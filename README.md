@@ -1,4 +1,5 @@
-# Screenshaver   <img width="128" height="128" alt="screenshaver" src="https://github.com/user-attachments/assets/9ecad862-dbc8-446c-a3e4-48be86738df8" />
+# Screenshaver
+<img width="128" height="128" alt="screenshaver" src="https://github.com/user-attachments/assets/9ecad862-dbc8-446c-a3e4-48be86738df8" />
 
 
 ## *Screensavers, reinvented.*
