@@ -1,0 +1,29 @@
+Version 1.0 Goals
+
+Core
+-----
+□ Renderer
+□ Shader cache
+□ Shader verification
+□ Logging
+
+Desktop Support
+---------------
+□ Mango
+□ Hyprland
+□ GNOME
+□ KDE
+
+Maintenance
+-----------
+□ --help
+□ --version
+□ --verify-cache
+□ --rebuild-cache
+□ --diagnostics
+
+Documentation
+-------------
+□ User Guide
+□ Developer Guide
+□ Build Instructions

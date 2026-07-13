@@ -1,0 +1,98 @@
+Perfect. This is exactly where I wanted us to be before writing any Wayland code.
+
+Phase 1 Goal
+
+The first version of wayland.rs should not attempt idle detection.
+
+Its only responsibility is:
+
+Connect to the Wayland compositor.
+Verify the connection succeeds.
+Enumerate globals.
+Verify ext_idle_notifier_v1 is advertised.
+Return success/failure.
+
+Nothing more.
+
+Why we're doing this
+
+We're separating:
+
+Transport
+    ↓
+Protocol discovery
+    ↓
+Protocol usage
+
+This makes debugging much easier.
+
+If something fails, we'll know exactly which layer failed.
+
+I propose three incremental commits
+Step A
+wayland.rs
+
+Connect to compositor only.
+
+If this works, we know the library is configured correctly.
+
+Step B
+wayland.rs
+
+Enumerate globals.
+
+Print every advertised interface.
+
+We should eventually see something similar to:
+
+wl_compositor
+wl_shm
+wl_seat
+xdg_wm_base
+ext_idle_notifier_v1
+...
+
+Once we can enumerate globals, we've essentially proven we can communicate with Mango.
+
+Step C
+
+Bind to:
+
+ext_idle_notifier_v1
+
+Only then do we begin implementing idle notifications.
+
+I intentionally do NOT want to hook this into main.rs yet.
+
+For the next few iterations, I'd rather keep wayland.rs completely isolated.
+
+Once we're confident it can:
+
+connect,
+enumerate globals,
+bind to the idle interface,
+
+then we'll make it the preferred backend in session_backend::mod.rs.
+
+I think this is the safest implementation strategy
+
+Rather than writing 300 lines and hoping they work, we'll build it like this:
+
+Commit 1
+✓ Connected
+
+Commit 2
+✓ Globals visible
+
+Commit 3
+✓ ext_idle_notifier_v1 found
+
+Commit 4
+✓ Idle notifications received
+
+Commit 5
+✓ Integrated into query_session
+
+At each stage, we'll have something small, testable, and easy to debug.
+
+I think this incremental approach is especially appropriate here because we're entering a new subsystem (native Wayland protocols), and it will let us verify each assumption before layering on additional complexity.

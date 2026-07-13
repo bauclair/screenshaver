@@ -1,0 +1,22 @@
+[package]
+name = "screenshaver"
+version = "0.1.5"
+edition = "2024"
+
+[dependencies]
+sdl2 = { version = "0.38", features = ["ttf"] }
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+gl = "0.14"
+libc = "0.2"
+notify = "6"
+ctrlc = "3.4"
+evdev = "0.13"
+zbus = "5"
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["staging", "client"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+x11 = "2.21"
+fs2 = "0.4"
+image = { version = "0.25", default-features = false, features = ["png"] }
+regex = "1"

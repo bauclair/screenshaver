@@ -1,0 +1,29 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# Nix
+/result
+/result-*
+
+# Direnv
+.direnv/
+
+# Environment files
+.env
+.env.*
+
+# Editors
+.vscode/
+.idea/
+
+# Temporary files
+*.swp
+*.swo
+*~
+*.tmp
+*.bak
+
+# OS metadata
+.DS_Store
+Thumbs.db
