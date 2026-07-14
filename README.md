@@ -80,6 +80,5 @@ Community feedback plays an important role in helping Screenshaver grow into the
 
 ---
 
-**Screenshaver**
+**Screenshaver** -- this is not your father's screensaver.
 
-*Screensavers, reinvented.*
