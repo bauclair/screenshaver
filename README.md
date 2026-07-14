@@ -44,9 +44,8 @@ Current texture families include:
 - Marble
 - Cellular
 - Minerals
+- Fabric (planned)
 - Julia (planned)
-
-Every generated texture is deterministic. Given the same texture family, palette, and seed value, Screenshaver will reproduce exactly the same image every time.
 
 ## Designed for Exploration
 
