@@ -27,41 +27,53 @@ pub enum Command {
 }
 
 
-const VALID_TEXTURE_FAMILIES: [&str; 6] = [
+const VALID_TEXTURE_FAMILIES: [&str; 11] = [
     "random",
     "julia",
     "marble",
     "clouds",
     "cellular",
     "minerals",
+    "mesh",
+    "radial",
+    "jigsaw",
+    "noise",
+    "bricks",
 ];
 
 
-const VALID_PREVIEW_TEXTURE_FAMILIES: [&str; 5] = [
+const VALID_PREVIEW_TEXTURE_FAMILIES: [&str; 10] = [
     "julia",
     "marble",
     "clouds",
     "cellular",
     "minerals",
+    "mesh",
+    "radial",
+    "jigsaw",
+    "noise",
+    "bricks",
 ];
 
 
-const VALID_TEXTURE_PALETTES: [&str; 6] = [
+const VALID_TEXTURE_PALETTES: [&str; 7] = [
     "random",
     "slate",
     "sandstone",
     "lichen",
     "mist",
     "bronze",
+    "brick",
 ];
 
 
-const VALID_PREVIEW_TEXTURE_PALETTES: [&str; 5] = [
+const VALID_PREVIEW_TEXTURE_PALETTES: [&str; 6] = [
     "slate",
     "sandstone",
     "lichen",
     "mist",
     "bronze",
+    "brick",
 ];
 
 
@@ -705,6 +717,11 @@ pub fn print_help() {
              clouds\n\
              cellular\n\
              minerals\n\
+             mesh\n\
+             radial\n\
+             jigsaw\n\
+             noise\n\
+             bricks\n\
          \n\
          Texture palettes:\n\
              slate\n\
@@ -712,6 +729,7 @@ pub fn print_help() {
              lichen\n\
              mist\n\
              bronze\n\
+             brick\n\
          \n\
          Examples:\n\
              screenshaver --preview-texture --family julia\n\

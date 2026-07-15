@@ -30,18 +30,20 @@ pub enum Palette {
     Lichen,
     Mist,
     Bronze,
+    Brick,
 }
 
 
 impl Palette {
 
     /// Every currently supported palette.
-    pub const ALL: [Palette; 5] = [
+    pub const ALL: [Palette; 6] = [
         Palette::Slate,
         Palette::Sandstone,
         Palette::Lichen,
         Palette::Mist,
         Palette::Bronze,
+        Palette::Brick,
     ];
 
 
@@ -72,6 +74,11 @@ impl Palette {
             Palette::Bronze => {
                 "bronze"
             }
+
+            Palette::Brick => {
+                "brick"
+            }
+
         }
     }
 
@@ -183,6 +190,11 @@ impl Palette {
             Palette::Bronze => {
                 &BRONZE_STOPS
             }
+
+            Palette::Brick => {
+                &BRICK_STOPS
+            }
+
         }
     }
 }
@@ -236,6 +248,12 @@ impl FromStr for Palette {
             "bronze" => {
                 Ok(
                     Palette::Bronze
+                )
+            }
+
+            "brick" => {
+                Ok(
+                    Palette::Brick
                 )
             }
 
@@ -543,6 +561,54 @@ const BRONZE_STOPS: [ColorStop; 6] = [
 ];
 
 
+/// Deep fired clay, traditional red brick, warm terracotta,
+/// and softly weathered highlights.
+const BRICK_STOPS: [ColorStop; 6] = [
+
+    ColorStop::new(
+        0.00,
+        31,
+        12,
+        9,
+    ),
+
+    ColorStop::new(
+        0.20,
+        68,
+        25,
+        17,
+    ),
+
+    ColorStop::new(
+        0.42,
+        112,
+        43,
+        28,
+    ),
+
+    ColorStop::new(
+        0.64,
+        154,
+        66,
+        42,
+    ),
+
+    ColorStop::new(
+        0.84,
+        190,
+        101,
+        70,
+    ),
+
+    ColorStop::new(
+        1.00,
+        222,
+        153,
+        118,
+    ),
+];
+
+
 // ============================================================
 // Color interpolation
 // ============================================================
@@ -755,6 +821,14 @@ mod tests {
                 Palette::Mist
             )
         );
+
+        assert_eq!(
+            "Brick".parse::<Palette>(),
+            Ok(
+                Palette::Brick
+            )
+        );
+
     }
 
 

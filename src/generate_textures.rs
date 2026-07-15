@@ -43,12 +43,22 @@ pub enum TextureFamily {
     Cellular,
 
     Minerals,
+
+    Mesh,
+
+    Radial,
+
+    Jigsaw,
+
+    Noise,
+
+    Bricks,
 }
 
 
 impl TextureFamily {
 
-    pub const ALL: [TextureFamily; 5] = [
+    pub const ALL: [TextureFamily; 10] = [
 
         TextureFamily::Julia,
 
@@ -59,6 +69,16 @@ impl TextureFamily {
         TextureFamily::Cellular,
 
         TextureFamily::Minerals,
+
+        TextureFamily::Mesh,
+
+        TextureFamily::Radial,
+
+        TextureFamily::Jigsaw,
+
+        TextureFamily::Noise,
+
+        TextureFamily::Bricks,
     ];
 
 
@@ -87,6 +107,27 @@ impl TextureFamily {
             TextureFamily::Minerals => {
                 "minerals"
             }
+
+            TextureFamily::Mesh => {
+                "mesh"
+            }
+
+            TextureFamily::Radial => {
+                "radial"
+            }
+
+            TextureFamily::Jigsaw => {
+                "jigsaw"
+            }
+
+            TextureFamily::Noise => {
+                "noise"
+            }
+
+            TextureFamily::Bricks => {
+                "bricks"
+            }
+
         }
     }
 
@@ -158,6 +199,36 @@ impl FromStr for TextureFamily {
             "minerals" => {
                 Ok(
                     TextureFamily::Minerals
+                )
+            }
+
+            "mesh" => {
+                Ok(
+                    TextureFamily::Mesh
+                )
+            }
+
+            "radial" => {
+                Ok(
+                    TextureFamily::Radial
+                )
+            }
+
+            "jigsaw" => {
+                Ok(
+                    TextureFamily::Jigsaw
+                )
+            }
+
+            "noise" => {
+                Ok(
+                    TextureFamily::Noise
+                )
+            }
+
+            "bricks" => {
+                Ok(
+                    TextureFamily::Bricks
                 )
             }
 
@@ -372,6 +443,42 @@ pub fn generate(
         TextureFamily::Minerals => {
 
             crate::generate_minerals::generate(
+                palette,
+                seed,
+            )
+        }
+
+        TextureFamily::Mesh => {
+
+            crate::generate_mesh::generate(
+                palette,
+                seed,
+            )
+        }
+
+        TextureFamily::Radial => {
+            crate::generate_radial::generate(
+                palette,
+                seed,
+            )
+        }
+
+        TextureFamily::Jigsaw => {
+            crate::generate_jigsaw::generate(
+                palette,
+                seed,
+            )
+        }
+
+        TextureFamily::Noise => {
+            crate::generate_noise::generate(
+                palette,
+                seed,
+            )
+        }
+
+        TextureFamily::Bricks => {
+            crate::generate_bricks::generate(
                 palette,
                 seed,
             )

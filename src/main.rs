@@ -20,10 +20,15 @@ mod compile_shader;
 mod render_frame;
 mod splash_screen;
 mod reject_shader;
+mod generate_bricks;
 mod generate_cellular;
 mod generate_clouds;
+mod generate_jigsaw;
 mod generate_marble;
+mod generate_mesh;
 mod generate_minerals;
+mod generate_noise;
+mod generate_radial;
 mod generate_textures;
 mod preview_texture;
 mod palettes;
@@ -162,6 +167,26 @@ crate::parse_arguments::Command::ListTextures => {
         "    minerals"
     );
 
+    println!(
+        "    mesh"
+    );
+
+    println!(
+        "    radial"
+    );
+
+    println!(
+        "    jigsaw"
+    ); 
+
+    println!(
+        "    noise"
+    ); 
+
+    println!(
+        "    bricks"
+    ); 
+
     return;
 }
 
@@ -190,6 +215,10 @@ crate::parse_arguments::Command::ListPalettes => {
 
     println!(
         "    bronze"
+    );
+
+    println!(
+        "    brick"
     );
 
     return;
