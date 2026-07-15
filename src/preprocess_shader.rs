@@ -3,12 +3,40 @@ use regex::Regex;
 const MAX_SHADER_SOURCE_BYTES: usize = 1_000_000;
 const MAX_CONSTANT_LOOP_BOUND: u64 = 2048;
 
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+)]
+pub struct ShaderChannelUsage {
+    pub channels: [bool; 4],
+    pub requires_mipmaps: bool,
+}
+
+impl ShaderChannelUsage {
+    pub fn uses_any_channel(
+        self,
+    ) -> bool {
+        self.channels
+            .iter()
+            .any(
+                |used| {
+                    *used
+                }
+            )
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct PreprocessResult {
     pub source: String,
     pub applied: Vec<String>,
     pub warnings: Vec<String>,
     pub rejection_reasons: Vec<String>,
+    pub channel_usage: ShaderChannelUsage,
 }
 
 pub fn preprocess_shader(source: &str) -> String {
@@ -35,11 +63,17 @@ pub fn preprocess_shader_with_report(source: &str) -> PreprocessResult {
     analyze_warnings(&processed, &mut warnings);
     analyze_rejection_risks(&processed, true, &mut rejection_reasons);
 
+    let channel_usage =
+        analyze_channel_usage(
+            &processed
+        );
+
     PreprocessResult {
         source: wrap_shadertoy_main_image(&processed),
         applied,
         warnings,
         rejection_reasons,
+        channel_usage,
     }
 }
 
@@ -49,6 +83,14 @@ pub fn analyze_native_shader(source: &str) -> (Vec<String>, Vec<String>) {
     analyze_warnings(source, &mut warnings);
     analyze_rejection_risks(source, false, &mut rejection_reasons);
     (warnings, rejection_reasons)
+}
+
+pub fn analyze_native_channel_usage(
+    source: &str,
+) -> ShaderChannelUsage {
+    analyze_channel_usage(
+        source
+    )
 }
 
 fn normalize_line_endings(source: &str) -> String {
@@ -444,6 +486,46 @@ fn initialize_partial_vectors(source: &str, applied: &mut Vec<String>) -> String
     apply_edits(source, edits)
 }
 
+fn analyze_channel_usage(
+    source: &str,
+) -> ShaderChannelUsage {
+    let mask =
+        code_mask(
+            source
+        );
+
+    let mut channels =
+        [false; 4];
+
+    for (
+        index,
+        used,
+    ) in channels
+        .iter_mut()
+        .enumerate()
+    {
+        let channel_name =
+            format!(
+                "iChannel{index}"
+            );
+
+        *used =
+            contains_identifier(
+                &mask,
+                &channel_name,
+            );
+    }
+
+    ShaderChannelUsage {
+        channels,
+        requires_mipmaps:
+            contains_identifier(
+                &mask,
+                "textureLod",
+            ),
+    }
+}
+
 fn analyze_warnings(source: &str, warnings: &mut Vec<String>) {
     let mask = code_mask(source);
 
@@ -493,64 +575,12 @@ fn analyze_warnings(source: &str, warnings: &mut Vec<String>) {
     warnings.dedup();
 }
 
-// ------------------------------------------------------------
-// GLSL-COMP-0008
-// Title: Reject shaders requiring unsupported texture channels.
-// Category: Compatibility Rejection
-// Status: Experimental
-// Introduced: Screenshaver pre-release
-// First Observed: 2026-07-11
-// Implemented: 2026-07-11
-// Last Revised: 2026-07-11
-// First Case: Heartfelt
-// ------------------------------------------------------------
-fn glsl_comp_0008_reject_texture_channels(
-    masked_source: &str,
-    reasons: &mut Vec<String>,
-) {
-    let channel_regex = Regex::new(r"\biChannel[0-3]\b")
-        .expect("GLSL-COMP-0008 texture-channel regex");
-
-    let mut channels = channel_regex
-        .find_iter(masked_source)
-        .map(|matched| matched.as_str().to_string())
-        .collect::<Vec<_>>();
-
-    channels.sort();
-    channels.dedup();
-
-    if channels.is_empty() {
-        return;
-    }
-
-    reasons.push(format!(
-        "Unsupported texture channel dependency detected: {}",
-        channels.join(", ")
-    ));
-
-    if contains_identifier(masked_source, "textureLod") {
-        reasons.push(
-            "Shader requires mipmap-capable texture input through textureLod()"
-                .into(),
-        );
-    }
-
-    if contains_identifier(masked_source, "texelFetch") {
-        reasons.push(
-            "Shader requires direct texture access through texelFetch()"
-                .into(),
-        );
-    }
-}
-
 fn analyze_rejection_risks(
     source: &str,
     require_main_image: bool,
     reasons: &mut Vec<String>,
 ) {
     let mask = code_mask(source);
-
-    glsl_comp_0008_reject_texture_channels(&mask, reasons);
 
     if source.len() > MAX_SHADER_SOURCE_BYTES {
         reasons.push(format!(
@@ -966,3 +996,4 @@ fn mask_preprocessor_lines(bytes: &mut [u8]) {
         };
     }
 }
+

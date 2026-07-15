@@ -18,6 +18,8 @@ pub enum ShaderLoadResult {
         source: String,
         shader_name: String,
         built_in_default: bool,
+        channel_usage:
+            crate::preprocess_shader::ShaderChannelUsage,
     },
     Rejected {
         shader_name: String,
@@ -88,12 +90,20 @@ pub fn load_shader(shader_name: &str) -> ShaderLoadResult {
                 source: processed,
                 shader_name: shader_name.to_string(),
                 built_in_default: false,
+                channel_usage:
+                    report.channel_usage,
             }
         }
 
         crate::classify_shader::ShaderKind::NativeGLSL => {
             let (warnings, rejection_reasons) =
                 crate::preprocess_shader::analyze_native_shader(&source);
+
+            let channel_usage =
+                crate::preprocess_shader::analyze_native_channel_usage(
+                    &source
+                );
+
             log_report(&[], &warnings, &rejection_reasons);
 
             if !rejection_reasons.is_empty() {
@@ -108,6 +118,7 @@ pub fn load_shader(shader_name: &str) -> ShaderLoadResult {
                 source,
                 shader_name: shader_name.to_string(),
                 built_in_default: false,
+                channel_usage,
             }
         }
     }
@@ -131,6 +142,8 @@ pub fn load_builtin_default_shader() -> ShaderLoadResult {
         source: report.source,
         shader_name: "<built-in-default>".to_string(),
         built_in_default: true,
+        channel_usage:
+            report.channel_usage,
     }
 }
 
@@ -256,3 +269,4 @@ fn log(message: &str) {
     let logfile = crate::locate_paths::runtime_log_path();
     crate::logger::log(&logfile, message);
 }
+

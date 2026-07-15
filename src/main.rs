@@ -13,6 +13,7 @@ mod query_session;
 mod session_backend;
 
 mod manage_shader;
+mod manage_textures;
 mod classify_shader;
 mod preprocess_shader;
 mod load_shader;
