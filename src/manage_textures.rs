@@ -6,6 +6,14 @@
 
 use std::ffi::CString;
 use std::path::PathBuf;
+use std::sync::atomic::{
+    AtomicU64,
+    Ordering,
+};
+use std::time::{
+    SystemTime,
+    UNIX_EPOCH,
+};
 
 use crate::generate_textures::{
     GeneratedTexture,
@@ -16,22 +24,253 @@ use crate::preprocess_shader::ShaderChannelUsage;
 
 
 // ============================================================
-// Initial diagnostic selection
+// Random fallback selection
 // ============================================================
 
-/// Fixed texture selection used until configuration-based and
-/// random selection policy is connected to this module.
-const DEFAULT_TEXTURE_FAMILY: TextureFamily =
-    TextureFamily::Bricks;
+/// Texture families whose generators are currently implemented.
+///
+/// Julia is intentionally excluded until its generator is ready.
+const RANDOM_TEXTURE_FAMILIES: [TextureFamily; 9] = [
 
-const DEFAULT_PALETTE: Palette =
-    Palette::Brick;
+    TextureFamily::Marble,
 
-const DEFAULT_SEED: u64 =
-    12_345;
+    TextureFamily::Clouds,
+
+    TextureFamily::Cellular,
+
+    TextureFamily::Minerals,
+
+    TextureFamily::Mesh,
+
+    TextureFamily::Radial,
+
+    TextureFamily::Jigsaw,
+
+    TextureFamily::Noise,
+
+    TextureFamily::Bricks,
+];
+
 
 const CHANNEL_COUNT: usize =
     4;
+
+
+/// Additional entropy so selections made within the same system
+/// clock tick still receive different random streams.
+static RANDOM_COUNTER: AtomicU64 =
+    AtomicU64::new(
+        0
+    );
+
+
+// ============================================================
+// Texture request
+// ============================================================
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+)]
+struct TextureRequest {
+    family: TextureFamily,
+    palette: Palette,
+    seed: u64,
+}
+
+
+fn resolve_texture_request(
+    global_texture: Option<TextureFamily>,
+    global_palette: Option<Palette>,
+) -> (
+    TextureRequest,
+    &'static str,
+    &'static str,
+) {
+
+    let mut state =
+        random_state();
+
+
+    let (
+        family,
+        texture_source,
+    ) =
+        match global_texture {
+
+            Some(family) => {
+                (
+                    family,
+                    "global",
+                )
+            }
+
+            None => {
+                let family_index =
+                    random_index(
+                        &mut state,
+                        RANDOM_TEXTURE_FAMILIES.len(),
+                    );
+
+
+                (
+                    RANDOM_TEXTURE_FAMILIES[
+                        family_index
+                    ],
+                    "random fallback",
+                )
+            }
+        };
+
+
+    let (
+        palette,
+        palette_source,
+    ) =
+        match global_palette {
+
+            Some(palette) => {
+                (
+                    palette,
+                    "global",
+                )
+            }
+
+            None => {
+                let palette_index =
+                    random_index(
+                        &mut state,
+                        Palette::ALL.len(),
+                    );
+
+
+                (
+                    Palette::ALL[
+                        palette_index
+                    ],
+                    "random fallback",
+                )
+            }
+        };
+
+
+    (
+        TextureRequest {
+            family,
+            palette,
+            seed:
+                splitmix64(
+                    &mut state
+                ),
+        },
+        texture_source,
+        palette_source,
+    )
+}
+
+
+fn random_state() -> u64 {
+
+    let time_entropy =
+        SystemTime::now()
+            .duration_since(
+                UNIX_EPOCH
+            )
+            .map(
+                |duration| {
+                    duration.as_nanos()
+                        as u64
+                }
+            )
+            .unwrap_or(
+                0
+            );
+
+
+    let counter =
+        RANDOM_COUNTER.fetch_add(
+            1,
+            Ordering::Relaxed,
+        );
+
+
+    let mut state =
+        time_entropy
+            ^ counter.rotate_left(
+                23
+            )
+            ^ 0xA076_1D64_78BD_642F;
+
+
+    splitmix64(
+        &mut state
+    )
+}
+
+
+fn random_index(
+    state: &mut u64,
+    length: usize,
+) -> usize {
+
+    debug_assert!(
+        length > 0
+    );
+
+
+    (
+        splitmix64(
+            state
+        )
+            % length as u64
+    ) as usize
+}
+
+
+fn splitmix64(
+    state: &mut u64,
+) -> u64 {
+
+    *state =
+        state.wrapping_add(
+            0x9E37_79B9_7F4A_7C15
+        );
+
+
+    let mut value =
+        *state;
+
+
+    value =
+        (
+            value
+                ^ (
+                    value >> 30
+                )
+        )
+        .wrapping_mul(
+            0xBF58_476D_1CE4_E5B9
+        );
+
+
+    value =
+        (
+            value
+                ^ (
+                    value >> 27
+                )
+        )
+        .wrapping_mul(
+            0x94D0_49BB_1331_11EB
+        );
+
+
+    value
+        ^ (
+            value >> 31
+        )
+}
 
 
 // ============================================================
@@ -57,25 +296,35 @@ struct GpuTexture {
 pub struct TextureManager {
     texture: Option<GpuTexture>,
     active_channels: [bool; CHANNEL_COUNT],
+    global_texture: Option<TextureFamily>,
+    global_palette: Option<Palette>,
 }
 
 
 impl TextureManager {
 
-    pub fn new() -> Self {
+    pub fn new(
+        global_texture: Option<TextureFamily>,
+        global_palette: Option<Palette>,
+    ) -> Self {
+
         Self {
-            texture: None,
-            active_channels: [false; CHANNEL_COUNT],
+            texture:
+                None,
+            active_channels:
+                [false; CHANNEL_COUNT],
+            global_texture,
+            global_palette,
         }
     }
 
 
     /// Satisfy the texture requirements of the selected shader.
     ///
-    /// The first implementation deliberately uses one generated
-    /// texture for every channel referenced by the shader. Later,
-    /// selection will be resolved from per-shader overrides,
-    /// global configuration, or random fallback policy.
+    /// Until global and per-shader configuration are connected,
+    /// every texture-dependent shader receives one randomly chosen
+    /// procedural texture and palette. The same generated texture
+    /// is bound to every channel referenced by that shader.
     pub fn prepare_for_shader(
         &mut self,
         channel_usage: ShaderChannelUsage,
@@ -86,56 +335,88 @@ impl TextureManager {
 
 
         if !channel_usage.uses_any_channel() {
+
             log(
                 "[TEXTURE] Active shader does not require texture channels"
             );
+
+
+            self.delete_current_texture();
+
 
             return Ok(());
         }
 
 
-        if self.texture.is_none() {
-            log(
-                &format!(
-                    "[TEXTURE] Generating diagnostic texture: family={}, palette={}, seed={}",
-                    DEFAULT_TEXTURE_FAMILY,
-                    DEFAULT_PALETTE,
-                    DEFAULT_SEED,
-                )
+        let (
+            request,
+            texture_source,
+            palette_source,
+        ) =
+            resolve_texture_request(
+                self.global_texture,
+                self.global_palette,
             );
 
 
-            let generated =
-                crate::generate_textures::generate(
-                    DEFAULT_TEXTURE_FAMILY,
-                    DEFAULT_PALETTE,
-                    DEFAULT_SEED,
-                )?;
+        log(
+            &format!(
+                "[TEXTURE] Selected procedural texture: family={}, palette={}, seed={}",
+                request.family,
+                request.palette,
+                request.seed,
+            )
+        );
 
 
-            generated.validate_standard()?;
+        log(
+            &format!(
+                "[TEXTURE] Selection source: texture={}, palette={}",
+                texture_source,
+                palette_source,
+            )
+        );
 
 
-            let gpu_texture =
-                upload_generated_texture(
-                    generated
-                )?;
+        let generated =
+            crate::generate_textures::generate(
+                request.family,
+                request.palette,
+                request.seed,
+            )?;
 
 
-            log(
-                &format!(
-                    "[TEXTURE] Uploaded texture {}x{} as OpenGL object {}",
-                    gpu_texture.width,
-                    gpu_texture.height,
-                    gpu_texture.id,
-                )
+        generated.validate_standard()?;
+
+
+        let gpu_texture =
+            upload_generated_texture(
+                generated
+            )?;
+
+
+        log(
+            &format!(
+                "[TEXTURE] Uploaded texture {}x{} as OpenGL object {}",
+                gpu_texture.width,
+                gpu_texture.height,
+                gpu_texture.id,
+            )
+        );
+
+
+        let previous_texture =
+            self.texture.replace(
+                gpu_texture
             );
 
 
-            self.texture =
-                Some(
-                    gpu_texture
-                );
+        if let Some(previous_texture) =
+            previous_texture
+        {
+            delete_gpu_texture(
+                previous_texture
+            );
         }
 
 
@@ -234,41 +515,26 @@ impl TextureManager {
     pub fn delete_all(
         &mut self,
     ) {
-        let Some(texture) =
-            self.texture.take()
-        else {
-            self.active_channels =
-                [false; CHANNEL_COUNT];
 
-            return;
-        };
-
-
-        unsafe {
-            if texture.id
-                != 0
-            {
-                gl::DeleteTextures(
-                    1,
-                    &texture.id,
-                );
-            }
-        }
-
-
-        log(
-            &format!(
-                "[TEXTURE] Deleted OpenGL texture {} ({} / {}, seed={})",
-                texture.id,
-                texture.family,
-                texture.palette,
-                texture.seed,
-            )
-        );
+        self.delete_current_texture();
 
 
         self.active_channels =
             [false; CHANNEL_COUNT];
+    }
+
+
+    fn delete_current_texture(
+        &mut self,
+    ) {
+
+        if let Some(texture) =
+            self.texture.take()
+        {
+            delete_gpu_texture(
+                texture
+            );
+        }
     }
 
 
@@ -340,12 +606,6 @@ impl TextureManager {
     }
 }
 
-
-impl Default for TextureManager {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 
 // ============================================================
@@ -667,6 +927,34 @@ fn flip_rgba_rows(
     Ok(
         flipped
     )
+}
+
+
+fn delete_gpu_texture(
+    texture: GpuTexture,
+) {
+
+    unsafe {
+        if texture.id
+            != 0
+        {
+            gl::DeleteTextures(
+                1,
+                &texture.id,
+            );
+        }
+    }
+
+
+    log(
+        &format!(
+            "[TEXTURE] Deleted OpenGL texture {} ({} / {}, seed={})",
+            texture.id,
+            texture.family,
+            texture.palette,
+            texture.seed,
+        )
+    );
 }
 
 

@@ -36,6 +36,12 @@ struct OperationSection {
     mode: String,
 
     idle_timeout: String,
+
+    #[serde(default)]
+    global_texture: Option<String>,
+
+    #[serde(default)]
+    global_palette: Option<String>,
 }
 
 
@@ -59,7 +65,6 @@ struct RawToml {
     appearance: AppearanceSection,
 
     operation: OperationSection,
-
     locking: LockingSection,
 
     debug: DebugSection,
@@ -82,6 +87,16 @@ pub struct Config {
     pub mode: String,
 
     pub idle_timeout: String,
+
+    pub global_texture:
+        Option<
+            crate::generate_textures::TextureFamily
+        >,
+
+    pub global_palette:
+        Option<
+            crate::palettes::Palette
+        >,
 
     pub screen_lock: bool,
 
@@ -147,6 +162,26 @@ pub fn load_config(
 
 
     //---------------------------------------------------------
+    // Parse global texture and palette policy
+    //---------------------------------------------------------
+
+    let global_texture =
+        parse_global_texture(
+            raw.operation
+                .global_texture
+                .as_deref()
+        )?;
+
+
+    let global_palette =
+        parse_global_palette(
+            raw.operation
+                .global_palette
+                .as_deref()
+        )?;
+
+
+    //---------------------------------------------------------
     // Flatten configuration
     //---------------------------------------------------------
 
@@ -164,6 +199,10 @@ pub fn load_config(
 
             idle_timeout:
                 raw.operation.idle_timeout,
+
+            global_texture,
+
+            global_palette,
 
             screen_lock:
                 raw.locking.screen_lock,
@@ -201,6 +240,34 @@ pub fn load_config(
             ),
 
             format!(
+                "[CONFIG] global_texture = {}",
+                config
+                    .global_texture
+                    .map(
+                        |family| {
+                            family.name()
+                        }
+                    )
+                    .unwrap_or(
+                        "random"
+                    ),
+            ),
+
+            format!(
+                "[CONFIG] global_palette = {}",
+                config
+                    .global_palette
+                    .map(
+                        |palette| {
+                            palette.name()
+                        }
+                    )
+                    .unwrap_or(
+                        "random"
+                    ),
+            ),
+
+            format!(
                 "[CONFIG] screen_lock = {}",
                 config.screen_lock,
             ),
@@ -221,3 +288,128 @@ pub fn load_config(
         }
     )
 }
+
+//
+// ------------------------------------------------------------
+// Global texture and palette parsing
+// ------------------------------------------------------------
+//
+
+fn parse_global_texture(
+    value: Option<&str>,
+) -> Result<
+    Option<
+        crate::generate_textures::TextureFamily
+    >,
+    String,
+> {
+
+    let Some(value) =
+        value
+    else {
+        return Ok(
+            None
+        );
+    };
+
+
+    let normalized =
+        value
+            .trim()
+            .to_ascii_lowercase();
+
+
+    if normalized.is_empty()
+        || normalized
+            == "random"
+    {
+        return Ok(
+            None
+        );
+    }
+
+
+    let family =
+        crate::generate_textures::TextureFamily::from_name(
+            &normalized
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Invalid global_texture value '{}': {}",
+                    value,
+                    error,
+                )
+            }
+        )?;
+
+
+    if family
+        == crate::generate_textures::TextureFamily::Julia
+    {
+        return Err(
+            "global_texture = \"julia\" is recognized, but Julia texture generation is not yet implemented"
+                .to_string()
+        );
+    }
+
+
+    Ok(
+        Some(
+            family
+        )
+    )
+}
+
+
+fn parse_global_palette(
+    value: Option<&str>,
+) -> Result<
+    Option<
+        crate::palettes::Palette
+    >,
+    String,
+> {
+
+    let Some(value) =
+        value
+    else {
+        return Ok(
+            None
+        );
+    };
+
+
+    let normalized =
+        value
+            .trim()
+            .to_ascii_lowercase();
+
+
+    if normalized.is_empty()
+        || normalized
+            == "random"
+    {
+        return Ok(
+            None
+        );
+    }
+
+
+    crate::palettes::Palette::from_name(
+        &normalized
+    )
+    .map(
+        Some
+    )
+    .map_err(
+        |error| {
+            format!(
+                "Invalid global_palette value '{}': {}",
+                value,
+                error,
+            )
+        }
+    )
+}
+

@@ -751,6 +751,8 @@ crate::parse_arguments::Command::ListPalettes => {
                         shader_manager,
                         parsed_interval.seconds,
                         crate::define_constants::DEFAULT_RENDER_FPS,
+                        cfg.global_texture,
+                        cfg.global_palette,
                     ) {
 
                         Ok(renderer) => renderer,
@@ -889,3 +891,4 @@ crate::parse_arguments::Command::ListPalettes => {
         "[MAIN] Pipeline complete."
     );
 }
+
