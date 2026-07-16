@@ -33,6 +33,9 @@ struct ActivePreviewShader {
     channel_usage:
         crate::preprocess_shader::ShaderChannelUsage,
 
+    shader_inputs:
+        Vec<crate::isf_types::ShaderInput>,
+
     texture_manager:
         crate::manage_textures::TextureManager,
 
@@ -534,6 +537,12 @@ pub fn run_paths(
                     .bind_channels();
 
 
+                crate::apply_shader_inputs::apply(
+                    active.program,
+                    &active.shader_inputs,
+                );
+
+
                 gl::BindVertexArray(
                     vao
                 );
@@ -788,6 +797,7 @@ fn load_active_shader(
         source,
         shader_name,
         channel_usage,
+        shader_inputs,
     ) =
         match loaded {
 
@@ -795,12 +805,14 @@ fn load_active_shader(
                 source,
                 shader_name,
                 channel_usage,
+                shader_inputs,
                 ..
             } => {
                 (
                     source,
                     shader_name,
                     channel_usage,
+                    shader_inputs,
                 )
             }
 
@@ -945,6 +957,7 @@ fn load_active_shader(
             shader_name,
             program,
             channel_usage,
+            shader_inputs,
             texture_manager,
             overlay_descriptor,
             subtitle_overlay,

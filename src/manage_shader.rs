@@ -123,9 +123,26 @@ impl ShaderManager {
                 };
 
 
-            if !file_name.ends_with(
-                ".glsl"
-            ) {
+            let extension =
+                path.extension()
+                    .and_then(
+                        |value| {
+                            value.to_str()
+                        }
+                    )
+                    .unwrap_or_default();
+
+
+            if !extension.eq_ignore_ascii_case(
+                "glsl"
+            )
+                && !extension.eq_ignore_ascii_case(
+                    "fs"
+                )
+                && !extension.eq_ignore_ascii_case(
+                    "shaver"
+                )
+            {
                 continue;
             }
 
@@ -135,6 +152,14 @@ impl ShaderManager {
             ) {
                 continue;
             }
+
+
+            log(
+                &format!(
+                    "[SHADER] Discovered shader: {}",
+                    file_name
+                )
+            );
 
 
             shaders.push(
@@ -329,3 +354,4 @@ fn log(
         message,
     );
 }
+

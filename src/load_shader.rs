@@ -1,7 +1,5 @@
 use std::path::{Path, PathBuf};
 
-const CACHE_SCHEMA_VERSION: u32 = 5;
-
 const BUILTIN_DEFAULT_SHADER: &str = r#"
 void mainImage(out vec4 fragColor, vec2 fragCoord)
 {
@@ -20,6 +18,8 @@ pub enum ShaderLoadResult {
         built_in_default: bool,
         channel_usage:
             crate::preprocess_shader::ShaderChannelUsage,
+        shader_inputs:
+            Vec<crate::isf_types::ShaderInput>,
     },
     Rejected {
         shader_name: String,
@@ -113,11 +113,19 @@ fn load_shader_path_internal(
         source.len()
     ));
 
-    let shader_kind = crate::classify_shader::classify_shader(&source);
-    log(&format!("[SHADER] Shader classified as: {shader_kind:?}"));
+    let shader_kind =
+        crate::classify_shader::classify_shader(
+            &source
+        );
+
 
     match shader_kind {
         crate::classify_shader::ShaderKind::ShaderToy => {
+            log(
+                "[SHADER] Type: ShaderToy"
+            );
+
+
             let report = crate::preprocess_shader::preprocess_shader_with_report(&source);
             log_report(&report.applied, &report.warnings, &report.rejection_reasons);
 
@@ -150,10 +158,135 @@ fn load_shader_path_internal(
                 built_in_default: false,
                 channel_usage:
                     report.channel_usage,
+                shader_inputs:
+                    Vec::new(),
+            }
+        }
+
+        crate::classify_shader::ShaderKind::Isf => {
+            log(
+                "[SHADER] Type: ISF"
+            );
+
+            let document =
+                match crate::parse_isf::parse(
+                    &source
+                ) {
+                    Ok(document) => document,
+                    Err(error) => {
+                        return ShaderLoadResult::Unavailable {
+                            shader_name:
+                                shader_name.clone(),
+                            error:
+                                format!(
+                                    "ISF metadata parsing failed: {}",
+                                    error,
+                                ),
+                        };
+                    }
+                };
+
+            log(
+                &format!(
+                    "[ISF] Version: {}",
+                    document.metadata.version_name(),
+                )
+            );
+
+            log(
+                &format!(
+                    "[ISF] Inputs: {}",
+                    document.metadata.inputs.len(),
+                )
+            );
+
+            log(
+                &format!(
+                    "[ISF] Passes: {}",
+                    document.metadata.pass_count(),
+                )
+            );
+
+            log(
+                &format!(
+                    "[ISF] Imported resources: {}",
+                    document.metadata.has_imported_resources(),
+                )
+            );
+
+            let report =
+                crate::preprocess_isf::preprocess(
+                    &document
+                );
+
+            log_report(
+                &report.applied,
+                &report.warnings,
+                &report.rejection_reasons,
+            );
+
+            if !report.rejection_reasons.is_empty() {
+                log(
+                    "[ISF] Status: Unsupported"
+                );
+
+                return ShaderLoadResult::Rejected {
+                    shader_name:
+                        shader_name.clone(),
+                    reasons:
+                        report.rejection_reasons,
+                };
+            }
+
+            log(
+                "[ISF] Status: Supported"
+            );
+
+            let processed =
+                if let Some(cached) =
+                    try_load_cached_shader(
+                        source_path
+                    )
+                {
+                    cached
+                } else {
+
+                    if let Err(error) =
+                        write_cached_shader(
+                            source_path,
+                            &report.source,
+                        )
+                    {
+                        log(
+                            &format!(
+                                "[CACHE] Failed to write cache entry: {error}"
+                            )
+                        );
+                    }
+
+                    report.source
+                };
+
+            ShaderLoadResult::Ready {
+                source:
+                    processed,
+                shader_name:
+                    shader_name.clone(),
+                built_in_default:
+                    false,
+                channel_usage:
+                    crate::preprocess_shader::ShaderChannelUsage::default(),
+                shader_inputs:
+                    report.inputs,
             }
         }
 
         crate::classify_shader::ShaderKind::NativeGLSL => {
+            log(
+                "[SHADER] Type: Native GLSL"
+            );
+
+
             let (warnings, rejection_reasons) =
                 crate::preprocess_shader::analyze_native_shader(&source);
 
@@ -183,6 +316,8 @@ fn load_shader_path_internal(
                 shader_name: shader_name.clone(),
                 built_in_default: false,
                 channel_usage,
+                shader_inputs:
+                    Vec::new(),
             }
         }
     }
@@ -208,6 +343,8 @@ pub fn load_builtin_default_shader() -> ShaderLoadResult {
         built_in_default: true,
         channel_usage:
             report.channel_usage,
+        shader_inputs:
+            Vec::new(),
     }
 }
 
@@ -293,7 +430,7 @@ fn generated_cache_path(source_path: &Path) -> PathBuf {
         .unwrap_or("shader");
 
     crate::locate_paths::shader_cache_dir()
-        .join(format!("{stem}._gen.v{CACHE_SCHEMA_VERSION}.glsl"))
+        .join(format!("{stem}._gen.glsl"))
 }
 
 pub fn cleanup_generated_shaders() {

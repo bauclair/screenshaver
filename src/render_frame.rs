@@ -10,6 +10,7 @@ struct ActiveShader {
     program: u32,
     shader_name: String,
     channel_usage: crate::preprocess_shader::ShaderChannelUsage,
+    shader_inputs: Vec<crate::isf_types::ShaderInput>,
     built_in_default: bool,
 }
 
@@ -272,6 +273,11 @@ impl FrameRenderer {
 
             self.texture_manager
                 .bind_channels();
+
+            crate::apply_shader_inputs::apply(
+                program,
+                &self.active_shader.shader_inputs,
+            );
 
             gl::BindVertexArray(
                 self.vao
@@ -724,6 +730,7 @@ fn select_safe_shader_program(
                 shader_name,
                 built_in_default,
                 channel_usage,
+                shader_inputs,
             } => {
                 let program =
                     crate::compile_shader::build_program(
@@ -736,6 +743,7 @@ fn select_safe_shader_program(
                         program,
                         shader_name,
                         channel_usage,
+                        shader_inputs,
                         built_in_default,
                     }
                 );
@@ -789,6 +797,7 @@ fn select_safe_shader_program(
             shader_name,
             built_in_default,
             channel_usage,
+            shader_inputs,
         } => {
             let program =
                 crate::compile_shader::build_program(
@@ -801,6 +810,7 @@ fn select_safe_shader_program(
                     program,
                     shader_name,
                     channel_usage,
+                    shader_inputs,
                     built_in_default,
                 }
             )
