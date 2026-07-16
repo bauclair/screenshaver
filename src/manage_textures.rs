@@ -19,6 +19,10 @@ use crate::generate_textures::{
     GeneratedTexture,
     TextureFamily,
 };
+use crate::load_config::{
+    TextureOverride,
+    TextureSelectionPolicy,
+};
 use crate::palettes::Palette;
 use crate::preprocess_shader::ShaderChannelUsage;
 
@@ -80,9 +84,9 @@ struct TextureRequest {
 }
 
 
-fn resolve_texture_request(
-    global_texture: Option<TextureFamily>,
-    global_palette: Option<Palette>,
+fn resolve_texture_selection(
+    shader_name: &str,
+    policy: &TextureSelectionPolicy,
 ) -> (
     TextureRequest,
     &'static str,
@@ -93,11 +97,36 @@ fn resolve_texture_request(
         random_state();
 
 
+    if let Some(texture_override) =
+        matching_override(
+            shader_name,
+            &policy.texture_overrides,
+        )
+    {
+        return (
+            TextureRequest {
+                family:
+                    texture_override
+                        .shader_texture,
+                palette:
+                    texture_override
+                        .shader_palette,
+                seed:
+                    splitmix64(
+                        &mut state
+                    ),
+            },
+            "shader override",
+            "shader override",
+        );
+    }
+
+
     let (
         family,
         texture_source,
     ) =
-        match global_texture {
+        match policy.global_texture {
 
             Some(family) => {
                 (
@@ -128,7 +157,7 @@ fn resolve_texture_request(
         palette,
         palette_source,
     ) =
-        match global_palette {
+        match policy.global_palette {
 
             Some(palette) => {
                 (
@@ -167,6 +196,27 @@ fn resolve_texture_request(
         texture_source,
         palette_source,
     )
+}
+
+
+fn matching_override<'a>(
+    shader_name: &str,
+    overrides: &'a [TextureOverride],
+) -> Option<
+    &'a TextureOverride
+> {
+
+    overrides
+        .iter()
+        .find(
+            |texture_override| {
+                texture_override
+                    .shader
+                    .eq_ignore_ascii_case(
+                        shader_name
+                    )
+            }
+        )
 }
 
 
@@ -296,16 +346,15 @@ struct GpuTexture {
 pub struct TextureManager {
     texture: Option<GpuTexture>,
     active_channels: [bool; CHANNEL_COUNT],
-    global_texture: Option<TextureFamily>,
-    global_palette: Option<Palette>,
+    policy:
+        TextureSelectionPolicy,
 }
 
 
 impl TextureManager {
 
     pub fn new(
-        global_texture: Option<TextureFamily>,
-        global_palette: Option<Palette>,
+        policy: TextureSelectionPolicy,
     ) -> Self {
 
         Self {
@@ -313,20 +362,20 @@ impl TextureManager {
                 None,
             active_channels:
                 [false; CHANNEL_COUNT],
-            global_texture,
-            global_palette,
+            policy,
         }
     }
 
 
     /// Satisfy the texture requirements of the selected shader.
     ///
-    /// Until global and per-shader configuration are connected,
-    /// every texture-dependent shader receives one randomly chosen
-    /// procedural texture and palette. The same generated texture
-    /// is bound to every channel referenced by that shader.
+    /// Resolve the selected shader's procedural texture through
+    /// per-shader override, global configuration, and random
+    /// fallback policy. The same generated texture is bound to
+    /// every channel referenced by that shader.
     pub fn prepare_for_shader(
         &mut self,
+        shader_name: &str,
         channel_usage: ShaderChannelUsage,
     ) -> Result<(), String> {
 
@@ -335,6 +384,21 @@ impl TextureManager {
 
 
         if !channel_usage.uses_any_channel() {
+
+            if matching_override(
+                shader_name,
+                &self.policy.texture_overrides,
+            )
+            .is_some()
+            {
+                log(
+                    &format!(
+                        "[TEXTURE] Warning: texture override configured for '{}', but the shader does not use texture channels; override ignored",
+                        shader_name,
+                    )
+                );
+            }
+
 
             log(
                 "[TEXTURE] Active shader does not require texture channels"
@@ -353,10 +417,25 @@ impl TextureManager {
             texture_source,
             palette_source,
         ) =
-            resolve_texture_request(
-                self.global_texture,
-                self.global_palette,
+            resolve_texture_selection(
+                shader_name,
+                &self.policy,
             );
+
+
+        if matching_override(
+            shader_name,
+            &self.policy.texture_overrides,
+        )
+        .is_some()
+        {
+            log(
+                &format!(
+                    "[TEXTURE] Shader override matched: {}",
+                    shader_name,
+                )
+            );
+        }
 
 
         log(

@@ -46,6 +46,17 @@ struct OperationSection {
 
 
 #[derive(Debug, Deserialize)]
+struct RawTextureOverride {
+
+    shader: String,
+
+    shader_texture: String,
+
+    shader_palette: String,
+}
+
+
+#[derive(Debug, Deserialize)]
 struct LockingSection {
 
     screen_lock: bool,
@@ -65,6 +76,13 @@ struct RawToml {
     appearance: AppearanceSection,
 
     operation: OperationSection,
+
+    #[serde(default)]
+    texture_override:
+        Vec<
+            RawTextureOverride
+        >,
+
     locking: LockingSection,
 
     debug: DebugSection,
@@ -77,6 +95,46 @@ struct RawToml {
 // ------------------------------------------------------------
 //
 
+#[derive(
+    Debug,
+    Clone,
+)]
+pub struct TextureOverride {
+
+    pub shader:
+        String,
+
+    pub shader_texture:
+        crate::generate_textures::TextureFamily,
+
+    pub shader_palette:
+        crate::palettes::Palette,
+}
+
+
+#[derive(
+    Debug,
+    Clone,
+)]
+pub struct TextureSelectionPolicy {
+
+    pub global_texture:
+        Option<
+            crate::generate_textures::TextureFamily
+        >,
+
+    pub global_palette:
+        Option<
+            crate::palettes::Palette
+        >,
+
+    pub texture_overrides:
+        Vec<
+            TextureOverride
+        >,
+}
+
+
 #[derive(Debug)]
 pub struct Config {
 
@@ -88,15 +146,8 @@ pub struct Config {
 
     pub idle_timeout: String,
 
-    pub global_texture:
-        Option<
-            crate::generate_textures::TextureFamily
-        >,
-
-    pub global_palette:
-        Option<
-            crate::palettes::Palette
-        >,
+    pub texture_policy:
+        TextureSelectionPolicy,
 
     pub screen_lock: bool,
 
@@ -181,6 +232,20 @@ pub fn load_config(
         )?;
 
 
+    let texture_overrides =
+        parse_texture_overrides(
+            raw.texture_override
+        )?;
+
+
+    let texture_policy =
+        TextureSelectionPolicy {
+            global_texture,
+            global_palette,
+            texture_overrides,
+        };
+
+
     //---------------------------------------------------------
     // Flatten configuration
     //---------------------------------------------------------
@@ -200,9 +265,7 @@ pub fn load_config(
             idle_timeout:
                 raw.operation.idle_timeout,
 
-            global_texture,
-
-            global_palette,
+            texture_policy,
 
             screen_lock:
                 raw.locking.screen_lock,
@@ -216,7 +279,7 @@ pub fn load_config(
     // Build diagnostics
     //---------------------------------------------------------
 
-    let diagnostics =
+    let mut diagnostics =
         vec![
 
             format!(
@@ -242,6 +305,7 @@ pub fn load_config(
             format!(
                 "[CONFIG] global_texture = {}",
                 config
+                    .texture_policy
                     .global_texture
                     .map(
                         |family| {
@@ -256,6 +320,7 @@ pub fn load_config(
             format!(
                 "[CONFIG] global_palette = {}",
                 config
+                    .texture_policy
                     .global_palette
                     .map(
                         |palette| {
@@ -277,6 +342,33 @@ pub fn load_config(
                 config.debug_log,
             ),
         ];
+
+
+    diagnostics.push(
+        format!(
+            "[CONFIG] texture_override count = {}",
+            config
+                .texture_policy
+                .texture_overrides
+                .len(),
+        )
+    );
+
+
+    for texture_override in
+        &config
+            .texture_policy
+            .texture_overrides
+    {
+        diagnostics.push(
+            format!(
+                "[CONFIG] texture_override shader={} shader_texture={} shader_palette={}",
+                texture_override.shader,
+                texture_override.shader_texture,
+                texture_override.shader_palette,
+            )
+        );
+    }
 
 
     Ok(
@@ -407,6 +499,204 @@ fn parse_global_palette(
             format!(
                 "Invalid global_palette value '{}': {}",
                 value,
+                error,
+            )
+        }
+    )
+}
+
+
+
+//
+// ------------------------------------------------------------
+// Per-shader texture override parsing
+// ------------------------------------------------------------
+//
+
+fn parse_texture_overrides(
+    raw_overrides:
+        Vec<
+            RawTextureOverride
+        >,
+) -> Result<
+    Vec<
+        TextureOverride
+    >,
+    String,
+> {
+
+    let mut overrides =
+        Vec::with_capacity(
+            raw_overrides.len()
+        );
+
+
+    for raw_override in
+        raw_overrides
+    {
+        let shader =
+            raw_override
+                .shader
+                .trim()
+                .to_string();
+
+
+        if shader.is_empty() {
+            return Err(
+                "A [[texture_override]] block contains an empty shader name"
+                    .to_string()
+            );
+        }
+
+
+        if overrides
+            .iter()
+            .any(
+                |existing: &TextureOverride| {
+                    existing
+                        .shader
+                        .eq_ignore_ascii_case(
+                            &shader
+                        )
+                }
+            )
+        {
+            return Err(
+                format!(
+                    "Duplicate [[texture_override]] block for shader '{}'",
+                    shader,
+                )
+            );
+        }
+
+
+        let shader_texture =
+            parse_shader_texture(
+                &shader,
+                &raw_override.shader_texture,
+            )?;
+
+
+        let shader_palette =
+            parse_shader_palette(
+                &shader,
+                &raw_override.shader_palette,
+            )?;
+
+
+        overrides.push(
+            TextureOverride {
+                shader,
+                shader_texture,
+                shader_palette,
+            }
+        );
+    }
+
+
+    Ok(
+        overrides
+    )
+}
+
+
+fn parse_shader_texture(
+    shader: &str,
+    value: &str,
+) -> Result<
+    crate::generate_textures::TextureFamily,
+    String,
+> {
+
+    let normalized =
+        value
+            .trim()
+            .to_ascii_lowercase();
+
+
+    if normalized.is_empty()
+        || normalized
+            == "random"
+    {
+        return Err(
+            format!(
+                "[[texture_override]] for '{}' requires a specific shader_texture; 'random' is not permitted",
+                shader,
+            )
+        );
+    }
+
+
+    let family =
+        crate::generate_textures::TextureFamily::from_name(
+            &normalized
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Invalid shader_texture '{}' in [[texture_override]] for '{}': {}",
+                    value,
+                    shader,
+                    error,
+                )
+            }
+        )?;
+
+
+    if family
+        == crate::generate_textures::TextureFamily::Julia
+    {
+        return Err(
+            format!(
+                "[[texture_override]] for '{}' selects Julia, but Julia texture generation is not yet implemented",
+                shader,
+            )
+        );
+    }
+
+
+    Ok(
+        family
+    )
+}
+
+
+fn parse_shader_palette(
+    shader: &str,
+    value: &str,
+) -> Result<
+    crate::palettes::Palette,
+    String,
+> {
+
+    let normalized =
+        value
+            .trim()
+            .to_ascii_lowercase();
+
+
+    if normalized.is_empty()
+        || normalized
+            == "random"
+    {
+        return Err(
+            format!(
+                "[[texture_override]] for '{}' requires a specific shader_palette; 'random' is not permitted",
+                shader,
+            )
+        );
+    }
+
+
+    crate::palettes::Palette::from_name(
+        &normalized
+    )
+    .map_err(
+        |error| {
+            format!(
+                "Invalid shader_palette '{}' in [[texture_override]] for '{}': {}",
+                value,
+                shader,
                 error,
             )
         }

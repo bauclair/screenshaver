@@ -36,14 +36,8 @@ impl FrameRenderer {
         mut shader_manager: crate::manage_shader::ShaderManager,
         shader_interval: u64,
         fps: u32,
-        global_texture:
-            Option<
-                crate::generate_textures::TextureFamily
-            >,
-        global_palette:
-            Option<
-                crate::palettes::Palette
-            >,
+        texture_policy:
+            crate::load_config::TextureSelectionPolicy,
     ) -> Result<Self, String> {
         log("[RENDER] Initializing frame renderer");
 
@@ -138,11 +132,11 @@ impl FrameRenderer {
 
         let mut texture_manager =
             crate::manage_textures::TextureManager::new(
-                global_texture,
-                global_palette,
+                texture_policy
             );
 
         texture_manager.prepare_for_shader(
+            &active_shader.shader_name,
             active_shader.channel_usage,
         )?;
 
@@ -368,6 +362,7 @@ impl FrameRenderer {
             Ok(new_shader) => {
                 if let Err(error) =
                     self.texture_manager.prepare_for_shader(
+                        &new_shader.shader_name,
                         new_shader.channel_usage,
                     )
                 {
