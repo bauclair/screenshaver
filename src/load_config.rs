@@ -14,6 +14,11 @@ fn default_show_splash() -> bool {
 }
 
 
+fn default_subtitle_placement() -> String {
+    "bottom:left".to_string()
+}
+
+
 //
 // ------------------------------------------------------------
 // Structures that exactly match screenshaver.toml
@@ -24,6 +29,9 @@ fn default_show_splash() -> bool {
 struct AppearanceSection {
 
     subtitles: bool,
+
+    #[serde(default = "default_subtitle_placement")]
+    subtitle_placement: String,
 
     #[serde(default = "default_show_splash")]
     show_splash: bool,
@@ -140,6 +148,9 @@ pub struct Config {
 
     pub subtitles: bool,
 
+    pub subtitle_placement:
+        crate::parse_subtitle_placement::SubtitlePlacement,
+
     pub show_splash: bool,
 
     pub mode: String,
@@ -213,6 +224,18 @@ pub fn load_config(
 
 
     //---------------------------------------------------------
+    // Parse subtitle placement
+    //---------------------------------------------------------
+
+    let parsed_subtitle_placement =
+        crate::parse_subtitle_placement::parse(
+            Some(
+                &raw.appearance.subtitle_placement
+            )
+        );
+
+
+    //---------------------------------------------------------
     // Parse global texture and palette policy
     //---------------------------------------------------------
 
@@ -256,6 +279,9 @@ pub fn load_config(
             subtitles:
                 raw.appearance.subtitles,
 
+            subtitle_placement:
+                parsed_subtitle_placement.placement,
+
             show_splash:
                 raw.appearance.show_splash,
 
@@ -285,6 +311,11 @@ pub fn load_config(
             format!(
                 "[CONFIG] subtitles = {}",
                 config.subtitles,
+            ),
+
+            format!(
+                "[CONFIG] subtitle_placement = {}",
+                config.subtitle_placement.name(),
             ),
 
             format!(
@@ -342,6 +373,15 @@ pub fn load_config(
                 config.debug_log,
             ),
         ];
+
+
+    if let Some(warning) =
+        parsed_subtitle_placement.warning
+    {
+        diagnostics.push(
+            warning
+        );
+    }
 
 
     diagnostics.push(

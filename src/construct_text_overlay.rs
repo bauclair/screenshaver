@@ -1,0 +1,342 @@
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+use sdl2::pixels::{Color, PixelFormatEnum};
+
+const BASELINE_HEIGHT: f32 = 1080.0;
+const MINIMUM_SCALE: f32 = 0.75;
+const MAXIMUM_SCALE: f32 = 2.0;
+const BASE_FONT_SIZE: f32 = 18.0;
+const BASE_HORIZONTAL_PADDING: f32 = 16.0;
+const BASE_VERTICAL_PADDING: f32 = 9.0;
+const MAXIMUM_WIDTH_RATIO: f32 = 0.80;
+const BACKGROUND_RGBA: [u8; 4] = [0, 0, 0, 150];
+const TEXT_COLOR: Color = Color::RGBA(245, 245, 245, 255);
+
+#[derive(Debug, Clone, Default)]
+pub struct OverlayDescriptor {
+    pub shader: Option<String>,
+    pub texture: Option<String>,
+    pub palette: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConstructedTextOverlay {
+    pub width: u32,
+    pub height: u32,
+    pub pixels: Vec<u8>,
+}
+
+pub fn construct(
+    descriptor: &OverlayDescriptor,
+    output_width: u32,
+    output_height: u32,
+) -> Result<ConstructedTextOverlay, String> {
+    let scale = calculate_scale(output_height);
+    let font_size = (BASE_FONT_SIZE * scale).round().clamp(10.0, 72.0) as u16;
+    let padding_x = (BASE_HORIZONTAL_PADDING * scale).round().max(8.0) as u32;
+    let padding_y = (BASE_VERTICAL_PADDING * scale).round().max(5.0) as u32;
+    let maximum_width = (output_width as f32 * MAXIMUM_WIDTH_RATIO)
+        .round()
+        .max(1.0) as u32;
+
+    let ttf_context = sdl2::ttf::init()
+        .map_err(|error| format!("Unable to initialize SDL_ttf: {}", error))?;
+    let font_path = locate_subtitle_font()?;
+    let font = ttf_context
+        .load_font(&font_path, font_size)
+        .map_err(|error| format!(
+            "Unable to load subtitle font '{}': {}",
+            font_path.display(),
+            error
+        ))?;
+
+    let available_text_width = maximum_width
+        .saturating_sub(padding_x.saturating_mul(2))
+        .max(1);
+    let text = fit_descriptor_text(descriptor, &font, available_text_width)?;
+
+    if text.is_empty() {
+        return Err("Cannot construct a text overlay without content".to_string());
+    }
+
+    let surface = font
+        .render(&text)
+        .blended(TEXT_COLOR)
+        .map_err(|error| format!("Unable to render subtitle text: {}", error))?
+        .convert_format(PixelFormatEnum::RGBA32)
+        .map_err(|error| format!("Unable to convert subtitle text surface: {}", error))?;
+
+    let text_width = surface.width();
+    let text_height = surface.height();
+    let height = text_height.saturating_add(padding_y.saturating_mul(2)).max(1);
+    let width = text_width
+        .saturating_add(padding_x.saturating_mul(2))
+        .max(height)
+        .min(maximum_width)
+        .max(1);
+
+    let byte_count = usize::try_from(width)
+        .ok()
+        .and_then(|w| usize::try_from(height).ok().and_then(|h| w.checked_mul(h)))
+        .and_then(|pixels| pixels.checked_mul(4))
+        .ok_or_else(|| "Subtitle overlay dimensions overflow".to_string())?;
+
+    let mut pixels = vec![0_u8; byte_count];
+    draw_capsule_background(&mut pixels, width, height);
+
+    let source = surface
+        .without_lock()
+        .ok_or_else(|| "Unable to access rendered subtitle pixels".to_string())?;
+    let source_pitch = usize::try_from(surface.pitch())
+        .map_err(|_| "Subtitle surface pitch cannot be represented as usize".to_string())?;
+
+    composite_text(
+        &mut pixels,
+        width,
+        height,
+        source,
+        source_pitch,
+        text_width,
+        text_height,
+        padding_x,
+        padding_y,
+    );
+
+    Ok(ConstructedTextOverlay {
+        width,
+        height,
+        pixels,
+    })
+}
+
+pub fn calculate_scale(output_height: u32) -> f32 {
+    (output_height as f32 / BASELINE_HEIGHT).clamp(MINIMUM_SCALE, MAXIMUM_SCALE)
+}
+
+pub fn edge_margin(output_height: u32) -> u32 {
+    (24.0 * calculate_scale(output_height)).round().max(12.0) as u32
+}
+
+fn format_descriptor(descriptor: &OverlayDescriptor) -> String {
+    let mut fields = Vec::new();
+
+    if let Some(value) = nonempty(descriptor.shader.as_deref()) {
+        fields.push(format!("S: {}", value));
+    }
+    if let Some(value) = nonempty(descriptor.texture.as_deref()) {
+        fields.push(format!("T: {}", value));
+    }
+    if let Some(value) = nonempty(descriptor.palette.as_deref()) {
+        fields.push(format!("P: {}", value));
+    }
+
+    fields.join(" | ")
+}
+
+fn nonempty(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|value| !value.is_empty())
+}
+
+fn fit_descriptor_text(
+    descriptor: &OverlayDescriptor,
+    font: &sdl2::ttf::Font<'_, '_>,
+    maximum_width: u32,
+) -> Result<String, String> {
+    let full = format_descriptor(descriptor);
+
+    if text_fits(font, &full, maximum_width)? {
+        return Ok(full);
+    }
+
+    let Some(shader) = descriptor.shader.as_deref() else {
+        return truncate_plain_text(&full, font, maximum_width);
+    };
+
+    let path = Path::new(shader);
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| format!(".{}", value))
+        .unwrap_or_default();
+    let stem = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or(shader);
+    let characters = stem.chars().collect::<Vec<_>>();
+
+    for keep in (0..=characters.len()).rev() {
+        let shortened = format!(
+            "{}...{}",
+            characters[..keep].iter().collect::<String>(),
+            extension
+        );
+        let candidate = OverlayDescriptor {
+            shader: Some(shortened),
+            texture: descriptor.texture.clone(),
+            palette: descriptor.palette.clone(),
+        };
+        let candidate_text = format_descriptor(&candidate);
+
+        if text_fits(font, &candidate_text, maximum_width)? {
+            return Ok(candidate_text);
+        }
+    }
+
+    truncate_plain_text(&full, font, maximum_width)
+}
+
+fn truncate_plain_text(
+    text: &str,
+    font: &sdl2::ttf::Font<'_, '_>,
+    maximum_width: u32,
+) -> Result<String, String> {
+    let characters = text.chars().collect::<Vec<_>>();
+
+    for keep in (0..=characters.len()).rev() {
+        let candidate = format!(
+            "{}...",
+            characters[..keep].iter().collect::<String>()
+        );
+
+        if text_fits(font, &candidate, maximum_width)? {
+            return Ok(candidate);
+        }
+    }
+
+    Ok("...".to_string())
+}
+
+fn text_fits(
+    font: &sdl2::ttf::Font<'_, '_>,
+    text: &str,
+    maximum_width: u32,
+) -> Result<bool, String> {
+    let (width, _) = font
+        .size_of(text)
+        .map_err(|error| format!("Unable to measure subtitle text: {}", error))?;
+    Ok(width <= maximum_width)
+}
+
+fn locate_subtitle_font() -> Result<PathBuf, String> {
+    if let Ok(value) = std::env::var("SCREENSHAVER_SUBTITLE_FONT") {
+        let path = PathBuf::from(value);
+        if path.is_file() {
+            return Ok(path);
+        }
+    }
+
+    if let Ok(output) = Command::new("fc-match")
+        .args(["-f", "%{file}\n", "DejaVu Sans:style=Book"])
+        .output()
+    {
+        if output.status.success() {
+            if let Some(value) = String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .map(str::trim)
+                .find(|line| !line.is_empty())
+            {
+                let path = PathBuf::from(value);
+                if path.is_file() {
+                    return Ok(path);
+                }
+            }
+        }
+    }
+
+    for value in [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/TTF/DejaVuSans.ttf",
+        "/usr/local/share/fonts/DejaVuSans.ttf",
+    ] {
+        let path = PathBuf::from(value);
+        if path.is_file() {
+            return Ok(path);
+        }
+    }
+
+    Err(
+        "Unable to locate DejaVu Sans; set SCREENSHAVER_SUBTITLE_FONT to a sans-serif TTF file"
+            .to_string(),
+    )
+}
+
+fn draw_capsule_background(pixels: &mut [u8], width: u32, height: u32) {
+    let radius = height as f32 / 2.0;
+    let left_center = radius;
+    let right_center = width as f32 - radius;
+    let center_y = radius;
+
+    for y in 0..height {
+        for x in 0..width {
+            let px = x as f32 + 0.5;
+            let py = y as f32 + 0.5;
+
+            let inside = if px < left_center {
+                distance_squared(px, py, left_center, center_y) <= radius * radius
+            } else if px > right_center {
+                distance_squared(px, py, right_center, center_y) <= radius * radius
+            } else {
+                true
+            };
+
+            if inside {
+                let index = ((y as usize * width as usize) + x as usize) * 4;
+                pixels[index..index + 4].copy_from_slice(&BACKGROUND_RGBA);
+            }
+        }
+    }
+}
+
+fn distance_squared(x1: f32, y1: f32, x2: f32, y2: f32) -> f32 {
+    let dx = x1 - x2;
+    let dy = y1 - y2;
+    dx * dx + dy * dy
+}
+
+fn composite_text(
+    destination: &mut [u8],
+    destination_width: u32,
+    destination_height: u32,
+    source: &[u8],
+    source_pitch: usize,
+    source_width: u32,
+    source_height: u32,
+    offset_x: u32,
+    offset_y: u32,
+) {
+    for y in 0..source_height {
+        for x in 0..source_width {
+            let destination_x = offset_x + x;
+            let destination_y = offset_y + y;
+
+            if destination_x >= destination_width || destination_y >= destination_height {
+                continue;
+            }
+
+            let source_index = y as usize * source_pitch + x as usize * 4;
+            let destination_index =
+                ((destination_y as usize * destination_width as usize) + destination_x as usize) * 4;
+
+            let alpha = source[source_index + 3] as f32 / 255.0;
+            let inverse = 1.0 - alpha;
+
+            for channel in 0..3 {
+                destination[destination_index + channel] = (
+                    source[source_index + channel] as f32 * alpha
+                        + destination[destination_index + channel] as f32 * inverse
+                )
+                    .round()
+                    .clamp(0.0, 255.0) as u8;
+            }
+
+            let destination_alpha = destination[destination_index + 3] as f32 / 255.0;
+            destination[destination_index + 3] =
+                ((alpha + destination_alpha * inverse) * 255.0)
+                    .round()
+                    .clamp(0.0, 255.0) as u8;
+        }
+    }
+}
+

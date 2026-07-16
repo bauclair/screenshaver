@@ -24,6 +24,12 @@ use sdl2::rect::Rect;
 pub fn display(
     generated:
         &crate::generate_textures::GeneratedTexture,
+
+    subtitles:
+        bool,
+
+    subtitle_placement:
+        crate::parse_subtitle_placement::SubtitlePlacement,
 ) -> Result<(), String> {
 
     generated
@@ -190,6 +196,42 @@ pub fn display(
                 )
             }
         )?;
+
+
+    let mut overlay_size:
+        Option<
+            (
+                u32,
+                u32,
+            )
+        > =
+            None;
+
+
+    let mut constructed_overlay:
+        Option<
+            crate::construct_text_overlay::ConstructedTextOverlay
+        > =
+            None;
+
+
+    let overlay_descriptor =
+        crate::construct_text_overlay::OverlayDescriptor {
+            shader:
+                None,
+
+            texture:
+                Some(
+                    generated.family
+                        .to_string()
+                ),
+
+            palette:
+                Some(
+                    generated.palette
+                        .to_string()
+                ),
+        };
 
 
     let mut event_pump =
@@ -370,6 +412,52 @@ let mut accumulated_mouse_y =
             )?;
 
 
+        if subtitles {
+
+            let current_size =
+                (
+                    output_width,
+                    output_height,
+                );
+
+
+            if overlay_size
+                != Some(
+                    current_size
+                )
+            {
+                constructed_overlay =
+                    Some(
+                        crate::construct_text_overlay::construct(
+                            &overlay_descriptor,
+                            output_width,
+                            output_height,
+                        )?
+                    );
+
+
+                overlay_size =
+                    Some(
+                        current_size
+                    );
+            }
+
+
+            if let Some(overlay) =
+                constructed_overlay.as_ref()
+            {
+                crate::display_overlay::display(
+                    &mut canvas,
+                    &texture_creator,
+                    overlay,
+                    subtitle_placement,
+                    output_width,
+                    output_height,
+                )?;
+            }
+        }
+
+
         canvas.present();
 
 
@@ -546,3 +634,4 @@ fn fit_size(
         height,
     )
 }
+

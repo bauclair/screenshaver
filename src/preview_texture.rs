@@ -12,6 +12,25 @@ pub fn run(
     palette: Option<String>,
 ) {
 
+    let config =
+        match crate::load_config::load_config(
+            &crate::locate_paths::config_path()
+        ) {
+
+            Ok(result) => result.config,
+
+            Err(error) => {
+
+                eprintln!(
+                    "[TEXTURE PREVIEW] Configuration error: {}",
+                    error
+                );
+
+                return;
+            }
+        };
+
+
     let family =
         match TextureFamily::from_name(
             &family
@@ -29,6 +48,10 @@ pub fn run(
                 return;
             }
         };
+
+
+    let seed =
+        generate_seed();
 
 
     let palette =
@@ -56,20 +79,11 @@ pub fn run(
 
             None => {
 
-                //-------------------------------------------------
-                // Temporary default.
-                //
-                // Random palette selection will eventually belong
-                // in manage_textures.rs.
-                //-------------------------------------------------
-
-                Palette::Mist
+                random_palette(
+                    seed
+                )
             }
         };
-
-
-    let seed =
-        generate_seed();
 
 
     println!(
@@ -157,7 +171,9 @@ pub fn run(
 
 
     match crate::display_texture::display(
-        &texture
+        &texture,
+        config.subtitles,
+        config.subtitle_placement,
     ) {
 
         Ok(()) => {
@@ -180,6 +196,34 @@ pub fn run(
 }
 
 
+fn random_palette(
+    seed: u64,
+) -> Palette {
+
+    let palettes = [
+        Palette::Slate,
+        Palette::Sandstone,
+        Palette::Lichen,
+        Palette::Mist,
+        Palette::Bronze,
+        Palette::Brick,
+    ];
+
+
+    let index =
+        (
+            seed
+                % palettes.len()
+                    as u64
+        ) as usize;
+
+
+    palettes[
+        index
+    ]
+}
+
+
 fn generate_seed() -> u64 {
 
     SystemTime::now()
@@ -196,3 +240,4 @@ fn generate_seed() -> u64 {
             0
         )
 }
+

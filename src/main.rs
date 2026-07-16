@@ -5,6 +5,7 @@ mod parse_mode;
 mod parse_interval;
 mod parse_duration;
 mod parse_arguments;
+mod parse_subtitle_placement;
 
 mod define_constants;
 mod locate_paths;
@@ -36,6 +37,8 @@ mod preview_texture;
 mod preview_shader;
 mod palettes;
 mod display_texture;
+mod construct_text_overlay;
+mod display_overlay;
 
 use std::sync::Arc;
 use std::sync::atomic::{
