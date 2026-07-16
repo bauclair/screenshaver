@@ -19,6 +19,7 @@ pub enum Command {
         shader_name: String,
         shader_texture: Option<String>,
         shader_palette: Option<String>,
+        interval_seconds: Option<u64>,
     },
 
     ListTextures,
@@ -420,6 +421,11 @@ fn parse_preview_shader(
             None;
 
 
+    let mut interval_seconds:
+        Option<u64> =
+            None;
+
+
     let mut index =
         1;
 
@@ -508,6 +514,57 @@ fn parse_preview_shader(
             }
 
 
+            "--interval" => {
+
+                if interval_seconds.is_some() {
+
+                    return Err(
+                        "--interval may only be specified once"
+                            .to_string()
+                    );
+                }
+
+
+                let value =
+                    argument_value(
+                        args,
+                        index,
+                        "--interval",
+                    )?;
+
+
+                let seconds =
+                    value.parse::<u64>()
+                        .map_err(
+                            |_| {
+                                format!(
+                                    "Invalid --interval value '{}'; specify a positive number of seconds",
+                                    value
+                                )
+                            }
+                        )?;
+
+
+                if seconds
+                    == 0
+                {
+                    return Err(
+                        "--interval must be greater than zero"
+                            .to_string()
+                    );
+                }
+
+
+                interval_seconds =
+                    Some(
+                        seconds
+                    );
+
+
+                index += 2;
+            }
+
+
             "--family" => {
 
                 return Err(
@@ -551,6 +608,8 @@ fn parse_preview_shader(
             shader_texture,
 
             shader_palette,
+
+            interval_seconds,
         }
     )
 }
@@ -728,10 +787,11 @@ pub fn print_help() {
                  Preview one procedurally generated texture.\n\
                  This command does not consult screenshaver.toml.\n\
          \n\
-             --preview-shader SHADER [--shader-texture FAMILY] [--shader-palette PALETTE]\n\
-                 Preview one shader immediately in a full-screen window.\n\
-                 SHADER may be a path or a filename in the shader folder.\n\
-                 Command-line values override shader-specific and global values.\n\
+             --preview-shader PATH [--interval SECONDS]\n\
+                              [--shader-texture FAMILY] [--shader-palette PALETTE]\n\
+                 Preview one shader or all shaders directly inside a folder.\n\
+                 Folder previews use a 30-second interval unless overridden.\n\
+                 Command-line texture values override TOML selection values.\n\
                  --texture and --palette are accepted as shorter aliases.\n\
          \n\
              --list-textures\n\

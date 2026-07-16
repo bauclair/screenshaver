@@ -1,8 +1,8 @@
 //! Full-screen command-line shader preview.
 //!
-//! This path bypasses idle detection, shader rotation, splash
-//! display, and screen locking. It renders one selected shader
-//! until meaningful keyboard or mouse input is received.
+//! Supports one shader file or an ordered playlist supplied by the
+//! directory-preview module. The OpenGL window remains active while
+//! shaders rotate at the requested interval.
 
 use std::path::{
     Path,
@@ -20,35 +20,108 @@ use sdl2::video::{
 };
 
 
+struct ActivePreviewShader {
+    path:
+        PathBuf,
+
+    shader_name:
+        String,
+
+    program:
+        u32,
+
+    channel_usage:
+        crate::preprocess_shader::ShaderChannelUsage,
+
+    texture_manager:
+        crate::manage_textures::TextureManager,
+
+    overlay_descriptor:
+        crate::construct_text_overlay::OverlayDescriptor,
+
+    subtitle_overlay:
+        Option<
+            crate::display_overlay::OpenGlOverlay
+        >,
+
+    overlay_output_size:
+        (
+            u32,
+            u32,
+        ),
+
+    start_time:
+        Instant,
+
+    previous_frame:
+        Instant,
+
+    frame:
+        i32,
+}
+
+
 pub fn run(
     shader_argument: String,
     shader_texture: Option<String>,
     shader_palette: Option<String>,
+    interval_seconds: Option<u64>,
 ) -> Result<(), String> {
 
-    let shader_path =
-        resolve_shader_path(
-            &shader_argument
-        )?;
+    match crate::preview_shader_directory::resolve_preview_target(
+        &shader_argument
+    )? {
+
+        crate::preview_shader_directory::PreviewTarget::File(
+            path
+        ) => {
+
+            if interval_seconds.is_some() {
+                log(
+                    "[PREVIEW_SHADER] --interval ignored for a single shader file"
+                );
+            }
 
 
-    let shader_name =
-        shader_path
-            .file_name()
-            .and_then(
-                |name| {
-                    name.to_str()
-                }
+            run_paths(
+                vec![
+                    path
+                ],
+                shader_texture,
+                shader_palette,
+                None,
             )
-            .ok_or_else(
-                || {
-                    format!(
-                        "Unable to determine shader filename from '{}'",
-                        shader_path.display(),
-                    )
-                }
-            )?
-            .to_string();
+        }
+
+        crate::preview_shader_directory::PreviewTarget::Directory(
+            path
+        ) => {
+
+            crate::preview_shader_directory::run(
+                path.display()
+                    .to_string(),
+                shader_texture,
+                shader_palette,
+                interval_seconds,
+            )
+        }
+    }
+}
+
+
+pub fn run_paths(
+    shader_paths: Vec<PathBuf>,
+    shader_texture: Option<String>,
+    shader_palette: Option<String>,
+    interval_seconds: Option<u64>,
+) -> Result<(), String> {
+
+    if shader_paths.is_empty() {
+        return Err(
+            "No shader paths were supplied for preview"
+                .to_string()
+        );
+    }
 
 
     let config_result =
@@ -69,6 +142,17 @@ pub fn run(
         config.subtitle_placement;
 
 
+    let texture_policy =
+        config.texture_policy;
+
+
+    let preview_selection =
+        parse_preview_selection(
+            shader_texture.as_deref(),
+            shader_palette.as_deref(),
+        )?;
+
+
     let logfile =
         crate::locate_paths::runtime_log_path();
 
@@ -81,70 +165,10 @@ pub fn run(
     crate::logger::log(
         &logfile,
         &format!(
-            "[PREVIEW_SHADER] Preview requested: {}",
-            shader_path.display(),
+            "[PREVIEW_SHADER] Preview playlist contains {} shader path(s)",
+            shader_paths.len(),
         ),
     );
-
-
-    let preview_selection =
-        parse_preview_selection(
-            shader_texture.as_deref(),
-            shader_palette.as_deref(),
-        )?;
-
-
-    let loaded =
-        crate::load_shader::load_shader_for_preview(
-            &shader_path
-        );
-
-
-    let (
-        source,
-        channel_usage,
-    ) =
-        match loaded {
-
-            crate::load_shader::ShaderLoadResult::Ready {
-                source,
-                channel_usage,
-                ..
-            } => {
-                (
-                    source,
-                    channel_usage,
-                )
-            }
-
-            crate::load_shader::ShaderLoadResult::Rejected {
-                reasons,
-                ..
-            } => {
-                return Err(
-                    format!(
-                        "Shader '{}' was rejected: {}",
-                        shader_path.display(),
-                        reasons.join(
-                            "; "
-                        ),
-                    )
-                );
-            }
-
-            crate::load_shader::ShaderLoadResult::Unavailable {
-                error,
-                ..
-            } => {
-                return Err(
-                    format!(
-                        "Unable to load shader '{}': {}",
-                        shader_path.display(),
-                        error,
-                    )
-                );
-            }
-        };
 
 
     let sdl =
@@ -246,106 +270,27 @@ pub fn run(
         );
 
 
-    let program =
-        crate::compile_shader::build_program(
-            crate::define_constants::VERTEX_SHADER,
-            &source,
-        );
-
-
-    let mut texture_manager =
-        crate::manage_textures::TextureManager::new(
-            config.texture_policy
-        );
-
-
-    texture_manager
-        .prepare_for_shader_with_selection(
-            &shader_name,
-            channel_usage,
-            preview_selection,
-        )?;
-
-
-    texture_manager.configure_program(
-        program
-    );
-
-
     let (
-        selected_texture,
-        selected_palette,
-    ) =
-        texture_manager
-            .active_selection()
-            .map(
-                |(
-                    family,
-                    palette,
-                )| {
-                    (
-                        Some(
-                            family.to_string()
-                        ),
-                        Some(
-                            palette.to_string()
-                        ),
-                    )
-                }
-            )
-            .unwrap_or(
-                (
-                    None,
-                    None,
-                )
-            );
-
-
-    let overlay_descriptor =
-        crate::construct_text_overlay::OverlayDescriptor {
-            shader:
-                Some(
-                    shader_name.clone()
-                ),
-
-            texture:
-                selected_texture,
-
-            palette:
-                selected_palette,
-        };
-
-
-    let (
-        initial_width,
-        initial_height,
+        width,
+        height,
     ) =
         window.size();
 
 
-    let mut overlay_output_size =
-        (
-            initial_width,
-            initial_height,
-        );
-
-
-    let mut subtitle_overlay =
-        if subtitles {
-
-            Some(
-                crate::display_overlay::OpenGlOverlay::new(
-                    &overlay_descriptor,
-                    subtitle_placement,
-                    initial_width,
-                    initial_height,
-                )?
-            )
-
-        } else {
-
-            None
-        };
+    let (
+        mut active,
+        mut active_index,
+    ) =
+        load_first_usable_shader(
+            &shader_paths,
+            0,
+            &texture_policy,
+            preview_selection,
+            subtitles,
+            subtitle_placement,
+            width,
+            height,
+        )?;
 
 
     let mut vao =
@@ -382,18 +327,6 @@ pub fn run(
     );
 
 
-    let start_time =
-        Instant::now();
-
-
-    let mut previous_frame =
-        Instant::now();
-
-
-    let mut frame =
-        0_i32;
-
-
     let mut accumulated_mouse_x =
         0_i32;
 
@@ -418,6 +351,10 @@ pub fn run(
             1.0
                 / fps as f64
         );
+
+
+    let mut last_switch =
+        Instant::now();
 
 
     let result =
@@ -466,6 +403,83 @@ pub fn run(
             }
 
 
+            if let Some(interval) =
+                interval_seconds
+            {
+                if last_switch.elapsed()
+                    >= Duration::from_secs(
+                        interval
+                    )
+                {
+                    let next_start =
+                        (
+                            active_index
+                                + 1
+                        )
+                            % shader_paths.len();
+
+
+                    match load_first_usable_shader(
+                        &shader_paths,
+                        next_start,
+                        &texture_policy,
+                        preview_selection,
+                        subtitles,
+                        subtitle_placement,
+                        window.size().0,
+                        window.size().1,
+                    ) {
+
+                        Ok(
+                            (
+                                replacement,
+                                replacement_index,
+                            )
+                        ) => {
+
+                            destroy_active_shader(
+                                &mut active
+                            );
+
+
+                            active =
+                                replacement;
+
+
+                            active_index =
+                                replacement_index;
+
+
+                            last_switch =
+                                Instant::now();
+
+
+                            log(
+                                &format!(
+                                    "[PREVIEW_SHADER] Switched to {}",
+                                    active.path.display(),
+                                )
+                            );
+                        }
+
+                        Err(error) => {
+
+                            log(
+                                &format!(
+                                    "[PREVIEW_SHADER] Unable to select another usable shader: {}",
+                                    error,
+                                )
+                            );
+
+
+                            last_switch =
+                                Instant::now();
+                        }
+                    }
+                }
+            }
+
+
             let frame_start =
                 Instant::now();
 
@@ -478,13 +492,13 @@ pub fn run(
 
 
             let elapsed =
-                start_time
+                active.start_time
                     .elapsed()
                     .as_secs_f32();
 
 
             let delta =
-                previous_frame
+                active.previous_frame
                     .elapsed()
                     .as_secs_f32();
 
@@ -512,11 +526,11 @@ pub fn run(
 
 
                 gl::UseProgram(
-                    program
+                    active.program
                 );
 
 
-                texture_manager
+                active.texture_manager
                     .bind_channels();
 
 
@@ -526,28 +540,28 @@ pub fn run(
 
 
                 set_uniform_1f(
-                    program,
+                    active.program,
                     b"iTime\0",
                     elapsed,
                 );
 
 
                 set_uniform_1f(
-                    program,
+                    active.program,
                     b"iTimeDelta\0",
                     delta,
                 );
 
 
                 set_uniform_1i(
-                    program,
+                    active.program,
                     b"iFrame\0",
-                    frame,
+                    active.frame,
                 );
 
 
                 set_uniform_3f(
-                    program,
+                    active.program,
                     b"iResolution\0",
                     width as f32,
                     height as f32,
@@ -556,7 +570,7 @@ pub fn run(
 
 
                 set_uniform_4f(
-                    program,
+                    active.program,
                     b"iMouse\0",
                     0.0,
                     0.0,
@@ -583,12 +597,12 @@ pub fn run(
 
 
                 if current_size
-                    != overlay_output_size
+                    != active.overlay_output_size
                 {
-                    subtitle_overlay =
+                    active.subtitle_overlay =
                         Some(
                             crate::display_overlay::OpenGlOverlay::new(
-                                &overlay_descriptor,
+                                &active.overlay_descriptor,
                                 subtitle_placement,
                                 width,
                                 height,
@@ -596,13 +610,13 @@ pub fn run(
                         );
 
 
-                    overlay_output_size =
+                    active.overlay_output_size =
                         current_size;
                 }
 
 
                 if let Some(overlay) =
-                    subtitle_overlay.as_ref()
+                    active.subtitle_overlay.as_ref()
                 {
                     overlay.display(
                         width,
@@ -615,13 +629,13 @@ pub fn run(
             window.gl_swap_window();
 
 
-            frame =
-                frame.saturating_add(
+            active.frame =
+                active.frame.saturating_add(
                     1
                 );
 
 
-            previous_frame =
+            active.previous_frame =
                 Instant::now();
 
 
@@ -640,24 +654,12 @@ pub fn run(
         };
 
 
-    drop(
-        subtitle_overlay
+    destroy_active_shader(
+        &mut active
     );
 
 
-    texture_manager.delete_all();
-
-
     unsafe {
-        if program
-            != 0
-        {
-            gl::DeleteProgram(
-                program
-            );
-        }
-
-
         if vao
             != 0
         {
@@ -674,9 +676,8 @@ pub fn run(
     );
 
 
-    crate::logger::log(
-        &logfile,
-        "[PREVIEW_SHADER] Preview closed",
+    log(
+        "[PREVIEW_SHADER] Preview closed"
     );
 
 
@@ -684,53 +685,310 @@ pub fn run(
 }
 
 
-fn resolve_shader_path(
-    shader_argument: &str,
-) -> Result<PathBuf, String> {
+fn load_first_usable_shader(
+    paths: &[PathBuf],
+    start_index: usize,
+    texture_policy:
+        &crate::load_config::TextureSelectionPolicy,
+    preview_selection:
+        crate::manage_textures::PreviewTextureSelection,
+    subtitles: bool,
+    subtitle_placement:
+        crate::parse_subtitle_placement::SubtitlePlacement,
+    output_width: u32,
+    output_height: u32,
+) -> Result<
+    (
+        ActivePreviewShader,
+        usize,
+    ),
+    String,
+> {
 
-    let supplied_path =
-        PathBuf::from(
-            shader_argument
-        );
-
-
-    let resolved =
-        if has_explicit_path(
-            &supplied_path
-        ) {
-            supplied_path
-        } else {
-            crate::locate_paths::shader_dir()
-                .join(
-                    supplied_path
-                )
-        };
-
-
-    if !resolved.is_file() {
-        return Err(
-            format!(
-                "Shader file not found: {}",
-                resolved.display(),
+    for offset in
+        0..paths.len()
+    {
+        let index =
+            (
+                start_index
+                    + offset
             )
-        );
+                % paths.len();
+
+
+        let path =
+            &paths[
+                index
+            ];
+
+
+        match load_active_shader(
+            path,
+            texture_policy,
+            preview_selection,
+            subtitles,
+            subtitle_placement,
+            output_width,
+            output_height,
+        ) {
+
+            Ok(shader) => {
+                return Ok(
+                    (
+                        shader,
+                        index,
+                    )
+                );
+            }
+
+            Err(error) => {
+
+                log(
+                    &format!(
+                        "[PREVIEW_SHADER] Skipping '{}': {}",
+                        path.display(),
+                        error,
+                    )
+                );
+            }
+        }
     }
 
 
-    Ok(
-        resolved
+    Err(
+        "No usable shaders were found in the preview playlist"
+            .to_string()
     )
 }
 
 
-fn has_explicit_path(
+fn load_active_shader(
     path: &Path,
-) -> bool {
+    texture_policy:
+        &crate::load_config::TextureSelectionPolicy,
+    preview_selection:
+        crate::manage_textures::PreviewTextureSelection,
+    subtitles: bool,
+    subtitle_placement:
+        crate::parse_subtitle_placement::SubtitlePlacement,
+    output_width: u32,
+    output_height: u32,
+) -> Result<
+    ActivePreviewShader,
+    String,
+> {
 
-    path.is_absolute()
-        || path.components()
-            .count()
-            > 1
+    let loaded =
+        crate::load_shader::load_shader_for_preview(
+            path
+        );
+
+
+    let (
+        source,
+        shader_name,
+        channel_usage,
+    ) =
+        match loaded {
+
+            crate::load_shader::ShaderLoadResult::Ready {
+                source,
+                shader_name,
+                channel_usage,
+                ..
+            } => {
+                (
+                    source,
+                    shader_name,
+                    channel_usage,
+                )
+            }
+
+            crate::load_shader::ShaderLoadResult::Rejected {
+                reasons,
+                ..
+            } => {
+                return Err(
+                    format!(
+                        "rejected: {}",
+                        reasons.join(
+                            "; "
+                        ),
+                    )
+                );
+            }
+
+            crate::load_shader::ShaderLoadResult::Unavailable {
+                error,
+                ..
+            } => {
+                return Err(
+                    format!(
+                        "unavailable: {}",
+                        error,
+                    )
+                );
+            }
+        };
+
+
+    let program =
+        crate::compile_shader::build_program(
+            crate::define_constants::VERTEX_SHADER,
+            &source,
+        );
+
+
+    let mut texture_manager =
+        crate::manage_textures::TextureManager::new(
+            texture_policy.clone()
+        );
+
+
+    if let Err(error) =
+        texture_manager.prepare_for_shader_with_selection(
+            &shader_name,
+            channel_usage,
+            preview_selection,
+        )
+    {
+        unsafe {
+            gl::DeleteProgram(
+                program
+            );
+        }
+
+
+        return Err(
+            error
+        );
+    }
+
+
+    texture_manager.configure_program(
+        program
+    );
+
+
+    let (
+        texture,
+        palette,
+    ) =
+        texture_manager
+            .active_selection()
+            .map(
+                |(
+                    family,
+                    palette,
+                )| {
+                    (
+                        Some(
+                            family.to_string()
+                        ),
+                        Some(
+                            palette.to_string()
+                        ),
+                    )
+                }
+            )
+            .unwrap_or(
+                (
+                    None,
+                    None,
+                )
+            );
+
+
+    let overlay_descriptor =
+        crate::construct_text_overlay::OverlayDescriptor {
+            shader:
+                Some(
+                    shader_name.clone()
+                ),
+
+            texture,
+
+            palette,
+        };
+
+
+    let subtitle_overlay =
+        if subtitles {
+
+            Some(
+                crate::display_overlay::OpenGlOverlay::new(
+                    &overlay_descriptor,
+                    subtitle_placement,
+                    output_width,
+                    output_height,
+                )?
+            )
+
+        } else {
+
+            None
+        };
+
+
+    log(
+        &format!(
+            "[PREVIEW_SHADER] Active shader: {}",
+            path.display(),
+        )
+    );
+
+
+    Ok(
+        ActivePreviewShader {
+            path:
+                path.to_path_buf(),
+            shader_name,
+            program,
+            channel_usage,
+            texture_manager,
+            overlay_descriptor,
+            subtitle_overlay,
+            overlay_output_size:
+                (
+                    output_width,
+                    output_height,
+                ),
+            start_time:
+                Instant::now(),
+            previous_frame:
+                Instant::now(),
+            frame:
+                0,
+        }
+    )
+}
+
+
+fn destroy_active_shader(
+    active: &mut ActivePreviewShader,
+) {
+
+    active.subtitle_overlay =
+        None;
+
+
+    active.texture_manager
+        .delete_all();
+
+
+    unsafe {
+        if active.program
+            != 0
+        {
+            gl::DeleteProgram(
+                active.program
+            );
+
+
+            active.program =
+                0;
+        }
+    }
 }
 
 
@@ -850,6 +1108,21 @@ fn discard_startup_input(
             )
         );
     }
+}
+
+
+fn log(
+    message: &str,
+) {
+
+    let logfile =
+        crate::locate_paths::runtime_log_path();
+
+
+    crate::logger::log(
+        &logfile,
+        message,
+    );
 }
 
 

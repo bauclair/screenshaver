@@ -25,6 +25,17 @@ pub struct FrameRenderer {
     shader_interval: u64,
     shader_manager: crate::manage_shader::ShaderManager,
     texture_manager: crate::manage_textures::TextureManager,
+    subtitles: bool,
+    subtitle_placement:
+        crate::parse_subtitle_placement::SubtitlePlacement,
+    subtitle_overlay:
+        Option<
+            crate::display_overlay::OpenGlOverlay
+        >,
+    overlay_output_size: (
+        u32,
+        u32,
+    ),
     target_frame_time: Duration,
     last_frame: Instant,
 }
@@ -38,6 +49,9 @@ impl FrameRenderer {
         fps: u32,
         texture_policy:
             crate::load_config::TextureSelectionPolicy,
+        subtitles: bool,
+        subtitle_placement:
+            crate::parse_subtitle_placement::SubtitlePlacement,
     ) -> Result<Self, String> {
         log("[RENDER] Initializing frame renderer");
 
@@ -144,6 +158,24 @@ impl FrameRenderer {
             active_shader.program,
         );
 
+        let subtitle_overlay =
+            if subtitles {
+
+                Some(
+                    build_subtitle_overlay(
+                        &active_shader,
+                        &texture_manager,
+                        subtitle_placement,
+                        window_width,
+                        window_height,
+                    )?
+                )
+
+            } else {
+
+                None
+            };
+
         let mut vao =
             0_u32;
 
@@ -180,6 +212,14 @@ impl FrameRenderer {
                 shader_interval,
                 shader_manager,
                 texture_manager,
+                subtitles,
+                subtitle_placement,
+                subtitle_overlay,
+                overlay_output_size:
+                    (
+                        window_width,
+                        window_height,
+                    ),
                 target_frame_time:
                     Duration::from_secs_f64(
                         1.0
@@ -201,10 +241,13 @@ impl FrameRenderer {
         let program =
             self.active_shader.program;
 
-        unsafe {
-            let (width, height) =
-                self.window.size();
+        let (
+            width,
+            height,
+        ) =
+            self.window.size();
 
+        unsafe {
             gl::Viewport(
                 0,
                 0,
@@ -280,6 +323,60 @@ impl FrameRenderer {
                 0,
                 3,
             );
+        }
+
+        if self.subtitles {
+
+            let current_size =
+                (
+                    width,
+                    height,
+                );
+
+            if current_size
+                != self.overlay_output_size
+            {
+                match build_subtitle_overlay(
+                    &self.active_shader,
+                    &self.texture_manager,
+                    self.subtitle_placement,
+                    width,
+                    height,
+                ) {
+
+                    Ok(overlay) => {
+                        self.subtitle_overlay =
+                            Some(
+                                overlay
+                            );
+
+                        self.overlay_output_size =
+                            current_size;
+                    }
+
+                    Err(error) => {
+                        log(
+                            &format!(
+                                "[SUBTITLE] Unable to rebuild overlay after resize: {}",
+                                error,
+                            )
+                        );
+
+                        self.subtitle_overlay =
+                            None;
+                    }
+                }
+            }
+
+            if let Some(overlay) =
+                self.subtitle_overlay
+                    .as_ref()
+            {
+                overlay.display(
+                    width,
+                    height,
+                );
+            }
         }
 
         self.window.gl_swap_window();
@@ -392,11 +489,57 @@ impl FrameRenderer {
                     new_shader.program,
                 );
 
+                let new_overlay =
+                    if self.subtitles {
+
+                        let (
+                            width,
+                            height,
+                        ) =
+                            self.window.size();
+
+                        match build_subtitle_overlay(
+                            &new_shader,
+                            &self.texture_manager,
+                            self.subtitle_placement,
+                            width,
+                            height,
+                        ) {
+
+                            Ok(overlay) => {
+                                Some(
+                                    overlay
+                                )
+                            }
+
+                            Err(error) => {
+                                log(
+                                    &format!(
+                                        "[SUBTITLE] Unable to construct replacement shader overlay: {}",
+                                        error,
+                                    )
+                                );
+
+                                None
+                            }
+                        }
+
+                    } else {
+
+                        None
+                    };
+
                 let old_program =
                     self.active_shader.program;
 
                 self.active_shader =
                     new_shader;
+
+                self.subtitle_overlay =
+                    new_overlay;
+
+                self.overlay_output_size =
+                    self.window.size();
 
                 unsafe {
                     if old_program
@@ -459,6 +602,9 @@ impl Drop for FrameRenderer {
     fn drop(
         &mut self,
     ) {
+        self.subtitle_overlay =
+            None;
+
         self.texture_manager
             .delete_all();
 
@@ -485,6 +631,67 @@ impl Drop for FrameRenderer {
             "[RENDER] Frame renderer dropped"
         );
     }
+}
+
+
+fn build_subtitle_overlay(
+    shader: &ActiveShader,
+    texture_manager:
+        &crate::manage_textures::TextureManager,
+    placement:
+        crate::parse_subtitle_placement::SubtitlePlacement,
+    output_width: u32,
+    output_height: u32,
+) -> Result<
+    crate::display_overlay::OpenGlOverlay,
+    String,
+> {
+
+    let (
+        texture,
+        palette,
+    ) =
+        texture_manager
+            .active_selection()
+            .map(
+                |(
+                    family,
+                    palette,
+                )| {
+                    (
+                        Some(
+                            family.to_string()
+                        ),
+                        Some(
+                            palette.to_string()
+                        ),
+                    )
+                }
+            )
+            .unwrap_or(
+                (
+                    None,
+                    None,
+                )
+            );
+
+    let descriptor =
+        crate::construct_text_overlay::OverlayDescriptor {
+            shader:
+                Some(
+                    shader.shader_name
+                        .clone()
+                ),
+            texture,
+            palette,
+        };
+
+    crate::display_overlay::OpenGlOverlay::new(
+        &descriptor,
+        placement,
+        output_width,
+        output_height,
+    )
 }
 
 

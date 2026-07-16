@@ -35,6 +35,7 @@ mod generate_radial;
 mod generate_textures;
 mod preview_texture;
 mod preview_shader;
+mod preview_shader_directory;
 mod palettes;
 mod display_texture;
 mod construct_text_overlay;
@@ -114,12 +115,14 @@ crate::parse_arguments::Command::PreviewShader {
     shader_name,
     shader_texture,
     shader_palette,
+    interval_seconds,
 } => {
 
     match crate::preview_shader::run(
         shader_name,
         shader_texture,
         shader_palette,
+        interval_seconds,
     ) {
 
         Ok(()) => {}
@@ -768,6 +771,8 @@ crate::parse_arguments::Command::ListPalettes => {
                         parsed_interval.seconds,
                         crate::define_constants::DEFAULT_RENDER_FPS,
                         cfg.texture_policy.clone(),
+                        cfg.subtitles,
+                        cfg.subtitle_placement,
                     ) {
 
                         Ok(renderer) => renderer,
