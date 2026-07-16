@@ -57,6 +57,18 @@ pub fn run(
         )?;
 
 
+    let config =
+        config_result.config;
+
+
+    let subtitles =
+        config.subtitles;
+
+
+    let subtitle_placement =
+        config.subtitle_placement;
+
+
     let logfile =
         crate::locate_paths::runtime_log_path();
 
@@ -243,7 +255,7 @@ pub fn run(
 
     let mut texture_manager =
         crate::manage_textures::TextureManager::new(
-            config_result.config.texture_policy
+            config.texture_policy
         );
 
 
@@ -258,6 +270,82 @@ pub fn run(
     texture_manager.configure_program(
         program
     );
+
+
+    let (
+        selected_texture,
+        selected_palette,
+    ) =
+        texture_manager
+            .active_selection()
+            .map(
+                |(
+                    family,
+                    palette,
+                )| {
+                    (
+                        Some(
+                            family.to_string()
+                        ),
+                        Some(
+                            palette.to_string()
+                        ),
+                    )
+                }
+            )
+            .unwrap_or(
+                (
+                    None,
+                    None,
+                )
+            );
+
+
+    let overlay_descriptor =
+        crate::construct_text_overlay::OverlayDescriptor {
+            shader:
+                Some(
+                    shader_name.clone()
+                ),
+
+            texture:
+                selected_texture,
+
+            palette:
+                selected_palette,
+        };
+
+
+    let (
+        initial_width,
+        initial_height,
+    ) =
+        window.size();
+
+
+    let mut overlay_output_size =
+        (
+            initial_width,
+            initial_height,
+        );
+
+
+    let mut subtitle_overlay =
+        if subtitles {
+
+            Some(
+                crate::display_overlay::OpenGlOverlay::new(
+                    &overlay_descriptor,
+                    subtitle_placement,
+                    initial_width,
+                    initial_height,
+                )?
+            )
+
+        } else {
+
+            None
+        };
 
 
     let mut vao =
@@ -485,6 +573,45 @@ pub fn run(
             }
 
 
+            if subtitles {
+
+                let current_size =
+                    (
+                        width,
+                        height,
+                    );
+
+
+                if current_size
+                    != overlay_output_size
+                {
+                    subtitle_overlay =
+                        Some(
+                            crate::display_overlay::OpenGlOverlay::new(
+                                &overlay_descriptor,
+                                subtitle_placement,
+                                width,
+                                height,
+                            )?
+                        );
+
+
+                    overlay_output_size =
+                        current_size;
+                }
+
+
+                if let Some(overlay) =
+                    subtitle_overlay.as_ref()
+                {
+                    overlay.display(
+                        width,
+                        height,
+                    );
+                }
+            }
+
+
             window.gl_swap_window();
 
 
@@ -511,6 +638,11 @@ pub fn run(
                 );
             }
         };
+
+
+    drop(
+        subtitle_overlay
+    );
 
 
     texture_manager.delete_all();

@@ -643,6 +643,29 @@ impl TextureManager {
     }
 
 
+    /// Return the procedural texture and palette currently bound
+    /// for the active shader. Shaders without texture channels
+    /// return None.
+    pub fn active_selection(
+        &self,
+    ) -> Option<(
+        TextureFamily,
+        Palette,
+    )> {
+
+        self.texture
+            .as_ref()
+            .map(
+                |texture| {
+                    (
+                        texture.family,
+                        texture.palette,
+                    )
+                }
+            )
+    }
+
+
     /// Assign sampler units and channel-resolution values for a
     /// newly linked shader program.
     pub fn configure_program(
