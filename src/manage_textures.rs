@@ -69,6 +69,41 @@ static RANDOM_COUNTER: AtomicU64 =
 
 
 // ============================================================
+// Temporary command-line preview selection
+// ============================================================
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+)]
+pub enum PreviewSelectionValue<T> {
+    Random,
+    Specific(T),
+}
+
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+)]
+pub struct PreviewTextureSelection {
+
+    pub texture:
+        Option<
+            PreviewSelectionValue<TextureFamily>
+        >,
+
+    pub palette:
+        Option<
+            PreviewSelectionValue<Palette>
+        >,
+}
+
+
+// ============================================================
 // Texture request
 // ============================================================
 
@@ -87,6 +122,7 @@ struct TextureRequest {
 fn resolve_texture_selection(
     shader_name: &str,
     policy: &TextureSelectionPolicy,
+    preview_selection: PreviewTextureSelection,
 ) -> (
     TextureRequest,
     &'static str,
@@ -97,58 +133,65 @@ fn resolve_texture_selection(
         random_state();
 
 
-    if let Some(texture_override) =
+    let shader_override =
         matching_override(
             shader_name,
             &policy.texture_overrides,
-        )
-    {
-        return (
-            TextureRequest {
-                family:
-                    texture_override
-                        .shader_texture,
-                palette:
-                    texture_override
-                        .shader_palette,
-                seed:
-                    splitmix64(
-                        &mut state
-                    ),
-            },
-            "shader override",
-            "shader override",
         );
-    }
 
 
     let (
         family,
         texture_source,
     ) =
-        match policy.global_texture {
+        match preview_selection.texture {
 
-            Some(family) => {
+            Some(
+                PreviewSelectionValue::Specific(
+                    family
+                )
+            ) => {
                 (
                     family,
-                    "global",
+                    "command line",
+                )
+            }
+
+            Some(
+                PreviewSelectionValue::Random
+            ) => {
+                (
+                    random_texture_family(
+                        &mut state
+                    ),
+                    "command-line random",
                 )
             }
 
             None => {
-                let family_index =
-                    random_index(
-                        &mut state,
-                        RANDOM_TEXTURE_FAMILIES.len(),
-                    );
-
-
-                (
-                    RANDOM_TEXTURE_FAMILIES[
-                        family_index
-                    ],
-                    "random fallback",
-                )
+                if let Some(texture_override) =
+                    shader_override
+                {
+                    (
+                        texture_override
+                            .shader_texture,
+                        "shader override",
+                    )
+                } else if let Some(family) =
+                    policy.global_texture
+                {
+                    (
+                        family,
+                        "global",
+                    )
+                } else {
+                    (
+                        random_texture_family(
+                            &mut state
+                        ),
+                        "random fallback",
+                    )
+                }
             }
         };
 
@@ -157,29 +200,54 @@ fn resolve_texture_selection(
         palette,
         palette_source,
     ) =
-        match policy.global_palette {
+        match preview_selection.palette {
 
-            Some(palette) => {
+            Some(
+                PreviewSelectionValue::Specific(
+                    palette
+                )
+            ) => {
                 (
                     palette,
-                    "global",
+                    "command line",
+                )
+            }
+
+            Some(
+                PreviewSelectionValue::Random
+            ) => {
+                (
+                    random_palette(
+                        &mut state
+                    ),
+                    "command-line random",
                 )
             }
 
             None => {
-                let palette_index =
-                    random_index(
-                        &mut state,
-                        Palette::ALL.len(),
-                    );
-
-
-                (
-                    Palette::ALL[
-                        palette_index
-                    ],
-                    "random fallback",
-                )
+                if let Some(texture_override) =
+                    shader_override
+                {
+                    (
+                        texture_override
+                            .shader_palette,
+                        "shader override",
+                    )
+                } else if let Some(palette) =
+                    policy.global_palette
+                {
+                    (
+                        palette,
+                        "global",
+                    )
+                } else {
+                    (
+                        random_palette(
+                            &mut state
+                        ),
+                        "random fallback",
+                    )
+                }
             }
         };
 
@@ -196,6 +264,40 @@ fn resolve_texture_selection(
         texture_source,
         palette_source,
     )
+}
+
+
+fn random_texture_family(
+    state: &mut u64,
+) -> TextureFamily {
+
+    let family_index =
+        random_index(
+            state,
+            RANDOM_TEXTURE_FAMILIES.len(),
+        );
+
+
+    RANDOM_TEXTURE_FAMILIES[
+        family_index
+    ]
+}
+
+
+fn random_palette(
+    state: &mut u64,
+) -> Palette {
+
+    let palette_index =
+        random_index(
+            state,
+            Palette::ALL.len(),
+        );
+
+
+    Palette::ALL[
+        palette_index
+    ]
 }
 
 
@@ -379,11 +481,38 @@ impl TextureManager {
         channel_usage: ShaderChannelUsage,
     ) -> Result<(), String> {
 
+        self.prepare_for_shader_with_selection(
+            shader_name,
+            channel_usage,
+            PreviewTextureSelection::default(),
+        )
+    }
+
+
+    pub fn prepare_for_shader_with_selection(
+        &mut self,
+        shader_name: &str,
+        channel_usage: ShaderChannelUsage,
+        preview_selection: PreviewTextureSelection,
+    ) -> Result<(), String> {
+
         self.active_channels =
             channel_usage.channels;
 
 
         if !channel_usage.uses_any_channel() {
+
+            if preview_selection.texture.is_some()
+                || preview_selection.palette.is_some()
+            {
+                log(
+                    &format!(
+                        "[PREVIEW_SHADER] Texture/palette command-line options ignored because '{}' does not use texture channels",
+                        shader_name,
+                    )
+                );
+            }
+
 
             if matching_override(
                 shader_name,
@@ -420,6 +549,7 @@ impl TextureManager {
             resolve_texture_selection(
                 shader_name,
                 &self.policy,
+                preview_selection,
             );
 
 

@@ -8,6 +8,7 @@ mod parse_arguments;
 
 mod define_constants;
 mod locate_paths;
+mod delete_cache;
 
 mod query_session;
 mod session_backend;
@@ -32,6 +33,7 @@ mod generate_noise;
 mod generate_radial;
 mod generate_textures;
 mod preview_texture;
+mod preview_shader;
 mod palettes;
 mod display_texture;
 
@@ -107,36 +109,47 @@ match command {
 
 crate::parse_arguments::Command::PreviewShader {
     shader_name,
-    background_texture,
-    palette,
+    shader_texture,
+    shader_palette,
 } => {
 
-    println!(
-        "Shader preview is not yet implemented."
-    );
+    match crate::preview_shader::run(
+        shader_name,
+        shader_texture,
+        shader_palette,
+    ) {
 
-    println!(
-        "Shader: {}",
-        shader_name
-    );
+        Ok(()) => {}
 
-    println!(
-        "Background texture: {}",
-        background_texture
-            .as_deref()
-            .unwrap_or(
-                "screenshaver.toml"
-            )
-    );
+        Err(error) => {
 
-    println!(
-        "Palette: {}",
-        palette
-            .as_deref()
-            .unwrap_or(
-                "screenshaver.toml"
-            )
-    );
+            eprintln!(
+                "[SHADER PREVIEW] {}",
+                error
+            );
+        }
+    }
+
+
+    return;
+}
+
+
+crate::parse_arguments::Command::DeleteCache => {
+
+    match crate::delete_cache::run() {
+
+        Ok(()) => {}
+
+        Err(error) => {
+
+            eprintln!(
+                "[CACHE] {}",
+                error
+            );
+        }
+    }
+
 
     return;
 }

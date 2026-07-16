@@ -31,11 +31,63 @@ pub enum ShaderLoadResult {
     },
 }
 
-pub fn load_shader(shader_name: &str) -> ShaderLoadResult {
-    log(&format!("[SHADER] Attempting to load shader: {shader_name}"));
+pub fn load_shader(
+    shader_name: &str,
+) -> ShaderLoadResult {
 
-    let source_path = crate::locate_paths::shader_dir().join(shader_name);
-    let source = match std::fs::read_to_string(&source_path) {
+    let source_path =
+        crate::locate_paths::shader_dir()
+            .join(
+                shader_name
+            );
+
+
+    load_shader_path_internal(
+        &source_path,
+        true,
+    )
+}
+
+
+pub fn load_shader_for_preview(
+    source_path: &Path,
+) -> ShaderLoadResult {
+
+    load_shader_path_internal(
+        source_path,
+        false,
+    )
+}
+
+
+fn load_shader_path_internal(
+    source_path: &Path,
+    quarantine_on_rejection: bool,
+) -> ShaderLoadResult {
+
+    let shader_name =
+        source_path
+            .file_name()
+            .and_then(
+                |name| {
+                    name.to_str()
+                }
+            )
+            .unwrap_or(
+                "<shader>"
+            )
+            .to_string();
+
+
+    log(
+        &format!(
+            "[SHADER] Attempting to load shader: {}",
+            source_path.display(),
+        )
+    );
+
+
+    let source = match std::fs::read_to_string(source_path) {
         Ok(source) => {
             log(&format!(
                 "[SHADER] Successfully loaded shader: {}",
@@ -50,7 +102,7 @@ pub fn load_shader(shader_name: &str) -> ShaderLoadResult {
                 error
             ));
             return ShaderLoadResult::Unavailable {
-                shader_name: shader_name.to_string(),
+                shader_name: shader_name.clone(),
                 error: error.to_string(),
             };
         }
@@ -70,17 +122,23 @@ pub fn load_shader(shader_name: &str) -> ShaderLoadResult {
             log_report(&report.applied, &report.warnings, &report.rejection_reasons);
 
             if !report.rejection_reasons.is_empty() {
-                quarantine(&source_path, shader_name, &report.rejection_reasons);
+                if quarantine_on_rejection {
+                    quarantine(
+                        source_path,
+                        &shader_name,
+                        &report.rejection_reasons,
+                    );
+                }
                 return ShaderLoadResult::Rejected {
-                    shader_name: shader_name.to_string(),
+                    shader_name: shader_name.clone(),
                     reasons: report.rejection_reasons,
                 };
             }
 
-            let processed = if let Some(cached) = try_load_cached_shader(&source_path) {
+            let processed = if let Some(cached) = try_load_cached_shader(source_path) {
                 cached
             } else {
-                if let Err(error) = write_cached_shader(&source_path, &report.source) {
+                if let Err(error) = write_cached_shader(source_path, &report.source) {
                     log(&format!("[CACHE] Failed to write cache entry: {error}"));
                 }
                 report.source
@@ -88,7 +146,7 @@ pub fn load_shader(shader_name: &str) -> ShaderLoadResult {
 
             ShaderLoadResult::Ready {
                 source: processed,
-                shader_name: shader_name.to_string(),
+                shader_name: shader_name.clone(),
                 built_in_default: false,
                 channel_usage:
                     report.channel_usage,
@@ -107,16 +165,22 @@ pub fn load_shader(shader_name: &str) -> ShaderLoadResult {
             log_report(&[], &warnings, &rejection_reasons);
 
             if !rejection_reasons.is_empty() {
-                quarantine(&source_path, shader_name, &rejection_reasons);
+                if quarantine_on_rejection {
+                    quarantine(
+                        source_path,
+                        &shader_name,
+                        &rejection_reasons,
+                    );
+                }
                 return ShaderLoadResult::Rejected {
-                    shader_name: shader_name.to_string(),
+                    shader_name: shader_name.clone(),
                     reasons: rejection_reasons,
                 };
             }
 
             ShaderLoadResult::Ready {
                 source,
-                shader_name: shader_name.to_string(),
+                shader_name: shader_name.clone(),
                 built_in_default: false,
                 channel_usage,
             }

@@ -17,13 +17,15 @@ pub enum Command {
 
     PreviewShader {
         shader_name: String,
-        background_texture: Option<String>,
-        palette: Option<String>,
+        shader_texture: Option<String>,
+        shader_palette: Option<String>,
     },
 
     ListTextures,
 
     ListPalettes,
+
+    DeleteCache,
 }
 
 
@@ -176,6 +178,20 @@ pub fn parse() -> Result<Command, String> {
 
             Ok(
                 Command::ListPalettes
+            )
+        }
+
+
+        "--delete-cache" => {
+
+            require_no_extra_arguments(
+                &args,
+                "--delete-cache",
+            )?;
+
+
+            Ok(
+                Command::DeleteCache
             )
         }
 
@@ -379,7 +395,7 @@ fn parse_preview_shader(
         args.first()
             .ok_or_else(
                 || {
-                    "--preview-shader requires a shader filename"
+                    "--preview-shader requires a shader filename or path"
                         .to_string()
                 }
             )?;
@@ -388,18 +404,18 @@ fn parse_preview_shader(
     if shader_name.starts_with('-') {
 
         return Err(
-            "--preview-shader requires a shader filename before its optional parameters"
+            "--preview-shader requires a shader filename or path before its optional parameters"
                 .to_string()
         );
     }
 
 
-    let mut background_texture:
+    let mut shader_texture:
         Option<String> =
             None;
 
 
-    let mut palette:
+    let mut shader_palette:
         Option<String> =
             None;
 
@@ -413,22 +429,28 @@ fn parse_preview_shader(
     {
         match args[index].as_str() {
 
-            "--background-texture" => {
+            "--shader-texture"
+            | "--texture"
+            | "--background-texture" => {
 
-                if background_texture.is_some() {
+                if shader_texture.is_some() {
 
                     return Err(
-                        "--background-texture may only be specified once"
+                        "A shader texture option may only be specified once"
                             .to_string()
                     );
                 }
+
+
+                let option_name =
+                    args[index].as_str();
 
 
                 let value =
                     argument_value(
                         args,
                         index,
-                        "--background-texture",
+                        option_name,
                     )?;
 
 
@@ -437,7 +459,7 @@ fn parse_preview_shader(
                 )?;
 
 
-                background_texture =
+                shader_texture =
                     Some(
                         value.to_ascii_lowercase()
                     );
@@ -447,22 +469,27 @@ fn parse_preview_shader(
             }
 
 
-            "--palette" => {
+            "--shader-palette"
+            | "--palette" => {
 
-                if palette.is_some() {
+                if shader_palette.is_some() {
 
                     return Err(
-                        "--palette may only be specified once"
+                        "A shader palette option may only be specified once"
                             .to_string()
                     );
                 }
+
+
+                let option_name =
+                    args[index].as_str();
 
 
                 let value =
                     argument_value(
                         args,
                         index,
-                        "--palette",
+                        option_name,
                     )?;
 
 
@@ -471,7 +498,7 @@ fn parse_preview_shader(
                 )?;
 
 
-                palette =
+                shader_palette =
                     Some(
                         value.to_ascii_lowercase()
                     );
@@ -484,7 +511,7 @@ fn parse_preview_shader(
             "--family" => {
 
                 return Err(
-                    "--family is not valid with --preview-shader; use --background-texture"
+                    "--family is not valid with --preview-shader; use --shader-texture"
                         .to_string()
                 );
             }
@@ -521,9 +548,9 @@ fn parse_preview_shader(
             shader_name:
                 shader_name.to_string(),
 
-            background_texture,
+            shader_texture,
 
-            palette,
+            shader_palette,
         }
     )
 }
@@ -701,9 +728,11 @@ pub fn print_help() {
                  Preview one procedurally generated texture.\n\
                  This command does not consult screenshaver.toml.\n\
          \n\
-             --preview-shader SHADER [--background-texture FAMILY] [--palette PALETTE]\n\
-                 Preview one shader immediately. Command-line texture values\n\
-                 override shader-specific and global configuration values.\n\
+             --preview-shader SHADER [--shader-texture FAMILY] [--shader-palette PALETTE]\n\
+                 Preview one shader immediately in a full-screen window.\n\
+                 SHADER may be a path or a filename in the shader folder.\n\
+                 Command-line values override shader-specific and global values.\n\
+                 --texture and --palette are accepted as shorter aliases.\n\
          \n\
              --list-textures\n\
                  Display available procedural texture families.\n\
@@ -749,20 +778,8 @@ pub fn print_help() {
              --list-shaders\n\
                  Display available shaders.\n\
          \n\
-             --verify-cache\n\
-                 Verify shader cache integrity.\n\
-         \n\
-             --rebuild-cache\n\
-                 Rebuild shader cache entries.\n\
-         \n\
-             --clean-cache\n\
-                 Remove obsolete shader cache entries.\n\
-         \n\
-             --benchmark\n\
-                 Benchmark shader loading and rendering performance.\n\
-         \n\
-             --evaluate\n\
-                 Evaluate a GLSL shader and produce a compatibility report.\n\
+             --delete-cache\n\
+                 Delete all Screenshaver cached/preprocessed shaders.\n\
          \n\
              --convert\n\
                  Convert a GLSL shader using Screenshaver preprocessing.\n\
