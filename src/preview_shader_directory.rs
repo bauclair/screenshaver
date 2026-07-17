@@ -35,7 +35,7 @@ pub fn run(
     if shader_paths.is_empty() {
         return Err(
             format!(
-                "No .glsl or .shaver shader files were found directly inside '{}'",
+                "No .glsl, .fs, or .shaver shader files were found directly inside '{}'",
                 directory.display(),
             )
         );
@@ -221,6 +221,9 @@ fn discover_shader_paths(
         if extension.eq_ignore_ascii_case(
             "glsl"
         )
+            || extension.eq_ignore_ascii_case(
+                "fs"
+            )
             || extension.eq_ignore_ascii_case(
                 "shaver"
             )
