@@ -19,6 +19,11 @@ fn default_subtitle_placement() -> String {
 }
 
 
+fn default_rendered_fps() -> u32 {
+    crate::define_constants::DEFAULT_RENDER_FPS
+}
+
+
 //
 // ------------------------------------------------------------
 // Structures that exactly match screenshaver.toml
@@ -65,6 +70,26 @@ struct RawTextureOverride {
 
 
 #[derive(Debug, Deserialize)]
+struct PerformanceSection {
+
+    #[serde(default = "default_rendered_fps")]
+    rendered_fps: u32,
+}
+
+
+impl Default for PerformanceSection {
+
+    fn default() -> Self {
+
+        Self {
+            rendered_fps:
+                default_rendered_fps(),
+        }
+    }
+}
+
+
+#[derive(Debug, Deserialize)]
 struct LockingSection {
 
     screen_lock: bool,
@@ -90,6 +115,9 @@ struct RawToml {
         Vec<
             RawTextureOverride
         >,
+
+    #[serde(default)]
+    performance: PerformanceSection,
 
     locking: LockingSection,
 
@@ -159,6 +187,8 @@ pub struct Config {
 
     pub texture_policy:
         TextureSelectionPolicy,
+
+    pub rendered_fps: u32,
 
     pub screen_lock: bool,
 
@@ -270,6 +300,19 @@ pub fn load_config(
 
 
     //---------------------------------------------------------
+    // Validate performance configuration
+    //---------------------------------------------------------
+
+    let (
+        rendered_fps,
+        rendered_fps_warning,
+    ) =
+        validate_rendered_fps(
+            raw.performance.rendered_fps
+        );
+
+
+    //---------------------------------------------------------
     // Flatten configuration
     //---------------------------------------------------------
 
@@ -292,6 +335,8 @@ pub fn load_config(
                 raw.operation.idle_timeout,
 
             texture_policy,
+
+            rendered_fps,
 
             screen_lock:
                 raw.locking.screen_lock,
@@ -364,6 +409,11 @@ pub fn load_config(
             ),
 
             format!(
+                "[CONFIG] rendered_fps = {}",
+                config.rendered_fps,
+            ),
+
+            format!(
                 "[CONFIG] screen_lock = {}",
                 config.screen_lock,
             ),
@@ -377,6 +427,15 @@ pub fn load_config(
 
     if let Some(warning) =
         parsed_subtitle_placement.warning
+    {
+        diagnostics.push(
+            warning
+        );
+    }
+
+
+    if let Some(warning) =
+        rendered_fps_warning
     {
         diagnostics.push(
             warning
@@ -420,6 +479,54 @@ pub fn load_config(
         }
     )
 }
+
+//
+// ------------------------------------------------------------
+// Render FPS validation
+// ------------------------------------------------------------
+//
+
+fn validate_rendered_fps(
+    value: u32,
+) -> (
+    u32,
+    Option<String>,
+) {
+
+    if (
+        crate::define_constants::MIN_RENDER_FPS
+            ..=
+        crate::define_constants::MAX_RENDER_FPS
+    )
+        .contains(
+            &value
+        )
+    {
+        return (
+            value,
+            None,
+        );
+    }
+
+
+    let fallback =
+        crate::define_constants::DEFAULT_RENDER_FPS;
+
+
+    (
+        fallback,
+        Some(
+            format!(
+                "[CONFIG] WARNING: rendered_fps = {} is outside the supported range {}-{}; using {}",
+                value,
+                crate::define_constants::MIN_RENDER_FPS,
+                crate::define_constants::MAX_RENDER_FPS,
+                fallback,
+            )
+        ),
+    )
+}
+
 
 //
 // ------------------------------------------------------------

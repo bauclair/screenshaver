@@ -3,12 +3,16 @@ pub const WINDOW_TITLE: &str = "Screenshaver";
 pub const GL_MAJOR: u8 = 3;
 pub const GL_MINOR: u8 = 3;
 
-pub const DEFAULT_RENDER_FPS: u32 = 60;
+// Supported render frame rate limits.
+pub const MIN_RENDER_FPS: u32 = 24;
+pub const DEFAULT_RENDER_FPS: u32 = 30;
+pub const MAX_RENDER_FPS: u32 = 60;
 
 pub const VERTEX_SHADER: &str = r#"
 #version 330 core
 
 void main() {
+
     vec2 pos = vec2(
         (gl_VertexID << 1) & 2,
         gl_VertexID & 2

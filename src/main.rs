@@ -773,7 +773,7 @@ crate::parse_arguments::Command::ListPalettes => {
                         &sdl,
                         shader_manager,
                         parsed_interval.seconds,
-                        crate::define_constants::DEFAULT_RENDER_FPS,
+                        cfg.rendered_fps,
                         cfg.texture_policy.clone(),
                         cfg.subtitles,
                         cfg.subtitle_placement,
