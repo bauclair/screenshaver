@@ -4,9 +4,9 @@ pub const GL_MAJOR: u8 = 3;
 pub const GL_MINOR: u8 = 3;
 
 // Supported render frame rate limits.
-pub const MIN_RENDER_FPS: u32 = 24;
+pub const MIN_RENDER_FPS: u32 = 16;
 pub const DEFAULT_RENDER_FPS: u32 = 30;
-pub const MAX_RENDER_FPS: u32 = 60;
+pub const MAX_RENDER_FPS: u32 = 120;
 
 pub const VERTEX_SHADER: &str = r#"
 #version 330 core

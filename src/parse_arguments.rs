@@ -20,6 +20,7 @@ pub enum Command {
         shader_texture: Option<String>,
         shader_palette: Option<String>,
         interval_seconds: Option<u64>,
+        fps: Option<u32>,
     },
 
     ListTextures,
@@ -267,6 +268,8 @@ fn parse_preview_texture(
     {
         match args[index].as_str() {
 
+
+
             "--family" => {
 
                 if family.is_some() {
@@ -426,6 +429,11 @@ fn parse_preview_shader(
             None;
 
 
+    let mut fps:
+        Option<u32> =
+            None;
+
+
     let mut index =
         1;
 
@@ -507,6 +515,69 @@ fn parse_preview_shader(
                 shader_palette =
                     Some(
                         value.to_ascii_lowercase()
+                    );
+
+
+                index += 2;
+            }
+
+
+            "--fps" => {
+
+                if fps.is_some() {
+
+                    return Err(
+                        "--fps may only be specified once"
+                            .to_string()
+                    );
+                }
+
+
+                let value =
+                    argument_value(
+                        args,
+                        index,
+                        "--fps",
+                    )?;
+
+
+                let parsed_fps =
+                    value.parse::<u32>()
+                        .map_err(
+                            |_| {
+                                format!(
+                                    "Invalid --fps value '{}'; specify an integer from {} through {}",
+                                    value,
+                                    crate::define_constants::MIN_RENDER_FPS,
+                                    crate::define_constants::MAX_RENDER_FPS,
+                                )
+                            }
+                        )?;
+
+
+                if !(
+                    crate::define_constants::MIN_RENDER_FPS
+                        ..=
+                    crate::define_constants::MAX_RENDER_FPS
+                )
+                    .contains(
+                        &parsed_fps
+                    )
+                {
+                    return Err(
+                        format!(
+                            "--fps value {} is outside the supported range {}-{}",
+                            parsed_fps,
+                            crate::define_constants::MIN_RENDER_FPS,
+                            crate::define_constants::MAX_RENDER_FPS,
+                        )
+                    );
+                }
+
+
+                fps =
+                    Some(
+                        parsed_fps
                     );
 
 
@@ -610,6 +681,8 @@ fn parse_preview_shader(
             shader_palette,
 
             interval_seconds,
+
+            fps,
         }
     )
 }
@@ -787,7 +860,7 @@ pub fn print_help() {
                  Preview one procedurally generated texture.\n\
                  This command does not consult screenshaver.toml.\n\
          \n\
-             --preview-shader PATH [--interval SECONDS]\n\
+             --preview-shader PATH [--interval SECONDS] [--fps FPS]\n\
                               [--shader-texture FAMILY] [--shader-palette PALETTE]\n\
                  Preview one shader or all shaders directly inside a folder.\n\
                  Folder previews use a 30-second interval unless overridden.\n\

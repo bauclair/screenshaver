@@ -14,13 +14,13 @@ fn default_show_splash() -> bool {
 }
 
 
-fn default_subtitle_placement() -> String {
-    "bottom:left".to_string()
+fn default_global_rendered_fps() -> u32 {
+    crate::define_constants::DEFAULT_RENDER_FPS
 }
 
 
-fn default_rendered_fps() -> u32 {
-    crate::define_constants::DEFAULT_RENDER_FPS
+fn default_subtitle_placement() -> String {
+    "bottom:left".to_string()
 }
 
 
@@ -70,10 +70,19 @@ struct RawTextureOverride {
 
 
 #[derive(Debug, Deserialize)]
+struct RawFpsOverride {
+
+    shader: String,
+
+    rendered_fps: u32,
+}
+
+
+#[derive(Debug, Deserialize)]
 struct PerformanceSection {
 
-    #[serde(default = "default_rendered_fps")]
-    rendered_fps: u32,
+    #[serde(default = "default_global_rendered_fps")]
+    global_rendered_fps: u32,
 }
 
 
@@ -82,8 +91,8 @@ impl Default for PerformanceSection {
     fn default() -> Self {
 
         Self {
-            rendered_fps:
-                default_rendered_fps(),
+            global_rendered_fps:
+                default_global_rendered_fps(),
         }
     }
 }
@@ -119,6 +128,12 @@ struct RawToml {
     #[serde(default)]
     performance: PerformanceSection,
 
+    #[serde(default)]
+    fps_override:
+        Vec<
+            RawFpsOverride
+        >,
+
     locking: LockingSection,
 
     debug: DebugSection,
@@ -145,6 +160,20 @@ pub struct TextureOverride {
 
     pub shader_palette:
         crate::palettes::Palette,
+}
+
+
+#[derive(
+    Debug,
+    Clone,
+)]
+pub struct FpsOverride {
+
+    pub shader:
+        String,
+
+    pub rendered_fps:
+        u32,
 }
 
 
@@ -188,11 +217,59 @@ pub struct Config {
     pub texture_policy:
         TextureSelectionPolicy,
 
-    pub rendered_fps: u32,
+    pub global_rendered_fps: u32,
+
+    pub fps_overrides:
+        Vec<
+            FpsOverride
+        >,
 
     pub screen_lock: bool,
 
     pub debug_log: bool,
+}
+
+
+impl Config {
+
+    pub fn rendered_fps_for_shader(
+        &self,
+        shader_name: &str,
+        command_line_fps: Option<u32>,
+    ) -> u32 {
+
+        if let Some(fps) =
+            command_line_fps
+        {
+            return fps.max(
+                1
+            );
+        }
+
+
+        self.fps_overrides
+            .iter()
+            .find(
+                |fps_override| {
+                    fps_override
+                        .shader
+                        .eq_ignore_ascii_case(
+                            shader_name
+                        )
+                }
+            )
+            .map(
+                |fps_override| {
+                    fps_override.rendered_fps
+                }
+            )
+            .unwrap_or(
+                self.global_rendered_fps
+            )
+            .max(
+                1
+            )
+    }
 }
 
 
@@ -299,17 +376,19 @@ pub fn load_config(
         };
 
 
-    //---------------------------------------------------------
-    // Validate performance configuration
-    //---------------------------------------------------------
-
     let (
-        rendered_fps,
-        rendered_fps_warning,
+        global_rendered_fps,
+        global_rendered_fps_warning,
     ) =
         validate_rendered_fps(
-            raw.performance.rendered_fps
+            raw.performance.global_rendered_fps
         );
+
+
+    let fps_overrides =
+        parse_fps_overrides(
+            raw.fps_override
+        )?;
 
 
     //---------------------------------------------------------
@@ -336,7 +415,9 @@ pub fn load_config(
 
             texture_policy,
 
-            rendered_fps,
+            global_rendered_fps,
+
+            fps_overrides,
 
             screen_lock:
                 raw.locking.screen_lock,
@@ -409,8 +490,8 @@ pub fn load_config(
             ),
 
             format!(
-                "[CONFIG] rendered_fps = {}",
-                config.rendered_fps,
+                "[CONFIG] global_rendered_fps = {}",
+                config.global_rendered_fps,
             ),
 
             format!(
@@ -435,10 +516,31 @@ pub fn load_config(
 
 
     if let Some(warning) =
-        rendered_fps_warning
+        global_rendered_fps_warning
     {
         diagnostics.push(
             warning
+        );
+    }
+
+
+    diagnostics.push(
+        format!(
+            "[CONFIG] fps_override count = {}",
+            config.fps_overrides.len(),
+        )
+    );
+
+
+    for fps_override in
+        &config.fps_overrides
+    {
+        diagnostics.push(
+            format!(
+                "[CONFIG] fps_override shader={} rendered_fps={}",
+                fps_override.shader,
+                fps_override.rendered_fps,
+            )
         );
     }
 
@@ -482,7 +584,7 @@ pub fn load_config(
 
 //
 // ------------------------------------------------------------
-// Render FPS validation
+// Performance validation
 // ------------------------------------------------------------
 //
 
@@ -517,13 +619,114 @@ fn validate_rendered_fps(
         fallback,
         Some(
             format!(
-                "[CONFIG] WARNING: rendered_fps = {} is outside the supported range {}-{}; using {}",
+                "[CONFIG] WARNING: global_rendered_fps = {} is outside the supported range {}-{}; using {}",
                 value,
                 crate::define_constants::MIN_RENDER_FPS,
                 crate::define_constants::MAX_RENDER_FPS,
                 fallback,
             )
         ),
+    )
+}
+
+
+
+//
+// ------------------------------------------------------------
+// Per-shader FPS override parsing
+// ------------------------------------------------------------
+//
+
+fn parse_fps_overrides(
+    raw_overrides:
+        Vec<
+            RawFpsOverride
+        >,
+) -> Result<
+    Vec<
+        FpsOverride
+    >,
+    String,
+> {
+
+    let mut overrides =
+        Vec::with_capacity(
+            raw_overrides.len()
+        );
+
+
+    for raw_override in
+        raw_overrides
+    {
+        let shader =
+            raw_override
+                .shader
+                .trim()
+                .to_string();
+
+
+        if shader.is_empty() {
+            return Err(
+                "A [[fps_override]] block contains an empty shader name"
+                    .to_string()
+            );
+        }
+
+
+        if overrides
+            .iter()
+            .any(
+                |existing: &FpsOverride| {
+                    existing
+                        .shader
+                        .eq_ignore_ascii_case(
+                            &shader
+                        )
+                }
+            )
+        {
+            return Err(
+                format!(
+                    "Duplicate [[fps_override]] block for shader '{}'",
+                    shader,
+                )
+            );
+        }
+
+
+        let (
+            rendered_fps,
+            warning,
+        ) =
+            validate_rendered_fps(
+                raw_override.rendered_fps
+            );
+
+
+        if warning.is_some() {
+            return Err(
+                format!(
+                    "rendered_fps = {} in [[fps_override]] for '{}' is outside the supported range {}-{}",
+                    raw_override.rendered_fps,
+                    shader,
+                    crate::define_constants::MIN_RENDER_FPS,
+                    crate::define_constants::MAX_RENDER_FPS,
+                )
+            );
+        }
+
+
+        overrides.push(
+            FpsOverride {
+                shader,
+                rendered_fps,
+            }
+        );
+    }
+
+
+    Ok(
+        overrides
     )
 }
 

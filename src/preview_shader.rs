@@ -161,6 +161,7 @@ pub fn run(
     shader_texture: Option<String>,
     shader_palette: Option<String>,
     interval_seconds: Option<u64>,
+    command_line_fps: Option<u32>,
 ) -> Result<(), String> {
 
     match crate::preview_shader_directory::resolve_preview_target(
@@ -185,6 +186,7 @@ pub fn run(
                 shader_texture,
                 shader_palette,
                 None,
+                command_line_fps,
             )
         }
 
@@ -198,6 +200,7 @@ pub fn run(
                 shader_texture,
                 shader_palette,
                 interval_seconds,
+                command_line_fps,
             )
         }
     }
@@ -209,6 +212,7 @@ pub fn run_paths(
     shader_texture: Option<String>,
     shader_palette: Option<String>,
     interval_seconds: Option<u64>,
+    command_line_fps: Option<u32>,
 ) -> Result<(), String> {
 
     if shader_paths.is_empty() {
@@ -237,10 +241,12 @@ pub fn run_paths(
         config.subtitle_placement;
 
 
-    let configured_fps =
-        config.rendered_fps.max(
-            1
-        );
+    let global_rendered_fps =
+        config.global_rendered_fps;
+
+
+    let fps_overrides =
+        config.fps_overrides;
 
 
     let texture_policy =
@@ -389,10 +395,28 @@ pub fn run_paths(
             preview_selection,
             subtitles,
             subtitle_placement,
-            configured_fps,
+            global_rendered_fps,
+            &fps_overrides,
+            command_line_fps,
             width,
             height,
         )?;
+
+
+    let mut configured_fps =
+        resolve_preview_fps(
+            global_rendered_fps,
+            &fps_overrides,
+            command_line_fps,
+            &active.shader_name,
+        );
+
+
+    let mut target_frame_time =
+        Duration::from_secs_f64(
+            1.0
+                / configured_fps.max(1) as f64
+        );
 
 
     let mut vao =
@@ -439,17 +463,6 @@ pub fn run_paths(
 
     let mouse_threshold =
         8_i32;
-
-
-    let fps =
-        configured_fps;
-
-
-    let target_frame_time =
-        Duration::from_secs_f64(
-            1.0
-                / fps as f64
-        );
 
 
     let mut last_switch =
@@ -525,7 +538,9 @@ pub fn run_paths(
                         preview_selection,
                         subtitles,
                         subtitle_placement,
-                        configured_fps,
+                        global_rendered_fps,
+                        &fps_overrides,
+                        command_line_fps,
                         window.size().0,
                         window.size().1,
                     ) {
@@ -544,6 +559,22 @@ pub fn run_paths(
 
                             active =
                                 replacement;
+
+
+                            configured_fps =
+                                resolve_preview_fps(
+                                    global_rendered_fps,
+                                    &fps_overrides,
+                                    command_line_fps,
+                                    &active.shader_name,
+                                );
+
+
+                            target_frame_time =
+                                Duration::from_secs_f64(
+                                    1.0
+                                        / configured_fps.max(1) as f64
+                                );
 
 
                             active_index =
@@ -885,6 +916,50 @@ pub fn run_paths(
 }
 
 
+fn resolve_preview_fps(
+    global_rendered_fps: u32,
+    fps_overrides:
+        &[
+            crate::load_config::FpsOverride
+        ],
+    command_line_fps: Option<u32>,
+    shader_name: &str,
+) -> u32 {
+
+    if let Some(fps) =
+        command_line_fps
+    {
+        return fps.max(
+            1
+        );
+    }
+
+
+    fps_overrides
+        .iter()
+        .find(
+            |fps_override| {
+                fps_override
+                    .shader
+                    .eq_ignore_ascii_case(
+                        shader_name
+                    )
+            }
+        )
+        .map(
+            |fps_override| {
+                fps_override.rendered_fps
+            }
+        )
+        .unwrap_or(
+            global_rendered_fps
+        )
+        .max(
+            1
+        )
+}
+
+
 fn load_first_usable_shader(
     paths: &[PathBuf],
     start_index: usize,
@@ -895,7 +970,12 @@ fn load_first_usable_shader(
     subtitles: bool,
     subtitle_placement:
         crate::parse_subtitle_placement::SubtitlePlacement,
-    configured_fps: u32,
+    global_rendered_fps: u32,
+    fps_overrides:
+        &[
+            crate::load_config::FpsOverride
+        ],
+    command_line_fps: Option<u32>,
     output_width: u32,
     output_height: u32,
 ) -> Result<
@@ -921,6 +1001,25 @@ fn load_first_usable_shader(
             &paths[
                 index
             ];
+
+
+        let shader_name =
+            path.file_name()
+                .and_then(
+                    |value| {
+                        value.to_str()
+                    }
+                )
+                .unwrap_or_default();
+
+
+        let configured_fps =
+            resolve_preview_fps(
+                global_rendered_fps,
+                fps_overrides,
+                command_line_fps,
+                shader_name,
+            );
 
 
         match load_active_shader(

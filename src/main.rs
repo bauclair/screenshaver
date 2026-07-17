@@ -120,6 +120,7 @@ crate::parse_arguments::Command::PreviewShader {
     shader_texture,
     shader_palette,
     interval_seconds,
+    fps,
 } => {
 
     match crate::preview_shader::run(
@@ -127,6 +128,7 @@ crate::parse_arguments::Command::PreviewShader {
         shader_texture,
         shader_palette,
         interval_seconds,
+        fps,
     ) {
 
         Ok(()) => {}
@@ -773,7 +775,8 @@ crate::parse_arguments::Command::ListPalettes => {
                         &sdl,
                         shader_manager,
                         parsed_interval.seconds,
-                        cfg.rendered_fps,
+                        cfg.global_rendered_fps,
+                        cfg.fps_overrides.clone(),
                         cfg.texture_policy.clone(),
                         cfg.subtitles,
                         cfg.subtitle_placement,

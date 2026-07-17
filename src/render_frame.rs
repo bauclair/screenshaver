@@ -125,7 +125,12 @@ pub struct FrameRenderer {
         u32,
         u32,
     ),
+    global_rendered_fps: u32,
     configured_fps: u32,
+    fps_overrides:
+        Vec<
+            crate::load_config::FpsOverride
+        >,
     fps_warning_state:
         crate::construct_text_overlay::FpsWarningState,
     fps_blink_visible: bool,
@@ -141,7 +146,11 @@ impl FrameRenderer {
         sdl: &sdl2::Sdl,
         mut shader_manager: crate::manage_shader::ShaderManager,
         shader_interval: u64,
-        fps: u32,
+        global_rendered_fps: u32,
+        fps_overrides:
+            Vec<
+                crate::load_config::FpsOverride
+            >,
         texture_policy:
             crate::load_config::TextureSelectionPolicy,
         subtitles: bool,
@@ -254,11 +263,18 @@ impl FrameRenderer {
         );
 
         let safe_fps =
-            if fps == 0 {
+            if global_rendered_fps == 0 {
                 crate::define_constants::DEFAULT_RENDER_FPS
             } else {
-                fps
+                global_rendered_fps
             };
+
+        let configured_fps =
+            resolve_shader_fps(
+                safe_fps,
+                &fps_overrides,
+                &active_shader.shader_name,
+            );
 
         let subtitle_overlay =
             if subtitles {
@@ -269,7 +285,7 @@ impl FrameRenderer {
                         &texture_manager,
                         true,
                         subtitle_placement,
-                        safe_fps,
+                        configured_fps,
                         crate::construct_text_overlay::FpsWarningState::Normal,
                         window_width,
                         window_height,
@@ -318,8 +334,10 @@ impl FrameRenderer {
                         window_width,
                         window_height,
                     ),
-                configured_fps:
+                global_rendered_fps:
                     safe_fps,
+                configured_fps,
+                fps_overrides,
                 fps_warning_state:
                     crate::construct_text_overlay::FpsWarningState::Normal,
                 fps_blink_visible:
@@ -331,7 +349,7 @@ impl FrameRenderer {
                 target_frame_time:
                     Duration::from_secs_f64(
                         1.0
-                            / safe_fps as f64
+                            / configured_fps as f64
                     ),
                 last_frame:
                     Instant::now(),
@@ -671,6 +689,13 @@ impl FrameRenderer {
                     new_shader.program,
                 );
 
+                let new_configured_fps =
+                    resolve_shader_fps(
+                        self.global_rendered_fps,
+                        &self.fps_overrides,
+                        &new_shader.shader_name,
+                    );
+
                 let new_overlay =
                     if self.subtitles {
 
@@ -685,7 +710,7 @@ impl FrameRenderer {
                             &self.texture_manager,
                             true,
                             self.subtitle_placement,
-                            self.configured_fps,
+                            new_configured_fps,
                             crate::construct_text_overlay::FpsWarningState::Normal,
                             width,
                             height,
@@ -719,6 +744,15 @@ impl FrameRenderer {
 
                 self.active_shader =
                     new_shader;
+
+                self.configured_fps =
+                    new_configured_fps;
+
+                self.target_frame_time =
+                    Duration::from_secs_f64(
+                        1.0
+                            / new_configured_fps.max(1) as f64
+                    );
 
                 self.subtitle_overlay =
                     new_overlay;
@@ -821,6 +855,40 @@ impl Drop for FrameRenderer {
             "[RENDER] Frame renderer dropped"
         );
     }
+}
+
+
+fn resolve_shader_fps(
+    global_rendered_fps: u32,
+    fps_overrides:
+        &[
+            crate::load_config::FpsOverride
+        ],
+    shader_name: &str,
+) -> u32 {
+
+    fps_overrides
+        .iter()
+        .find(
+            |fps_override| {
+                fps_override
+                    .shader
+                    .eq_ignore_ascii_case(
+                        shader_name
+                    )
+            }
+        )
+        .map(
+            |fps_override| {
+                fps_override.rendered_fps
+            }
+        )
+        .unwrap_or(
+            global_rendered_fps
+        )
+        .max(
+            1
+        )
 }
 
 
