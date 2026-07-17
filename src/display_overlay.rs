@@ -160,9 +160,127 @@ impl OpenGlOverlay {
             u32,
     ) -> Result<Self, String> {
 
+        Self::new_with_optional_fps(
+            descriptor,
+            None,
+            placement,
+            output_width,
+            output_height,
+        )
+    }
+
+
+    pub fn new_with_fps(
+        descriptor:
+            &crate::construct_text_overlay::OverlayDescriptor,
+
+        rendered_fps:
+            u32,
+
+        placement:
+            crate::parse_subtitle_placement::SubtitlePlacement,
+
+        output_width:
+            u32,
+
+        output_height:
+            u32,
+    ) -> Result<Self, String> {
+
+        Self::new_with_optional_fps(
+            descriptor,
+            Some(rendered_fps),
+            placement,
+            output_width,
+            output_height,
+        )
+    }
+
+
+    pub fn new_with_fps_warning(
+        descriptor:
+            &crate::construct_text_overlay::OverlayDescriptor,
+
+        rendered_fps:
+            u32,
+
+        warning_state:
+            crate::construct_text_overlay::FpsWarningState,
+
+        placement:
+            crate::parse_subtitle_placement::SubtitlePlacement,
+
+        output_width:
+            u32,
+
+        output_height:
+            u32,
+    ) -> Result<Self, String> {
+
+        Self::new_with_optional_fps_warning(
+            descriptor,
+            Some(rendered_fps),
+            warning_state,
+            placement,
+            output_width,
+            output_height,
+        )
+    }
+
+
+    fn new_with_optional_fps(
+        descriptor:
+            &crate::construct_text_overlay::OverlayDescriptor,
+
+        rendered_fps:
+            Option<u32>,
+
+        placement:
+            crate::parse_subtitle_placement::SubtitlePlacement,
+
+        output_width:
+            u32,
+
+        output_height:
+            u32,
+    ) -> Result<Self, String> {
+
+        Self::new_with_optional_fps_warning(
+            descriptor,
+            rendered_fps,
+            crate::construct_text_overlay::FpsWarningState::Normal,
+            placement,
+            output_width,
+            output_height,
+        )
+    }
+
+
+    fn new_with_optional_fps_warning(
+        descriptor:
+            &crate::construct_text_overlay::OverlayDescriptor,
+
+        rendered_fps:
+            Option<u32>,
+
+        warning_state:
+            crate::construct_text_overlay::FpsWarningState,
+
+        placement:
+            crate::parse_subtitle_placement::SubtitlePlacement,
+
+        output_width:
+            u32,
+
+        output_height:
+            u32,
+    ) -> Result<Self, String> {
+
         let overlay =
-            crate::construct_text_overlay::construct(
+            crate::construct_text_overlay::construct_with_fps_warning(
                 descriptor,
+                rendered_fps,
+                warning_state,
                 output_width,
                 output_height,
             )?;

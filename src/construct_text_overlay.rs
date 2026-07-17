@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use sdl2::pixels::{Color, PixelFormatEnum};
+use sdl2::ttf::FontStyle;
 
 const BASELINE_HEIGHT: f32 = 1080.0;
 const MINIMUM_SCALE: f32 = 0.75;
@@ -12,6 +13,17 @@ const BASE_VERTICAL_PADDING: f32 = 9.0;
 const MAXIMUM_WIDTH_RATIO: f32 = 0.80;
 const BACKGROUND_RGBA: [u8; 4] = [0, 0, 0, 150];
 const TEXT_COLOR: Color = Color::RGBA(245, 245, 245, 255);
+const FPS_WARNING_COLOR: Color = Color::RGBA(255, 221, 64, 255);
+const FPS_CRITICAL_COLOR: Color = Color::RGBA(255, 72, 72, 255);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FpsWarningState {
+    #[default]
+    Normal,
+    Warning,
+    Critical,
+    CriticalHidden,
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct OverlayDescriptor {
@@ -32,6 +44,36 @@ pub fn construct(
     output_width: u32,
     output_height: u32,
 ) -> Result<ConstructedTextOverlay, String> {
+    construct_with_fps(
+        descriptor,
+        None,
+        output_width,
+        output_height,
+    )
+}
+
+pub fn construct_with_fps(
+    descriptor: &OverlayDescriptor,
+    rendered_fps: Option<u32>,
+    output_width: u32,
+    output_height: u32,
+) -> Result<ConstructedTextOverlay, String> {
+    construct_with_fps_warning(
+        descriptor,
+        rendered_fps,
+        FpsWarningState::Normal,
+        output_width,
+        output_height,
+    )
+}
+
+pub fn construct_with_fps_warning(
+    descriptor: &OverlayDescriptor,
+    rendered_fps: Option<u32>,
+    warning_state: FpsWarningState,
+    output_width: u32,
+    output_height: u32,
+) -> Result<ConstructedTextOverlay, String> {
     let scale = calculate_scale(output_height);
     let font_size = (BASE_FONT_SIZE * scale).round().clamp(10.0, 72.0) as u16;
     let padding_x = (BASE_HORIZONTAL_PADDING * scale).round().max(8.0) as u32;
@@ -43,32 +85,88 @@ pub fn construct(
     let ttf_context = sdl2::ttf::init()
         .map_err(|error| format!("Unable to initialize SDL_ttf: {}", error))?;
     let font_path = locate_subtitle_font()?;
-    let font = ttf_context
+    let normal_font = ttf_context
         .load_font(&font_path, font_size)
         .map_err(|error| format!(
             "Unable to load subtitle font '{}': {}",
             font_path.display(),
             error
         ))?;
+    let mut critical_font = ttf_context
+        .load_font(&font_path, font_size)
+        .map_err(|error| format!(
+            "Unable to load bold subtitle font '{}': {}",
+            font_path.display(),
+            error
+        ))?;
+    critical_font.set_style(FontStyle::BOLD);
+
+    let fps_font = if matches!(
+        warning_state,
+        FpsWarningState::Critical
+            | FpsWarningState::CriticalHidden
+    ) {
+        &critical_font
+    } else {
+        &normal_font
+    };
 
     let available_text_width = maximum_width
         .saturating_sub(padding_x.saturating_mul(2))
         .max(1);
-    let text = fit_descriptor_text(descriptor, &font, available_text_width)?;
+    let text = fit_descriptor_text(
+        descriptor,
+        rendered_fps,
+        &normal_font,
+        fps_font,
+        available_text_width,
+    )?;
 
     if text.is_empty() {
         return Err("Cannot construct a text overlay without content".to_string());
     }
 
-    let surface = font
-        .render(&text)
-        .blended(TEXT_COLOR)
-        .map_err(|error| format!("Unable to render subtitle text: {}", error))?
-        .convert_format(PixelFormatEnum::RGBA32)
-        .map_err(|error| format!("Unable to convert subtitle text surface: {}", error))?;
+    let (prefix_text, fps_text) = split_fps_segment(&text, rendered_fps);
 
-    let text_width = surface.width();
-    let text_height = surface.height();
+    let prefix_surface = if prefix_text.is_empty() {
+        None
+    } else {
+        Some(
+            normal_font
+                .render(prefix_text)
+                .blended(TEXT_COLOR)
+                .map_err(|error| format!("Unable to render subtitle text: {}", error))?
+                .convert_format(PixelFormatEnum::RGBA32)
+                .map_err(|error| format!("Unable to convert subtitle text surface: {}", error))?,
+        )
+    };
+
+    let fps_color = match warning_state {
+        FpsWarningState::Normal => TEXT_COLOR,
+        FpsWarningState::Warning => FPS_WARNING_COLOR,
+        FpsWarningState::Critical
+        | FpsWarningState::CriticalHidden => FPS_CRITICAL_COLOR,
+    };
+    let fps_surface = if fps_text.is_empty() {
+        None
+    } else {
+        Some(
+            fps_font
+                .render(fps_text)
+                .blended(fps_color)
+                .map_err(|error| format!("Unable to render FPS subtitle text: {}", error))?
+                .convert_format(PixelFormatEnum::RGBA32)
+                .map_err(|error| format!("Unable to convert FPS subtitle surface: {}", error))?,
+        )
+    };
+
+    let prefix_width = prefix_surface.as_ref().map_or(0, |surface| surface.width());
+    let fps_width = fps_surface.as_ref().map_or(0, |surface| surface.width());
+    let text_width = prefix_width.saturating_add(fps_width);
+    let text_height = prefix_surface
+        .as_ref()
+        .map_or(0, |surface| surface.height())
+        .max(fps_surface.as_ref().map_or(0, |surface| surface.height()));
     let height = text_height.saturating_add(padding_y.saturating_mul(2)).max(1);
     let width = text_width
         .saturating_add(padding_x.saturating_mul(2))
@@ -85,23 +183,29 @@ pub fn construct(
     let mut pixels = vec![0_u8; byte_count];
     draw_capsule_background(&mut pixels, width, height);
 
-    let source = surface
-        .without_lock()
-        .ok_or_else(|| "Unable to access rendered subtitle pixels".to_string())?;
-    let source_pitch = usize::try_from(surface.pitch())
-        .map_err(|_| "Subtitle surface pitch cannot be represented as usize".to_string())?;
+    if let Some(surface) = prefix_surface.as_ref() {
+        composite_surface(
+            &mut pixels,
+            width,
+            height,
+            surface,
+            padding_x,
+            padding_y.saturating_add((text_height.saturating_sub(surface.height())) / 2),
+        )?;
+    }
 
-    composite_text(
-        &mut pixels,
-        width,
-        height,
-        source,
-        source_pitch,
-        text_width,
-        text_height,
-        padding_x,
-        padding_y,
-    );
+    if warning_state != FpsWarningState::CriticalHidden {
+        if let Some(surface) = fps_surface.as_ref() {
+            composite_surface(
+                &mut pixels,
+                width,
+                height,
+                surface,
+                padding_x.saturating_add(prefix_width),
+                padding_y.saturating_add((text_height.saturating_sub(surface.height())) / 2),
+            )?;
+        }
+    }
 
     Ok(ConstructedTextOverlay {
         width,
@@ -118,7 +222,10 @@ pub fn edge_margin(output_height: u32) -> u32 {
     (24.0 * calculate_scale(output_height)).round().max(12.0) as u32
 }
 
-fn format_descriptor(descriptor: &OverlayDescriptor) -> String {
+fn format_descriptor(
+    descriptor: &OverlayDescriptor,
+    rendered_fps: Option<u32>,
+) -> String {
     let mut fields = Vec::new();
 
     if let Some(value) = nonempty(descriptor.shader.as_deref()) {
@@ -130,6 +237,9 @@ fn format_descriptor(descriptor: &OverlayDescriptor) -> String {
     if let Some(value) = nonempty(descriptor.palette.as_deref()) {
         fields.push(format!("P: {}", value));
     }
+    if let Some(value) = rendered_fps {
+        fields.push(format!("FPS: {}", value));
+    }
 
     fields.join(" | ")
 }
@@ -140,17 +250,25 @@ fn nonempty(value: Option<&str>) -> Option<&str> {
 
 fn fit_descriptor_text(
     descriptor: &OverlayDescriptor,
-    font: &sdl2::ttf::Font<'_, '_>,
+    rendered_fps: Option<u32>,
+    normal_font: &sdl2::ttf::Font<'_, '_>,
+    fps_font: &sdl2::ttf::Font<'_, '_>,
     maximum_width: u32,
 ) -> Result<String, String> {
-    let full = format_descriptor(descriptor);
+    let full = format_descriptor(descriptor, rendered_fps);
 
-    if text_fits(font, &full, maximum_width)? {
+    if segmented_text_fits(
+        normal_font,
+        fps_font,
+        &full,
+        rendered_fps,
+        maximum_width,
+    )? {
         return Ok(full);
     }
 
     let Some(shader) = descriptor.shader.as_deref() else {
-        return truncate_plain_text(&full, font, maximum_width);
+        return truncate_plain_text(&full, normal_font, maximum_width);
     };
 
     let path = Path::new(shader);
@@ -176,14 +294,61 @@ fn fit_descriptor_text(
             texture: descriptor.texture.clone(),
             palette: descriptor.palette.clone(),
         };
-        let candidate_text = format_descriptor(&candidate);
+        let candidate_text = format_descriptor(&candidate, rendered_fps);
 
-        if text_fits(font, &candidate_text, maximum_width)? {
+        if segmented_text_fits(
+            normal_font,
+            fps_font,
+            &candidate_text,
+            rendered_fps,
+            maximum_width,
+        )? {
             return Ok(candidate_text);
         }
     }
 
-    truncate_plain_text(&full, font, maximum_width)
+    truncate_plain_text(&full, normal_font, maximum_width)
+}
+
+fn split_fps_segment(text: &str, rendered_fps: Option<u32>) -> (&str, &str) {
+    let Some(rendered_fps) = rendered_fps else {
+        return (text, "");
+    };
+
+    let suffix = format!("FPS: {}", rendered_fps);
+    let Some(prefix) = text.strip_suffix(&suffix) else {
+        return (text, "");
+    };
+
+    (prefix, &text[prefix.len()..])
+}
+
+fn segmented_text_fits(
+    normal_font: &sdl2::ttf::Font<'_, '_>,
+    fps_font: &sdl2::ttf::Font<'_, '_>,
+    text: &str,
+    rendered_fps: Option<u32>,
+    maximum_width: u32,
+) -> Result<bool, String> {
+    let (prefix, fps) = split_fps_segment(text, rendered_fps);
+    let prefix_width = if prefix.is_empty() {
+        0
+    } else {
+        normal_font
+            .size_of(prefix)
+            .map_err(|error| format!("Unable to measure subtitle text: {}", error))?
+            .0
+    };
+    let fps_width = if fps.is_empty() {
+        0
+    } else {
+        fps_font
+            .size_of(fps)
+            .map_err(|error| format!("Unable to measure FPS subtitle text: {}", error))?
+            .0
+    };
+
+    Ok(prefix_width.saturating_add(fps_width) <= maximum_width)
 }
 
 fn truncate_plain_text(
@@ -293,6 +458,35 @@ fn distance_squared(x1: f32, y1: f32, x2: f32, y2: f32) -> f32 {
     let dx = x1 - x2;
     let dy = y1 - y2;
     dx * dx + dy * dy
+}
+
+fn composite_surface(
+    destination: &mut [u8],
+    destination_width: u32,
+    destination_height: u32,
+    surface: &sdl2::surface::Surface<'_>,
+    offset_x: u32,
+    offset_y: u32,
+) -> Result<(), String> {
+    let source = surface
+        .without_lock()
+        .ok_or_else(|| "Unable to access rendered subtitle pixels".to_string())?;
+    let source_pitch = usize::try_from(surface.pitch())
+        .map_err(|_| "Subtitle surface pitch cannot be represented as usize".to_string())?;
+
+    composite_text(
+        destination,
+        destination_width,
+        destination_height,
+        source,
+        source_pitch,
+        surface.width(),
+        surface.height(),
+        offset_x,
+        offset_y,
+    );
+
+    Ok(())
 }
 
 fn composite_text(

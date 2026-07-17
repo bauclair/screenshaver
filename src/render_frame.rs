@@ -1,8 +1,96 @@
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use sdl2::event::Event;
 use sdl2::video::{GLContext, GLProfile, Window};
+
+
+const FPS_AVERAGE_WINDOW: Duration =
+    Duration::from_secs(5);
+
+const FPS_CRITICAL_BLINK_INTERVAL: Duration =
+    Duration::from_millis(500);
+
+
+struct FrameTimeWindow {
+    samples: VecDeque<(Instant, Duration)>,
+    total: Duration,
+}
+
+
+impl FrameTimeWindow {
+    fn new() -> Self {
+        Self {
+            samples: VecDeque::new(),
+            total: Duration::ZERO,
+        }
+    }
+
+
+    fn clear(
+        &mut self,
+    ) {
+        self.samples.clear();
+        self.total = Duration::ZERO;
+    }
+
+
+    fn record(
+        &mut self,
+        elapsed: Duration,
+        configured_fps: u32,
+    ) -> crate::construct_text_overlay::FpsWarningState {
+        let now = Instant::now();
+
+        self.samples.push_back(
+            (now, elapsed)
+        );
+
+        self.total += elapsed;
+
+        while let Some((timestamp, duration)) =
+            self.samples.front().copied()
+        {
+            if now.duration_since(timestamp)
+                <= FPS_AVERAGE_WINDOW
+            {
+                break;
+            }
+
+            self.samples.pop_front();
+            self.total = self.total.saturating_sub(
+                duration
+            );
+        }
+
+        let sample_count =
+            self.samples.len() as u32;
+
+        if sample_count == 0 {
+            return crate::construct_text_overlay::FpsWarningState::Normal;
+        }
+
+        let average_seconds =
+            self.total.as_secs_f64()
+                / sample_count as f64;
+
+        let ideal_seconds =
+            1.0 / configured_fps.max(1) as f64;
+
+        if average_seconds
+            > ideal_seconds * 2.0
+        {
+            crate::construct_text_overlay::FpsWarningState::Critical
+        } else if average_seconds
+            > ideal_seconds * 1.5
+        {
+            crate::construct_text_overlay::FpsWarningState::Warning
+        } else {
+            crate::construct_text_overlay::FpsWarningState::Normal
+        }
+    }
+}
 
 
 #[derive(Debug)]
@@ -37,6 +125,12 @@ pub struct FrameRenderer {
         u32,
         u32,
     ),
+    configured_fps: u32,
+    fps_warning_state:
+        crate::construct_text_overlay::FpsWarningState,
+    fps_blink_visible: bool,
+    last_fps_blink: Instant,
+    frame_times: FrameTimeWindow,
     target_frame_time: Duration,
     last_frame: Instant,
 }
@@ -159,6 +253,13 @@ impl FrameRenderer {
             active_shader.program,
         );
 
+        let safe_fps =
+            if fps == 0 {
+                crate::define_constants::DEFAULT_RENDER_FPS
+            } else {
+                fps
+            };
+
         let subtitle_overlay =
             if subtitles {
 
@@ -166,7 +267,10 @@ impl FrameRenderer {
                     build_subtitle_overlay(
                         &active_shader,
                         &texture_manager,
+                        true,
                         subtitle_placement,
+                        safe_fps,
+                        crate::construct_text_overlay::FpsWarningState::Normal,
                         window_width,
                         window_height,
                     )?
@@ -191,13 +295,6 @@ impl FrameRenderer {
             );
         }
 
-        let safe_fps =
-            if fps == 0 {
-                crate::define_constants::DEFAULT_RENDER_FPS
-            } else {
-                fps
-            };
-
         Ok(
             Self {
                 window,
@@ -221,6 +318,16 @@ impl FrameRenderer {
                         window_width,
                         window_height,
                     ),
+                configured_fps:
+                    safe_fps,
+                fps_warning_state:
+                    crate::construct_text_overlay::FpsWarningState::Normal,
+                fps_blink_visible:
+                    true,
+                last_fps_blink:
+                    Instant::now(),
+                frame_times:
+                    FrameTimeWindow::new(),
                 target_frame_time:
                     Duration::from_secs_f64(
                         1.0
@@ -247,6 +354,9 @@ impl FrameRenderer {
             height,
         ) =
             self.window.size();
+
+        let shader_render_start =
+            Instant::now();
 
         unsafe {
             gl::Viewport(
@@ -329,9 +439,64 @@ impl FrameRenderer {
                 0,
                 3,
             );
+
+            gl::Finish();
         }
 
-        if self.subtitles {
+        let warning_state =
+            self.frame_times.record(
+                shader_render_start.elapsed(),
+                self.configured_fps,
+            );
+
+        let warning_changed =
+            warning_state
+                != self.fps_warning_state;
+
+        if warning_changed {
+            self.fps_warning_state =
+                warning_state;
+            self.fps_blink_visible =
+                true;
+            self.last_fps_blink =
+                Instant::now();
+        }
+
+        let mut blink_changed =
+            false;
+
+        if self.fps_warning_state
+            == crate::construct_text_overlay::FpsWarningState::Critical
+            && self.last_fps_blink.elapsed()
+                >= FPS_CRITICAL_BLINK_INTERVAL
+        {
+            self.fps_blink_visible =
+                !self.fps_blink_visible;
+            self.last_fps_blink =
+                Instant::now();
+            blink_changed =
+                true;
+        }
+
+        let overlay_warning_state =
+            if self.fps_warning_state
+                == crate::construct_text_overlay::FpsWarningState::Critical
+                && !self.fps_blink_visible
+            {
+                crate::construct_text_overlay::FpsWarningState::CriticalHidden
+            } else {
+                self.fps_warning_state
+            };
+
+        let warning_overlay_active =
+            self.fps_warning_state
+                != crate::construct_text_overlay::FpsWarningState::Normal;
+
+        let overlay_should_display =
+            self.subtitles
+                || warning_overlay_active;
+
+        if overlay_should_display {
 
             let current_size =
                 (
@@ -341,11 +506,17 @@ impl FrameRenderer {
 
             if current_size
                 != self.overlay_output_size
+                || warning_changed
+                || blink_changed
+                || self.subtitle_overlay.is_none()
             {
                 match build_subtitle_overlay(
                     &self.active_shader,
                     &self.texture_manager,
+                    self.subtitles,
                     self.subtitle_placement,
+                    self.configured_fps,
+                    overlay_warning_state,
                     width,
                     height,
                 ) {
@@ -383,6 +554,11 @@ impl FrameRenderer {
                     height,
                 );
             }
+
+        } else {
+
+            self.subtitle_overlay =
+                None;
         }
 
         self.window.gl_swap_window();
@@ -507,7 +683,10 @@ impl FrameRenderer {
                         match build_subtitle_overlay(
                             &new_shader,
                             &self.texture_manager,
+                            true,
                             self.subtitle_placement,
+                            self.configured_fps,
+                            crate::construct_text_overlay::FpsWarningState::Normal,
                             width,
                             height,
                         ) {
@@ -546,6 +725,11 @@ impl FrameRenderer {
 
                 self.overlay_output_size =
                     self.window.size();
+
+                self.fps_warning_state =
+                    crate::construct_text_overlay::FpsWarningState::Normal;
+
+                self.frame_times.clear();
 
                 unsafe {
                     if old_program
@@ -644,8 +828,13 @@ fn build_subtitle_overlay(
     shader: &ActiveShader,
     texture_manager:
         &crate::manage_textures::TextureManager,
+    include_descriptor:
+        bool,
     placement:
         crate::parse_subtitle_placement::SubtitlePlacement,
+    configured_fps: u32,
+    warning_state:
+        crate::construct_text_overlay::FpsWarningState,
     output_width: u32,
     output_height: u32,
 ) -> Result<
@@ -682,18 +871,27 @@ fn build_subtitle_overlay(
             );
 
     let descriptor =
-        crate::construct_text_overlay::OverlayDescriptor {
-            shader:
-                Some(
-                    shader.shader_name
-                        .clone()
-                ),
-            texture,
-            palette,
+        if include_descriptor {
+
+            crate::construct_text_overlay::OverlayDescriptor {
+                shader:
+                    Some(
+                        shader.shader_name
+                            .clone()
+                    ),
+                texture,
+                palette,
+            }
+
+        } else {
+
+            crate::construct_text_overlay::OverlayDescriptor::default()
         };
 
-    crate::display_overlay::OpenGlOverlay::new(
+    crate::display_overlay::OpenGlOverlay::new_with_fps_warning(
         &descriptor,
+        configured_fps,
+        warning_state,
         placement,
         output_width,
         output_height,
