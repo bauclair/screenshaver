@@ -1,6 +1,6 @@
 [package]
 name = "screenshaver"
-version = "0.2.9"
+version = "0.3.0"
 edition = "2024"
 
 [dependencies]
@@ -17,7 +17,12 @@ zbus = "5"
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["staging", "client"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-x11 = "2.21"
+
+x11 = {
+    version = "2.21",
+    features = ["xlib", "xss"]
+}
+
 fs2 = "0.4"
 image = { version = "0.25", default-features = false, features = ["png"] }
 regex = "1"

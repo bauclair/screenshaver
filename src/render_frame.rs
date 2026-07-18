@@ -1,10 +1,14 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use sdl2::event::Event;
 use sdl2::video::{GLContext, GLProfile, Window};
 
+
+const INPUT_STARTUP_GRACE: Duration = Duration::from_millis(750);
+const MOUSE_MOTION_EXIT_THRESHOLD: i32 = 4;
 
 const FPS_AVERAGE_WINDOW: Duration =
     Duration::from_secs(5);
@@ -138,6 +142,7 @@ pub struct FrameRenderer {
     frame_times: FrameTimeWindow,
     target_frame_time: Duration,
     last_frame: Instant,
+    renderer_started: Instant,
 }
 
 
@@ -353,15 +358,42 @@ impl FrameRenderer {
                     ),
                 last_frame:
                     Instant::now(),
+                renderer_started:
+                    Instant::now(),
             }
         )
+    }
+
+
+    pub fn run(
+        &mut self,
+        running: &AtomicBool,
+    ) {
+        log(
+            "[RENDER] Entering renderer-owned event loop"
+        );
+
+        while running.load(Ordering::SeqCst) {
+            if self.pump_events() {
+                log(
+                    "[RENDER] User input requested renderer exit"
+                );
+
+                break;
+            }
+
+            self.render_frame();
+        }
+
+        log(
+            "[RENDER] Leaving renderer-owned event loop"
+        );
     }
 
 
     pub fn render_frame(
         &mut self,
     ) {
-        self.pump_events();
         self.maybe_switch_shader();
 
         let program =
@@ -586,7 +618,11 @@ impl FrameRenderer {
 
     fn pump_events(
         &mut self,
-    ) {
+    ) -> bool {
+        let mouse_motion_enabled =
+            self.renderer_started.elapsed()
+                >= INPUT_STARTUP_GRACE;
+
         for event in
             self.event_pump.poll_iter()
         {
@@ -597,6 +633,8 @@ impl FrameRenderer {
                     log(
                         "[RENDER] SDL quit event received"
                     );
+
+                    return true;
                 }
 
                 Event::Window {
@@ -614,31 +652,66 @@ impl FrameRenderer {
                     ..
                 } => {
                     log(
-                        "[RENDER] SDL keydown event observed"
+                        "[RENDER] SDL keydown event: exiting"
                     );
-                }
 
-                Event::MouseMotion {
-                    ..
-                } => {
-                    log(
-                        "[RENDER] SDL mouse motion event observed"
-                    );
+                    return true;
                 }
 
                 Event::MouseButtonDown {
                     ..
                 } => {
                     log(
-                        "[RENDER] SDL mouse button event observed"
+                        "[RENDER] SDL mouse button event: exiting"
                     );
+
+                    return true;
+                }
+
+                Event::MouseWheel {
+                    ..
+                } => {
+                    log(
+                        "[RENDER] SDL mouse wheel event: exiting"
+                    );
+
+                    return true;
+                }
+
+                Event::MouseMotion {
+                    xrel,
+                    yrel,
+                    ..
+                } => {
+                    if !mouse_motion_enabled {
+                        log(
+                            "[RENDER] Ignoring startup mouse motion"
+                        );
+
+                        continue;
+                    }
+
+                    if xrel.abs()
+                        >= MOUSE_MOTION_EXIT_THRESHOLD
+                        || yrel.abs()
+                            >= MOUSE_MOTION_EXIT_THRESHOLD
+                    {
+                        log(
+                            &format!(
+                                "[RENDER] SDL mouse motion event: exiting (xrel={xrel}, yrel={yrel})"
+                            )
+                        );
+
+                        return true;
+                    }
                 }
 
                 _ => {}
             }
         }
-    }
 
+        false
+    }
 
     fn maybe_switch_shader(
         &mut self,

@@ -818,61 +818,25 @@ crate::parse_arguments::Command::ListPalettes => {
                 }
 
 
-                while running.load(Ordering::SeqCst) {
-
-                    renderer.render_frame();
-
-
-                    let state =
-                        match session.poll_state() {
-
-                            Ok(state) => state,
-
-                            Err(error) => {
-
-                                eprintln!(
-                                    "[MAIN] SESSION QUERY ERROR: {}",
-                                    error
-                                );
+                renderer.run(
+                    running.as_ref()
+                );
 
 
-                                if cfg.debug_log {
+                if running.load(Ordering::SeqCst) {
 
-                                    crate::logger::log(
-                                        &logfile,
-                                        &format!(
-                                            "[MAIN] SESSION QUERY ERROR: {}",
-                                            error
-                                        ),
-                                    );
-                                }
+                    if cfg.debug_log {
 
-
-                                break;
-                            }
-                        };
-
-
-                    if state
-                        == crate::query_session::SessionState::Active
-                    {
-
-                        if cfg.debug_log {
-
-                            crate::logger::log(
-                                &logfile,
-                                "[SESSION] Session active: disengaging renderer",
-                            );
-                        }
-
-
-                        println!(
-                            "[MAIN] Session active: disengaging renderer"
+                        crate::logger::log(
+                            &logfile,
+                            "[SESSION] User input: disengaging renderer",
                         );
-
-
-                        break;
                     }
+
+
+                    println!(
+                        "[MAIN] User input: disengaging renderer"
+                    );
                 }
 
 
