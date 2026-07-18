@@ -1,9 +1,8 @@
-use std::fs;
-use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::fs::File;
 
 fn timestamp() -> String {
     let now = SystemTime::now();
@@ -28,52 +27,7 @@ fn timestamp() -> String {
     )
 }
 
-fn ensure_parent_directory(logfile: &Path) -> bool {
-    if let Some(parent) = logfile.parent() {
-        if let Err(err) = fs::create_dir_all(parent) {
-            eprintln!(
-                "[LOGGER] Unable to create directory {} ({})",
-                parent.display(),
-                err
-            );
-            return false;
-        }
-    }
-
-    true
-}
-
-///
-/// Create the log file if it does not already exist.
-///
-/// Existing contents are preserved.
-///
-pub fn ensure_log_exists(logfile: &Path) {
-    if !ensure_parent_directory(logfile) {
-        return;
-    }
-
-    if !logfile.exists() {
-        if let Err(err) = File::create(logfile) {
-            eprintln!(
-                "[LOGGER] Unable to create {} ({})",
-                logfile.display(),
-                err
-            );
-        }
-    }
-}
-
-///
-/// Start a new logging session.
-///
-/// Any existing log is discarded.
-///
-pub fn reset_log(logfile: &Path) {
-    if !ensure_parent_directory(logfile) {
-        return;
-    }
-
+pub fn create_log(logfile: &Path) {
     if let Err(err) = File::create(logfile) {
         eprintln!(
             "[LOGGER] Unable to create {} ({})",
@@ -84,9 +38,6 @@ pub fn reset_log(logfile: &Path) {
 }
 
 pub fn log(logfile: &Path, message: &str) {
-    if !ensure_parent_directory(logfile) {
-        return;
-    }
 
     let mut file = match OpenOptions::new()
         .create(true)
@@ -97,7 +48,7 @@ pub fn log(logfile: &Path, message: &str) {
 
         Err(err) => {
             eprintln!(
-                "[LOGGER] Unable to open {} ({})",
+                "LOGGER: Unable to open {} ({})",
                 logfile.display(),
                 err
             );
@@ -108,11 +59,11 @@ pub fn log(logfile: &Path, message: &str) {
     let line = format!("{} {}\n", timestamp(), message);
 
     if let Err(err) = file.write_all(line.as_bytes()) {
-        eprintln!("[LOGGER] Write failed ({})", err);
+        eprintln!("LOGGER: Write failed ({})", err);
         return;
     }
 
     if let Err(err) = file.flush() {
-        eprintln!("[LOGGER] Flush failed ({})", err);
+        eprintln!("LOGGER: Flush failed ({})", err);
     }
 }

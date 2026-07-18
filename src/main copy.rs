@@ -294,50 +294,6 @@ crate::parse_arguments::Command::ListPalettes => {
 
 }
 
-     let identity =
-        crate::startup_checks::current_user_identity();
-
-    if identity.is_root() {
-
-        let security_logfile =
-            crate::locate_paths::runtime_log_path();
-
-
-        let security_message =
-            format!(
-                "[SECURITY] Refusing root execution: \
-                 real_uid={} effective_uid={}",
-                identity.real_uid,
-                identity.effective_uid,
-            );
-
-
-        eprintln!(
-            "{}",
-            security_message
-        );
-
-
-        crate::logger::ensure_log_exists(
-            &security_logfile
-        );
-
-
-        crate::logger::log(
-            &security_logfile,
-            &security_message,
-        );
-
-
-        crate::logger::log(
-            &security_logfile,
-            "[SECURITY] Screenshaver terminated after refusing root execution.",
-        );
-
-
-        return;
-    }
-
     let _singleton =
         match crate::singleton::acquire() {
 
@@ -436,7 +392,7 @@ crate::parse_arguments::Command::ListPalettes => {
         crate::locate_paths::runtime_log_path();
 
 
-    crate::logger::reset_log(
+    crate::logger::create_log(
         &logfile
     );
 
@@ -756,6 +712,7 @@ crate::parse_arguments::Command::ListPalettes => {
             }
         }
     }
+
 
     let running =
         Arc::new(

@@ -264,7 +264,7 @@ pub fn run_paths(
         crate::locate_paths::runtime_log_path();
 
 
-    crate::logger::reset_log(
+    crate::logger::create_log(
         &logfile
     );
 
