@@ -1,18 +1,8 @@
-Screenshaver Icon Set
-=====================
+Screenshaver replacement icon set
 
-Canonical source:
-  master/screenshaver.svg
+Copy the contents of assets/icons/hicolor over the project's existing
+assets/icons/hicolor tree. This replaces the application, desktop-entry,
+and tray/status icons with the new rainbow-and-black-T design.
 
-Individual PNG exports:
-  png/screenshaver-<size>x<size>.png
-
-Linux hicolor hierarchy:
-  hicolor/<size>x<size>/apps/screenshaver.png
-  hicolor/scalable/apps/screenshaver.svg
-
-Desktop entry:
-  Icon=screenshaver
-
-Suggested Nix install:
-  cp -r assets/icons/hicolor $out/share/icons/
+Do not replace or modify the splash-screen graphic. No splash-screen file is
+included in this package.

@@ -44,6 +44,7 @@ mod palettes;
 mod display_texture;
 mod construct_text_overlay;
 mod display_overlay;
+mod tray_icon;
 
 use std::sync::Arc;
 use std::sync::atomic::{
@@ -321,6 +322,38 @@ crate::parse_arguments::Command::ListPalettes => {
             }
         };
 
+    let (
+        tray_command_sender,
+        tray_command_receiver,
+    ) =
+        std::sync::mpsc::channel::<
+            crate::tray_icon::TrayCommand
+        >();
+
+    let _tray_handle =
+        match crate::tray_icon::start(
+            tray_command_sender
+        ) {
+
+            Ok(handle) => {
+
+                println!(
+                    "[TRAY] System tray icon registered successfully."
+                );
+
+                Some(handle)
+            }
+
+            Err(error) => {
+
+                eprintln!(
+                    "[TRAY] System tray icon unavailable: {:?}",
+                    error
+                );
+
+                None
+            }
+        };
 
     println!(
         "[MAIN] Loading configuration..."
@@ -718,7 +751,75 @@ crate::parse_arguments::Command::ListPalettes => {
     );
 
 
+    let mut restart_requested = false;
+
+
     while running.load(Ordering::SeqCst) {
+
+        match tray_command_receiver.try_recv() {
+
+            Ok(crate::tray_icon::TrayCommand::Stop) => {
+
+                println!(
+                    "[TRAY] Stop requested."
+                );
+
+
+                if cfg.debug_log {
+
+                    crate::logger::log(
+                        &logfile,
+                        "[TRAY] Stop requested",
+                    );
+                }
+
+
+                running.store(
+                    false,
+                    Ordering::SeqCst,
+                );
+
+                break;
+            }
+
+
+            Ok(crate::tray_icon::TrayCommand::Restart) => {
+
+                println!(
+                    "[TRAY] Restart requested."
+                );
+
+
+                if cfg.debug_log {
+
+                    crate::logger::log(
+                        &logfile,
+                        "[TRAY] Restart requested",
+                    );
+                }
+
+
+                restart_requested = true;
+
+                running.store(
+                    false,
+                    Ordering::SeqCst,
+                );
+
+                break;
+            }
+
+
+            Err(std::sync::mpsc::TryRecvError::Empty) => {}
+
+
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+
+                eprintln!(
+                    "[TRAY] Command channel disconnected."
+                );
+            }
+        }
 
         let session_state =
             match session.poll_state() {
@@ -921,5 +1022,51 @@ crate::parse_arguments::Command::ListPalettes => {
     println!(
         "[MAIN] Pipeline complete."
     );
+
+
+    if restart_requested {
+
+        drop(_tray_handle);
+        drop(_singleton);
+
+
+        match std::env::current_exe() {
+
+            Ok(executable) => {
+
+                match std::process::Command::new(
+                    executable
+                )
+                .spawn()
+                {
+
+                    Ok(_) => {
+
+                        println!(
+                            "[TRAY] Screenshaver restart launched."
+                        );
+                    }
+
+
+                    Err(error) => {
+
+                        eprintln!(
+                            "[TRAY] Unable to restart Screenshaver: {}",
+                            error
+                        );
+                    }
+                }
+            }
+
+
+            Err(error) => {
+
+                eprintln!(
+                    "[TRAY] Unable to locate Screenshaver executable: {}",
+                    error
+                );
+            }
+        }
+    }
 }
 
