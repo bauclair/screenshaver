@@ -72,7 +72,47 @@ let command =
 
 match command {
 
-    crate::parse_arguments::Command::Run => {}
+    crate::parse_arguments::Command::Run
+    | crate::parse_arguments::Command::Start => {}
+
+
+    crate::parse_arguments::Command::Stop => {
+
+        match crate::singleton::stop() {
+
+            Ok(
+                crate::singleton::StopOutcome::StopRequested {
+                    pid,
+                }
+            ) => {
+
+                println!(
+                    "Screenshaver stop requested for process {}.",
+                    pid
+                );
+            }
+
+            Ok(
+                crate::singleton::StopOutcome::NotRunning
+            ) => {
+
+                println!(
+                    "Screenshaver is not running."
+                );
+            }
+
+            Err(error) => {
+
+                eprintln!(
+                    "[MAIN] STOP ERROR: {}",
+                    error
+                );
+            }
+        }
+
+
+        return;
+    }
 
 
     crate::parse_arguments::Command::Help => {

@@ -9,7 +9,7 @@
 
 rustPlatform.buildRustPackage rec {
   pname = "screenshaver";
-  version = "0.3.0";
+  version = "0.3.1";
 
   src = ./.;
 
@@ -46,7 +46,7 @@ rustPlatform.buildRustPackage rec {
   '';
 
   meta = with lib; {
-    description = "ShaderToy-style GLSL screensaver";
+    description = "Feature-packed GLSL screensaver and viewer";
     license = licenses.gpl3Plus;
     platforms = platforms.linux;
     # homepage = "https://github.com/bauclair/screenshaver";  (later)

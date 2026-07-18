@@ -2,6 +2,10 @@
 pub enum Command {
     Run,
 
+    Start,
+
+    Stop,
+
     Help,
 
     Version,
@@ -111,6 +115,34 @@ pub fn parse() -> Result<Command, String> {
 
 
     match args[0].as_str() {
+
+        "--start" => {
+
+            require_no_extra_arguments(
+                &args,
+                "--start",
+            )?;
+
+
+            Ok(
+                Command::Start
+            )
+        }
+
+
+        "--stop" => {
+
+            require_no_extra_arguments(
+                &args,
+                "--stop",
+            )?;
+
+
+            Ok(
+                Command::Stop
+            )
+        }
+
 
         "-h" | "--help" => {
 
@@ -850,6 +882,12 @@ pub fn print_help() {
          \n\
          Available options:\n\
          \n\
+             --start\n\
+                 Start Screenshaver normally. Equivalent to launching without an option.\n\
+         \n\
+             --stop\n\
+                 Stop the running Screenshaver program, regardless of its current state.\n\
+         \n\
              -h, --help\n\
                  Display this help information.\n\
          \n\
@@ -894,6 +932,8 @@ pub fn print_help() {
              brick\n\
          \n\
          Examples:\n\
+             screenshaver --start\n\
+             screenshaver --stop\n\
              screenshaver --preview-texture --family julia\n\
              screenshaver --preview-texture --family marble --palette sandstone\n\
              screenshaver --preview-shader \"Heartfelt.glsl\"\n\
