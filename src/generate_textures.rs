@@ -53,12 +53,14 @@ pub enum TextureFamily {
     Noise,
 
     Bricks,
+
+    Hexagons,
 }
 
 
 impl TextureFamily {
 
-    pub const ALL: [TextureFamily; 10] = [
+    pub const ALL: [TextureFamily; 11] = [
 
         TextureFamily::Julia,
 
@@ -79,6 +81,8 @@ impl TextureFamily {
         TextureFamily::Noise,
 
         TextureFamily::Bricks,
+
+        TextureFamily::Hexagons,
     ];
 
 
@@ -126,6 +130,10 @@ impl TextureFamily {
 
             TextureFamily::Bricks => {
                 "bricks"
+            }
+
+            TextureFamily::Hexagons => {
+                "hexagons"
             }
 
         }
@@ -229,6 +237,12 @@ impl FromStr for TextureFamily {
             "bricks" => {
                 Ok(
                     TextureFamily::Bricks
+                )
+            }
+
+            "hexagons" => {
+                Ok(
+                    TextureFamily::Hexagons
                 )
             }
 
@@ -481,6 +495,14 @@ pub fn generate(
             crate::generate_bricks::generate(
                 palette,
                 seed,
+            )
+        }
+
+        TextureFamily::Hexagons => {
+            crate::generate_hexagons::generate(
+                palette,
+                seed,
+                144,
             )
         }
 

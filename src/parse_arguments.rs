@@ -35,7 +35,7 @@ pub enum Command {
 }
 
 
-const VALID_TEXTURE_FAMILIES: [&str; 11] = [
+const VALID_TEXTURE_FAMILIES: [&str; 12] = [
     "random",
     "julia",
     "marble",
@@ -47,10 +47,11 @@ const VALID_TEXTURE_FAMILIES: [&str; 11] = [
     "jigsaw",
     "noise",
     "bricks",
+    "hexagons",
 ];
 
 
-const VALID_PREVIEW_TEXTURE_FAMILIES: [&str; 10] = [
+const VALID_PREVIEW_TEXTURE_FAMILIES: [&str; 11] = [
     "julia",
     "marble",
     "clouds",
@@ -61,6 +62,7 @@ const VALID_PREVIEW_TEXTURE_FAMILIES: [&str; 10] = [
     "jigsaw",
     "noise",
     "bricks",
+    "hexagons",
 ];
 
 
@@ -922,6 +924,7 @@ pub fn print_help() {
              jigsaw\n\
              noise\n\
              bricks\n\
+             hexagons\n\
          \n\
          Texture palettes:\n\
              slate\n\

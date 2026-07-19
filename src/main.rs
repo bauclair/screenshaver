@@ -31,6 +31,7 @@ mod reject_shader;
 mod generate_bricks;
 mod generate_cellular;
 mod generate_clouds;
+mod generate_hexagons;
 mod generate_jigsaw;
 mod generate_marble;
 mod generate_mesh;
@@ -253,6 +254,10 @@ crate::parse_arguments::Command::ListTextures => {
 
     println!(
         "    bricks"
+    );
+
+    println!(
+        "    hexagons"
     ); 
 
     return;

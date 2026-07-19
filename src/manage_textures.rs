@@ -34,7 +34,7 @@ use crate::preprocess_shader::ShaderChannelUsage;
 /// Texture families whose generators are currently implemented.
 ///
 /// Julia is intentionally excluded until its generator is ready.
-const RANDOM_TEXTURE_FAMILIES: [TextureFamily; 9] = [
+const RANDOM_TEXTURE_FAMILIES: [TextureFamily; 10] = [
 
     TextureFamily::Marble,
 
@@ -53,6 +53,8 @@ const RANDOM_TEXTURE_FAMILIES: [TextureFamily; 9] = [
     TextureFamily::Noise,
 
     TextureFamily::Bricks,
+
+    TextureFamily::Hexagons,
 ];
 
 
