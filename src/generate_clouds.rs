@@ -20,8 +20,41 @@ use crate::palettes::Palette;
 const OCTAVES: u32 =
     6;
 
-const BASE_FREQUENCY: f32 =
-    3.0;
+#[derive(Clone, Copy, Debug)]
+struct CloudLayout {
+    base_frequency: f32,
+}
+
+impl CloudLayout {
+    fn new(
+        requested_primitive_count: usize,
+    ) -> Self {
+
+        let primitive_count =
+            requested_primitive_count
+                .max(
+                    1
+                );
+
+
+        // The base octave contains approximately frequency² lattice
+        // cells across the square texture. Higher octaves add detail
+        // without changing the requested large-scale cloud count.
+        let base_frequency =
+            (
+                primitive_count as f32
+            )
+            .sqrt()
+            .max(
+                1.0
+            );
+
+
+        Self {
+            base_frequency,
+        }
+    }
+}
 
 const FREQUENCY_MULTIPLIER: f32 =
     2.0;
@@ -43,7 +76,14 @@ const BRIGHTNESS: f32 =
 pub fn generate(
     palette: Palette,
     seed: u64,
+    requested_primitive_count: usize,
 ) -> Result<GeneratedTexture, String> {
+
+    let layout =
+        CloudLayout::new(
+            requested_primitive_count
+        );
+
 
     let pixel_count =
         TEXTURE_SIZE as usize
@@ -95,6 +135,7 @@ pub fn generate(
                     normalized_x,
                     normalized_y,
                     seed,
+                    &layout,
                 );
 
 
@@ -130,10 +171,11 @@ fn cloud_value(
     x: f32,
     y: f32,
     seed: u64,
+    layout: &CloudLayout,
 ) -> f32 {
 
     let mut frequency =
-        BASE_FREQUENCY;
+        layout.base_frequency;
 
 
     let mut amplitude =
@@ -488,7 +530,70 @@ mod tests {
 
 
     #[test]
+    fn layout_uses_requested_primitive_count() {
+
+        let layout =
+            CloudLayout::new(
+                256
+            );
+
+
+        assert_eq!(
+            layout.base_frequency,
+            16.0
+        );
+    }
+
+
+    #[test]
+    fn different_primitive_counts_change_output() {
+
+        let sparse_layout =
+            CloudLayout::new(
+                16
+            );
+
+
+        let dense_layout =
+            CloudLayout::new(
+                256
+            );
+
+
+        let sparse =
+            cloud_value(
+                0.25,
+                0.75,
+                999,
+                &sparse_layout,
+            );
+
+
+        let dense =
+            cloud_value(
+                0.25,
+                0.75,
+                999,
+                &dense_layout,
+            );
+
+
+        assert_ne!(
+            sparse,
+            dense
+        );
+    }
+
+
+    #[test]
     fn cloud_value_is_normalized() {
+
+        let layout =
+            CloudLayout::new(
+                144
+            );
+
+
 
         for y in
             0..16
@@ -503,6 +608,7 @@ mod tests {
                         y as f32
                             / 16.0,
                         12345,
+                        &layout,
                     );
 
 
@@ -522,11 +628,19 @@ mod tests {
     #[test]
     fn same_seed_is_deterministic() {
 
+        let layout =
+            CloudLayout::new(
+                144
+            );
+
+
+
         let first =
             cloud_value(
                 0.25,
                 0.75,
                 999,
+                &layout,
             );
 
 
@@ -535,6 +649,7 @@ mod tests {
                 0.25,
                 0.75,
                 999,
+                &layout,
             );
 
 
@@ -548,11 +663,19 @@ mod tests {
     #[test]
     fn different_seeds_change_output() {
 
+        let layout =
+            CloudLayout::new(
+                144
+            );
+
+
+
         let first =
             cloud_value(
                 0.25,
                 0.75,
                 1,
+                &layout,
             );
 
 
@@ -561,6 +684,7 @@ mod tests {
                 0.25,
                 0.75,
                 2,
+                &layout,
             );
 
 
@@ -570,3 +694,4 @@ mod tests {
         );
     }
 }
+

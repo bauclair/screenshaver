@@ -156,7 +156,7 @@ pub struct TextureOverride {
         String,
 
     pub shader_texture:
-        crate::generate_textures::TextureFamily,
+        crate::parse_texture_specification::TextureSpecification,
 
     pub shader_palette:
         crate::palettes::Palette,
@@ -185,7 +185,7 @@ pub struct TextureSelectionPolicy {
 
     pub global_texture:
         Option<
-            crate::generate_textures::TextureFamily
+            crate::parse_texture_specification::TextureSpecification
         >,
 
     pub global_palette:
@@ -464,13 +464,18 @@ pub fn load_config(
                 config
                     .texture_policy
                     .global_texture
+                    .as_ref()
                     .map(
-                        |family| {
-                            family.name()
+                        |texture| {
+                            format_texture_specification(
+                                texture
+                            )
                         }
                     )
-                    .unwrap_or(
-                        "random"
+                    .unwrap_or_else(
+                        || {
+                            "random".to_string()
+                        }
                     ),
             ),
 
@@ -561,14 +566,16 @@ pub fn load_config(
             .texture_policy
             .texture_overrides
     {
-        diagnostics.push(
-            format!(
-                "[CONFIG] texture_override shader={} shader_texture={} shader_palette={}",
-                texture_override.shader,
-                texture_override.shader_texture,
-                texture_override.shader_palette,
-            )
-        );
+    diagnostics.push(
+        format!(
+            "[CONFIG] texture_override shader={} shader_texture={} shader_palette={}",
+            texture_override.shader,
+            format_texture_specification(
+                &texture_override.shader_texture
+            ),
+            texture_override.shader_palette,
+        )
+    );
     }
 
 
@@ -737,11 +744,33 @@ fn parse_fps_overrides(
 // ------------------------------------------------------------
 //
 
+fn format_texture_specification(
+    texture:
+        &crate::parse_texture_specification::TextureSpecification,
+) -> String {
+
+    if texture.count_was_explicit {
+
+        format!(
+            "{}:{}",
+            texture.family.name(),
+            texture.requested_primitive_count,
+        )
+
+    } else {
+
+        texture
+            .family
+            .name()
+            .to_string()
+    }
+}
+
 fn parse_global_texture(
     value: Option<&str>,
 ) -> Result<
     Option<
-        crate::generate_textures::TextureFamily
+        crate::parse_texture_specification::TextureSpecification
     >,
     String,
 > {
@@ -771,8 +800,8 @@ fn parse_global_texture(
     }
 
 
-    let family =
-        crate::generate_textures::TextureFamily::from_name(
+    let texture =
+        crate::parse_texture_specification::parse_texture_specification(
             &normalized
         )
         .map_err(
@@ -786,19 +815,9 @@ fn parse_global_texture(
         )?;
 
 
-    if family
-        == crate::generate_textures::TextureFamily::Julia
-    {
-        return Err(
-            "global_texture = \"julia\" is recognized, but Julia texture generation is not yet implemented"
-                .to_string()
-        );
-    }
-
-
     Ok(
         Some(
-            family
+            texture
         )
     )
 }
@@ -954,7 +973,7 @@ fn parse_shader_texture(
     shader: &str,
     value: &str,
 ) -> Result<
-    crate::generate_textures::TextureFamily,
+    crate::parse_texture_specification::TextureSpecification,
     String,
 > {
 
@@ -977,8 +996,8 @@ fn parse_shader_texture(
     }
 
 
-    let family =
-        crate::generate_textures::TextureFamily::from_name(
+    let texture =
+        crate::parse_texture_specification::parse_texture_specification(
             &normalized
         )
         .map_err(
@@ -993,20 +1012,8 @@ fn parse_shader_texture(
         )?;
 
 
-    if family
-        == crate::generate_textures::TextureFamily::Julia
-    {
-        return Err(
-            format!(
-                "[[texture_override]] for '{}' selects Julia, but Julia texture generation is not yet implemented",
-                shader,
-            )
-        );
-    }
-
-
     Ok(
-        family
+        texture
     )
 }
 

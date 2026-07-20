@@ -39,9 +39,48 @@ const AMPLITUDE_MULTIPLIER: f32 =
 const DIRECTION_DEGREES: f32 =
     55.0;
 
-/// Scale of the broad vein structures.
-const VEIN_SCALE: f32 =
-    2.20;
+/// Vein density derived from the requested primitive count.
+#[derive(Clone, Copy, Debug)]
+struct MarbleLayout {
+    vein_scale: f32,
+}
+
+impl MarbleLayout {
+    fn new(
+        requested_primitive_count: usize,
+    ) -> Self {
+
+        let primitive_count =
+            requested_primitive_count
+                .max(
+                    1
+                );
+
+
+        // Preserve the original visual density at the standard request
+        // of 144 primitives, while scaling broad vein density with the
+        // square root of the requested count.
+        let reference_frequency =
+            144.0_f32.sqrt();
+
+
+        let vein_scale =
+            2.20
+                * (
+                    primitive_count as f32
+                )
+                .sqrt()
+                / reference_frequency;
+
+
+        Self {
+            vein_scale:
+                vein_scale.max(
+                    0.10
+                ),
+        }
+    }
+}
 
 /// Strength of coordinate distortion.
 const DOMAIN_WARP_STRENGTH: f32 =
@@ -67,7 +106,14 @@ const BRIGHTNESS: f32 =
 pub fn generate(
     palette: Palette,
     seed: u64,
+    requested_primitive_count: usize,
 ) -> Result<GeneratedTexture, String> {
+
+    let layout =
+        MarbleLayout::new(
+            requested_primitive_count
+        );
+
 
     let pixel_count =
         TEXTURE_SIZE as usize
@@ -119,6 +165,7 @@ pub fn generate(
                     normalized_x,
                     normalized_y,
                     seed,
+                    &layout,
                 );
 
 
@@ -154,6 +201,7 @@ fn marble_value(
     x: f32,
     y: f32,
     seed: u64,
+    layout: &MarbleLayout,
 ) -> f32 {
 
     let angle =
@@ -233,9 +281,9 @@ fn marble_value(
     let broad_noise =
         fractal_noise(
             warped_x
-                * VEIN_SCALE,
+                * layout.vein_scale,
             warped_y
-                * VEIN_SCALE
+                * layout.vein_scale
                 * 0.62,
             seed.wrapping_add(
                 0xD1B5_4A32_D192_ED03
@@ -737,7 +785,96 @@ mod tests {
 
 
     #[test]
+    fn layout_preserves_reference_density() {
+
+        let layout =
+            MarbleLayout::new(
+                144
+            );
+
+
+        assert!(
+            (
+                layout.vein_scale
+                    - 2.20
+            )
+            .abs()
+                <= f32::EPSILON
+        );
+    }
+
+
+    #[test]
+    fn larger_primitive_counts_increase_vein_density() {
+
+        let sparse =
+            MarbleLayout::new(
+                16
+            );
+
+
+        let dense =
+            MarbleLayout::new(
+                256
+            );
+
+
+        assert!(
+            dense.vein_scale
+                > sparse.vein_scale
+        );
+    }
+
+
+    #[test]
+    fn different_primitive_counts_change_output() {
+
+        let sparse_layout =
+            MarbleLayout::new(
+                16
+            );
+
+
+        let dense_layout =
+            MarbleLayout::new(
+                256
+            );
+
+
+        let sparse =
+            marble_value(
+                0.31,
+                0.67,
+                999,
+                &sparse_layout,
+            );
+
+
+        let dense =
+            marble_value(
+                0.31,
+                0.67,
+                999,
+                &dense_layout,
+            );
+
+
+        assert_ne!(
+            sparse,
+            dense
+        );
+    }
+
+
+    #[test]
     fn marble_value_is_normalized() {
+
+        let layout =
+            MarbleLayout::new(
+                144
+            );
+
+
 
         for y in
             0..16
@@ -752,6 +889,7 @@ mod tests {
                         y as f32
                             / 16.0,
                         12345,
+                        &layout,
                     );
 
 
@@ -771,11 +909,19 @@ mod tests {
     #[test]
     fn same_seed_is_deterministic() {
 
+        let layout =
+            MarbleLayout::new(
+                144
+            );
+
+
+
         let first =
             marble_value(
                 0.31,
                 0.67,
                 999,
+                &layout,
             );
 
 
@@ -784,6 +930,7 @@ mod tests {
                 0.31,
                 0.67,
                 999,
+                &layout,
             );
 
 
@@ -797,11 +944,19 @@ mod tests {
     #[test]
     fn different_seeds_change_output() {
 
+        let layout =
+            MarbleLayout::new(
+                144
+            );
+
+
+
         let first =
             marble_value(
                 0.31,
                 0.67,
                 1,
+                &layout,
             );
 
 
@@ -810,6 +965,7 @@ mod tests {
                 0.31,
                 0.67,
                 2,
+                &layout,
             );
 
 
@@ -827,6 +983,7 @@ mod tests {
             generate(
                 Palette::Sandstone,
                 12345,
+                144,
             )
             .expect(
                 "marble generation"
@@ -858,3 +1015,4 @@ mod tests {
         );
     }
 }
+

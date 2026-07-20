@@ -7,15 +7,15 @@ use std::path::{
     Path,
     PathBuf,
 };
+use crate::parse_texture_specification::TextureSpecification;
 
 
 const DEFAULT_DIRECTORY_INTERVAL_SECONDS: u64 =
     30;
 
-
 pub fn run(
     directory_argument: String,
-    shader_texture: Option<String>,
+    shader_texture: Option<TextureSpecification>,
     shader_palette: Option<String>,
     interval_seconds: Option<u64>,
     fps: Option<u32>,
@@ -26,12 +26,10 @@ pub fn run(
             &directory_argument
         )?;
 
-
     let shader_paths =
         discover_shader_paths(
             &directory
         )?;
-
 
     if shader_paths.is_empty() {
         return Err(
@@ -42,20 +40,16 @@ pub fn run(
         );
     }
 
-
     let interval_seconds =
         interval_seconds.unwrap_or(
             DEFAULT_DIRECTORY_INTERVAL_SECONDS
         );
 
-
     crate::preview_shader::run_paths(
         shader_paths,
         shader_texture,
         shader_palette,
-        Some(
-            interval_seconds
-        ),
+        Some(interval_seconds),
         fps,
     )
 }

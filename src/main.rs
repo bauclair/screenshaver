@@ -7,6 +7,7 @@ mod parse_interval;
 mod parse_duration;
 mod parse_arguments;
 mod parse_subtitle_placement;
+mod parse_texture_specification;
 
 mod define_constants;
 mod locate_paths;
@@ -32,10 +33,8 @@ mod generate_bricks;
 mod generate_cellular;
 mod generate_clouds;
 mod generate_hexagons;
-mod generate_jigsaw;
 mod generate_marble;
 mod generate_mesh;
-mod generate_minerals;
 mod generate_noise;
 mod generate_radial;
 mod generate_textures;
@@ -146,12 +145,12 @@ match command {
     }
 
     crate::parse_arguments::Command::PreviewTexture {
-        family,
+        texture,
         palette,
     } => {
 
         crate::preview_texture::run(
-            family,
+            texture,
             palette,
         );
 
@@ -217,10 +216,6 @@ crate::parse_arguments::Command::ListTextures => {
     );
 
     println!(
-        "    julia"
-    );
-
-    println!(
         "    marble"
     );
 
@@ -233,20 +228,12 @@ crate::parse_arguments::Command::ListTextures => {
     );
 
     println!(
-        "    minerals"
-    );
-
-    println!(
         "    mesh"
     );
 
     println!(
         "    radial"
     );
-
-    println!(
-        "    jigsaw"
-    ); 
 
     println!(
         "    noise"

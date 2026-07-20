@@ -22,12 +22,68 @@ use crate::palettes::Palette;
 // Television-snow parameters
 // ============================================================
 
-/// Number of source-noise samples across the texture.
-///
-/// Keeping this equal to TEXTURE_SIZE produces approximately
-/// one independent static sample per output pixel.
-const NOISE_FREQUENCY: u32 =
-    TEXTURE_SIZE;
+/// Source-sample density derived from the requested primitive count.
+#[derive(Clone, Copy, Debug)]
+struct NoiseLayout {
+    source_frequency: u32,
+}
+
+impl NoiseLayout {
+    fn new(
+        requested_primitive_count: usize,
+    ) -> Self {
+
+        let primitive_count =
+            requested_primitive_count
+                .max(
+                    1
+                );
+
+
+        // Treat 1024 as the maximum-detail reference level.
+        // At that setting, the source lattice matches TEXTURE_SIZE
+        // and produces approximately one independent static sample
+        // per output pixel.
+        //
+        // Square-root scaling makes lower requested counts become
+        // progressively coarser without collapsing into very large
+        // blocks too quickly. At 512 primitives, the source lattice
+        // remains fine enough to resemble conventional television
+        // snow.
+        const REFERENCE_PRIMITIVE_COUNT: f32 =
+            1024.0;
+
+
+        let primitive_ratio =
+            (
+                primitive_count as f32
+                    / REFERENCE_PRIMITIVE_COUNT
+            )
+            .clamp(
+                0.0,
+                1.0
+            );
+
+
+        let source_frequency =
+            (
+                TEXTURE_SIZE as f32
+                    * primitive_ratio.sqrt()
+            )
+            .round()
+            .max(
+                1.0
+            )
+            .min(
+                TEXTURE_SIZE as f32
+            ) as u32;
+
+
+        Self {
+            source_frequency,
+        }
+    }
+}
 
 /// Contrast of the underlying white-noise signal.
 const NOISE_CONTRAST: f32 =
@@ -74,7 +130,14 @@ const SIGNAL_SHARPNESS: f32 =
 pub fn generate(
     palette: Palette,
     seed: u64,
+    requested_primitive_count: usize,
 ) -> Result<GeneratedTexture, String> {
+
+    let layout =
+        NoiseLayout::new(
+            requested_primitive_count
+        );
+
 
     let pixel_count =
         TEXTURE_SIZE as usize
@@ -111,6 +174,7 @@ pub fn generate(
                     x,
                     y,
                     seed,
+                    &layout,
                 );
 
 
@@ -146,13 +210,14 @@ fn television_snow_value(
     x: u32,
     y: u32,
     seed: u64,
+    layout: &NoiseLayout,
 ) -> f32 {
 
     let source_x =
         scaled_coordinate(
             x,
             TEXTURE_SIZE,
-            NOISE_FREQUENCY,
+            layout.source_frequency,
         );
 
 
@@ -160,7 +225,7 @@ fn television_snow_value(
         scaled_coordinate(
             y,
             TEXTURE_SIZE,
-            NOISE_FREQUENCY,
+            layout.source_frequency,
         );
 
 
@@ -412,7 +477,110 @@ mod tests {
 
 
     #[test]
+    fn maximum_primitive_count_uses_full_resolution_noise() {
+
+        let layout =
+            NoiseLayout::new(
+                1024
+            );
+
+
+        assert_eq!(
+            layout.source_frequency,
+            TEXTURE_SIZE
+        );
+    }
+
+
+    #[test]
+    fn five_hundred_twelve_primitives_remain_fine_grained() {
+
+        let layout =
+            NoiseLayout::new(
+                512
+            );
+
+
+        let expected =
+            (
+                TEXTURE_SIZE as f32
+                    * 0.5_f32.sqrt()
+            )
+            .round() as u32;
+
+
+        assert_eq!(
+            layout.source_frequency,
+            expected
+        );
+
+
+        assert!(
+            layout.source_frequency
+                > TEXTURE_SIZE / 2
+        );
+    }
+
+
+    #[test]
+    fn layout_never_exceeds_texture_size() {
+
+        let layout =
+            NoiseLayout::new(
+                usize::MAX
+            );
+
+
+        assert_eq!(
+            layout.source_frequency,
+            TEXTURE_SIZE
+        );
+    }
+
+
+    #[test]
+    fn lower_primitive_counts_produce_coarser_noise() {
+
+        let coarse_layout =
+            NoiseLayout::new(
+                16
+            );
+
+
+        let medium_layout =
+            NoiseLayout::new(
+                256
+            );
+
+
+        let fine_layout =
+            NoiseLayout::new(
+                1024
+            );
+
+
+        assert!(
+            coarse_layout.source_frequency
+                < medium_layout.source_frequency
+        );
+
+
+        assert!(
+            medium_layout.source_frequency
+                < fine_layout.source_frequency
+        );
+    }
+
+
+    #[test]
     fn television_snow_value_is_normalized() {
+
+        let layout =
+            NoiseLayout::new(
+                144
+            );
+
+
 
         for y in
             0..64
@@ -425,6 +593,7 @@ mod tests {
                         x,
                         y,
                         12345,
+                        &layout,
                     );
 
 
@@ -444,11 +613,19 @@ mod tests {
     #[test]
     fn same_seed_is_deterministic() {
 
+        let layout =
+            NoiseLayout::new(
+                144
+            );
+
+
+
         let first =
             television_snow_value(
                 371,
                 629,
                 999,
+                &layout,
             );
 
 
@@ -457,6 +634,7 @@ mod tests {
                 371,
                 629,
                 999,
+                &layout,
             );
 
 
@@ -469,6 +647,13 @@ mod tests {
 
     #[test]
     fn different_seeds_change_output() {
+
+        let layout =
+            NoiseLayout::new(
+                144
+            );
+
+
 
         let mut found_difference =
             false;
@@ -485,6 +670,7 @@ mod tests {
                         x,
                         y,
                         1,
+                        &layout,
                     );
 
 
@@ -493,6 +679,7 @@ mod tests {
                         x,
                         y,
                         2,
+                        &layout,
                     );
 
 
@@ -531,6 +718,7 @@ mod tests {
             generate(
                 Palette::Slate,
                 12345,
+                144,
             )
             .expect(
                 "noise generation"

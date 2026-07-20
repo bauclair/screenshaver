@@ -19,6 +19,7 @@ use sdl2::video::{
     FullscreenType,
     GLProfile,
 };
+use crate::parse_texture_specification::TextureSpecification;
 
 
 const FPS_AVERAGE_WINDOW: Duration =
@@ -158,7 +159,7 @@ struct ActivePreviewShader {
 
 pub fn run(
     shader_argument: String,
-    shader_texture: Option<String>,
+    shader_texture: Option<TextureSpecification>,
     shader_palette: Option<String>,
     interval_seconds: Option<u64>,
     command_line_fps: Option<u32>,
@@ -209,7 +210,7 @@ pub fn run(
 
 pub fn run_paths(
     shader_paths: Vec<PathBuf>,
-    shader_texture: Option<String>,
+    shader_texture: Option<TextureSpecification>,
     shader_palette: Option<String>,
     interval_seconds: Option<u64>,
     command_line_fps: Option<u32>,
@@ -255,7 +256,7 @@ pub fn run_paths(
 
     let preview_selection =
         parse_preview_selection(
-            shader_texture.as_deref(),
+            shader_texture.as_ref(),
             shader_palette.as_deref(),
         )?;
 
@@ -1309,54 +1310,29 @@ fn destroy_active_shader(
 
 
 fn parse_preview_selection(
-    texture_name: Option<&str>,
+    texture_specification: Option<&TextureSpecification>,
     palette_name: Option<&str>,
 ) -> Result<
     crate::manage_textures::PreviewTextureSelection,
     String,
 > {
 
-    let texture =
-        match texture_name {
+let texture =
+    match texture_specification.cloned() {
+
+        Some(specification) => {
 
             Some(
-                "random"
-            ) => {
-                Some(
-                    crate::manage_textures::PreviewSelectionValue::Random
+                crate::manage_textures::PreviewSelectionValue::Specific(
+                    specification
                 )
-            }
+            )
+        }
 
-            Some(
-                name
-            ) => {
-                let family =
-                    crate::generate_textures::TextureFamily::from_name(
-                        name
-                    )?;
-
-
-                if family
-                    == crate::generate_textures::TextureFamily::Julia
-                {
-                    return Err(
-                        "Julia texture generation is not yet implemented"
-                            .to_string()
-                    );
-                }
-
-
-                Some(
-                    crate::manage_textures::PreviewSelectionValue::Specific(
-                        family
-                    )
-                )
-            }
-
-            None => {
-                None
-            }
-        };
+        None => {
+            None
+        }
+    };
 
 
     let palette =

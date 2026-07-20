@@ -23,6 +23,9 @@ use crate::load_config::{
     TextureOverride,
     TextureSelectionPolicy,
 };
+use crate::parse_texture_specification::{
+    TextureSpecification,
+};
 use crate::palettes::Palette;
 use crate::preprocess_shader::ShaderChannelUsage;
 
@@ -31,10 +34,8 @@ use crate::preprocess_shader::ShaderChannelUsage;
 // Random fallback selection
 // ============================================================
 
-/// Texture families whose generators are currently implemented.
-///
-/// Julia is intentionally excluded until its generator is ready.
-const RANDOM_TEXTURE_FAMILIES: [TextureFamily; 10] = [
+/// Texture families available for random fallback selection.
+const RANDOM_TEXTURE_FAMILIES: [TextureFamily; 8] = [
 
     TextureFamily::Marble,
 
@@ -42,13 +43,9 @@ const RANDOM_TEXTURE_FAMILIES: [TextureFamily; 10] = [
 
     TextureFamily::Cellular,
 
-    TextureFamily::Minerals,
-
     TextureFamily::Mesh,
 
     TextureFamily::Radial,
-
-    TextureFamily::Jigsaw,
 
     TextureFamily::Noise,
 
@@ -95,7 +92,7 @@ pub struct PreviewTextureSelection {
 
     pub texture:
         Option<
-            PreviewSelectionValue<TextureFamily>
+            PreviewSelectionValue<TextureSpecification>
         >,
 
     pub palette:
@@ -115,11 +112,10 @@ pub struct PreviewTextureSelection {
     Copy,
 )]
 struct TextureRequest {
-    family: TextureFamily,
+    texture: TextureSpecification,
     palette: Palette,
     seed: u64,
 }
-
 
 fn resolve_texture_selection(
     shader_name: &str,
@@ -143,7 +139,7 @@ fn resolve_texture_selection(
 
 
     let (
-        family,
+        texture,
         texture_source,
     ) =
         match preview_selection.texture {
@@ -163,8 +159,10 @@ fn resolve_texture_selection(
                 PreviewSelectionValue::Random
             ) => {
                 (
-                    random_texture_family(
-                        &mut state
+                    default_texture_specification(
+                        random_texture_family(
+                            &mut state
+                        )
                     ),
                     "command-line random",
                 )
@@ -179,17 +177,19 @@ fn resolve_texture_selection(
                             .shader_texture,
                         "shader override",
                     )
-                } else if let Some(family) =
+                } else if let Some(texture) =
                     policy.global_texture
                 {
                     (
-                        family,
+                        texture,
                         "global",
                     )
                 } else {
                     (
-                        random_texture_family(
-                            &mut state
+                        default_texture_specification(
+                            random_texture_family(
+                                &mut state
+                            )
                         ),
                         "random fallback",
                     )
@@ -256,7 +256,7 @@ fn resolve_texture_selection(
 
     (
         TextureRequest {
-            family,
+            texture,
             palette,
             seed:
                 splitmix64(
@@ -268,6 +268,17 @@ fn resolve_texture_selection(
     )
 }
 
+fn default_texture_specification(
+    family: TextureFamily,
+) -> TextureSpecification {
+
+    crate::parse_texture_specification::parse_texture_specification(
+        family.name()
+    )
+    .expect(
+        "A built-in TextureFamily name must always be a valid texture specification"
+    )
+}
 
 fn random_texture_family(
     state: &mut u64,
@@ -427,6 +438,7 @@ fn splitmix64(
 }
 
 
+
 // ============================================================
 // GPU texture representation
 // ============================================================
@@ -573,7 +585,7 @@ impl TextureManager {
         log(
             &format!(
                 "[TEXTURE] Selected procedural texture: family={}, palette={}, seed={}",
-                request.family,
+                request.texture.family,
                 request.palette,
                 request.seed,
             )
@@ -590,8 +602,8 @@ impl TextureManager {
 
 
         let generated =
-            crate::generate_textures::generate(
-                request.family,
+            crate::generate_textures::generate_from_specification(
+                &request.texture,
                 request.palette,
                 request.seed,
             )?;

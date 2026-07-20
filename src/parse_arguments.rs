@@ -1,3 +1,8 @@
+use crate::parse_texture_specification::{
+    parse_texture_specification,
+    TextureSpecification,
+};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     Run,
@@ -15,13 +20,13 @@ pub enum Command {
     },
 
     PreviewTexture {
-        family: String,
+        texture: TextureSpecification,
         palette: Option<String>,
     },
 
     PreviewShader {
         shader_name: String,
-        shader_texture: Option<String>,
+        shader_texture: Option<TextureSpecification>,
         shader_palette: Option<String>,
         interval_seconds: Option<u64>,
         fps: Option<u32>,
@@ -35,31 +40,25 @@ pub enum Command {
 }
 
 
-const VALID_TEXTURE_FAMILIES: [&str; 12] = [
+const VALID_TEXTURE_FAMILIES: [&str; 9] = [
     "random",
-    "julia",
     "marble",
     "clouds",
     "cellular",
-    "minerals",
     "mesh",
     "radial",
-    "jigsaw",
     "noise",
     "bricks",
     "hexagons",
 ];
 
 
-const VALID_PREVIEW_TEXTURE_FAMILIES: [&str; 11] = [
-    "julia",
+const VALID_PREVIEW_TEXTURE_FAMILIES: [&str; 8] = [
     "marble",
     "clouds",
     "cellular",
-    "minerals",
     "mesh",
     "radial",
-    "jigsaw",
     "noise",
     "bricks",
     "hexagons",
@@ -283,8 +282,8 @@ fn parse_preview_texture(
     args: &[String],
 ) -> Result<Command, String> {
 
-    let mut family:
-        Option<String> =
+    let mut texture:
+        Option<TextureSpecification> =
             None;
 
 
@@ -306,7 +305,7 @@ fn parse_preview_texture(
 
             "--family" => {
 
-                if family.is_some() {
+                if texture.is_some() {
 
                     return Err(
                         "--family may only be specified once"
@@ -323,14 +322,15 @@ fn parse_preview_texture(
                     )?;
 
 
-                validate_preview_texture_family(
-                    value
-                )?;
+                let parsed_texture =
+                    parse_texture_specification(
+                        value
+                    )?;
 
 
-                family =
+                texture =
                     Some(
-                        value.to_ascii_lowercase()
+                        parsed_texture
                     );
 
 
@@ -407,8 +407,8 @@ fn parse_preview_texture(
     }
 
 
-    let family =
-        family.ok_or_else(
+    let texture =
+        texture.ok_or_else(
             || {
                 "--family is required with --preview-texture"
                     .to_string()
@@ -418,7 +418,7 @@ fn parse_preview_texture(
 
     Ok(
         Command::PreviewTexture {
-            family,
+            texture,
             palette,
         }
     )
@@ -449,7 +449,7 @@ fn parse_preview_shader(
 
 
     let mut shader_texture:
-        Option<String> =
+        Option<TextureSpecification> =
             None;
 
 
@@ -502,14 +502,11 @@ fn parse_preview_shader(
                     )?;
 
 
-                validate_texture_family(
-                    value
-                )?;
-
-
                 shader_texture =
                     Some(
-                        value.to_ascii_lowercase()
+                        parse_texture_specification(
+                            value
+                        )?
                     );
 
 
@@ -896,12 +893,13 @@ pub fn print_help() {
              -V, --version\n\
                  Display the Screenshaver version.\n\
          \n\
-             --preview-texture --family FAMILY [--palette PALETTE]\n\
+             --preview-texture --family FAMILY[:COUNT] [--palette PALETTE]\n\
                  Preview one procedurally generated texture.\n\
+                 COUNT may range from 1 through 1024.\n\
                  This command does not consult screenshaver.toml.\n\
          \n\
              --preview-shader PATH [--interval SECONDS] [--fps FPS]\n\
-                              [--shader-texture FAMILY] [--shader-palette PALETTE]\n\
+                              [--shader-texture FAMILY[:COUNT]] [--shader-palette PALETTE]\n\
                  Preview one shader or all shaders directly inside a folder.\n\
                  Folder previews use a 30-second interval unless overridden.\n\
                  Command-line texture values override TOML selection values.\n\
@@ -914,14 +912,11 @@ pub fn print_help() {
                  Display available procedural texture palettes.\n\
          \n\
          Texture families:\n\
-             julia\n\
              marble\n\
              clouds\n\
              cellular\n\
-             minerals\n\
              mesh\n\
              radial\n\
-             jigsaw\n\
              noise\n\
              bricks\n\
              hexagons\n\
@@ -937,7 +932,7 @@ pub fn print_help() {
          Examples:\n\
              screenshaver --start\n\
              screenshaver --stop\n\
-             screenshaver --preview-texture --family julia\n\
+             screenshaver --preview-texture --family noise:1024\n\
              screenshaver --preview-texture --family marble --palette sandstone\n\
              screenshaver --preview-shader \"Heartfelt.glsl\"\n\
              screenshaver --preview-shader \"Heartfelt.glsl\" --background-texture clouds\n\

@@ -3,12 +3,12 @@ use std::time::{
     UNIX_EPOCH,
 };
 
-use crate::generate_textures::TextureFamily;
 use crate::palettes::Palette;
+use crate::parse_texture_specification::TextureSpecification;
 
 
 pub fn run(
-    family: String,
+    texture: TextureSpecification,
     palette: Option<String>,
 ) {
 
@@ -23,25 +23,6 @@ pub fn run(
 
                 eprintln!(
                     "[TEXTURE PREVIEW] Configuration error: {}",
-                    error
-                );
-
-                return;
-            }
-        };
-
-
-    let family =
-        match TextureFamily::from_name(
-            &family
-        ) {
-
-            Ok(family) => family,
-
-            Err(error) => {
-
-                eprintln!(
-                    "[TEXTURE PREVIEW] {}",
                     error
                 );
 
@@ -92,8 +73,8 @@ pub fn run(
 
 
     let texture =
-        match crate::generate_textures::generate(
-            family,
+        match crate::generate_textures::generate_from_specification(
+            &texture,
             palette,
             seed,
         ) {

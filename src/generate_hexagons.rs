@@ -3,7 +3,7 @@
 //! The Hexagons engine renders a regular flat-top honeycomb:
 //!
 //! - the requested count controls approximate visual density;
-//! - valid requested counts range from 1 through 512;
+//! - valid requested counts range from 1 through 1024;
 //! - omitted counts are resolved to 1 before reaching this module;
 //! - the grid extends beyond the texture boundaries;
 //! - edge hexagons are naturally clipped;
@@ -11,13 +11,12 @@
 //! - shared edges are rendered with a uniform black outline;
 //! - no lighting, beveling, or random variation is applied.
 
-use crate::generate_textures::{
+use crate::palettes::Palette;
+use crate::generate_textures:: {
     GeneratedTexture,
     TextureFamily,
     TEXTURE_SIZE,
 };
-
-use crate::palettes::Palette;
 
 
 // ============================================================
@@ -26,11 +25,11 @@ use crate::palettes::Palette;
 
 /// Lowest supported requested primitive count.
 pub const MIN_HEXAGON_COUNT: usize =
-    1;
+    crate::define_constants::MIN_TEXTURE_PRIMITIVES;
 
 /// Highest supported requested primitive count.
 pub const MAX_HEXAGON_COUNT: usize =
-    512;
+    crate::define_constants::MAX_TEXTURE_PRIMITIVES;
 
 /// Width of the black hexagon boundaries in pixels.
 const OUTLINE_WIDTH: f32 =
@@ -98,7 +97,7 @@ struct HexagonLayout {
 pub fn generate(
     palette: Palette,
     seed: u64,
-    requested_hexagon_count: usize,
+    requested_primitive_count: usize,
 ) -> Result<GeneratedTexture, String> {
 
     //---------------------------------------------------------
@@ -113,10 +112,11 @@ pub fn generate(
 
 
     let requested_hexagon_count =
-        requested_hexagon_count.clamp(
-            MIN_HEXAGON_COUNT,
-            MAX_HEXAGON_COUNT,
-        );
+        requested_primitive_count
+            .clamp(
+                MIN_HEXAGON_COUNT,
+                MAX_HEXAGON_COUNT,
+            );
 
 
     let layout =
@@ -860,11 +860,11 @@ mod tests {
 
 
         assert_eq!(
-            900_usize.clamp(
+            2000_usize.clamp(
                 MIN_HEXAGON_COUNT,
                 MAX_HEXAGON_COUNT,
             ),
-            512
+            crate::define_constants::MAX_TEXTURE_PRIMITIVES
         );
     }
 
@@ -948,38 +948,61 @@ mod tests {
         );
     }
 
-
     #[test]
-    fn generated_texture_has_standard_dimensions() {
+    fn layout_solver_supports_maximum_primitive_count() {
 
-        let texture =
-            generate(
-                Palette::Mist,
-                1,
-                144,
-            )
-            .expect(
-                "hexagon texture generation"
+        let layout =
+            calculate_hexagon_layout(
+                1024,
+                1024,
+                crate::define_constants::MAX_TEXTURE_PRIMITIVES,
             );
 
 
-        assert_eq!(
-            texture.width,
-            TEXTURE_SIZE
-        );
-
-
-        assert_eq!(
-            texture.height,
-            TEXTURE_SIZE
-        );
-
-
-        assert_eq!(
-            texture.byte_count(),
-            1024
-                * 1024
-                * 4
+        // A centered hexagonal lattice can only change its visible
+        // center count in discrete row-and-column steps. At the
+        // 1024-primitive boundary, the closest valid layout contains
+        // 1033 visible centers, a difference of nine.
+        assert!(
+            layout.actual_center_count
+                .abs_diff(
+                    layout.requested_count
+                )
+                <= 16
         );
     }
+
+
+#[test]
+fn generated_texture_has_standard_dimensions() {
+
+    let texture =
+        generate(
+            Palette::Mist,
+            1,
+            144,
+        )
+        .expect(
+            "hexagon texture generation"
+        );
+
+    assert_eq!(
+        texture.width,
+        TEXTURE_SIZE
+    );
+
+    assert_eq!(
+        texture.height,
+        TEXTURE_SIZE
+    );
+
+    assert_eq!(
+        texture.byte_count(),
+        (TEXTURE_SIZE as usize)
+            * (TEXTURE_SIZE as usize)
+            * 4
+    );
 }
+
+}
+

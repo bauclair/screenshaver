@@ -94,6 +94,59 @@ const BRICK_BRIGHTNESS: f32 =
     0.0;
 
 
+
+// ============================================================
+// Brick layout
+// ============================================================
+
+#[derive(Debug, Clone, Copy)]
+struct BrickLayout {
+    brick_width: f32,
+    brick_height: f32,
+    mortar_x: f32,
+    mortar_y: f32,
+}
+
+impl BrickLayout {
+    fn new(requested_primitive_count: usize) -> Self {
+        let requested = requested_primitive_count.clamp(1, 4096) as f32;
+
+        // For normalized texture dimensions:
+        //
+        //     brick_width  = 1 / columns
+        //     brick_height = 1 / rows
+        //
+        // Therefore:
+        //
+        //     brick_width / brick_height = rows / columns
+        //
+        // To preserve BRICK_ASPECT_RATIO, the wall needs roughly
+        // BRICK_ASPECT_RATIO times as many rows as columns.
+        let columns =
+            ((requested / BRICK_ASPECT_RATIO).sqrt())
+                .max(1.0)
+                .round();
+
+        let rows =
+            (requested / columns)
+                .max(1.0)
+                .round();
+
+        let brick_width =
+            1.0 / columns;
+
+        let brick_height =
+            1.0 / rows;
+
+        Self {
+            brick_width,
+            brick_height,
+            mortar_x: brick_width * MORTAR_WIDTH * 0.5,
+            mortar_y: brick_height * MORTAR_WIDTH * 0.5,
+        }
+    }
+}
+
 // ============================================================
 // Public generator
 // ============================================================
@@ -101,7 +154,10 @@ const BRICK_BRIGHTNESS: f32 =
 pub fn generate(
     palette: Palette,
     seed: u64,
+    requested_primitive_count: usize,
 ) -> Result<GeneratedTexture, String> {
+
+    let layout = BrickLayout::new(requested_primitive_count);
 
     let pixel_count =
         TEXTURE_SIZE as usize
@@ -158,6 +214,7 @@ pub fn generate(
                 brick_wall_color(
                     normalized_x,
                     normalized_y,
+                    &layout,
                     palette,
                     seed,
                 );
@@ -188,18 +245,14 @@ pub fn generate(
 fn brick_wall_color(
     x: f32,
     y: f32,
+    layout: &BrickLayout,
     palette: Palette,
     seed: u64,
 ) -> [u8; 4] {
 
-    let brick_width =
-        1.0
-            / BRICKS_ACROSS;
+    let brick_width = layout.brick_width;
 
-
-    let brick_height =
-        brick_width
-            / BRICK_ASPECT_RATIO;
+    let brick_height = layout.brick_height;
 
 
     let row_position =
@@ -252,15 +305,9 @@ fn brick_wall_color(
             - column_index as f32;
 
 
-    let mortar_x =
-        MORTAR_WIDTH
-            * 0.5
-            / BRICK_ASPECT_RATIO;
+    let mortar_x = layout.mortar_x;
 
-
-    let mortar_y =
-        MORTAR_WIDTH
-            * 0.5;
+    let mortar_y = layout.mortar_y;
 
 
     let distance_left =
@@ -910,10 +957,13 @@ mod tests {
     #[test]
     fn same_seed_is_deterministic() {
 
+        let layout = BrickLayout::new(144);
+
         let first =
             brick_wall_color(
                 0.37,
                 0.63,
+                &layout,
                 Palette::Brick,
                 999,
             );
@@ -923,6 +973,7 @@ mod tests {
             brick_wall_color(
                 0.37,
                 0.63,
+                &layout,
                 Palette::Brick,
                 999,
             );
@@ -937,6 +988,8 @@ mod tests {
 
     #[test]
     fn different_seeds_change_output() {
+
+        let layout = BrickLayout::new(144);
 
         let mut found_difference =
             false;
@@ -968,6 +1021,7 @@ mod tests {
                     brick_wall_color(
                         sample_x,
                         sample_y,
+                        &layout,
                         Palette::Brick,
                         1,
                     );
@@ -977,6 +1031,7 @@ mod tests {
                     brick_wall_color(
                         sample_x,
                         sample_y,
+                        &layout,
                         Palette::Brick,
                         2,
                     );
@@ -1058,6 +1113,7 @@ mod tests {
             generate(
                 Palette::Brick,
                 12345,
+                144,
             )
             .expect(
                 "brick generation"

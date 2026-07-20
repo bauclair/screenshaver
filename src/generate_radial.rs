@@ -20,15 +20,27 @@ use crate::palettes::Palette;
 // Radial-generation parameters
 // ============================================================
 
-/// Number of radial cycles from the center toward the corners.
-/// Set this to zero for a pure sunburst.
-const RADIAL_FREQUENCY: f32 =
-    11.0;
-
-/// Number of angular cycles around the center.
-/// Set this to zero for concentric rings.
-const ANGULAR_FREQUENCY: f32 =
-    7.0;
+#[derive(Clone, Copy, Debug)]
+struct RadialLayout {
+    radial_frequency:f32,
+    angular_frequency:f32,
+}
+impl RadialLayout{
+    fn new(requested_primitive_count:usize)->Self{
+        let f=(requested_primitive_count.max(1) as f32).sqrt().max(1.0);
+        Self{
+            radial_frequency:f,
+            angular_frequency:
+                (
+                    f * 0.64
+                )
+                .round()
+                .max(
+                    1.0
+                ),
+        }
+    }
+}
 
 /// Additional nonlinear curvature applied as radius increases.
 /// Positive and negative values reverse the apparent twist.
@@ -92,13 +104,6 @@ const SURFACE_VARIATION_STRENGTH: f32 =
 const SURFACE_VARIATION_FREQUENCY: f32 =
     9.0;
 
-/// Center-singularity fade.
-const CENTER_FADE_RADIUS: f32 =
-    0.025;
-
-const CENTER_FADE_SOFTNESS: f32 =
-    0.045;
-
 /// Final tone adjustment.
 const CONTRAST: f32 =
     1.08;
@@ -114,7 +119,10 @@ const BRIGHTNESS: f32 =
 pub fn generate(
     palette: Palette,
     seed: u64,
+    requested_primitive_count: usize,
 ) -> Result<GeneratedTexture, String> {
+
+    let layout = RadialLayout::new(requested_primitive_count);
 
     let pixel_count =
         TEXTURE_SIZE as usize
@@ -172,6 +180,7 @@ pub fn generate(
                     normalized_x,
                     normalized_y,
                     seed,
+                    &layout,
                 );
 
 
@@ -207,6 +216,7 @@ fn radial_value(
     x: f32,
     y: f32,
     seed: u64,
+    layout:&RadialLayout,
 ) -> f32 {
 
     let rotation =
@@ -308,10 +318,10 @@ fn radial_value(
 
     let phase =
         radius
-            * RADIAL_FREQUENCY
+            * layout.radial_frequency
             * TAU
         + angle
-            * ANGULAR_FREQUENCY
+            * layout.angular_frequency
         + radius
             * radius
             * CURVATURE
@@ -355,25 +365,8 @@ fn radial_value(
                 * SURFACE_VARIATION_STRENGTH;
 
 
-    let center_visibility =
-        smoothstep(
-            CENTER_FADE_RADIUS,
-            CENTER_FADE_RADIUS
-                + CENTER_FADE_SOFTNESS,
-            base_radius,
-        );
-
-
-    let centered_value =
-        0.5
-            + (
-                varied - 0.5
-            )
-                * center_visibility;
-
-
     apply_tone_curve(
-        centered_value.clamp(
+        varied.clamp(
             0.0,
             1.0,
         )
@@ -818,6 +811,9 @@ mod tests {
     #[test]
     fn radial_value_is_normalized() {
 
+        let layout=RadialLayout::new(144);
+
+
         for y in
             0..32
         {
@@ -839,6 +835,7 @@ mod tests {
                             / 32.0,
 
                         12345,
+                        &layout,
                     );
 
 
@@ -858,11 +855,15 @@ mod tests {
     #[test]
     fn same_seed_is_deterministic() {
 
+        let layout=RadialLayout::new(144);
+
+
         let first =
             radial_value(
                 0.37,
                 0.63,
                 999,
+                &layout,
             );
 
 
@@ -871,6 +872,7 @@ mod tests {
                 0.37,
                 0.63,
                 999,
+                &layout,
             );
 
 
@@ -883,6 +885,9 @@ mod tests {
 
     #[test]
     fn different_seeds_change_output() {
+
+        let layout=RadialLayout::new(144);
+
 
         let mut found_difference =
             false;
@@ -915,6 +920,7 @@ mod tests {
                         sample_x,
                         sample_y,
                         1,
+                        &layout,
                     );
 
 
@@ -923,6 +929,7 @@ mod tests {
                         sample_x,
                         sample_y,
                         2,
+                        &layout,
                     );
 
 
@@ -982,12 +989,33 @@ mod tests {
 
 
     #[test]
+    fn layout_uses_requested_primitive_count(){
+        let l=RadialLayout::new(256);
+
+        assert_eq!(
+            l.radial_frequency,
+            16.0
+        );
+
+        assert_eq!(
+            l.angular_frequency,
+            10.0
+        );
+
+        assert_eq!(
+            l.angular_frequency.fract(),
+            0.0
+        );
+    }
+
+    #[test]
     fn generator_returns_standard_texture() {
 
         let texture =
             generate(
                 Palette::Slate,
                 12345,
+                144,
             )
             .expect(
                 "radial generation"

@@ -21,9 +21,42 @@ use crate::palettes::Palette;
 // Cellular-generation parameters
 // ============================================================
 
-/// Approximate number of cells across each texture dimension.
-const CELL_FREQUENCY: f32 =
-    9.0;
+/// Density and geometry derived from the requested primitive count.
+#[derive(Clone, Copy, Debug)]
+struct CellularLayout {
+    cell_frequency: f32,
+}
+
+impl CellularLayout {
+    fn new(
+        requested_primitive_count: usize,
+    ) -> Self {
+
+        let primitive_count =
+            requested_primitive_count
+                .max(
+                    1
+                );
+
+
+        // One feature point is generated per lattice cell.  A square
+        // texture therefore uses the square root of the requested
+        // primitive count as its frequency along each dimension.
+        let cell_frequency =
+            (
+                primitive_count as f32
+            )
+            .sqrt()
+            .max(
+                1.0
+            );
+
+
+        Self {
+            cell_frequency,
+        }
+    }
+}
 
 /// Amount by which each feature point may move away from the
 /// center of its grid cell.
@@ -84,7 +117,14 @@ const BRIGHTNESS: f32 =
 pub fn generate(
     palette: Palette,
     seed: u64,
+    requested_primitive_count: usize,
 ) -> Result<GeneratedTexture, String> {
+
+    let layout =
+        CellularLayout::new(
+            requested_primitive_count
+        );
+
 
     let pixel_count =
         TEXTURE_SIZE as usize
@@ -136,6 +176,7 @@ pub fn generate(
                     normalized_x,
                     normalized_y,
                     seed,
+                    &layout,
                 );
 
 
@@ -171,6 +212,7 @@ fn cellular_value(
     x: f32,
     y: f32,
     seed: u64,
+    layout: &CellularLayout,
 ) -> f32 {
 
     //---------------------------------------------------------
@@ -214,12 +256,12 @@ fn cellular_value(
 
     let sample_x =
         warped_x
-            * CELL_FREQUENCY;
+            * layout.cell_frequency;
 
 
     let sample_y =
         warped_y
-            * CELL_FREQUENCY;
+            * layout.cell_frequency;
 
 
     let distances =
@@ -874,6 +916,12 @@ mod tests {
     #[test]
     fn cellular_value_is_normalized() {
 
+        let layout =
+            CellularLayout::new(
+                144
+            );
+
+
         for y in
             0..16
         {
@@ -887,6 +935,7 @@ mod tests {
                         y as f32
                             / 16.0,
                         12345,
+                        &layout,
                     );
 
 
@@ -906,11 +955,18 @@ mod tests {
     #[test]
     fn same_seed_is_deterministic() {
 
+        let layout =
+            CellularLayout::new(
+                144
+            );
+
+
         let first =
             cellular_value(
                 0.37,
                 0.63,
                 999,
+                &layout,
             );
 
 
@@ -919,6 +975,7 @@ mod tests {
                 0.37,
                 0.63,
                 999,
+                &layout,
             );
 
 
@@ -932,11 +989,18 @@ mod tests {
     #[test]
     fn different_seeds_change_output() {
 
+        let layout =
+            CellularLayout::new(
+                144
+            );
+
+
         let first =
             cellular_value(
                 0.37,
                 0.63,
                 1,
+                &layout,
             );
 
 
@@ -945,6 +1009,7 @@ mod tests {
                 0.37,
                 0.63,
                 2,
+                &layout,
             );
 
 
@@ -988,12 +1053,69 @@ mod tests {
 
 
     #[test]
+    fn layout_uses_requested_primitive_count() {
+
+        let layout =
+            CellularLayout::new(
+                256
+            );
+
+
+        assert_eq!(
+            layout.cell_frequency,
+            16.0
+        );
+    }
+
+
+    #[test]
+    fn different_primitive_counts_change_output() {
+
+        let sparse_layout =
+            CellularLayout::new(
+                16
+            );
+
+
+        let dense_layout =
+            CellularLayout::new(
+                256
+            );
+
+
+        let sparse =
+            cellular_value(
+                0.37,
+                0.63,
+                999,
+                &sparse_layout,
+            );
+
+
+        let dense =
+            cellular_value(
+                0.37,
+                0.63,
+                999,
+                &dense_layout,
+            );
+
+
+        assert_ne!(
+            sparse,
+            dense
+        );
+    }
+
+
+    #[test]
     fn generator_returns_standard_texture() {
 
         let texture =
             generate(
                 Palette::Lichen,
                 12345,
+                144,
             )
             .expect(
                 "cellular generation"
@@ -1025,3 +1147,4 @@ mod tests {
         );
     }
 }
+

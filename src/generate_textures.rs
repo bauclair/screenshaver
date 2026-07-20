@@ -5,8 +5,8 @@
 
 use std::fmt;
 use std::str::FromStr;
-
 use crate::palettes::Palette;
+use crate::parse_texture_specification::TextureSpecification;
 
 
 // ============================================================
@@ -34,7 +34,6 @@ pub const CHANNELS_PER_PIXEL: usize =
 )]
 pub enum TextureFamily {
 
-    Julia,
 
     Marble,
 
@@ -42,13 +41,11 @@ pub enum TextureFamily {
 
     Cellular,
 
-    Minerals,
 
     Mesh,
 
     Radial,
 
-    Jigsaw,
 
     Noise,
 
@@ -60,9 +57,8 @@ pub enum TextureFamily {
 
 impl TextureFamily {
 
-    pub const ALL: [TextureFamily; 11] = [
+    pub const ALL: [TextureFamily; 8] = [
 
-        TextureFamily::Julia,
 
         TextureFamily::Marble,
 
@@ -70,13 +66,11 @@ impl TextureFamily {
 
         TextureFamily::Cellular,
 
-        TextureFamily::Minerals,
 
         TextureFamily::Mesh,
 
         TextureFamily::Radial,
 
-        TextureFamily::Jigsaw,
 
         TextureFamily::Noise,
 
@@ -92,10 +86,6 @@ impl TextureFamily {
 
         match self {
 
-            TextureFamily::Julia => {
-                "julia"
-            }
-
             TextureFamily::Marble => {
                 "marble"
             }
@@ -108,20 +98,12 @@ impl TextureFamily {
                 "cellular"
             }
 
-            TextureFamily::Minerals => {
-                "minerals"
-            }
-
             TextureFamily::Mesh => {
                 "mesh"
             }
 
             TextureFamily::Radial => {
                 "radial"
-            }
-
-            TextureFamily::Jigsaw => {
-                "jigsaw"
             }
 
             TextureFamily::Noise => {
@@ -180,12 +162,6 @@ impl FromStr for TextureFamily {
 
         match normalized.as_str() {
 
-            "julia" => {
-                Ok(
-                    TextureFamily::Julia
-                )
-            }
-
             "marble" => {
                 Ok(
                     TextureFamily::Marble
@@ -204,12 +180,6 @@ impl FromStr for TextureFamily {
                 )
             }
 
-            "minerals" => {
-                Ok(
-                    TextureFamily::Minerals
-                )
-            }
-
             "mesh" => {
                 Ok(
                     TextureFamily::Mesh
@@ -219,12 +189,6 @@ impl FromStr for TextureFamily {
             "radial" => {
                 Ok(
                     TextureFamily::Radial
-                )
-            }
-
-            "jigsaw" => {
-                Ok(
-                    TextureFamily::Jigsaw
                 )
             }
 
@@ -415,79 +379,20 @@ impl GeneratedTexture {
 // Public generation API
 // ============================================================
 
-pub fn generate(
-    family: TextureFamily,
+
+pub fn generate_from_specification(
+    specification: &TextureSpecification,
     palette: Palette,
     seed: u64,
 ) -> Result<GeneratedTexture, String> {
 
-    match family {
+    match specification.family {
 
-        TextureFamily::Clouds => {
-
-            crate::generate_clouds::generate(
+        TextureFamily::Hexagons => {
+            crate::generate_hexagons::generate(
                 palette,
                 seed,
-            )
-        }
-
-        TextureFamily::Julia => {
-            Err(
-                "Julia texture generation is not yet implemented"
-                    .to_string()
-            )
-        }
-
-        TextureFamily::Marble => {
-
-            crate::generate_marble::generate(
-                palette,
-                seed,
-            )
-        }
-
-        TextureFamily::Cellular => {
-
-            crate::generate_cellular::generate(
-                palette,
-                seed,
-            )
-        }
-
-        TextureFamily::Minerals => {
-
-            crate::generate_minerals::generate(
-                palette,
-                seed,
-            )
-        }
-
-        TextureFamily::Mesh => {
-
-            crate::generate_mesh::generate(
-                palette,
-                seed,
-            )
-        }
-
-        TextureFamily::Radial => {
-            crate::generate_radial::generate(
-                palette,
-                seed,
-            )
-        }
-
-        TextureFamily::Jigsaw => {
-            crate::generate_jigsaw::generate(
-                palette,
-                seed,
-            )
-        }
-
-        TextureFamily::Noise => {
-            crate::generate_noise::generate(
-                palette,
-                seed,
+                specification.requested_primitive_count,
             )
         }
 
@@ -495,16 +400,57 @@ pub fn generate(
             crate::generate_bricks::generate(
                 palette,
                 seed,
+                specification.requested_primitive_count,
             )
         }
 
-        TextureFamily::Hexagons => {
-            crate::generate_hexagons::generate(
+        TextureFamily::Cellular => {
+            crate::generate_cellular::generate(
                 palette,
                 seed,
-                144,
+                specification.requested_primitive_count,
             )
         }
+
+        TextureFamily::Clouds => {
+            crate::generate_clouds::generate(
+                palette,
+                seed,
+                specification.requested_primitive_count,
+            )
+        }
+
+        TextureFamily::Marble => {
+            crate::generate_marble::generate(
+                palette,
+                seed,
+                specification.requested_primitive_count,
+            )
+        }
+
+        TextureFamily::Mesh => {
+            crate::generate_mesh::generate(
+                palette,
+                seed,
+                specification.requested_primitive_count,
+            )
+        } 
+
+        TextureFamily::Noise => {
+            crate::generate_noise::generate(
+                palette,
+                seed,
+                specification.requested_primitive_count,
+            )
+        }
+
+        TextureFamily::Radial => {
+            crate::generate_radial::generate(
+                palette,
+                seed,
+                specification.requested_primitive_count,
+            )
+        }       
 
     }
 }
@@ -600,9 +546,18 @@ mod tests {
     #[test]
     fn cloud_diagnostic_generates_standard_texture() {
 
+        let specification =
+            TextureSpecification {
+                family: TextureFamily::Clouds,
+
+                requested_primitive_count: 144,
+
+                count_was_explicit: false,
+            };
+
         let texture =
-            generate(
-                TextureFamily::Clouds,
+            generate_from_specification(
+                &specification,
                 Palette::Mist,
                 1,
             )
@@ -610,24 +565,22 @@ mod tests {
                 "diagnostic texture generation"
             );
 
-
         assert_eq!(
             texture.width,
             TEXTURE_SIZE
         );
-
 
         assert_eq!(
             texture.height,
             TEXTURE_SIZE
         );
 
-
         assert_eq!(
             texture.byte_count(),
-            1024 * 1024 * 4
+            (TEXTURE_SIZE as usize)
+                * (TEXTURE_SIZE as usize)
+                * 4
         );
-
 
         assert!(
             texture
@@ -637,16 +590,6 @@ mod tests {
     }
 
 
-    #[test]
-    fn unimplemented_family_returns_error() {
 
-        assert!(
-            generate(
-                TextureFamily::Julia,
-                Palette::Slate,
-                1,
-            )
-            .is_err()
-        );
-    }
 }
+

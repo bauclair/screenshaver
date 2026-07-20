@@ -26,13 +26,22 @@ use crate::palettes::Palette;
 // Mesh-generation parameters
 // ============================================================
 
-/// Approximate number of vertical strands across the texture.
-const VERTICAL_FREQUENCY: f32 =
-    18.0;
+/// Density derived from the requested primitive count.
+#[derive(Clone, Copy, Debug)]
+struct MeshLayout {
+    vertical_frequency: f32,
+    horizontal_frequency: f32,
+}
 
-/// Approximate number of horizontal strands across the texture.
-const HORIZONTAL_FREQUENCY: f32 =
-    18.0;
+impl MeshLayout {
+    fn new(requested_primitive_count: usize) -> Self {
+        let f=(requested_primitive_count.max(1) as f32).sqrt().max(1.0);
+        Self{
+            vertical_frequency:f,
+            horizontal_frequency:f,
+        }
+    }
+}
 
 /// Strand width as a proportion of each vertical repeat cell.
 ///
@@ -104,7 +113,10 @@ const BRIGHTNESS: f32 =
 pub fn generate(
     palette: Palette,
     seed: u64,
+    requested_primitive_count: usize,
 ) -> Result<GeneratedTexture, String> {
+
+    let layout = MeshLayout::new(requested_primitive_count);
 
     let pixel_count =
         TEXTURE_SIZE as usize
@@ -162,6 +174,7 @@ pub fn generate(
                     normalized_x,
                     normalized_y,
                     seed,
+                    &layout,
                 );
 
 
@@ -197,6 +210,7 @@ fn mesh_value(
     x: f32,
     y: f32,
     seed: u64,
+    layout: &MeshLayout,
 ) -> f32 {
 
     let (
@@ -214,7 +228,7 @@ fn mesh_value(
         strand_sample(
             rotated_x,
             rotated_y,
-            VERTICAL_FREQUENCY,
+            layout.vertical_frequency,
             VERTICAL_WIDTH,
             StrandDirection::Vertical,
             seed,
@@ -225,7 +239,7 @@ fn mesh_value(
         strand_sample(
             rotated_y,
             rotated_x,
-            HORIZONTAL_FREQUENCY,
+            layout.horizontal_frequency,
             HORIZONTAL_WIDTH,
             StrandDirection::Horizontal,
             seed.wrapping_add(
@@ -1166,6 +1180,9 @@ mod tests {
     #[test]
     fn mesh_value_is_normalized() {
 
+        let layout = MeshLayout::new(144);
+
+
         for y in
             0..32
         {
@@ -1187,6 +1204,7 @@ mod tests {
                             / 32.0,
 
                         12345,
+                        &layout,
                     );
 
 
@@ -1206,11 +1224,15 @@ mod tests {
     #[test]
     fn same_seed_is_deterministic() {
 
+        let layout = MeshLayout::new(144);
+
+
         let first =
             mesh_value(
                 0.37,
                 0.63,
                 999,
+                &layout,
             );
 
 
@@ -1219,6 +1241,7 @@ mod tests {
                 0.37,
                 0.63,
                 999,
+                &layout,
             );
 
 
@@ -1231,6 +1254,9 @@ mod tests {
 
     #[test]
     fn different_seeds_change_output() {
+
+        let layout = MeshLayout::new(144);
+
 
         let mut found_difference =
             false;
@@ -1263,6 +1289,7 @@ mod tests {
                         sample_x,
                         sample_y,
                         1,
+                        &layout,
                     );
 
 
@@ -1271,6 +1298,7 @@ mod tests {
                         sample_x,
                         sample_y,
                         2,
+                        &layout,
                     );
 
 
@@ -1303,12 +1331,20 @@ mod tests {
 
 
     #[test]
+    fn layout_uses_requested_primitive_count() {
+        let layout=MeshLayout::new(256);
+        assert_eq!(layout.vertical_frequency,16.0);
+        assert_eq!(layout.horizontal_frequency,16.0);
+    }
+
+    #[test]
     fn generator_returns_standard_texture() {
 
         let texture =
             generate(
                 Palette::Slate,
                 12345,
+                144,
             )
             .expect(
                 "mesh generation"

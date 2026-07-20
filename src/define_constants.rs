@@ -8,6 +8,10 @@ pub const MIN_RENDER_FPS: u32 = 16;
 pub const DEFAULT_RENDER_FPS: u32 = 30;
 pub const MAX_RENDER_FPS: u32 = 120;
 
+// Supported procedural texture primitive-count limits.
+pub const MIN_TEXTURE_PRIMITIVES: usize = 1;
+pub const MAX_TEXTURE_PRIMITIVES: usize = 1024;
+
 pub const VERTEX_SHADER: &str = r#"
 #version 330 core
 
