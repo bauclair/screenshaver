@@ -222,8 +222,8 @@ pub fn display(
 
             texture:
                 Some(
-                    generated.family
-                        .to_string()
+                    generated.specification
+                        .display_name()
                 ),
 
             palette:

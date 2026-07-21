@@ -1,5 +1,5 @@
-use std::str::FromStr;
 use std::fmt;
+use std::str::FromStr;
 
 use crate::generate_textures::TextureFamily;
 
@@ -38,6 +38,43 @@ impl TextureSpecification {
             value
         )
     }
+
+
+    /// Return a user-facing texture name for logs and overlay pills.
+    ///
+    /// The canonical `Display` implementation remains suitable for
+    /// configuration and command-line text:
+    ///
+    /// - `hexagons`
+    /// - `hexagons:144`
+    ///
+    /// This method instead produces presentation text:
+    ///
+    /// - `Hexagons`
+    /// - `Hexagons (144)`
+    pub fn display_name(
+        &self,
+    ) -> String {
+
+        let family_name =
+            title_case_family_name(
+                self.family.name()
+            );
+
+
+        if self.count_was_explicit {
+
+            format!(
+                "{} ({})",
+                family_name,
+                self.requested_primitive_count,
+            )
+
+        } else {
+
+            family_name
+        }
+    }
 }
 
 
@@ -62,13 +99,13 @@ impl fmt::Display for TextureSpecification {
 
     fn fmt(
         &self,
-        f: &mut fmt::Formatter<'_>,
+        formatter: &mut fmt::Formatter<'_>,
     ) -> fmt::Result {
 
         if self.count_was_explicit {
 
             write!(
-                f,
+                formatter,
                 "{}:{}",
                 self.family.name(),
                 self.requested_primitive_count,
@@ -76,12 +113,9 @@ impl fmt::Display for TextureSpecification {
 
         } else {
 
-            write!(
-                f,
-                "{}",
-                self.family.name(),
+            formatter.write_str(
+                self.family.name()
             )
-
         }
     }
 }
@@ -162,20 +196,16 @@ pub fn parse_texture_specification(
     }
 
 
-    let normalized_family =
-        family_text.to_ascii_lowercase();
-
-
     let family =
         TextureFamily::from_str(
-            &normalized_family
+            family_text
         )
         .map_err(
             |error| {
                 format!(
                     "Invalid texture specification '{}': {}",
                     value,
-                    error
+                    error,
                 )
             }
         )?;
@@ -211,7 +241,8 @@ pub fn parse_texture_specification(
                 count
             ) => {
 
-                if !count.chars()
+                if !count
+                    .chars()
                     .all(
                         |character| {
                             character.is_ascii_digit()
@@ -222,20 +253,21 @@ pub fn parse_texture_specification(
                         format!(
                             "Invalid primitive count '{}' in texture specification '{}'; the count must be a positive integer",
                             count,
-                            value
+                            value,
                         )
                     );
                 }
 
 
                 let parsed_count =
-                    count.parse::<usize>()
+                    count
+                        .parse::<usize>()
                         .map_err(
                             |_| {
                                 format!(
                                     "Primitive count '{}' in texture specification '{}' is too large",
                                     count,
-                                    value
+                                    value,
                                 )
                             }
                         )?;
@@ -280,6 +312,36 @@ pub fn parse_texture_specification(
 }
 
 
+fn title_case_family_name(
+    family_name: &str,
+) -> String {
+
+    let mut characters =
+        family_name.chars();
+
+
+    match characters.next() {
+
+        Some(
+            first_character
+        ) => {
+
+            first_character
+                .to_uppercase()
+                .chain(
+                    characters
+                )
+                .collect()
+        }
+
+
+        None => {
+            String::new()
+        }
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
 
@@ -287,7 +349,7 @@ mod tests {
 
 
     #[test]
-    fn texture_without_count_defaults_to_one() {
+    fn texture_without_count_uses_default_primitive_count() {
 
         let specification =
             parse_texture_specification(
@@ -305,7 +367,7 @@ mod tests {
 
         assert_eq!(
             specification.requested_primitive_count,
-            1
+            DEFAULT_PRIMITIVE_COUNT
         );
 
         assert!(
@@ -387,6 +449,86 @@ mod tests {
             specification.requested_primitive_count,
             144
         );
+
+        assert!(
+            specification.count_was_explicit
+        );
+    }
+
+
+    #[test]
+    fn canonical_display_omits_defaulted_count() {
+
+        let specification =
+            parse_texture_specification(
+                "hexagons"
+            )
+            .expect(
+                "The texture specification should parse"
+            );
+
+
+        assert_eq!(
+            specification.to_string(),
+            "hexagons"
+        );
+    }
+
+
+    #[test]
+    fn canonical_display_preserves_explicit_count() {
+
+        let specification =
+            parse_texture_specification(
+                "hexagons:144"
+            )
+            .expect(
+                "The texture specification should parse"
+            );
+
+
+        assert_eq!(
+            specification.to_string(),
+            "hexagons:144"
+        );
+    }
+
+
+    #[test]
+    fn display_name_omits_defaulted_count() {
+
+        let specification =
+            parse_texture_specification(
+                "hexagons"
+            )
+            .expect(
+                "The texture specification should parse"
+            );
+
+
+        assert_eq!(
+            specification.display_name(),
+            "Hexagons"
+        );
+    }
+
+
+    #[test]
+    fn display_name_includes_explicit_count() {
+
+        let specification =
+            parse_texture_specification(
+                "hexagons:144"
+            )
+            .expect(
+                "The texture specification should parse"
+            );
+
+
+        assert_eq!(
+            specification.display_name(),
+            "Hexagons (144)"
+        );
     }
 
 
@@ -467,7 +609,10 @@ mod tests {
 
         let specification =
             parse_texture_specification(
-                "hexagons:1024"
+                &format!(
+                    "hexagons:{}",
+                    crate::define_constants::MAX_TEXTURE_PRIMITIVES,
+                )
             )
             .expect(
                 "The maximum primitive count should parse"
@@ -484,9 +629,17 @@ mod tests {
     #[test]
     fn rejects_count_above_maximum() {
 
+        let value =
+            format!(
+                "hexagons:{}",
+                crate::define_constants::MAX_TEXTURE_PRIMITIVES
+                    + 1,
+            );
+
+
         assert!(
             parse_texture_specification(
-                "hexagons:1025"
+                &value
             )
             .is_err()
         );

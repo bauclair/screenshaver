@@ -255,6 +255,17 @@ pub struct GeneratedTexture {
     pub pixels:
         Vec<u8>,
 
+    /// Complete texture request used to generate this image.
+    ///
+    /// This is the authoritative identity of the generated texture and
+    /// preserves both the requested primitive count and whether that
+    /// count was explicitly supplied by the user.
+    pub specification:
+        TextureSpecification,
+
+    /// Temporary compatibility field for code that has not yet been
+    /// migrated to `specification.family`. Remove after all downstream
+    /// consumers have been updated.
     pub family:
         TextureFamily,
 
@@ -299,11 +310,22 @@ impl GeneratedTexture {
         }
 
 
+        let specification =
+            TextureSpecification {
+                family,
+                requested_primitive_count:
+                    crate::parse_texture_specification::DEFAULT_PRIMITIVE_COUNT,
+                count_was_explicit:
+                    false,
+            };
+
+
         Ok(
             Self {
                 width,
                 height,
                 pixels,
+                specification,
                 family,
                 palette,
                 seed,
@@ -386,7 +408,8 @@ pub fn generate_from_specification(
     seed: u64,
 ) -> Result<GeneratedTexture, String> {
 
-    match specification.family {
+    let mut generated =
+        match specification.family {
 
         TextureFamily::Hexagons => {
             crate::generate_hexagons::generate(
@@ -452,7 +475,23 @@ pub fn generate_from_specification(
             )
         }       
 
-    }
+    }?;
+
+
+    // Preserve the exact parsed request rather than reconstructing it
+    // from the family and effective primitive count. In particular,
+    // `count_was_explicit` must survive generation so logs and overlay
+    // pills can distinguish `hexagons` from `hexagons:144`.
+    generated.specification =
+        *specification;
+
+    generated.family =
+        specification.family;
+
+
+    Ok(
+        generated
+    )
 }
 
 
@@ -573,6 +612,20 @@ mod tests {
         assert_eq!(
             texture.height,
             TEXTURE_SIZE
+        );
+
+        assert_eq!(
+            texture.specification,
+            specification
+        );
+
+        assert_eq!(
+            texture.specification.requested_primitive_count,
+            144
+        );
+
+        assert!(
+            !texture.specification.count_was_explicit
         );
 
         assert_eq!(

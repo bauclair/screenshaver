@@ -448,7 +448,21 @@ struct GpuTexture {
     id: u32,
     width: u32,
     height: u32,
-    family: TextureFamily,
+
+    /// Complete texture request that produced this GPU texture.
+    ///
+    /// This is the authoritative identity of the uploaded texture and
+    /// preserves the requested primitive count plus whether that count
+    /// was explicitly supplied by the user.
+    specification:
+        TextureSpecification,
+
+    /// Temporary compatibility field for downstream code that has not
+    /// yet been migrated to `specification.family`. Remove after the
+    /// overlay and other consumers use the complete specification.
+    family:
+        TextureFamily,
+
     palette: Palette,
     seed: u64,
 }
@@ -657,9 +671,34 @@ impl TextureManager {
     }
 
 
-    /// Return the procedural texture and palette currently bound
-    /// for the active shader. Shaders without texture channels
-    /// return None.
+    /// Return the complete procedural texture specification and
+    /// palette currently bound for the active shader. Shaders
+    /// without texture channels return None.
+    pub fn active_specification_selection(
+        &self,
+    ) -> Option<(
+        TextureSpecification,
+        Palette,
+    )> {
+
+        self.texture
+            .as_ref()
+            .map(
+                |texture| {
+                    (
+                        texture.specification,
+                        texture.palette,
+                    )
+                }
+            )
+    }
+
+
+    /// Temporary compatibility accessor for downstream code that
+    /// still expects only a TextureFamily and Palette.
+    ///
+    /// New code should use `active_specification_selection()` so the
+    /// primitive-count metadata is not discarded.
     pub fn active_selection(
         &self,
     ) -> Option<(
@@ -1014,6 +1053,8 @@ fn upload_generated_texture(
                 generated.width,
             height:
                 generated.height,
+            specification:
+                generated.specification,
             family:
                 generated.family,
             palette:
@@ -1196,7 +1237,7 @@ fn delete_gpu_texture(
         &format!(
             "[TEXTURE] Deleted OpenGL texture {} ({} / {}, seed={})",
             texture.id,
-            texture.family,
+            texture.specification.display_name(),
             texture.palette,
             texture.seed,
         )

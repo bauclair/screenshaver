@@ -988,15 +988,15 @@ fn build_subtitle_overlay(
         palette,
     ) =
         texture_manager
-            .active_selection()
+            .active_specification_selection()
             .map(
                 |(
-                    family,
+                    specification,
                     palette,
                 )| {
                     (
                         Some(
-                            family.to_string()
+                            specification.display_name()
                         ),
                         Some(
                             palette.to_string()

@@ -1181,15 +1181,15 @@ fn load_active_shader(
         palette,
     ) =
         texture_manager
-            .active_selection()
+            .active_specification_selection()
             .map(
                 |(
-                    family,
+                    specification,
                     palette,
                 )| {
                     (
                         Some(
-                            family.to_string()
+                            specification.display_name()
                         ),
                         Some(
                             palette.to_string()
