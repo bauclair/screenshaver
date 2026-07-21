@@ -44,7 +44,7 @@ const VALID_TEXTURE_FAMILIES: [&str; 9] = [
     "random",
     "marble",
     "clouds",
-    "cellular",
+    "cells",
     "mesh",
     "radial",
     "noise",
@@ -56,7 +56,7 @@ const VALID_TEXTURE_FAMILIES: [&str; 9] = [
 const VALID_PREVIEW_TEXTURE_FAMILIES: [&str; 8] = [
     "marble",
     "clouds",
-    "cellular",
+    "cells",
     "mesh",
     "radial",
     "noise",
@@ -914,7 +914,7 @@ pub fn print_help() {
          Texture families:\n\
              marble\n\
              clouds\n\
-             cellular\n\
+             cells\n\
              mesh\n\
              radial\n\
              noise\n\

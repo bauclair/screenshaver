@@ -95,7 +95,7 @@ impl TextureFamily {
             }
 
             TextureFamily::Cellular => {
-                "cellular"
+                "cells"
             }
 
             TextureFamily::Mesh => {
@@ -174,7 +174,7 @@ impl FromStr for TextureFamily {
                 )
             }
 
-            "cellular" => {
+            "cells" => {
                 Ok(
                     TextureFamily::Cellular
                 )

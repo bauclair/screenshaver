@@ -457,12 +457,6 @@ struct GpuTexture {
     specification:
         TextureSpecification,
 
-    /// Temporary compatibility field for downstream code that has not
-    /// yet been migrated to `specification.family`. Remove after the
-    /// overlay and other consumers use the complete specification.
-    family:
-        TextureFamily,
-
     palette: Palette,
     seed: u64,
 }
@@ -687,31 +681,6 @@ impl TextureManager {
                 |texture| {
                     (
                         texture.specification,
-                        texture.palette,
-                    )
-                }
-            )
-    }
-
-
-    /// Temporary compatibility accessor for downstream code that
-    /// still expects only a TextureFamily and Palette.
-    ///
-    /// New code should use `active_specification_selection()` so the
-    /// primitive-count metadata is not discarded.
-    pub fn active_selection(
-        &self,
-    ) -> Option<(
-        TextureFamily,
-        Palette,
-    )> {
-
-        self.texture
-            .as_ref()
-            .map(
-                |texture| {
-                    (
-                        texture.family,
                         texture.palette,
                     )
                 }
@@ -1055,8 +1024,6 @@ fn upload_generated_texture(
                 generated.height,
             specification:
                 generated.specification,
-            family:
-                generated.family,
             palette:
                 generated.palette,
             seed:

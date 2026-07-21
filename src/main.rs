@@ -224,7 +224,7 @@ crate::parse_arguments::Command::ListTextures => {
     );
 
     println!(
-        "    cellular"
+        "    cells"
     );
 
     println!(
