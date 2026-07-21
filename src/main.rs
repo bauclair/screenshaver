@@ -43,6 +43,7 @@ mod preview_shader;
 mod preview_shader_directory;
 mod palettes;
 mod display_texture;
+mod display_message;
 mod construct_text_overlay;
 mod display_overlay;
 mod tray_icon;

@@ -9,7 +9,7 @@
 
 rustPlatform.buildRustPackage rec {
   pname = "screenshaver";
-  version = "0.3.8";
+  version = "0.3.9";
 
   src = ./.;
 

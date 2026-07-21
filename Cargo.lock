@@ -999,7 +999,7 @@ dependencies = [
 
 [[package]]
 name = "screenshaver"
-version = "0.3.8"
+version = "0.3.9"
 dependencies = [
  "ctrlc",
  "evdev",
