@@ -263,12 +263,6 @@ pub struct GeneratedTexture {
     pub specification:
         TextureSpecification,
 
-    /// Temporary compatibility field for code that has not yet been
-    /// migrated to `specification.family`. Remove after all downstream
-    /// consumers have been updated.
-    pub family:
-        TextureFamily,
-
     pub palette:
         Palette,
 
@@ -326,7 +320,6 @@ impl GeneratedTexture {
                 height,
                 pixels,
                 specification,
-                family,
                 palette,
                 seed,
             }
@@ -484,9 +477,6 @@ pub fn generate_from_specification(
     // pills can distinguish `hexagons` from `hexagons:144`.
     generated.specification =
         *specification;
-
-    generated.family =
-        specification.family;
 
 
     Ok(

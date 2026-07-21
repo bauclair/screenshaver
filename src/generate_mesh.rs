@@ -1352,7 +1352,7 @@ mod tests {
 
 
         assert_eq!(
-            texture.family,
+            texture.specification.family,
             TextureFamily::Mesh
         );
 

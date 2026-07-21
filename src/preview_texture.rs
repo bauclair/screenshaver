@@ -112,7 +112,7 @@ pub fn run(
 
     println!(
         "Family: {}",
-        texture.family
+        texture.specification.family
     );
 
 

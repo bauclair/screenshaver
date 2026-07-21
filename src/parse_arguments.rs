@@ -477,9 +477,7 @@ fn parse_preview_shader(
     {
         match args[index].as_str() {
 
-            "--shader-texture"
-            | "--texture"
-            | "--background-texture" => {
+            | "--texture" => {
 
                 if shader_texture.is_some() {
 
@@ -670,7 +668,7 @@ fn parse_preview_shader(
             "--family" => {
 
                 return Err(
-                    "--family is not valid with --preview-shader; use --shader-texture"
+                    "--family is not valid with --preview-shader; use --texture"
                         .to_string()
                 );
             }
@@ -899,7 +897,7 @@ pub fn print_help() {
                  This command does not consult screenshaver.toml.\n\
          \n\
              --preview-shader PATH [--interval SECONDS] [--fps FPS]\n\
-                              [--shader-texture FAMILY[:COUNT]] [--shader-palette PALETTE]\n\
+                              [--texture FAMILY[:COUNT]] [--palette PALETTE]\n\
                  Preview one shader or all shaders directly inside a folder.\n\
                  Folder previews use a 30-second interval unless overridden.\n\
                  Command-line texture values override TOML selection values.\n\
@@ -912,22 +910,22 @@ pub fn print_help() {
                  Display available procedural texture palettes.\n\
          \n\
          Texture families:\n\
-             marble\n\
-             clouds\n\
-             cells\n\
-             mesh\n\
-             radial\n\
-             noise\n\
              bricks\n\
+             cells\n\
+             clouds\n\
              hexagons\n\
+             marble\n\
+             mesh\n\
+             noise\n\
+             radial\n\
          \n\
          Texture palettes:\n\
-             slate\n\
-             sandstone\n\
+             brick\n\
+             bronze\n\
              lichen\n\
              mist\n\
-             bronze\n\
-             brick\n\
+             sandstone\n\
+             slate\n\
          \n\
          Examples:\n\
              screenshaver --start\n\

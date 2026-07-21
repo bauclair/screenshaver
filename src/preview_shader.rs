@@ -1187,9 +1187,28 @@ fn load_active_shader(
                     specification,
                     palette,
                 )| {
+                    let texture_name =
+                        specification.display_name();
+
+
+                    let texture_description =
+                        if specification.count_was_explicit {
+
+                            texture_name
+
+                        } else {
+
+                            format!(
+                                "{} ({})",
+                                texture_name,
+                                specification.requested_primitive_count,
+                            )
+                        };
+
+
                     (
                         Some(
-                            specification.display_name()
+                            texture_description
                         ),
                         Some(
                             palette.to_string()

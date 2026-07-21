@@ -55,6 +55,24 @@ const RANDOM_TEXTURE_FAMILIES: [TextureFamily; 8] = [
 ];
 
 
+/// Primitive counts available for automatic random texture selection.
+///
+/// Powers of two provide broad visual variation without selecting every
+/// possible count in the supported range.
+const RANDOM_PRIMITIVE_COUNTS: [usize; 10] = [
+    2,
+    4,
+    8,
+    16,
+    32,
+    64,
+    128,
+    256,
+    512,
+    1024,
+];
+
+
 const CHANNEL_COUNT: usize =
     4;
 
@@ -159,10 +177,8 @@ fn resolve_texture_selection(
                 PreviewSelectionValue::Random
             ) => {
                 (
-                    default_texture_specification(
-                        random_texture_family(
-                            &mut state
-                        )
+                    random_texture_specification(
+                        &mut state
                     ),
                     "command-line random",
                 )
@@ -186,10 +202,8 @@ fn resolve_texture_selection(
                     )
                 } else {
                     (
-                        default_texture_specification(
-                            random_texture_family(
-                                &mut state
-                            )
+                        random_texture_specification(
+                            &mut state
                         ),
                         "random fallback",
                     )
@@ -268,17 +282,33 @@ fn resolve_texture_selection(
     )
 }
 
-fn default_texture_specification(
-    family: TextureFamily,
+fn random_texture_specification(
+    state: &mut u64,
 ) -> TextureSpecification {
 
-    crate::parse_texture_specification::parse_texture_specification(
-        family.name()
-    )
-    .expect(
-        "A built-in TextureFamily name must always be a valid texture specification"
-    )
+    let family =
+        random_texture_family(
+            state
+        );
+
+
+    let primitive_count =
+        random_primitive_count(
+            state
+        );
+
+
+    TextureSpecification {
+        family,
+
+        requested_primitive_count:
+            primitive_count,
+
+        count_was_explicit:
+            false,
+    }
 }
+
 
 fn random_texture_family(
     state: &mut u64,
@@ -293,6 +323,23 @@ fn random_texture_family(
 
     RANDOM_TEXTURE_FAMILIES[
         family_index
+    ]
+}
+
+
+fn random_primitive_count(
+    state: &mut u64,
+) -> usize {
+
+    let count_index =
+        random_index(
+            state,
+            RANDOM_PRIMITIVE_COUNTS.len(),
+        );
+
+
+    RANDOM_PRIMITIVE_COUNTS[
+        count_index
     ]
 }
 
@@ -592,8 +639,9 @@ impl TextureManager {
 
         log(
             &format!(
-                "[TEXTURE] Selected procedural texture: family={}, palette={}, seed={}",
+                "[TEXTURE] Selected procedural texture: family={}, primitives={}, palette={}, seed={}",
                 request.texture.family,
+                request.texture.requested_primitive_count,
                 request.palette,
                 request.seed,
             )

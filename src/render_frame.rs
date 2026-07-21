@@ -996,7 +996,15 @@ fn build_subtitle_overlay(
                 )| {
                     (
                         Some(
-                            specification.display_name()
+                            if specification.count_was_explicit {
+                                specification.display_name()
+                            } else {
+                                format!(
+                                    "{} ({})",
+                                    specification.display_name(),
+                                    specification.requested_primitive_count,
+                                )
+                            }
                         ),
                         Some(
                             palette.to_string()
