@@ -12,6 +12,19 @@ pub fn run(
     palette: Option<String>,
 ) {
 
+    let logfile =
+        crate::locate_paths::runtime_log_path();
+
+
+    crate::logger::information(
+        &logfile,
+        &format!(
+            "[TEXTURE_PREVIEW] Texture preview requested: {}",
+            texture.display_name(),
+        ),
+    );
+
+
     let config =
         match crate::load_config::load_config(
             &crate::locate_paths::config_path()
@@ -20,6 +33,15 @@ pub fn run(
             Ok(result) => result.config,
 
             Err(error) => {
+
+                crate::logger::error(
+                    &logfile,
+                    &format!(
+                        "[TEXTURE_PREVIEW] Configuration error: {}",
+                        error,
+                    ),
+                );
+
 
                 eprintln!(
                     "[TEXTURE PREVIEW] Configuration error: {}",
@@ -35,7 +57,10 @@ pub fn run(
         generate_seed();
 
 
-    let palette =
+    let (
+        palette,
+        palette_source,
+    ) =
         match palette {
 
             Some(name) => {
@@ -44,9 +69,21 @@ pub fn run(
                     &name
                 ) {
 
-                    Ok(palette) => palette,
+                    Ok(palette) => (
+                        palette,
+                        "command line",
+                    ),
 
                     Err(error) => {
+
+                        crate::logger::error(
+                            &logfile,
+                            &format!(
+                                "[TEXTURE_PREVIEW] Palette selection failed: {}",
+                                error,
+                            ),
+                        );
+
 
                         eprintln!(
                             "[TEXTURE PREVIEW] {}",
@@ -60,11 +97,23 @@ pub fn run(
 
             None => {
 
-                random_palette(
-                    seed
+                (
+                    random_palette(
+                        seed
+                    ),
+                    "random fallback",
                 )
             }
         };
+
+
+    crate::logger::debug(
+        &logfile,
+        &format!(
+            "[TEXTURE_PREVIEW] Palette selection source: {}",
+            palette_source,
+        ),
+    );
 
 
     println!(
@@ -83,6 +132,15 @@ pub fn run(
 
             Err(error) => {
 
+                crate::logger::error(
+                    &logfile,
+                    &format!(
+                        "[TEXTURE_PREVIEW] Texture generation failed: {}",
+                        error,
+                    ),
+                );
+
+
                 eprintln!(
                     "[TEXTURE PREVIEW] Generation failed: {}",
                     error
@@ -96,6 +154,15 @@ pub fn run(
     if let Err(error) =
         texture.validate_standard()
     {
+        crate::logger::error(
+            &logfile,
+            &format!(
+                "[TEXTURE_PREVIEW] Texture validation failed: {}",
+                error,
+            ),
+        );
+
+
         eprintln!(
             "[TEXTURE PREVIEW] Validation failed: {}",
             error
@@ -103,6 +170,22 @@ pub fn run(
 
         return;
     }
+
+
+    crate::logger::information(
+        &logfile,
+        &format!(
+            "[TEXTURE_PREVIEW] Generated texture: family={}, primitives={}, palette={}, seed={}, size={}x{}, pixels={}, bytes={}",
+            texture.specification.family,
+            texture.specification.requested_primitive_count,
+            texture.palette,
+            texture.seed,
+            texture.width,
+            texture.height,
+            texture.pixel_count(),
+            texture.byte_count(),
+        ),
+    );
 
 
     println!(
@@ -146,6 +229,13 @@ pub fn run(
         texture.byte_count()
     );
 
+
+    crate::logger::information(
+        &logfile,
+        "[TEXTURE_PREVIEW] Opening texture preview window",
+    );
+
+
     println!(
         "[TEXTURE PREVIEW] Opening preview window..."
     );
@@ -159,6 +249,12 @@ pub fn run(
 
         Ok(()) => {
 
+            crate::logger::information(
+                &logfile,
+                "[TEXTURE_PREVIEW] Texture preview window closed",
+            );
+
+
             println!(
                 "[TEXTURE PREVIEW] Preview closed"
             );
@@ -166,6 +262,15 @@ pub fn run(
 
 
         Err(error) => {
+
+            crate::logger::error(
+                &logfile,
+                &format!(
+                    "[TEXTURE_PREVIEW] Texture display failed: {}",
+                    error,
+                ),
+            );
+
 
             eprintln!(
                 "[TEXTURE PREVIEW] Display failed: {}",

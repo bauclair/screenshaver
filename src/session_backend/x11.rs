@@ -26,14 +26,14 @@ impl X11Backend {
     pub fn new(
         idle_timeout: Duration,
     ) -> Result<Self, SessionError> {
-        log("[X11] Opening X11 display");
+        log_debug("[X11] Opening X11 display");
 
         let idle_timeout_ms =
             idle_timeout
                 .as_millis()
                 .min(u64::MAX as u128) as u64;
 
-        log(
+        log_debug(
             &format!(
                 "[X11] Idle threshold = {} ms",
                 idle_timeout_ms,
@@ -63,7 +63,7 @@ impl X11Backend {
                         display_name
                     );
 
-                log(
+                log_debug(
                     &format!(
                         "[X11] Connected to {}",
                         name.to_string_lossy()
@@ -71,7 +71,7 @@ impl X11Backend {
                 );
             }
             else {
-                log(
+                log_debug(
                     "[X11] Connected (display name unavailable)"
                 );
             }
@@ -98,7 +98,7 @@ impl X11Backend {
                 );
             }
 
-            log(
+            log_debug(
                 &format!(
                     "[X11] XScreenSaver extension available (event_base={}, error_base={})",
                     event_base,
@@ -142,7 +142,7 @@ impl X11Backend {
                 );
             }
 
-            log(
+            log_debug(
                 &format!(
                     "[X11] Root window = {}",
                     root_window,
@@ -176,7 +176,7 @@ impl SessionBackend for X11Backend {
             };
 
         if query_succeeded == 0 {
-            log(
+            log_error(
                 "[X11] XScreenSaverQueryInfo failed"
             );
 
@@ -200,7 +200,7 @@ impl SessionBackend for X11Backend {
                 idle_second
             );
 
-            log(
+            log_debug(
                 &format!(
                     "[X11] poll_state: idle={} ms, timeout={} ms",
                     idle_ms,
@@ -210,7 +210,7 @@ impl SessionBackend for X11Backend {
         }
 
         if idle_ms >= self.idle_timeout_ms {
-            log(
+            log_information(
                 &format!(
                     "[X11] State = Idle (idle={} ms, timeout={} ms)",
                     idle_ms,
@@ -240,7 +240,7 @@ impl Drop for X11Backend {
     fn drop(
         &mut self
     ) {
-        log(
+        log_debug(
             "[X11] Closing display"
         );
 
@@ -266,20 +266,41 @@ impl Drop for X11Backend {
     }
 }
 
-fn log(
+fn log_debug(
     message: &str,
 ) {
     let logfile =
         crate::locate_paths::runtime_log_path();
 
-    crate::logger::log(
+    crate::logger::debug(
         &logfile,
         message,
     );
+}
 
-    println!(
-        "{}",
-        message
+
+fn log_information(
+    message: &str,
+) {
+    let logfile =
+        crate::locate_paths::runtime_log_path();
+
+    crate::logger::information(
+        &logfile,
+        message,
+    );
+}
+
+
+fn log_error(
+    message: &str,
+) {
+    let logfile =
+        crate::locate_paths::runtime_log_path();
+
+    crate::logger::error(
+        &logfile,
+        message,
     );
 }
 

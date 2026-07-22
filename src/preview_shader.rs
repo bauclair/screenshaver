@@ -174,7 +174,7 @@ pub fn run(
         ) => {
 
             if interval_seconds.is_some() {
-                log(
+                log_warning(
                     "[PREVIEW_SHADER] --interval ignored for a single shader file"
                 );
             }
@@ -265,12 +265,7 @@ pub fn run_paths(
         crate::locate_paths::runtime_log_path();
 
 
-    crate::logger::reset_log(
-        &logfile
-    );
-
-
-    crate::logger::log(
+    crate::logger::information(
         &logfile,
         &format!(
             "[PREVIEW_SHADER] Preview playlist contains {} shader path(s)",
@@ -586,7 +581,7 @@ pub fn run_paths(
                                 Instant::now();
 
 
-                            log(
+                            log_information(
                                 &format!(
                                     "[PREVIEW_SHADER] Switched to {}",
                                     active.path.display(),
@@ -596,7 +591,7 @@ pub fn run_paths(
 
                         Err(error) => {
 
-                            log(
+                            log_warning(
                                 &format!(
                                     "[PREVIEW_SHADER] Unable to select another usable shader: {}",
                                     error,
@@ -908,7 +903,7 @@ pub fn run_paths(
     );
 
 
-    log(
+    log_information(
         "[PREVIEW_SHADER] Preview closed"
     );
 
@@ -1045,7 +1040,7 @@ fn load_first_usable_shader(
 
             Err(error) => {
 
-                log(
+                log_warning(
                     &format!(
                         "[PREVIEW_SHADER] Skipping '{}': {}",
                         path.display(),
@@ -1142,7 +1137,7 @@ fn load_active_shader(
         crate::compile_shader::build_program(
             crate::define_constants::VERTEX_SHADER,
             &source,
-        );
+        )?;
 
 
     let mut texture_manager =
@@ -1257,7 +1252,7 @@ fn load_active_shader(
         };
 
 
-    log(
+    log_information(
         &format!(
             "[PREVIEW_SHADER] Active shader: {}",
             path.display(),
@@ -1422,7 +1417,7 @@ fn discard_startup_input(
 }
 
 
-fn log(
+fn log_warning(
     message: &str,
 ) {
 
@@ -1430,7 +1425,22 @@ fn log(
         crate::locate_paths::runtime_log_path();
 
 
-    crate::logger::log(
+    crate::logger::warning(
+        &logfile,
+        message,
+    );
+}
+
+
+fn log_information(
+    message: &str,
+) {
+
+    let logfile =
+        crate::locate_paths::runtime_log_path();
+
+
+    crate::logger::information(
         &logfile,
         message,
     );

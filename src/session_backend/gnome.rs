@@ -11,6 +11,17 @@ use crate::query_session::{
     SessionState,
 };
 
+
+fn log_debug(message: &str) {
+    let logfile = crate::locate_paths::runtime_log_path();
+    crate::logger::debug(&logfile, message);
+}
+
+fn log_information(message: &str) {
+    let logfile = crate::locate_paths::runtime_log_path();
+    crate::logger::information(&logfile, message);
+}
+
 pub struct GnomeBackend {
     _connection: Connection,
     proxy: Proxy<'static>,
@@ -21,7 +32,7 @@ impl GnomeBackend {
     pub fn new(
         idle_timeout: Duration,
     ) -> Result<Self, SessionError> {
-        println!("[GNOME] Connecting to session bus");
+        log_debug("[GNOME] Connecting to session bus");
 
         let connection =
             Connection::session()
@@ -34,7 +45,7 @@ impl GnomeBackend {
                     )
                 })?;
 
-        println!("[GNOME] Session bus connected");
+        log_debug("[GNOME] Session bus connected");
 
         let proxy =
             Proxy::new(
@@ -52,9 +63,9 @@ impl GnomeBackend {
                 )
             })?;
 
-        println!("[GNOME] Mutter IdleMonitor proxy created");
+        log_debug("[GNOME] Mutter IdleMonitor proxy created");
 
-        println!("[GNOME] Testing GNOME IdleMonitor availability");
+        log_debug("[GNOME] Testing GNOME IdleMonitor availability");
 
         let _: u64 =
             proxy
@@ -71,8 +82,8 @@ impl GnomeBackend {
                     )
                 })?;
 
-        println!("[GNOME] GNOME IdleMonitor available");
-        println!("[GNOME] GNOME backend initialized");
+        log_information("[GNOME] GNOME IdleMonitor available");
+        log_information("[GNOME] GNOME backend initialized");
 
         Ok(
             Self {
@@ -116,3 +127,4 @@ impl SessionBackend for GnomeBackend {
         "gnome"
     }
 }
+

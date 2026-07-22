@@ -1,25 +1,59 @@
 use std::ffi::CString;
-use std::path::PathBuf;
+
 
 pub fn compile_shader(
     source: &str,
     kind: u32,
-) -> u32 {
-
-    log("Entered compile_shader()");
+) -> Result<u32, String> {
 
     unsafe {
         let shader =
-            gl::CreateShader(kind);
+            gl::CreateShader(
+                kind
+            );
 
-        if shader == 0 {
-            log("ERROR: gl::CreateShader returned 0");
-            panic!("Shader creation failed");
+
+        if shader
+            == 0
+        {
+            return Err(
+                format!(
+                    "Unable to create OpenGL {} shader object",
+                    shader_kind_name(
+                        kind
+                    ),
+                )
+            );
         }
 
+
         let c_source =
-            CString::new(source)
-                .expect("Shader source contained interior null byte");
+            match CString::new(
+                source
+            ) {
+
+                Ok(source) => {
+                    source
+                }
+
+                Err(_) => {
+
+                    gl::DeleteShader(
+                        shader
+                    );
+
+
+                    return Err(
+                        format!(
+                            "{} shader source contained an interior null byte",
+                            shader_kind_display_name(
+                                kind
+                            ),
+                        )
+                    );
+                }
+            };
+
 
         gl::ShaderSource(
             shader,
@@ -28,121 +62,246 @@ pub fn compile_shader(
             std::ptr::null(),
         );
 
-        gl::CompileShader(shader);
 
-        if !shader_compile_success(shader) {
+        gl::CompileShader(
+            shader
+        );
+
+
+        if !shader_compile_success(
+            shader
+        ) {
             let error =
-                shader_info_log(shader);
+                shader_info_log(
+                    shader
+                );
 
-            log(
-                &format!(
-                    "ERROR: shader compilation failed:\n{}",
-                    error
-                )
+
+            gl::DeleteShader(
+                shader
             );
 
-            panic!(
-                "Shader compile error:\n{}",
-                error
+
+            return Err(
+                format_shader_failure(
+                    kind,
+                    &error,
+                )
             );
         }
 
-        shader
+
+        Ok(
+            shader
+        )
     }
 }
+
 
 pub fn link_program(
     vertex_shader: u32,
     fragment_shader: u32,
-) -> u32 {
+) -> Result<u32, String> {
 
     unsafe {
         let program =
             gl::CreateProgram();
 
-        if program == 0 {
-            log("ERROR: gl::CreateProgram returned 0");
-            panic!("Program creation failed");
+
+        if program
+            == 0
+        {
+            return Err(
+                "Unable to create OpenGL shader program object"
+                    .to_string()
+            );
         }
+
 
         gl::AttachShader(
             program,
             vertex_shader,
         );
 
+
         gl::AttachShader(
             program,
             fragment_shader,
         );
 
+
         gl::LinkProgram(
             program
         );
 
-        if !program_link_success(program) {
-            let error =
-                program_info_log(program);
 
-            log(
-                &format!(
-                    "ERROR: shader program link failed:\n{}",
-                    error
-                )
+        if !program_link_success(
+            program
+        ) {
+            let error =
+                program_info_log(
+                    program
+                );
+
+
+            gl::DeleteProgram(
+                program
             );
 
-            panic!(
-                "Program link error:\n{}",
-                error
+
+            return Err(
+                if error.is_empty() {
+
+                    "Shader program linking failed without an OpenGL diagnostic"
+                        .to_string()
+
+                } else {
+
+                    format!(
+                        "Shader program linking failed:\n{}",
+                        error,
+                    )
+                }
             );
         }
 
-        program
+
+        Ok(
+            program
+        )
     }
 }
+
 
 pub fn build_program(
     vertex_source: &str,
     fragment_source: &str,
-) -> u32 {
+) -> Result<u32, String> {
+
+    let vertex_shader =
+        compile_shader(
+            vertex_source,
+            gl::VERTEX_SHADER,
+        )?;
+
+
+    let fragment_shader =
+        match compile_shader(
+            fragment_source,
+            gl::FRAGMENT_SHADER,
+        ) {
+
+            Ok(shader) => {
+                shader
+            }
+
+            Err(error) => {
+
+                unsafe {
+                    gl::DeleteShader(
+                        vertex_shader
+                    );
+                }
+
+
+                return Err(
+                    error
+                );
+            }
+        };
+
+
+    let program =
+        link_program(
+            vertex_shader,
+            fragment_shader,
+        );
+
 
     unsafe {
-        log("Compiling vertex shader");
-
-        let vertex_shader =
-            compile_shader(
-                vertex_source,
-                gl::VERTEX_SHADER,
-            );
-
-        log("Compiling fragment shader");
-
-        let fragment_shader =
-            compile_shader(
-                fragment_source,
-                gl::FRAGMENT_SHADER,
-            );
-
-        log("Linking shader program");
-
-        let program =
-            link_program(
-                vertex_shader,
-                fragment_shader,
-            );
-
         gl::DeleteShader(
             vertex_shader
         );
 
+
         gl::DeleteShader(
             fragment_shader
         );
+    }
 
-        log("Shader program built successfully");
 
-        program
+    program
+}
+
+
+fn shader_kind_name(
+    kind: u32,
+) -> &'static str {
+
+    match kind {
+
+        gl::VERTEX_SHADER => {
+            "vertex"
+        }
+
+        gl::FRAGMENT_SHADER => {
+            "fragment"
+        }
+
+        _ => {
+            "unknown"
+        }
     }
 }
+
+
+fn shader_kind_display_name(
+    kind: u32,
+) -> &'static str {
+
+    match kind {
+
+        gl::VERTEX_SHADER => {
+            "Vertex"
+        }
+
+        gl::FRAGMENT_SHADER => {
+            "Fragment"
+        }
+
+        _ => {
+            "Unknown"
+        }
+    }
+}
+
+
+fn format_shader_failure(
+    kind: u32,
+    error: &str,
+) -> String {
+
+    if error.is_empty() {
+
+        format!(
+            "{} shader compilation failed without an OpenGL diagnostic",
+            shader_kind_display_name(
+                kind
+            ),
+        )
+
+    } else {
+
+        format!(
+            "{} shader compilation failed:\n{}",
+            shader_kind_display_name(
+                kind
+            ),
+            error,
+        )
+    }
+}
+
 
 fn shader_compile_success(
     shader: u32,
@@ -152,15 +311,19 @@ fn shader_compile_success(
         let mut success: i32 =
             0;
 
+
         gl::GetShaderiv(
             shader,
             gl::COMPILE_STATUS,
             &mut success,
         );
 
-        success != 0
+
+        success
+            != 0
     }
 }
+
 
 fn program_link_success(
     program: u32,
@@ -170,15 +333,19 @@ fn program_link_success(
         let mut success: i32 =
             0;
 
+
         gl::GetProgramiv(
             program,
             gl::LINK_STATUS,
             &mut success,
         );
 
-        success != 0
+
+        success
+            != 0
     }
 }
+
 
 fn shader_info_log(
     shader: u32,
@@ -188,18 +355,27 @@ fn shader_info_log(
         let mut len: i32 =
             0;
 
+
         gl::GetShaderiv(
             shader,
             gl::INFO_LOG_LENGTH,
             &mut len,
         );
 
-        if len <= 0 {
+
+        if len
+            <= 0
+        {
             return String::new();
         }
 
+
         let mut buffer =
-            vec![0u8; len as usize];
+            vec![
+                0u8;
+                len as usize
+            ];
+
 
         gl::GetShaderInfoLog(
             shader,
@@ -208,11 +384,17 @@ fn shader_info_log(
             buffer.as_mut_ptr() as *mut _,
         );
 
-        String::from_utf8_lossy(&buffer)
-            .trim_end_matches('\0')
+
+        String::from_utf8_lossy(
+            &buffer
+        )
+            .trim_end_matches(
+                '\0'
+            )
             .to_string()
     }
 }
+
 
 fn program_info_log(
     program: u32,
@@ -222,18 +404,27 @@ fn program_info_log(
         let mut len: i32 =
             0;
 
+
         gl::GetProgramiv(
             program,
             gl::INFO_LOG_LENGTH,
             &mut len,
         );
 
-        if len <= 0 {
+
+        if len
+            <= 0
+        {
             return String::new();
         }
 
+
         let mut buffer =
-            vec![0u8; len as usize];
+            vec![
+                0u8;
+                len as usize
+            ];
+
 
         gl::GetProgramInfoLog(
             program,
@@ -242,21 +433,14 @@ fn program_info_log(
             buffer.as_mut_ptr() as *mut _,
         );
 
-        String::from_utf8_lossy(&buffer)
-            .trim_end_matches('\0')
+
+        String::from_utf8_lossy(
+            &buffer
+        )
+            .trim_end_matches(
+                '\0'
+            )
             .to_string()
     }
 }
 
-fn log(
-    message: &str,
-) {
-
-    let logfile: PathBuf =
-        crate::locate_paths::runtime_log_path();
-
-    crate::logger::log(
-        &logfile,
-        message,
-    );
-}

@@ -209,7 +209,7 @@ pub fn acquire() -> Result<Singleton, SingletonError> {
             )?;
 
 
-            log(
+            log_information(
                 &format!(
                     "Exclusive instance lock acquired: {} (PID {})",
                     lock_path.display(),
@@ -230,7 +230,7 @@ pub fn acquire() -> Result<Singleton, SingletonError> {
                 == std::io::ErrorKind::WouldBlock =>
         {
 
-            log(
+            log_warning(
                 &format!(
                     "Instance lock already held: {}",
                     lock_path.display()
@@ -245,7 +245,7 @@ pub fn acquire() -> Result<Singleton, SingletonError> {
 
         Err(error) => {
 
-            log(
+            log_error(
                 &format!(
                     "Failed to acquire instance lock '{}': {}",
                     lock_path.display(),
@@ -291,7 +291,7 @@ pub fn stop() -> Result<StopOutcome, StopError> {
                 if error.kind()
                     == std::io::ErrorKind::NotFound =>
             {
-                log(
+                log_warning(
                     "Stop requested, but no instance lock file exists"
                 );
 
@@ -318,7 +318,7 @@ pub fn stop() -> Result<StopOutcome, StopError> {
                 file.unlock();
 
 
-            log(
+            log_warning(
                 "Stop requested, but the instance lock is not held"
             );
 
@@ -344,7 +344,7 @@ pub fn stop() -> Result<StopOutcome, StopError> {
             )?;
 
 
-            log(
+            log_information(
                 &format!(
                     "SIGTERM sent to Screenshaver process {}",
                     pid
@@ -524,7 +524,7 @@ fn lock_path() -> Result<PathBuf, PathError> {
 }
 
 
-fn log(
+fn log_information(
     message: &str,
 ) {
 
@@ -532,7 +532,43 @@ fn log(
         crate::locate_paths::runtime_log_path();
 
 
-    crate::logger::log(
+    crate::logger::information(
+        &logfile,
+        &format!(
+            "[INSTANCE] {}",
+            message
+        ),
+    );
+}
+
+
+fn log_warning(
+    message: &str,
+) {
+
+    let logfile =
+        crate::locate_paths::runtime_log_path();
+
+
+    crate::logger::warning(
+        &logfile,
+        &format!(
+            "[INSTANCE] {}",
+            message
+        ),
+    );
+}
+
+
+fn log_error(
+    message: &str,
+) {
+
+    let logfile =
+        crate::locate_paths::runtime_log_path();
+
+
+    crate::logger::error(
         &logfile,
         &format!(
             "[INSTANCE] {}",

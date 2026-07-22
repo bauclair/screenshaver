@@ -79,7 +79,7 @@ fn load_shader_path_internal(
             .to_string();
 
 
-    log(
+    log_debug(
         &format!(
             "[SHADER] Attempting to load shader: {}",
             source_path.display(),
@@ -89,14 +89,14 @@ fn load_shader_path_internal(
 
     let source = match std::fs::read_to_string(source_path) {
         Ok(source) => {
-            log(&format!(
+            log_information(&format!(
                 "[SHADER] Successfully loaded shader: {}",
                 source_path.display()
             ));
             source
         }
         Err(error) => {
-            log(&format!(
+            log_error(&format!(
                 "[SHADER] Failed to load shader '{}': {}",
                 source_path.display(),
                 error
@@ -108,7 +108,7 @@ fn load_shader_path_internal(
         }
     };
 
-    log(&format!(
+    log_debug(&format!(
         "[SHADER] Loaded shader source: {} bytes",
         source.len()
     ));
@@ -121,7 +121,7 @@ fn load_shader_path_internal(
 
     match shader_kind {
         crate::classify_shader::ShaderKind::ShaderToy => {
-            log(
+            log_debug(
                 "[SHADER] Type: ShaderToy"
             );
 
@@ -147,7 +147,7 @@ fn load_shader_path_internal(
                 cached
             } else {
                 if let Err(error) = write_cached_shader(source_path, &report.source) {
-                    log(&format!("[CACHE] Failed to write cache entry: {error}"));
+                    log_warning(&format!("[CACHE] Failed to write cache entry: {error}"));
                 }
                 report.source
             };
@@ -164,7 +164,7 @@ fn load_shader_path_internal(
         }
 
         crate::classify_shader::ShaderKind::Isf => {
-            log(
+            log_debug(
                 "[SHADER] Type: ISF"
             );
 
@@ -174,6 +174,14 @@ fn load_shader_path_internal(
                 ) {
                     Ok(document) => document,
                     Err(error) => {
+                        log_error(
+                            &format!(
+                                "[ISF] Metadata parsing failed for '{}': {}",
+                                source_path.display(),
+                                error,
+                            )
+                        );
+
                         return ShaderLoadResult::Unavailable {
                             shader_name:
                                 shader_name.clone(),
@@ -186,28 +194,28 @@ fn load_shader_path_internal(
                     }
                 };
 
-            log(
+            log_debug(
                 &format!(
                     "[ISF] Version: {}",
                     document.metadata.version_name(),
                 )
             );
 
-            log(
+            log_debug(
                 &format!(
                     "[ISF] Inputs: {}",
                     document.metadata.inputs.len(),
                 )
             );
 
-            log(
+            log_debug(
                 &format!(
                     "[ISF] Passes: {}",
                     document.metadata.pass_count(),
                 )
             );
 
-            log(
+            log_debug(
                 &format!(
                     "[ISF] Imported resources: {}",
                     document.metadata.has_imported_resources(),
@@ -226,7 +234,7 @@ fn load_shader_path_internal(
             );
 
             if !report.rejection_reasons.is_empty() {
-                log(
+                log_warning(
                     "[ISF] Status: Unsupported"
                 );
 
@@ -238,7 +246,7 @@ fn load_shader_path_internal(
                 };
             }
 
-            log(
+            log_information(
                 "[ISF] Status: Supported"
             );
 
@@ -257,7 +265,7 @@ fn load_shader_path_internal(
                             &report.source,
                         )
                     {
-                        log(
+                        log_warning(
                             &format!(
                                 "[CACHE] Failed to write cache entry: {error}"
                             )
@@ -282,7 +290,7 @@ fn load_shader_path_internal(
         }
 
         crate::classify_shader::ShaderKind::NativeGLSL => {
-            log(
+            log_debug(
                 "[SHADER] Type: Native GLSL"
             );
 
@@ -324,10 +332,17 @@ fn load_shader_path_internal(
 }
 
 pub fn load_builtin_default_shader() -> ShaderLoadResult {
-    log("[SHADER] Loading built-in default shader");
+    log_information("[SHADER] Loading built-in default shader");
     let report = crate::preprocess_shader::preprocess_shader_with_report(BUILTIN_DEFAULT_SHADER);
 
     if !report.rejection_reasons.is_empty() {
+        log_error(
+            &format!(
+                "[SHADER] Built-in default shader failed validation: {}",
+                report.rejection_reasons.join("; "),
+            )
+        );
+
         return ShaderLoadResult::Unavailable {
             shader_name: "<built-in-default>".to_string(),
             error: format!(
@@ -350,12 +365,12 @@ pub fn load_builtin_default_shader() -> ShaderLoadResult {
 
 fn quarantine(source_path: &Path, shader_name: &str, reasons: &[String]) {
     match crate::reject_shader::reject_shader(source_path, reasons) {
-        Ok(path) => log(&format!(
+        Ok(path) => log_information(&format!(
             "[REJECT] Shader '{}' quarantined at '{}'",
             shader_name,
             path.display()
         )),
-        Err(error) => log(&format!(
+        Err(error) => log_warning(&format!(
             "[REJECT] Failed to quarantine shader '{}': {}",
             source_path.display(),
             error
@@ -365,13 +380,13 @@ fn quarantine(source_path: &Path, shader_name: &str, reasons: &[String]) {
 
 fn log_report(applied: &[String], warnings: &[String], reasons: &[String]) {
     for item in applied {
-        log(&format!("[PREPROCESS] Applied: {item}"));
+        log_debug(&format!("[PREPROCESS] Applied: {item}"));
     }
     for item in warnings {
-        log(&format!("[PREPROCESS] Warning: {item}"));
+        log_warning(&format!("[PREPROCESS] Warning: {item}"));
     }
     for item in reasons {
-        log(&format!("[PREPROCESS] Rejection: {item}"));
+        log_warning(&format!("[PREPROCESS] Rejection: {item}"));
     }
 }
 
@@ -379,22 +394,22 @@ fn try_load_cached_shader(source_path: &Path) -> Option<String> {
     let cache_path = generated_cache_path(source_path);
 
     if !cache_path.exists() {
-        log(&format!("[CACHE] Miss: {}", cache_path.display()));
+        log_debug(&format!("[CACHE] Miss: {}", cache_path.display()));
         return None;
     }
 
     if cache_is_stale(source_path, &cache_path) {
-        log(&format!("[CACHE] Stale: {}", cache_path.display()));
+        log_debug(&format!("[CACHE] Stale: {}", cache_path.display()));
         return None;
     }
 
     match std::fs::read_to_string(&cache_path) {
         Ok(source) => {
-            log(&format!("[CACHE] Hit: {}", cache_path.display()));
+            log_debug(&format!("[CACHE] Hit: {}", cache_path.display()));
             Some(source)
         }
         Err(error) => {
-            log(&format!(
+            log_warning(&format!(
                 "[CACHE] Failed to read cache entry '{}': {}",
                 cache_path.display(),
                 error
@@ -419,7 +434,7 @@ fn write_cached_shader(source_path: &Path, processed: &str) -> std::io::Result<P
     std::fs::create_dir_all(&cache_dir)?;
     let output_path = generated_cache_path(source_path);
     std::fs::write(&output_path, processed)?;
-    log(&format!("[CACHE] Cache entry written: {}", output_path.display()));
+    log_debug(&format!("[CACHE] Cache entry written: {}", output_path.display()));
     Ok(output_path)
 }
 
@@ -438,7 +453,7 @@ pub fn cleanup_generated_shaders() {
     let entries = match std::fs::read_dir(&directory) {
         Ok(entries) => entries,
         Err(error) => {
-            log(&format!(
+            log_warning(&format!(
                 "[CACHE] Failed to read shader cache directory '{}': {}",
                 directory.display(),
                 error
@@ -456,8 +471,8 @@ pub fn cleanup_generated_shaders() {
             continue;
         }
         match std::fs::remove_file(&path) {
-            Ok(()) => log(&format!("[CACHE] Deleted generated shader: {}", path.display())),
-            Err(error) => log(&format!(
+            Ok(()) => log_debug(&format!("[CACHE] Deleted generated shader: {}", path.display())),
+            Err(error) => log_warning(&format!(
                 "[CACHE] Failed to delete generated shader '{}': {}",
                 path.display(),
                 error
@@ -466,8 +481,62 @@ pub fn cleanup_generated_shaders() {
     }
 }
 
-fn log(message: &str) {
-    let logfile = crate::locate_paths::runtime_log_path();
-    crate::logger::log(&logfile, message);
+fn log_debug(
+    message: &str,
+) {
+
+    let logfile =
+        crate::locate_paths::runtime_log_path();
+
+
+    crate::logger::debug(
+        &logfile,
+        message,
+    );
+}
+
+
+fn log_information(
+    message: &str,
+) {
+
+    let logfile =
+        crate::locate_paths::runtime_log_path();
+
+
+    crate::logger::information(
+        &logfile,
+        message,
+    );
+}
+
+
+fn log_warning(
+    message: &str,
+) {
+
+    let logfile =
+        crate::locate_paths::runtime_log_path();
+
+
+    crate::logger::warning(
+        &logfile,
+        message,
+    );
+}
+
+
+fn log_error(
+    message: &str,
+) {
+
+    let logfile =
+        crate::locate_paths::runtime_log_path();
+
+
+    crate::logger::error(
+        &logfile,
+        message,
+    );
 }
 

@@ -73,6 +73,34 @@ let command =
         }
     };
 
+
+let runtime_logfile =
+    match &command {
+
+        crate::parse_arguments::Command::Run
+        | crate::parse_arguments::Command::Start
+        | crate::parse_arguments::Command::PreviewTexture { .. }
+        | crate::parse_arguments::Command::PreviewShader { .. }
+        | crate::parse_arguments::Command::DeleteCache => {
+
+            let logfile =
+                crate::locate_paths::runtime_log_path();
+
+
+            crate::logger::reset_log(
+                &logfile
+            );
+
+
+            Some(logfile)
+        }
+
+        _ => {
+            None
+        }
+    };
+
+
 match command {
 
     crate::parse_arguments::Command::Run
@@ -182,6 +210,19 @@ crate::parse_arguments::Command::PreviewShader {
                 "[SHADER PREVIEW] {}",
                 error
             );
+
+
+            if let Some(logfile) =
+                runtime_logfile.as_ref()
+            {
+                crate::logger::error(
+                    logfile,
+                    &format!(
+                        "[PREVIEW_SHADER] {}",
+                        error,
+                    ),
+                );
+            }
         }
     }
 
@@ -202,6 +243,19 @@ crate::parse_arguments::Command::DeleteCache => {
                 "[CACHE] {}",
                 error
             );
+
+
+            if let Some(logfile) =
+                runtime_logfile.as_ref()
+            {
+                crate::logger::error(
+                    logfile,
+                    &format!(
+                        "[CACHE] {}",
+                        error,
+                    ),
+                );
+            }
         }
     }
 
@@ -316,13 +370,13 @@ crate::parse_arguments::Command::ListPalettes => {
         );
 
 
-        crate::logger::log(
+        crate::logger::error(
             &security_logfile,
             &security_message,
         );
 
 
-        crate::logger::log(
+        crate::logger::information(
             &security_logfile,
             "[SECURITY] Screenshaver terminated after refusing root execution.",
         );
@@ -356,6 +410,20 @@ crate::parse_arguments::Command::ListPalettes => {
                     error
                 );
 
+
+                if let Some(logfile) =
+                    runtime_logfile.as_ref()
+                {
+                    crate::logger::error(
+                        logfile,
+                        &format!(
+                            "[MAIN] Singleton acquisition failed: {}",
+                            error,
+                        ),
+                    );
+                }
+
+
                 return;
             }
         };
@@ -379,6 +447,17 @@ crate::parse_arguments::Command::ListPalettes => {
                     "[TRAY] System tray icon registered successfully."
                 );
 
+
+                if let Some(logfile) =
+                    runtime_logfile.as_ref()
+                {
+                    crate::logger::information(
+                        logfile,
+                        "[TRAY] System tray icon registered successfully",
+                    );
+                }
+
+
                 Some(handle)
             }
 
@@ -388,6 +467,20 @@ crate::parse_arguments::Command::ListPalettes => {
                     "[TRAY] System tray icon unavailable: {:?}",
                     error
                 );
+
+
+                if let Some(logfile) =
+                    runtime_logfile.as_ref()
+                {
+                    crate::logger::warning(
+                        logfile,
+                        &format!(
+                            "[TRAY] System tray icon unavailable: {:?}",
+                            error,
+                        ),
+                    );
+                }
+
 
                 None
             }
@@ -416,6 +509,20 @@ crate::parse_arguments::Command::ListPalettes => {
                     error
                 );
 
+
+                if let Some(logfile) =
+                    runtime_logfile.as_ref()
+                {
+                    crate::logger::error(
+                        logfile,
+                        &format!(
+                            "[CONFIG] Unable to load configuration: {}",
+                            error,
+                        ),
+                    );
+                }
+
+
                 return;
             }
         };
@@ -426,17 +533,20 @@ crate::parse_arguments::Command::ListPalettes => {
 
 
     let logfile =
-        crate::locate_paths::runtime_log_path();
+        runtime_logfile.expect(
+            "Runtime command did not initialize the log path"
+        );
 
 
-    crate::logger::reset_log(
-        &logfile
+    crate::logger::information(
+        &logfile,
+        "[MAIN] Screenshaver runtime started",
     );
 
 
     if cfg.debug_log {
 
-        crate::logger::log(
+        crate::logger::debug(
             &logfile,
             "[MAIN] === CONFIG DUMP ===",
         );
@@ -444,14 +554,14 @@ crate::parse_arguments::Command::ListPalettes => {
 
         for line in &result.diagnostics {
 
-            crate::logger::log(
+            crate::logger::debug(
                 &logfile,
                 line,
             );
         }
 
 
-        crate::logger::log(
+        crate::logger::debug(
             &logfile,
             "[MAIN] === CONFIG END ===",
         );
@@ -483,7 +593,7 @@ crate::parse_arguments::Command::ListPalettes => {
 
     if cfg.debug_log {
 
-        crate::logger::log(
+        crate::logger::debug(
             &logfile,
             "[MAIN] === MODE PARSE ===",
         );
@@ -491,7 +601,7 @@ crate::parse_arguments::Command::ListPalettes => {
 
         for line in &parsed_mode.diagnostics {
 
-            crate::logger::log(
+            crate::logger::debug(
                 &logfile,
                 line,
             );
@@ -515,7 +625,7 @@ crate::parse_arguments::Command::ListPalettes => {
 
                 if cfg.debug_log {
 
-                    crate::logger::log(
+                    crate::logger::debug(
                         &logfile,
                         "[MAIN] === INTERVAL SKIPPED (SINGLE MODE) ===",
                     );
@@ -549,7 +659,7 @@ crate::parse_arguments::Command::ListPalettes => {
 
                 if cfg.debug_log {
 
-                    crate::logger::log(
+                    crate::logger::debug(
                         &logfile,
                         "[MAIN] === INTERVAL PARSE ===",
                     );
@@ -557,7 +667,7 @@ crate::parse_arguments::Command::ListPalettes => {
 
                     for line in &result.diagnostics {
 
-                        crate::logger::log(
+                        crate::logger::debug(
                             &logfile,
                             line,
                         );
@@ -601,7 +711,7 @@ crate::parse_arguments::Command::ListPalettes => {
 
     if cfg.debug_log {
 
-        crate::logger::log(
+        crate::logger::debug(
             &logfile,
             "[MAIN] === IDLE PARSE ===",
         );
@@ -609,7 +719,7 @@ crate::parse_arguments::Command::ListPalettes => {
 
         for line in &parsed_idle.diagnostics {
 
-            crate::logger::log(
+            crate::logger::debug(
                 &logfile,
                 line,
             );
@@ -632,16 +742,13 @@ crate::parse_arguments::Command::ListPalettes => {
                 );
 
 
-                if cfg.debug_log {
-
-                    crate::logger::log(
-                        &logfile,
-                        &format!(
-                            "[MAIN] SESSION ERROR: {}",
-                            error
-                        ),
-                    );
-                }
+                crate::logger::error(
+                    &logfile,
+                    &format!(
+                        "[SESSION] Unable to initialize session query: {}",
+                        error,
+                    ),
+                );
 
 
                 return;
@@ -655,16 +762,13 @@ crate::parse_arguments::Command::ListPalettes => {
     );
 
 
-    if cfg.debug_log {
-
-        crate::logger::log(
-            &logfile,
-            &format!(
-                "[MAIN] Session backend = {}",
-                session.backend_name()
-            ),
-        );
-    }
+    crate::logger::information(
+        &logfile,
+        &format!(
+            "[SESSION] Session backend: {}",
+            session.backend_name(),
+        ),
+    );
 
 
     let sdl =
@@ -680,16 +784,13 @@ crate::parse_arguments::Command::ListPalettes => {
                 );
 
 
-                if cfg.debug_log {
-
-                    crate::logger::log(
-                        &logfile,
-                        &format!(
-                            "[MAIN] SDL initialization failed: {}",
-                            error
-                        ),
-                    );
-                }
+                crate::logger::error(
+                    &logfile,
+                    &format!(
+                        "[SDL] Initialization failed: {}",
+                        error,
+                    ),
+                );
 
 
                 return;
@@ -704,13 +805,10 @@ crate::parse_arguments::Command::ListPalettes => {
         );
 
 
-        if cfg.debug_log {
-
-            crate::logger::log(
-                &logfile,
-                "[SPLASH] Displaying splash screen",
-            );
-        }
+        crate::logger::information(
+            &logfile,
+            "[SPLASH] Displaying splash screen",
+        );
 
 
         match crate::splash_screen::show_splash(
@@ -719,13 +817,10 @@ crate::parse_arguments::Command::ListPalettes => {
 
             Ok(()) => {
 
-                if cfg.debug_log {
-
-                    crate::logger::log(
-                        &logfile,
-                        "[SPLASH] Splash screen complete",
-                    );
-                }
+                crate::logger::information(
+                    &logfile,
+                    "[SPLASH] Splash screen complete",
+                );
             }
 
             Err(error) => {
@@ -736,16 +831,13 @@ crate::parse_arguments::Command::ListPalettes => {
                 );
 
 
-                if cfg.debug_log {
-
-                    crate::logger::log(
-                        &logfile,
-                        &format!(
-                            "[SPLASH] Splash screen failed: {}",
-                            error
-                        ),
-                    );
-                }
+                crate::logger::warning(
+                    &logfile,
+                    &format!(
+                        "[SPLASH] Splash screen failed: {}",
+                        error,
+                    ),
+                );
             }
         }
     }
@@ -776,7 +868,7 @@ crate::parse_arguments::Command::ListPalettes => {
 
     if cfg.debug_log {
 
-        crate::logger::log(
+        crate::logger::debug(
             &logfile,
             "[MAIN] === ENTERING SESSION LOOP ===",
         );
@@ -791,9 +883,15 @@ crate::parse_arguments::Command::ListPalettes => {
     let mut restart_requested = false;
 
 
+    let mut tray_channel_connected =
+        true;
+
+
     while running.load(Ordering::SeqCst) {
 
-        match tray_command_receiver.try_recv() {
+        if tray_channel_connected {
+
+            match tray_command_receiver.try_recv() {
 
             Ok(crate::tray_icon::TrayCommand::Stop) => {
 
@@ -802,13 +900,10 @@ crate::parse_arguments::Command::ListPalettes => {
                 );
 
 
-                if cfg.debug_log {
-
-                    crate::logger::log(
-                        &logfile,
-                        "[TRAY] Stop requested",
-                    );
-                }
+                crate::logger::information(
+                    &logfile,
+                    "[TRAY] Stop requested",
+                );
 
 
                 running.store(
@@ -827,13 +922,10 @@ crate::parse_arguments::Command::ListPalettes => {
                 );
 
 
-                if cfg.debug_log {
-
-                    crate::logger::log(
-                        &logfile,
-                        "[TRAY] Restart requested",
-                    );
-                }
+                crate::logger::information(
+                    &logfile,
+                    "[TRAY] Restart requested",
+                );
 
 
                 restart_requested = true;
@@ -855,7 +947,18 @@ crate::parse_arguments::Command::ListPalettes => {
                 eprintln!(
                     "[TRAY] Command channel disconnected."
                 );
+
+
+                crate::logger::warning(
+                    &logfile,
+                    "[TRAY] Command channel disconnected",
+                );
+
+
+                tray_channel_connected =
+                    false;
             }
+        }
         }
 
         let session_state =
@@ -871,16 +974,13 @@ crate::parse_arguments::Command::ListPalettes => {
                     );
 
 
-                    if cfg.debug_log {
-
-                        crate::logger::log(
-                            &logfile,
-                            &format!(
-                                "[MAIN] SESSION QUERY ERROR: {}",
-                                error
-                            ),
-                        );
-                    }
+                    crate::logger::error(
+                        &logfile,
+                        &format!(
+                            "[SESSION] Session query failed: {}",
+                            error,
+                        ),
+                    );
 
 
                     break;
@@ -892,13 +992,10 @@ crate::parse_arguments::Command::ListPalettes => {
 
             crate::query_session::SessionState::Idle => {
 
-                if cfg.debug_log {
-
-                    crate::logger::log(
-                        &logfile,
-                        "[SESSION] Session idle: engaging renderer",
-                    );
-                }
+                crate::logger::information(
+                    &logfile,
+                    "[SESSION] Session idle: engaging renderer",
+                );
 
 
                 println!(
@@ -970,16 +1067,13 @@ crate::parse_arguments::Command::ListPalettes => {
                             );
 
 
-                            if cfg.debug_log {
-
-                                crate::logger::log(
-                                    &logfile,
-                                    &format!(
-                                        "[MAIN] Renderer initialization failed: {}",
-                                        error
-                                    ),
-                                );
-                            }
+                            crate::logger::error(
+                                &logfile,
+                                &format!(
+                                    "[RENDER] Renderer initialization failed: {}",
+                                    error,
+                                ),
+                            );
 
 
                             break;
@@ -987,13 +1081,10 @@ crate::parse_arguments::Command::ListPalettes => {
                     };
 
 
-                if cfg.debug_log {
-
-                    crate::logger::log(
-                        &logfile,
-                        "[RENDER] Renderer started",
-                    );
-                }
+                crate::logger::information(
+                    &logfile,
+                    "[RENDER] Renderer started",
+                );
 
 
                 renderer.run(
@@ -1003,13 +1094,10 @@ crate::parse_arguments::Command::ListPalettes => {
 
                 if running.load(Ordering::SeqCst) {
 
-                    if cfg.debug_log {
-
-                        crate::logger::log(
-                            &logfile,
-                            "[SESSION] User input: disengaging renderer",
-                        );
-                    }
+                    crate::logger::information(
+                        &logfile,
+                        "[SESSION] User input: disengaging renderer",
+                    );
 
 
                     println!(
@@ -1025,7 +1113,7 @@ crate::parse_arguments::Command::ListPalettes => {
 
                     if cfg.debug_log {
 
-                        crate::logger::log(
+                        crate::logger::debug(
                             &logfile,
                             "[MAIN] Returning to session loop",
                         );
@@ -1061,6 +1149,12 @@ crate::parse_arguments::Command::ListPalettes => {
     );
 
 
+    crate::logger::information(
+        &logfile,
+        "[MAIN] Pipeline complete",
+    );
+
+
     if restart_requested {
 
         drop(_tray_handle);
@@ -1082,6 +1176,12 @@ crate::parse_arguments::Command::ListPalettes => {
                         println!(
                             "[TRAY] Screenshaver restart launched."
                         );
+
+
+                        crate::logger::information(
+                            &logfile,
+                            "[TRAY] Screenshaver restart launched",
+                        );
                     }
 
 
@@ -1090,6 +1190,15 @@ crate::parse_arguments::Command::ListPalettes => {
                         eprintln!(
                             "[TRAY] Unable to restart Screenshaver: {}",
                             error
+                        );
+
+
+                        crate::logger::error(
+                            &logfile,
+                            &format!(
+                                "[TRAY] Unable to restart Screenshaver: {}",
+                                error,
+                            ),
                         );
                     }
                 }
@@ -1101,6 +1210,15 @@ crate::parse_arguments::Command::ListPalettes => {
                 eprintln!(
                     "[TRAY] Unable to locate Screenshaver executable: {}",
                     error
+                );
+
+
+                crate::logger::error(
+                    &logfile,
+                    &format!(
+                        "[TRAY] Unable to locate Screenshaver executable: {}",
+                        error,
+                    ),
                 );
             }
         }

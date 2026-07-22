@@ -21,9 +21,14 @@ pub fn run() -> Result<(), String> {
         debug_logging_enabled();
 
 
+    let logfile =
+        crate::locate_paths::runtime_log_path();
+
+
     if logging_enabled {
-        log(
-            "[CACHE] Delete requested from command line"
+        crate::logger::information(
+            &logfile,
+            "[CACHE] Delete requested from command line",
         );
     }
 
@@ -37,11 +42,12 @@ pub fn run() -> Result<(), String> {
 
 
         if logging_enabled {
-            log(
+            crate::logger::debug(
+                &logfile,
                 &format!(
                     "[CACHE] Cache directory does not exist: {}",
                     cache_dir.display(),
-                )
+                ),
             );
         }
 
@@ -75,8 +81,9 @@ pub fn run() -> Result<(), String> {
 
 
         if logging_enabled {
-            log(
-                "[CACHE] Cache already empty"
+            crate::logger::debug(
+                &logfile,
+                "[CACHE] Cache already empty",
             );
         }
 
@@ -127,11 +134,12 @@ pub fn run() -> Result<(), String> {
 
 
         if logging_enabled {
-            log(
+            crate::logger::debug(
+                &logfile,
                 &format!(
                     "[CACHE] Deleted: {}",
                     display_name,
-                )
+                ),
             );
         }
 
@@ -176,7 +184,8 @@ pub fn run() -> Result<(), String> {
 
 
     if logging_enabled {
-        log(
+        crate::logger::information(
+            &logfile,
             &format!(
                 "[CACHE] Deleted {} cache {}",
                 count,
@@ -185,7 +194,7 @@ pub fn run() -> Result<(), String> {
                 } else {
                     "files"
                 },
-            )
+            ),
         );
     }
 
@@ -284,20 +293,5 @@ fn debug_logging_enabled() -> bool {
     .unwrap_or(
         false
     )
-}
-
-
-fn log(
-    message: &str,
-) {
-
-    let logfile =
-        crate::locate_paths::runtime_log_path();
-
-
-    crate::logger::log(
-        &logfile,
-        message,
-    );
 }
 

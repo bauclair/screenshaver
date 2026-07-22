@@ -139,7 +139,7 @@ impl Dispatch<ExtIdleNotificationV1, ()> for WaylandState {
         match event {
 
             ext_idle_notification_v1::Event::Idled => {
-                println!(
+                log_information(
                     "[SESSION] Wayland idle notification: idled"
                 );
 
@@ -148,7 +148,7 @@ impl Dispatch<ExtIdleNotificationV1, ()> for WaylandState {
             }
 
             ext_idle_notification_v1::Event::Resumed => {
-                println!(
+                log_information(
                     "[SESSION] Wayland idle notification: resumed"
                 );
 
@@ -393,3 +393,18 @@ impl SessionBackend for WaylandBackend {
         "wayland"
     }
 }
+
+fn log_information(
+    message: &str,
+) {
+
+    let logfile =
+        crate::locate_paths::runtime_log_path();
+
+
+    crate::logger::information(
+        &logfile,
+        message,
+    );
+}
+

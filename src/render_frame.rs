@@ -162,7 +162,7 @@ impl FrameRenderer {
         subtitle_placement:
             crate::parse_subtitle_placement::SubtitlePlacement,
     ) -> Result<Self, String> {
-        log("[RENDER] Initializing frame renderer");
+        log_information("[RENDER] Initializing frame renderer");
 
         let video = sdl.video()?;
 
@@ -210,7 +210,7 @@ impl FrameRenderer {
         let (window_width, window_height) =
             window.size();
 
-        log(
+        log_information(
             &format!(
                 "[RENDER] Window created: {window_width}x{window_height}"
             )
@@ -369,13 +369,13 @@ impl FrameRenderer {
         &mut self,
         running: &AtomicBool,
     ) {
-        log(
+        log_information(
             "[RENDER] Entering renderer-owned event loop"
         );
 
         while running.load(Ordering::SeqCst) {
             if self.pump_events() {
-                log(
+                log_information(
                     "[RENDER] User input requested renderer exit"
                 );
 
@@ -385,7 +385,7 @@ impl FrameRenderer {
             self.render_frame();
         }
 
-        log(
+        log_information(
             "[RENDER] Leaving renderer-owned event loop"
         );
     }
@@ -582,7 +582,7 @@ impl FrameRenderer {
                     }
 
                     Err(error) => {
-                        log(
+                        log_warning(
                             &format!(
                                 "[SUBTITLE] Unable to rebuild overlay after resize: {}",
                                 error,
@@ -630,7 +630,7 @@ impl FrameRenderer {
                 Event::Quit {
                     ..
                 } => {
-                    log(
+                    log_information(
                         "[RENDER] SDL quit event received"
                     );
 
@@ -641,7 +641,7 @@ impl FrameRenderer {
                     win_event,
                     ..
                 } => {
-                    log(
+                    log_debug(
                         &format!(
                             "[RENDER] SDL window event: {win_event:?}"
                         )
@@ -651,7 +651,7 @@ impl FrameRenderer {
                 Event::KeyDown {
                     ..
                 } => {
-                    log(
+                    log_information(
                         "[RENDER] SDL keydown event: exiting"
                     );
 
@@ -661,7 +661,7 @@ impl FrameRenderer {
                 Event::MouseButtonDown {
                     ..
                 } => {
-                    log(
+                    log_information(
                         "[RENDER] SDL mouse button event: exiting"
                     );
 
@@ -671,7 +671,7 @@ impl FrameRenderer {
                 Event::MouseWheel {
                     ..
                 } => {
-                    log(
+                    log_information(
                         "[RENDER] SDL mouse wheel event: exiting"
                     );
 
@@ -684,7 +684,7 @@ impl FrameRenderer {
                     ..
                 } => {
                     if !mouse_motion_enabled {
-                        log(
+                        log_debug(
                             "[RENDER] Ignoring startup mouse motion"
                         );
 
@@ -696,7 +696,7 @@ impl FrameRenderer {
                         || yrel.abs()
                             >= MOUSE_MOTION_EXIT_THRESHOLD
                     {
-                        log(
+                        log_information(
                             &format!(
                                 "[RENDER] SDL mouse motion event: exiting (xrel={xrel}, yrel={yrel})"
                             )
@@ -746,7 +746,7 @@ impl FrameRenderer {
                         }
                     }
 
-                    log(
+                    log_warning(
                         &format!(
                             "[RENDER] Replacement shader texture preparation failed: {error}"
                         )
@@ -796,7 +796,7 @@ impl FrameRenderer {
                             }
 
                             Err(error) => {
-                                log(
+                                log_warning(
                                     &format!(
                                         "[SUBTITLE] Unable to construct replacement shader overlay: {}",
                                         error,
@@ -855,13 +855,13 @@ impl FrameRenderer {
                     &self.active_shader
                 );
 
-                log(
+                log_information(
                     "[RENDER] Shader switch complete"
                 );
             }
 
             Err(error) => {
-                log(
+                log_warning(
                     &format!(
                         "[RENDER] No replacement shader available: {error}"
                     )
@@ -924,7 +924,7 @@ impl Drop for FrameRenderer {
             }
         }
 
-        log(
+        log_debug(
             "[RENDER] Frame renderer dropped"
         );
     }
@@ -1063,7 +1063,7 @@ fn select_safe_shader_program(
             break;
         };
 
-        log(
+        log_debug(
             &format!(
                 "[RENDER] Evaluating shader: {requested_shader_name}"
             )
@@ -1079,28 +1079,47 @@ fn select_safe_shader_program(
                 channel_usage,
                 shader_inputs,
             } => {
-                let program =
-                    crate::compile_shader::build_program(
-                        crate::define_constants::VERTEX_SHADER,
-                        &source,
-                    );
+                match crate::compile_shader::build_program(
+                    crate::define_constants::VERTEX_SHADER,
+                    &source,
+                ) {
 
-                return Ok(
-                    ActiveShader {
-                        program,
-                        shader_name,
-                        channel_usage,
-                        shader_inputs,
-                        built_in_default,
+                    Ok(program) => {
+
+                        return Ok(
+                            ActiveShader {
+                                program,
+                                shader_name,
+                                channel_usage,
+                                shader_inputs,
+                                built_in_default,
+                            }
+                        );
                     }
-                );
+
+                    Err(error) => {
+
+                        log_warning(
+                            &format!(
+                                "[RENDER] Shader compilation failed: {} ({})",
+                                requested_shader_name,
+                                error,
+                            )
+                        );
+
+
+                        shader_manager.remove_shader(
+                            &requested_shader_name
+                        );
+                    }
+                }
             }
 
             crate::load_shader::ShaderLoadResult::Rejected {
                 reasons,
                 ..
             } => {
-                log(
+                log_warning(
                     &format!(
                         "[RENDER] Shader rejected: {} ({})",
                         requested_shader_name,
@@ -1119,7 +1138,7 @@ fn select_safe_shader_program(
                 error,
                 ..
             } => {
-                log(
+                log_warning(
                     &format!(
                         "[RENDER] Shader unavailable: {} ({})",
                         requested_shader_name,
@@ -1134,7 +1153,7 @@ fn select_safe_shader_program(
         }
     }
 
-    log(
+    log_warning(
         "[RENDER] No usable user shaders remain; loading built-in default"
     );
 
@@ -1150,7 +1169,15 @@ fn select_safe_shader_program(
                 crate::compile_shader::build_program(
                     crate::define_constants::VERTEX_SHADER,
                     &source,
-                );
+                )
+                .map_err(
+                    |error| {
+                        format!(
+                            "Built-in default shader compilation failed: {}",
+                            error,
+                        )
+                    }
+                )?;
 
             Ok(
                 ActiveShader {
@@ -1224,7 +1251,7 @@ fn log_active_shader(
             )
         };
 
-    log(
+    log_information(
         &format!(
             "[RENDER] Active shader: {} (built-in: {}, channels: {}, mipmaps: {})",
             shader.shader_name,
@@ -1236,13 +1263,39 @@ fn log_active_shader(
 }
 
 
-fn log(
+fn log_debug(
     message: &str,
 ) {
     let logfile: PathBuf =
         crate::locate_paths::runtime_log_path();
 
-    crate::logger::log(
+    crate::logger::debug(
+        &logfile,
+        message,
+    );
+}
+
+
+fn log_information(
+    message: &str,
+) {
+    let logfile: PathBuf =
+        crate::locate_paths::runtime_log_path();
+
+    crate::logger::information(
+        &logfile,
+        message,
+    );
+}
+
+
+fn log_warning(
+    message: &str,
+) {
+    let logfile: PathBuf =
+        crate::locate_paths::runtime_log_path();
+
+    crate::logger::warning(
         &logfile,
         message,
     );

@@ -75,7 +75,7 @@ pub fn reject_shader(
     );
 
 
-    log(
+    log_information(
         &format!(
             "[REJECT] Shader moved from '{}' to '{}'",
             source_path.display(),
@@ -86,7 +86,7 @@ pub fn reject_shader(
 
     for reason in reasons {
 
-        log(
+        log_warning(
             &format!(
                 "[REJECT] Reason: {}",
                 reason
@@ -368,7 +368,7 @@ fn remove_cached_shader(
 
                 Ok(()) => {
 
-                    log(
+                    log_debug(
                         &format!(
                             "[CACHE] Removed rejected shader cache entry: {}",
                             path.display()
@@ -379,7 +379,7 @@ fn remove_cached_shader(
 
                 Err(error) => {
 
-                    log(
+                    log_warning(
                         &format!(
                             "[CACHE] Failed to remove rejected shader cache entry '{}': {}",
                             path.display(),
@@ -399,16 +399,17 @@ fn remove_cached_shader(
 // ------------------------------------------------------------
 //
 
-fn log(
-    message: &str,
-) {
+fn log_debug(message: &str) {
+    let logfile = crate::locate_paths::runtime_log_path();
+    crate::logger::debug(&logfile, message);
+}
 
-    let logfile =
-        crate::locate_paths::runtime_log_path();
+fn log_information(message: &str) {
+    let logfile = crate::locate_paths::runtime_log_path();
+    crate::logger::information(&logfile, message);
+}
 
-
-    crate::logger::log(
-        &logfile,
-        message,
-    );
+fn log_warning(message: &str) {
+    let logfile = crate::locate_paths::runtime_log_path();
+    crate::logger::warning(&logfile, message);
 }

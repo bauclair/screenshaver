@@ -5,7 +5,6 @@
 //! It owns all GPU texture objects used by the frame renderer.
 
 use std::ffi::CString;
-use std::path::PathBuf;
 use std::sync::atomic::{
     AtomicU64,
     Ordering,
@@ -574,7 +573,7 @@ impl TextureManager {
             if preview_selection.texture.is_some()
                 || preview_selection.palette.is_some()
             {
-                log(
+                log_warning(
                     &format!(
                         "[PREVIEW_SHADER] Texture/palette command-line options ignored because '{}' does not use texture channels",
                         shader_name,
@@ -589,16 +588,16 @@ impl TextureManager {
             )
             .is_some()
             {
-                log(
+                log_warning(
                     &format!(
-                        "[TEXTURE] Warning: texture override configured for '{}', but the shader does not use texture channels; override ignored",
+                        "[TEXTURE] Texture override configured for '{}', but the shader does not use texture channels; override ignored",
                         shader_name,
                     )
                 );
             }
 
 
-            log(
+            log_debug(
                 "[TEXTURE] Active shader does not require texture channels"
             );
 
@@ -628,7 +627,7 @@ impl TextureManager {
         )
         .is_some()
         {
-            log(
+            log_debug(
                 &format!(
                     "[TEXTURE] Shader override matched: {}",
                     shader_name,
@@ -637,7 +636,7 @@ impl TextureManager {
         }
 
 
-        log(
+        log_information(
             &format!(
                 "[TEXTURE] Selected procedural texture: family={}, primitives={}, palette={}, seed={}",
                 request.texture.family,
@@ -648,7 +647,7 @@ impl TextureManager {
         );
 
 
-        log(
+        log_debug(
             &format!(
                 "[TEXTURE] Selection source: texture={}, palette={}",
                 texture_source,
@@ -674,7 +673,7 @@ impl TextureManager {
             )?;
 
 
-        log(
+        log_information(
             &format!(
                 "[TEXTURE] Uploaded texture {}x{} as OpenGL object {}",
                 gpu_texture.width,
@@ -699,7 +698,7 @@ impl TextureManager {
         }
 
 
-        log(
+        log_debug(
             &format!(
                 "[TEXTURE] Active channel assignment: {}",
                 describe_channels(
@@ -1248,7 +1247,7 @@ fn delete_gpu_texture(
     }
 
 
-    log(
+    log_information(
         &format!(
             "[TEXTURE] Deleted OpenGL texture {} ({} / {}, seed={})",
             texture.id,
@@ -1329,14 +1328,42 @@ fn take_gl_error(
 }
 
 
-fn log(
+fn log_warning(
     message: &str,
 ) {
-    let logfile: PathBuf =
+    let logfile =
         crate::locate_paths::runtime_log_path();
 
 
-    crate::logger::log(
+    crate::logger::warning(
+        &logfile,
+        message,
+    );
+}
+
+
+fn log_information(
+    message: &str,
+) {
+    let logfile =
+        crate::locate_paths::runtime_log_path();
+
+
+    crate::logger::information(
+        &logfile,
+        message,
+    );
+}
+
+
+fn log_debug(
+    message: &str,
+) {
+    let logfile =
+        crate::locate_paths::runtime_log_path();
+
+
+    crate::logger::debug(
         &logfile,
         message,
     );

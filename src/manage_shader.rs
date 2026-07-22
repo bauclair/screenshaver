@@ -1,5 +1,4 @@
 use std::fs;
-use std::path::PathBuf;
 
 
 /// Determines how shaders are selected.
@@ -44,7 +43,7 @@ impl ShaderManager {
 
         if shaders.is_empty() {
 
-            log(
+            log_warning(
                 "[SHADER] No user shaders found"
             );
         }
@@ -79,7 +78,7 @@ impl ShaderManager {
 
                 Err(error) => {
 
-                    log(
+                    log_error(
                         &format!(
                             "[SHADER] Cannot read shader directory '{}': {}",
                             directory.display(),
@@ -154,7 +153,7 @@ impl ShaderManager {
             }
 
 
-            log(
+            log_debug(
                 &format!(
                     "[SHADER] Discovered shader: {}",
                     file_name
@@ -210,7 +209,7 @@ impl ShaderManager {
         }
 
 
-        log(
+        log_information(
             &format!(
                 "[SHADER] Removed rejected shader from active list: {}",
                 shader_name
@@ -239,7 +238,7 @@ impl ShaderManager {
 
                 } else {
 
-                    log(
+                    log_warning(
                         &format!(
                             "[SHADER] Requested shader '{}' is unavailable; selecting another shader",
                             name
@@ -340,16 +339,66 @@ impl ShaderManager {
 }
 
 
-/// Internal logging helper.
-fn log(
+//
+// ------------------------------------------------------------
+// Structured logging helpers
+// ------------------------------------------------------------
+//
+
+fn log_debug(
     message: &str,
 ) {
 
-    let logfile: PathBuf =
+    let logfile =
         crate::locate_paths::runtime_log_path();
 
 
-    crate::logger::log(
+    crate::logger::debug(
+        &logfile,
+        message,
+    );
+}
+
+
+fn log_information(
+    message: &str,
+) {
+
+    let logfile =
+        crate::locate_paths::runtime_log_path();
+
+
+    crate::logger::information(
+        &logfile,
+        message,
+    );
+}
+
+
+fn log_warning(
+    message: &str,
+) {
+
+    let logfile =
+        crate::locate_paths::runtime_log_path();
+
+
+    crate::logger::warning(
+        &logfile,
+        message,
+    );
+}
+
+
+fn log_error(
+    message: &str,
+) {
+
+    let logfile =
+        crate::locate_paths::runtime_log_path();
+
+
+    crate::logger::error(
         &logfile,
         message,
     );
