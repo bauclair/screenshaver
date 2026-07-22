@@ -385,6 +385,101 @@ crate::parse_arguments::Command::ListPalettes => {
         return;
     }
 
+    println!(
+        "[MAIN] Loading configuration..."
+    );
+
+
+    let cfg_path =
+        crate::locate_paths::config_path();
+
+
+    let result =
+        match crate::load_config::load_config(
+            &cfg_path
+        ) {
+
+            Ok(result) => result,
+
+            Err(error) => {
+
+                eprintln!(
+                    "[MAIN] CONFIG ERROR: {}",
+                    error
+                );
+
+
+                if let Some(logfile) =
+                    runtime_logfile.as_ref()
+                {
+                    crate::logger::error(
+                        logfile,
+                        &format!(
+                            "[CONFIG] Unable to load configuration: {}",
+                            error,
+                        ),
+                    );
+                }
+
+
+                return;
+            }
+        };
+
+
+    let cfg =
+        result.config;
+
+
+    let logfile =
+        runtime_logfile
+            .as_ref()
+            .expect(
+                "Runtime command did not initialize the log path"
+            )
+            .clone();
+
+
+    crate::logger::set_enabled(
+        cfg.debug_log
+    );
+
+
+    crate::logger::set_log_level(
+        cfg.log_level
+    );
+
+
+    crate::logger::information(
+        &logfile,
+        "[MAIN] Screenshaver runtime started",
+    );
+
+
+    if cfg.debug_log {
+
+        crate::logger::debug(
+            &logfile,
+            "[MAIN] === CONFIG DUMP ===",
+        );
+
+
+        for line in &result.diagnostics {
+
+            crate::logger::debug(
+                &logfile,
+                line,
+            );
+        }
+
+
+        crate::logger::debug(
+            &logfile,
+            "[MAIN] === CONFIG END ===",
+        );
+    }
+
+
     let _singleton =
         match crate::singleton::acquire() {
 
@@ -485,88 +580,6 @@ crate::parse_arguments::Command::ListPalettes => {
                 None
             }
         };
-
-    println!(
-        "[MAIN] Loading configuration..."
-    );
-
-
-    let cfg_path =
-        crate::locate_paths::config_path();
-
-
-    let result =
-        match crate::load_config::load_config(
-            &cfg_path
-        ) {
-
-            Ok(result) => result,
-
-            Err(error) => {
-
-                eprintln!(
-                    "[MAIN] CONFIG ERROR: {}",
-                    error
-                );
-
-
-                if let Some(logfile) =
-                    runtime_logfile.as_ref()
-                {
-                    crate::logger::error(
-                        logfile,
-                        &format!(
-                            "[CONFIG] Unable to load configuration: {}",
-                            error,
-                        ),
-                    );
-                }
-
-
-                return;
-            }
-        };
-
-
-    let cfg =
-        result.config;
-
-
-    let logfile =
-        runtime_logfile.expect(
-            "Runtime command did not initialize the log path"
-        );
-
-
-    crate::logger::information(
-        &logfile,
-        "[MAIN] Screenshaver runtime started",
-    );
-
-
-    if cfg.debug_log {
-
-        crate::logger::debug(
-            &logfile,
-            "[MAIN] === CONFIG DUMP ===",
-        );
-
-
-        for line in &result.diagnostics {
-
-            crate::logger::debug(
-                &logfile,
-                line,
-            );
-        }
-
-
-        crate::logger::debug(
-            &logfile,
-            "[MAIN] === CONFIG END ===",
-        );
-    }
-
 
     println!(
         "[MAIN] Parsing shader mode..."

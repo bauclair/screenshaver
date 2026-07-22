@@ -24,6 +24,11 @@ fn default_subtitle_placement() -> String {
 }
 
 
+fn default_log_level() -> u8 {
+    5
+}
+
+
 //
 // ------------------------------------------------------------
 // Structures that exactly match screenshaver.toml
@@ -109,6 +114,9 @@ struct LockingSection {
 struct DebugSection {
 
     debug_log: bool,
+
+    #[serde(default = "default_log_level")]
+    log_level: u8,
 }
 
 
@@ -227,6 +235,8 @@ pub struct Config {
     pub screen_lock: bool,
 
     pub debug_log: bool,
+
+    pub log_level: u8,
 }
 
 
@@ -391,6 +401,15 @@ pub fn load_config(
         )?;
 
 
+    let (
+        log_level,
+        log_level_warning,
+    ) =
+        validate_log_level(
+            raw.debug.log_level
+        );
+
+
     //---------------------------------------------------------
     // Flatten configuration
     //---------------------------------------------------------
@@ -424,6 +443,8 @@ pub fn load_config(
 
             debug_log:
                 raw.debug.debug_log,
+
+            log_level,
         };
 
 
@@ -508,6 +529,11 @@ pub fn load_config(
                 "[CONFIG] debug_log = {}",
                 config.debug_log,
             ),
+
+            format!(
+                "[CONFIG] log_level = {}",
+                config.log_level,
+            ),
         ];
 
 
@@ -522,6 +548,15 @@ pub fn load_config(
 
     if let Some(warning) =
         global_rendered_fps_warning
+    {
+        diagnostics.push(
+            warning
+        );
+    }
+
+
+    if let Some(warning) =
+        log_level_warning
     {
         diagnostics.push(
             warning
@@ -588,6 +623,46 @@ pub fn load_config(
         }
     )
 }
+
+//
+// ------------------------------------------------------------
+// Log-level validation
+// ------------------------------------------------------------
+//
+
+fn validate_log_level(
+    value: u8,
+) -> (
+    u8,
+    Option<String>,
+) {
+
+    if (1..=6).contains(
+        &value
+    ) {
+        return (
+            value,
+            None,
+        );
+    }
+
+
+    let fallback =
+        default_log_level();
+
+
+    (
+        fallback,
+        Some(
+            format!(
+                "[CONFIG] WARNING: log_level = {} is outside the supported range 1-6; using {}",
+                value,
+                fallback,
+            )
+        ),
+    )
+}
+
 
 //
 // ------------------------------------------------------------

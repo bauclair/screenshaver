@@ -3,7 +3,15 @@ use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+const MIN_LOG_LEVEL: u8 = 1;
+const MAX_LOG_LEVEL: u8 = 6;
+const DEFAULT_LOG_LEVEL: u8 = 5;
+
+static LOGGING_ENABLED: AtomicBool = AtomicBool::new(true);
+static LOG_LEVEL: AtomicU8 = AtomicU8::new(DEFAULT_LOG_LEVEL);
 
 fn timestamp() -> String {
     let now = SystemTime::now();
@@ -93,12 +101,21 @@ fn write_log_entry(logfile: &Path, message: &str) {
     }
 }
 
+fn should_write(level: u8) -> bool {
+    LOGGING_ENABLED.load(Ordering::Relaxed)
+        && level <= LOG_LEVEL.load(Ordering::Relaxed)
+}
+
 fn write_categorized_entry(
     logfile: &Path,
     level: u8,
     category: &str,
     message: &str,
 ) {
+    if !should_write(level) {
+        return;
+    }
+
     write_log_entry(
         logfile,
         &format!("[L{}] [{}] {}", level, category, message),
@@ -145,15 +162,23 @@ pub fn reset_log(logfile: &Path) {
     }
 }
 
+/// Configure whether categorized log entries are written.
+pub fn set_enabled(enabled: bool) {
+    LOGGING_ENABLED.store(enabled, Ordering::Relaxed);
+}
+
+/// Configure the highest verbosity level that will be written.
 ///
-/// Write an unclassified legacy log entry.
-///
-/// This function remains available during the logging migration so that
-/// existing call sites continue to compile without modification.
-///
-//pub fn log(logfile: &Path, message: &str) {
-//    write_log_entry(logfile, message);
-//}
+/// Levels outside the supported range are replaced with the default level.
+pub fn set_log_level(level: u8) {
+    let normalized = if (MIN_LOG_LEVEL..=MAX_LOG_LEVEL).contains(&level) {
+        level
+    } else {
+        DEFAULT_LOG_LEVEL
+    };
+
+    LOG_LEVEL.store(normalized, Ordering::Relaxed);
+}
 
 /// Write a Level 1 critical event.
 pub fn critical(logfile: &Path, message: &str) {

@@ -86,16 +86,12 @@ const VALID_PREVIEW_TEXTURE_PALETTES: [&str; 6] = [
 ];
 
 
-const RESERVED_OPTIONS: [&str; 9] = [
-    "--diagnostics",
-    "--list-backends",
-    "--list-shaders",
+const RESERVED_OPTIONS: [&str; 5] = [
     "--verify-cache",
     "--rebuild-cache",
     "--clean-cache",
     "--benchmark",
     "--evaluate",
-    "--convert",
 ];
 
 
@@ -372,10 +368,10 @@ fn parse_preview_texture(
             }
 
 
-            "--background-texture" => {
+            "--texture" => {
 
                 return Err(
-                    "--background-texture is not valid with --preview-texture; use --family"
+                    "--texture is not valid with --preview-texture; use --family"
                         .to_string()
                 );
             }
@@ -909,6 +905,9 @@ pub fn print_help() {
              --list-palettes\n\
                  Display available procedural texture palettes.\n\
          \n\
+             --delete-cache\n\
+                 Delete all Screenshaver cached/preprocessed shaders.\n\
+         \n\
          Texture families:\n\
              bricks\n\
              cells\n\
@@ -933,25 +932,8 @@ pub fn print_help() {
              screenshaver --preview-texture --family noise:1024\n\
              screenshaver --preview-texture --family marble --palette sandstone\n\
              screenshaver --preview-shader \"Heartfelt.glsl\"\n\
-             screenshaver --preview-shader \"Heartfelt.glsl\" --background-texture clouds\n\
+             screenshaver --preview-shader \"Heartfelt.glsl\" --texture clouds\n\
              screenshaver --preview-shader \"Heartfelt.glsl\" --palette mist\n\
-         \n\
-         Reserved options:\n\
-         \n\
-             --diagnostics\n\
-                 Display system and desktop information useful for troubleshooting.\n\
-         \n\
-             --list-backends\n\
-                 Display supported session backends.\n\
-         \n\
-             --list-shaders\n\
-                 Display available shaders.\n\
-         \n\
-             --delete-cache\n\
-                 Delete all Screenshaver cached/preprocessed shaders.\n\
-         \n\
-             --convert\n\
-                 Convert a GLSL shader using Screenshaver preprocessing.\n\
          \n\
          Configuration:\n\
              ~/.config/screenshaver/\n\
