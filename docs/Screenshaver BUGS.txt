@@ -1,7 +1,0 @@
-2026-07-08: Niri:
-            Very occasionally the first screensaver activation
-            may appear as a tiled window rather than fullscreen.
-            Subsequent activations are fullscreen.
-            Investigation deferred.
-
-2026-07-08: Mouse cursor visible during shader rendering. Should be hidden.
