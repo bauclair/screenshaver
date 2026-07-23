@@ -251,14 +251,14 @@ install_suse_dependencies() {
         devel_basis
 
     "${SUDO[@]}" zypper --non-interactive install \
-        pkg-config \
+        pkgconf \
         curl \
         ca-certificates \
-        libSDL2-devel \
-        libSDL2_ttf-devel \
+        SDL2-devel \
+        SDL2_ttf-devel \
         libX11-devel \
         libXss-devel \
-        Mesa-libGL-devel \
+        libglvnd-devel \
         desktop-file-utils
 }
 
