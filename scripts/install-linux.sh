@@ -5,22 +5,29 @@ set -Eeuo pipefail
 # -----------------------------------------------------------------------------
 # Screenshaver Linux source installer
 #
-# This script:
-#   1. Installs distribution-specific build dependencies.
-#   2. Installs rustup, Cargo, and stable Rust when necessary.
-#   3. Builds Screenshaver in release mode.
-#   4. Installs the executable, desktop launcher, and icons.
+# Conventional Linux distributions:
+#   1. Install distribution-specific build dependencies.
+#   2. Install rustup, Cargo, and stable Rust when necessary.
+#   3. Build Screenshaver with Cargo.
+#   4. Install the executable, desktop launcher, and icons under /usr/local.
 #
-# Run this script as a normal user:
+# NixOS:
+#   1. Validate the repository's flake.
+#   2. Build the Screenshaver flake package.
+#   3. Install the package into the current user's Nix profile.
+#
+# Run as a normal user:
 #
 #   ./scripts/install-linux.sh
 #
-# Do not run the entire script with sudo. The script invokes sudo only for
-# operations that modify the operating system.
+# Do not run the entire script with sudo. The script invokes sudo only when
+# conventional distributions require system package or /usr/local access.
 # -----------------------------------------------------------------------------
 
 APP_NAME="Screenshaver"
 BINARY_NAME="screenshaver"
+FLAKE_PACKAGE_NAME="screenshaver"
+
 INSTALL_PREFIX="/usr/local"
 ASSUME_YES=false
 
@@ -30,6 +37,12 @@ PROJECT_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 DESKTOP_FILE="${PROJECT_DIR}/assets/screenshaver.desktop"
 ICON_SOURCE_DIR="${PROJECT_DIR}/assets/icons/hicolor"
 BUILD_BINARY="${PROJECT_DIR}/target/release/${BINARY_NAME}"
+
+DISTRO_ID=""
+DISTRO_LIKE=""
+DISTRO_NAME=""
+
+SUDO=()
 
 usage() {
     cat <<USAGE
@@ -41,18 +54,22 @@ Options:
   -y, --yes       Do not ask before installing system packages or Rust
   -h, --help      Show this help text
 
-This script may install:
+Conventional Linux installation may install:
 
   * C/C++ compiler and build tools
   * pkg-config
+  * curl and CA certificates
   * SDL2 and SDL2_ttf development libraries
   * X11 and XScreenSaver development libraries
   * OpenGL development libraries
   * rustup, Cargo, and the stable Rust toolchain
 
-Application files are installed under:
+On conventional Linux distributions, application files are installed under:
 
   ${INSTALL_PREFIX}
+
+On NixOS, ${APP_NAME} is built from flake.nix and installed into the
+current user's Nix profile.
 USAGE
 }
 
@@ -71,10 +88,11 @@ die() {
 
 on_error() {
     local exit_code=$?
+    local line_number="${BASH_LINENO[0]:-unknown}"
 
     printf \
         '\nInstallation stopped at line %s (exit code %s).\n' \
-        "${BASH_LINENO[0]}" \
+        "$line_number" \
         "$exit_code" >&2
 
     exit "$exit_code"
@@ -82,53 +100,35 @@ on_error() {
 
 trap on_error ERR
 
-for arg in "$@"; do
-    case "$arg" in
-        -y|--yes)
-            ASSUME_YES=true
-            ;;
+parse_arguments() {
+    local arg
 
-        -h|--help)
-            usage
-            exit 0
-            ;;
+    for arg in "$@"; do
+        case "$arg" in
+            -y|--yes)
+                ASSUME_YES=true
+                ;;
 
-        *)
-            usage
-            die "Unknown option: $arg"
-            ;;
-    esac
-done
+            -h|--help)
+                usage
+                exit 0
+                ;;
 
-[[ "$(uname -s)" == "Linux" ]] ||
-    die "This installer supports Linux only."
-
-[[ "$EUID" -ne 0 ]] ||
-    die "Do not run this entire script with sudo. Run it as your normal user."
-
-[[ -f "${PROJECT_DIR}/Cargo.toml" ]] ||
-    die "Cargo.toml was not found. Keep this script in the repository's scripts directory."
-
-[[ -f "$DESKTOP_FILE" ]] ||
-    die "Desktop file not found: $DESKTOP_FILE"
-
-[[ -d "$ICON_SOURCE_DIR" ]] ||
-    die "Icon directory not found: $ICON_SOURCE_DIR"
-
-if command -v sudo >/dev/null 2>&1; then
-    SUDO=(sudo)
-else
-    die "sudo is required to install packages and files under ${INSTALL_PREFIX}."
-fi
+            *)
+                usage
+                die "Unknown option: $arg"
+                ;;
+        esac
+    done
+}
 
 confirm() {
     local prompt="$1"
+    local reply
 
     if $ASSUME_YES; then
         return 0
     fi
-
-    local reply
 
     read -r -p "$prompt [Y/n] " reply
 
@@ -162,6 +162,42 @@ is_like() {
     [[ " ${DISTRO_LIKE} " == *" ${family} "* ]]
 }
 
+require_normal_user() {
+    [[ "$EUID" -ne 0 ]] ||
+        die \
+            "Do not run this entire script with sudo.
+
+Run it as your normal user:
+
+  ./scripts/install-linux.sh
+
+The script will request sudo only when system access is required."
+}
+
+initialize_sudo() {
+    if command -v sudo >/dev/null 2>&1; then
+        SUDO=(sudo)
+    else
+        die \
+            "sudo is required to install system packages and files under
+${INSTALL_PREFIX}."
+    fi
+}
+
+validate_repository_layout() {
+    [[ -f "${PROJECT_DIR}/Cargo.toml" ]] ||
+        die \
+            "Cargo.toml was not found in:
+
+  ${PROJECT_DIR}
+
+This script must remain in the repository's scripts directory."
+}
+
+# -----------------------------------------------------------------------------
+# Conventional Linux dependency installation
+# -----------------------------------------------------------------------------
+
 install_debian_dependencies() {
     "${SUDO[@]}" apt-get update
 
@@ -174,7 +210,8 @@ install_debian_dependencies() {
         libsdl2-ttf-dev \
         libx11-dev \
         libxss-dev \
-        libgl1-mesa-dev
+        libgl1-mesa-dev \
+        desktop-file-utils
 }
 
 install_fedora_dependencies() {
@@ -190,7 +227,8 @@ install_fedora_dependencies() {
         libX11-devel \
         libXScrnSaver-devel \
         libglvnd-devel \
-        mesa-libGL-devel
+        mesa-libGL-devel \
+        desktop-file-utils
 }
 
 install_arch_dependencies() {
@@ -203,7 +241,8 @@ install_arch_dependencies() {
         sdl2_ttf \
         libx11 \
         libxss \
-        libglvnd
+        libglvnd \
+        desktop-file-utils
 }
 
 install_suse_dependencies() {
@@ -219,12 +258,31 @@ install_suse_dependencies() {
         libSDL2_ttf-devel \
         libX11-devel \
         libXss-devel \
-        Mesa-libGL-devel
+        Mesa-libGL-devel \
+        desktop-file-utils
+}
+
+install_void_dependencies() {
+    log "Synchronizing Void Linux package indexes"
+
+    "${SUDO[@]}" xbps-install -S
+
+    log "Installing Void Linux build dependencies"
+
+    "${SUDO[@]}" xbps-install -y \
+        base-devel \
+        pkg-config \
+        curl \
+        ca-certificates \
+        SDL2-devel \
+        SDL2_ttf-devel \
+        libX11-devel \
+        libXScrnSaver-devel \
+        MesaLib-devel \
+        desktop-file-utils
 }
 
 install_build_dependencies() {
-    load_os_release
-
     log "Detected ${DISTRO_NAME}"
 
     if ! confirm "Install or verify the required system build dependencies?"; then
@@ -255,9 +313,8 @@ install_build_dependencies() {
             install_suse_dependencies
             ;;
 
-        nixos)
-            die \
-                "NixOS should build Screenshaver through its Nix expression rather than this mutable system installer."
+        void)
+            install_void_dependencies
             ;;
 
         *)
@@ -273,9 +330,12 @@ install_build_dependencies() {
             elif is_like suse; then
                 install_suse_dependencies
 
+            elif is_like void; then
+                install_void_dependencies
+
             else
                 die \
-                    "Unsupported distribution: ${DISTRO_NAME}.
+                    "Unsupported distribution: ${DISTRO_NAME}
 
 Install these components manually and run the installer again:
 
@@ -291,6 +351,10 @@ Install these components manually and run the installer again:
             ;;
     esac
 }
+
+# -----------------------------------------------------------------------------
+# Rust installation and Cargo build
+# -----------------------------------------------------------------------------
 
 load_cargo_environment() {
     if [[ -f "$HOME/.cargo/env" ]]; then
@@ -358,17 +422,28 @@ build_application() {
         die "Expected executable was not produced: $BUILD_BINARY"
 }
 
-install_icons() {
-    log "Installing application icons"
+# -----------------------------------------------------------------------------
+# Conventional filesystem installation
+# -----------------------------------------------------------------------------
 
+validate_runtime_assets() {
+    [[ -f "$DESKTOP_FILE" ]] ||
+        die "Desktop file not found: $DESKTOP_FILE"
+
+    [[ -d "$ICON_SOURCE_DIR" ]] ||
+        die "Icon directory not found: $ICON_SOURCE_DIR"
+}
+
+install_icons() {
     local source_file
     local relative_file
     local target_file
     local icon_count=0
 
+    log "Installing application icons"
+
     while IFS= read -r -d '' source_file; do
         relative_file="${source_file#${ICON_SOURCE_DIR}/}"
-
         target_file="${INSTALL_PREFIX}/share/icons/hicolor/${relative_file}"
 
         "${SUDO[@]}" install \
@@ -389,7 +464,10 @@ install_icons() {
     )
 
     [[ "$icon_count" -gt 0 ]] ||
-        die "No PNG, SVG, or XPM icon files were found under $ICON_SOURCE_DIR."
+        die \
+            "No PNG, SVG, or XPM icon files were found under:
+
+  ${ICON_SOURCE_DIR}"
 }
 
 install_application() {
@@ -417,7 +495,8 @@ refresh_desktop_caches() {
             warn "The desktop application database could not be refreshed."
     else
         warn \
-            "update-desktop-database was not found. The application menu may refresh automatically after login."
+            "update-desktop-database was not found. The application menu may
+refresh automatically after login."
     fi
 
     if command -v gtk-update-icon-cache >/dev/null 2>&1; then
@@ -428,7 +507,8 @@ refresh_desktop_caches() {
             warn "The icon cache could not be refreshed."
     else
         warn \
-            "gtk-update-icon-cache was not found. The desktop may refresh the icon cache automatically."
+            "gtk-update-icon-cache was not found. The desktop may refresh the
+icon cache automatically."
     fi
 }
 
@@ -467,31 +547,24 @@ verify_shared_libraries() {
 
     if [[ -n "$missing" ]]; then
         printf '\nThe following shared libraries are unresolved:\n' >&2
-        printf '  %s\n' $missing >&2
+
+        while IFS= read -r library; do
+            [[ -n "$library" ]] &&
+                printf '  %s\n' "$library" >&2
+        done <<< "$missing"
 
         die "Installation completed, but runtime libraries are missing."
     fi
 }
 
-verify_installation() {
+verify_conventional_installation() {
     log "Verifying the installation"
 
     verify_desktop_file
     verify_shared_libraries
 }
 
-main() {
-    printf '%s source installer\n' "$APP_NAME"
-    printf 'Project directory: %s\n' "$PROJECT_DIR"
-    printf 'Installation prefix: %s\n' "$INSTALL_PREFIX"
-
-    install_build_dependencies
-    install_rust_toolchain
-    build_application
-    install_application
-    refresh_desktop_caches
-    verify_installation
-
+print_conventional_success() {
     cat <<SUCCESS
 
 ${APP_NAME} was installed successfully.
@@ -504,7 +577,7 @@ Desktop launcher:
 
   ${INSTALL_PREFIX}/share/applications/screenshaver.desktop
 
-You can launch ${APP_NAME} from the desktop application menu or by running:
+Launch ${APP_NAME} from the desktop application menu or run:
 
   ${BINARY_NAME}
 
@@ -517,4 +590,186 @@ If Cargo is not available in another terminal session, run:
 SUCCESS
 }
 
-main
+install_conventional_linux() {
+    initialize_sudo
+    validate_runtime_assets
+    install_build_dependencies
+    install_rust_toolchain
+    build_application
+    install_application
+    refresh_desktop_caches
+    verify_conventional_installation
+    print_conventional_success
+}
+
+# -----------------------------------------------------------------------------
+# NixOS installation
+# -----------------------------------------------------------------------------
+
+nix_command() {
+    nix \
+        --extra-experimental-features "nix-command flakes" \
+        "$@"
+}
+
+verify_nix_available() {
+    command -v nix >/dev/null 2>&1 ||
+        die \
+            "The nix command was not found.
+
+NixOS normally provides this command as part of the operating system."
+}
+
+verify_flake_files() {
+    [[ -f "${PROJECT_DIR}/flake.nix" ]] ||
+        die \
+            "NixOS was detected, but flake.nix was not found in:
+
+  ${PROJECT_DIR}
+
+Add the Screenshaver flake to the repository root before running this
+installer on NixOS."
+
+    if [[ ! -f "${PROJECT_DIR}/flake.lock" ]]; then
+        warn \
+            "flake.lock was not found. Nix may resolve the flake inputs without
+a committed lock file, but the build will not be pinned to the repository's
+intended input revisions."
+    fi
+}
+
+show_nix_flake_package() {
+    log "Checking the available Screenshaver flake output"
+
+    nix_command \
+        flake show \
+        "path:${PROJECT_DIR}" \
+        --no-write-lock-file
+}
+
+check_nixos_flake() {
+    log "Validating the Screenshaver flake"
+
+    nix_command \
+        flake check \
+        "path:${PROJECT_DIR}" \
+        --no-write-lock-file
+}
+
+build_nixos_flake() {
+    log "Building ${APP_NAME} with Nix"
+
+    nix_command \
+        build \
+        "path:${PROJECT_DIR}#${FLAKE_PACKAGE_NAME}" \
+        --no-write-lock-file
+}
+
+install_nixos_profile() {
+    log "Installing ${APP_NAME} into the current user's Nix profile"
+
+    if nix_command \
+        profile install \
+        "path:${PROJECT_DIR}#${FLAKE_PACKAGE_NAME}" \
+        --no-write-lock-file; then
+
+        return
+    fi
+
+    die \
+        "Nix could not add ${APP_NAME} to the current user's profile.
+
+If Screenshaver is already installed, inspect the profile with:
+
+  nix profile list
+
+Remove the old profile entry if necessary, then run this installer again:
+
+  nix profile remove <index>"
+}
+
+verify_nixos_installation() {
+    log "Verifying the Nix profile installation"
+
+    if command -v "$BINARY_NAME" >/dev/null 2>&1; then
+        printf 'Installed executable: %s\n' \
+            "$(command -v "$BINARY_NAME")"
+        return
+    fi
+
+    warn \
+        "${BINARY_NAME} was installed into the Nix profile, but it is not
+currently visible through PATH.
+
+Open a new terminal or make sure the user profile bin directory is included
+in PATH."
+}
+
+print_nixos_success() {
+    cat <<SUCCESS
+
+${APP_NAME} was installed successfully through Nix.
+
+The package was added to the current user's Nix profile.
+
+Launch ${APP_NAME} with:
+
+  ${BINARY_NAME}
+
+Display the installed profile entries with:
+
+  nix profile list
+
+To remove Screenshaver later, identify its profile index and run:
+
+  nix profile remove <index>
+
+For a declarative system-wide installation, add the Screenshaver flake input
+and package to your own NixOS configuration instead of relying on a user
+profile installation.
+
+SUCCESS
+}
+
+install_nixos() {
+    log "NixOS installation path selected"
+
+    verify_nix_available
+    verify_flake_files
+    show_nix_flake_package
+    check_nixos_flake
+    build_nixos_flake
+    install_nixos_profile
+    verify_nixos_installation
+    print_nixos_success
+}
+
+# -----------------------------------------------------------------------------
+# Main
+# -----------------------------------------------------------------------------
+
+main() {
+    parse_arguments "$@"
+
+    [[ "$(uname -s)" == "Linux" ]] ||
+        die "This installer supports Linux only."
+
+    require_normal_user
+    validate_repository_layout
+    load_os_release
+
+    printf '%s source installer\n' "$APP_NAME"
+    printf 'Detected system: %s\n' "$DISTRO_NAME"
+    printf 'Project directory: %s\n' "$PROJECT_DIR"
+
+    if [[ "$DISTRO_ID" == "nixos" ]] || is_like nixos; then
+        install_nixos
+        exit 0
+    fi
+
+    printf 'Installation prefix: %s\n' "$INSTALL_PREFIX"
+
+    install_conventional_linux
+}
+
+main "$@"
