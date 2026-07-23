@@ -123,7 +123,11 @@ SCRIPT_DIR="$(
     pwd
 )"
 
-PROJECT_ROOT="$SCRIPT_DIR"
+PROJECT_ROOT="$(
+    cd -- "$SCRIPT_DIR/.."
+    pwd
+)"
+
 CARGO_TOML="$PROJECT_ROOT/Cargo.toml"
 
 info "Project root: $PROJECT_ROOT"

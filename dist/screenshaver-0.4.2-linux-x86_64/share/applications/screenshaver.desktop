@@ -1,0 +1,22 @@
+[Desktop Entry]
+Version=1.5
+Type=Application
+Name=Screenshaver
+GenericName=Shader Screensaver
+Comment=Display animated GLSL shaders when the desktop is idle
+Exec=screenshaver
+Icon=screenshaver
+Terminal=false
+Categories=Utility;Settings;
+Keywords=screensaver;shader;GLSL;Wayland;OpenGL;desktop;
+StartupNotify=false
+StartupWMClass=Screenshaver
+Actions=Start;Stop;
+
+[Desktop Action Start]
+Name=Start Screenshaver
+Exec=screenshaver --start
+
+[Desktop Action Stop]
+Name=Stop Screenshaver
+Exec=screenshaver --stop
