@@ -1,3 +1,4 @@
+mod initialize_user_files;
 mod startup_checks;
 mod load_config;
 mod singleton;
@@ -57,6 +58,22 @@ use std::time::Duration;
 
 
 fn main() {
+
+let config_dir = match initialize_user_files::initialize() {
+    Ok(path) => path,
+
+    Err(error) => {
+        eprintln!(
+            "Screenshaver could not initialize its user files: {error}"
+        );
+        std::process::exit(1);
+    }
+};
+
+println!(
+    "Screenshaver configuration directory: {}",
+    config_dir.display()
+);
 
 let command =
     match crate::parse_arguments::parse() {
