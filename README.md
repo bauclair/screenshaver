@@ -1,3 +1,7 @@
+> [!CAUTION]
+> Screenshaver is beta software. Configuration syntax, shader compatibility,
+> installation procedures, and command-line options may change before version 1.0.
+
 # Screenshaver
 <img width="128" height="128" alt="screenshaver" src="https://github.com/user-attachments/assets/9ecad862-dbc8-446c-a3e4-48be86738df8" />
 

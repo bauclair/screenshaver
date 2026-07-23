@@ -21,8 +21,10 @@
 *.swp
 *.swo
 *~
+*.log
 *.tmp
 *.bak
+*._gen.glsl
 
 # OS metadata
 .DS_Store
