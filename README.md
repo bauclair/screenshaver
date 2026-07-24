@@ -12,7 +12,7 @@ please take some time to review the  **[SCREENSHAVER_USER_MANUAL.md](SCREENSHAVE
 
 ## *Screensavers, reinvented.*
 
-Screenshaver is a modern, ShaderToy-compatible screensaver for Linux that brings GPU-accelerated procedural graphics to the desktop.
+Screenshaver is a modern, ISF- and ShaderToy-compatible screensaver for Linux that brings GPU-accelerated procedural graphics to the desktop.
 
 Rather than displaying static images or pre-rendered animations, Screenshaver renders visual effects in real time using OpenGL fragment shaders. Every frame is generated live by your GPU, creating an effectively limitless variety of animated imagery.
 
@@ -27,7 +27,7 @@ Screenshaver is designed to make discovering, rendering, and sharing shader-base
 
 ## Features
 
-- ShaderToy-compatible shader rendering
+- ISF- and ShaderToy-compatible shader rendering
 - Automatic GLSL preprocessing and compatibility pipeline
 - Native Wayland support
 - Full-screen GPU-accelerated rendering
@@ -49,12 +49,14 @@ Instead of relying on external image files, Screenshaver can generate textures p
 
 Current texture families include:
 
+- Bricks
+- Cells
 - Clouds
+- Hexagons
 - Marble
-- Cellular
-- Minerals
-- Fabric (planned)
-- Julia (planned)
+- Mesh
+- Noise
+- Radial
 
 ## Designed for Exploration
 
@@ -89,5 +91,5 @@ Community feedback plays an important role in helping Screenshaver grow into the
 
 ---
 
-**Screenshaver** -- this is not your father's screensaver.
+**Screenshaver** -- Not your parents' screensaver.
 
