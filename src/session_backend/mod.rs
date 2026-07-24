@@ -60,9 +60,9 @@ pub fn create_backend(
 
         Err(error) => {
 
-            println!(
-                "[SESSION] Wayland backend unavailable: {}",
-                error,
+            log_backend_unavailable(
+                "Wayland",
+                &error,
             );
         }
     }
@@ -87,9 +87,9 @@ pub fn create_backend(
 
         Err(error) => {
 
-            println!(
-                "[SESSION] GNOME backend unavailable: {}",
-                error,
+            log_backend_unavailable(
+                "GNOME",
+                &error,
             );
         }
     }
@@ -114,9 +114,9 @@ pub fn create_backend(
 
         Err(error) => {
 
-            println!(
-                "[SESSION] X11 backend unavailable: {}",
-                error,
+            log_backend_unavailable(
+                "X11",
+                &error,
             );
         }
     }
@@ -141,9 +141,9 @@ pub fn create_backend(
 
         Err(error) => {
 
-            println!(
-                "[SESSION] logind backend unavailable: {}",
-                error,
+            log_backend_unavailable(
+                "logind",
+                &error,
             );
 
 
@@ -156,3 +156,33 @@ pub fn create_backend(
         }
     }
 }
+
+fn log_backend_unavailable(
+    backend_name: &str,
+    error: &SessionError,
+) {
+
+    let message =
+        format!(
+            "[SESSION] {} backend unavailable: {}",
+            backend_name,
+            error,
+        );
+
+
+    println!(
+        "{}",
+        message,
+    );
+
+
+    let logfile =
+        crate::locate_paths::runtime_log_path();
+
+
+    crate::logger::information(
+        &logfile,
+        &message,
+    );
+}
+

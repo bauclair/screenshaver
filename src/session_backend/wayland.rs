@@ -257,10 +257,14 @@ impl WaylandBackend {
                 })?;
 
 
+        let bound_idle_version =
+            idle_global_version.min(2);
+
+
         let idle_notifier: ExtIdleNotifierV1 =
             registry.bind(
                 idle_global_name,
-                idle_global_version.min(2),
+                bound_idle_version,
                 &qh,
                 (),
             );
@@ -299,12 +303,31 @@ impl WaylandBackend {
 
 
         let idle_notification =
-            idle_notifier.get_input_idle_notification(
-                timeout_ms,
-                &seat,
-                &qh,
-                (),
-            );
+            if bound_idle_version >= 2 {
+                log_information(
+                    "[SESSION] Using Wayland input-only idle notification (protocol v2)"
+                );
+
+
+                idle_notifier.get_input_idle_notification(
+                    timeout_ms,
+                    &seat,
+                    &qh,
+                    (),
+                )
+            } else {
+                log_information(
+                    "[SESSION] Using Wayland idle notification (protocol v1)"
+                );
+
+
+                idle_notifier.get_idle_notification(
+                    timeout_ms,
+                    &seat,
+                    &qh,
+                    (),
+                )
+            };
 
 
         event_queue
