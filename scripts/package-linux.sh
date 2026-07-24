@@ -1,458 +1,659 @@
 #!/usr/bin/env bash
 
-# Build and package Screenshaver as a versioned Linux archive.
+# Screenshaver Linux release-package test script
 #
-# Output:
-#   dist/screenshaver-<version>-linux-<architecture>.tar.gz
-#   dist/screenshaver-<version>-linux-<architecture>.tar.gz.sha256
+# This script packages the version of Screenshaver installed in the current
+# NixOS system profile. It does not compile Screenshaver directly with Cargo.
 #
-# Run from anywhere inside the repository:
-#   ./scripts/package-linux.sh
-
+# Expected workflow:
+#
+#   1. Update Cargo.toml and default.nix to the new version.
+#   2. Rebuild NixOS:
+#
+#        sudo nixos-rebuild switch --flake /etc/nixos
+#
+#   3. Run this script:
+#
+#        ./test-package-linux.sh
+#
+# Generated files are placed under:
+#
+#   dist/
+#
+# Exit immediately when a command fails, an undefined variable is used,
+# or a command in a pipeline fails.
 set -Eeuo pipefail
 
-PROGRAM_NAME="screenshaver"
-DISPLAY_NAME="Screenshaver"
+# Use predictable word splitting.
+IFS=$'\n\t'
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 
-CARGO_TOML="${PROJECT_DIR}/Cargo.toml"
-TARGET_DIR="${PROJECT_DIR}/target"
-DIST_DIR="${PROJECT_DIR}/dist"
+# -----------------------------------------------------------------------------
+# Output helpers
+# -----------------------------------------------------------------------------
 
-readonly PROGRAM_NAME
-readonly DISPLAY_NAME
-readonly SCRIPT_DIR
-readonly PROJECT_DIR
-readonly CARGO_TOML
-readonly TARGET_DIR
-readonly DIST_DIR
-
-log() {
-    printf '\n\033[1;32m==>\033[0m %s\n' "$*"
+info() {
+    printf '%s\n' "$*"
 }
 
-warn() {
-    printf '\n\033[1;33mWarning:\033[0m %s\n' "$*" >&2
+success() {
+    printf '  OK: %s\n' "$*"
 }
 
-fail() {
-    printf '\n\033[1;31mError:\033[0m %s\n' "$*" >&2
+warning() {
+    printf '  WARNING: %s\n' "$*" >&2
+}
+
+error() {
+    printf 'ERROR: %s\n' "$*" >&2
     exit 1
 }
 
-cleanup_on_error() {
-    local exit_code=$?
 
-    if (( exit_code != 0 )); then
-        printf '\n\033[1;31mPackaging failed with exit code %d.\033[0m\n' \
-            "${exit_code}" >&2
-    fi
-}
-
-trap cleanup_on_error EXIT
-
-require_command() {
-    local command_name="$1"
-
-    command -v "${command_name}" >/dev/null 2>&1 ||
-        fail "Required command not found: ${command_name}"
-}
+# -----------------------------------------------------------------------------
+# Copy helpers
+# -----------------------------------------------------------------------------
 
 copy_required_file() {
     local source_path="$1"
     local destination_path="$2"
 
-    [[ -f "${source_path}" ]] ||
-        fail "Required file not found: ${source_path}"
+    if [[ ! -f "$source_path" ]]; then
+        error "Required file not found: $source_path"
+    fi
 
-    install -Dm644 "${source_path}" "${destination_path}"
+    mkdir -p "$(dirname "$destination_path")"
+    cp -p "$source_path" "$destination_path"
+
+    success "Copied $(basename "$source_path")"
 }
 
 copy_optional_file() {
     local source_path="$1"
     local destination_path="$2"
 
-    if [[ -f "${source_path}" ]]; then
-        install -Dm644 "${source_path}" "${destination_path}"
-    else
-        warn "Optional file not found: ${source_path}"
+    if [[ ! -f "$source_path" ]]; then
+        warning "Optional file not found; skipping: $source_path"
+        return 0
     fi
+
+    mkdir -p "$(dirname "$destination_path")"
+    cp -p "$source_path" "$destination_path"
+
+    success "Copied $(basename "$source_path")"
 }
 
-read_cargo_version() {
-    # Reads the first package version declared in Cargo.toml.
-    #
-    # This avoids requiring an additional TOML parser. If Cargo.toml later
-    # contains multiple package declarations or uses workspace inheritance,
-    # replace this function with a cargo metadata query.
+copy_required_directory() {
+    local source_path="$1"
+    local destination_path="$2"
 
-    local version
+    if [[ ! -d "$source_path" ]]; then
+        error "Required directory not found: $source_path"
+    fi
 
-    version="$(
-        awk '
-            /^\[package\]/ {
-                in_package = 1
-                next
-            }
+    mkdir -p "$(dirname "$destination_path")"
+    cp -a "$source_path" "$destination_path"
 
-            /^\[/ && in_package {
-                exit
-            }
-
-            in_package && /^[[:space:]]*version[[:space:]]*=/ {
-                line = $0
-                sub(/^[^=]*=[[:space:]]*"/, "", line)
-                sub(/".*$/, "", line)
-                print line
-                exit
-            }
-        ' "${CARGO_TOML}"
-    )"
-
-    [[ -n "${version}" ]] ||
-        fail "Could not determine package version from Cargo.toml."
-
-    printf '%s\n' "${version}"
+    success "Copied directory $(basename "$source_path")"
 }
 
-detect_architecture() {
-    case "$(uname -m)" in
-        x86_64 | amd64)
-            printf 'x86_64\n'
-            ;;
-        aarch64 | arm64)
-            printf 'aarch64\n'
-            ;;
-        *)
-            fail "Unsupported packaging architecture: $(uname -m)"
-            ;;
-    esac
+copy_optional_directory() {
+    local source_path="$1"
+    local destination_path="$2"
+
+    if [[ ! -d "$source_path" ]]; then
+        warning "Optional directory not found; skipping: $source_path"
+        return 0
+    fi
+
+    mkdir -p "$(dirname "$destination_path")"
+    cp -a "$source_path" "$destination_path"
+
+    success "Copied directory $(basename "$source_path")"
 }
 
-create_installer() {
-    local installer_path="$1"
 
-    cat >"${installer_path}" <<'INSTALLER'
-#!/usr/bin/env bash
+# -----------------------------------------------------------------------------
+# Determine project location
+# -----------------------------------------------------------------------------
 
-# Install Screenshaver for the current user by default.
-#
-# Default installation:
-#   ~/.local/bin/screenshaver
-#   ~/.local/share/applications/screenshaver.desktop
-#   ~/.local/share/icons/hicolor/...
-#   ~/.local/share/doc/screenshaver/...
-#
-# System-wide installation:
-#   sudo ./install.sh --prefix /usr/local
+# This allows the script to be run from any current working directory.
+SCRIPT_DIR="$(
+    cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
+    pwd
+)"
 
-set -Eeuo pipefail
+PROJECT_ROOT="$(
+    cd -- "$SCRIPT_DIR/.."
+    pwd
+)"
 
-PREFIX="${HOME}/.local"
+CARGO_TOML="$PROJECT_ROOT/Cargo.toml"
 
-usage() {
-    cat <<'EOF'
-Usage:
-  ./install.sh [--prefix DIRECTORY]
+info "Project root: $PROJECT_ROOT"
 
-Options:
-  --prefix DIRECTORY   Installation prefix.
-                       Default: ~/.local
+if [[ ! -f "$CARGO_TOML" ]]; then
+    error "Cargo.toml was not found at: $CARGO_TOML"
+fi
 
-Examples:
-  ./install.sh
-  sudo ./install.sh --prefix /usr/local
+
+# -----------------------------------------------------------------------------
+# Read the Screenshaver version from Cargo.toml
+# -----------------------------------------------------------------------------
+
+# This reads the first version assignment in Cargo.toml.
+VERSION="$(
+    awk '
+        /^[[:space:]]*version[[:space:]]*=/ {
+            line = $0
+            sub(/^[^"]*"/, "", line)
+            sub(/".*$/, "", line)
+            print line
+            exit
+        }
+    ' "$CARGO_TOML"
+)"
+
+if [[ -z "$VERSION" ]]; then
+    error "Could not determine the Screenshaver version from Cargo.toml."
+fi
+
+if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+    error "Cargo.toml contains an unexpected version value: $VERSION"
+fi
+
+info "Screenshaver version: $VERSION"
+
+
+# -----------------------------------------------------------------------------
+# Package naming
+# -----------------------------------------------------------------------------
+
+MACHINE_ARCH="$(uname -m)"
+
+case "$MACHINE_ARCH" in
+    x86_64)
+        PACKAGE_ARCH="x86_64"
+        ;;
+
+    aarch64 | arm64)
+        PACKAGE_ARCH="aarch64"
+        ;;
+
+    *)
+        error "Unsupported package architecture: $MACHINE_ARCH"
+        ;;
+esac
+
+PACKAGE_NAME="screenshaver-${VERSION}-linux-${PACKAGE_ARCH}"
+
+DIST_DIR="$PROJECT_ROOT/dist"
+STAGING_DIR="$DIST_DIR/$PACKAGE_NAME"
+
+ARCHIVE_NAME="${PACKAGE_NAME}.tar.gz"
+ARCHIVE_PATH="$DIST_DIR/$ARCHIVE_NAME"
+CHECKSUM_PATH="${ARCHIVE_PATH}.sha256"
+
+
+# -----------------------------------------------------------------------------
+# Check commands used by this script
+# -----------------------------------------------------------------------------
+
+info
+info "Checking required commands..."
+
+REQUIRED_COMMANDS=(
+    awk
+    basename
+    cat
+    cp
+    date
+    dirname
+    find
+    grep
+    mkdir
+    pwd
+    readlink
+    rm
+    sha256sum
+    sort
+    tar
+    uname
+)
+
+for command_name in "${REQUIRED_COMMANDS[@]}"; do
+    if ! command -v "$command_name" >/dev/null 2>&1; then
+        error "Required command not found: $command_name"
+    fi
+
+    success "FOUND: $command_name"
+done
+
+info
+info "All preliminary checks passed."
+
+
+# -----------------------------------------------------------------------------
+# Locate and validate the installed binary
+# -----------------------------------------------------------------------------
+
+info
+info "Locating installed Screenshaver binary..."
+
+BINARY_PATH="$(command -v screenshaver || true)"
+
+if [[ -z "$BINARY_PATH" ]]; then
+    error "Screenshaver is not installed or is not available in PATH.
+
+Run:
+
+  sudo nixos-rebuild switch --flake /etc/nixos
+
+and then run this script again."
+fi
+
+if [[ ! -x "$BINARY_PATH" ]]; then
+    error "Installed Screenshaver binary is not executable: $BINARY_PATH"
+fi
+
+INSTALLED_TARGET="$(readlink -f "$BINARY_PATH")"
+
+if [[ ! -f "$INSTALLED_TARGET" ]]; then
+    error "Could not resolve the installed Screenshaver executable."
+fi
+
+if [[ ! -x "$INSTALLED_TARGET" ]]; then
+    error "Resolved Screenshaver binary is not executable: $INSTALLED_TARGET"
+fi
+
+info
+info "Installed Screenshaver binary found."
+info "Binary: $BINARY_PATH"
+ls -l "$BINARY_PATH"
+
+INSTALLED_VERSION=""
+
+if [[ "$INSTALLED_TARGET" =~ screenshaver-([0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?)/bin/screenshaver$ ]]; then
+    INSTALLED_VERSION="${BASH_REMATCH[1]}"
+fi
+
+if [[ -z "$INSTALLED_VERSION" ]]; then
+    error "Could not determine the installed version from:
+
+  $INSTALLED_TARGET"
+fi
+
+info "Installed version: $INSTALLED_VERSION"
+
+if [[ "$INSTALLED_VERSION" != "$VERSION" ]]; then
+    error "Version mismatch.
+
+Cargo.toml version:  $VERSION
+Installed version:   $INSTALLED_VERSION
+Installed executable: $INSTALLED_TARGET
+
+Run:
+
+  sudo nixos-rebuild switch --flake /etc/nixos
+
+and then run this script again."
+fi
+
+success "Installed version matches Cargo.toml"
+
+
+# -----------------------------------------------------------------------------
+# Prepare the staging directory
+# -----------------------------------------------------------------------------
+
+info
+info "Creating package staging directory..."
+
+# Remove only the directory for this exact package version and architecture.
+rm -rf -- "$STAGING_DIR"
+
+mkdir -p "$STAGING_DIR/bin"
+mkdir -p "$STAGING_DIR/share/applications"
+mkdir -p "$STAGING_DIR/share/icons"
+mkdir -p "$STAGING_DIR/docs"
+mkdir -p "$STAGING_DIR/examples"
+
+success "Created $STAGING_DIR"
+
+
+# -----------------------------------------------------------------------------
+# Copy the executable
+# -----------------------------------------------------------------------------
+
+info
+info "Copying Screenshaver executable..."
+
+# -L dereferences /run/current-system/sw/bin/screenshaver so that the package
+# contains a regular executable rather than a symlink into /nix/store.
+cp -Lp "$BINARY_PATH" "$STAGING_DIR/bin/screenshaver"
+
+if [[ ! -f "$STAGING_DIR/bin/screenshaver" ]]; then
+    error "Screenshaver binary was not copied into the staging directory."
+fi
+
+if [[ -L "$STAGING_DIR/bin/screenshaver" ]]; then
+    error "Staged Screenshaver executable is still a symbolic link."
+fi
+
+if [[ ! -x "$STAGING_DIR/bin/screenshaver" ]]; then
+    error "Staged Screenshaver binary is not executable."
+fi
+
+success "Copied executable"
+ls -lh "$STAGING_DIR/bin/screenshaver"
+
+
+# -----------------------------------------------------------------------------
+# Create the generated VERSION file
+# -----------------------------------------------------------------------------
+
+info
+info "Creating VERSION file..."
+
+VERSION_FILE="$STAGING_DIR/VERSION"
+BUILD_DATE="$(date -u +%Y-%m-%d)"
+BUILD_TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+cat > "$VERSION_FILE" <<EOF
+Screenshaver $VERSION
+Build date: $BUILD_DATE
+Build timestamp: $BUILD_TIMESTAMP
+Operating system: Linux
+Architecture: $PACKAGE_ARCH
+Package: $PACKAGE_NAME
 EOF
-}
 
-while (($# > 0)); do
-    case "$1" in
-        --prefix)
-            (($# >= 2)) || {
-                printf 'Error: --prefix requires a directory.\n' >&2
-                exit 2
-            }
-
-            PREFIX="$2"
-            shift 2
-            ;;
-
-        --help | -h)
-            usage
-            exit 0
-            ;;
-
-        *)
-            printf 'Error: unknown option: %s\n' "$1" >&2
-            usage >&2
-            exit 2
-            ;;
-    esac
-done
-
-PACKAGE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-
-install -Dm755 \
-    "${PACKAGE_DIR}/bin/screenshaver" \
-    "${PREFIX}/bin/screenshaver"
-
-if [[ -f "${PACKAGE_DIR}/share/applications/screenshaver.desktop" ]]; then
-    install -Dm644 \
-        "${PACKAGE_DIR}/share/applications/screenshaver.desktop" \
-        "${PREFIX}/share/applications/screenshaver.desktop"
+if [[ ! -s "$VERSION_FILE" ]]; then
+    error "VERSION file was not created or is empty."
 fi
 
-if [[ -d "${PACKAGE_DIR}/share/icons" ]]; then
-    mkdir -p "${PREFIX}/share/icons"
-    cp -a \
-        "${PACKAGE_DIR}/share/icons/." \
-        "${PREFIX}/share/icons/"
-fi
+success "Created VERSION"
+cat "$VERSION_FILE"
 
-if [[ -d "${PACKAGE_DIR}/share/doc/screenshaver" ]]; then
-    mkdir -p "${PREFIX}/share/doc/screenshaver"
-    cp -a \
-        "${PACKAGE_DIR}/share/doc/screenshaver/." \
-        "${PREFIX}/share/doc/screenshaver/"
-fi
 
-printf '\nScreenshaver was installed under:\n  %s\n' "${PREFIX}"
+# -----------------------------------------------------------------------------
+# Copy top-level release files
+# -----------------------------------------------------------------------------
 
-if [[ ":${PATH}:" != *":${PREFIX}/bin:"* ]]; then
-    printf '\nAdd this directory to PATH if necessary:\n  %s/bin\n' "${PREFIX}"
-fi
-INSTALLER
+info
+info "Copying top-level package files..."
 
-    chmod 755 "${installer_path}"
-}
+# Mark files as required only when every release must contain them.
+copy_required_file \
+    "$PROJECT_ROOT/README.md" \
+    "$STAGING_DIR/README.md"
 
-create_uninstaller() {
-    local uninstaller_path="$1"
+copy_required_file \
+    "$PROJECT_ROOT/LICENSE" \
+    "$STAGING_DIR/LICENSE"
 
-    cat >"${uninstaller_path}" <<'UNINSTALLER'
-#!/usr/bin/env bash
+# These are examples of optional top-level files. Delete or add entries as
+# appropriate for the Screenshaver repository.
+copy_optional_file \
+    "$PROJECT_ROOT/CHANGELOG.md" \
+    "$STAGING_DIR/CHANGELOG.md"
 
-# Remove files installed by this Screenshaver archive.
+copy_optional_file \
+    "$PROJECT_ROOT/CONTRIBUTING.md" \
+    "$STAGING_DIR/CONTRIBUTING.md"
+
+copy_optional_file \
+    "$PROJECT_ROOT/SCREENSHAVER_USER_MANUAL.md" \
+    "$STAGING_DIR/SCREENSHAVER_USER_MANUAL.md"
+
+copy_optional_file \
+    "$PROJECT_ROOT/INSTALL.md" \
+    "$STAGING_DIR/INSTALL.md"
+
+
+# -----------------------------------------------------------------------------
+# Copy desktop integration files
+# -----------------------------------------------------------------------------
+
+info
+info "Copying desktop integration files..."
+
+# The desktop file is placed in the conventional share/applications location.
+copy_optional_file \
+    "$PROJECT_ROOT/assets/screenshaver.desktop" \
+    "$STAGING_DIR/share/applications/screenshaver.desktop"
+
+# Preserve the complete packaged icon hierarchy beneath share/icons.
 #
-# Default:
-#   ./uninstall.sh
+# For example:
 #
-# System-wide:
-#   sudo ./uninstall.sh --prefix /usr/local
+#   assets/icons/hicolor/16x16/apps/screenshaver.png
+#   assets/icons/hicolor/32x32/apps/screenshaver.png
+#   assets/icons/hicolor/scalable/apps/screenshaver.svg
+#
+copy_optional_directory \
+    "$PROJECT_ROOT/assets/icons" \
+    "$STAGING_DIR/share/icons/screenshaver"
 
-set -Eeuo pipefail
 
-PREFIX="${HOME}/.local"
+# -----------------------------------------------------------------------------
+# Copy other runtime assets
+# -----------------------------------------------------------------------------
 
-usage() {
-    cat <<'EOF'
-Usage:
-  ./uninstall.sh [--prefix DIRECTORY]
-EOF
-}
+info
+info "Copying additional runtime assets..."
 
-while (($# > 0)); do
-    case "$1" in
-        --prefix)
-            (($# >= 2)) || {
-                printf 'Error: --prefix requires a directory.\n' >&2
-                exit 2
-            }
+# Copy individual runtime assets here when they are needed by the installed
+# application or useful to end users.
+copy_optional_file \
+    "$PROJECT_ROOT/assets/screenshaver-splash.png" \
+    "$STAGING_DIR/share/screenshaver/screenshaver-splash.png"
 
-            PREFIX="$2"
-            shift 2
-            ;;
+# Uncomment this block if the entire assets directory should be distributed
+# exactly as it appears in the repository.
+#
+# copy_optional_directory \
+#     "$PROJECT_ROOT/assets" \
+#     "$STAGING_DIR/assets"
 
-        --help | -h)
-            usage
-            exit 0
-            ;;
 
-        *)
-            printf 'Error: unknown option: %s\n' "$1" >&2
-            usage >&2
-            exit 2
-            ;;
-    esac
-done
+# -----------------------------------------------------------------------------
+# Copy documentation
+# -----------------------------------------------------------------------------
 
-rm -f "${PREFIX}/bin/screenshaver"
-rm -f "${PREFIX}/share/applications/screenshaver.desktop"
-rm -rf "${PREFIX}/share/doc/screenshaver"
+info
+info "Copying documentation..."
 
-for size in 16x16 22x22 24x24 32x32 48x48 64x64 128x128 256x256 512x512; do
-    rm -f \
-        "${PREFIX}/share/icons/hicolor/${size}/apps/screenshaver.png"
-done
+# This copies the entire docs directory. You can replace this with individual
+# copy_optional_file calls if the release should contain only user-facing
+# documentation.
+copy_optional_directory \
+    "$PROJECT_ROOT/docs" \
+    "$STAGING_DIR/docs/screenshaver"
 
-rm -f \
-    "${PREFIX}/share/icons/hicolor/scalable/apps/screenshaver.svg"
 
-printf 'Screenshaver was removed from %s.\n' "${PREFIX}"
-UNINSTALLER
+# -----------------------------------------------------------------------------
+# Copy example shaders or configurations
+# -----------------------------------------------------------------------------
 
-    chmod 755 "${uninstaller_path}"
-}
+info
+info "Copying examples and configuration templates..."
 
-main() {
-    require_command awk
-    require_command cargo
-    require_command install
-    require_command tar
-    require_command sha256sum
-    require_command uname
+# Adjust these paths to match files that actually exist in the repository.
+# Missing optional files produce warnings but do not stop packaging.
 
-    [[ -f "${CARGO_TOML}" ]] ||
-        fail "Cargo.toml not found at ${CARGO_TOML}"
+copy_optional_directory \
+    "$PROJECT_ROOT/examples" \
+    "$STAGING_DIR/examples/screenshaver"
 
-    local version
-    local architecture
-    local package_name
-    local staging_root
-    local package_root
-    local executable_path
-    local archive_path
-    local checksum_path
+copy_optional_directory \
+    "$PROJECT_ROOT/shaders" \
+    "$STAGING_DIR/examples/shaders"
 
-    version="$(read_cargo_version)"
-    architecture="$(detect_architecture)"
+copy_optional_directory \
+    "$PROJECT_ROOT/config" \
+    "$STAGING_DIR/examples/config"
 
-    package_name="${PROGRAM_NAME}-${version}-linux-${architecture}"
-    staging_root="${DIST_DIR}/staging"
-    package_root="${staging_root}/${package_name}"
-    executable_path="${TARGET_DIR}/release/${PROGRAM_NAME}"
-    archive_path="${DIST_DIR}/${package_name}.tar.gz"
-    checksum_path="${archive_path}.sha256"
+# Individual examples can be copied instead:
+#
+# copy_optional_file \
+#     "$PROJECT_ROOT/default.glsl" \
+#     "$STAGING_DIR/examples/shaders/default.glsl"
+#
+# copy_optional_file \
+#     "$PROJECT_ROOT/screenshaver.conf.example" \
+#     "$STAGING_DIR/examples/config/screenshaver.conf"
 
-    log "Packaging ${DISPLAY_NAME} ${version}"
-    printf 'Project:      %s\n' "${PROJECT_DIR}"
-    printf 'Architecture: %s\n' "${architecture}"
-    printf 'Package:      %s\n' "${package_name}"
 
-    log "Checking Rust formatting"
-    (
-        cd "${PROJECT_DIR}"
-        cargo fmt --all --check
-    )
+# -----------------------------------------------------------------------------
+# Remove empty optional directories
+# -----------------------------------------------------------------------------
 
-    log "Running Rust tests"
-    (
-        cd "${PROJECT_DIR}"
-        cargo test --locked
-    )
+info
+info "Removing empty staging directories..."
 
-    log "Building release executable"
-    (
-        cd "${PROJECT_DIR}"
-        cargo build --release --locked
-    )
+find "$STAGING_DIR" -depth -type d -empty -delete
 
-    [[ -x "${executable_path}" ]] ||
-        fail "Release executable was not created: ${executable_path}"
+success "Removed empty directories"
 
-    log "Preparing staging directory"
-    rm -rf "${staging_root}"
-    mkdir -p "${package_root}"
 
-    install -Dm755 \
-        "${executable_path}" \
-        "${package_root}/bin/${PROGRAM_NAME}"
+# -----------------------------------------------------------------------------
+# Display and validate the staging tree
+# -----------------------------------------------------------------------------
 
-    log "Copying application metadata"
+info
+info "Validating package staging directory..."
 
-    copy_optional_file \
-        "${PROJECT_DIR}/assets/screenshaver.desktop" \
-        "${package_root}/share/applications/screenshaver.desktop"
+if [[ ! -d "$STAGING_DIR" ]]; then
+    error "Staging directory does not exist."
+fi
 
-    if [[ -d "${PROJECT_DIR}/assets/icons/hicolor" ]]; then
-        mkdir -p "${package_root}/share/icons/hicolor"
-        cp -a \
-            "${PROJECT_DIR}/assets/icons/hicolor/." \
-            "${package_root}/share/icons/hicolor/"
-    else
-        warn "Icon directory not found: assets/icons/hicolor"
-    fi
+if [[ ! -x "$STAGING_DIR/bin/screenshaver" ]]; then
+    error "Staged package does not contain an executable Screenshaver binary."
+fi
 
-    log "Copying documentation"
+if [[ ! -s "$STAGING_DIR/VERSION" ]]; then
+    error "Staged package does not contain a valid VERSION file."
+fi
 
-    copy_required_file \
-        "${PROJECT_DIR}/README.md" \
-        "${package_root}/share/doc/${PROGRAM_NAME}/README.md"
+if [[ ! -s "$STAGING_DIR/README.md" ]]; then
+    error "Staged package does not contain README.md."
+fi
 
-    copy_required_file \
-        "${PROJECT_DIR}/LICENSE" \
-        "${package_root}/share/doc/${PROGRAM_NAME}/LICENSE"
+if [[ ! -s "$STAGING_DIR/LICENSE" ]]; then
+    error "Staged package does not contain LICENSE."
+fi
 
-    copy_optional_file \
-        "${PROJECT_DIR}/CHANGELOG.md" \
-        "${package_root}/share/doc/${PROGRAM_NAME}/CHANGELOG.md"
+success "Staging directory passed validation"
 
-    copy_optional_file \
-        "${PROJECT_DIR}/SCREENSHAVER_USER_MANUAL.md" \
-        "${package_root}/share/doc/${PROGRAM_NAME}/SCREENSHAVER_USER_MANUAL.md"
+info
+info "Package contents:"
 
-    copy_optional_file \
-        "${PROJECT_DIR}/docs/user-manual/README.md" \
-        "${package_root}/share/doc/${PROGRAM_NAME}/USER_MANUAL.md"
+(
+    cd "$DIST_DIR"
+    find "$PACKAGE_NAME" -print | sort
+)
 
-    create_installer "${package_root}/install.sh"
-    create_uninstaller "${package_root}/uninstall.sh"
 
-    log "Recording package information"
+# -----------------------------------------------------------------------------
+# Create the compressed archive
+# -----------------------------------------------------------------------------
 
-    {
-        printf 'Name: %s\n' "${DISPLAY_NAME}"
-        printf 'Version: %s\n' "${version}"
-        printf 'Architecture: %s\n' "${architecture}"
-        printf 'Built: %s\n' "$(date --utc '+%Y-%m-%dT%H:%M:%SZ')"
-        printf 'Rust compiler: %s\n' "$(rustc --version)"
-        printf 'Cargo: %s\n' "$(cargo --version)"
-    } >"${package_root}/BUILD-INFO.txt"
+info
+info "Creating release archive..."
 
-    log "Reviewing runtime library dependencies"
+rm -f -- "$ARCHIVE_PATH"
+rm -f -- "$CHECKSUM_PATH"
 
-    if command -v ldd >/dev/null 2>&1; then
-        ldd "${package_root}/bin/${PROGRAM_NAME}" |
-            tee "${package_root}/RUNTIME-DEPENDENCIES.txt"
-    else
-        warn "ldd is unavailable; runtime dependencies were not recorded."
-    fi
+# Running tar from DIST_DIR ensures that the archive contains one clean,
+# top-level package directory rather than absolute filesystem paths.
+tar \
+    --create \
+    --gzip \
+    --file "$ARCHIVE_PATH" \
+    --directory "$DIST_DIR" \
+    "$PACKAGE_NAME"
 
-    log "Creating compressed archive"
+if [[ ! -s "$ARCHIVE_PATH" ]]; then
+    error "Release archive was not created or is empty."
+fi
 
-    rm -f "${archive_path}" "${checksum_path}"
+success "Created $ARCHIVE_NAME"
+ls -lh "$ARCHIVE_PATH"
 
-    tar \
-        --create \
-        --gzip \
-        --file "${archive_path}" \
-        --directory "${staging_root}" \
-        "${package_name}"
 
-    (
-        cd "${DIST_DIR}"
-        sha256sum "$(basename "${archive_path}")" \
-            >"$(basename "${checksum_path}")"
-    )
+# -----------------------------------------------------------------------------
+# Validate the archive
+# -----------------------------------------------------------------------------
 
-    log "Verifying archive"
+info
+info "Validating release archive..."
 
-    tar --list --file "${archive_path}"
+if ! tar -tzf "$ARCHIVE_PATH" >/dev/null; then
+    error "The generated release archive failed tar validation."
+fi
 
-    log "Package completed successfully"
+if ! tar -tzf "$ARCHIVE_PATH" |
+    grep -Fxq "$PACKAGE_NAME/bin/screenshaver"; then
+    error "The generated archive does not contain the Screenshaver executable."
+fi
 
-    printf '\nArchive:\n  %s\n' "${archive_path}"
-    printf '\nChecksum:\n  %s\n' "${checksum_path}"
-    printf '\nSHA-256:\n  '
-    cut -d' ' -f1 "${checksum_path}"
+if ! tar -tzf "$ARCHIVE_PATH" |
+    grep -Fxq "$PACKAGE_NAME/VERSION"; then
+    error "The generated archive does not contain the VERSION file."
+fi
 
-    if [[ -f /etc/NIXOS ]]; then
-        warn \
-            "This archive was built on NixOS. Test the binary on clean " \
-            "non-NixOS systems before advertising it as a generic Linux build."
-    fi
-}
+if ! tar -tzf "$ARCHIVE_PATH" |
+    grep -Fxq "$PACKAGE_NAME/README.md"; then
+    error "The generated archive does not contain README.md."
+fi
 
-main "$@"
+if ! tar -tzf "$ARCHIVE_PATH" |
+    grep -Fxq "$PACKAGE_NAME/LICENSE"; then
+    error "The generated archive does not contain LICENSE."
+fi
+
+success "Archive passed validation"
+
+
+# -----------------------------------------------------------------------------
+# Generate the SHA-256 checksum
+# -----------------------------------------------------------------------------
+
+info
+info "Generating SHA-256 checksum..."
+
+(
+    cd "$DIST_DIR"
+    sha256sum "$ARCHIVE_NAME" > "$(basename "$CHECKSUM_PATH")"
+)
+
+if [[ ! -s "$CHECKSUM_PATH" ]]; then
+    error "Checksum file was not created or is empty."
+fi
+
+success "Created $(basename "$CHECKSUM_PATH")"
+cat "$CHECKSUM_PATH"
+
+
+# -----------------------------------------------------------------------------
+# Final result
+# -----------------------------------------------------------------------------
+
+info
+info "Screenshaver Linux package created successfully."
+info
+info "Staging directory:"
+info "  $STAGING_DIR"
+info
+info "Release archive:"
+info "  $ARCHIVE_PATH"
+info
+info "SHA-256 checksum:"
+info "  $CHECKSUM_PATH"
+info
+info "Package version:"
+info "  $VERSION"
+info
+info "Installed source binary:"
+info "  $INSTALLED_TARGET"
