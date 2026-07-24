@@ -1,3 +1,5 @@
+For complete installation instructions, including cloning the repository from GitHub and installing on all supported Linux distributions, see **[INSTALL.md](INSTALL.md)**.
+
 > [!CAUTION]
 > Screenshaver is beta software. Configuration syntax, shader compatibility,
 > installation procedures, and command-line options may change before version 1.0.
