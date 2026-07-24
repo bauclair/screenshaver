@@ -1,5 +1,8 @@
 For complete installation instructions, including cloning the repository from GitHub and installing on all supported Linux distributions, see **[INSTALL.md](INSTALL.md)**.
 
+For detailed operating instructions, including how to start your own collection of beautiful GL shaders from websites like https://shadertoy.com and https://isf.video,
+please take some time to review the  **[SCREENSHAVER_USER_MANUAL.md](SCREENSHAVER_USER_MANUAL.md)**.
+
 > [!CAUTION]
 > Screenshaver is beta software. Configuration syntax, shader compatibility,
 > installation procedures, and command-line options may change before version 1.0.
