@@ -3,6 +3,7 @@
    1. Introduction to Screenshaver
 
       1. Screenshaver is a next-generation Linux screensaver program, programmed in Rust, that renders and displays full-screen GL shaders after a predefined amount of time without keyboard or mouse activity occurs on a user’s system. When keyboard or mouse activity again occurs, the screensaver deactivates, and restores the user desktop as it was left before screensaver engagement. The name “Screenshaver” is a tongue-in-cheek combination of the words “screensaver” and “shader”. Screenshaver can render GL shader files with both .glsl and .fs extensions. Screenshaver is currently in beta-test mode, with a full production release anticipated at version 1.0.0.
+         *NOTE: All of Screenshaver's configuration files, log files, shaders  and folders can be found under ~/.config/screenshaver.
 
    2. What is a GL Shader?
 
