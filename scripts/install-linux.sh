@@ -231,6 +231,123 @@ install_fedora_dependencies() {
         desktop-file-utils
 }
 
+
+install_rhel_dependencies() {
+    local major_version
+    local crb_repository
+    local epel_release_url
+
+    major_version="${VERSION_ID%%.*}"
+
+    case "$major_version" in
+        8)
+            crb_repository="powertools"
+            epel_release_url="https://dl.fedoraproject.org/pub/epel/epel-release-latest-8.noarch.rpm"
+            ;;
+
+        9)
+            crb_repository="crb"
+            epel_release_url="https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm"
+            ;;
+
+        10)
+            crb_repository="crb"
+            epel_release_url="https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm"
+            ;;
+
+        *)
+            die \
+                "Unsupported Enterprise Linux major version: ${VERSION_ID:-unknown}
+
+Screenshaver currently supports CentOS, RHEL, Rocky Linux, and AlmaLinux
+major versions 8, 9, and 10."
+            ;;
+    esac
+
+    log "Installing DNF repository-management tools"
+
+    "${SUDO[@]}" dnf install -y \
+        dnf-plugins-core
+
+    if [[ "$DISTRO_ID" == "rhel" ]]; then
+        command -v subscription-manager >/dev/null 2>&1 ||
+            die \
+                "subscription-manager is required to enable the RHEL
+CodeReady Builder repository."
+
+        log "Enabling the RHEL CodeReady Builder repository"
+
+        "${SUDO[@]}" subscription-manager repos \
+            --enable "codeready-builder-for-rhel-${major_version}-$(uname -m)-rpms"
+    else
+        log "Enabling the ${crb_repository} repository"
+
+        "${SUDO[@]}" dnf config-manager \
+            --set-enabled "$crb_repository"
+    fi
+
+    log "Installing the EPEL repository definition"
+
+    "${SUDO[@]}" dnf install -y \
+        "$epel_release_url"
+
+    # EPEL Next is specifically intended for CentOS Stream 9 packages that
+    # build against packages newer than the corresponding RHEL release.
+    if [[ "$DISTRO_ID" == "centos" && "$major_version" == "9" ]]; then
+        log "Installing the EPEL Next repository definition"
+
+        "${SUDO[@]}" dnf install -y \
+            https://dl.fedoraproject.org/pub/epel/epel-next-release-latest-9.noarch.rpm
+    fi
+
+    log "Refreshing DNF package metadata"
+
+    "${SUDO[@]}" dnf makecache
+
+    if ! dnf -q repoquery --available --qf '%{name}' SDL2_ttf-devel 2>/dev/null |
+        grep -Fxq SDL2_ttf-devel; then
+        die \
+            "SDL2_ttf-devel is still unavailable after enabling the required
+Enterprise Linux repositories.
+
+Verify that ${crb_repository}, EPEL, and any required vendor subscription
+repositories are enabled:
+
+  dnf repolist
+  dnf repoquery --available SDL2_ttf-devel"
+    fi
+
+    if ! dnf -q repoquery --available --qf '%{name}' libXScrnSaver-devel 2>/dev/null |
+        grep -Fxq libXScrnSaver-devel; then
+        die \
+            "libXScrnSaver-devel is still unavailable after enabling the required
+Enterprise Linux repositories.
+
+Verify that ${crb_repository}, EPEL, and any required vendor subscription
+repositories are enabled:
+
+  dnf repolist
+  dnf repoquery --available libXScrnSaver-devel"
+    fi
+
+    log "Installing Enterprise Linux build dependencies"
+
+    "${SUDO[@]}" dnf install -y \
+        gcc \
+        gcc-c++ \
+        make \
+        pkgconf-pkg-config \
+        curl \
+        ca-certificates \
+        SDL2-devel \
+        SDL2_ttf-devel \
+        libX11-devel \
+        libXScrnSaver-devel \
+        libglvnd-devel \
+        mesa-libGL-devel \
+        desktop-file-utils
+}
+
 install_arch_dependencies() {
     "${SUDO[@]}" pacman -S --needed --noconfirm \
         base-devel \
@@ -299,10 +416,7 @@ install_build_dependencies() {
             ;;
 
         rhel|centos|rocky|almalinux)
-            warn \
-                "SDL2 development packages may require EPEL or another enabled repository."
-
-            install_fedora_dependencies
+            install_rhel_dependencies
             ;;
 
         arch|manjaro|endeavouros)
@@ -321,7 +435,10 @@ install_build_dependencies() {
             if is_like debian; then
                 install_debian_dependencies
 
-            elif is_like fedora || is_like rhel; then
+            elif is_like rhel; then
+                install_rhel_dependencies
+
+            elif is_like fedora; then
                 install_fedora_dependencies
 
             elif is_like arch; then
@@ -773,3 +890,4 @@ main() {
 }
 
 main "$@"
+
