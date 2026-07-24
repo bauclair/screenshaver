@@ -1,0 +1,240 @@
+#!/usr/bin/env bash
+#
+# ============================================================================
+# Screenshaver Diagnostic Utility
+# ----------------------------------------------------------------------------
+#
+# Purpose:
+#   Collect desktop/session/compositor/backend diagnostic information useful
+#   for determining which Screenshaver backend should be used or whether a new
+#   backend is needed.
+#
+# Usage:
+#   ./screenshaver-diag <report-name>
+#
+# Example:
+#   ./screenshaver-diag ubuntu-plasma
+#
+# Output:
+#   Creates a timestamped report file in the current directory:
+#
+#       screenshaver-diag-ubuntu-plasma-YYYYMMDD-HHMMSS.txt
+#
+# Prerequisite packages / utilities:
+#
+#   Core utilities:
+#       bash
+#       coreutils
+#       procps        (ps)
+#       grep
+#       sed
+#       awk
+#       findutils
+#
+#   Session / systemd diagnostics:
+#       systemd       (loginctl, systemctl)
+#       dbus          (busctl)
+#
+#   Wayland diagnostics:
+#       wayland-utils (wayland-info)
+#
+#   X11 diagnostics:
+#       xorg-xdpyinfo (xdpyinfo)
+#       xorg-xprop    (xprop)
+#       xorg-xrandr   (xrandr)
+#
+#   Optional graphics diagnostics:
+#       mesa-demos    (glxinfo)
+#       vulkan-tools  (vulkaninfo)
+#       clinfo        (OpenCL information)
+#
+# Notes:
+#   - Not every utility is expected to exist on every distribution.
+#   - Missing utilities are reported in the output file.
+#   - This script should not require root privileges.
+#   - This script is intended for support/debugging, not system modification.
+#
+# ============================================================================
+
+set -u
+
+if [[ $# -lt 1 ]]; then
+    echo "Usage: $0 <report-name>"
+    echo "Example: $0 ubuntu-plasma"
+    exit 1
+fi
+
+REPORT_LABEL="$1"
+TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
+OUTFILE="screenshaver-diag-${REPORT_LABEL}-${TIMESTAMP}.txt"
+
+exec >"$OUTFILE" 2>&1
+
+section() {
+    echo
+    echo "============================================================================"
+    echo "$1"
+    echo "============================================================================"
+}
+
+run_cmd() {
+    local description="$1"
+    shift
+
+    echo
+    echo "----------------------------------------------------------------------------"
+    echo "$description"
+    echo "Command: $*"
+    echo "----------------------------------------------------------------------------"
+
+    if command -v "$1" >/dev/null 2>&1; then
+        "$@"
+    else
+        echo "Utility not found: $1"
+    fi
+}
+
+run_shell() {
+    local description="$1"
+    local command_text="$2"
+
+    echo
+    echo "----------------------------------------------------------------------------"
+    echo "$description"
+    echo "Command: $command_text"
+    echo "----------------------------------------------------------------------------"
+
+    bash -lc "$command_text"
+}
+
+section "Screenshaver Diagnostic Report"
+echo "Report label      : $REPORT_LABEL"
+echo "Generated         : $(date --iso-8601=seconds 2>/dev/null || date)"
+echo "Hostname          : $(hostname 2>/dev/null || echo unknown)"
+echo "Current user      : ${USER:-unknown}"
+echo "UID               : $(id -u 2>/dev/null || echo unknown)"
+echo "Shell             : ${SHELL:-unknown}"
+echo "PWD               : $(pwd)"
+
+section "Operating System"
+run_cmd "Kernel and architecture" uname -a
+run_cmd "User and group membership" id
+run_shell "Distribution release information" 'cat /etc/os-release 2>/dev/null || true'
+run_shell "Pretty OS name" 'grep PRETTY_NAME /etc/os-release 2>/dev/null || true'
+
+section "Important Environment Variables"
+run_shell "Desktop/session environment variables" 'env | grep -E "^(XDG_|WAYLAND_|DISPLAY|DESKTOP_SESSION|GDMSESSION|KDE_|GNOME_|SWAY|HYPRLAND|MANGO|QT_|SDL_)" | sort || true'
+run_shell "HOME and USER values" 'printf "HOME=%s\nUSER=%s\nLOGNAME=%s\n" "${HOME:-}" "${USER:-}" "${LOGNAME:-}"'
+
+section "Systemd User Session"
+run_cmd "systemctl --user status" systemctl --user status
+run_shell "Failed user units" 'systemctl --user --failed 2>/dev/null || true'
+run_shell "User services matching desktop/session/portal/idle terms" 'systemctl --user list-units --type=service --all 2>/dev/null | grep -Ei "portal|idle|sway|hypr|mango|gnome|kde|plasma|xfce|xss|lock|screen" || true'
+
+section "loginctl Session Information"
+run_cmd "loginctl list-sessions" loginctl list-sessions
+
+if [[ -n "${XDG_SESSION_ID:-}" ]]; then
+    run_cmd "loginctl show-session XDG_SESSION_ID" loginctl show-session "$XDG_SESSION_ID"
+    run_cmd "loginctl show-session selected properties" loginctl show-session "$XDG_SESSION_ID" -p Id -p Name -p User -p Type -p Class -p Active -p State -p Desktop -p Remote -p Service -p Scope -p Leader -p CanIdle -p IdleHint -p IdleSinceHint -p IdleSinceHintMonotonic -p CanLock -p LockedHint
+else
+    echo
+    echo "XDG_SESSION_ID is not set; cannot run loginctl show-session for current session."
+fi
+
+section "D-Bus / logind"
+run_cmd "System bus services" busctl list
+run_shell "System bus login service filter" 'busctl list 2>/dev/null | grep -i login || true'
+run_shell "User bus login service filter" 'busctl --user list 2>/dev/null | grep -i login || true'
+run_cmd "Introspect logind manager" busctl introspect org.freedesktop.login1 /org/freedesktop/login1
+
+if [[ -n "${XDG_SESSION_ID:-}" ]]; then
+    run_shell "Get logind session object path" "busctl call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager GetSession s \"$XDG_SESSION_ID\" 2>/dev/null || true"
+
+    SESSION_PATH="$(busctl call org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager GetSession s "$XDG_SESSION_ID" 2>/dev/null | sed -n 's/^o "\(.*\)"/\1/p')"
+
+    if [[ -n "$SESSION_PATH" ]]; then
+        run_cmd "Introspect current logind session object" busctl introspect org.freedesktop.login1 "$SESSION_PATH"
+        run_cmd "logind IdleHint" busctl get-property org.freedesktop.login1 "$SESSION_PATH" org.freedesktop.login1.Session IdleHint
+        run_cmd "logind IdleSinceHint" busctl get-property org.freedesktop.login1 "$SESSION_PATH" org.freedesktop.login1.Session IdleSinceHint
+        run_cmd "logind IdleSinceHintMonotonic" busctl get-property org.freedesktop.login1 "$SESSION_PATH" org.freedesktop.login1.Session IdleSinceHintMonotonic
+        run_cmd "logind Active" busctl get-property org.freedesktop.login1 "$SESSION_PATH" org.freedesktop.login1.Session Active
+        run_cmd "logind LockedHint" busctl get-property org.freedesktop.login1 "$SESSION_PATH" org.freedesktop.login1.Session LockedHint
+        run_cmd "logind Type" busctl get-property org.freedesktop.login1 "$SESSION_PATH" org.freedesktop.login1.Session Type
+        run_cmd "logind Desktop" busctl get-property org.freedesktop.login1 "$SESSION_PATH" org.freedesktop.login1.Session Desktop
+        run_cmd "logind CanIdle" busctl get-property org.freedesktop.login1 "$SESSION_PATH" org.freedesktop.login1.Session CanIdle
+    else
+        echo "Could not determine logind session object path."
+    fi
+fi
+
+section "Desktop Portals"
+run_shell "Portal processes" 'ps aux | grep -Ei "xdg-desktop-portal|xdg-document-portal|xdg-permission-store" | grep -v grep || true'
+run_shell "Portal user services" 'systemctl --user list-units --type=service --all 2>/dev/null | grep -i portal || true'
+run_shell "Portal DBus services" 'busctl --user list 2>/dev/null | grep -i portal || true'
+
+section "Wayland Diagnostics"
+run_shell "Wayland display socket information" 'printf "WAYLAND_DISPLAY=%s\nXDG_RUNTIME_DIR=%s\n" "${WAYLAND_DISPLAY:-}" "${XDG_RUNTIME_DIR:-}"; if [[ -n "${XDG_RUNTIME_DIR:-}" ]]; then ls -la "$XDG_RUNTIME_DIR" 2>/dev/null | grep -E "wayland|\.lock" || true; fi'
+run_cmd "wayland-info full output" wayland-info
+run_shell "Wayland globals related to idle/session/output/seat/screencopy/layer" 'wayland-info 2>/dev/null | grep -Ei "idle|seat|output|session|lock|layer|wlr|ext_|xdg|presentation|fractional|dmabuf|drm" || true'
+run_shell "Wayland idle protocols" 'wayland-info 2>/dev/null | grep -Ei "ext_idle_notifier|zwlr_idle|idle_inhibit|idle" || true'
+
+section "Compositor / Desktop Processes"
+run_shell "Compositor and desktop processes" 'ps aux | grep -Ei "mango|sway|hypr|kwin|gnome-shell|mutter|plasmashell|xfwm|cinnamon|wayfire|river|labwc|wayland|xwayland|Xorg|Xwayland" | grep -v grep || true'
+run_shell "Idle/lock/saver processes" 'ps aux | grep -Ei "idle|swayidle|xss-lock|swaylock|hypridle|hyprlock|screensaver|locker|lock" | grep -v grep || true'
+
+section "X11 / Xwayland Diagnostics"
+run_shell "DISPLAY value" 'printf "DISPLAY=%s\n" "${DISPLAY:-}"'
+run_cmd "xdpyinfo" xdpyinfo
+run_shell "XScreenSaver extension check" 'xdpyinfo 2>/dev/null | grep -i screensaver || true'
+run_cmd "xprop root properties" xprop -root
+run_shell "XScreenSaver-related root properties" 'xprop -root 2>/dev/null | grep -Ei "screensaver|idle|dpms" || true'
+run_cmd "xrandr monitors" xrandr --listmonitors
+run_cmd "xrandr verbose" xrandr --verbose
+
+section "Graphics / Renderer Diagnostics"
+run_shell "DRI devices" 'ls -la /dev/dri 2>/dev/null || true'
+run_shell "OpenGL renderer summary" 'glxinfo -B 2>/dev/null || true'
+run_shell "Vulkan summary" 'vulkaninfo --summary 2>/dev/null || true'
+run_shell "OpenCL summary" 'clinfo 2>/dev/null | head -n 120 || true'
+
+section "Screenshaver Config and Shader Paths"
+run_shell "Screenshaver config directory" 'ls -la "${HOME:-}/.config/screenshaver" 2>/dev/null || true'
+run_shell "Screenshaver shader directory" 'ls -la "${HOME:-}/.config/screenshaver/shaders" 2>/dev/null || true'
+run_shell "Screenshaver config file" 'cat "${HOME:-}/.config/screenshaver/screenshaver.toml" 2>/dev/null || true'
+
+section "Backend Capability Summary"
+echo "This section is heuristic. The raw data above is authoritative."
+echo
+
+if command -v wayland-info >/dev/null 2>&1 && wayland-info 2>/dev/null | grep -q "ext_idle_notifier_v1"; then
+    echo "[OK] Wayland ext_idle_notifier_v1 detected."
+    echo "     Screenshaver Wayland backend is likely appropriate."
+else
+    echo "[WARN] Wayland ext_idle_notifier_v1 not detected or wayland-info unavailable."
+fi
+
+if [[ -n "${XDG_SESSION_ID:-}" ]]; then
+    if loginctl show-session "$XDG_SESSION_ID" -p CanIdle 2>/dev/null | grep -q "CanIdle=yes"; then
+        echo "[INFO] logind reports CanIdle=yes."
+    else
+        echo "[INFO] logind does not report CanIdle=yes or session query failed."
+    fi
+
+    if loginctl show-session "$XDG_SESSION_ID" -p IdleHint 2>/dev/null | grep -q "IdleHint=yes"; then
+        echo "[INFO] logind currently reports IdleHint=yes."
+    else
+        echo "[INFO] logind currently reports IdleHint=no or unavailable."
+    fi
+fi
+
+if [[ -n "${DISPLAY:-}" ]]; then
+    if xdpyinfo 2>/dev/null | grep -qi screensaver; then
+        echo "[INFO] X11 XScreenSaver extension appears available."
+    else
+        echo "[INFO] X11 XScreenSaver extension not detected or xdpyinfo unavailable."
+    fi
+fi
+
+section "End of Report"
+echo "Report complete: $OUTFILE"
