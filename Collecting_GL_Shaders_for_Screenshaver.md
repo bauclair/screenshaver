@@ -24,6 +24,23 @@ Visit:
 Browse the available shaders using the site's categories, popularity
 lists, search feature, or newest uploads.
 
+> **Important:** Screenshaver supports **only ShaderToy shaders that
+> consist of a single `Image` tab** on the shader's code page.
+>
+> **Do not download** ShaderToy shaders that contain:
+>
+> -   `Common`
+> -   `Buffer A`
+> -   `Buffer B`
+> -   `Buffer C`
+> -   `Buffer D`
+> -   `Cube A`
+> -   Any other additional rendering passes
+>
+> These are multi-pass shaders that require multiple rendering buffers
+> and are **not compatible with Screenshaver**. Only single-pass shaders
+> with a single **Image** tab should be collected.
+
 ### ISF
 
 Visit:
@@ -37,15 +54,17 @@ shaders.
 
 ## Step 2 -- Copy the Shader Source
 
-When you find a shader you would like to test:
+When you find a compatible shader you would like to test:
 
 1.  Open the shader.
-2.  Locate the GLSL source code.
-3.  Copy the fragment shader source.
+2.  Verify that it contains **only a single `Image` tab** (ShaderToy
+    only).
+3.  Locate the GLSL source code.
+4.  Copy the fragment shader source.
 
 For ShaderToy:
 
--   Save the file using the extension:
+Save the file using the extension:
 
 ``` text
 MyShader.glsl
@@ -53,7 +72,7 @@ MyShader.glsl
 
 For ISF:
 
--   Save the file using the extension:
+Save the file using the extension:
 
 ``` text
 MyShader.fs
@@ -68,8 +87,6 @@ file extension.
 
 Create a temporary directory for evaluation.
 
-Example:
-
 ``` bash
 mkdir -p ~/Downloads/TestShaders
 ```
@@ -82,8 +99,6 @@ Copy your downloaded shader files into this directory.
 
 Use Screenshaver's preview mode to automatically cycle through every
 shader.
-
-Example:
 
 ``` bash
 screenshaver --preview-shader ~/Downloads/TestShaders --interval 10
@@ -143,8 +158,6 @@ are preferred over visually impressive but expensive effects.
 After testing is complete, move the approved shaders into the
 Screenshaver shader directory.
 
-Example:
-
 ``` bash
 mkdir -p ~/.config/screenshaver/shaders
 
@@ -160,17 +173,18 @@ this directory.
 ## Recommended Workflow
 
 1.  Browse ShaderToy and ISF.
-2.  Copy the shader source.
-3.  Save it as `.glsl` or `.fs`.
-4.  Place it into a temporary test directory.
-5.  Preview the directory using:
+2.  For ShaderToy, select only shaders with a single **Image** tab.
+3.  Copy the shader source.
+4.  Save it as `.glsl` or `.fs`.
+5.  Place it into a temporary test directory.
+6.  Preview the directory using:
 
 ``` bash
 screenshaver --preview-shader /path/to/shaders/ --interval 10
 ```
 
-6.  Remove incompatible or high-GPU-cost shaders.
-7.  Move the remaining certified shaders into:
+7.  Remove incompatible or high-GPU-cost shaders.
+8.  Move the remaining certified shaders into:
 
 ``` text
 ~/.config/screenshaver/shaders
