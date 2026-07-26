@@ -88,6 +88,7 @@ Features, command-line options, configuration syntax, and procedural texture alg
 Bug reports, feature requests, testing, and pull requests are always welcome.
 
 Community feedback plays an important role in helping Screenshaver grow into the best procedural screensaver platform available for Linux.
+Please send all Screenshaver bug reports and feature requests to screenshaver@proton.me.
 
 ---
 
