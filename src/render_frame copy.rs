@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
@@ -1022,37 +1022,11 @@ fn build_subtitle_overlay(
     let descriptor =
         if include_descriptor {
 
-            let shader_file_name =
-                Path::new(
-                    &shader.shader_name
-                )
-                .file_name()
-                .and_then(
-                    |name| name.to_str()
-                );
-
-            let shader_label =
-                if shader.built_in_default
-                    || shader_file_name
-                        .is_some_and(
-                            |name| {
-                                name.eq_ignore_ascii_case(
-                                    "default.glsl"
-                                )
-                            }
-                        )
-                {
-                    "Collect more shaders at https://editor.isf.video/shaders and https://shadertoy.com/browse"
-                        .to_string()
-                } else {
-                    shader.shader_name
-                        .clone()
-                };
-
             crate::construct_text_overlay::OverlayDescriptor {
                 shader:
                     Some(
-                        shader_label
+                        shader.shader_name
+                            .clone()
                     ),
                 texture,
                 palette,
