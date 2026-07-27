@@ -49,6 +49,13 @@ mod construct_text_overlay;
 mod display_overlay;
 mod tray_icon;
 
+mod configure_wallpaper;
+mod control_wallpaper;
+mod locate_wallpaper;
+mod manage_wallpaper;
+mod notify_wallpaper;
+mod render_wallpaper;
+
 use std::sync::Arc;
 use std::sync::atomic::{
     AtomicBool,
