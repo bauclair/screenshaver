@@ -81,7 +81,31 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 # shader_texture = "clouds"
 # shader_palette = "mist"
 #
+##
 #
+################################
+# WALLPAPER MODE
+################################
+[wallpaper]
+# Wallpaper shaders are loaded from:
+#     ~/.config/screenshaver/wallpapers/
+#
+# Existing [operation], [performance], global texture/palette overrides,
+# per-shader texture/palette overrides, and FPS overrides also apply to
+# wallpaper mode.
+#
+# Initial multi-monitor support renders the same shader independently on
+# every monitor. Each monitor uses its own native resolution while sharing
+# the shader, timeline, rotation schedule, textures, palettes, and overrides.
+#
+# Supported values:
+#     mirror
+  monitor_mode = "mirror"
+#
+# Use desktop notifications for wallpaper shader changes and sustained
+# performance warnings.
+  notifications = true
+
 [performance]
 # Frames per second for all shaders
   global_rendered_fps = 30
@@ -190,6 +214,7 @@ pub fn initialize() -> io::Result<PathBuf> {
     let cache_dir = config_dir.join("cache");
     let rejected_dir = config_dir.join("rejected");
     let shaders_dir = config_dir.join("shaders");
+    let wallpapers_dir = config_dir.join("wallpapers");
 
     let config_file = config_dir.join("screenshaver.toml");
     let default_shader_file = shaders_dir.join("default.glsl");
@@ -199,9 +224,11 @@ pub fn initialize() -> io::Result<PathBuf> {
     fs::create_dir_all(&cache_dir)?;
     fs::create_dir_all(&rejected_dir)?;
     fs::create_dir_all(&shaders_dir)?;
+    fs::create_dir_all(&wallpapers_dir)?;
 
     create_file_if_missing(&config_file, DEFAULT_CONFIG)?;
     create_file_if_missing(&default_shader_file, DEFAULT_SHADER)?;
 
     Ok(config_dir)
 }
+
