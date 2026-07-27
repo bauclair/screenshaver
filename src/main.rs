@@ -49,6 +49,7 @@ mod construct_text_overlay;
 mod display_overlay;
 mod tray_icon;
 
+mod define_operation;
 mod configure_wallpaper;
 mod control_wallpaper;
 mod locate_wallpaper;
