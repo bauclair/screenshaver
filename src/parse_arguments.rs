@@ -9,6 +9,8 @@ pub enum Command {
 
     Start,
 
+    Wallpaper,
+
     Stop,
 
     Help,
@@ -123,6 +125,20 @@ pub fn parse() -> Result<Command, String> {
 
             Ok(
                 Command::Start
+            )
+        }
+
+
+        "--wallpaper" => {
+
+            require_no_extra_arguments(
+                &args,
+                "--wallpaper",
+            )?;
+
+
+            Ok(
+                Command::Wallpaper
             )
         }
 
@@ -878,6 +894,9 @@ pub fn print_help() {
              --start\n\
                  Start Screenshaver normally. Equivalent to launching without an option.\n\
          \n\
+             --wallpaper\n\
+                 Start wallpaper mode. Wallpaper rendering is not implemented yet.\n\
+         \n\
              --stop\n\
                  Stop the running Screenshaver program, regardless of its current state.\n\
          \n\
@@ -928,6 +947,7 @@ pub fn print_help() {
          \n\
          Examples:\n\
              screenshaver --start\n\
+             screenshaver --wallpaper\n\
              screenshaver --stop\n\
              screenshaver --preview-texture --family noise:1024\n\
              screenshaver --preview-texture --family marble --palette sandstone\n\

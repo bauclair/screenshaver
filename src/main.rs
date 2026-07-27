@@ -132,6 +132,14 @@ match command {
     | crate::parse_arguments::Command::Start => {}
 
 
+    crate::parse_arguments::Command::Wallpaper => {
+
+        crate::manage_wallpaper::run();
+
+        return;
+    }
+
+
     crate::parse_arguments::Command::Stop => {
 
         match crate::singleton::stop() {
