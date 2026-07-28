@@ -141,97 +141,148 @@ pub fn run(
     );
 
 
-    match crate::load_shader::load_shader_for_preview(
-        selected_shader
-    ) {
+    let (
+        source,
+        shader_name,
+        built_in_default,
+    ) =
+        match crate::load_shader::load_shader_for_preview(
+            selected_shader
+        ) {
 
-        crate::load_shader::ShaderLoadResult::Ready {
-            source,
-            shader_name,
-            built_in_default,
-            ..
-        } => {
-
-            println!(
-                "Wallpaper shader is ready:"
-            );
-
-
-            println!(
-                "    Shader: {}",
-                shader_name
-            );
-
-
-            println!(
-                "    Processed source: {} bytes",
-                source.len()
-            );
-
-
-            println!(
-                "    Built-in default: {}",
-                built_in_default
-            );
-        }
-
-
-        crate::load_shader::ShaderLoadResult::Rejected {
-            shader_name,
-            reasons,
-        } => {
-
-            println!(
-                "Wallpaper shader was rejected:"
-            );
-
-
-            println!(
-                "    Shader: {}",
-                shader_name
-            );
-
-
-            for reason in
-                reasons
-            {
-                println!(
-                    "    Reason: {}",
-                    reason
-                );
+            crate::load_shader::ShaderLoadResult::Ready {
+                source,
+                shader_name,
+                built_in_default,
+                ..
+            } => {
+                (
+                    source,
+                    shader_name,
+                    built_in_default,
+                )
             }
-        }
 
 
-        crate::load_shader::ShaderLoadResult::Unavailable {
-            shader_name,
-            error,
-        } => {
+            crate::load_shader::ShaderLoadResult::Rejected {
+                shader_name,
+                reasons,
+            } => {
 
-            println!(
-                "Wallpaper shader is unavailable:"
-            );
-
-
-            println!(
-                "    Shader: {}",
-                shader_name
-            );
+                println!(
+                    "Wallpaper shader was rejected:"
+                );
 
 
-            println!(
-                "    Error: {}",
-                error
-            );
-        }
-    }
+                println!(
+                    "    Shader: {}",
+                    shader_name
+                );
+
+
+                for reason in
+                    reasons
+                {
+                    println!(
+                        "    Reason: {}",
+                        reason
+                    );
+                }
+
+
+                println!();
+
+
+                println!(
+                    "Wallpaper rendering was not started."
+                );
+
+
+                return Ok(());
+            }
+
+
+            crate::load_shader::ShaderLoadResult::Unavailable {
+                shader_name,
+                error,
+            } => {
+
+                println!(
+                    "Wallpaper shader is unavailable:"
+                );
+
+
+                println!(
+                    "    Shader: {}",
+                    shader_name
+                );
+
+
+                println!(
+                    "    Error: {}",
+                    error
+                );
+
+
+                println!();
+
+
+                println!(
+                    "Wallpaper rendering was not started."
+                );
+
+
+                return Ok(());
+            }
+        };
+
+
+    println!(
+        "Wallpaper shader is ready:"
+    );
+
+
+    println!(
+        "    Shader: {}",
+        shader_name
+    );
+
+
+    println!(
+        "    Processed source: {} bytes",
+        source.len()
+    );
+
+
+    println!(
+        "    Built-in default: {}",
+        built_in_default
+    );
 
 
     println!();
 
 
     println!(
-        "Wallpaper shader compilation and rendering are not implemented yet."
+        "Compiling and linking wallpaper shader..."
+    );
+
+
+    crate::render_wallpaper::validate_shader_program(
+        &source
+    )?;
+
+
+    println!(
+        "Wallpaper shader program compiled and linked successfully."
+    );
+
+
+    println!();
+
+
+    println!(
+        "Wallpaper surface creation and rendering are not implemented yet."
     );
 
 
