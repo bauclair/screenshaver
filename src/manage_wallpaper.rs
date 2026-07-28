@@ -307,6 +307,61 @@ pub fn run(
 
 
     println!(
+        "Creating unbuffered Wayland background surface..."
+    );
+
+
+    let surface_configuration =
+        crate::wayland_wallpaper::test_background_surface()?;
+
+
+    println!(
+        "Wayland background surface configured successfully:"
+    );
+
+
+    println!(
+        "    Width: {}",
+        surface_configuration.width
+    );
+
+
+    println!(
+        "    Height: {}",
+        surface_configuration.height
+    );
+
+
+    println!(
+        "    Configure serial: {}",
+        surface_configuration.serial
+    );
+
+
+    println!(
+        "    Layer: background"
+    );
+
+
+    println!(
+        "    Anchors: top, bottom, left, right"
+    );
+
+
+    println!(
+        "    Keyboard input: disabled"
+    );
+
+
+    println!(
+        "    Pointer input: disabled"
+    );
+
+
+    println!();
+
+
+    println!(
         "Opening wallpaper rendering test window..."
     );
 

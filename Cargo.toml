@@ -16,6 +16,7 @@ evdev = "0.13"
 zbus = "5"
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["staging", "client"] }
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 x11 = { version = "2.21", features = ["xlib", "xss"] }
 fs2 = "0.4"
