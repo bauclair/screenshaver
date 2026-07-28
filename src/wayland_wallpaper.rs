@@ -90,6 +90,37 @@ struct WallpaperTarget {
 }
 
 
+#[derive(Debug, Clone)]
+struct LayerSurfaceDispatchData {
+    registry_name: u32,
+}
+
+
+#[derive(Debug, Clone, Default)]
+struct WallpaperSurfaceState {
+    registry_name: u32,
+    configured: Option<WallpaperSurfaceConfiguration>,
+    closed: bool,
+}
+
+
+struct NativeWallpaperTarget {
+    info: WallpaperTargetInfo,
+    surface: wl_surface::WlSurface,
+    layer_surface: ZwlrLayerSurfaceV1,
+    input_region: wl_region::WlRegion,
+    egl_window: wayland_egl::WlEglSurface,
+    width: i32,
+    height: i32,
+}
+
+
+struct EglWallpaperTarget {
+    registry_name: u32,
+    surface: EglSurface,
+}
+
+
 #[derive(Debug, Default)]
 pub struct WallpaperWaylandCapabilities {
     pub compositor_version: Option<u32>,
@@ -99,7 +130,7 @@ pub struct WallpaperWaylandCapabilities {
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct WallpaperSurfaceConfiguration {
     pub width: u32,
     pub height: u32,
@@ -115,9 +146,7 @@ struct WaylandState {
     layer_shell_version: Option<u32>,
     output_count: usize,
     targets: Vec<WallpaperTarget>,
-
-    configured: Option<WallpaperSurfaceConfiguration>,
-    closed: bool,
+    surface_states: Vec<WallpaperSurfaceState>,
 }
 
 
@@ -255,14 +284,14 @@ impl Dispatch<wl_registry::WlRegistry, ()>
 }
 
 
-impl Dispatch<ZwlrLayerSurfaceV1, ()>
+impl Dispatch<ZwlrLayerSurfaceV1, LayerSurfaceDispatchData>
     for WaylandState
 {
     fn event(
         state: &mut Self,
         layer_surface: &ZwlrLayerSurfaceV1,
         event: zwlr_layer_surface_v1::Event,
-        _data: &(),
+        data: &LayerSurfaceDispatchData,
         _connection: &Connection,
         _queue_handle: &QueueHandle<Self>,
     ) {
@@ -280,21 +309,49 @@ impl Dispatch<ZwlrLayerSurfaceV1, ()>
                 );
 
 
-                state.configured =
-                    Some(
-                        WallpaperSurfaceConfiguration {
-                            width,
-                            height,
-                            serial,
-                        }
-                    );
+                if let Some(
+                    surface_state
+                ) =
+                    state
+                        .surface_states
+                        .iter_mut()
+                        .find(
+                            |surface_state| {
+                                surface_state.registry_name
+                                    == data.registry_name
+                            }
+                        )
+                {
+                    surface_state.configured =
+                        Some(
+                            WallpaperSurfaceConfiguration {
+                                width,
+                                height,
+                                serial,
+                            }
+                        );
+                }
             }
 
 
             zwlr_layer_surface_v1::Event::Closed => {
 
-                state.closed =
-                    true;
+                if let Some(
+                    surface_state
+                ) =
+                    state
+                        .surface_states
+                        .iter_mut()
+                        .find(
+                            |surface_state| {
+                                surface_state.registry_name
+                                    == data.registry_name
+                            }
+                        )
+                {
+                    surface_state.closed =
+                        true;
+                }
             }
 
 
@@ -532,7 +589,7 @@ pub fn probe_capabilities(
 
 pub fn run_egl_background_surface(
     fragment_source: &str,
-) -> Result<WallpaperSurfaceConfiguration, String> {
+) -> Result<(), String> {
 
     let (
         connection,
@@ -610,87 +667,124 @@ pub fn run_egl_background_surface(
             )?;
 
 
-    let selected_target =
-        state
-            .targets
-            .first()
-            .cloned()
-            .ok_or_else(
-                || {
-                    "The Wayland compositor did not provide any wallpaper targets"
-                        .to_string()
-                }
-            )?;
+    let targets =
+        state.targets.clone();
 
 
-    print_selected_target(
-        &selected_target.info
+    println!(
+        "Creating mirror-mode wallpaper surfaces:"
     );
 
 
-    let output =
-        selected_target.output;
+    println!(
+        "    Target count: {}",
+        targets.len()
+    );
 
 
-    let surface =
-        compositor.create_surface(
-            &queue_handle,
-            (),
+    let mut pending_targets =
+        Vec::with_capacity(
+            targets.len()
         );
 
 
-    let layer_surface =
-        layer_shell.get_layer_surface(
-            &surface,
+    for target in targets {
+
+        print_selected_target(
+            &target.info
+        );
+
+
+        state.surface_states.push(
+            WallpaperSurfaceState {
+                registry_name:
+                    target.info.registry_name,
+
+                configured:
+                    None,
+
+                closed:
+                    false,
+            }
+        );
+
+
+        let surface =
+            compositor.create_surface(
+                &queue_handle,
+                (),
+            );
+
+
+        let layer_surface =
+            layer_shell.get_layer_surface(
+                &surface,
+                Some(
+                    &target.output
+                ),
+                Layer::Background,
+                format!(
+                    "screenshaver-wallpaper-{}",
+                    target.info.registry_name,
+                ),
+                &queue_handle,
+                LayerSurfaceDispatchData {
+                    registry_name:
+                        target.info.registry_name,
+                },
+            );
+
+
+        layer_surface.set_size(
+            0,
+            0,
+        );
+
+
+        layer_surface.set_anchor(
+            Anchor::Top
+                | Anchor::Bottom
+                | Anchor::Left
+                | Anchor::Right
+        );
+
+
+        layer_surface.set_exclusive_zone(
+            -1
+        );
+
+
+        layer_surface.set_keyboard_interactivity(
+            KeyboardInteractivity::None
+        );
+
+
+        let input_region =
+            compositor.create_region(
+                &queue_handle,
+                (),
+            );
+
+
+        surface.set_input_region(
             Some(
-                &output
-            ),
-            Layer::Background,
-            "screenshaver-wallpaper".to_string(),
-            &queue_handle,
-            (),
+                &input_region
+            )
         );
 
 
-    layer_surface.set_size(
-        0,
-        0,
-    );
+        surface.commit();
 
 
-    layer_surface.set_anchor(
-        Anchor::Top
-            | Anchor::Bottom
-            | Anchor::Left
-            | Anchor::Right
-    );
-
-
-    layer_surface.set_exclusive_zone(
-        -1
-    );
-
-
-    layer_surface.set_keyboard_interactivity(
-        KeyboardInteractivity::None
-    );
-
-
-    let empty_input_region =
-        compositor.create_region(
-            &queue_handle,
-            (),
+        pending_targets.push(
+            (
+                target.info,
+                surface,
+                layer_surface,
+                input_region,
+            )
         );
-
-
-    surface.set_input_region(
-        Some(
-            &empty_input_region
-        )
-    );
-
-
-    surface.commit();
+    }
 
 
     connection
@@ -698,7 +792,7 @@ pub fn run_egl_background_surface(
         .map_err(
             |error| {
                 format!(
-                    "Unable to send the wallpaper surface request to the Wayland compositor: {}",
+                    "Unable to send mirror wallpaper surface requests: {}",
                     error,
                 )
             }
@@ -706,9 +800,14 @@ pub fn run_egl_background_surface(
 
 
     while state
-        .configured
-        .is_none()
-        && !state.closed
+        .surface_states
+        .iter()
+        .any(
+            |surface_state| {
+                surface_state.configured.is_none()
+                    && !surface_state.closed
+            }
+        )
     {
         event_queue
             .blocking_dispatch(
@@ -717,7 +816,7 @@ pub fn run_egl_background_surface(
             .map_err(
                 |error| {
                     format!(
-                        "Unable to receive the wallpaper surface configure event: {}",
+                        "Unable to receive mirror wallpaper configure events: {}",
                         error,
                     )
                 }
@@ -725,16 +824,26 @@ pub fn run_egl_background_surface(
     }
 
 
-    let configuration =
+    if let Some(
+        closed_target
+    ) =
         state
-            .configured
-            .take()
-            .ok_or_else(
-                || {
-                    "Mango closed the wallpaper layer surface before configuring it"
-                        .to_string()
+            .surface_states
+            .iter()
+            .find(
+                |surface_state| {
+                    surface_state.closed
+                        && surface_state.configured.is_none()
                 }
-            )?;
+            )
+    {
+        return Err(
+            format!(
+                "The compositor closed wallpaper target {} before configuring it",
+                closed_target.registry_name,
+            )
+        );
+    }
 
 
     connection
@@ -742,82 +851,131 @@ pub fn run_egl_background_surface(
         .map_err(
             |error| {
                 format!(
-                    "Unable to send the wallpaper configure acknowledgement: {}",
+                    "Unable to send mirror wallpaper configure acknowledgements: {}",
                     error,
                 )
             }
         )?;
 
 
-    let buffer_width =
-        i32::try_from(
-            configuration.width
-        )
-        .map_err(
-            |_| {
-                "Wallpaper surface width exceeds the EGL window range"
-                    .to_string()
-            }
-        )?;
+    let mut native_targets =
+        Vec::with_capacity(
+            pending_targets.len()
+        );
 
 
-    let buffer_height =
-        i32::try_from(
-            configuration.height
-        )
-        .map_err(
-            |_| {
-                "Wallpaper surface height exceeds the EGL window range"
-                    .to_string()
-            }
-        )?;
+    for (
+        info,
+        surface,
+        layer_surface,
+        input_region,
+    ) in pending_targets {
 
-
-    print_surface_configuration(
-        &configuration
-    );
-
-
-    let egl_window =
-        wayland_egl::WlEglSurface::new(
-            surface.id(),
-            buffer_width,
-            buffer_height,
-        )
-        .map_err(
-            |error| {
-                format!(
-                    "Unable to create wl_egl_window: {}",
-                    error,
+        let configuration =
+            state
+                .surface_states
+                .iter_mut()
+                .find(
+                    |surface_state| {
+                        surface_state.registry_name
+                            == info.registry_name
+                    }
                 )
+                .and_then(
+                    |surface_state| {
+                        surface_state.configured.take()
+                    }
+                )
+                .ok_or_else(
+                    || {
+                        format!(
+                            "Wallpaper target {} was not configured",
+                            info.registry_name,
+                        )
+                    }
+                )?;
+
+
+        let width =
+            configured_dimension(
+                configuration.width,
+                info.mode_width,
+                "width",
+            )?;
+
+
+        let height =
+            configured_dimension(
+                configuration.height,
+                info.mode_height,
+                "height",
+            )?;
+
+
+        print_target_surface_configuration(
+            &info,
+            &configuration,
+            width,
+            height,
+        );
+
+
+        let egl_window =
+            wayland_egl::WlEglSurface::new(
+                surface.id(),
+                width,
+                height,
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to create wl_egl_window for target {}: {}",
+                        info.registry_name,
+                        error,
+                    )
+                }
+            )?;
+
+
+        native_targets.push(
+            NativeWallpaperTarget {
+                info,
+                surface,
+                layer_surface,
+                input_region,
+                egl_window,
+                width,
+                height,
             }
-        )?;
+        );
+    }
 
 
-    render_egl_wallpaper(
+    render_egl_wallpapers(
         &connection,
         &mut event_queue,
         &mut state,
-        &egl_window,
-        buffer_width,
-        buffer_height,
+        &mut native_targets,
         fragment_source,
         &shutdown_requested,
     )?;
 
 
-    drop(
-        egl_window
-    );
+    for target in native_targets {
+
+        drop(
+            target.egl_window
+        );
 
 
-    layer_surface.destroy();
+        target.layer_surface.destroy();
 
 
-    surface.destroy();
+        target.surface.destroy();
 
 
-    empty_input_region.destroy();
+        target.input_region.destroy();
+    }
 
 
     layer_shell.destroy();
@@ -828,7 +986,7 @@ pub fn run_egl_background_surface(
         .map_err(
             |error| {
                 format!(
-                    "Unable to send wallpaper surface cleanup requests: {}",
+                    "Unable to send mirror wallpaper cleanup requests: {}",
                     error,
                 )
             }
@@ -836,7 +994,48 @@ pub fn run_egl_background_surface(
 
 
     Ok(
-        configuration
+        ()
+    )
+}
+
+
+fn configured_dimension(
+    configured: u32,
+    fallback: i32,
+    dimension_name: &str,
+) -> Result<i32, String> {
+
+    if configured
+        != 0
+    {
+        return i32::try_from(
+            configured
+        )
+        .map_err(
+            |_| {
+                format!(
+                    "Wallpaper surface {} exceeds the EGL window range",
+                    dimension_name,
+                )
+            }
+        );
+    }
+
+
+    if fallback
+        > 0
+    {
+        return Ok(
+            fallback
+        );
+    }
+
+
+    Err(
+        format!(
+            "The compositor returned zero {} and no valid output-mode fallback is available",
+            dimension_name,
+        )
     )
 }
 
@@ -1078,13 +1277,11 @@ unsafe extern "C" {
 }
 
 
-fn render_egl_wallpaper(
+fn render_egl_wallpapers(
     connection: &Connection,
     event_queue: &mut wayland_client::EventQueue<WaylandState>,
     state: &mut WaylandState,
-    egl_window: &wayland_egl::WlEglSurface,
-    width: i32,
-    height: i32,
+    native_targets: &mut [NativeWallpaperTarget],
     fragment_source: &str,
     shutdown_requested: &Arc<AtomicBool>,
 ) -> Result<(), String> {
@@ -1148,6 +1345,7 @@ fn render_egl_wallpaper(
             );
         }
 
+
         return Err(
             egl_failure(
                 "eglBindAPI(EGL_OPENGL_API)"
@@ -1177,7 +1375,8 @@ fn render_egl_wallpaper(
         ptr::null_mut();
 
 
-    let mut config_count = 0;
+    let mut config_count =
+        0;
 
 
     if unsafe {
@@ -1197,6 +1396,7 @@ fn render_egl_wallpaper(
                 display
             );
         }
+
 
         return Err(
             egl_failure(
@@ -1237,6 +1437,7 @@ fn render_egl_wallpaper(
             );
         }
 
+
         return Err(
             egl_failure(
                 "eglCreateContext"
@@ -1245,55 +1446,94 @@ fn render_egl_wallpaper(
     }
 
 
-    let egl_surface =
-        unsafe {
-            eglCreateWindowSurface(
-                display,
-                config,
-                egl_window.ptr()
-                    as EglNativeWindow,
-                ptr::null(),
-            )
-        };
+    let mut egl_targets =
+        Vec::with_capacity(
+            native_targets.len()
+        );
 
 
-    if egl_surface
-        == EGL_NO_SURFACE
-    {
-        unsafe {
-            eglDestroyContext(
+    for target in native_targets.iter() {
+
+        let surface =
+            unsafe {
+                eglCreateWindowSurface(
+                    display,
+                    config,
+                    target.egl_window.ptr()
+                        as EglNativeWindow,
+                    ptr::null(),
+                )
+            };
+
+
+        if surface
+            == EGL_NO_SURFACE
+        {
+            destroy_egl_targets(
                 display,
-                context,
+                &egl_targets,
             );
 
-            eglTerminate(
-                display
+
+            unsafe {
+                eglDestroyContext(
+                    display,
+                    context,
+                );
+
+                eglTerminate(
+                    display
+                );
+            }
+
+
+            return Err(
+                egl_failure(
+                    "eglCreateWindowSurface"
+                )
             );
         }
 
-        return Err(
-            egl_failure(
-                "eglCreateWindowSurface"
-            )
+
+        egl_targets.push(
+            EglWallpaperTarget {
+                registry_name:
+                    target.info.registry_name,
+
+                surface,
+            }
         );
     }
+
+
+    let first_surface =
+        egl_targets
+            .first()
+            .ok_or_else(
+                || {
+                    "No EGL wallpaper targets were created"
+                        .to_string()
+                }
+            )?
+            .surface;
 
 
     if unsafe {
         eglMakeCurrent(
             display,
-            egl_surface,
-            egl_surface,
+            first_surface,
+            first_surface,
             context,
         )
     } == EGL_FALSE
     {
-        unsafe {
-            eglDestroySurface(
-                display,
-                egl_surface,
-            );
+        destroy_egl_targets(
+            display,
+            &egl_targets,
+        );
 
+
+        unsafe {
             eglDestroyContext(
                 display,
                 context,
@@ -1303,6 +1543,7 @@ fn render_egl_wallpaper(
                 display
             );
         }
+
 
         return Err(
             egl_failure(
@@ -1335,14 +1576,13 @@ fn render_egl_wallpaper(
 
 
     let render_result =
-        render_native_wallpaper_frames(
+        render_mirror_frames(
             display,
-            egl_surface,
+            context,
+            &egl_targets,
             event_queue,
             state,
-            egl_window,
-            width,
-            height,
+            native_targets,
             fragment_source,
             shutdown_requested,
         );
@@ -1355,12 +1595,16 @@ fn render_egl_wallpaper(
             EGL_NO_SURFACE,
             EGL_NO_CONTEXT,
         );
+    }
 
-        eglDestroySurface(
-            display,
-            egl_surface,
-        );
 
+    destroy_egl_targets(
+        display,
+        &egl_targets,
+    );
+
+
+    unsafe {
         eglDestroyContext(
             display,
             context,
@@ -1376,7 +1620,7 @@ fn render_egl_wallpaper(
 
 
     println!(
-        "Native EGL wallpaper renderer stopped:"
+        "Native EGL mirror wallpaper renderer stopped:"
     );
 
 
@@ -1393,16 +1637,23 @@ fn render_egl_wallpaper(
 
 
     println!(
-        "    Buffer size: {}x{}",
-        width,
-        height
+        "    Rendered targets: {}",
+        native_targets.len()
     );
 
 
     println!(
         "    Shutdown reason: {}",
-        if state.closed {
-            "compositor closed the layer surface"
+        if state
+            .surface_states
+            .iter()
+            .any(
+                |surface_state| {
+                    surface_state.closed
+                }
+            )
+        {
+            "compositor closed a layer surface"
         } else {
             "SIGINT or SIGTERM received"
         }
@@ -1415,14 +1666,30 @@ fn render_egl_wallpaper(
 }
 
 
-fn render_native_wallpaper_frames(
+fn destroy_egl_targets(
     display: EglDisplay,
-    egl_surface: EglSurface,
+    targets: &[EglWallpaperTarget],
+) {
+
+    for target in targets {
+
+        unsafe {
+            eglDestroySurface(
+                display,
+                target.surface,
+            );
+        }
+    }
+}
+
+
+fn render_mirror_frames(
+    display: EglDisplay,
+    context: EglContext,
+    egl_targets: &[EglWallpaperTarget],
     event_queue: &mut wayland_client::EventQueue<WaylandState>,
     state: &mut WaylandState,
-    egl_window: &wayland_egl::WlEglSurface,
-    mut width: i32,
-    mut height: i32,
+    native_targets: &mut [NativeWallpaperTarget],
     fragment_source: &str,
     shutdown_requested: &Arc<AtomicBool>,
 ) -> Result<(), String> {
@@ -1491,7 +1758,7 @@ fn render_native_wallpaper_frames(
 
 
     let result =
-        loop {
+        'render_loop: loop {
 
             process_wayland_events(
                 event_queue,
@@ -1499,21 +1766,20 @@ fn render_native_wallpaper_frames(
             )?;
 
 
-            if let Some(
-                configuration
-            ) =
-                state.configured.take()
-            {
-                apply_surface_resize(
-                    egl_window,
-                    &configuration,
-                    &mut width,
-                    &mut height,
-                )?;
-            }
+            apply_pending_target_resizes(
+                state,
+                native_targets,
+            )?;
 
 
-            if state.closed
+            if state
+                .surface_states
+                .iter()
+                .any(
+                    |surface_state| {
+                        surface_state.closed
+                    }
+                )
                 || shutdown_requested.load(
                     Ordering::Relaxed
                 )
@@ -1526,78 +1792,105 @@ fn render_native_wallpaper_frames(
                 start_time.elapsed();
 
 
-            unsafe {
-                gl::Viewport(
-                    0,
-                    0,
-                    width,
-                    height,
-                );
-
-                gl::ClearColor(
-                    0.0,
-                    0.0,
-                    0.0,
-                    1.0,
-                );
-
-                gl::Clear(
-                    gl::COLOR_BUFFER_BIT
-                );
-
-                gl::UseProgram(
-                    program
-                );
-
-                set_uniform_1f(
-                    i_time,
-                    elapsed.as_secs_f32(),
-                );
-
-                set_uniform_3f(
-                    i_resolution,
-                    width as f32,
-                    height as f32,
-                    1.0,
-                );
-
-                set_uniform_4f(
-                    i_mouse,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                );
-
-                set_uniform_1i(
-                    i_frame,
-                    frame,
-                );
-
-                gl::BindVertexArray(
-                    vao
-                );
-
-                gl::DrawArrays(
-                    gl::TRIANGLES,
-                    0,
-                    3,
-                );
-            }
-
-
-            if unsafe {
-                eglSwapBuffers(
-                    display,
-                    egl_surface,
+            for (
+                egl_target,
+                native_target,
+            ) in egl_targets
+                .iter()
+                .zip(
+                    native_targets.iter()
                 )
-            } == EGL_FALSE
             {
-                break Err(
-                    egl_failure(
-                        "eglSwapBuffers"
+                if unsafe {
+                    eglMakeCurrent(
+                        display,
+                        egl_target.surface,
+                        egl_target.surface,
+                        context,
                     )
-                );
+                } == EGL_FALSE
+                {
+                    break 'render_loop Err(
+                        egl_failure(
+                            "eglMakeCurrent"
+                        )
+                    );
+                }
+
+
+                unsafe {
+                    gl::Viewport(
+                        0,
+                        0,
+                        native_target.width,
+                        native_target.height,
+                    );
+
+                    gl::ClearColor(
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0,
+                    );
+
+                    gl::Clear(
+                        gl::COLOR_BUFFER_BIT
+                    );
+
+                    gl::UseProgram(
+                        program
+                    );
+
+                    set_uniform_1f(
+                        i_time,
+                        elapsed.as_secs_f32(),
+                    );
+
+                    set_uniform_3f(
+                        i_resolution,
+                        native_target.width as f32,
+                        native_target.height as f32,
+                        1.0,
+                    );
+
+                    set_uniform_4f(
+                        i_mouse,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                    );
+
+                    set_uniform_1i(
+                        i_frame,
+                        frame,
+                    );
+
+                    gl::BindVertexArray(
+                        vao
+                    );
+
+                    gl::DrawArrays(
+                        gl::TRIANGLES,
+                        0,
+                        3,
+                    );
+                }
+
+
+                if unsafe {
+                    eglSwapBuffers(
+                        display,
+                        egl_target.surface,
+                    )
+                } == EGL_FALSE
+                {
+                    break 'render_loop Err(
+                        egl_failure(
+                            "eglSwapBuffers"
+                        )
+                    );
+                }
             }
 
 
@@ -1636,6 +1929,143 @@ fn render_native_wallpaper_frames(
 
 
     result
+}
+
+
+fn apply_pending_target_resizes(
+    state: &mut WaylandState,
+    native_targets: &mut [NativeWallpaperTarget],
+) -> Result<(), String> {
+
+    for surface_state in state.surface_states.iter_mut() {
+
+        let Some(
+            configuration
+        ) =
+            surface_state.configured.take()
+        else {
+            continue;
+        };
+
+
+        let Some(
+            target
+        ) =
+            native_targets
+                .iter_mut()
+                .find(
+                    |target| {
+                        target.info.registry_name
+                            == surface_state.registry_name
+                    }
+                )
+        else {
+            continue;
+        };
+
+
+        let new_width =
+            if configuration.width
+                == 0
+            {
+                target.width
+            } else {
+                i32::try_from(
+                    configuration.width
+                )
+                .map_err(
+                    |_| {
+                        "Wallpaper resize width exceeds the EGL window range"
+                            .to_string()
+                    }
+                )?
+            };
+
+
+        let new_height =
+            if configuration.height
+                == 0
+            {
+                target.height
+            } else {
+                i32::try_from(
+                    configuration.height
+                )
+                .map_err(
+                    |_| {
+                        "Wallpaper resize height exceeds the EGL window range"
+                            .to_string()
+                    }
+                )?
+            };
+
+
+        if new_width
+            == target.width
+            && new_height
+                == target.height
+        {
+            continue;
+        }
+
+
+        target
+            .egl_window
+            .resize(
+                new_width,
+                new_height,
+                0,
+                0,
+            );
+
+
+        target.width =
+            new_width;
+
+
+        target.height =
+            new_height;
+
+
+        println!(
+            "Wayland wallpaper target resized:"
+        );
+
+
+        println!(
+            "    Connector: {}",
+            target
+                .info
+                .connector_name
+                .as_deref()
+                .unwrap_or(
+                    "<not advertised>"
+                )
+        );
+
+
+        println!(
+            "    Width: {}",
+            new_width
+        );
+
+
+        println!(
+            "    Height: {}",
+            new_height
+        );
+
+
+        println!(
+            "    Configure serial: {}",
+            configuration.serial
+        );
+    }
+
+
+    Ok(
+        ()
+    )
 }
 
 
@@ -1910,7 +2340,7 @@ fn print_selected_target(
 ) {
 
     println!(
-        "Selected wallpaper target:"
+        "Creating wallpaper target:"
     );
 
 
@@ -1961,8 +2391,11 @@ fn print_selected_target(
 }
 
 
-fn print_surface_configuration(
+fn print_target_surface_configuration(
+    target: &WallpaperTargetInfo,
     configuration: &WallpaperSurfaceConfiguration,
+    width: i32,
+    height: i32,
 ) {
 
     println!(
@@ -1971,14 +2404,31 @@ fn print_surface_configuration(
 
 
     println!(
+        "    Connector: {}",
+        target
+            .connector_name
+            .as_deref()
+            .unwrap_or(
+                "<not advertised>"
+            )
+    );
+
+
+    println!(
+        "    Registry name: {}",
+        target.registry_name
+    );
+
+
+    println!(
         "    Width: {}",
-        configuration.width
+        width
     );
 
 
     println!(
         "    Height: {}",
-        configuration.height
+        height
     );
 
 

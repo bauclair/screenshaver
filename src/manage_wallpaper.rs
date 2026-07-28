@@ -421,7 +421,7 @@ pub fn run(
 
 
     println!(
-        "Starting native Wayland/EGL wallpaper renderer..."
+        "Starting native Wayland/EGL mirror wallpaper renderer..."
     );
 
 
@@ -434,7 +434,7 @@ pub fn run(
 
 
     println!(
-        "Native Wayland/EGL wallpaper renderer ended cleanly."
+        "Native Wayland/EGL mirror wallpaper renderer ended cleanly."
     );
 
 
