@@ -147,6 +147,7 @@ struct WaylandState {
     output_count: usize,
     targets: Vec<WallpaperTarget>,
     surface_states: Vec<WallpaperSurfaceState>,
+    removed_output_names: Vec<u32>,
 }
 
 
@@ -162,64 +163,87 @@ impl Dispatch<wl_registry::WlRegistry, ()>
         queue_handle: &QueueHandle<Self>,
     ) {
 
-        let wl_registry::Event::Global {
-            name,
-            interface,
-            version,
-        } = event else {
-            return;
-        };
+        match event {
+
+            wl_registry::Event::Global {
+                name,
+                interface,
+                version,
+            } => {
+
+                match interface.as_str() {
+
+                    "wl_compositor" => {
+
+                        state.compositor_version =
+                            Some(
+                                version
+                            );
 
 
-        match interface.as_str() {
+                        if state
+                            .compositor
+                            .is_none()
+                        {
+                            state.compositor =
+                                Some(
+                                    registry.bind::<
+                                        wl_compositor::WlCompositor,
+                                        _,
+                                        _
+                                    >(
+                                        name,
+                                        version.min(
+                                            6
+                                        ),
+                                        queue_handle,
+                                        (),
+                                    )
+                                );
+                        }
+                    }
 
-            "wl_compositor" => {
 
-                state.compositor_version =
-                    Some(
-                        version
-                    );
+                    "zwlr_layer_shell_v1" => {
+
+                        state.layer_shell_version =
+                            Some(
+                                version
+                            );
 
 
-                if state
-                    .compositor
-                    .is_none()
-                {
-                    state.compositor =
-                        Some(
+                        if state
+                            .layer_shell
+                            .is_none()
+                        {
+                            state.layer_shell =
+                                Some(
+                                    registry.bind::<
+                                        ZwlrLayerShellV1,
+                                        _,
+                                        _
+                                    >(
+                                        name,
+                                        version.min(
+                                            4
+                                        ),
+                                        queue_handle,
+                                        (),
+                                    )
+                                );
+                        }
+                    }
+
+
+                    "wl_output" => {
+
+                        state.output_count +=
+                            1;
+
+
+                        let output =
                             registry.bind::<
-                                wl_compositor::WlCompositor,
-                                _,
-                                _
-                            >(
-                                name,
-                                version.min(
-                                    6
-                                ),
-                                queue_handle,
-                                (),
-                            )
-                        );
-                }
-            }
-
-
-            "zwlr_layer_shell_v1" => {
-
-                state.layer_shell_version =
-                    Some(
-                        version
-                    );
-
-
-                if state
-                    .layer_shell
-                    .is_none()
-                {
-                    state.layer_shell =
-                        Some(
-                            registry.bind::<
-                                ZwlrLayerShellV1,
+                                wl_output::WlOutput,
                                 _,
                                 _
                             >(
@@ -228,53 +252,86 @@ impl Dispatch<wl_registry::WlRegistry, ()>
                                     4
                                 ),
                                 queue_handle,
-                                (),
-                            )
+                                OutputDispatchData {
+                                    registry_name:
+                                        name,
+                                },
+                            );
+
+
+                        state.targets.push(
+                            WallpaperTarget {
+                                output,
+
+                                info:
+                                    WallpaperTargetInfo {
+                                        registry_name:
+                                            name,
+
+                                        scale:
+                                            1,
+
+                                        ..WallpaperTargetInfo::default()
+                                    },
+                            }
                         );
+                    }
+
+
+                    _ => {}
                 }
             }
 
 
-            "wl_output" => {
+            wl_registry::Event::GlobalRemove {
+                name,
+            } => {
 
-                state.output_count +=
-                    1;
-
-
-                let output =
-                    registry.bind::<
-                        wl_output::WlOutput,
-                        _,
-                        _
-                    >(
-                        name,
-                        version.min(
-                            4
-                        ),
-                        queue_handle,
-                        OutputDispatchData {
-                            registry_name:
-                                name,
-                        },
-                    );
+                let was_wallpaper_output =
+                    state
+                        .targets
+                        .iter()
+                        .any(
+                            |target| {
+                                target.info.registry_name
+                                    == name
+                            }
+                        );
 
 
-                state.targets.push(
-                    WallpaperTarget {
-                        output,
+                if !was_wallpaper_output {
+                    return;
+                }
 
-                        info:
-                            WallpaperTargetInfo {
-                                registry_name:
-                                    name,
 
-                                scale:
-                                    1,
-
-                                ..WallpaperTargetInfo::default()
-                            },
+                state.targets.retain(
+                    |target| {
+                        target.info.registry_name
+                            != name
                     }
                 );
+
+
+                state.output_count =
+                    state
+                        .output_count
+                        .saturating_sub(
+                            1
+                        );
+
+
+                if !state
+                    .removed_output_names
+                    .contains(
+                        &name
+                    )
+                {
+                    state
+                        .removed_output_names
+                        .push(
+                            name
+                        );
+                }
             }
 
 
@@ -1281,7 +1338,7 @@ fn render_egl_wallpapers(
     connection: &Connection,
     event_queue: &mut wayland_client::EventQueue<WaylandState>,
     state: &mut WaylandState,
-    native_targets: &mut [NativeWallpaperTarget],
+    native_targets: &mut Vec<NativeWallpaperTarget>,
     fragment_source: &str,
     shutdown_requested: &Arc<AtomicBool>,
 ) -> Result<(), String> {
@@ -1579,7 +1636,7 @@ fn render_egl_wallpapers(
         render_mirror_frames(
             display,
             context,
-            &egl_targets,
+            &mut egl_targets,
             event_queue,
             state,
             native_targets,
@@ -1654,6 +1711,10 @@ fn render_egl_wallpapers(
             )
         {
             "compositor closed a layer surface"
+        } else if native_targets
+            .is_empty()
+        {
+            "all wallpaper outputs disconnected"
         } else {
             "SIGINT or SIGTERM received"
         }
@@ -1686,10 +1747,10 @@ fn destroy_egl_targets(
 fn render_mirror_frames(
     display: EglDisplay,
     context: EglContext,
-    egl_targets: &[EglWallpaperTarget],
+    egl_targets: &mut Vec<EglWallpaperTarget>,
     event_queue: &mut wayland_client::EventQueue<WaylandState>,
     state: &mut WaylandState,
-    native_targets: &mut [NativeWallpaperTarget],
+    native_targets: &mut Vec<NativeWallpaperTarget>,
     fragment_source: &str,
     shutdown_requested: &Arc<AtomicBool>,
 ) -> Result<(), String> {
@@ -1764,6 +1825,27 @@ fn render_mirror_frames(
                 event_queue,
                 state,
             )?;
+
+
+            remove_disconnected_targets(
+                display,
+                context,
+                state,
+                egl_targets,
+                native_targets,
+            )?;
+
+
+            if native_targets
+                .is_empty()
+            {
+                println!(
+                    "All wallpaper outputs have been disconnected."
+                );
+
+
+                break Ok(());
+            }
 
 
             apply_pending_target_resizes(
@@ -1929,6 +2011,203 @@ fn render_mirror_frames(
 
 
     result
+}
+
+
+fn remove_disconnected_targets(
+    display: EglDisplay,
+    context: EglContext,
+    state: &mut WaylandState,
+    egl_targets: &mut Vec<EglWallpaperTarget>,
+    native_targets: &mut Vec<NativeWallpaperTarget>,
+) -> Result<(), String> {
+
+    let removed_names =
+        std::mem::take(
+            &mut state.removed_output_names
+        );
+
+
+    for registry_name in removed_names {
+
+        let Some(
+            egl_index
+        ) =
+            egl_targets
+                .iter()
+                .position(
+                    |target| {
+                        target.registry_name
+                            == registry_name
+                    }
+                )
+        else {
+            continue;
+        };
+
+
+        let Some(
+            native_index
+        ) =
+            native_targets
+                .iter()
+                .position(
+                    |target| {
+                        target.info.registry_name
+                            == registry_name
+                    }
+                )
+        else {
+            return Err(
+                format!(
+                    "Wallpaper output {} disappeared, but its native target was not found",
+                    registry_name,
+                )
+            );
+        };
+
+
+        if unsafe {
+            eglMakeCurrent(
+                display,
+                EGL_NO_SURFACE,
+                EGL_NO_SURFACE,
+                EGL_NO_CONTEXT,
+            )
+        } == EGL_FALSE
+        {
+            return Err(
+                egl_failure(
+                    "eglMakeCurrent while removing a wallpaper target"
+                )
+            );
+        }
+
+
+        let egl_target =
+            egl_targets.remove(
+                egl_index
+            );
+
+
+        if unsafe {
+            eglDestroySurface(
+                display,
+                egl_target.surface,
+            )
+        } == EGL_FALSE
+        {
+            return Err(
+                egl_failure(
+                    "eglDestroySurface while removing a wallpaper target"
+                )
+            );
+        }
+
+
+        let native_target =
+            native_targets.remove(
+                native_index
+            );
+
+
+        let connector =
+            native_target
+                .info
+                .connector_name
+                .clone()
+                .unwrap_or_else(
+                    || {
+                        "<unknown>"
+                            .to_string()
+                    }
+                );
+
+
+        let NativeWallpaperTarget {
+            surface,
+            layer_surface,
+            input_region,
+            egl_window,
+            ..
+        } = native_target;
+
+
+        drop(
+            egl_window
+        );
+
+
+        layer_surface.destroy();
+
+
+        surface.destroy();
+
+
+        input_region.destroy();
+
+
+        state
+            .surface_states
+            .retain(
+                |surface_state| {
+                    surface_state.registry_name
+                        != registry_name
+                }
+            );
+
+
+        println!(
+            "Wallpaper target removed:"
+        );
+
+
+        println!(
+            "    Registry name: {}",
+            registry_name
+        );
+
+
+        println!(
+            "    Connector: {}",
+            connector
+        );
+
+
+        println!(
+            "    Remaining targets: {}",
+            native_targets.len()
+        );
+
+
+        println!();
+
+
+        if let Some(
+            next_target
+        ) =
+            egl_targets.first()
+        {
+            if unsafe {
+                eglMakeCurrent(
+                    display,
+                    next_target.surface,
+                    next_target.surface,
+                    context,
+                )
+            } == EGL_FALSE
+            {
+                return Err(
+                    egl_failure(
+                        "eglMakeCurrent after removing a wallpaper target"
+                    )
+                );
+            }
+        }
+    }
+
+
+    Ok(())
 }
 
 
