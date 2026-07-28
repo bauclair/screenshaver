@@ -5,10 +5,20 @@ use wayland_client::protocol::{
     wl_registry,
     wl_surface,
 };
+use std::ffi::{
+    c_char,
+    c_void,
+    CString,
+};
+use std::ptr;
+use std::thread;
+use std::time::Duration;
+
 use wayland_client::{
     delegate_noop,
     Connection,
     Dispatch,
+    Proxy,
     QueueHandle,
 };
 
@@ -283,7 +293,7 @@ pub fn probe_capabilities(
 }
 
 
-pub fn test_background_surface(
+pub fn test_egl_background_surface(
 ) -> Result<WallpaperSurfaceConfiguration, String> {
 
     let (
@@ -297,32 +307,42 @@ pub fn test_background_surface(
     let queue_handle =
         event_queue.handle();
 
+
     let compositor =
         state
             .compositor
             .clone()
-            .ok_or_else(|| {
-                "The Wayland compositor did not advertise wl_compositor"
-                    .to_string()
-            })?;
+            .ok_or_else(
+                || {
+                    "The Wayland compositor did not advertise wl_compositor"
+                        .to_string()
+                }
+            )?;
+
 
     let layer_shell =
         state
             .layer_shell
             .clone()
-            .ok_or_else(|| {
-                "The Wayland compositor does not advertise zwlr_layer_shell_v1"
-                    .to_string()
-            })?;
+            .ok_or_else(
+                || {
+                    "The Wayland compositor does not advertise zwlr_layer_shell_v1"
+                        .to_string()
+                }
+            )?;
+
 
     let output =
         state
             .output
             .clone()
-            .ok_or_else(|| {
-                "The Wayland compositor did not advertise any wl_output objects"
-                    .to_string()
-            })?;
+            .ok_or_else(
+                || {
+                    "The Wayland compositor did not advertise any wl_output objects"
+                        .to_string()
+                }
+            )?;
+
 
     let surface =
         compositor.create_surface(
@@ -330,15 +350,19 @@ pub fn test_background_surface(
             (),
         );
 
+
     let layer_surface =
         layer_shell.get_layer_surface(
             &surface,
-            Some(&output),
+            Some(
+                &output
+            ),
             Layer::Background,
             "screenshaver-wallpaper".to_string(),
             &queue_handle,
             (),
         );
+
 
     layer_surface.set_size(
         0,
@@ -435,6 +459,66 @@ pub fn test_background_surface(
                 )
             }
         )?;
+
+
+    let buffer_width =
+        i32::try_from(
+            configuration.width
+        )
+        .map_err(
+            |_| {
+                "Wallpaper surface width exceeds the EGL window range"
+                    .to_string()
+            }
+        )?;
+
+
+    let buffer_height =
+        i32::try_from(
+            configuration.height
+        )
+        .map_err(
+            |_| {
+                "Wallpaper surface height exceeds the EGL window range"
+                    .to_string()
+            }
+        )?;
+
+
+    let egl_window =
+        wayland_egl::WlEglSurface::new(
+            surface.id(),
+            buffer_width,
+            buffer_height,
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to create wl_egl_window: {}",
+                    error,
+                )
+            }
+        )?;
+
+
+    render_egl_diagnostic_frame(
+        &connection,
+        &egl_window,
+        buffer_width,
+        buffer_height,
+    )?;
+
+
+    thread::sleep(
+        Duration::from_secs(
+            2
+        )
+    );
+
+
+    drop(
+        egl_window
+    );
 
 
     layer_surface.destroy();
@@ -565,6 +649,515 @@ fn connect_and_bind(
             event_queue,
             state,
         )
+    )
+}
+
+type EglBoolean = u32;
+type EglEnum = u32;
+type EglInt = i32;
+type EglDisplay = *mut c_void;
+type EglConfig = *mut c_void;
+type EglContext = *mut c_void;
+type EglSurface = *mut c_void;
+type EglNativeDisplay = *mut c_void;
+type EglNativeWindow = *mut c_void;
+
+const EGL_FALSE: EglBoolean = 0;
+
+const EGL_NONE: EglInt = 0x3038;
+const EGL_RED_SIZE: EglInt = 0x3024;
+const EGL_GREEN_SIZE: EglInt = 0x3023;
+const EGL_BLUE_SIZE: EglInt = 0x3022;
+const EGL_ALPHA_SIZE: EglInt = 0x3021;
+const EGL_RENDERABLE_TYPE: EglInt = 0x3040;
+const EGL_SURFACE_TYPE: EglInt = 0x3033;
+const EGL_WINDOW_BIT: EglInt = 0x0004;
+const EGL_OPENGL_BIT: EglInt = 0x0008;
+
+const EGL_CONTEXT_MAJOR_VERSION: EglInt = 0x3098;
+const EGL_CONTEXT_MINOR_VERSION: EglInt = 0x30FB;
+const EGL_CONTEXT_OPENGL_PROFILE_MASK: EglInt = 0x30FD;
+const EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT: EglInt = 0x0001;
+
+const EGL_OPENGL_API: EglEnum = 0x30A2;
+
+const EGL_NO_DISPLAY: EglDisplay = ptr::null_mut();
+const EGL_NO_CONTEXT: EglContext = ptr::null_mut();
+const EGL_NO_SURFACE: EglSurface = ptr::null_mut();
+
+
+#[link(
+    name = "EGL"
+)]
+unsafe extern "C" {
+
+    fn eglGetDisplay(
+        native_display: EglNativeDisplay,
+    ) -> EglDisplay;
+
+
+    fn eglInitialize(
+        display: EglDisplay,
+        major: *mut EglInt,
+        minor: *mut EglInt,
+    ) -> EglBoolean;
+
+
+    fn eglBindAPI(
+        api: EglEnum,
+    ) -> EglBoolean;
+
+
+    fn eglChooseConfig(
+        display: EglDisplay,
+        attributes: *const EglInt,
+        configs: *mut EglConfig,
+        config_size: EglInt,
+        config_count: *mut EglInt,
+    ) -> EglBoolean;
+
+
+    fn eglCreateContext(
+        display: EglDisplay,
+        config: EglConfig,
+        shared_context: EglContext,
+        attributes: *const EglInt,
+    ) -> EglContext;
+
+
+    fn eglCreateWindowSurface(
+        display: EglDisplay,
+        config: EglConfig,
+        native_window: EglNativeWindow,
+        attributes: *const EglInt,
+    ) -> EglSurface;
+
+
+    fn eglMakeCurrent(
+        display: EglDisplay,
+        draw_surface: EglSurface,
+        read_surface: EglSurface,
+        context: EglContext,
+    ) -> EglBoolean;
+
+
+    fn eglSwapBuffers(
+        display: EglDisplay,
+        surface: EglSurface,
+    ) -> EglBoolean;
+
+
+    fn eglDestroySurface(
+        display: EglDisplay,
+        surface: EglSurface,
+    ) -> EglBoolean;
+
+
+    fn eglDestroyContext(
+        display: EglDisplay,
+        context: EglContext,
+    ) -> EglBoolean;
+
+
+    fn eglTerminate(
+        display: EglDisplay,
+    ) -> EglBoolean;
+
+
+    fn eglGetError(
+    ) -> EglInt;
+
+
+    fn eglGetProcAddress(
+        name: *const c_char,
+    ) -> *const c_void;
+}
+
+
+fn render_egl_diagnostic_frame(
+    connection: &Connection,
+    egl_window: &wayland_egl::WlEglSurface,
+    width: i32,
+    height: i32,
+) -> Result<(), String> {
+
+    let native_display =
+        connection
+            .backend()
+            .display_id()
+            .as_ptr()
+            as EglNativeDisplay;
+
+
+    let display =
+        unsafe {
+            eglGetDisplay(
+                native_display
+            )
+        };
+
+
+    if display
+        == EGL_NO_DISPLAY
+    {
+        return Err(
+            egl_failure(
+                "eglGetDisplay"
+            )
+        );
+    }
+
+
+    let mut egl_major = 0;
+    let mut egl_minor = 0;
+
+
+    if unsafe {
+        eglInitialize(
+            display,
+            &mut egl_major,
+            &mut egl_minor,
+        )
+    } == EGL_FALSE
+    {
+        return Err(
+            egl_failure(
+                "eglInitialize"
+            )
+        );
+    }
+
+
+    if unsafe {
+        eglBindAPI(
+            EGL_OPENGL_API
+        )
+    } == EGL_FALSE
+    {
+        unsafe {
+            eglTerminate(
+                display
+            );
+        }
+
+        return Err(
+            egl_failure(
+                "eglBindAPI(EGL_OPENGL_API)"
+            )
+        );
+    }
+
+
+    let config_attributes = [
+        EGL_SURFACE_TYPE,
+        EGL_WINDOW_BIT,
+        EGL_RENDERABLE_TYPE,
+        EGL_OPENGL_BIT,
+        EGL_RED_SIZE,
+        8,
+        EGL_GREEN_SIZE,
+        8,
+        EGL_BLUE_SIZE,
+        8,
+        EGL_ALPHA_SIZE,
+        8,
+        EGL_NONE,
+    ];
+
+
+    let mut config =
+        ptr::null_mut();
+
+
+    let mut config_count = 0;
+
+
+    if unsafe {
+        eglChooseConfig(
+            display,
+            config_attributes.as_ptr(),
+            &mut config,
+            1,
+            &mut config_count,
+        )
+    } == EGL_FALSE
+        || config_count
+            == 0
+    {
+        unsafe {
+            eglTerminate(
+                display
+            );
+        }
+
+        return Err(
+            egl_failure(
+                "eglChooseConfig"
+            )
+        );
+    }
+
+
+    let context_attributes = [
+        EGL_CONTEXT_MAJOR_VERSION,
+        3,
+        EGL_CONTEXT_MINOR_VERSION,
+        3,
+        EGL_CONTEXT_OPENGL_PROFILE_MASK,
+        EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT,
+        EGL_NONE,
+    ];
+
+
+    let context =
+        unsafe {
+            eglCreateContext(
+                display,
+                config,
+                EGL_NO_CONTEXT,
+                context_attributes.as_ptr(),
+            )
+        };
+
+
+    if context
+        == EGL_NO_CONTEXT
+    {
+        unsafe {
+            eglTerminate(
+                display
+            );
+        }
+
+        return Err(
+            egl_failure(
+                "eglCreateContext"
+            )
+        );
+    }
+
+
+    let egl_surface =
+        unsafe {
+            eglCreateWindowSurface(
+                display,
+                config,
+                egl_window.ptr()
+                    as EglNativeWindow,
+                ptr::null(),
+            )
+        };
+
+
+    if egl_surface
+        == EGL_NO_SURFACE
+    {
+        unsafe {
+            eglDestroyContext(
+                display,
+                context,
+            );
+
+            eglTerminate(
+                display
+            );
+        }
+
+        return Err(
+            egl_failure(
+                "eglCreateWindowSurface"
+            )
+        );
+    }
+
+
+    if unsafe {
+        eglMakeCurrent(
+            display,
+            egl_surface,
+            egl_surface,
+            context,
+        )
+    } == EGL_FALSE
+    {
+        unsafe {
+            eglDestroySurface(
+                display,
+                egl_surface,
+            );
+
+            eglDestroyContext(
+                display,
+                context,
+            );
+
+            eglTerminate(
+                display
+            );
+        }
+
+        return Err(
+            egl_failure(
+                "eglMakeCurrent"
+            )
+        );
+    }
+
+
+    gl::load_with(
+        |name| {
+            let Ok(
+                symbol
+            ) =
+                CString::new(
+                    name
+                )
+            else {
+                return ptr::null();
+            };
+
+
+            unsafe {
+                eglGetProcAddress(
+                    symbol.as_ptr()
+                )
+            }
+        }
+    );
+
+
+    unsafe {
+        gl::Viewport(
+            0,
+            0,
+            width,
+            height,
+        );
+
+        gl::ClearColor(
+            0.08,
+            0.20,
+            0.55,
+            1.0,
+        );
+
+        gl::Clear(
+            gl::COLOR_BUFFER_BIT
+        );
+    }
+
+
+    if unsafe {
+        eglSwapBuffers(
+            display,
+            egl_surface,
+        )
+    } == EGL_FALSE
+    {
+        unsafe {
+            eglMakeCurrent(
+                display,
+                EGL_NO_SURFACE,
+                EGL_NO_SURFACE,
+                EGL_NO_CONTEXT,
+            );
+
+            eglDestroySurface(
+                display,
+                egl_surface,
+            );
+
+            eglDestroyContext(
+                display,
+                context,
+            );
+
+            eglTerminate(
+                display
+            );
+        }
+
+        return Err(
+            egl_failure(
+                "eglSwapBuffers"
+            )
+        );
+    }
+
+
+    println!(
+        "Native EGL diagnostic frame displayed:"
+    );
+
+
+    println!(
+        "    EGL version: {}.{}",
+        egl_major,
+        egl_minor
+    );
+
+
+    println!(
+        "    OpenGL context: 3.3 core"
+    );
+
+
+    println!(
+        "    Buffer size: {}x{}",
+        width,
+        height
+    );
+
+
+    println!(
+        "    Diagnostic color: blue"
+    );
+
+
+    unsafe {
+        eglMakeCurrent(
+            display,
+            EGL_NO_SURFACE,
+            EGL_NO_SURFACE,
+            EGL_NO_CONTEXT,
+        );
+
+        eglDestroySurface(
+            display,
+            egl_surface,
+        );
+
+        eglDestroyContext(
+            display,
+            context,
+        );
+
+        eglTerminate(
+            display
+        );
+    }
+
+
+    Ok(
+        ()
+    )
+}
+
+
+fn egl_failure(
+    operation: &str,
+) -> String {
+
+    let error =
+        unsafe {
+            eglGetError()
+        };
+
+
+    format!(
+        "{} failed with EGL error 0x{:04X}",
+        operation,
+        error,
     )
 }
 

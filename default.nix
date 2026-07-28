@@ -4,6 +4,8 @@
 , SDL2
 , SDL2_ttf
 , libGL
+, libglvnd
+, wayland
 , xorg
 }:
 
@@ -25,6 +27,8 @@ rustPlatform.buildRustPackage rec {
     SDL2
     SDL2_ttf
     libGL
+    libglvnd
+    wayland
     xorg.libX11
     xorg.libXScrnSaver
   ];

@@ -312,7 +312,7 @@ pub fn run(
 
 
     let surface_configuration =
-        crate::wayland_wallpaper::test_background_surface()?;
+        crate::wayland_wallpaper::test_egl_background_surface()?;
 
 
     println!(
@@ -355,6 +355,14 @@ pub fn run(
 
     println!(
         "    Pointer input: disabled"
+    );
+
+
+    println!();
+
+
+    println!(
+        "Native Wayland/EGL diagnostic surface test completed."
     );
 
 

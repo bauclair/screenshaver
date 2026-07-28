@@ -15,6 +15,7 @@ ctrlc = "3.4"
 evdev = "0.13"
 zbus = "5"
 wayland-client = "0.31"
+wayland-egl = "0.32"
 wayland-protocols = { version = "0.32", features = ["staging", "client"] }
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
