@@ -48,7 +48,7 @@ impl FrameTimeWindow {
         &mut self,
         elapsed: Duration,
         configured_fps: u32,
-    ) -> crate::construct_text_overlay::FpsWarningState {
+    ) -> crate::fps_monitor::FpsWarningState {
         let now = Instant::now();
 
         self.samples.push_back(
@@ -76,7 +76,7 @@ impl FrameTimeWindow {
             self.samples.len() as u32;
 
         if sample_count == 0 {
-            return crate::construct_text_overlay::FpsWarningState::Normal;
+            return crate::fps_monitor::FpsWarningState::Normal;
         }
 
         let average_seconds =
@@ -89,13 +89,13 @@ impl FrameTimeWindow {
         if average_seconds
             > ideal_seconds * 2.0
         {
-            crate::construct_text_overlay::FpsWarningState::Critical
+            crate::fps_monitor::FpsWarningState::Critical
         } else if average_seconds
             > ideal_seconds * 1.5
         {
-            crate::construct_text_overlay::FpsWarningState::Warning
+            crate::fps_monitor::FpsWarningState::Warning
         } else {
-            crate::construct_text_overlay::FpsWarningState::Normal
+            crate::fps_monitor::FpsWarningState::Normal
         }
     }
 }
@@ -135,7 +135,7 @@ struct ActivePreviewShader {
         ),
 
     fps_warning_state:
-        crate::construct_text_overlay::FpsWarningState,
+        crate::fps_monitor::FpsWarningState,
 
     fps_blink_visible:
         bool,
@@ -756,7 +756,7 @@ pub fn run_paths(
 
 
             if active.fps_warning_state
-                == crate::construct_text_overlay::FpsWarningState::Critical
+                == crate::fps_monitor::FpsWarningState::Critical
                 && active.last_fps_blink.elapsed()
                     >= FPS_CRITICAL_BLINK_INTERVAL
             {
@@ -773,10 +773,10 @@ pub fn run_paths(
 
             let overlay_warning_state =
                 if active.fps_warning_state
-                    == crate::construct_text_overlay::FpsWarningState::Critical
+                    == crate::fps_monitor::FpsWarningState::Critical
                     && !active.fps_blink_visible
                 {
-                    crate::construct_text_overlay::FpsWarningState::CriticalHidden
+                    crate::fps_monitor::FpsWarningState::CriticalHidden
                 } else {
                     active.fps_warning_state
                 };
@@ -784,7 +784,7 @@ pub fn run_paths(
 
             let warning_overlay_active =
                 active.fps_warning_state
-                    != crate::construct_text_overlay::FpsWarningState::Normal;
+                    != crate::fps_monitor::FpsWarningState::Normal;
 
 
             let overlay_should_display =
@@ -1239,7 +1239,7 @@ fn load_active_shader(
                 crate::display_overlay::OpenGlOverlay::new_with_fps_warning(
                     &overlay_descriptor,
                     configured_fps,
-                    crate::construct_text_overlay::FpsWarningState::Normal,
+                    crate::fps_monitor::FpsWarningState::Normal,
                     subtitle_placement,
                     output_width,
                     output_height,
@@ -1277,7 +1277,7 @@ fn load_active_shader(
                     output_height,
                 ),
             fps_warning_state:
-                crate::construct_text_overlay::FpsWarningState::Normal,
+                crate::fps_monitor::FpsWarningState::Normal,
             fps_blink_visible:
                 true,
             last_fps_blink:

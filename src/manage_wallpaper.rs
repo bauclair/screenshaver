@@ -3,8 +3,72 @@ use crate::define_wallpaper::WallpaperSettings;
 
 pub fn run(
     settings: WallpaperSettings,
+    configured_mode: &str,
     texture_policy: crate::load_config::TextureSelectionPolicy,
 ) -> Result<(), String> {
+
+    let parsed_mode =
+        crate::parse_mode::parse_mode(
+            configured_mode
+        );
+
+
+    let (
+        shader_mode,
+        shader_interval,
+    ) =
+        match parsed_mode.mode {
+
+            crate::parse_mode::ModeType::Single => {
+                (
+                    crate::manage_shader::ShaderMode::Single(
+                        parsed_mode.argument.clone()
+                    ),
+                    None,
+                )
+            }
+
+
+            crate::parse_mode::ModeType::Random => {
+                (
+                    crate::manage_shader::ShaderMode::Random,
+                    Some(
+                        std::time::Duration::from_secs(
+                            crate::parse_interval::parse_interval(
+                                &parsed_mode.argument
+                            )
+                            .seconds
+                        )
+                    ),
+                )
+            }
+
+
+            crate::parse_mode::ModeType::Ordered => {
+                (
+                    crate::manage_shader::ShaderMode::Ordered,
+                    Some(
+                        std::time::Duration::from_secs(
+                            crate::parse_interval::parse_interval(
+                                &parsed_mode.argument
+                            )
+                            .seconds
+                        )
+                    ),
+                )
+            }
+
+
+            crate::parse_mode::ModeType::Invalid => {
+                return Err(
+                    format!(
+                        "Invalid wallpaper mode '{}'; expected single:<shader>, random:<seconds>, or ordered:<seconds>",
+                        configured_mode,
+                    )
+                );
+            }
+        };
+
 
     let wallpaper_directory =
         crate::locate_wallpaper::wallpaper_directory()
@@ -43,6 +107,12 @@ pub fn run(
 
     println!(
         "Wallpaper mode configuration:"
+    );
+
+
+    println!(
+        "    Shader mode: {}",
+        configured_mode
     );
 
 
@@ -132,7 +202,7 @@ pub fn run(
 
     let shader_manager =
         crate::manage_shader::ShaderManager::from_shader_list(
-            crate::manage_shader::ShaderMode::Ordered,
+            shader_mode,
             shader_names,
         );
 
@@ -302,6 +372,7 @@ pub fn run(
     crate::wayland_wallpaper::run_egl_background_surface(
         shader_manager,
         &wallpaper_directory,
+        shader_interval,
         texture_policy,
     )?;
 

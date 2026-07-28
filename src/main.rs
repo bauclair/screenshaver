@@ -58,6 +58,7 @@ mod manage_wallpaper;
 mod notify_wallpaper;
 mod render_wallpaper;
 mod wayland_wallpaper;
+mod fps_monitor;
 
 use std::sync::Arc;
 use std::sync::atomic::{
@@ -518,7 +519,8 @@ crate::parse_arguments::Command::ListPalettes => {
 
         match crate::manage_wallpaper::run(
             cfg.wallpaper,
-            cfg.texture_policy,
+            &cfg.wallpaper_mode,
+            cfg.wallpaper_texture_policy,
         ) {
 
             Ok(()) => {}

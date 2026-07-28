@@ -826,6 +826,7 @@ fn print_active_wallpaper_shader(
 pub fn run_egl_background_surface(
     mut shader_manager: crate::manage_shader::ShaderManager,
     wallpaper_directory: &Path,
+    shader_interval: Option<Duration>,
     texture_policy: crate::load_config::TextureSelectionPolicy,
 ) -> Result<(), String> {
 
@@ -1209,6 +1210,7 @@ pub fn run_egl_background_surface(
         &active_shader,
         &mut shader_manager,
         wallpaper_directory,
+        shader_interval,
         texture_policy,
         &shutdown_requested,
     )?;
@@ -1538,6 +1540,7 @@ fn render_egl_wallpapers(
     active_shader: &ActiveWallpaperShader,
     shader_manager: &mut crate::manage_shader::ShaderManager,
     wallpaper_directory: &Path,
+    shader_interval: Option<Duration>,
     texture_policy: crate::load_config::TextureSelectionPolicy,
     shutdown_requested: &Arc<AtomicBool>,
 ) -> Result<(), String> {
@@ -1842,6 +1845,7 @@ fn render_egl_wallpapers(
             active_shader,
             shader_manager,
             wallpaper_directory,
+            shader_interval,
             texture_policy,
             shutdown_requested,
         );
@@ -1956,6 +1960,7 @@ fn render_mirror_frames(
     active_shader: &ActiveWallpaperShader,
     shader_manager: &mut crate::manage_shader::ShaderManager,
     wallpaper_directory: &Path,
+    shader_interval: Option<Duration>,
     texture_policy: crate::load_config::TextureSelectionPolicy,
     shutdown_requested: &Arc<AtomicBool>,
 ) -> Result<(), String> {
@@ -2059,12 +2064,6 @@ fn render_mirror_frames(
         Instant::now();
 
 
-    let shader_interval =
-        Duration::from_secs(
-            10
-        );
-
-
     let mut last_shader_switch =
         Instant::now();
 
@@ -2125,8 +2124,16 @@ fn render_mirror_frames(
             }
 
 
-            if last_shader_switch.elapsed()
-                >= shader_interval
+            if shader_interval
+                .map(
+                    |interval| {
+                        last_shader_switch.elapsed()
+                            >= interval
+                    }
+                )
+                .unwrap_or(
+                    false
+                )
             {
                 last_shader_switch =
                     Instant::now();
@@ -2321,10 +2328,15 @@ fn render_mirror_frames(
                                 );
 
 
-                                println!(
-                                    "    Interval: {} seconds",
-                                    shader_interval.as_secs()
-                                );
+                                if let Some(
+                                    interval
+                                ) = shader_interval
+                                {
+                                    println!(
+                                        "    Interval: {} seconds",
+                                        interval.as_secs()
+                                    );
+                                }
 
 
                                 println!();

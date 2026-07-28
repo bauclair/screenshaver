@@ -29,16 +29,6 @@ fn default_log_level() -> u8 {
 }
 
 
-fn default_wallpaper_monitor_mode() -> String {
-    "mirror".to_string()
-}
-
-
-fn default_wallpaper_notifications() -> bool {
-    true
-}
-
-
 //
 // ------------------------------------------------------------
 // Structures that exactly match screenshaver.toml
@@ -59,7 +49,7 @@ struct AppearanceSection {
 
 
 #[derive(Debug, Deserialize)]
-struct OperationSection {
+struct ScreensaverSection {
 
     mode: String,
 
@@ -70,6 +60,23 @@ struct OperationSection {
 
     #[serde(default)]
     global_palette: Option<String>,
+}
+
+
+#[derive(Debug, Deserialize)]
+struct WallpaperSection {
+
+    mode: String,
+
+    #[serde(default)]
+    global_texture: Option<String>,
+
+    #[serde(default)]
+    global_palette: Option<String>,
+
+    monitor_mode: String,
+
+    notifications: bool,
 }
 
 
@@ -131,37 +138,13 @@ struct DebugSection {
 
 
 #[derive(Debug, Deserialize)]
-struct WallpaperSection {
-
-    #[serde(default = "default_wallpaper_monitor_mode")]
-    monitor_mode: String,
-
-    #[serde(default = "default_wallpaper_notifications")]
-    notifications: bool,
-}
-
-
-impl Default for WallpaperSection {
-
-    fn default() -> Self {
-
-        Self {
-            monitor_mode:
-                default_wallpaper_monitor_mode(),
-
-            notifications:
-                default_wallpaper_notifications(),
-        }
-    }
-}
-
-
-#[derive(Debug, Deserialize)]
 struct RawToml {
 
     appearance: AppearanceSection,
 
-    operation: OperationSection,
+    screensaver: ScreensaverSection,
+
+    wallpaper: WallpaperSection,
 
     #[serde(default)]
     texture_override:
@@ -177,9 +160,6 @@ struct RawToml {
         Vec<
             RawFpsOverride
         >,
-
-    #[serde(default)]
-    wallpaper: WallpaperSection,
 
     locking: LockingSection,
 
@@ -264,15 +244,20 @@ pub struct Config {
     pub texture_policy:
         TextureSelectionPolicy,
 
+    pub wallpaper:
+        crate::define_wallpaper::WallpaperSettings,
+
+    pub wallpaper_mode: String,
+
+    pub wallpaper_texture_policy:
+        TextureSelectionPolicy,
+
     pub global_rendered_fps: u32,
 
     pub fps_overrides:
         Vec<
             FpsOverride
         >,
-
-    pub wallpaper:
-        crate::define_wallpaper::WallpaperSettings,
 
     pub screen_lock: bool,
 
@@ -398,17 +383,33 @@ pub fn load_config(
     // Parse global texture and palette policy
     //---------------------------------------------------------
 
-    let global_texture =
+    let screensaver_global_texture =
         parse_global_texture(
-            raw.operation
+            raw.screensaver
                 .global_texture
                 .as_deref()
         )?;
 
 
-    let global_palette =
+    let screensaver_global_palette =
         parse_global_palette(
-            raw.operation
+            raw.screensaver
+                .global_palette
+                .as_deref()
+        )?;
+
+
+    let wallpaper_global_texture =
+        parse_global_texture(
+            raw.wallpaper
+                .global_texture
+                .as_deref()
+        )?;
+
+
+    let wallpaper_global_palette =
+        parse_global_palette(
+            raw.wallpaper
                 .global_palette
                 .as_deref()
         )?;
@@ -422,9 +423,38 @@ pub fn load_config(
 
     let texture_policy =
         TextureSelectionPolicy {
-            global_texture,
-            global_palette,
+            global_texture:
+                screensaver_global_texture,
+            global_palette:
+                screensaver_global_palette,
+            texture_overrides:
+                texture_overrides.clone(),
+        };
+
+
+    let wallpaper_texture_policy =
+        TextureSelectionPolicy {
+            global_texture:
+                wallpaper_global_texture,
+            global_palette:
+                wallpaper_global_palette,
             texture_overrides,
+        };
+
+
+    let wallpaper_monitor_mode =
+        crate::define_wallpaper::WallpaperMonitorMode::parse(
+            &raw.wallpaper.monitor_mode
+        )?;
+
+
+    let wallpaper =
+        crate::define_wallpaper::WallpaperSettings {
+            monitor_mode:
+                wallpaper_monitor_mode,
+
+            notifications:
+                raw.wallpaper.notifications,
         };
 
 
@@ -452,21 +482,6 @@ pub fn load_config(
         );
 
 
-    let wallpaper =
-        crate::configure_wallpaper::resolve(
-            &raw.wallpaper.monitor_mode,
-            raw.wallpaper.notifications,
-        )
-        .map_err(
-            |error| {
-                format!(
-                    "Invalid [wallpaper] configuration: {}",
-                    error,
-                )
-            }
-        )?;
-
-
     //---------------------------------------------------------
     // Flatten configuration
     //---------------------------------------------------------
@@ -484,18 +499,23 @@ pub fn load_config(
                 raw.appearance.show_splash,
 
             mode:
-                raw.operation.mode,
+                raw.screensaver.mode,
 
             idle_timeout:
-                raw.operation.idle_timeout,
+                raw.screensaver.idle_timeout,
 
             texture_policy,
+
+            wallpaper,
+
+            wallpaper_mode:
+                raw.wallpaper.mode,
+
+            wallpaper_texture_policy,
 
             global_rendered_fps,
 
             fps_overrides,
-
-            wallpaper,
 
             screen_lock:
                 raw.locking.screen_lock,
@@ -530,12 +550,12 @@ pub fn load_config(
             ),
 
             format!(
-                "[CONFIG] mode = {}",
+                "[CONFIG] screensaver.mode = {}",
                 config.mode,
             ),
 
             format!(
-                "[CONFIG] idle_timeout = {}",
+                "[CONFIG] screensaver.idle_timeout = {}",
                 config.idle_timeout,
             ),
 
@@ -575,8 +595,43 @@ pub fn load_config(
             ),
 
             format!(
-                "[CONFIG] global_rendered_fps = {}",
-                config.global_rendered_fps,
+                "[CONFIG] wallpaper.mode = {}",
+                config.wallpaper_mode,
+            ),
+
+            format!(
+                "[CONFIG] wallpaper.global_texture = {}",
+                config
+                    .wallpaper_texture_policy
+                    .global_texture
+                    .as_ref()
+                    .map(
+                        |texture| {
+                            format_texture_specification(
+                                texture
+                            )
+                        }
+                    )
+                    .unwrap_or_else(
+                        || {
+                            "random".to_string()
+                        }
+                    ),
+            ),
+
+            format!(
+                "[CONFIG] wallpaper.global_palette = {}",
+                config
+                    .wallpaper_texture_policy
+                    .global_palette
+                    .map(
+                        |palette| {
+                            palette.name()
+                        }
+                    )
+                    .unwrap_or(
+                        "random"
+                    ),
             ),
 
             format!(
@@ -587,6 +642,11 @@ pub fn load_config(
             format!(
                 "[CONFIG] wallpaper.notifications = {}",
                 config.wallpaper.notifications,
+            ),
+
+            format!(
+                "[CONFIG] global_rendered_fps = {}",
+                config.global_rendered_fps,
             ),
 
             format!(

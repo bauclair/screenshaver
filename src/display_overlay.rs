@@ -205,7 +205,7 @@ impl OpenGlOverlay {
             u32,
 
         warning_state:
-            crate::construct_text_overlay::FpsWarningState,
+            crate::fps_monitor::FpsWarningState,
 
         placement:
             crate::parse_subtitle_placement::SubtitlePlacement,
@@ -248,7 +248,7 @@ impl OpenGlOverlay {
         Self::new_with_optional_fps_warning(
             descriptor,
             rendered_fps,
-            crate::construct_text_overlay::FpsWarningState::Normal,
+            crate::fps_monitor::FpsWarningState::Normal,
             placement,
             output_width,
             output_height,
@@ -264,7 +264,7 @@ impl OpenGlOverlay {
             Option<u32>,
 
         warning_state:
-            crate::construct_text_overlay::FpsWarningState,
+            crate::fps_monitor::FpsWarningState,
 
         placement:
             crate::parse_subtitle_placement::SubtitlePlacement,

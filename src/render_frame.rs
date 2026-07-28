@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -6,96 +5,15 @@ use std::time::{Duration, Instant};
 use sdl2::event::Event;
 use sdl2::video::{GLContext, GLProfile, Window};
 
+use crate::fps_monitor::{
+    FpsWarningState,
+    FrameTimeWindow,
+    FPS_CRITICAL_BLINK_INTERVAL,
+};
+
 
 const INPUT_STARTUP_GRACE: Duration = Duration::from_millis(750);
 const MOUSE_MOTION_EXIT_THRESHOLD: i32 = 4;
-
-const FPS_AVERAGE_WINDOW: Duration =
-    Duration::from_secs(5);
-
-const FPS_CRITICAL_BLINK_INTERVAL: Duration =
-    Duration::from_millis(500);
-
-
-struct FrameTimeWindow {
-    samples: VecDeque<(Instant, Duration)>,
-    total: Duration,
-}
-
-
-impl FrameTimeWindow {
-    fn new() -> Self {
-        Self {
-            samples: VecDeque::new(),
-            total: Duration::ZERO,
-        }
-    }
-
-
-    fn clear(
-        &mut self,
-    ) {
-        self.samples.clear();
-        self.total = Duration::ZERO;
-    }
-
-
-    fn record(
-        &mut self,
-        elapsed: Duration,
-        configured_fps: u32,
-    ) -> crate::construct_text_overlay::FpsWarningState {
-        let now = Instant::now();
-
-        self.samples.push_back(
-            (now, elapsed)
-        );
-
-        self.total += elapsed;
-
-        while let Some((timestamp, duration)) =
-            self.samples.front().copied()
-        {
-            if now.duration_since(timestamp)
-                <= FPS_AVERAGE_WINDOW
-            {
-                break;
-            }
-
-            self.samples.pop_front();
-            self.total = self.total.saturating_sub(
-                duration
-            );
-        }
-
-        let sample_count =
-            self.samples.len() as u32;
-
-        if sample_count == 0 {
-            return crate::construct_text_overlay::FpsWarningState::Normal;
-        }
-
-        let average_seconds =
-            self.total.as_secs_f64()
-                / sample_count as f64;
-
-        let ideal_seconds =
-            1.0 / configured_fps.max(1) as f64;
-
-        if average_seconds
-            > ideal_seconds * 2.0
-        {
-            crate::construct_text_overlay::FpsWarningState::Critical
-        } else if average_seconds
-            > ideal_seconds * 1.5
-        {
-            crate::construct_text_overlay::FpsWarningState::Warning
-        } else {
-            crate::construct_text_overlay::FpsWarningState::Normal
-        }
-    }
-}
-
 
 #[derive(Debug)]
 struct ActiveShader {
@@ -136,7 +54,7 @@ pub struct FrameRenderer {
             crate::load_config::FpsOverride
         >,
     fps_warning_state:
-        crate::construct_text_overlay::FpsWarningState,
+        FpsWarningState,
     fps_blink_visible: bool,
     last_fps_blink: Instant,
     frame_times: FrameTimeWindow,
@@ -291,7 +209,7 @@ impl FrameRenderer {
                         true,
                         subtitle_placement,
                         configured_fps,
-                        crate::construct_text_overlay::FpsWarningState::Normal,
+                        FpsWarningState::Normal,
                         window_width,
                         window_height,
                     )?
@@ -344,7 +262,7 @@ impl FrameRenderer {
                 configured_fps,
                 fps_overrides,
                 fps_warning_state:
-                    crate::construct_text_overlay::FpsWarningState::Normal,
+                    FpsWarningState::Normal,
                 fps_blink_visible:
                     true,
                 last_fps_blink:
@@ -493,11 +411,14 @@ impl FrameRenderer {
             gl::Finish();
         }
 
-        let warning_state =
+        let performance_status =
             self.frame_times.record(
                 shader_render_start.elapsed(),
                 self.configured_fps,
             );
+
+        let warning_state =
+            performance_status.warning_state;
 
         let warning_changed =
             warning_state
@@ -516,7 +437,7 @@ impl FrameRenderer {
             false;
 
         if self.fps_warning_state
-            == crate::construct_text_overlay::FpsWarningState::Critical
+            == FpsWarningState::Critical
             && self.last_fps_blink.elapsed()
                 >= FPS_CRITICAL_BLINK_INTERVAL
         {
@@ -530,17 +451,17 @@ impl FrameRenderer {
 
         let overlay_warning_state =
             if self.fps_warning_state
-                == crate::construct_text_overlay::FpsWarningState::Critical
+                == FpsWarningState::Critical
                 && !self.fps_blink_visible
             {
-                crate::construct_text_overlay::FpsWarningState::CriticalHidden
+                FpsWarningState::CriticalHidden
             } else {
                 self.fps_warning_state
             };
 
         let warning_overlay_active =
             self.fps_warning_state
-                != crate::construct_text_overlay::FpsWarningState::Normal;
+                != FpsWarningState::Normal;
 
         let overlay_should_display =
             self.subtitles
@@ -784,7 +705,7 @@ impl FrameRenderer {
                             true,
                             self.subtitle_placement,
                             new_configured_fps,
-                            crate::construct_text_overlay::FpsWarningState::Normal,
+                            FpsWarningState::Normal,
                             width,
                             height,
                         ) {
@@ -834,7 +755,7 @@ impl FrameRenderer {
                     self.window.size();
 
                 self.fps_warning_state =
-                    crate::construct_text_overlay::FpsWarningState::Normal;
+                    FpsWarningState::Normal;
 
                 self.frame_times.clear();
 
@@ -975,7 +896,7 @@ fn build_subtitle_overlay(
         crate::parse_subtitle_placement::SubtitlePlacement,
     configured_fps: u32,
     warning_state:
-        crate::construct_text_overlay::FpsWarningState,
+        FpsWarningState,
     output_width: u32,
     output_height: u32,
 ) -> Result<
