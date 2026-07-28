@@ -264,6 +264,49 @@ pub fn run(
 
 
     println!(
+        "Probing native Wayland wallpaper capabilities..."
+    );
+
+
+    let capabilities =
+        crate::wayland_wallpaper::probe_capabilities()?;
+
+
+    println!(
+        "Wayland wallpaper capabilities are available:"
+    );
+
+
+    println!(
+        "    wl_compositor: version {}",
+        capabilities
+            .compositor_version
+            .unwrap_or(
+                0
+            )
+    );
+
+
+    println!(
+        "    zwlr_layer_shell_v1: version {}",
+        capabilities
+            .layer_shell_version
+            .unwrap_or(
+                0
+            )
+    );
+
+
+    println!(
+        "    Advertised outputs: {}",
+        capabilities.output_count
+    );
+
+
+    println!();
+
+
+    println!(
         "Opening wallpaper rendering test window..."
     );
 

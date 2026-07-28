@@ -57,6 +57,7 @@ mod locate_wallpaper;
 mod manage_wallpaper;
 mod notify_wallpaper;
 mod render_wallpaper;
+mod wayland_wallpaper;
 
 use std::sync::Arc;
 use std::sync::atomic::{
