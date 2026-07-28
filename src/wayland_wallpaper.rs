@@ -647,6 +647,7 @@ pub fn probe_capabilities(
 
 #[derive(Debug)]
 struct ActiveWallpaperShader {
+    manager_name: String,
     source: String,
     shader_name: String,
     built_in_default: bool,
@@ -702,6 +703,7 @@ fn select_safe_wallpaper_shader(
             } => {
                 return Ok(
                     ActiveWallpaperShader {
+                        manager_name: requested_shader_name,
                         source,
                         shader_name,
                         built_in_default,
@@ -1197,6 +1199,8 @@ pub fn run_egl_background_surface(
         &mut state,
         &mut native_targets,
         &active_shader.source,
+        &mut shader_manager,
+        wallpaper_directory,
         &shutdown_requested,
     )?;
 
@@ -1523,6 +1527,8 @@ fn render_egl_wallpapers(
     state: &mut WaylandState,
     native_targets: &mut Vec<NativeWallpaperTarget>,
     fragment_source: &str,
+    shader_manager: &mut crate::manage_shader::ShaderManager,
+    wallpaper_directory: &Path,
     shutdown_requested: &Arc<AtomicBool>,
 ) -> Result<(), String> {
 
@@ -1824,6 +1830,8 @@ fn render_egl_wallpapers(
             state,
             native_targets,
             fragment_source,
+            shader_manager,
+            wallpaper_directory,
             shutdown_requested,
         );
 
@@ -1935,10 +1943,12 @@ fn render_mirror_frames(
     state: &mut WaylandState,
     native_targets: &mut Vec<NativeWallpaperTarget>,
     fragment_source: &str,
+    shader_manager: &mut crate::manage_shader::ShaderManager,
+    wallpaper_directory: &Path,
     shutdown_requested: &Arc<AtomicBool>,
 ) -> Result<(), String> {
 
-    let program =
+    let mut program =
         crate::compile_shader::build_program(
             crate::define_constants::VERTEX_SHADER,
             fragment_source,
@@ -1965,35 +1975,45 @@ fn render_mirror_frames(
     }
 
 
-    let i_time =
+    let mut i_time =
         uniform_location(
             program,
             "iTime",
         )?;
 
 
-    let i_resolution =
+    let mut i_resolution =
         uniform_location(
             program,
             "iResolution",
         )?;
 
 
-    let i_mouse =
+    let mut i_mouse =
         uniform_location(
             program,
             "iMouse",
         )?;
 
 
-    let i_frame =
+    let mut i_frame =
         uniform_location(
             program,
             "iFrame",
         )?;
 
 
-    let start_time =
+    let mut start_time =
+        Instant::now();
+
+
+    let shader_interval =
+        Duration::from_secs(
+            10
+        );
+
+
+    let mut last_shader_switch =
         Instant::now();
 
 
@@ -2050,6 +2070,188 @@ fn render_mirror_frames(
                 )
             {
                 break Ok(());
+            }
+
+
+            if last_shader_switch.elapsed()
+                >= shader_interval
+            {
+                last_shader_switch =
+                    Instant::now();
+
+
+                if let Some(
+                    first_target
+                ) = egl_targets.first()
+                {
+                    if unsafe {
+                        eglMakeCurrent(
+                            display,
+                            first_target.surface,
+                            first_target.surface,
+                            context,
+                        )
+                    } == EGL_FALSE
+                    {
+                        break 'render_loop Err(
+                            egl_failure(
+                                "eglMakeCurrent before switching wallpaper shaders"
+                            )
+                        );
+                    }
+                }
+
+
+                match select_safe_wallpaper_shader(
+                    shader_manager,
+                    wallpaper_directory,
+                ) {
+                    Ok(
+                        next_shader
+                    ) => {
+                        match crate::compile_shader::build_program(
+                            crate::define_constants::VERTEX_SHADER,
+                            &next_shader.source,
+                        ) {
+                            Ok(
+                                next_program
+                            ) => {
+                                let next_i_time =
+                                    uniform_location(
+                                        next_program,
+                                        "iTime",
+                                    )?;
+
+
+                                let next_i_resolution =
+                                    uniform_location(
+                                        next_program,
+                                        "iResolution",
+                                    )?;
+
+
+                                let next_i_mouse =
+                                    uniform_location(
+                                        next_program,
+                                        "iMouse",
+                                    )?;
+
+
+                                let next_i_frame =
+                                    uniform_location(
+                                        next_program,
+                                        "iFrame",
+                                    )?;
+
+
+                                unsafe {
+                                    gl::UseProgram(
+                                        0
+                                    );
+
+                                    gl::DeleteProgram(
+                                        program
+                                    );
+                                }
+
+
+                                program =
+                                    next_program;
+
+
+                                i_time =
+                                    next_i_time;
+
+
+                                i_resolution =
+                                    next_i_resolution;
+
+
+                                i_mouse =
+                                    next_i_mouse;
+
+
+                                i_frame =
+                                    next_i_frame;
+
+
+                                start_time =
+                                    Instant::now();
+
+
+                                frame =
+                                    0;
+
+
+                                println!(
+                                    "Wallpaper shader changed:"
+                                );
+
+
+                                println!(
+                                    "    Shader: {}",
+                                    next_shader.shader_name
+                                );
+
+
+                                println!(
+                                    "    Interval: {} seconds",
+                                    shader_interval.as_secs()
+                                );
+
+
+                                println!();
+                            }
+
+
+                            Err(
+                                error
+                            ) => {
+                                println!(
+                                    "Wallpaper shader compilation failed; keeping the current shader:"
+                                );
+
+
+                                println!(
+                                    "    Shader: {}",
+                                    next_shader.shader_name
+                                );
+
+
+                                println!(
+                                    "    Error: {}",
+                                    error
+                                );
+
+
+                                println!();
+
+
+                                shader_manager.remove_shader(
+                                    &next_shader.manager_name
+                                );
+                            }
+                        }
+                    }
+
+
+                    Err(
+                        error
+                    ) => {
+                        println!(
+                            "Wallpaper shader selection failed; keeping the current shader:"
+                        );
+
+
+                        println!(
+                            "    Error: {}",
+                            error
+                        );
+
+
+                        println!();
+                    }
+                }
             }
 
 
