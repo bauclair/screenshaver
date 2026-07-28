@@ -298,8 +298,8 @@ pub fn run(
 
 
     println!(
-        "    Advertised outputs: {}",
-        capabilities.output_count
+        "    Wallpaper targets: {}",
+        capabilities.targets.len()
     );
 
 
@@ -307,7 +307,7 @@ pub fn run(
         index,
         output,
     ) in capabilities
-        .outputs
+        .targets
         .iter()
         .enumerate()
     {
@@ -315,7 +315,7 @@ pub fn run(
 
 
         println!(
-            "    Output {}:",
+            "    Target {}:",
             index + 1
         );
 

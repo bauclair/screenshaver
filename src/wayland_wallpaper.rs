@@ -57,7 +57,7 @@ use wayland_protocols_wlr::layer_shell::v1::client::{
 
 
 #[derive(Debug, Clone, Default)]
-pub struct WallpaperOutputInfo {
+pub struct WallpaperTargetInfo {
     pub registry_name: u32,
     pub connector_name: Option<String>,
     pub description: Option<String>,
@@ -83,12 +83,19 @@ struct OutputDispatchData {
 }
 
 
+#[derive(Debug, Clone)]
+struct WallpaperTarget {
+    output: wl_output::WlOutput,
+    info: WallpaperTargetInfo,
+}
+
+
 #[derive(Debug, Default)]
 pub struct WallpaperWaylandCapabilities {
     pub compositor_version: Option<u32>,
     pub layer_shell_version: Option<u32>,
     pub output_count: usize,
-    pub outputs: Vec<WallpaperOutputInfo>,
+    pub targets: Vec<WallpaperTargetInfo>,
 }
 
 
@@ -104,12 +111,10 @@ pub struct WallpaperSurfaceConfiguration {
 struct WaylandState {
     compositor: Option<wl_compositor::WlCompositor>,
     layer_shell: Option<ZwlrLayerShellV1>,
-    output: Option<wl_output::WlOutput>,
-
     compositor_version: Option<u32>,
     layer_shell_version: Option<u32>,
     output_count: usize,
-    outputs: Vec<WallpaperOutputInfo>,
+    targets: Vec<WallpaperTarget>,
 
     configured: Option<WallpaperSurfaceConfiguration>,
     closed: bool,
@@ -207,19 +212,6 @@ impl Dispatch<wl_registry::WlRegistry, ()>
                     1;
 
 
-                state.outputs.push(
-                    WallpaperOutputInfo {
-                        registry_name:
-                            name,
-
-                        scale:
-                            1,
-
-                        ..WallpaperOutputInfo::default()
-                    }
-                );
-
-
                 let output =
                     registry.bind::<
                         wl_output::WlOutput,
@@ -238,15 +230,22 @@ impl Dispatch<wl_registry::WlRegistry, ()>
                     );
 
 
-                if state
-                    .output
-                    .is_none()
-                {
-                    state.output =
-                        Some(
-                            output
-                        );
-                }
+                state.targets.push(
+                    WallpaperTarget {
+                        output,
+
+                        info:
+                            WallpaperTargetInfo {
+                                registry_name:
+                                    name,
+
+                                scale:
+                                    1,
+
+                                ..WallpaperTargetInfo::default()
+                            },
+                    }
+                );
             }
 
 
@@ -324,20 +323,24 @@ impl Dispatch<wl_output::WlOutput, OutputDispatchData>
     ) {
 
         let Some(
-            output
+            target
         ) =
             state
-                .outputs
+                .targets
                 .iter_mut()
                 .find(
-                    |output| {
-                        output.registry_name
+                    |target| {
+                        target.info.registry_name
                             == data.registry_name
                     }
                 )
         else {
             return;
         };
+
+
+        let output =
+            &mut target.info;
 
 
         match event {
@@ -512,8 +515,16 @@ pub fn probe_capabilities(
             output_count:
                 state.output_count,
 
-            outputs:
-                state.outputs,
+            targets:
+                state
+                    .targets
+                    .into_iter()
+                    .map(
+                        |target| {
+                            target.info
+                        }
+                    )
+                    .collect(),
         }
     )
 }
@@ -599,16 +610,26 @@ pub fn run_egl_background_surface(
             )?;
 
 
-    let output =
+    let selected_target =
         state
-            .output
-            .clone()
+            .targets
+            .first()
+            .cloned()
             .ok_or_else(
                 || {
-                    "The Wayland compositor did not advertise any wl_output objects"
+                    "The Wayland compositor did not provide any wallpaper targets"
                         .to_string()
                 }
             )?;
+
+
+    print_selected_target(
+        &selected_target.info
+    );
+
+
+    let output =
+        selected_target.output;
 
 
     let surface =
@@ -916,11 +937,11 @@ fn connect_and_bind(
 
 
     if state
-        .output
-        .is_none()
+        .targets
+        .is_empty()
     {
         return Err(
-            "The Wayland compositor did not advertise any wl_output objects"
+            "The Wayland compositor did not provide any wallpaper targets"
                 .to_string()
         );
     }
@@ -1881,6 +1902,62 @@ fn apply_surface_resize(
 
 
     Ok(())
+}
+
+
+fn print_selected_target(
+    target: &WallpaperTargetInfo,
+) {
+
+    println!(
+        "Selected wallpaper target:"
+    );
+
+
+    println!(
+        "    Registry name: {}",
+        target.registry_name
+    );
+
+
+    println!(
+        "    Connector: {}",
+        target
+            .connector_name
+            .as_deref()
+            .unwrap_or(
+                "<not advertised>"
+            )
+    );
+
+
+    println!(
+        "    Description: {}",
+        target
+            .description
+            .as_deref()
+            .unwrap_or(
+                "<not advertised>"
+            )
+    );
+
+
+    println!(
+        "    Current mode: {}x{} @ {:.3} Hz",
+        target.mode_width,
+        target.mode_height,
+        target.refresh_millihertz as f64
+            / 1000.0
+    );
+
+
+    println!(
+        "    Scale: {}",
+        target.scale
+    );
+
+
+    println!();
 }
 
 
