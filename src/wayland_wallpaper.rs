@@ -12,7 +12,10 @@ use std::ffi::{
 };
 use std::ptr;
 use std::thread;
-use std::time::Duration;
+use std::time::{
+    Duration,
+    Instant,
+};
 
 use wayland_client::{
     delegate_noop,
@@ -294,6 +297,7 @@ pub fn probe_capabilities(
 
 
 pub fn test_egl_background_surface(
+    fragment_source: &str,
 ) -> Result<WallpaperSurfaceConfiguration, String> {
 
     let (
@@ -501,19 +505,13 @@ pub fn test_egl_background_surface(
         )?;
 
 
-    render_egl_diagnostic_frame(
+    render_egl_shader_test(
         &connection,
         &egl_window,
         buffer_width,
         buffer_height,
+        fragment_source,
     )?;
-
-
-    thread::sleep(
-        Duration::from_secs(
-            2
-        )
-    );
 
 
     drop(
@@ -774,11 +772,12 @@ unsafe extern "C" {
 }
 
 
-fn render_egl_diagnostic_frame(
+fn render_egl_shader_test(
     connection: &Connection,
     egl_window: &wayland_egl::WlEglSurface,
     width: i32,
     height: i32,
+    fragment_source: &str,
 ) -> Result<(), String> {
 
     let native_display =
@@ -1026,92 +1025,14 @@ fn render_egl_diagnostic_frame(
     );
 
 
-    unsafe {
-        gl::Viewport(
-            0,
-            0,
-            width,
-            height,
-        );
-
-        gl::ClearColor(
-            0.08,
-            0.20,
-            0.55,
-            1.0,
-        );
-
-        gl::Clear(
-            gl::COLOR_BUFFER_BIT
-        );
-    }
-
-
-    if unsafe {
-        eglSwapBuffers(
+    let render_result =
+        render_native_shader_frames(
             display,
             egl_surface,
-        )
-    } == EGL_FALSE
-    {
-        unsafe {
-            eglMakeCurrent(
-                display,
-                EGL_NO_SURFACE,
-                EGL_NO_SURFACE,
-                EGL_NO_CONTEXT,
-            );
-
-            eglDestroySurface(
-                display,
-                egl_surface,
-            );
-
-            eglDestroyContext(
-                display,
-                context,
-            );
-
-            eglTerminate(
-                display
-            );
-        }
-
-        return Err(
-            egl_failure(
-                "eglSwapBuffers"
-            )
+            width,
+            height,
+            fragment_source,
         );
-    }
-
-
-    println!(
-        "Native EGL diagnostic frame displayed:"
-    );
-
-
-    println!(
-        "    EGL version: {}.{}",
-        egl_major,
-        egl_minor
-    );
-
-
-    println!(
-        "    OpenGL context: 3.3 core"
-    );
-
-
-    println!(
-        "    Buffer size: {}x{}",
-        width,
-        height
-    );
-
-
-    println!(
-        "    Diagnostic color: blue"
-    );
 
 
     unsafe {
@@ -1138,9 +1059,349 @@ fn render_egl_diagnostic_frame(
     }
 
 
+    render_result?;
+
+
+    println!(
+        "Native EGL shader test completed:"
+    );
+
+
+    println!(
+        "    EGL version: {}.{}",
+        egl_major,
+        egl_minor
+    );
+
+
+    println!(
+        "    OpenGL context: 3.3 core"
+    );
+
+
+    println!(
+        "    Buffer size: {}x{}",
+        width,
+        height
+    );
+
+
+    println!(
+        "    Render duration: 5 seconds"
+    );
+
+
     Ok(
         ()
     )
+}
+
+
+fn render_native_shader_frames(
+    display: EglDisplay,
+    egl_surface: EglSurface,
+    width: i32,
+    height: i32,
+    fragment_source: &str,
+) -> Result<(), String> {
+
+    let program =
+        crate::compile_shader::build_program(
+            crate::define_constants::VERTEX_SHADER,
+            fragment_source,
+        )?;
+
+
+    let mut vao =
+        0_u32;
+
+
+    unsafe {
+        gl::GenVertexArrays(
+            1,
+            &mut vao,
+        );
+
+        gl::BindVertexArray(
+            vao
+        );
+
+        gl::UseProgram(
+            program
+        );
+    }
+
+
+    let i_time =
+        uniform_location(
+            program,
+            "iTime",
+        )?;
+
+
+    let i_resolution =
+        uniform_location(
+            program,
+            "iResolution",
+        )?;
+
+
+    let i_mouse =
+        uniform_location(
+            program,
+            "iMouse",
+        )?;
+
+
+    let i_frame =
+        uniform_location(
+            program,
+            "iFrame",
+        )?;
+
+
+    let start_time =
+        Instant::now();
+
+
+    let test_duration =
+        Duration::from_secs(
+            5
+        );
+
+
+    let mut frame =
+        0_i32;
+
+
+    let result =
+        loop {
+
+            let elapsed =
+                start_time.elapsed();
+
+
+            if elapsed
+                >= test_duration
+            {
+                break Ok(());
+            }
+
+
+            unsafe {
+                gl::Viewport(
+                    0,
+                    0,
+                    width,
+                    height,
+                );
+
+                gl::ClearColor(
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                );
+
+                gl::Clear(
+                    gl::COLOR_BUFFER_BIT
+                );
+
+                gl::UseProgram(
+                    program
+                );
+
+                set_uniform_1f(
+                    i_time,
+                    elapsed.as_secs_f32(),
+                );
+
+                set_uniform_3f(
+                    i_resolution,
+                    width as f32,
+                    height as f32,
+                    1.0,
+                );
+
+                set_uniform_4f(
+                    i_mouse,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                );
+
+                set_uniform_1i(
+                    i_frame,
+                    frame,
+                );
+
+                gl::BindVertexArray(
+                    vao
+                );
+
+                gl::DrawArrays(
+                    gl::TRIANGLES,
+                    0,
+                    3,
+                );
+            }
+
+
+            if unsafe {
+                eglSwapBuffers(
+                    display,
+                    egl_surface,
+                )
+            } == EGL_FALSE
+            {
+                break Err(
+                    egl_failure(
+                        "eglSwapBuffers"
+                    )
+                );
+            }
+
+
+            frame =
+                frame.saturating_add(
+                    1
+                );
+
+
+            thread::sleep(
+                Duration::from_millis(
+                    1
+                )
+            );
+        };
+
+
+    unsafe {
+        gl::UseProgram(
+            0
+        );
+
+        gl::BindVertexArray(
+            0
+        );
+
+        gl::DeleteVertexArrays(
+            1,
+            &vao,
+        );
+
+        gl::DeleteProgram(
+            program
+        );
+    }
+
+
+    result
+}
+
+
+fn uniform_location(
+    program: u32,
+    name: &str,
+) -> Result<i32, String> {
+
+    let c_name =
+        CString::new(
+            name
+        )
+        .map_err(
+            |_| {
+                format!(
+                    "Uniform name contains an interior null byte: {}",
+                    name,
+                )
+            }
+        )?;
+
+
+    Ok(
+        unsafe {
+            gl::GetUniformLocation(
+                program,
+                c_name.as_ptr(),
+            )
+        }
+    )
+}
+
+
+fn set_uniform_1f(
+    location: i32,
+    value: f32,
+) {
+
+    if location >= 0 {
+        unsafe {
+            gl::Uniform1f(
+                location,
+                value,
+            );
+        }
+    }
+}
+
+
+fn set_uniform_1i(
+    location: i32,
+    value: i32,
+) {
+
+    if location >= 0 {
+        unsafe {
+            gl::Uniform1i(
+                location,
+                value,
+            );
+        }
+    }
+}
+
+
+fn set_uniform_3f(
+    location: i32,
+    x: f32,
+    y: f32,
+    z: f32,
+) {
+
+    if location >= 0 {
+        unsafe {
+            gl::Uniform3f(
+                location,
+                x,
+                y,
+                z,
+            );
+        }
+    }
+}
+
+
+fn set_uniform_4f(
+    location: i32,
+    x: f32,
+    y: f32,
+    z: f32,
+    w: f32,
+) {
+
+    if location >= 0 {
+        unsafe {
+            gl::Uniform4f(
+                location,
+                x,
+                y,
+                z,
+                w,
+            );
+        }
+    }
 }
 
 

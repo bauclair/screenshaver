@@ -312,7 +312,7 @@ pub fn run(
 
 
     let surface_configuration =
-        crate::wayland_wallpaper::test_egl_background_surface()?;
+        crate::wayland_wallpaper::test_egl_background_surface(&source)?;
 
 
     println!(
@@ -362,7 +362,7 @@ pub fn run(
 
 
     println!(
-        "Native Wayland/EGL diagnostic surface test completed."
+        "Native Wayland/EGL shader surface test completed."
     );
 
 
