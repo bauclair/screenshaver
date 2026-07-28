@@ -56,11 +56,39 @@ use wayland_protocols_wlr::layer_shell::v1::client::{
 };
 
 
+#[derive(Debug, Clone, Default)]
+pub struct WallpaperOutputInfo {
+    pub registry_name: u32,
+    pub connector_name: Option<String>,
+    pub description: Option<String>,
+    pub make: Option<String>,
+    pub model: Option<String>,
+    pub logical_x: i32,
+    pub logical_y: i32,
+    pub physical_width_mm: i32,
+    pub physical_height_mm: i32,
+    pub mode_width: i32,
+    pub mode_height: i32,
+    pub refresh_millihertz: i32,
+    pub scale: i32,
+    pub subpixel: Option<String>,
+    pub transform: Option<String>,
+    pub complete: bool,
+}
+
+
+#[derive(Debug, Clone)]
+struct OutputDispatchData {
+    registry_name: u32,
+}
+
+
 #[derive(Debug, Default)]
 pub struct WallpaperWaylandCapabilities {
     pub compositor_version: Option<u32>,
     pub layer_shell_version: Option<u32>,
     pub output_count: usize,
+    pub outputs: Vec<WallpaperOutputInfo>,
 }
 
 
@@ -81,6 +109,7 @@ struct WaylandState {
     compositor_version: Option<u32>,
     layer_shell_version: Option<u32>,
     output_count: usize,
+    outputs: Vec<WallpaperOutputInfo>,
 
     configured: Option<WallpaperSurfaceConfiguration>,
     closed: bool,
@@ -178,24 +207,44 @@ impl Dispatch<wl_registry::WlRegistry, ()>
                     1;
 
 
+                state.outputs.push(
+                    WallpaperOutputInfo {
+                        registry_name:
+                            name,
+
+                        scale:
+                            1,
+
+                        ..WallpaperOutputInfo::default()
+                    }
+                );
+
+
+                let output =
+                    registry.bind::<
+                        wl_output::WlOutput,
+                        _,
+                        _
+                    >(
+                        name,
+                        version.min(
+                            4
+                        ),
+                        queue_handle,
+                        OutputDispatchData {
+                            registry_name:
+                                name,
+                        },
+                    );
+
+
                 if state
                     .output
                     .is_none()
                 {
                     state.output =
                         Some(
-                            registry.bind::<
-                                wl_output::WlOutput,
-                                _,
-                                _
-                            >(
-                                name,
-                                version.min(
-                                    4
-                                ),
-                                queue_handle,
-                                (),
-                            )
+                            output
                         );
                 }
             }
@@ -262,10 +311,165 @@ delegate_noop!(
 );
 
 
-delegate_noop!(
-    WaylandState:
-    ignore wl_output::WlOutput
-);
+impl Dispatch<wl_output::WlOutput, OutputDispatchData>
+    for WaylandState
+{
+    fn event(
+        state: &mut Self,
+        _output: &wl_output::WlOutput,
+        event: wl_output::Event,
+        data: &OutputDispatchData,
+        _connection: &Connection,
+        _queue_handle: &QueueHandle<Self>,
+    ) {
+
+        let Some(
+            output
+        ) =
+            state
+                .outputs
+                .iter_mut()
+                .find(
+                    |output| {
+                        output.registry_name
+                            == data.registry_name
+                    }
+                )
+        else {
+            return;
+        };
+
+
+        match event {
+
+            wl_output::Event::Geometry {
+                x,
+                y,
+                physical_width,
+                physical_height,
+                subpixel,
+                make,
+                model,
+                transform,
+            } => {
+
+                output.logical_x =
+                    x;
+
+
+                output.logical_y =
+                    y;
+
+
+                output.physical_width_mm =
+                    physical_width;
+
+
+                output.physical_height_mm =
+                    physical_height;
+
+
+                output.subpixel =
+                    Some(
+                        format!(
+                            "{:?}",
+                            subpixel,
+                        )
+                    );
+
+
+                output.make =
+                    Some(
+                        make
+                    );
+
+
+                output.model =
+                    Some(
+                        model
+                    );
+
+
+                output.transform =
+                    Some(
+                        format!(
+                            "{:?}",
+                            transform,
+                        )
+                    );
+            }
+
+
+            wl_output::Event::Mode {
+                flags,
+                width,
+                height,
+                refresh,
+            } => {
+
+                if format!(
+                    "{:?}",
+                    flags,
+                )
+                .contains(
+                    "Current"
+                ) {
+                    output.mode_width =
+                        width;
+
+
+                    output.mode_height =
+                        height;
+
+
+                    output.refresh_millihertz =
+                        refresh;
+                }
+            }
+
+
+            wl_output::Event::Done => {
+
+                output.complete =
+                    true;
+            }
+
+
+            wl_output::Event::Scale {
+                factor,
+            } => {
+
+                output.scale =
+                    factor;
+            }
+
+
+            wl_output::Event::Name {
+                name,
+            } => {
+
+                output.connector_name =
+                    Some(
+                        name
+                    );
+            }
+
+
+            wl_output::Event::Description {
+                description,
+            } => {
+
+                output.description =
+                    Some(
+                        description
+                    );
+            }
+
+
+            _ => {}
+        }
+    }
+}
 
 
 delegate_noop!(
@@ -307,6 +511,9 @@ pub fn probe_capabilities(
 
             output_count:
                 state.output_count,
+
+            outputs:
+                state.outputs,
         }
     )
 }
@@ -666,6 +873,20 @@ fn connect_and_bind(
             |error| {
                 format!(
                     "Unable to read Wayland compositor capabilities: {}",
+                    error,
+                )
+            }
+        )?;
+
+
+    event_queue
+        .roundtrip(
+            &mut state
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to read Wayland output metadata: {}",
                     error,
                 )
             }

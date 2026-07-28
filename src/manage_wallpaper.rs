@@ -303,6 +303,120 @@ pub fn run(
     );
 
 
+    for (
+        index,
+        output,
+    ) in capabilities
+        .outputs
+        .iter()
+        .enumerate()
+    {
+        println!();
+
+
+        println!(
+            "    Output {}:",
+            index + 1
+        );
+
+
+        println!(
+            "        Registry name: {}",
+            output.registry_name
+        );
+
+
+        println!(
+            "        Connector: {}",
+            output
+                .connector_name
+                .as_deref()
+                .unwrap_or(
+                    "<not advertised>"
+                )
+        );
+
+
+        println!(
+            "        Description: {}",
+            output
+                .description
+                .as_deref()
+                .unwrap_or(
+                    "<not advertised>"
+                )
+        );
+
+
+        println!(
+            "        Make: {}",
+            output
+                .make
+                .as_deref()
+                .unwrap_or(
+                    "<not advertised>"
+                )
+        );
+
+
+        println!(
+            "        Model: {}",
+            output
+                .model
+                .as_deref()
+                .unwrap_or(
+                    "<not advertised>"
+                )
+        );
+
+
+        println!(
+            "        Position: {},{}",
+            output.logical_x,
+            output.logical_y
+        );
+
+
+        println!(
+            "        Current mode: {}x{} @ {:.3} Hz",
+            output.mode_width,
+            output.mode_height,
+            output.refresh_millihertz as f64
+                / 1000.0
+        );
+
+
+        println!(
+            "        Physical size: {}x{} mm",
+            output.physical_width_mm,
+            output.physical_height_mm
+        );
+
+
+        println!(
+            "        Scale: {}",
+            output.scale
+        );
+
+
+        println!(
+            "        Transform: {}",
+            output
+                .transform
+                .as_deref()
+                .unwrap_or(
+                    "<not advertised>"
+                )
+        );
+
+
+        println!(
+            "        Metadata complete: {}",
+            output.complete
+        );
+    }
+
+
     println!();
 
 
@@ -311,51 +425,9 @@ pub fn run(
     );
 
 
-    let surface_configuration =
-        crate::wayland_wallpaper::run_egl_background_surface(&source)?;
-
-
-    println!(
-        "Wayland background surface configured successfully:"
-    );
-
-
-    println!(
-        "    Width: {}",
-        surface_configuration.width
-    );
-
-
-    println!(
-        "    Height: {}",
-        surface_configuration.height
-    );
-
-
-    println!(
-        "    Configure serial: {}",
-        surface_configuration.serial
-    );
-
-
-    println!(
-        "    Layer: background"
-    );
-
-
-    println!(
-        "    Anchors: top, bottom, left, right"
-    );
-
-
-    println!(
-        "    Keyboard input: disabled"
-    );
-
-
-    println!(
-        "    Pointer input: disabled"
-    );
+    crate::wayland_wallpaper::run_egl_background_surface(
+        &source
+    )?;
 
 
     println!();
