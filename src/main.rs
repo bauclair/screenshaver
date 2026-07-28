@@ -50,6 +50,7 @@ mod display_overlay;
 mod tray_icon;
 
 mod define_operation;
+mod define_wallpaper;
 mod configure_wallpaper;
 mod control_wallpaper;
 mod locate_wallpaper;
@@ -104,6 +105,7 @@ let runtime_logfile =
 
         crate::parse_arguments::Command::Run
         | crate::parse_arguments::Command::Start
+        | crate::parse_arguments::Command::Wallpaper
         | crate::parse_arguments::Command::PreviewTexture { .. }
         | crate::parse_arguments::Command::PreviewShader { .. }
         | crate::parse_arguments::Command::DeleteCache => {
@@ -132,12 +134,7 @@ match command {
     | crate::parse_arguments::Command::Start => {}
 
 
-    crate::parse_arguments::Command::Wallpaper => {
-
-        crate::manage_wallpaper::run();
-
-        return;
-    }
+    crate::parse_arguments::Command::Wallpaper => {}
 
 
     crate::parse_arguments::Command::Stop => {
@@ -510,6 +507,40 @@ crate::parse_arguments::Command::ListPalettes => {
             &logfile,
             "[MAIN] === CONFIG END ===",
         );
+    }
+
+
+    if matches!(
+        command,
+        crate::parse_arguments::Command::Wallpaper
+    ) {
+
+        match crate::manage_wallpaper::run(
+            cfg.wallpaper
+        ) {
+
+            Ok(()) => {}
+
+            Err(error) => {
+
+                eprintln!(
+                    "[WALLPAPER] {}",
+                    error
+                );
+
+
+                crate::logger::error(
+                    &logfile,
+                    &format!(
+                        "[WALLPAPER] {}",
+                        error,
+                    ),
+                );
+            }
+        }
+
+
+        return;
     }
 
 

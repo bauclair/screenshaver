@@ -29,6 +29,16 @@ fn default_log_level() -> u8 {
 }
 
 
+fn default_wallpaper_monitor_mode() -> String {
+    "mirror".to_string()
+}
+
+
+fn default_wallpaper_notifications() -> bool {
+    true
+}
+
+
 //
 // ------------------------------------------------------------
 // Structures that exactly match screenshaver.toml
@@ -121,6 +131,32 @@ struct DebugSection {
 
 
 #[derive(Debug, Deserialize)]
+struct WallpaperSection {
+
+    #[serde(default = "default_wallpaper_monitor_mode")]
+    monitor_mode: String,
+
+    #[serde(default = "default_wallpaper_notifications")]
+    notifications: bool,
+}
+
+
+impl Default for WallpaperSection {
+
+    fn default() -> Self {
+
+        Self {
+            monitor_mode:
+                default_wallpaper_monitor_mode(),
+
+            notifications:
+                default_wallpaper_notifications(),
+        }
+    }
+}
+
+
+#[derive(Debug, Deserialize)]
 struct RawToml {
 
     appearance: AppearanceSection,
@@ -141,6 +177,9 @@ struct RawToml {
         Vec<
             RawFpsOverride
         >,
+
+    #[serde(default)]
+    wallpaper: WallpaperSection,
 
     locking: LockingSection,
 
@@ -231,6 +270,9 @@ pub struct Config {
         Vec<
             FpsOverride
         >,
+
+    pub wallpaper:
+        crate::define_wallpaper::WallpaperSettings,
 
     pub screen_lock: bool,
 
@@ -410,6 +452,21 @@ pub fn load_config(
         );
 
 
+    let wallpaper =
+        crate::configure_wallpaper::resolve(
+            &raw.wallpaper.monitor_mode,
+            raw.wallpaper.notifications,
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Invalid [wallpaper] configuration: {}",
+                    error,
+                )
+            }
+        )?;
+
+
     //---------------------------------------------------------
     // Flatten configuration
     //---------------------------------------------------------
@@ -437,6 +494,8 @@ pub fn load_config(
             global_rendered_fps,
 
             fps_overrides,
+
+            wallpaper,
 
             screen_lock:
                 raw.locking.screen_lock,
@@ -518,6 +577,16 @@ pub fn load_config(
             format!(
                 "[CONFIG] global_rendered_fps = {}",
                 config.global_rendered_fps,
+            ),
+
+            format!(
+                "[CONFIG] wallpaper.monitor_mode = {}",
+                config.wallpaper.monitor_mode.name(),
+            ),
+
+            format!(
+                "[CONFIG] wallpaper.notifications = {}",
+                config.wallpaper.notifications,
             ),
 
             format!(
