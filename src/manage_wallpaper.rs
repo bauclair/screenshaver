@@ -307,12 +307,12 @@ pub fn run(
 
 
     println!(
-        "Creating unbuffered Wayland background surface..."
+        "Starting native Wayland/EGL wallpaper renderer..."
     );
 
 
     let surface_configuration =
-        crate::wayland_wallpaper::test_egl_background_surface(&source)?;
+        crate::wayland_wallpaper::run_egl_background_surface(&source)?;
 
 
     println!(
@@ -362,38 +362,7 @@ pub fn run(
 
 
     println!(
-        "Native Wayland/EGL shader surface test completed."
-    );
-
-
-    println!();
-
-
-    println!(
-        "Opening wallpaper rendering test window..."
-    );
-
-
-    println!(
-        "Press Escape or close the window to exit."
-    );
-
-
-    crate::render_wallpaper::run_test_window(
-        &source
-    )?;
-
-
-    println!();
-
-
-    println!(
-        "Wallpaper rendering test ended cleanly."
-    );
-
-
-    println!(
-        "Compositor wallpaper-surface integration is not implemented yet."
+        "Native Wayland/EGL wallpaper renderer ended cleanly."
     );
 
 

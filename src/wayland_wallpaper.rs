@@ -10,11 +10,27 @@ use std::ffi::{
     c_void,
     CString,
 };
+use std::os::fd::AsRawFd;
 use std::ptr;
+use std::sync::{
+    atomic::{
+        AtomicBool,
+        Ordering,
+    },
+    Arc,
+};
 use std::thread;
 use std::time::{
     Duration,
     Instant,
+};
+
+use signal_hook::{
+    consts::{
+        SIGINT,
+        SIGTERM,
+    },
+    flag,
 };
 
 use wayland_client::{
@@ -296,7 +312,7 @@ pub fn probe_capabilities(
 }
 
 
-pub fn test_egl_background_surface(
+pub fn run_egl_background_surface(
     fragment_source: &str,
 ) -> Result<WallpaperSurfaceConfiguration, String> {
 
@@ -306,6 +322,46 @@ pub fn test_egl_background_surface(
         mut state,
     ) =
         connect_and_bind()?;
+
+
+    let shutdown_requested =
+        Arc::new(
+            AtomicBool::new(
+                false
+            )
+        );
+
+
+    flag::register(
+        SIGINT,
+        Arc::clone(
+            &shutdown_requested
+        ),
+    )
+    .map_err(
+        |error| {
+            format!(
+                "Unable to install the SIGINT handler: {}",
+                error,
+            )
+        }
+    )?;
+
+
+    flag::register(
+        SIGTERM,
+        Arc::clone(
+            &shutdown_requested
+        ),
+    )
+    .map_err(
+        |error| {
+            format!(
+                "Unable to install the SIGTERM handler: {}",
+                error,
+            )
+        }
+    )?;
 
 
     let queue_handle =
@@ -505,12 +561,15 @@ pub fn test_egl_background_surface(
         )?;
 
 
-    render_egl_shader_test(
+    render_egl_wallpaper(
         &connection,
+        &mut event_queue,
+        &mut state,
         &egl_window,
         buffer_width,
         buffer_height,
         fragment_source,
+        &shutdown_requested,
     )?;
 
 
@@ -772,12 +831,15 @@ unsafe extern "C" {
 }
 
 
-fn render_egl_shader_test(
+fn render_egl_wallpaper(
     connection: &Connection,
+    event_queue: &mut wayland_client::EventQueue<WaylandState>,
+    state: &mut WaylandState,
     egl_window: &wayland_egl::WlEglSurface,
     width: i32,
     height: i32,
     fragment_source: &str,
+    shutdown_requested: &Arc<AtomicBool>,
 ) -> Result<(), String> {
 
     let native_display =
@@ -1026,12 +1088,15 @@ fn render_egl_shader_test(
 
 
     let render_result =
-        render_native_shader_frames(
+        render_native_wallpaper_frames(
             display,
             egl_surface,
+            event_queue,
+            state,
             width,
             height,
             fragment_source,
+            shutdown_requested,
         );
 
 
@@ -1063,7 +1128,7 @@ fn render_egl_shader_test(
 
 
     println!(
-        "Native EGL shader test completed:"
+        "Native EGL wallpaper renderer stopped:"
     );
 
 
@@ -1087,7 +1152,12 @@ fn render_egl_shader_test(
 
 
     println!(
-        "    Render duration: 5 seconds"
+        "    Shutdown reason: {}",
+        if state.closed {
+            "compositor closed the layer surface"
+        } else {
+            "SIGINT or SIGTERM received"
+        }
     );
 
 
@@ -1097,12 +1167,15 @@ fn render_egl_shader_test(
 }
 
 
-fn render_native_shader_frames(
+fn render_native_wallpaper_frames(
     display: EglDisplay,
     egl_surface: EglSurface,
+    event_queue: &mut wayland_client::EventQueue<WaylandState>,
+    state: &mut WaylandState,
     width: i32,
     height: i32,
     fragment_source: &str,
+    shutdown_requested: &Arc<AtomicBool>,
 ) -> Result<(), String> {
 
     let program =
@@ -1164,12 +1237,6 @@ fn render_native_shader_frames(
         Instant::now();
 
 
-    let test_duration =
-        Duration::from_secs(
-            5
-        );
-
-
     let mut frame =
         0_i32;
 
@@ -1177,15 +1244,23 @@ fn render_native_shader_frames(
     let result =
         loop {
 
-            let elapsed =
-                start_time.elapsed();
+            process_wayland_events(
+                event_queue,
+                state,
+            )?;
 
 
-            if elapsed
-                >= test_duration
+            if state.closed
+                || shutdown_requested.load(
+                    Ordering::Relaxed
+                )
             {
                 break Ok(());
             }
+
+
+            let elapsed =
+                start_time.elapsed();
 
 
             unsafe {
@@ -1298,6 +1373,162 @@ fn render_native_shader_frames(
 
 
     result
+}
+
+
+#[repr(C)]
+struct PollFd {
+    fd: i32,
+    events: i16,
+    revents: i16,
+}
+
+
+const POLLIN: i16 = 0x0001;
+const POLLERR: i16 = 0x0008;
+const POLLHUP: i16 = 0x0010;
+
+
+unsafe extern "C" {
+    fn poll(
+        file_descriptors: *mut PollFd,
+        descriptor_count: usize,
+        timeout_milliseconds: i32,
+    ) -> i32;
+}
+
+
+fn process_wayland_events(
+    event_queue: &mut wayland_client::EventQueue<WaylandState>,
+    state: &mut WaylandState,
+) -> Result<(), String> {
+
+    event_queue
+        .flush()
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to flush Wayland wallpaper requests: {}",
+                    error,
+                )
+            }
+        )?;
+
+
+    event_queue
+        .dispatch_pending(
+            state
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to dispatch pending Wayland wallpaper events: {}",
+                    error,
+                )
+            }
+        )?;
+
+
+    let Some(
+        read_guard
+    ) =
+        event_queue.prepare_read()
+    else {
+        return Ok(());
+    };
+
+
+    let mut descriptor =
+        PollFd {
+            fd:
+                read_guard
+                    .connection_fd()
+                    .as_raw_fd(),
+
+            events:
+                POLLIN,
+
+            revents:
+                0,
+        };
+
+
+    let poll_result =
+        unsafe {
+            poll(
+                &mut descriptor,
+                1,
+                0,
+            )
+        };
+
+
+    if poll_result
+        < 0
+    {
+        return Err(
+            format!(
+                "Unable to poll the Wayland connection: {}",
+                std::io::Error::last_os_error(),
+            )
+        );
+    }
+
+
+    if poll_result
+        == 0
+    {
+        drop(
+            read_guard
+        );
+
+
+        return Ok(());
+    }
+
+
+    if descriptor.revents
+        & (
+            POLLIN
+                | POLLERR
+                | POLLHUP
+        )
+        != 0
+    {
+        read_guard
+            .read()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to read Wayland wallpaper events: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+        event_queue
+            .dispatch_pending(
+                state
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to dispatch Wayland wallpaper events: {}",
+                        error,
+                    )
+                }
+            )?;
+    } else {
+        drop(
+            read_guard
+        );
+    }
+
+
+    Ok(
+        ()
+    )
 }
 
 
