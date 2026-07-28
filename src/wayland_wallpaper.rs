@@ -545,6 +545,11 @@ pub fn run_egl_background_surface(
         )?;
 
 
+    print_surface_configuration(
+        &configuration
+    );
+
+
     let egl_window =
         wayland_egl::WlEglSurface::new(
             surface.id(),
@@ -1093,6 +1098,7 @@ fn render_egl_wallpaper(
             egl_surface,
             event_queue,
             state,
+            egl_window,
             width,
             height,
             fragment_source,
@@ -1172,8 +1178,9 @@ fn render_native_wallpaper_frames(
     egl_surface: EglSurface,
     event_queue: &mut wayland_client::EventQueue<WaylandState>,
     state: &mut WaylandState,
-    width: i32,
-    height: i32,
+    egl_window: &wayland_egl::WlEglSurface,
+    mut width: i32,
+    mut height: i32,
     fragment_source: &str,
     shutdown_requested: &Arc<AtomicBool>,
 ) -> Result<(), String> {
@@ -1248,6 +1255,20 @@ fn render_native_wallpaper_frames(
                 event_queue,
                 state,
             )?;
+
+
+            if let Some(
+                configuration
+            ) =
+                state.configured.take()
+            {
+                apply_surface_resize(
+                    egl_window,
+                    &configuration,
+                    &mut width,
+                    &mut height,
+                )?;
+            }
 
 
             if state.closed
@@ -1529,6 +1550,167 @@ fn process_wayland_events(
     Ok(
         ()
     )
+}
+
+
+fn apply_surface_resize(
+    egl_window: &wayland_egl::WlEglSurface,
+    configuration: &WallpaperSurfaceConfiguration,
+    width: &mut i32,
+    height: &mut i32,
+) -> Result<(), String> {
+
+    let requested_width =
+        if configuration.width
+            == 0
+        {
+            *width
+        } else {
+            i32::try_from(
+                configuration.width
+            )
+            .map_err(
+                |_| {
+                    "Configured wallpaper width exceeds the EGL window range"
+                        .to_string()
+                }
+            )?
+        };
+
+
+    let requested_height =
+        if configuration.height
+            == 0
+        {
+            *height
+        } else {
+            i32::try_from(
+                configuration.height
+            )
+            .map_err(
+                |_| {
+                    "Configured wallpaper height exceeds the EGL window range"
+                        .to_string()
+                }
+            )?
+        };
+
+
+    if requested_width
+        <= 0
+        || requested_height
+            <= 0
+    {
+        return Err(
+            format!(
+                "The compositor configured an invalid wallpaper size: {}x{}",
+                requested_width,
+                requested_height,
+            )
+        );
+    }
+
+
+    if requested_width
+        == *width
+        && requested_height
+            == *height
+    {
+        return Ok(());
+    }
+
+
+    egl_window.resize(
+        requested_width,
+        requested_height,
+        0,
+        0,
+    );
+
+
+    *width =
+        requested_width;
+
+
+    *height =
+        requested_height;
+
+
+    println!(
+        "Wayland wallpaper surface resized:"
+    );
+
+
+    println!(
+        "    Width: {}",
+        *width
+    );
+
+
+    println!(
+        "    Height: {}",
+        *height
+    );
+
+
+    println!(
+        "    Configure serial: {}",
+        configuration.serial
+    );
+
+
+    Ok(())
+}
+
+
+fn print_surface_configuration(
+    configuration: &WallpaperSurfaceConfiguration,
+) {
+
+    println!(
+        "Wayland background surface configured successfully:"
+    );
+
+
+    println!(
+        "    Width: {}",
+        configuration.width
+    );
+
+
+    println!(
+        "    Height: {}",
+        configuration.height
+    );
+
+
+    println!(
+        "    Configure serial: {}",
+        configuration.serial
+    );
+
+
+    println!(
+        "    Layer: background"
+    );
+
+
+    println!(
+        "    Anchors: top, bottom, left, right"
+    );
+
+
+    println!(
+        "    Keyboard input: disabled"
+    );
+
+
+    println!(
+        "    Pointer input: disabled"
+    );
+
+
+    println!();
 }
 
 
