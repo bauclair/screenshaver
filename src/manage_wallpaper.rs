@@ -87,7 +87,7 @@ pub fn run(
 
 
         println!(
-            "Wallpaper rendering is not implemented yet."
+            "Wallpaper rendering was not started."
         );
 
 
@@ -264,25 +264,30 @@ pub fn run(
 
 
     println!(
-        "Compiling and linking wallpaper shader..."
+        "Opening wallpaper rendering test window..."
     );
-
-
-    crate::render_wallpaper::validate_shader_program(
-        &source
-    )?;
 
 
     println!(
-        "Wallpaper shader program compiled and linked successfully."
+        "Press Escape or close the window to exit."
     );
+
+
+    crate::render_wallpaper::run_test_window(
+        &source
+    )?;
 
 
     println!();
 
 
     println!(
-        "Wallpaper surface creation and rendering are not implemented yet."
+        "Wallpaper rendering test ended cleanly."
+    );
+
+
+    println!(
+        "Compositor wallpaper-surface integration is not implemented yet."
     );
 
 
