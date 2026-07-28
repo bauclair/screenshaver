@@ -11,6 +11,7 @@ use std::ffi::{
     CString,
 };
 use std::os::fd::AsRawFd;
+use std::path::Path;
 use std::ptr;
 use std::sync::{
     atomic::{
@@ -644,9 +645,191 @@ pub fn probe_capabilities(
 }
 
 
+#[derive(Debug)]
+struct ActiveWallpaperShader {
+    source: String,
+    shader_name: String,
+    built_in_default: bool,
+}
+
+
+fn select_safe_wallpaper_shader(
+    shader_manager: &mut crate::manage_shader::ShaderManager,
+    wallpaper_directory: &Path,
+) -> Result<ActiveWallpaperShader, String> {
+
+    let maximum_attempts =
+        shader_manager.shader_count();
+
+
+    for _ in
+        0..maximum_attempts
+    {
+        let Some(
+            requested_shader_name
+        ) =
+            shader_manager.next()
+        else {
+            break;
+        };
+
+
+        let shader_path =
+            wallpaper_directory.join(
+                &requested_shader_name
+            );
+
+
+        println!(
+            "Evaluating wallpaper shader:"
+        );
+
+
+        println!(
+            "    {}",
+            shader_path.display()
+        );
+
+
+        match crate::load_shader::load_shader_for_preview(
+            &shader_path
+        ) {
+            crate::load_shader::ShaderLoadResult::Ready {
+                source,
+                shader_name,
+                built_in_default,
+                ..
+            } => {
+                return Ok(
+                    ActiveWallpaperShader {
+                        source,
+                        shader_name,
+                        built_in_default,
+                    }
+                );
+            }
+
+
+            crate::load_shader::ShaderLoadResult::Rejected {
+                shader_name,
+                reasons,
+            } => {
+                println!(
+                    "Wallpaper shader was rejected:"
+                );
+
+
+                println!(
+                    "    Shader: {}",
+                    shader_name
+                );
+
+
+                for reason in
+                    reasons
+                {
+                    println!(
+                        "    Reason: {}",
+                        reason
+                    );
+                }
+
+
+                shader_manager.remove_shader(
+                    &requested_shader_name
+                );
+            }
+
+
+            crate::load_shader::ShaderLoadResult::Unavailable {
+                shader_name,
+                error,
+            } => {
+                println!(
+                    "Wallpaper shader is unavailable:"
+                );
+
+
+                println!(
+                    "    Shader: {}",
+                    shader_name
+                );
+
+
+                println!(
+                    "    Error: {}",
+                    error
+                );
+
+
+                shader_manager.remove_shader(
+                    &requested_shader_name
+                );
+            }
+        }
+
+
+        println!();
+    }
+
+
+    Err(
+        "No usable wallpaper shaders remain"
+            .to_string()
+    )
+}
+
+
+fn print_active_wallpaper_shader(
+    shader: &ActiveWallpaperShader,
+) {
+
+    println!();
+
+
+    println!(
+        "Wallpaper shader is ready:"
+    );
+
+
+    println!(
+        "    Shader: {}",
+        shader.shader_name
+    );
+
+
+    println!(
+        "    Processed source: {} bytes",
+        shader.source.len()
+    );
+
+
+    println!(
+        "    Built-in default: {}",
+        shader.built_in_default
+    );
+
+
+    println!();
+}
+
+
 pub fn run_egl_background_surface(
-    fragment_source: &str,
+    mut shader_manager: crate::manage_shader::ShaderManager,
+    wallpaper_directory: &Path,
 ) -> Result<(), String> {
+
+    let active_shader =
+        select_safe_wallpaper_shader(
+            &mut shader_manager,
+            wallpaper_directory,
+        )?;
+
+
+    print_active_wallpaper_shader(
+        &active_shader
+    );
+
 
     let (
         connection,
@@ -1013,7 +1196,7 @@ pub fn run_egl_background_surface(
         &mut event_queue,
         &mut state,
         &mut native_targets,
-        fragment_source,
+        &active_shader.source,
         &shutdown_requested,
     )?;
 

@@ -107,160 +107,33 @@ pub fn run(
     }
 
 
-    let selected_shader =
-        &shader_files[0];
-
-
-    println!();
-
-
-    println!(
-        "Selected wallpaper shader:"
-    );
-
-
-    println!(
-        "    {}",
-        display_name(
-            selected_shader
-        )
-    );
-
-
-    println!(
-        "    {}",
-        selected_shader.display()
-    );
-
-
-    println!();
-
-
-    println!(
-        "Loading and preprocessing selected shader..."
-    );
-
-
-    let (
-        source,
-        shader_name,
-        built_in_default,
-    ) =
-        match crate::load_shader::load_shader_for_preview(
-            selected_shader
-        ) {
-
-            crate::load_shader::ShaderLoadResult::Ready {
-                source,
-                shader_name,
-                built_in_default,
-                ..
-            } => {
-                (
-                    source,
-                    shader_name,
-                    built_in_default,
-                )
-            }
-
-
-            crate::load_shader::ShaderLoadResult::Rejected {
-                shader_name,
-                reasons,
-            } => {
-
-                println!(
-                    "Wallpaper shader was rejected:"
-                );
-
-
-                println!(
-                    "    Shader: {}",
-                    shader_name
-                );
-
-
-                for reason in
-                    reasons
-                {
-                    println!(
-                        "    Reason: {}",
-                        reason
-                    );
+    let shader_names =
+        shader_files
+            .iter()
+            .filter_map(
+                |shader_file| {
+                    shader_file
+                        .file_name()
+                        .and_then(
+                            |name| {
+                                name.to_str()
+                            }
+                        )
+                        .map(
+                            |name| {
+                                name.to_string()
+                            }
+                        )
                 }
+            )
+            .collect::<Vec<_>>();
 
 
-                println!();
-
-
-                println!(
-                    "Wallpaper rendering was not started."
-                );
-
-
-                return Ok(());
-            }
-
-
-            crate::load_shader::ShaderLoadResult::Unavailable {
-                shader_name,
-                error,
-            } => {
-
-                println!(
-                    "Wallpaper shader is unavailable:"
-                );
-
-
-                println!(
-                    "    Shader: {}",
-                    shader_name
-                );
-
-
-                println!(
-                    "    Error: {}",
-                    error
-                );
-
-
-                println!();
-
-
-                println!(
-                    "Wallpaper rendering was not started."
-                );
-
-
-                return Ok(());
-            }
-        };
-
-
-    println!(
-        "Wallpaper shader is ready:"
-    );
-
-
-    println!(
-        "    Shader: {}",
-        shader_name
-    );
-
-
-    println!(
-        "    Processed source: {} bytes",
-        source.len()
-    );
-
-
-    println!(
-        "    Built-in default: {}",
-        built_in_default
-    );
-
-
-    println!();
+    let shader_manager =
+        crate::manage_shader::ShaderManager::from_shader_list(
+            crate::manage_shader::ShaderMode::Ordered,
+            shader_names,
+        );
 
 
     println!(
@@ -426,7 +299,8 @@ pub fn run(
 
 
     crate::wayland_wallpaper::run_egl_background_surface(
-        &source
+        shader_manager,
+        &wallpaper_directory,
     )?;
 
 
