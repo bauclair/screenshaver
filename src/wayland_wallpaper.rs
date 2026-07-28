@@ -650,6 +650,10 @@ struct ActiveWallpaperShader {
     manager_name: String,
     source: String,
     shader_name: String,
+    channel_usage:
+        crate::preprocess_shader::ShaderChannelUsage,
+    shader_inputs:
+        Vec<crate::isf_types::ShaderInput>,
     built_in_default: bool,
 }
 
@@ -698,14 +702,17 @@ fn select_safe_wallpaper_shader(
             crate::load_shader::ShaderLoadResult::Ready {
                 source,
                 shader_name,
+                channel_usage,
+                shader_inputs,
                 built_in_default,
-                ..
             } => {
                 return Ok(
                     ActiveWallpaperShader {
                         manager_name: requested_shader_name,
                         source,
                         shader_name,
+                        channel_usage,
+                        shader_inputs,
                         built_in_default,
                     }
                 );
@@ -819,6 +826,7 @@ fn print_active_wallpaper_shader(
 pub fn run_egl_background_surface(
     mut shader_manager: crate::manage_shader::ShaderManager,
     wallpaper_directory: &Path,
+    texture_policy: crate::load_config::TextureSelectionPolicy,
 ) -> Result<(), String> {
 
     let active_shader =
@@ -1198,9 +1206,10 @@ pub fn run_egl_background_surface(
         &mut event_queue,
         &mut state,
         &mut native_targets,
-        &active_shader.source,
+        &active_shader,
         &mut shader_manager,
         wallpaper_directory,
+        texture_policy,
         &shutdown_requested,
     )?;
 
@@ -1526,9 +1535,10 @@ fn render_egl_wallpapers(
     event_queue: &mut wayland_client::EventQueue<WaylandState>,
     state: &mut WaylandState,
     native_targets: &mut Vec<NativeWallpaperTarget>,
-    fragment_source: &str,
+    active_shader: &ActiveWallpaperShader,
     shader_manager: &mut crate::manage_shader::ShaderManager,
     wallpaper_directory: &Path,
+    texture_policy: crate::load_config::TextureSelectionPolicy,
     shutdown_requested: &Arc<AtomicBool>,
 ) -> Result<(), String> {
 
@@ -1829,9 +1839,10 @@ fn render_egl_wallpapers(
             event_queue,
             state,
             native_targets,
-            fragment_source,
+            active_shader,
             shader_manager,
             wallpaper_directory,
+            texture_policy,
             shutdown_requested,
         );
 
@@ -1942,17 +1953,52 @@ fn render_mirror_frames(
     event_queue: &mut wayland_client::EventQueue<WaylandState>,
     state: &mut WaylandState,
     native_targets: &mut Vec<NativeWallpaperTarget>,
-    fragment_source: &str,
+    active_shader: &ActiveWallpaperShader,
     shader_manager: &mut crate::manage_shader::ShaderManager,
     wallpaper_directory: &Path,
+    texture_policy: crate::load_config::TextureSelectionPolicy,
     shutdown_requested: &Arc<AtomicBool>,
 ) -> Result<(), String> {
 
     let mut program =
         crate::compile_shader::build_program(
             crate::define_constants::VERTEX_SHADER,
-            fragment_source,
+            &active_shader.source,
         )?;
+
+
+    let mut texture_manager =
+        crate::manage_textures::TextureManager::new(
+            texture_policy.clone()
+        );
+
+
+    if let Err(error) =
+        texture_manager.prepare_for_shader(
+            &active_shader.shader_name,
+            active_shader.channel_usage,
+        )
+    {
+        unsafe {
+            gl::DeleteProgram(
+                program
+            );
+        }
+
+
+        return Err(
+            format!(
+                "Unable to prepare textures for wallpaper shader '{}': {}",
+                active_shader.shader_name,
+                error,
+            )
+        );
+    }
+
+
+    texture_manager.configure_program(
+        program
+    );
 
 
     let mut vao =
@@ -1973,6 +2019,12 @@ fn render_mirror_frames(
             program
         );
     }
+
+
+    crate::apply_shader_inputs::apply(
+        program,
+        &active_shader.shader_inputs,
+    );
 
 
     let mut i_time =
@@ -2116,6 +2168,74 @@ fn render_mirror_frames(
                             Ok(
                                 next_program
                             ) => {
+                                let mut next_texture_manager =
+                                    crate::manage_textures::TextureManager::new(
+                                        texture_policy.clone()
+                                    );
+
+
+                                if let Err(
+                                    error
+                                ) =
+                                    next_texture_manager.prepare_for_shader(
+                                        &next_shader.shader_name,
+                                        next_shader.channel_usage,
+                                    )
+                                {
+                                    println!(
+                                        "Wallpaper shader texture preparation failed; keeping the current shader:"
+                                    );
+
+
+                                    println!(
+                                        "    Shader: {}",
+                                        next_shader.shader_name
+                                    );
+
+
+                                    println!(
+                                        "    Error: {}",
+                                        error
+                                    );
+
+
+                                    println!();
+
+
+                                    unsafe {
+                                        gl::DeleteProgram(
+                                            next_program
+                                        );
+                                    }
+
+
+                                    shader_manager.remove_shader(
+                                        &next_shader.manager_name
+                                    );
+
+
+                                    continue 'render_loop;
+                                }
+
+
+                                next_texture_manager.configure_program(
+                                    next_program
+                                );
+
+
+                                unsafe {
+                                    gl::UseProgram(
+                                        next_program
+                                    );
+                                }
+
+
+                                crate::apply_shader_inputs::apply(
+                                    next_program,
+                                    &next_shader.shader_inputs,
+                                );
+
+
                                 let next_i_time =
                                     uniform_location(
                                         next_program,
@@ -2142,6 +2262,13 @@ fn render_mirror_frames(
                                         next_program,
                                         "iFrame",
                                     )?;
+
+
+                                texture_manager.delete_all();
+
+
+                                texture_manager =
+                                    next_texture_manager;
 
 
                                 unsafe {
@@ -2307,7 +2434,13 @@ fn render_mirror_frames(
                     gl::UseProgram(
                         program
                     );
+                }
 
+
+                texture_manager.bind_channels();
+
+
+                unsafe {
                     set_uniform_1f(
                         i_time,
                         elapsed.as_secs_f32(),
@@ -2373,6 +2506,9 @@ fn render_mirror_frames(
                 )
             );
         };
+
+
+    texture_manager.delete_all();
 
 
     unsafe {

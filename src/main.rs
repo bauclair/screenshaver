@@ -517,7 +517,8 @@ crate::parse_arguments::Command::ListPalettes => {
     ) {
 
         match crate::manage_wallpaper::run(
-            cfg.wallpaper
+            cfg.wallpaper,
+            cfg.texture_policy,
         ) {
 
             Ok(()) => {}

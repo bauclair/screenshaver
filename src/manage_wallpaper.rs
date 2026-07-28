@@ -3,6 +3,7 @@ use crate::define_wallpaper::WallpaperSettings;
 
 pub fn run(
     settings: WallpaperSettings,
+    texture_policy: crate::load_config::TextureSelectionPolicy,
 ) -> Result<(), String> {
 
     let wallpaper_directory =
@@ -301,6 +302,7 @@ pub fn run(
     crate::wayland_wallpaper::run_egl_background_surface(
         shader_manager,
         &wallpaper_directory,
+        texture_policy,
     )?;
 
 
