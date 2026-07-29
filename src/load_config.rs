@@ -14,6 +14,16 @@ fn default_show_splash() -> bool {
 }
 
 
+fn default_screensaver_enabled() -> bool {
+    true
+}
+
+
+fn default_wallpaper_enabled() -> bool {
+    false
+}
+
+
 fn default_global_rendered_fps() -> u32 {
     crate::define_constants::DEFAULT_RENDER_FPS
 }
@@ -38,11 +48,6 @@ fn default_log_level() -> u8 {
 #[derive(Debug, Deserialize)]
 struct AppearanceSection {
 
-    subtitles: bool,
-
-    #[serde(default = "default_subtitle_placement")]
-    subtitle_placement: String,
-
     #[serde(default = "default_show_splash")]
     show_splash: bool,
 }
@@ -50,6 +55,14 @@ struct AppearanceSection {
 
 #[derive(Debug, Deserialize)]
 struct ScreensaverSection {
+
+    #[serde(default = "default_screensaver_enabled")]
+    enabled: bool,
+
+    subtitles: bool,
+
+    #[serde(default = "default_subtitle_placement")]
+    subtitle_placement: String,
 
     mode: String,
 
@@ -65,6 +78,9 @@ struct ScreensaverSection {
 
 #[derive(Debug, Deserialize)]
 struct WallpaperSection {
+
+    #[serde(default = "default_wallpaper_enabled")]
+    enabled: bool,
 
     mode: String,
 
@@ -288,6 +304,10 @@ pub struct TextureSelectionPolicy {
 #[derive(Debug)]
 pub struct Config {
 
+    pub screensaver_enabled: bool,
+
+    pub wallpaper_enabled: bool,
+
     pub subtitles: bool,
 
     pub subtitle_placement:
@@ -435,7 +455,7 @@ pub fn load_config(
     let parsed_subtitle_placement =
         crate::parse_subtitle_placement::parse(
             Some(
-                &raw.appearance.subtitle_placement
+                &raw.screensaver.subtitle_placement
             )
         );
 
@@ -558,8 +578,14 @@ pub fn load_config(
     let config =
         Config {
 
+            screensaver_enabled:
+                raw.screensaver.enabled,
+
+            wallpaper_enabled:
+                raw.wallpaper.enabled,
+
             subtitles:
-                raw.appearance.subtitles,
+                raw.screensaver.subtitles,
 
             subtitle_placement:
                 parsed_subtitle_placement.placement,
@@ -604,6 +630,16 @@ pub fn load_config(
 
     let mut diagnostics =
         vec![
+
+            format!(
+                "[CONFIG] screensaver.enabled = {}",
+                config.screensaver_enabled,
+            ),
+
+            format!(
+                "[CONFIG] wallpaper.enabled = {}",
+                config.wallpaper_enabled,
+            ),
 
             format!(
                 "[CONFIG] subtitles = {}",

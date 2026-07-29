@@ -286,10 +286,15 @@ impl FrameRenderer {
     pub fn run(
         &mut self,
         running: &AtomicBool,
+        wallpaper_control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
     ) {
         log_information(
             "[RENDER] Entering renderer-owned event loop"
         );
+
+        let mut first_frame_presented =
+            false;
+
 
         while running.load(Ordering::SeqCst) {
             if self.pump_events() {
@@ -297,10 +302,28 @@ impl FrameRenderer {
                     "[RENDER] User input requested renderer exit"
                 );
 
+
+                wallpaper_control.resume_and_wait_for_frame(
+                    running
+                );
+
+
                 break;
             }
 
+
             self.render_frame();
+
+
+            if !first_frame_presented {
+                first_frame_presented =
+                    true;
+
+
+                wallpaper_control.request_pause_after_first_frame(
+                    running
+                );
+            }
         }
 
         log_information(

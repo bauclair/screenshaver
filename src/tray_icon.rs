@@ -16,10 +16,18 @@ pub enum TrayCommand {
     Stop,
 }
 
+/// Immutable runtime status displayed by the system tray menu.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TrayStatus {
+    pub screensaver_enabled: bool,
+    pub wallpaper_enabled: bool,
+}
+
 /// The Status Notifier Item presented to the desktop panel.
 #[derive(Debug)]
 pub struct ScreenshaverTray {
     command_sender: Sender<TrayCommand>,
+    status: TrayStatus,
 }
 
 /// Handle retained by `main.rs` for the lifetime of Screenshaver.
@@ -29,8 +37,14 @@ pub struct ScreenshaverTray {
 pub type TrayHandle = Handle<ScreenshaverTray>;
 
 impl ScreenshaverTray {
-    fn new(command_sender: Sender<TrayCommand>) -> Self {
-        Self { command_sender }
+    fn new(
+        command_sender: Sender<TrayCommand>,
+        status: TrayStatus,
+    ) -> Self {
+        Self {
+            command_sender,
+            status,
+        }
     }
 
     fn send_command(&self, command: TrayCommand) {
@@ -79,6 +93,24 @@ impl Tray for ScreenshaverTray {
     fn menu(&self) -> Vec<MenuItem<Self>> {
         vec![
             StandardItem {
+                label: format!(
+                    "Screensaver: {}",
+                    enabled_status(self.status.screensaver_enabled),
+                ),
+                enabled: false,
+                ..Default::default()
+            }
+            .into(),
+            StandardItem {
+                label: format!(
+                    "Wallpaper: {}",
+                    enabled_status(self.status.wallpaper_enabled),
+                ),
+                enabled: false,
+                ..Default::default()
+            }
+            .into(),
+            StandardItem {
                 label: "Restart".into(),
                 icon_name: "view-refresh".into(),
                 activate: Box::new(|tray: &mut Self| {
@@ -105,7 +137,22 @@ impl Tray for ScreenshaverTray {
 /// The caller must treat an error as non-fatal. Screenshaver's idle monitoring,
 /// rendering, and command-line controls must continue to work when the active
 /// desktop session does not provide tray-icon support.
-pub fn start(command_sender: Sender<TrayCommand>) -> Result<TrayHandle, ksni::Error> {
-    ScreenshaverTray::new(command_sender).spawn()
+pub fn start(
+    command_sender: Sender<TrayCommand>,
+    status: TrayStatus,
+) -> Result<TrayHandle, ksni::Error> {
+    ScreenshaverTray::new(
+        command_sender,
+        status,
+    )
+    .spawn()
+}
+
+fn enabled_status(enabled: bool) -> &'static str {
+    if enabled {
+        "Enabled"
+    } else {
+        "Disabled"
+    }
 }
 

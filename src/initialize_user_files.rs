@@ -10,6 +10,12 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 ################################
 [appearance]
   show_splash = true       # Show Screenshaver splash screen when run
+
+################################
+# SCREENSAVER MODE
+################################
+[screensaver]
+  enabled = true           # Enable automatic screensaver activation
   subtitles = true         # Show subtitle information at bottom of each shader
 
 # Accepted subtitle placement combinations:
@@ -20,11 +26,6 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 #     bottom:center
 #     bottom:right
   subtitle_placement = "bottom:center"
-
-################################
-# SCREENSAVER MODE
-################################
-[screensaver]
 # Screensaver shaders are loaded from:
 #     ~/.config/screenshaver/shaders/
 
@@ -50,6 +51,7 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 # WALLPAPER MODE
 ################################
 [wallpaper]
+  enabled = false          # Enable wallpaper rendering mode
 # Wallpaper shaders are loaded from:
 #     ~/.config/screenshaver/wallpapers/
 

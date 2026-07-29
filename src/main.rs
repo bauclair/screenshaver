@@ -55,6 +55,7 @@ mod configure_wallpaper;
 mod control_wallpaper;
 mod locate_wallpaper;
 mod manage_wallpaper;
+mod manage_wallpaper_runtime;
 mod notify_wallpaper;
 mod render_wallpaper;
 mod wayland_wallpaper;
@@ -107,7 +108,6 @@ let runtime_logfile =
 
         crate::parse_arguments::Command::Run
         | crate::parse_arguments::Command::Start
-        | crate::parse_arguments::Command::Wallpaper
         | crate::parse_arguments::Command::PreviewTexture { .. }
         | crate::parse_arguments::Command::PreviewShader { .. }
         | crate::parse_arguments::Command::DeleteCache => {
@@ -134,9 +134,6 @@ match command {
 
     crate::parse_arguments::Command::Run
     | crate::parse_arguments::Command::Start => {}
-
-
-    crate::parse_arguments::Command::Wallpaper => {}
 
 
     crate::parse_arguments::Command::Stop => {
@@ -512,54 +509,6 @@ crate::parse_arguments::Command::ListPalettes => {
     }
 
 
-    if matches!(
-        command,
-        crate::parse_arguments::Command::Wallpaper
-    ) {
-
-        let wallpaper_runtime =
-            crate::define_wallpaper::WallpaperRuntime {
-                monitor_mode:
-                    cfg.wallpaper.monitor_mode,
-                notifications:
-                    cfg.wallpaper.notifications,
-                texture_policy:
-                    cfg.wallpaper_texture_policy,
-                fps_policy:
-                    cfg.fps_policy,
-            };
-
-
-        match crate::manage_wallpaper::run(
-            &cfg.wallpaper_mode,
-            wallpaper_runtime,
-        ) {
-
-            Ok(()) => {}
-
-            Err(error) => {
-
-                eprintln!(
-                    "[WALLPAPER] {}",
-                    error
-                );
-
-
-                crate::logger::error(
-                    &logfile,
-                    &format!(
-                        "[WALLPAPER] {}",
-                        error,
-                    ),
-                );
-            }
-        }
-
-
-        return;
-    }
-
-
     let _singleton =
         match crate::singleton::acquire() {
 
@@ -613,7 +562,13 @@ crate::parse_arguments::Command::ListPalettes => {
 
     let _tray_handle =
         match crate::tray_icon::start(
-            tray_command_sender
+            tray_command_sender,
+            crate::tray_icon::TrayStatus {
+                screensaver_enabled:
+                    cfg.screensaver_enabled,
+                wallpaper_enabled:
+                    cfg.wallpaper_enabled,
+            },
         ) {
 
             Ok(handle) => {
@@ -959,6 +914,35 @@ crate::parse_arguments::Command::ListPalettes => {
     );
 
 
+    let wallpaper_runtime =
+        crate::define_wallpaper::WallpaperRuntime {
+            monitor_mode:
+                cfg.wallpaper.monitor_mode,
+            notifications:
+                cfg.wallpaper.notifications,
+            texture_policy:
+                cfg.wallpaper_texture_policy,
+            fps_policy:
+                cfg.fps_policy,
+        };
+
+
+    let mut wallpaper_manager =
+        crate::manage_wallpaper_runtime::WallpaperRuntimeManager::start(
+            cfg.wallpaper_enabled,
+            cfg.wallpaper_mode.clone(),
+            wallpaper_runtime,
+            logfile.clone(),
+            Arc::clone(
+                &running
+            ),
+        );
+
+
+    let wallpaper_control =
+        wallpaper_manager.control();
+
+
     if cfg.debug_log {
 
         crate::logger::debug(
@@ -1053,6 +1037,16 @@ crate::parse_arguments::Command::ListPalettes => {
             }
         }
         }
+
+        if !cfg.screensaver_enabled {
+
+            std::thread::sleep(
+                Duration::from_millis(50)
+            );
+
+            continue;
+        }
+
 
         let session_state =
             match session.poll_state() {
@@ -1181,7 +1175,8 @@ crate::parse_arguments::Command::ListPalettes => {
 
 
                 renderer.run(
-                    running.as_ref()
+                    running.as_ref(),
+                    &wallpaper_control,
                 );
 
 
@@ -1235,6 +1230,9 @@ crate::parse_arguments::Command::ListPalettes => {
             Duration::from_millis(50)
         );
     }
+
+
+    wallpaper_manager.stop_and_join();
 
 
     println!(

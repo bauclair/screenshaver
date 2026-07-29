@@ -3,7 +3,9 @@ use crate::define_wallpaper::WallpaperRuntime;
 
 pub fn run(
     configured_mode: &str,
-    runtime: WallpaperRuntime,
+    runtime: &WallpaperRuntime,
+    running: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    control: crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
 ) -> Result<(), String> {
 
     let parsed_mode =
@@ -373,6 +375,8 @@ pub fn run(
         &wallpaper_directory,
         shader_interval,
         runtime,
+        running,
+        control,
     )?;
 
 
