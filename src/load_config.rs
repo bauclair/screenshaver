@@ -208,6 +208,64 @@ pub struct FpsOverride {
     Debug,
     Clone,
 )]
+pub struct FpsSelectionPolicy {
+
+    pub global_rendered_fps: u32,
+
+    pub fps_overrides:
+        Vec<
+            FpsOverride
+        >,
+}
+
+
+impl FpsSelectionPolicy {
+
+    pub fn rendered_fps_for_shader(
+        &self,
+        shader_name: &str,
+        command_line_fps: Option<u32>,
+    ) -> u32 {
+
+        if let Some(fps) =
+            command_line_fps
+        {
+            return fps.max(
+                1
+            );
+        }
+
+
+        self.fps_overrides
+            .iter()
+            .find(
+                |fps_override| {
+                    fps_override
+                        .shader
+                        .eq_ignore_ascii_case(
+                            shader_name
+                        )
+                }
+            )
+            .map(
+                |fps_override| {
+                    fps_override.rendered_fps
+                }
+            )
+            .unwrap_or(
+                self.global_rendered_fps
+            )
+            .max(
+                1
+            )
+    }
+}
+
+
+#[derive(
+    Debug,
+    Clone,
+)]
 pub struct TextureSelectionPolicy {
 
     pub global_texture:
@@ -258,6 +316,9 @@ pub struct Config {
         Vec<
             FpsOverride
         >,
+
+    pub fps_policy:
+        FpsSelectionPolicy,
 
     pub screen_lock: bool,
 
@@ -473,6 +534,14 @@ pub fn load_config(
         )?;
 
 
+    let fps_policy =
+        FpsSelectionPolicy {
+            global_rendered_fps,
+            fps_overrides:
+                fps_overrides.clone(),
+        };
+
+
     let (
         log_level,
         log_level_warning,
@@ -516,6 +585,8 @@ pub fn load_config(
             global_rendered_fps,
 
             fps_overrides,
+
+            fps_policy,
 
             screen_lock:
                 raw.locking.screen_lock,

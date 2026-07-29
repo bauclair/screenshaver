@@ -517,10 +517,22 @@ crate::parse_arguments::Command::ListPalettes => {
         crate::parse_arguments::Command::Wallpaper
     ) {
 
+        let wallpaper_runtime =
+            crate::define_wallpaper::WallpaperRuntime {
+                monitor_mode:
+                    cfg.wallpaper.monitor_mode,
+                notifications:
+                    cfg.wallpaper.notifications,
+                texture_policy:
+                    cfg.wallpaper_texture_policy,
+                fps_policy:
+                    cfg.fps_policy,
+            };
+
+
         match crate::manage_wallpaper::run(
-            cfg.wallpaper,
             &cfg.wallpaper_mode,
-            cfg.wallpaper_texture_policy,
+            wallpaper_runtime,
         ) {
 
             Ok(()) => {}

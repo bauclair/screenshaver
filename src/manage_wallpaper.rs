@@ -1,10 +1,9 @@
-use crate::define_wallpaper::WallpaperSettings;
+use crate::define_wallpaper::WallpaperRuntime;
 
 
 pub fn run(
-    settings: WallpaperSettings,
     configured_mode: &str,
-    texture_policy: crate::load_config::TextureSelectionPolicy,
+    runtime: WallpaperRuntime,
 ) -> Result<(), String> {
 
     let parsed_mode =
@@ -118,13 +117,13 @@ pub fn run(
 
     println!(
         "    Monitor mode: {}",
-        settings.monitor_mode.name()
+        runtime.monitor_mode.name()
     );
 
 
     println!(
         "    Notifications: {}",
-        if settings.notifications {
+        if runtime.notifications {
             "enabled"
         } else {
             "disabled"
@@ -373,7 +372,7 @@ pub fn run(
         shader_manager,
         &wallpaper_directory,
         shader_interval,
-        texture_policy,
+        runtime,
     )?;
 
 

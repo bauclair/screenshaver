@@ -645,7 +645,7 @@ pub fn probe_capabilities(
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ActiveWallpaperShader {
     manager_name: String,
     source: String,
@@ -827,7 +827,7 @@ pub fn run_egl_background_surface(
     mut shader_manager: crate::manage_shader::ShaderManager,
     wallpaper_directory: &Path,
     shader_interval: Option<Duration>,
-    texture_policy: crate::load_config::TextureSelectionPolicy,
+    runtime: crate::define_wallpaper::WallpaperRuntime,
 ) -> Result<(), String> {
 
     let active_shader =
@@ -1211,7 +1211,7 @@ pub fn run_egl_background_surface(
         &mut shader_manager,
         wallpaper_directory,
         shader_interval,
-        texture_policy,
+        &runtime,
         &shutdown_requested,
     )?;
 
@@ -1541,7 +1541,7 @@ fn render_egl_wallpapers(
     shader_manager: &mut crate::manage_shader::ShaderManager,
     wallpaper_directory: &Path,
     shader_interval: Option<Duration>,
-    texture_policy: crate::load_config::TextureSelectionPolicy,
+    runtime: &crate::define_wallpaper::WallpaperRuntime,
     shutdown_requested: &Arc<AtomicBool>,
 ) -> Result<(), String> {
 
@@ -1846,7 +1846,7 @@ fn render_egl_wallpapers(
             shader_manager,
             wallpaper_directory,
             shader_interval,
-            texture_policy,
+            runtime,
             shutdown_requested,
         );
 
@@ -1961,7 +1961,7 @@ fn render_mirror_frames(
     shader_manager: &mut crate::manage_shader::ShaderManager,
     wallpaper_directory: &Path,
     shader_interval: Option<Duration>,
-    texture_policy: crate::load_config::TextureSelectionPolicy,
+    runtime: &crate::define_wallpaper::WallpaperRuntime,
     shutdown_requested: &Arc<AtomicBool>,
 ) -> Result<(), String> {
 
@@ -1974,7 +1974,7 @@ fn render_mirror_frames(
 
     let mut texture_manager =
         crate::manage_textures::TextureManager::new(
-            texture_policy.clone()
+            runtime.texture_policy.clone()
         );
 
 
@@ -2003,6 +2003,32 @@ fn render_mirror_frames(
 
     texture_manager.configure_program(
         program
+    );
+
+
+    let mut rendered_fps =
+        runtime.fps_policy.rendered_fps_for_shader(
+            &active_shader.shader_name,
+            None,
+        );
+
+
+    let mut frame_duration =
+        frame_duration_for_fps(
+            rendered_fps
+        );
+
+
+    let mut next_frame_deadline =
+        Instant::now();
+
+
+    notify_active_wallpaper(
+        runtime.notifications,
+        active_shader,
+        &texture_manager,
+        rendered_fps,
+        crate::fps_monitor::FpsWarningState::Normal,
     );
 
 
@@ -2070,6 +2096,18 @@ fn render_mirror_frames(
 
     let mut frame =
         0_i32;
+
+
+    let mut current_shader =
+        active_shader.clone();
+
+
+    let mut frame_times =
+        crate::fps_monitor::FrameTimeWindow::new();
+
+
+    let mut fps_warning_state =
+        crate::fps_monitor::FpsWarningState::Normal;
 
 
     let result =
@@ -2177,7 +2215,7 @@ fn render_mirror_frames(
                             ) => {
                                 let mut next_texture_manager =
                                     crate::manage_textures::TextureManager::new(
-                                        texture_policy.clone()
+                                        runtime.texture_policy.clone()
                                     );
 
 
@@ -2317,6 +2355,43 @@ fn render_mirror_frames(
                                     0;
 
 
+                                rendered_fps =
+                                    runtime.fps_policy.rendered_fps_for_shader(
+                                        &next_shader.shader_name,
+                                        None,
+                                    );
+
+
+                                frame_duration =
+                                    frame_duration_for_fps(
+                                        rendered_fps
+                                    );
+
+
+                                next_frame_deadline =
+                                    Instant::now();
+
+
+                                current_shader =
+                                    next_shader.clone();
+
+
+                                frame_times.clear();
+
+
+                                fps_warning_state =
+                                    crate::fps_monitor::FpsWarningState::Normal;
+
+
+                                notify_active_wallpaper(
+                                    runtime.notifications,
+                                    &current_shader,
+                                    &texture_manager,
+                                    rendered_fps,
+                                    fps_warning_state,
+                                );
+
+
                                 println!(
                                     "Wallpaper shader changed:"
                                 );
@@ -2325,6 +2400,12 @@ fn render_mirror_frames(
                                 println!(
                                     "    Shader: {}",
                                     next_shader.shader_name
+                                );
+
+
+                                println!(
+                                    "    FPS: {}",
+                                    rendered_fps
                                 );
 
 
@@ -2396,6 +2477,10 @@ fn render_mirror_frames(
 
             let elapsed =
                 start_time.elapsed();
+
+
+            let shader_render_start =
+                Instant::now();
 
 
             for (
@@ -2506,17 +2591,94 @@ fn render_mirror_frames(
             }
 
 
+            unsafe {
+                gl::Finish();
+            }
+
+
+            let performance_status =
+                frame_times.record(
+                    shader_render_start.elapsed(),
+                    rendered_fps,
+                );
+
+
+            let new_warning_state =
+                performance_status.warning_state;
+
+
+            if new_warning_state
+                != fps_warning_state
+            {
+                fps_warning_state =
+                    new_warning_state;
+
+
+                println!(
+                    "Wallpaper performance changed:"
+                );
+
+
+                println!(
+                    "    Target FPS: {}",
+                    rendered_fps
+                );
+
+
+                println!(
+                    "    Average FPS: {}",
+                    performance_status.average_fps
+                );
+
+
+                println!(
+                    "    State: {:?}",
+                    fps_warning_state
+                );
+
+
+                println!();
+
+
+                if fps_warning_state
+                    != crate::fps_monitor::FpsWarningState::Normal
+                {
+                    notify_active_wallpaper(
+                        runtime.notifications,
+                        &current_shader,
+                        &texture_manager,
+                        rendered_fps,
+                        fps_warning_state,
+                    );
+                }
+            }
+
+
             frame =
                 frame.saturating_add(
                     1
                 );
 
 
-            thread::sleep(
-                Duration::from_millis(
-                    1
-                )
-            );
+            next_frame_deadline +=
+                frame_duration;
+
+
+            let now =
+                Instant::now();
+
+
+            if next_frame_deadline
+                > now
+            {
+                thread::sleep(
+                    next_frame_deadline
+                        - now
+                );
+            } else {
+                next_frame_deadline =
+                    now;
+            }
         };
 
 
@@ -2544,6 +2706,62 @@ fn render_mirror_frames(
 
 
     result
+}
+
+
+fn frame_duration_for_fps(
+    fps: u32,
+) -> Duration {
+
+    Duration::from_secs_f64(
+        1.0 / fps.max(1) as f64
+    )
+}
+
+
+fn notify_active_wallpaper(
+    enabled: bool,
+    shader: &ActiveWallpaperShader,
+    texture_manager: &crate::manage_textures::TextureManager,
+    fps: u32,
+    warning_state: crate::fps_monitor::FpsWarningState,
+) {
+
+    let selection =
+        texture_manager.active_specification_selection();
+
+
+    let metadata =
+        crate::notify_wallpaper::WallpaperMetadata {
+            wallpaper:
+                shader.shader_name.clone(),
+
+            texture:
+                selection.map(
+                    |(specification, _)| {
+                        specification.display_name()
+                    }
+                ),
+
+            palette:
+                selection.map(
+                    |(_, palette)| {
+                        palette.name()
+                            .to_string()
+                    }
+                ),
+
+            fps:
+                fps.max(1),
+
+            warning_state,
+        };
+
+
+    crate::notify_wallpaper::show(
+        enabled,
+        &metadata,
+    );
 }
 
 

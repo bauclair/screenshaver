@@ -70,3 +70,23 @@ pub struct WallpaperSettings {
         bool,
 }
 
+
+
+#[derive(
+    Debug,
+    Clone,
+)]
+pub struct WallpaperRuntime {
+
+    pub monitor_mode:
+        WallpaperMonitorMode,
+
+    pub notifications:
+        bool,
+
+    pub texture_policy:
+        crate::load_config::TextureSelectionPolicy,
+
+    pub fps_policy:
+        crate::load_config::FpsSelectionPolicy,
+}
