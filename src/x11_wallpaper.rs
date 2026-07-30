@@ -37,7 +37,6 @@ use crate::glx_context::{
     GlxContext,
     GlxFramebufferConfig,
 };
-use crate::logger;
 use crate::manage_shader::ShaderManager;
 use crate::manage_wallpaper_runtime::WallpaperRuntimeControl;
 use crate::wallpaper_backend::WallpaperBackend;
@@ -49,7 +48,6 @@ pub struct X11WallpaperBackend {
 
 fn diagnostic(message: &str) {
     println!("{message}");
-    logger::log_message(message);
 }
 
 fn diagnostic_value(label: &str, value: impl std::fmt::Display) {
