@@ -37,6 +37,7 @@ use crate::glx_context::{
     GlxContext,
     GlxFramebufferConfig,
 };
+use crate::logger;
 use crate::manage_shader::ShaderManager;
 use crate::manage_wallpaper_runtime::WallpaperRuntimeControl;
 use crate::wallpaper_backend::WallpaperBackend;
@@ -46,9 +47,18 @@ pub struct X11WallpaperBackend {
     connection: X11Connection,
 }
 
+fn diagnostic(message: &str) {
+    println!("{message}");
+    logger::log_message(message);
+}
+
+fn diagnostic_value(label: &str, value: impl std::fmt::Display) {
+    diagnostic(&format!("{label}{value}"));
+}
+
 impl X11WallpaperBackend {
     pub fn new() -> Result<Self, String> {
-        println!("Probing native X11 wallpaper capabilities...");
+        diagnostic("Probing native X11 wallpaper capabilities...");
         let connection = X11Connection::connect()?;
         Ok(Self { connection })
     }
@@ -117,7 +127,7 @@ fn create_wallpaper_window(
         let height = connection.height() as u32;
         let visual_info = glx_config.visual_info();
 
-        println!("Interning EWMH atoms...");
+        diagnostic("Interning EWMH atoms...");
 
         let wm_type = intern_atom(display, "_NET_WM_WINDOW_TYPE")?;
         let wm_type_desktop =
@@ -130,7 +140,7 @@ fn create_wallpaper_window(
         let wm_state_skip_pager =
             intern_atom(display, "_NET_WM_STATE_SKIP_PAGER")?;
 
-        println!("Creating colormap for the GLX-compatible visual...");
+        diagnostic("Creating colormap for the GLX-compatible visual...");
 
         let colormap = xlib::XCreateColormap(
             display,
@@ -187,7 +197,7 @@ fn create_wallpaper_window(
             );
         }
 
-        println!("Creating GLXWindow drawable...");
+        diagnostic("Creating GLXWindow drawable...");
 
         let glx_window = glx::glXCreateWindow(
             display,
@@ -203,7 +213,7 @@ fn create_wallpaper_window(
             return Err("glXCreateWindow() failed.".to_string());
         }
 
-        println!("Applying desktop window hints...");
+        diagnostic("Applying desktop window hints...");
 
         set_atom_property(
             display,
@@ -226,13 +236,13 @@ fn create_wallpaper_window(
         xlib::XMapRaised(display, window);
         xlib::XSync(display, xlib::False);
 
-        println!(
+        diagnostic(&format!(
             "Created native X11 wallpaper window {} and GLX drawable {} ({}x{})",
             window,
             glx_window,
             width,
             height,
-        );
+        ));
 
         Ok(X11WallpaperWindow {
             window,
@@ -275,11 +285,11 @@ fn destroy_wallpaper_window(
         xlib::XSync(display, xlib::False);
     }
 
-    println!("Closed X11 wallpaper window.");
+    diagnostic("Closed X11 wallpaper window.");
 }
 
 fn load_opengl_functions() -> Result<(), String> {
-    println!("Loading OpenGL functions through GLX...");
+    diagnostic("Loading OpenGL functions through GLX...");
 
     gl::load_with(|symbol| {
         let symbol = match CString::new(symbol) {
@@ -298,8 +308,12 @@ fn load_opengl_functions() -> Result<(), String> {
     if !gl::Viewport::is_loaded()
         || !gl::ClearColor::is_loaded()
         || !gl::Clear::is_loaded()
-        || !gl::Flush::is_loaded()
+        || !gl::Finish::is_loaded()
         || !gl::GetString::is_loaded()
+        || !gl::GetError::is_loaded()
+        || !gl::GetIntegerv::is_loaded()
+        || !gl::ReadBuffer::is_loaded()
+        || !gl::ReadPixels::is_loaded()
     {
         return Err(
             "GLX context became current, but required OpenGL functions could not be loaded."
@@ -307,7 +321,7 @@ fn load_opengl_functions() -> Result<(), String> {
         );
     }
 
-    println!("Loaded required OpenGL functions.");
+    diagnostic("Loaded required OpenGL functions.");
     Ok(())
 }
 
@@ -326,24 +340,34 @@ fn opengl_string(name: u32) -> String {
 }
 
 fn report_opengl_information() {
-    println!("OpenGL context information:");
-    println!("    Vendor: {}", opengl_string(gl::VENDOR));
-    println!("    Renderer: {}", opengl_string(gl::RENDERER));
-    println!("    Version: {}", opengl_string(gl::VERSION));
-    println!(
-        "    GLSL version: {}",
+    diagnostic("OpenGL context information:");
+    diagnostic_value("    Vendor: ", opengl_string(gl::VENDOR));
+    diagnostic_value("    Renderer: ", opengl_string(gl::RENDERER));
+    diagnostic_value("    Version: ", opengl_string(gl::VERSION));
+    diagnostic_value(
+        "    GLSL version: ",
         opengl_string(gl::SHADING_LANGUAGE_VERSION),
     );
-    println!();
 }
 
 fn render_diagnostic_frame(
     display: *mut xlib::Display,
     wallpaper_window: &X11WallpaperWindow,
-) {
-    println!("Rendering diagnostic OpenGL frame...");
+) -> Result<(), String> {
+    diagnostic("Rendering diagnostic OpenGL frame...");
 
     unsafe {
+        // Remove any stale error so every reported value belongs to this test.
+        while gl::GetError() != gl::NO_ERROR {}
+
+        let mut viewport = [0_i32; 4];
+        gl::GetIntegerv(gl::VIEWPORT, viewport.as_mut_ptr());
+
+        diagnostic(&format!(
+            "OpenGL viewport before update: {}, {}, {}, {}",
+            viewport[0], viewport[1], viewport[2], viewport[3],
+        ));
+
         gl::Viewport(
             0,
             0,
@@ -351,9 +375,51 @@ fn render_diagnostic_frame(
             wallpaper_window.height,
         );
 
+        let viewport_error = gl::GetError();
+        diagnostic(&format!(
+            "glViewport error: 0x{viewport_error:04X}"
+        ));
+
         gl::ClearColor(0.0, 0.25, 1.0, 1.0);
+
+        let clear_color_error = gl::GetError();
+        diagnostic(&format!(
+            "glClearColor error: 0x{clear_color_error:04X}"
+        ));
+
         gl::Clear(gl::COLOR_BUFFER_BIT);
-        gl::Flush();
+
+        let clear_error = gl::GetError();
+        diagnostic(&format!(
+            "glClear error: 0x{clear_error:04X}"
+        ));
+
+        gl::Finish();
+
+        let finish_error = gl::GetError();
+        diagnostic(&format!(
+            "glFinish error: 0x{finish_error:04X}"
+        ));
+
+        // Read one pixel from the back buffer before swapping.  A successful
+        // blue clear should report approximately RGBA 0, 64, 255, 255.
+        let mut pixel = [0_u8; 4];
+        gl::ReadBuffer(gl::BACK);
+        gl::ReadPixels(
+            wallpaper_window.width / 2,
+            wallpaper_window.height / 2,
+            1,
+            1,
+            gl::RGBA,
+            gl::UNSIGNED_BYTE,
+            pixel.as_mut_ptr() as *mut std::ffi::c_void,
+        );
+
+        let read_error = gl::GetError();
+        diagnostic(&format!(
+            "Back-buffer center pixel: R={} G={} B={} A={}; glReadPixels error: 0x{read_error:04X}",
+            pixel[0], pixel[1], pixel[2], pixel[3],
+        ));
 
         glx::glXSwapBuffers(
             display,
@@ -361,13 +427,19 @@ fn render_diagnostic_frame(
         );
 
         xlib::XSync(display, xlib::False);
+
+        let swap_error = gl::GetError();
+        diagnostic(&format!(
+            "OpenGL error after glXSwapBuffers: 0x{swap_error:04X}"
+        ));
     }
 
-    println!("Presented diagnostic OpenGL frame with glXSwapBuffers().");
+    diagnostic("Presented diagnostic OpenGL frame with glXSwapBuffers().");
+    Ok(())
 }
 
 fn run_window_loop() {
-    println!("Displaying OpenGL diagnostic frame for five seconds...");
+    diagnostic("Displaying OpenGL diagnostic frame for five seconds...");
     thread::sleep(Duration::from_secs(5));
 }
 
@@ -407,7 +479,7 @@ impl WallpaperBackend for X11WallpaperBackend {
                 self.connection.screen(),
             )?;
 
-        println!("Creating native X11 wallpaper window...");
+        diagnostic("Creating native X11 wallpaper window...");
 
         let wallpaper_window =
             create_wallpaper_window(
@@ -451,7 +523,7 @@ impl WallpaperBackend for X11WallpaperBackend {
         let render_result = (|| -> Result<(), String> {
             load_opengl_functions()?;
             report_opengl_information();
-            render_diagnostic_frame(display, &wallpaper_window);
+            render_diagnostic_frame(display, &wallpaper_window)?;
             run_window_loop();
 
             Ok(())
