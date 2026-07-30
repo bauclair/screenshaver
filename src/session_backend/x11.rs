@@ -1,5 +1,4 @@
 use std::cell::Cell;
-use std::ffi::CStr;
 use std::os::raw::c_void;
 use std::ptr;
 use std::time::Duration;
@@ -11,10 +10,10 @@ use crate::query_session::{
     SessionError,
     SessionState,
 };
+use crate::x11_connection::X11Connection;
 
 pub struct X11Backend {
-    display: *mut xlib::Display,
-    root_window: xlib::Window,
+    connection: X11Connection,
     screensaver_info: *mut xss::XScreenSaverInfo,
     idle_timeout_ms: u64,
 
@@ -26,8 +25,6 @@ impl X11Backend {
     pub fn new(
         idle_timeout: Duration,
     ) -> Result<Self, SessionError> {
-        log_debug("[X11] Opening X11 display");
-
         let idle_timeout_ms =
             idle_timeout
                 .as_millis()
@@ -40,57 +37,28 @@ impl X11Backend {
             )
         );
 
+        let connection =
+            X11Connection::connect()
+                .map_err(
+                    |error| {
+                        SessionError::BackendUnavailable(
+                            error
+                        )
+                    }
+                )?;
+
         unsafe {
-            let display =
-                xlib::XOpenDisplay(
-                    ptr::null()
-                );
-
-            if display.is_null() {
-                return Err(
-                    SessionError::BackendUnavailable(
-                        "Unable to open X11 display".to_string()
-                    )
-                );
-            }
-
-            let display_name =
-                xlib::XDisplayString(display);
-
-            if !display_name.is_null() {
-                let name =
-                    CStr::from_ptr(
-                        display_name
-                    );
-
-                log_debug(
-                    &format!(
-                        "[X11] Connected to {}",
-                        name.to_string_lossy()
-                    )
-                );
-            }
-            else {
-                log_debug(
-                    "[X11] Connected (display name unavailable)"
-                );
-            }
-
             let mut event_base: i32 = 0;
             let mut error_base: i32 = 0;
 
             let extension_available =
                 xss::XScreenSaverQueryExtension(
-                    display,
+                    connection.display(),
                     &mut event_base,
                     &mut error_base,
                 );
 
             if extension_available == 0 {
-                xlib::XCloseDisplay(
-                    display
-                );
-
                 return Err(
                     SessionError::BackendUnavailable(
                         "XScreenSaver extension is unavailable".to_string()
@@ -110,10 +78,6 @@ impl X11Backend {
                 xss::XScreenSaverAllocInfo();
 
             if screensaver_info.is_null() {
-                xlib::XCloseDisplay(
-                    display
-                );
-
                 return Err(
                     SessionError::BackendUnavailable(
                         "Unable to allocate XScreenSaverInfo".to_string()
@@ -121,38 +85,9 @@ impl X11Backend {
                 );
             }
 
-            let root_window =
-                xlib::XDefaultRootWindow(
-                    display
-                );
-
-            if root_window == 0 {
-                xlib::XFree(
-                    screensaver_info as *mut c_void
-                );
-
-                xlib::XCloseDisplay(
-                    display
-                );
-
-                return Err(
-                    SessionError::BackendUnavailable(
-                        "Unable to obtain the X11 root window".to_string()
-                    )
-                );
-            }
-
-            log_debug(
-                &format!(
-                    "[X11] Root window = {}",
-                    root_window,
-                )
-            );
-
             Ok(
                 Self {
-                    display,
-                    root_window,
+                    connection,
                     screensaver_info,
                     idle_timeout_ms,
                     last_logged_idle_second: Cell::new(u64::MAX),
@@ -169,8 +104,8 @@ impl SessionBackend for X11Backend {
         let query_succeeded =
             unsafe {
                 xss::XScreenSaverQueryInfo(
-                    self.display,
-                    self.root_window,
+                    self.connection.display(),
+                    self.connection.root_window(),
                     self.screensaver_info,
                 )
             };
@@ -238,12 +173,8 @@ impl SessionBackend for X11Backend {
 
 impl Drop for X11Backend {
     fn drop(
-        &mut self
+        &mut self,
     ) {
-        log_debug(
-            "[X11] Closing display"
-        );
-
         unsafe {
             if !self.screensaver_info.is_null() {
                 xlib::XFree(
@@ -253,16 +184,10 @@ impl Drop for X11Backend {
                 self.screensaver_info =
                     ptr::null_mut();
             }
-
-            if !self.display.is_null() {
-                xlib::XCloseDisplay(
-                    self.display
-                );
-
-                self.display =
-                    ptr::null_mut();
-            }
         }
+
+        // `connection` is dropped automatically after this method returns.
+        // X11Connection is the sole owner of the Display* and closes it once.
     }
 }
 
@@ -278,7 +203,6 @@ fn log_debug(
     );
 }
 
-
 fn log_information(
     message: &str,
 ) {
@@ -290,7 +214,6 @@ fn log_information(
         message,
     );
 }
-
 
 fn log_error(
     message: &str,

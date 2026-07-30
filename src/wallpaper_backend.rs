@@ -37,34 +37,63 @@ pub trait WallpaperBackend {
 
 /// Select the first usable native wallpaper backend.
 ///
-/// Stage 1 intentionally preserves the existing behavior: native Wayland is
-/// the only implemented wallpaper backend. X11 will be added here as the next
-/// backend candidate without changing manage_wallpaper.rs again.
+/// Wayland remains the preferred backend. If native Wayland wallpaper
+/// capability probing fails, Screenshaver falls back to X11.
 pub fn create_backend(
 ) -> Result<Box<dyn WallpaperBackend>, String> {
     match WaylandWallpaperBackend::new() {
         Ok(backend) => {
-            println!(
-                "Selected native [{}] wallpaper backend",
-                backend.backend_name().to_uppercase()
+            announce_backend(
+                &backend
             );
-
-            println!();
 
             Ok(
                 Box::new(backend)
             )
         }
 
-        Err(error) => {
-            Err(
-                format!(
-                    "No compatible wallpaper backend is available. Wayland: {}. X11 wallpaper support has not yet been implemented.",
-                    error,
-                )
-            )
+        Err(wayland_error) => {
+            println!(
+                "Native Wayland wallpaper backend is unavailable: {}",
+                wayland_error,
+            );
+
+            println!();
+
+            match crate::x11_wallpaper::X11WallpaperBackend::new() {
+                Ok(backend) => {
+                    announce_backend(
+                        &backend
+                    );
+
+                    Ok(
+                        Box::new(backend)
+                    )
+                }
+
+                Err(x11_error) => {
+                    Err(
+                        format!(
+                            "No compatible wallpaper backend is available. Wayland: {}. X11: {}.",
+                            wayland_error,
+                            x11_error,
+                        )
+                    )
+                }
+            }
         }
     }
+}
+
+fn announce_backend(
+    backend: &dyn WallpaperBackend,
+) {
+    println!(
+        "Selected native [{}] wallpaper backend",
+        backend.backend_name().to_uppercase()
+    );
+
+    println!();
 }
 
 struct WaylandWallpaperBackend {
