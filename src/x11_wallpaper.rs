@@ -1,3 +1,4 @@
+use std::ffi::CString;
 use std::path::Path;
 use std::sync::{
     atomic::AtomicBool,
@@ -37,6 +38,43 @@ impl X11WallpaperBackend {
     }
 }
 
+
+fn intern_atom(
+    display: *mut xlib::Display,
+    name: &str,
+) -> Result<xlib::Atom, String> {
+    let name = CString::new(name)
+        .map_err(|_| format!("Invalid atom name: {name}"))?;
+
+    let atom = unsafe { xlib::XInternAtom(display, name.as_ptr(), xlib::False) };
+
+    if atom == 0 {
+        Err(format!("Unable to resolve X11 atom '{:?}'", name))
+    } else {
+        Ok(atom)
+    }
+}
+
+fn set_atom_property(
+    display: *mut xlib::Display,
+    window: xlib::Window,
+    property: xlib::Atom,
+    values: &[xlib::Atom],
+) {
+    unsafe {
+        xlib::XChangeProperty(
+            display,
+            window,
+            property,
+            xlib::XA_ATOM,
+            32,
+            xlib::PropModeReplace,
+            values.as_ptr() as *const u8,
+            values.len() as i32,
+        );
+    }
+}
+
 fn create_wallpaper_window(
     connection: &X11Connection,
 ) -> Result<xlib::Window, String> {
@@ -62,7 +100,26 @@ fn create_wallpaper_window(
             return Err("Unable to create native X11 wallpaper window.".to_string());
         }
 
-        xlib::XSetWindowBackground(display, window, 0x00ff0000);
+
+println!("Interning EWMH atoms...");
+let wm_type = intern_atom(display, "_NET_WM_WINDOW_TYPE")?;
+let wm_type_desktop = intern_atom(display, "_NET_WM_WINDOW_TYPE_DESKTOP")?;
+let wm_state = intern_atom(display, "_NET_WM_STATE")?;
+let wm_state_below = intern_atom(display, "_NET_WM_STATE_BELOW")?;
+let wm_state_skip_taskbar = intern_atom(display, "_NET_WM_STATE_SKIP_TASKBAR")?;
+let wm_state_skip_pager = intern_atom(display, "_NET_WM_STATE_SKIP_PAGER")?;
+
+println!("Applying desktop window hints...");
+set_atom_property(display, window, wm_type, &[wm_type_desktop]);
+set_atom_property(
+    display,
+    window,
+    wm_state,
+    &[wm_state_below, wm_state_skip_taskbar, wm_state_skip_pager],
+);
+
+xlib::XSetWindowBackground(display, window, 0x00ff0000);
+
         xlib::XSelectInput(
             display,
             window,
