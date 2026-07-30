@@ -89,4 +89,7 @@ pub struct WallpaperRuntime {
 
     pub fps_policy:
         crate::load_config::FpsSelectionPolicy,
+
+    pub animation_speed_policy:
+        crate::load_config::AnimationSpeedPolicy,
 }

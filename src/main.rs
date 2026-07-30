@@ -221,6 +221,7 @@ crate::parse_arguments::Command::PreviewShader {
     shader_palette,
     interval_seconds,
     fps,
+    animation_speed,
 } => {
 
     match crate::preview_shader::run(
@@ -229,6 +230,7 @@ crate::parse_arguments::Command::PreviewShader {
         shader_palette,
         interval_seconds,
         fps,
+        animation_speed,
     ) {
 
         Ok(()) => {}
@@ -924,6 +926,8 @@ crate::parse_arguments::Command::ListPalettes => {
                 cfg.wallpaper_texture_policy,
             fps_policy:
                 cfg.fps_policy,
+            animation_speed_policy:
+                cfg.wallpaper_speed_policy,
         };
 
 
@@ -1137,6 +1141,7 @@ crate::parse_arguments::Command::ListPalettes => {
                         &sdl,
                         shader_manager,
                         parsed_interval.seconds,
+                        cfg.screensaver_speed_policy.clone(),
                         cfg.global_rendered_fps,
                         cfg.fps_overrides.clone(),
                         cfg.texture_policy.clone(),

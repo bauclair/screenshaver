@@ -3,7 +3,7 @@ use crate::parse_texture_specification::{
     TextureSpecification,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Command {
     Run,
 
@@ -31,6 +31,7 @@ pub enum Command {
         shader_palette: Option<String>,
         interval_seconds: Option<u64>,
         fps: Option<u32>,
+        animation_speed: Option<f32>,
     },
 
     ListTextures,
@@ -465,6 +466,11 @@ fn parse_preview_shader(
             None;
 
 
+    let mut animation_speed:
+        Option<f32> =
+            None;
+
+
     let mut index =
         1;
 
@@ -611,6 +617,70 @@ fn parse_preview_shader(
             }
 
 
+            "--speed" => {
+
+                if animation_speed.is_some() {
+
+                    return Err(
+                        "--speed may only be specified once"
+                            .to_string()
+                    );
+                }
+
+
+                let value =
+                    argument_value(
+                        args,
+                        index,
+                        "--speed",
+                    )?;
+
+
+                let parsed_speed =
+                    value.parse::<f32>()
+                        .map_err(
+                            |_| {
+                                format!(
+                                    "Invalid --speed value '{}'; specify a number from {} through {}",
+                                    value,
+                                    crate::define_constants::PREVIEW_SPEED_MIN,
+                                    crate::define_constants::PREVIEW_SPEED_MAX,
+                                )
+                            }
+                        )?;
+
+
+                if !parsed_speed.is_finite()
+                    || !(
+                        crate::define_constants::PREVIEW_SPEED_MIN
+                            ..=
+                        crate::define_constants::PREVIEW_SPEED_MAX
+                    )
+                        .contains(
+                        &parsed_speed
+                    )
+                {
+                    return Err(
+                        format!(
+                            "--speed value {} is outside the supported range {}-{}",
+                            value,
+                            crate::define_constants::PREVIEW_SPEED_MIN,
+                            crate::define_constants::PREVIEW_SPEED_MAX,
+                        )
+                    );
+                }
+
+
+                animation_speed =
+                    Some(
+                        parsed_speed
+                    );
+
+
+                index += 2;
+            }
+
+
             "--interval" => {
 
                 if interval_seconds.is_some() {
@@ -709,6 +779,8 @@ fn parse_preview_shader(
             interval_seconds,
 
             fps,
+
+            animation_speed,
         }
     )
 }
@@ -894,10 +966,12 @@ pub fn print_help() {
                  COUNT may range from 1 through 1024.\n\
                  This command does not consult screenshaver.toml.\n\
          \n\
-             --preview-shader PATH [--interval SECONDS] [--fps FPS]\n\
+             --preview-shader PATH [--interval SECONDS] [--fps FPS] [--speed MULTIPLIER]\n\
                               [--texture FAMILY[:COUNT]] [--palette PALETTE]\n\
                  Preview one shader or all shaders directly inside a folder.\n\
                  Folder previews use a 30-second interval unless overridden.\n\
+                 --speed accepts an animation multiplier from 0.01 through 10.0.\n\
+                 The default animation speed is 1.0.\n\
                  Command-line texture values override TOML selection values.\n\
                  --texture and --palette are accepted as shorter aliases.\n\
          \n\

@@ -32,6 +32,9 @@ pub struct FrameRenderer {
     active_shader: ActiveShader,
     vao: u32,
     start_time: Instant,
+    animation_speed: f32,
+    animation_speed_policy:
+        crate::load_config::AnimationSpeedPolicy,
     last_shader_switch: Instant,
     shader_interval: u64,
     shader_manager: crate::manage_shader::ShaderManager,
@@ -69,6 +72,8 @@ impl FrameRenderer {
         sdl: &sdl2::Sdl,
         mut shader_manager: crate::manage_shader::ShaderManager,
         shader_interval: u64,
+        animation_speed_policy:
+            crate::load_config::AnimationSpeedPolicy,
         global_rendered_fps: u32,
         fps_overrides:
             Vec<
@@ -167,6 +172,19 @@ impl FrameRenderer {
                 &mut shader_manager
             )?;
 
+        let animation_speed =
+            animation_speed_policy.animation_speed_for_shader(
+                &active_shader.shader_name,
+                None,
+            );
+
+        log_information(
+            &format!(
+                "[RENDER] Animation speed: {:.3}x",
+                animation_speed,
+            )
+        );
+
         log_active_shader(
             &active_shader
         );
@@ -208,6 +226,7 @@ impl FrameRenderer {
                         &texture_manager,
                         true,
                         subtitle_placement,
+                        animation_speed,
                         configured_fps,
                         FpsWarningState::Normal,
                         window_width,
@@ -244,6 +263,8 @@ impl FrameRenderer {
                 vao,
                 start_time:
                     Instant::now(),
+                animation_speed,
+                animation_speed_policy,
                 last_shader_switch:
                     Instant::now(),
                 shader_interval,
@@ -387,7 +408,8 @@ impl FrameRenderer {
             let time =
                 self.start_time
                     .elapsed()
-                    .as_secs_f32();
+                    .as_secs_f32()
+                    * self.animation_speed;
 
             let time_location =
                 gl::GetUniformLocation(
@@ -509,6 +531,7 @@ impl FrameRenderer {
                     &self.texture_manager,
                     self.subtitles,
                     self.subtitle_placement,
+                    self.animation_speed,
                     self.configured_fps,
                     overlay_warning_state,
                     width,
@@ -706,6 +729,14 @@ impl FrameRenderer {
                     new_shader.program,
                 );
 
+                let new_animation_speed =
+                    self.animation_speed_policy
+                        .animation_speed_for_shader(
+                            &new_shader.shader_name,
+                            None,
+                        );
+
+
                 let new_configured_fps =
                     resolve_shader_fps(
                         self.global_rendered_fps,
@@ -727,6 +758,7 @@ impl FrameRenderer {
                             &self.texture_manager,
                             true,
                             self.subtitle_placement,
+                            new_animation_speed,
                             new_configured_fps,
                             FpsWarningState::Normal,
                             width,
@@ -761,6 +793,19 @@ impl FrameRenderer {
 
                 self.active_shader =
                     new_shader;
+
+                self.start_time =
+                    Instant::now();
+
+                self.animation_speed =
+                    new_animation_speed;
+
+                log_information(
+                    &format!(
+                        "[RENDER] Animation speed: {:.3}x",
+                        self.animation_speed,
+                    )
+                );
 
                 self.configured_fps =
                     new_configured_fps;
@@ -909,6 +954,22 @@ fn resolve_shader_fps(
 }
 
 
+fn format_animation_speed(
+    speed: f32,
+) -> String {
+
+    if speed.fract() == 0.0 {
+        format!(
+            "×{speed:.1}"
+        )
+    } else {
+        format!(
+            "×{speed}"
+        )
+    }
+}
+
+
 fn build_subtitle_overlay(
     shader: &ActiveShader,
     texture_manager:
@@ -917,6 +978,7 @@ fn build_subtitle_overlay(
         bool,
     placement:
         crate::parse_subtitle_placement::SubtitlePlacement,
+    animation_speed: f32,
     configured_fps: u32,
     warning_state:
         FpsWarningState,
@@ -992,6 +1054,15 @@ fn build_subtitle_overlay(
                     shader.shader_name
                         .clone()
                 };
+
+            let shader_label =
+                format!(
+                    "{} | {}",
+                    shader_label,
+                    format_animation_speed(
+                        animation_speed
+                    ),
+                );
 
             crate::construct_text_overlay::OverlayDescriptor {
                 shader:

@@ -29,6 +29,16 @@ fn default_global_rendered_fps() -> u32 {
 }
 
 
+fn default_screensaver_global_speed() -> f32 {
+    crate::define_constants::SCREENSAVER_SPEED_DEFAULT
+}
+
+
+fn default_wallpaper_global_speed() -> f32 {
+    crate::define_constants::WALLPAPER_SPEED_DEFAULT
+}
+
+
 fn default_subtitle_placement() -> String {
     "bottom:left".to_string()
 }
@@ -73,6 +83,9 @@ struct ScreensaverSection {
 
     #[serde(default)]
     global_palette: Option<String>,
+
+    #[serde(default = "default_screensaver_global_speed")]
+    global_speed: f32,
 }
 
 
@@ -93,6 +106,9 @@ struct WallpaperSection {
     monitor_mode: String,
 
     notifications: bool,
+
+    #[serde(default = "default_wallpaper_global_speed")]
+    global_speed: f32,
 }
 
 
@@ -188,6 +204,86 @@ struct RawToml {
 // Public structure returned to main.rs
 // ------------------------------------------------------------
 //
+
+#[derive(
+    Debug,
+    Clone,
+)]
+pub struct ShaderOverride {
+
+    pub shader:
+        String,
+
+    pub shader_texture:
+        Option<
+            crate::parse_texture_specification::TextureSpecification
+        >,
+
+    pub shader_palette:
+        Option<
+            crate::palettes::Palette
+        >,
+
+    pub rendered_fps:
+        Option<u32>,
+
+    pub animation_speed:
+        Option<f32>,
+}
+
+
+#[derive(
+    Debug,
+    Clone,
+)]
+pub struct AnimationSpeedPolicy {
+
+    pub global_speed: f32,
+
+    pub shader_overrides:
+        Vec<
+            ShaderOverride
+        >,
+}
+
+
+impl AnimationSpeedPolicy {
+
+    pub fn animation_speed_for_shader(
+        &self,
+        shader_name: &str,
+        command_line_speed: Option<f32>,
+    ) -> f32 {
+
+        if let Some(speed) =
+            command_line_speed
+        {
+            return speed;
+        }
+
+
+        self.shader_overrides
+            .iter()
+            .find(
+                |shader_override| {
+                    shader_override
+                        .shader
+                        .eq_ignore_ascii_case(
+                            shader_name
+                        )
+                }
+            )
+            .and_then(
+                |shader_override| {
+                    shader_override.animation_speed
+                }
+            )
+            .unwrap_or(
+                self.global_speed
+            )
+    }
+}
+
 
 #[derive(
     Debug,
@@ -329,6 +425,21 @@ pub struct Config {
 
     pub wallpaper_texture_policy:
         TextureSelectionPolicy,
+
+    pub screensaver_global_speed: f32,
+
+    pub wallpaper_global_speed: f32,
+
+    pub shader_overrides:
+        Vec<
+            ShaderOverride
+        >,
+
+    pub screensaver_speed_policy:
+        AnimationSpeedPolicy,
+
+    pub wallpaper_speed_policy:
+        AnimationSpeedPolicy,
 
     pub global_rendered_fps: u32,
 
@@ -540,6 +651,32 @@ pub fn load_config(
 
 
     let (
+        screensaver_global_speed,
+        screensaver_global_speed_warning,
+    ) =
+        validate_animation_speed(
+            raw.screensaver.global_speed,
+            crate::define_constants::SCREENSAVER_SPEED_MIN,
+            crate::define_constants::SCREENSAVER_SPEED_MAX,
+            crate::define_constants::SCREENSAVER_SPEED_DEFAULT,
+            "screensaver.global_speed",
+        );
+
+
+    let (
+        wallpaper_global_speed,
+        wallpaper_global_speed_warning,
+    ) =
+        validate_animation_speed(
+            raw.wallpaper.global_speed,
+            crate::define_constants::WALLPAPER_SPEED_MIN,
+            crate::define_constants::WALLPAPER_SPEED_MAX,
+            crate::define_constants::WALLPAPER_SPEED_DEFAULT,
+            "wallpaper.global_speed",
+        );
+
+
+    let (
         global_rendered_fps,
         global_rendered_fps_warning,
     ) =
@@ -559,6 +696,31 @@ pub fn load_config(
             global_rendered_fps,
             fps_overrides:
                 fps_overrides.clone(),
+        };
+
+
+    let shader_overrides =
+        merge_legacy_shader_overrides(
+            &texture_policy.texture_overrides,
+            &fps_overrides,
+        );
+
+
+    let screensaver_speed_policy =
+        AnimationSpeedPolicy {
+            global_speed:
+                screensaver_global_speed,
+            shader_overrides:
+                shader_overrides.clone(),
+        };
+
+
+    let wallpaper_speed_policy =
+        AnimationSpeedPolicy {
+            global_speed:
+                wallpaper_global_speed,
+            shader_overrides:
+                shader_overrides.clone(),
         };
 
 
@@ -607,6 +769,16 @@ pub fn load_config(
                 raw.wallpaper.mode,
 
             wallpaper_texture_policy,
+
+            screensaver_global_speed,
+
+            wallpaper_global_speed,
+
+            shader_overrides,
+
+            screensaver_speed_policy,
+
+            wallpaper_speed_policy,
 
             global_rendered_fps,
 
@@ -752,6 +924,21 @@ pub fn load_config(
             ),
 
             format!(
+                "[CONFIG] screensaver.global_speed = {}",
+                config.screensaver_global_speed,
+            ),
+
+            format!(
+                "[CONFIG] wallpaper.global_speed = {}",
+                config.wallpaper_global_speed,
+            ),
+
+            format!(
+                "[CONFIG] unified shader_override count = {}",
+                config.shader_overrides.len(),
+            ),
+
+            format!(
                 "[CONFIG] global_rendered_fps = {}",
                 config.global_rendered_fps,
             ),
@@ -775,6 +962,24 @@ pub fn load_config(
 
     if let Some(warning) =
         parsed_subtitle_placement.warning
+    {
+        diagnostics.push(
+            warning
+        );
+    }
+
+
+    if let Some(warning) =
+        screensaver_global_speed_warning
+    {
+        diagnostics.push(
+            warning
+        );
+    }
+
+
+    if let Some(warning) =
+        wallpaper_global_speed_warning
     {
         diagnostics.push(
             warning
@@ -862,6 +1067,91 @@ pub fn load_config(
 
 //
 // ------------------------------------------------------------
+// Legacy override consolidation
+// ------------------------------------------------------------
+//
+
+fn merge_legacy_shader_overrides(
+    texture_overrides: &[TextureOverride],
+    fps_overrides: &[FpsOverride],
+) -> Vec<ShaderOverride> {
+
+    let mut merged:
+        Vec<ShaderOverride> =
+            Vec::new();
+
+
+    for texture_override in
+        texture_overrides
+    {
+        merged.push(
+            ShaderOverride {
+                shader:
+                    texture_override.shader.clone(),
+                shader_texture:
+                    Some(
+                        texture_override.shader_texture.clone()
+                    ),
+                shader_palette:
+                    Some(
+                        texture_override.shader_palette
+                    ),
+                rendered_fps:
+                    None,
+                animation_speed:
+                    None,
+            }
+        );
+    }
+
+
+    for fps_override in
+        fps_overrides
+    {
+        if let Some(existing) =
+            merged
+                .iter_mut()
+                .find(
+                    |shader_override| {
+                        shader_override
+                            .shader
+                            .eq_ignore_ascii_case(
+                                &fps_override.shader
+                            )
+                    }
+                )
+        {
+            existing.rendered_fps =
+                Some(
+                    fps_override.rendered_fps
+                );
+        } else {
+            merged.push(
+                ShaderOverride {
+                    shader:
+                        fps_override.shader.clone(),
+                    shader_texture:
+                        None,
+                    shader_palette:
+                        None,
+                    rendered_fps:
+                        Some(
+                            fps_override.rendered_fps
+                        ),
+                    animation_speed:
+                        None,
+                }
+            );
+        }
+    }
+
+
+    merged
+}
+
+
+//
+// ------------------------------------------------------------
 // Log-level validation
 // ------------------------------------------------------------
 //
@@ -893,6 +1183,51 @@ fn validate_log_level(
             format!(
                 "[CONFIG] WARNING: log_level = {} is outside the supported range 1-6; using {}",
                 value,
+                fallback,
+            )
+        ),
+    )
+}
+
+
+//
+// ------------------------------------------------------------
+// Animation-speed validation
+// ------------------------------------------------------------
+//
+
+fn validate_animation_speed(
+    value: f32,
+    minimum: f32,
+    maximum: f32,
+    fallback: f32,
+    setting_name: &str,
+) -> (
+    f32,
+    Option<String>,
+) {
+
+    if value.is_finite()
+        && (minimum..=maximum).contains(
+            &value
+        )
+    {
+        return (
+            value,
+            None,
+        );
+    }
+
+
+    (
+        fallback,
+        Some(
+            format!(
+                "[CONFIG] WARNING: {} = {} is outside the supported range {}-{}; using {}",
+                setting_name,
+                value,
+                minimum,
+                maximum,
                 fallback,
             )
         ),

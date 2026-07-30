@@ -163,6 +163,7 @@ pub fn run(
     shader_palette: Option<String>,
     interval_seconds: Option<u64>,
     command_line_fps: Option<u32>,
+    animation_speed: Option<f32>,
 ) -> Result<(), String> {
 
     match crate::preview_shader_directory::resolve_preview_target(
@@ -188,6 +189,7 @@ pub fn run(
                 shader_palette,
                 None,
                 command_line_fps,
+                animation_speed,
             )
         }
 
@@ -202,6 +204,7 @@ pub fn run(
                 shader_palette,
                 interval_seconds,
                 command_line_fps,
+                animation_speed,
             )
         }
     }
@@ -214,6 +217,7 @@ pub fn run_paths(
     shader_palette: Option<String>,
     interval_seconds: Option<u64>,
     command_line_fps: Option<u32>,
+    animation_speed: Option<f32>,
 ) -> Result<(), String> {
 
     if shader_paths.is_empty() {
@@ -222,6 +226,12 @@ pub fn run_paths(
                 .to_string()
         );
     }
+
+
+    let animation_speed =
+        animation_speed.unwrap_or(
+            1.0
+        );
 
 
     let config_result =
@@ -270,6 +280,15 @@ pub fn run_paths(
         &format!(
             "[PREVIEW_SHADER] Preview playlist contains {} shader path(s)",
             shader_paths.len(),
+        ),
+    );
+
+
+    crate::logger::information(
+        &logfile,
+        &format!(
+            "[PREVIEW_SHADER] Animation speed: {:.3}x",
+            animation_speed,
         ),
     );
 
@@ -394,6 +413,7 @@ pub fn run_paths(
             global_rendered_fps,
             &fps_overrides,
             command_line_fps,
+            animation_speed,
             width,
             height,
         )?;
@@ -537,6 +557,7 @@ pub fn run_paths(
                         global_rendered_fps,
                         &fps_overrides,
                         command_line_fps,
+                        animation_speed,
                         window.size().0,
                         window.size().1,
                     ) {
@@ -621,13 +642,15 @@ pub fn run_paths(
             let elapsed =
                 active.start_time
                     .elapsed()
-                    .as_secs_f32();
+                    .as_secs_f32()
+                    * animation_speed;
 
 
             let delta =
                 active.previous_frame
                     .elapsed()
-                    .as_secs_f32();
+                    .as_secs_f32()
+                    * animation_speed;
 
 
             let shader_render_start =
@@ -972,6 +995,7 @@ fn load_first_usable_shader(
             crate::load_config::FpsOverride
         ],
     command_line_fps: Option<u32>,
+    animation_speed: f32,
     output_width: u32,
     output_height: u32,
 ) -> Result<
@@ -1025,6 +1049,7 @@ fn load_first_usable_shader(
             subtitles,
             subtitle_placement,
             configured_fps,
+            animation_speed,
             output_width,
             output_height,
         ) {
@@ -1069,6 +1094,7 @@ fn load_active_shader(
     subtitle_placement:
         crate::parse_subtitle_placement::SubtitlePlacement,
     configured_fps: u32,
+    animation_speed: f32,
     output_width: u32,
     output_height: u32,
 ) -> Result<
@@ -1223,7 +1249,13 @@ fn load_active_shader(
         crate::construct_text_overlay::OverlayDescriptor {
             shader:
                 Some(
-                    shader_name.clone()
+                    format!(
+                        "{} | {}",
+                        shader_name,
+                        format_animation_speed(
+                            animation_speed
+                        ),
+                    )
                 ),
 
             texture,
@@ -1292,6 +1324,24 @@ fn load_active_shader(
                 0,
         }
     )
+}
+
+
+fn format_animation_speed(
+    speed: f32,
+) -> String {
+
+    if speed.fract()
+        == 0.0
+    {
+        format!(
+            "×{speed:.1}"
+        )
+    } else {
+        format!(
+            "×{speed}"
+        )
+    }
 }
 
 

@@ -34,26 +34,6 @@ use wayland_client::{
     QueueHandle,
 };
 
-const WALLPAPER_CROSSFADE_DURATION: Duration =
-    Duration::from_millis(750);
-
-
-const WALLPAPER_CROSSFADE_FRAGMENT_SHADER: &str =
-    r#"#version 330 core
-uniform sampler2D oldFrame;
-uniform vec2 outputSize;
-uniform float oldOpacity;
-out vec4 fragColor;
-
-void main()
-{
-    vec2 uv = gl_FragCoord.xy / outputSize;
-    vec4 oldColor = texture(oldFrame, uv);
-    fragColor = vec4(oldColor.rgb, oldOpacity);
-}
-"#;
-
-
 use wayland_protocols_wlr::layer_shell::v1::client::{
     zwlr_layer_shell_v1::{
         self,
@@ -131,7 +111,6 @@ struct NativeWallpaperTarget {
 struct EglWallpaperTarget {
     registry_name: u32,
     surface: EglSurface,
-    crossfade_texture: u32,
 }
 
 
@@ -842,7 +821,7 @@ pub fn run_egl_background_surface(
     shader_interval: Option<Duration>,
     runtime: &crate::define_wallpaper::WallpaperRuntime,
     running: Arc<AtomicBool>,
-    control: crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+    _control: crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
 ) -> Result<(), String> {
 
     let active_shader =
@@ -1146,37 +1125,6 @@ pub fn run_egl_background_surface(
         );
 
 
-        // Tell the compositor that the complete wallpaper surface is opaque.
-        // This prevents any desktop wallpaper below Screenshaver from being
-        // composited through shader or crossfade alpha values.
-        let opaque_region =
-            compositor.create_region(
-                &queue_handle,
-                (),
-            );
-
-
-        opaque_region.add(
-            0,
-            0,
-            width,
-            height,
-        );
-
-
-        surface.set_opaque_region(
-            Some(
-                &opaque_region
-            )
-        );
-
-
-        surface.commit();
-
-
-        opaque_region.destroy();
-
-
         let egl_window =
             wayland_egl::WlEglSurface::new(
                 surface.id(),
@@ -1219,7 +1167,6 @@ pub fn run_egl_background_surface(
         shader_interval,
         runtime,
         &running,
-        &control,
     )?;
 
 
@@ -1550,7 +1497,6 @@ fn render_egl_wallpapers(
     shader_interval: Option<Duration>,
     runtime: &crate::define_wallpaper::WallpaperRuntime,
     running: &Arc<AtomicBool>,
-    control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
 ) -> Result<(), String> {
 
     let native_display =
@@ -1768,9 +1714,6 @@ fn render_egl_wallpapers(
                     target.info.registry_name,
 
                 surface,
-
-                crossfade_texture:
-                    0,
             }
         );
     }
@@ -1859,7 +1802,6 @@ fn render_egl_wallpapers(
             shader_interval,
             runtime,
             running,
-            control,
         );
 
 
@@ -1975,7 +1917,6 @@ fn render_mirror_frames(
     shader_interval: Option<Duration>,
     runtime: &crate::define_wallpaper::WallpaperRuntime,
     running: &Arc<AtomicBool>,
-    control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
 ) -> Result<(), String> {
 
     let mut program =
@@ -2019,6 +1960,14 @@ fn render_mirror_frames(
     );
 
 
+    let mut animation_speed =
+        runtime.animation_speed_policy
+            .animation_speed_for_shader(
+                &active_shader.shader_name,
+                None,
+            );
+
+
     let mut rendered_fps =
         runtime.fps_policy.rendered_fps_for_shader(
             &active_shader.shader_name,
@@ -2041,6 +1990,7 @@ fn render_mirror_frames(
         active_shader,
         &texture_manager,
         rendered_fps,
+        animation_speed,
         crate::fps_monitor::FpsWarningState::Normal,
     );
 
@@ -2099,53 +2049,6 @@ fn render_mirror_frames(
         )?;
 
 
-    let crossfade_program =
-        crate::compile_shader::build_program(
-            crate::define_constants::VERTEX_SHADER,
-            WALLPAPER_CROSSFADE_FRAGMENT_SHADER,
-        )?;
-
-
-    unsafe {
-        gl::UseProgram(
-            crossfade_program
-        );
-    }
-
-
-    let crossfade_old_frame =
-        uniform_location(
-            crossfade_program,
-            "oldFrame",
-        )?;
-
-
-    let crossfade_output_size =
-        uniform_location(
-            crossfade_program,
-            "outputSize",
-        )?;
-
-
-    let crossfade_old_opacity =
-        uniform_location(
-            crossfade_program,
-            "oldOpacity",
-        )?;
-
-
-    unsafe {
-        set_uniform_1i(
-            crossfade_old_frame,
-            0,
-        );
-
-        gl::UseProgram(
-            program
-        );
-    }
-
-
     let mut start_time =
         Instant::now();
 
@@ -2168,18 +2071,6 @@ fn render_mirror_frames(
 
     let mut fps_warning_state =
         crate::fps_monitor::FpsWarningState::Normal;
-
-
-    let mut pause_started: Option<Instant> =
-        None;
-
-
-    let mut resumed_frame_pending =
-        false;
-
-
-    let mut crossfade_started: Option<Instant> =
-        None;
 
 
     let result =
@@ -2234,63 +2125,6 @@ fn render_mirror_frames(
             }
 
 
-            if control.pause_requested() {
-
-                if pause_started.is_none() {
-                    pause_started =
-                        Some(
-                            Instant::now()
-                        );
-
-
-                    control.acknowledge_paused();
-                }
-
-
-                thread::sleep(
-                    Duration::from_millis(5)
-                );
-
-
-                continue 'render_loop;
-            }
-
-
-            if let Some(started) =
-                pause_started.take()
-            {
-                let paused_duration =
-                    started.elapsed();
-
-
-                start_time +=
-                    paused_duration;
-
-
-                last_shader_switch +=
-                    paused_duration;
-
-
-                if let Some(started) =
-                    crossfade_started.as_mut()
-                {
-                    *started +=
-                        paused_duration;
-                }
-
-
-                next_frame_deadline =
-                    Instant::now();
-
-
-                frame_times.clear();
-
-
-                resumed_frame_pending =
-                    true;
-            }
-
-
             if shader_interval
                 .map(
                     |interval| {
@@ -2325,40 +2159,6 @@ fn render_mirror_frames(
                             )
                         );
                     }
-                }
-
-
-                for (
-                    egl_target,
-                    native_target,
-                ) in egl_targets
-                    .iter_mut()
-                    .zip(
-                        native_targets.iter()
-                    )
-                {
-                    if unsafe {
-                        eglMakeCurrent(
-                            display,
-                            egl_target.surface,
-                            egl_target.surface,
-                            context,
-                        )
-                    } == EGL_FALSE
-                    {
-                        break 'render_loop Err(
-                            egl_failure(
-                                "eglMakeCurrent while capturing wallpaper crossfade frame"
-                            )
-                        );
-                    }
-
-
-                    capture_crossfade_frame(
-                        egl_target,
-                        native_target.width,
-                        native_target.height,
-                    );
                 }
 
 
@@ -2518,6 +2318,14 @@ fn render_mirror_frames(
                                     0;
 
 
+                                animation_speed =
+                                    runtime.animation_speed_policy
+                                        .animation_speed_for_shader(
+                                            &next_shader.shader_name,
+                                            None,
+                                        );
+
+
                                 rendered_fps =
                                     runtime.fps_policy.rendered_fps_for_shader(
                                         &next_shader.shader_name,
@@ -2539,12 +2347,6 @@ fn render_mirror_frames(
                                     next_shader.clone();
 
 
-                                crossfade_started =
-                                    Some(
-                                        Instant::now()
-                                    );
-
-
                                 frame_times.clear();
 
 
@@ -2557,6 +2359,7 @@ fn render_mirror_frames(
                                     &current_shader,
                                     &texture_manager,
                                     rendered_fps,
+                                    animation_speed,
                                     fps_warning_state,
                                 );
 
@@ -2575,6 +2378,12 @@ fn render_mirror_frames(
                                 println!(
                                     "    FPS: {}",
                                     rendered_fps
+                                );
+
+
+                                println!(
+                                    "    Animation speed: {:.3}x",
+                                    animation_speed
                                 );
 
 
@@ -2686,17 +2495,6 @@ fn render_mirror_frames(
                         native_target.height,
                     );
 
-                    // Always establish an opaque destination before running a
-                    // user shader. Imported shaders are allowed to calculate
-                    // any alpha value, but wallpaper mode must never expose it
-                    // to the Wayland compositor.
-                    gl::ColorMask(
-                        gl::TRUE,
-                        gl::TRUE,
-                        gl::TRUE,
-                        gl::TRUE,
-                    );
-
                     gl::ClearColor(
                         0.0,
                         0.0,
@@ -2706,13 +2504,6 @@ fn render_mirror_frames(
 
                     gl::Clear(
                         gl::COLOR_BUFFER_BIT
-                    );
-
-                    gl::ColorMask(
-                        gl::TRUE,
-                        gl::TRUE,
-                        gl::TRUE,
-                        gl::FALSE,
                     );
 
                     gl::UseProgram(
@@ -2727,7 +2518,8 @@ fn render_mirror_frames(
                 unsafe {
                     set_uniform_1f(
                         i_time,
-                        elapsed.as_secs_f32(),
+                        elapsed.as_secs_f32()
+                            * animation_speed,
                     );
 
                     set_uniform_3f(
@@ -2759,54 +2551,6 @@ fn render_mirror_frames(
                         0,
                         3,
                     );
-
-                    // Restore alpha writes for renderer-owned operations. The
-                    // crossfade blend function below preserves destination
-                    // alpha at 1.0 explicitly.
-                    gl::ColorMask(
-                        gl::TRUE,
-                        gl::TRUE,
-                        gl::TRUE,
-                        gl::TRUE,
-                    );
-                }
-
-
-                if let Some(started) =
-                    crossfade_started
-                {
-                    let linear_progress =
-                        (
-                            started.elapsed().as_secs_f32()
-                                / WALLPAPER_CROSSFADE_DURATION
-                                    .as_secs_f32()
-                        )
-                        .clamp(
-                            0.0,
-                            1.0,
-                        );
-
-
-                    let eased_progress =
-                        linear_progress
-                            * linear_progress
-                            * (
-                                3.0
-                                    - 2.0
-                                        * linear_progress
-                            );
-
-
-                    display_crossfade_overlay(
-                        crossfade_program,
-                        crossfade_output_size,
-                        crossfade_old_opacity,
-                        egl_target.crossfade_texture,
-                        native_target.width,
-                        native_target.height,
-                        1.0 - eased_progress,
-                        vao,
-                    );
                 }
 
 
@@ -2826,31 +2570,8 @@ fn render_mirror_frames(
             }
 
 
-            if crossfade_started
-                .map(
-                    |started| {
-                        started.elapsed()
-                            >= WALLPAPER_CROSSFADE_DURATION
-                    }
-                )
-                .unwrap_or(
-                    false
-                )
-            {
-                crossfade_started =
-                    None;
-            }
-
-
             unsafe {
                 gl::Finish();
-            }
-
-
-            if resumed_frame_pending {
-                control.acknowledge_resumed_frame();
-                resumed_frame_pending =
-                    false;
             }
 
 
@@ -2906,6 +2627,7 @@ fn render_mirror_frames(
                         &current_shader,
                         &texture_manager,
                         rendered_fps,
+                        animation_speed,
                         fps_warning_state,
                     );
                 }
@@ -2943,25 +2665,6 @@ fn render_mirror_frames(
     texture_manager.delete_all();
 
 
-    for target in
-        egl_targets.iter_mut()
-    {
-        if target.crossfade_texture
-            != 0
-        {
-            unsafe {
-                gl::DeleteTextures(
-                    1,
-                    &target.crossfade_texture,
-                );
-            }
-
-            target.crossfade_texture =
-                0;
-        }
-    }
-
-
     unsafe {
         gl::UseProgram(
             0
@@ -2979,197 +2682,10 @@ fn render_mirror_frames(
         gl::DeleteProgram(
             program
         );
-
-        gl::DeleteProgram(
-            crossfade_program
-        );
     }
 
 
     result
-}
-
-
-
-fn capture_crossfade_frame(
-    target: &mut EglWallpaperTarget,
-    width: i32,
-    height: i32,
-) {
-
-    if width <= 0
-        || height <= 0
-    {
-        return;
-    }
-
-
-    unsafe {
-        if target.crossfade_texture
-            == 0
-        {
-            gl::GenTextures(
-                1,
-                &mut target.crossfade_texture,
-            );
-        }
-
-
-        gl::ReadBuffer(
-            gl::FRONT
-        );
-
-
-        gl::BindTexture(
-            gl::TEXTURE_2D,
-            target.crossfade_texture,
-        );
-
-
-        gl::TexParameteri(
-            gl::TEXTURE_2D,
-            gl::TEXTURE_MIN_FILTER,
-            gl::LINEAR as i32,
-        );
-
-
-        gl::TexParameteri(
-            gl::TEXTURE_2D,
-            gl::TEXTURE_MAG_FILTER,
-            gl::LINEAR as i32,
-        );
-
-
-        gl::TexParameteri(
-            gl::TEXTURE_2D,
-            gl::TEXTURE_WRAP_S,
-            gl::CLAMP_TO_EDGE as i32,
-        );
-
-
-        gl::TexParameteri(
-            gl::TEXTURE_2D,
-            gl::TEXTURE_WRAP_T,
-            gl::CLAMP_TO_EDGE as i32,
-        );
-
-
-        gl::CopyTexImage2D(
-            gl::TEXTURE_2D,
-            0,
-            gl::RGBA8,
-            0,
-            0,
-            width,
-            height,
-            0,
-        );
-
-
-        gl::BindTexture(
-            gl::TEXTURE_2D,
-            0,
-        );
-
-
-        gl::ReadBuffer(
-            gl::BACK
-        );
-    }
-}
-
-
-fn display_crossfade_overlay(
-    program: u32,
-    output_size_location: i32,
-    opacity_location: i32,
-    texture: u32,
-    width: i32,
-    height: i32,
-    opacity: f32,
-    vao: u32,
-) {
-
-    if texture == 0
-        || width <= 0
-        || height <= 0
-        || opacity <= 0.0
-    {
-        return;
-    }
-
-
-    unsafe {
-        gl::Enable(
-            gl::BLEND
-        );
-
-
-        // Blend the outgoing frame into RGB only. Keep the destination
-        // alpha unchanged and fully opaque so the compositor can never reveal
-        // Mango's configured wallpaper underneath Screenshaver.
-        gl::BlendFuncSeparate(
-            gl::SRC_ALPHA,
-            gl::ONE_MINUS_SRC_ALPHA,
-            gl::ZERO,
-            gl::ONE,
-        );
-
-
-        gl::UseProgram(
-            program
-        );
-
-
-        gl::ActiveTexture(
-            gl::TEXTURE0
-        );
-
-
-        gl::BindTexture(
-            gl::TEXTURE_2D,
-            texture,
-        );
-
-
-        gl::Uniform2f(
-            output_size_location,
-            width as f32,
-            height as f32,
-        );
-
-
-        gl::Uniform1f(
-            opacity_location,
-            opacity.clamp(
-                0.0,
-                1.0,
-            ),
-        );
-
-
-        gl::BindVertexArray(
-            vao
-        );
-
-
-        gl::DrawArrays(
-            gl::TRIANGLES,
-            0,
-            3,
-        );
-
-
-        gl::BindTexture(
-            gl::TEXTURE_2D,
-            0,
-        );
-
-
-        gl::Disable(
-            gl::BLEND
-        );
-    }
 }
 
 
@@ -3188,6 +2704,7 @@ fn notify_active_wallpaper(
     shader: &ActiveWallpaperShader,
     texture_manager: &crate::manage_textures::TextureManager,
     fps: u32,
+    animation_speed: f32,
     warning_state: crate::fps_monitor::FpsWarningState,
 ) {
 
@@ -3199,6 +2716,8 @@ fn notify_active_wallpaper(
         crate::notify_wallpaper::WallpaperMetadata {
             wallpaper:
                 shader.shader_name.clone(),
+
+            animation_speed,
 
             texture:
                 selection.map(

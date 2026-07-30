@@ -19,6 +19,7 @@ pub fn run(
     shader_palette: Option<String>,
     interval_seconds: Option<u64>,
     fps: Option<u32>,
+    animation_speed: Option<f32>,
 ) -> Result<(), String> {
 
     let directory =
@@ -51,6 +52,7 @@ pub fn run(
         shader_palette,
         Some(interval_seconds),
         fps,
+        animation_speed,
     )
 }
 

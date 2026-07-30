@@ -7,11 +7,12 @@ use crate::fps_monitor::FpsWarningState;
     Debug,
     Clone,
     PartialEq,
-    Eq,
 )]
 pub struct WallpaperMetadata {
 
     pub wallpaper: String,
+
+    pub animation_speed: f32,
 
     pub texture: Option<String>,
 
@@ -32,8 +33,11 @@ impl WallpaperMetadata {
         let mut lines =
             vec![
                 format!(
-                    "Wallpaper: {}",
+                    "Shader: {} ({})",
                     self.wallpaper,
+                    format_animation_speed(
+                        self.animation_speed
+                    ),
                 )
             ];
 
@@ -115,6 +119,24 @@ impl WallpaperMetadata {
             self.warning_state,
             FpsWarningState::Critical
                 | FpsWarningState::CriticalHidden
+        )
+    }
+}
+
+
+fn format_animation_speed(
+    speed: f32,
+) -> String {
+
+    if speed.fract()
+        == 0.0
+    {
+        format!(
+            "×{speed:.1}"
+        )
+    } else {
+        format!(
+            "×{speed}"
         )
     }
 }

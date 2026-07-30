@@ -124,6 +124,12 @@ pub fn run(
 
 
     println!(
+        "    Global animation speed: {:.3}x",
+        runtime.animation_speed_policy.global_speed
+    );
+
+
+    println!(
         "    Notifications: {}",
         if runtime.notifications {
             "enabled"
