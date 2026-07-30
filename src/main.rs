@@ -60,6 +60,7 @@ mod manage_wallpaper_runtime;
 mod notify_wallpaper;
 mod render_wallpaper;
 mod wayland_wallpaper;
+mod wallpaper_backend;
 mod fps_monitor;
 
 use std::sync::Arc;

@@ -214,169 +214,14 @@ pub fn run(
         );
 
 
-    println!(
-        "Probing native Wayland wallpaper capabilities..."
-    );
+    let backend =
+        crate::wallpaper_backend::create_backend()?;
 
 
-    let capabilities =
-        crate::wayland_wallpaper::probe_capabilities()?;
+    backend.report_capabilities();
 
 
-    println!(
-        "Wayland wallpaper capabilities are available:"
-    );
-
-
-    println!(
-        "    wl_compositor: version {}",
-        capabilities
-            .compositor_version
-            .unwrap_or(
-                0
-            )
-    );
-
-
-    println!(
-        "    zwlr_layer_shell_v1: version {}",
-        capabilities
-            .layer_shell_version
-            .unwrap_or(
-                0
-            )
-    );
-
-
-    println!(
-        "    Wallpaper targets: {}",
-        capabilities.targets.len()
-    );
-
-
-    for (
-        index,
-        output,
-    ) in capabilities
-        .targets
-        .iter()
-        .enumerate()
-    {
-        println!();
-
-
-        println!(
-            "    Target {}:",
-            index + 1
-        );
-
-
-        println!(
-            "        Registry name: {}",
-            output.registry_name
-        );
-
-
-        println!(
-            "        Connector: {}",
-            output
-                .connector_name
-                .as_deref()
-                .unwrap_or(
-                    "<not advertised>"
-                )
-        );
-
-
-        println!(
-            "        Description: {}",
-            output
-                .description
-                .as_deref()
-                .unwrap_or(
-                    "<not advertised>"
-                )
-        );
-
-
-        println!(
-            "        Make: {}",
-            output
-                .make
-                .as_deref()
-                .unwrap_or(
-                    "<not advertised>"
-                )
-        );
-
-
-        println!(
-            "        Model: {}",
-            output
-                .model
-                .as_deref()
-                .unwrap_or(
-                    "<not advertised>"
-                )
-        );
-
-
-        println!(
-            "        Position: {},{}",
-            output.logical_x,
-            output.logical_y
-        );
-
-
-        println!(
-            "        Current mode: {}x{} @ {:.3} Hz",
-            output.mode_width,
-            output.mode_height,
-            output.refresh_millihertz as f64
-                / 1000.0
-        );
-
-
-        println!(
-            "        Physical size: {}x{} mm",
-            output.physical_width_mm,
-            output.physical_height_mm
-        );
-
-
-        println!(
-            "        Scale: {}",
-            output.scale
-        );
-
-
-        println!(
-            "        Transform: {}",
-            output
-                .transform
-                .as_deref()
-                .unwrap_or(
-                    "<not advertised>"
-                )
-        );
-
-
-        println!(
-            "        Metadata complete: {}",
-            output.complete
-        );
-    }
-
-
-    println!();
-
-
-    println!(
-        "Starting native Wayland/EGL mirror wallpaper renderer..."
-    );
-
-
-    crate::wayland_wallpaper::run_egl_background_surface(
+    backend.run(
         shader_manager,
         &wallpaper_directory,
         shader_interval,
@@ -384,14 +229,6 @@ pub fn run(
         running,
         control,
     )?;
-
-
-    println!();
-
-
-    println!(
-        "Native Wayland/EGL mirror wallpaper renderer ended cleanly."
-    );
 
 
     Ok(())
