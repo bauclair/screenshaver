@@ -2,10 +2,11 @@
 //
 // Native X11 wallpaper backend using a GLX-selected visual.
 //
-// Stage 4C:
+// Stage 4D:
 //
 // ✓ Selects a modern GLX framebuffer configuration.
 // ✓ Creates the X11 window with the visual required by that configuration.
+// ✓ Creates an explicit GLXWindow drawable for the X11 window.
 // ✓ Applies EWMH desktop-window semantics.
 // ✓ Creates and activates a GLX context.
 // ✓ Loads OpenGL functions through GLX.
@@ -13,9 +14,6 @@
 // ✓ Clears the drawable to a diagnostic blue color.
 // ✓ Presents the OpenGL back buffer with glXSwapBuffers().
 // ✓ Releases GLX and X11 resources in dependency order.
-//
-// Shader compilation and continuous rendering are intentionally deferred to
-// the next stage.
 
 use std::ffi::{
     CStr,
@@ -44,7 +42,6 @@ use crate::manage_wallpaper_runtime::WallpaperRuntimeControl;
 use crate::wallpaper_backend::WallpaperBackend;
 use crate::x11_connection::X11Connection;
 
-/// Native X11 wallpaper backend.
 pub struct X11WallpaperBackend {
     connection: X11Connection,
 }
@@ -52,18 +49,14 @@ pub struct X11WallpaperBackend {
 impl X11WallpaperBackend {
     pub fn new() -> Result<Self, String> {
         println!("Probing native X11 wallpaper capabilities...");
-
         let connection = X11Connection::connect()?;
-
         Ok(Self { connection })
     }
 }
 
-/// Resources owned by the X11 wallpaper window.
-///
-/// The GLX context remains separately owned by `GlxContext`.
 struct X11WallpaperWindow {
     window: xlib::Window,
+    glx_window: glx::GLXWindow,
     colormap: xlib::Colormap,
     width: i32,
     height: i32,
@@ -194,6 +187,22 @@ fn create_wallpaper_window(
             );
         }
 
+        println!("Creating GLXWindow drawable...");
+
+        let glx_window = glx::glXCreateWindow(
+            display,
+            glx_config.fb_config(),
+            window,
+            std::ptr::null(),
+        );
+
+        if glx_window == 0 {
+            xlib::XDestroyWindow(display, window);
+            xlib::XFreeColormap(display, colormap);
+
+            return Err("glXCreateWindow() failed.".to_string());
+        }
+
         println!("Applying desktop window hints...");
 
         set_atom_property(
@@ -215,17 +224,19 @@ fn create_wallpaper_window(
         );
 
         xlib::XMapRaised(display, window);
-        xlib::XFlush(display);
+        xlib::XSync(display, xlib::False);
 
         println!(
-            "Created native X11 wallpaper window {} ({}x{})",
+            "Created native X11 wallpaper window {} and GLX drawable {} ({}x{})",
             window,
+            glx_window,
             width,
             height,
         );
 
         Ok(X11WallpaperWindow {
             window,
+            glx_window,
             colormap,
             width: width as i32,
             height: height as i32,
@@ -239,6 +250,13 @@ fn destroy_wallpaper_window(
 ) {
     unsafe {
         let display = connection.display();
+
+        if wallpaper_window.glx_window != 0 {
+            glx::glXDestroyWindow(
+                display,
+                wallpaper_window.glx_window,
+            );
+        }
 
         if wallpaper_window.window != 0 {
             xlib::XDestroyWindow(
@@ -254,7 +272,7 @@ fn destroy_wallpaper_window(
             );
         }
 
-        xlib::XFlush(display);
+        xlib::XSync(display, xlib::False);
     }
 
     println!("Closed X11 wallpaper window.");
@@ -280,6 +298,7 @@ fn load_opengl_functions() -> Result<(), String> {
     if !gl::Viewport::is_loaded()
         || !gl::ClearColor::is_loaded()
         || !gl::Clear::is_loaded()
+        || !gl::Flush::is_loaded()
         || !gl::GetString::is_loaded()
     {
         return Err(
@@ -289,7 +308,6 @@ fn load_opengl_functions() -> Result<(), String> {
     }
 
     println!("Loaded required OpenGL functions.");
-
     Ok(())
 }
 
@@ -335,11 +353,14 @@ fn render_diagnostic_frame(
 
         gl::ClearColor(0.0, 0.25, 1.0, 1.0);
         gl::Clear(gl::COLOR_BUFFER_BIT);
+        gl::Flush();
 
         glx::glXSwapBuffers(
             display,
-            wallpaper_window.window,
+            wallpaper_window.glx_window,
         );
+
+        xlib::XSync(display, xlib::False);
     }
 
     println!("Presented diagnostic OpenGL frame with glXSwapBuffers().");
@@ -347,7 +368,6 @@ fn render_diagnostic_frame(
 
 fn run_window_loop() {
     println!("Displaying OpenGL diagnostic frame for five seconds...");
-
     thread::sleep(Duration::from_secs(5));
 }
 
@@ -415,7 +435,7 @@ impl WallpaperBackend for X11WallpaperBackend {
         if let Err(error) =
             glx_context.make_current(
                 display,
-                wallpaper_window.window,
+                wallpaper_window.glx_window,
             )
         {
             glx_context.destroy(display);
