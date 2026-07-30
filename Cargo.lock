@@ -1041,6 +1041,7 @@ dependencies = [
  "signal-hook",
  "tokio",
  "toml",
+ "toml_edit 0.22.27",
  "wayland-client",
  "wayland-egl",
  "wayland-protocols",

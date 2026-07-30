@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
@@ -112,24 +113,6 @@ struct WallpaperSection {
 }
 
 
-#[derive(Debug, Deserialize)]
-struct RawTextureOverride {
-
-    shader: String,
-
-    shader_texture: String,
-
-    shader_palette: String,
-}
-
-
-#[derive(Debug, Deserialize)]
-struct RawFpsOverride {
-
-    shader: String,
-
-    rendered_fps: u32,
-}
 
 
 #[derive(Debug, Deserialize)]
@@ -179,19 +162,15 @@ struct RawToml {
     wallpaper: WallpaperSection,
 
     #[serde(default)]
-    texture_override:
-        Vec<
-            RawTextureOverride
-        >,
+    screensaver_overrides:
+        BTreeMap<String, String>,
+
+    #[serde(default)]
+    wallpaper_overrides:
+        BTreeMap<String, String>,
 
     #[serde(default)]
     performance: PerformanceSection,
-
-    #[serde(default)]
-    fps_override:
-        Vec<
-            RawFpsOverride
-        >,
 
     locking: LockingSection,
 
@@ -295,10 +274,14 @@ pub struct TextureOverride {
         String,
 
     pub shader_texture:
-        crate::parse_texture_specification::TextureSpecification,
+        Option<
+            crate::parse_texture_specification::TextureSpecification
+        >,
 
     pub shader_palette:
-        crate::palettes::Palette,
+        Option<
+            crate::palettes::Palette
+        >,
 }
 
 
@@ -430,7 +413,12 @@ pub struct Config {
 
     pub wallpaper_global_speed: f32,
 
-    pub shader_overrides:
+    pub screensaver_overrides:
+        Vec<
+            ShaderOverride
+        >,
+
+    pub wallpaper_overrides:
         Vec<
             ShaderOverride
         >,
@@ -443,12 +431,12 @@ pub struct Config {
 
     pub global_rendered_fps: u32,
 
-    pub fps_overrides:
+    pub screensaver_fps_overrides:
         Vec<
             FpsOverride
         >,
 
-    pub fps_policy:
+    pub wallpaper_fps_policy:
         FpsSelectionPolicy,
 
     pub screen_lock: bool,
@@ -458,48 +446,6 @@ pub struct Config {
     pub log_level: u8,
 }
 
-
-impl Config {
-
-    pub fn rendered_fps_for_shader(
-        &self,
-        shader_name: &str,
-        command_line_fps: Option<u32>,
-    ) -> u32 {
-
-        if let Some(fps) =
-            command_line_fps
-        {
-            return fps.max(
-                1
-            );
-        }
-
-
-        self.fps_overrides
-            .iter()
-            .find(
-                |fps_override| {
-                    fps_override
-                        .shader
-                        .eq_ignore_ascii_case(
-                            shader_name
-                        )
-                }
-            )
-            .map(
-                |fps_override| {
-                    fps_override.rendered_fps
-                }
-            )
-            .unwrap_or(
-                self.global_rendered_fps
-            )
-            .max(
-                1
-            )
-    }
-}
 
 
 //
@@ -607,10 +553,30 @@ pub fn load_config(
         )?;
 
 
-    let texture_overrides =
-        parse_texture_overrides(
-            raw.texture_override
+    let screensaver_overrides =
+        parse_override_table(
+            raw.screensaver_overrides,
+            OverrideTarget::Screensaver,
         )?;
+
+
+    let wallpaper_overrides =
+        parse_override_table(
+            raw.wallpaper_overrides,
+            OverrideTarget::Wallpaper,
+        )?;
+
+
+    let screensaver_texture_overrides =
+        texture_overrides_from(
+            &screensaver_overrides
+        );
+
+
+    let wallpaper_texture_overrides =
+        texture_overrides_from(
+            &wallpaper_overrides
+        );
 
 
     let texture_policy =
@@ -620,7 +586,7 @@ pub fn load_config(
             global_palette:
                 screensaver_global_palette,
             texture_overrides:
-                texture_overrides.clone(),
+                screensaver_texture_overrides,
         };
 
 
@@ -630,7 +596,8 @@ pub fn load_config(
                 wallpaper_global_texture,
             global_palette:
                 wallpaper_global_palette,
-            texture_overrides,
+            texture_overrides:
+                wallpaper_texture_overrides,
         };
 
 
@@ -685,25 +652,24 @@ pub fn load_config(
         );
 
 
-    let fps_overrides =
-        parse_fps_overrides(
-            raw.fps_override
-        )?;
+    let screensaver_fps_overrides =
+        fps_overrides_from(
+            &screensaver_overrides
+        );
 
 
-    let fps_policy =
+    let wallpaper_fps_overrides =
+        fps_overrides_from(
+            &wallpaper_overrides
+        );
+
+
+    let wallpaper_fps_policy =
         FpsSelectionPolicy {
             global_rendered_fps,
             fps_overrides:
-                fps_overrides.clone(),
+                wallpaper_fps_overrides,
         };
-
-
-    let shader_overrides =
-        merge_legacy_shader_overrides(
-            &texture_policy.texture_overrides,
-            &fps_overrides,
-        );
 
 
     let screensaver_speed_policy =
@@ -711,7 +677,7 @@ pub fn load_config(
             global_speed:
                 screensaver_global_speed,
             shader_overrides:
-                shader_overrides.clone(),
+                screensaver_overrides.clone(),
         };
 
 
@@ -720,7 +686,7 @@ pub fn load_config(
             global_speed:
                 wallpaper_global_speed,
             shader_overrides:
-                shader_overrides.clone(),
+                wallpaper_overrides.clone(),
         };
 
 
@@ -774,7 +740,9 @@ pub fn load_config(
 
             wallpaper_global_speed,
 
-            shader_overrides,
+            screensaver_overrides,
+
+            wallpaper_overrides,
 
             screensaver_speed_policy,
 
@@ -782,9 +750,9 @@ pub fn load_config(
 
             global_rendered_fps,
 
-            fps_overrides,
+            screensaver_fps_overrides,
 
-            fps_policy,
+            wallpaper_fps_policy,
 
             screen_lock:
                 raw.locking.screen_lock,
@@ -934,8 +902,13 @@ pub fn load_config(
             ),
 
             format!(
-                "[CONFIG] unified shader_override count = {}",
-                config.shader_overrides.len(),
+                "[CONFIG] screensaver override count = {}",
+                config.screensaver_overrides.len(),
+            ),
+
+            format!(
+                "[CONFIG] wallpaper override count = {}",
+                config.wallpaper_overrides.len(),
             ),
 
             format!(
@@ -1007,20 +980,19 @@ pub fn load_config(
 
     diagnostics.push(
         format!(
-            "[CONFIG] fps_override count = {}",
-            config.fps_overrides.len(),
+            "[CONFIG] screensaver_overrides count = {}",
+            config.screensaver_overrides.len(),
         )
     );
 
 
-    for fps_override in
-        &config.fps_overrides
+    for shader_override in
+        &config.screensaver_overrides
     {
         diagnostics.push(
-            format!(
-                "[CONFIG] fps_override shader={} rendered_fps={}",
-                fps_override.shader,
-                fps_override.rendered_fps,
+            format_shader_override_diagnostic(
+                "screensaver_overrides",
+                shader_override,
             )
         );
     }
@@ -1028,30 +1000,21 @@ pub fn load_config(
 
     diagnostics.push(
         format!(
-            "[CONFIG] texture_override count = {}",
-            config
-                .texture_policy
-                .texture_overrides
-                .len(),
+            "[CONFIG] wallpaper_overrides count = {}",
+            config.wallpaper_overrides.len(),
         )
     );
 
 
-    for texture_override in
-        &config
-            .texture_policy
-            .texture_overrides
+    for shader_override in
+        &config.wallpaper_overrides
     {
-    diagnostics.push(
-        format!(
-            "[CONFIG] texture_override shader={} shader_texture={} shader_palette={}",
-            texture_override.shader,
-            format_texture_specification(
-                &texture_override.shader_texture
-            ),
-            texture_override.shader_palette,
-        )
-    );
+        diagnostics.push(
+            format_shader_override_diagnostic(
+                "wallpaper_overrides",
+                shader_override,
+            )
+        );
     }
 
 
@@ -1067,90 +1030,397 @@ pub fn load_config(
 
 //
 // ------------------------------------------------------------
-// Legacy override consolidation
+// Per-mode shader override parsing
 // ------------------------------------------------------------
-//
 
-fn merge_legacy_shader_overrides(
-    texture_overrides: &[TextureOverride],
-    fps_overrides: &[FpsOverride],
-) -> Vec<ShaderOverride> {
-
-    let mut merged:
-        Vec<ShaderOverride> =
-            Vec::new();
+#[derive(Debug, Clone, Copy)]
+enum OverrideTarget {
+    Screensaver,
+    Wallpaper,
+}
 
 
-    for texture_override in
-        texture_overrides
-    {
-        merged.push(
-            ShaderOverride {
-                shader:
-                    texture_override.shader.clone(),
-                shader_texture:
-                    Some(
-                        texture_override.shader_texture.clone()
-                    ),
-                shader_palette:
-                    Some(
-                        texture_override.shader_palette
-                    ),
-                rendered_fps:
-                    None,
-                animation_speed:
-                    None,
-            }
-        );
-    }
+impl OverrideTarget {
 
+    fn table_name(
+        self,
+    ) -> &'static str {
 
-    for fps_override in
-        fps_overrides
-    {
-        if let Some(existing) =
-            merged
-                .iter_mut()
-                .find(
-                    |shader_override| {
-                        shader_override
-                            .shader
-                            .eq_ignore_ascii_case(
-                                &fps_override.shader
-                            )
-                    }
-                )
-        {
-            existing.rendered_fps =
-                Some(
-                    fps_override.rendered_fps
-                );
-        } else {
-            merged.push(
-                ShaderOverride {
-                    shader:
-                        fps_override.shader.clone(),
-                    shader_texture:
-                        None,
-                    shader_palette:
-                        None,
-                    rendered_fps:
-                        Some(
-                            fps_override.rendered_fps
-                        ),
-                    animation_speed:
-                        None,
-                }
-            );
+        match self {
+            Self::Screensaver => "screensaver_overrides",
+            Self::Wallpaper => "wallpaper_overrides",
         }
     }
 
 
-    merged
+    fn speed_range(
+        self,
+    ) -> (f32, f32) {
+
+        match self {
+            Self::Screensaver => (
+                crate::define_constants::SCREENSAVER_SPEED_MIN,
+                crate::define_constants::SCREENSAVER_SPEED_MAX,
+            ),
+            Self::Wallpaper => (
+                crate::define_constants::WALLPAPER_SPEED_MIN,
+                crate::define_constants::WALLPAPER_SPEED_MAX,
+            ),
+        }
+    }
 }
 
 
-//
+fn parse_override_table(
+    raw_overrides: BTreeMap<String, String>,
+    target: OverrideTarget,
+) -> Result<Vec<ShaderOverride>, String> {
+
+    let mut overrides =
+        Vec::with_capacity(
+            raw_overrides.len()
+        );
+
+
+    for (shader, specification) in
+        raw_overrides
+    {
+        let shader =
+            shader.trim().to_string();
+
+
+        if shader.is_empty() {
+            return Err(
+                format!(
+                    "[{}] contains an empty shader name",
+                    target.table_name(),
+                )
+            );
+        }
+
+
+        overrides.push(
+            parse_override_specification(
+                shader,
+                &specification,
+                target,
+            )?
+        );
+    }
+
+
+    Ok(overrides)
+}
+
+
+fn parse_override_specification(
+    shader: String,
+    specification: &str,
+    target: OverrideTarget,
+) -> Result<ShaderOverride, String> {
+
+    let mut shader_texture = None;
+    let mut shader_palette = None;
+    let mut rendered_fps = None;
+    let mut animation_speed = None;
+
+
+    for token in
+        specification.split_whitespace()
+    {
+        let (name, value) =
+            token.split_once(':')
+                .ok_or_else(
+                    || {
+                        format!(
+                            "Invalid override token '{}' for '{}' in [{}]; expected name:value",
+                            token,
+                            shader,
+                            target.table_name(),
+                        )
+                    }
+                )?;
+
+
+        if value.trim().is_empty() {
+            return Err(
+                format!(
+                    "Override property '{}' for '{}' in [{}] requires a value",
+                    name,
+                    shader,
+                    target.table_name(),
+                )
+            );
+        }
+
+
+        match name.trim().to_ascii_lowercase().as_str() {
+            "texture" => {
+                if shader_texture.is_some() {
+                    return Err(duplicate_override_property(
+                        &shader,
+                        target,
+                        "texture",
+                    ));
+                }
+
+                shader_texture =
+                    Some(
+                        parse_shader_texture(
+                            &shader,
+                            value,
+                            target.table_name(),
+                        )?
+                    );
+            }
+
+            "palette" => {
+                if shader_palette.is_some() {
+                    return Err(duplicate_override_property(
+                        &shader,
+                        target,
+                        "palette",
+                    ));
+                }
+
+                shader_palette =
+                    Some(
+                        parse_shader_palette(
+                            &shader,
+                            value,
+                            target.table_name(),
+                        )?
+                    );
+            }
+
+            "fps" => {
+                if rendered_fps.is_some() {
+                    return Err(duplicate_override_property(
+                        &shader,
+                        target,
+                        "fps",
+                    ));
+                }
+
+                let fps =
+                    value.parse::<u32>()
+                        .map_err(
+                            |_| {
+                                format!(
+                                    "Invalid fps '{}' for '{}' in [{}]; expected an integer from {} through {}",
+                                    value,
+                                    shader,
+                                    target.table_name(),
+                                    crate::define_constants::MIN_RENDER_FPS,
+                                    crate::define_constants::MAX_RENDER_FPS,
+                                )
+                            }
+                        )?;
+
+                if !(crate::define_constants::MIN_RENDER_FPS
+                    ..=crate::define_constants::MAX_RENDER_FPS)
+                    .contains(&fps)
+                {
+                    return Err(
+                        format!(
+                            "FPS override {} for '{}' in [{}] is outside the supported range {}-{}",
+                            fps,
+                            shader,
+                            target.table_name(),
+                            crate::define_constants::MIN_RENDER_FPS,
+                            crate::define_constants::MAX_RENDER_FPS,
+                        )
+                    );
+                }
+
+                rendered_fps = Some(fps);
+            }
+
+            "speed" => {
+                if animation_speed.is_some() {
+                    return Err(duplicate_override_property(
+                        &shader,
+                        target,
+                        "speed",
+                    ));
+                }
+
+                let speed =
+                    value.parse::<f32>()
+                        .map_err(
+                            |_| {
+                                format!(
+                                    "Invalid speed '{}' for '{}' in [{}]",
+                                    value,
+                                    shader,
+                                    target.table_name(),
+                                )
+                            }
+                        )?;
+
+                let (minimum, maximum) =
+                    target.speed_range();
+
+                if !speed.is_finite()
+                    || !(minimum..=maximum).contains(&speed)
+                {
+                    return Err(
+                        format!(
+                            "Speed override {} for '{}' in [{}] is outside the supported range {}-{}",
+                            value,
+                            shader,
+                            target.table_name(),
+                            minimum,
+                            maximum,
+                        )
+                    );
+                }
+
+                animation_speed = Some(speed);
+            }
+
+            other => {
+                return Err(
+                    format!(
+                        "Unknown override property '{}' for '{}' in [{}]; supported properties: texture, palette, fps, speed",
+                        other,
+                        shader,
+                        target.table_name(),
+                    )
+                );
+            }
+        }
+    }
+
+
+    if shader_texture.is_none()
+        && shader_palette.is_none()
+        && rendered_fps.is_none()
+        && animation_speed.is_none()
+    {
+        return Err(
+            format!(
+                "Override for '{}' in [{}] does not define any properties",
+                shader,
+                target.table_name(),
+            )
+        );
+    }
+
+
+    Ok(
+        ShaderOverride {
+            shader,
+            shader_texture,
+            shader_palette,
+            rendered_fps,
+            animation_speed,
+        }
+    )
+}
+
+
+fn duplicate_override_property(
+    shader: &str,
+    target: OverrideTarget,
+    property: &str,
+) -> String {
+
+    format!(
+        "Override property '{}' is specified more than once for '{}' in [{}]",
+        property,
+        shader,
+        target.table_name(),
+    )
+}
+
+
+fn texture_overrides_from(
+    shader_overrides: &[ShaderOverride],
+) -> Vec<TextureOverride> {
+
+    shader_overrides
+        .iter()
+        .filter(
+            |shader_override| {
+                shader_override.shader_texture.is_some()
+                    || shader_override.shader_palette.is_some()
+            }
+        )
+        .map(
+            |shader_override| {
+                TextureOverride {
+                    shader:
+                        shader_override.shader.clone(),
+                    shader_texture:
+                        shader_override.shader_texture.clone(),
+                    shader_palette:
+                        shader_override.shader_palette,
+                }
+            }
+        )
+        .collect()
+}
+
+
+fn fps_overrides_from(
+    shader_overrides: &[ShaderOverride],
+) -> Vec<FpsOverride> {
+
+    shader_overrides
+        .iter()
+        .filter_map(
+            |shader_override| {
+                shader_override.rendered_fps
+                    .map(
+                        |rendered_fps| {
+                            FpsOverride {
+                                shader:
+                                    shader_override.shader.clone(),
+                                rendered_fps,
+                            }
+                        }
+                    )
+            }
+        )
+        .collect()
+}
+
+
+fn format_shader_override_diagnostic(
+    table_name: &str,
+    shader_override: &ShaderOverride,
+) -> String {
+
+    let texture = shader_override.shader_texture
+        .as_ref()
+        .map(format_texture_specification)
+        .unwrap_or_else(|| "<global>".to_string());
+
+    let palette = shader_override.shader_palette
+        .map(|palette| palette.to_string())
+        .unwrap_or_else(|| "<global>".to_string());
+
+    let fps = shader_override.rendered_fps
+        .map(|fps| fps.to_string())
+        .unwrap_or_else(|| "<global>".to_string());
+
+    let speed = shader_override.animation_speed
+        .map(|speed| speed.to_string())
+        .unwrap_or_else(|| "<global>".to_string());
+
+    format!(
+        "[CONFIG] {} shader={} texture={} palette={} fps={} speed={}",
+        table_name,
+        shader_override.shader,
+        texture,
+        palette,
+        fps,
+        speed,
+    )
+}
+
+
 // ------------------------------------------------------------
 // Log-level validation
 // ------------------------------------------------------------
@@ -1289,99 +1559,6 @@ fn validate_rendered_fps(
 // Per-shader FPS override parsing
 // ------------------------------------------------------------
 //
-
-fn parse_fps_overrides(
-    raw_overrides:
-        Vec<
-            RawFpsOverride
-        >,
-) -> Result<
-    Vec<
-        FpsOverride
-    >,
-    String,
-> {
-
-    let mut overrides =
-        Vec::with_capacity(
-            raw_overrides.len()
-        );
-
-
-    for raw_override in
-        raw_overrides
-    {
-        let shader =
-            raw_override
-                .shader
-                .trim()
-                .to_string();
-
-
-        if shader.is_empty() {
-            return Err(
-                "A [[fps_override]] block contains an empty shader name"
-                    .to_string()
-            );
-        }
-
-
-        if overrides
-            .iter()
-            .any(
-                |existing: &FpsOverride| {
-                    existing
-                        .shader
-                        .eq_ignore_ascii_case(
-                            &shader
-                        )
-                }
-            )
-        {
-            return Err(
-                format!(
-                    "Duplicate [[fps_override]] block for shader '{}'",
-                    shader,
-                )
-            );
-        }
-
-
-        let (
-            rendered_fps,
-            warning,
-        ) =
-            validate_rendered_fps(
-                raw_override.rendered_fps
-            );
-
-
-        if warning.is_some() {
-            return Err(
-                format!(
-                    "rendered_fps = {} in [[fps_override]] for '{}' is outside the supported range {}-{}",
-                    raw_override.rendered_fps,
-                    shader,
-                    crate::define_constants::MIN_RENDER_FPS,
-                    crate::define_constants::MAX_RENDER_FPS,
-                )
-            );
-        }
-
-
-        overrides.push(
-            FpsOverride {
-                shader,
-                rendered_fps,
-            }
-        );
-    }
-
-
-    Ok(
-        overrides
-    )
-}
 
 
 //
@@ -1524,100 +1701,13 @@ fn parse_global_palette(
 
 //
 // ------------------------------------------------------------
-// Per-shader texture override parsing
+// Per-shader texture and palette validation
 // ------------------------------------------------------------
-//
-
-fn parse_texture_overrides(
-    raw_overrides:
-        Vec<
-            RawTextureOverride
-        >,
-) -> Result<
-    Vec<
-        TextureOverride
-    >,
-    String,
-> {
-
-    let mut overrides =
-        Vec::with_capacity(
-            raw_overrides.len()
-        );
-
-
-    for raw_override in
-        raw_overrides
-    {
-        let shader =
-            raw_override
-                .shader
-                .trim()
-                .to_string();
-
-
-        if shader.is_empty() {
-            return Err(
-                "A [[texture_override]] block contains an empty shader name"
-                    .to_string()
-            );
-        }
-
-
-        if overrides
-            .iter()
-            .any(
-                |existing: &TextureOverride| {
-                    existing
-                        .shader
-                        .eq_ignore_ascii_case(
-                            &shader
-                        )
-                }
-            )
-        {
-            return Err(
-                format!(
-                    "Duplicate [[texture_override]] block for shader '{}'",
-                    shader,
-                )
-            );
-        }
-
-
-        let shader_texture =
-            parse_shader_texture(
-                &shader,
-                &raw_override.shader_texture,
-            )?;
-
-
-        let shader_palette =
-            parse_shader_palette(
-                &shader,
-                &raw_override.shader_palette,
-            )?;
-
-
-        overrides.push(
-            TextureOverride {
-                shader,
-                shader_texture,
-                shader_palette,
-            }
-        );
-    }
-
-
-    Ok(
-        overrides
-    )
-}
-
 
 fn parse_shader_texture(
     shader: &str,
     value: &str,
+    table_name: &str,
 ) -> Result<
     crate::parse_texture_specification::TextureSpecification,
     String,
@@ -1635,7 +1725,8 @@ fn parse_shader_texture(
     {
         return Err(
             format!(
-                "[[texture_override]] for '{}' requires a specific shader_texture; 'random' is not permitted",
+                "[{}] override for '{}' requires a specific texture; 'random' is not permitted",
+                table_name,
                 shader,
             )
         );
@@ -1649,9 +1740,10 @@ fn parse_shader_texture(
         .map_err(
             |error| {
                 format!(
-                    "Invalid shader_texture '{}' in [[texture_override]] for '{}': {}",
+                    "Invalid texture '{}' for '{}' in [{}]: {}",
                     value,
                     shader,
+                    table_name,
                     error,
                 )
             }
@@ -1667,6 +1759,7 @@ fn parse_shader_texture(
 fn parse_shader_palette(
     shader: &str,
     value: &str,
+    table_name: &str,
 ) -> Result<
     crate::palettes::Palette,
     String,
@@ -1684,7 +1777,8 @@ fn parse_shader_palette(
     {
         return Err(
             format!(
-                "[[texture_override]] for '{}' requires a specific shader_palette; 'random' is not permitted",
+                "[{}] override for '{}' requires a specific palette; 'random' is not permitted",
+                table_name,
                 shader,
             )
         );
@@ -1697,9 +1791,10 @@ fn parse_shader_palette(
     .map_err(
         |error| {
             format!(
-                "Invalid shader_palette '{}' in [[texture_override]] for '{}': {}",
+                "Invalid palette '{}' for '{}' in [{}]: {}",
                 value,
                 shader,
+                table_name,
                 error,
             )
         }

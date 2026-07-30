@@ -42,6 +42,9 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 # Accepted suffixes are (s)ec, (m)in, and (h)rs.
   idle_timeout = "10m"
 
+# Default animation speed for screensaver shaders.
+  global_speed = 1.0
+
 # Default texture and palette policy for screensaver shaders.
 # These values may differ from the wallpaper defaults.
   global_texture = "random"
@@ -64,6 +67,9 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 # Displays wallpaper shaders in alphanumerical order by filename
 # every <nn> seconds.
   mode = "ordered:10"
+
+# Default animation speed for wallpaper shaders.
+  global_speed = 0.025
 
 # Default texture and palette policy for wallpaper shaders.
 # These values may differ from the screensaver defaults.
@@ -108,19 +114,23 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 #     slate
 
 ################################
-# TEXTURE AND PALETTE OVERRIDES
+# PER-SHADER OVERRIDES
 ################################
-# Per-shader overrides apply to both screensaver and wallpaper modes.
-# A matching per-shader override takes precedence over the active runtime's
-# global_texture and global_palette settings.
+# Override properties may be written in any order.
+# Supported properties are:
+#     texture:<family>
+#     palette:<palette>
+#     fps:<frames-per-second>
+#     speed:<animation-multiplier>
 #
-# One [[texture_override]] block may be defined for each shader requiring
-# a specific background texture and/or palette.
-#
-# [[texture_override]]
-# shader = "Heartfelt.glsl"
-# shader_texture = "clouds"
-# shader_palette = "mist"
+# Properties not included in an override continue to use the active mode's
+# global setting or normal random fallback.
+
+[screensaver_overrides]
+# "CandyWarp.fs" = "texture:bricks palette:mist fps:24 speed:0.5"
+
+[wallpaper_overrides]
+# "CandyWarp.fs" = "fps:16 speed:0.125"
 
 ################################
 # PERFORMANCE
@@ -129,11 +139,6 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 # Frames per second for all shaders in all rendering modes.
   global_rendered_fps = 30
 
-# Per-shader FPS overrides apply to both screensaver and wallpaper modes.
-#
-# [[fps_override]]
-# shader = "high_gpu.glsl"
-# rendered_fps = 16
 
 ################################
 # SCREEN LOCKING

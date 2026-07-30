@@ -257,7 +257,7 @@ pub fn run_paths(
 
 
     let fps_overrides =
-        config.fps_overrides;
+        config.screensaver_fps_overrides;
 
 
     let texture_policy =
