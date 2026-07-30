@@ -63,6 +63,7 @@ mod wayland_wallpaper;
 mod wallpaper_backend;
 mod x11_connection;
 mod x11_wallpaper;
+mod glx_context;
 mod fps_monitor;
 
 use std::sync::Arc;
