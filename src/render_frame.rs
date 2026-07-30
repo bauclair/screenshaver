@@ -29,6 +29,12 @@ pub struct FrameRenderer {
     window: Window,
     _gl_context: GLContext,
     event_pump: sdl2::EventPump,
+    renderer_started: Instant,
+    engine: FrameRenderEngine,
+}
+
+
+struct FrameRenderEngine {
     active_shader: ActiveShader,
     vao: u32,
     start_time: Instant,
@@ -43,28 +49,20 @@ pub struct FrameRenderer {
     subtitle_placement:
         crate::parse_subtitle_placement::SubtitlePlacement,
     subtitle_overlay:
-        Option<
-            crate::display_overlay::OpenGlOverlay
-        >,
-    overlay_output_size: (
-        u32,
-        u32,
-    ),
+        Option<crate::display_overlay::OpenGlOverlay>,
+    overlay_output_size: (u32, u32),
     global_rendered_fps: u32,
     configured_fps: u32,
     fps_overrides:
-        Vec<
-            crate::load_config::FpsOverride
-        >,
-    fps_warning_state:
-        FpsWarningState,
+        Vec<crate::load_config::FpsOverride>,
+    fps_warning_state: FpsWarningState,
     fps_blink_visible: bool,
     last_fps_blink: Instant,
     frame_times: FrameTimeWindow,
     target_frame_time: Duration,
     last_frame: Instant,
-    renderer_started: Instant,
 }
+
 
 
 impl FrameRenderer {
@@ -253,12 +251,8 @@ impl FrameRenderer {
             );
         }
 
-        Ok(
-            Self {
-                window,
-                _gl_context:
-                    gl_context,
-                event_pump,
+        let engine =
+            FrameRenderEngine {
                 active_shader,
                 vao,
                 start_time:
@@ -297,8 +291,17 @@ impl FrameRenderer {
                     ),
                 last_frame:
                     Instant::now(),
+            };
+
+        Ok(
+            Self {
+                window,
+                _gl_context:
+                    gl_context,
+                event_pump,
                 renderer_started:
                     Instant::now(),
+                engine,
             }
         )
     }
@@ -359,7 +362,7 @@ impl FrameRenderer {
         self.maybe_switch_shader();
 
         let program =
-            self.active_shader.program;
+            self.engine.active_shader.program;
 
         let (
             width,
@@ -393,23 +396,23 @@ impl FrameRenderer {
                 program
             );
 
-            self.texture_manager
+            self.engine.texture_manager
                 .bind_channels();
 
             crate::apply_shader_inputs::apply(
                 program,
-                &self.active_shader.shader_inputs,
+                &self.engine.active_shader.shader_inputs,
             );
 
             gl::BindVertexArray(
-                self.vao
+                self.engine.vao
             );
 
             let time =
-                self.start_time
+                self.engine.start_time
                     .elapsed()
                     .as_secs_f32()
-                    * self.animation_speed;
+                    * self.engine.animation_speed;
 
             let time_location =
                 gl::GetUniformLocation(
@@ -457,9 +460,9 @@ impl FrameRenderer {
         }
 
         let performance_status =
-            self.frame_times.record(
+            self.engine.frame_times.record(
                 shader_render_start.elapsed(),
-                self.configured_fps,
+                self.engine.configured_fps,
             );
 
         let warning_state =
@@ -467,49 +470,49 @@ impl FrameRenderer {
 
         let warning_changed =
             warning_state
-                != self.fps_warning_state;
+                != self.engine.fps_warning_state;
 
         if warning_changed {
-            self.fps_warning_state =
+            self.engine.fps_warning_state =
                 warning_state;
-            self.fps_blink_visible =
+            self.engine.fps_blink_visible =
                 true;
-            self.last_fps_blink =
+            self.engine.last_fps_blink =
                 Instant::now();
         }
 
         let mut blink_changed =
             false;
 
-        if self.fps_warning_state
+        if self.engine.fps_warning_state
             == FpsWarningState::Critical
-            && self.last_fps_blink.elapsed()
+            && self.engine.last_fps_blink.elapsed()
                 >= FPS_CRITICAL_BLINK_INTERVAL
         {
-            self.fps_blink_visible =
-                !self.fps_blink_visible;
-            self.last_fps_blink =
+            self.engine.fps_blink_visible =
+                !self.engine.fps_blink_visible;
+            self.engine.last_fps_blink =
                 Instant::now();
             blink_changed =
                 true;
         }
 
         let overlay_warning_state =
-            if self.fps_warning_state
+            if self.engine.fps_warning_state
                 == FpsWarningState::Critical
-                && !self.fps_blink_visible
+                && !self.engine.fps_blink_visible
             {
                 FpsWarningState::CriticalHidden
             } else {
-                self.fps_warning_state
+                self.engine.fps_warning_state
             };
 
         let warning_overlay_active =
-            self.fps_warning_state
+            self.engine.fps_warning_state
                 != FpsWarningState::Normal;
 
         let overlay_should_display =
-            self.subtitles
+            self.engine.subtitles
                 || warning_overlay_active;
 
         if overlay_should_display {
@@ -521,30 +524,30 @@ impl FrameRenderer {
                 );
 
             if current_size
-                != self.overlay_output_size
+                != self.engine.overlay_output_size
                 || warning_changed
                 || blink_changed
-                || self.subtitle_overlay.is_none()
+                || self.engine.subtitle_overlay.is_none()
             {
                 match build_subtitle_overlay(
-                    &self.active_shader,
-                    &self.texture_manager,
-                    self.subtitles,
-                    self.subtitle_placement,
-                    self.animation_speed,
-                    self.configured_fps,
+                    &self.engine.active_shader,
+                    &self.engine.texture_manager,
+                    self.engine.subtitles,
+                    self.engine.subtitle_placement,
+                    self.engine.animation_speed,
+                    self.engine.configured_fps,
                     overlay_warning_state,
                     width,
                     height,
                 ) {
 
                     Ok(overlay) => {
-                        self.subtitle_overlay =
+                        self.engine.subtitle_overlay =
                             Some(
                                 overlay
                             );
 
-                        self.overlay_output_size =
+                        self.engine.overlay_output_size =
                             current_size;
                     }
 
@@ -556,14 +559,14 @@ impl FrameRenderer {
                             )
                         );
 
-                        self.subtitle_overlay =
+                        self.engine.subtitle_overlay =
                             None;
                     }
                 }
             }
 
             if let Some(overlay) =
-                self.subtitle_overlay
+                self.engine.subtitle_overlay
                     .as_ref()
             {
                 overlay.display(
@@ -574,7 +577,7 @@ impl FrameRenderer {
 
         } else {
 
-            self.subtitle_overlay =
+            self.engine.subtitle_overlay =
                 None;
         }
 
@@ -683,22 +686,22 @@ impl FrameRenderer {
     fn maybe_switch_shader(
         &mut self,
     ) {
-        if self.shader_interval == 0
-            || self
+        if self.engine.shader_interval == 0
+            || self.engine
                 .last_shader_switch
                 .elapsed()
                 .as_secs()
-                < self.shader_interval
+                < self.engine.shader_interval
         {
             return;
         }
 
         match select_safe_shader_program(
-            &mut self.shader_manager
+            &mut self.engine.shader_manager
         ) {
             Ok(new_shader) => {
                 if let Err(error) =
-                    self.texture_manager.prepare_for_shader(
+                    self.engine.texture_manager.prepare_for_shader(
                         &new_shader.shader_name,
                         new_shader.channel_usage,
                     )
@@ -719,18 +722,18 @@ impl FrameRenderer {
                         )
                     );
 
-                    self.last_shader_switch =
+                    self.engine.last_shader_switch =
                         Instant::now();
 
                     return;
                 }
 
-                self.texture_manager.configure_program(
+                self.engine.texture_manager.configure_program(
                     new_shader.program,
                 );
 
                 let new_animation_speed =
-                    self.animation_speed_policy
+                    self.engine.animation_speed_policy
                         .animation_speed_for_shader(
                             &new_shader.shader_name,
                             None,
@@ -739,13 +742,13 @@ impl FrameRenderer {
 
                 let new_configured_fps =
                     resolve_shader_fps(
-                        self.global_rendered_fps,
-                        &self.fps_overrides,
+                        self.engine.global_rendered_fps,
+                        &self.engine.fps_overrides,
                         &new_shader.shader_name,
                     );
 
                 let new_overlay =
-                    if self.subtitles {
+                    if self.engine.subtitles {
 
                         let (
                             width,
@@ -755,9 +758,9 @@ impl FrameRenderer {
 
                         match build_subtitle_overlay(
                             &new_shader,
-                            &self.texture_manager,
+                            &self.engine.texture_manager,
                             true,
-                            self.subtitle_placement,
+                            self.engine.subtitle_placement,
                             new_animation_speed,
                             new_configured_fps,
                             FpsWarningState::Normal,
@@ -789,43 +792,43 @@ impl FrameRenderer {
                     };
 
                 let old_program =
-                    self.active_shader.program;
+                    self.engine.active_shader.program;
 
-                self.active_shader =
+                self.engine.active_shader =
                     new_shader;
 
-                self.start_time =
+                self.engine.start_time =
                     Instant::now();
 
-                self.animation_speed =
+                self.engine.animation_speed =
                     new_animation_speed;
 
                 log_information(
                     &format!(
                         "[RENDER] Animation speed: {:.3}x",
-                        self.animation_speed,
+                        self.engine.animation_speed,
                     )
                 );
 
-                self.configured_fps =
+                self.engine.configured_fps =
                     new_configured_fps;
 
-                self.target_frame_time =
+                self.engine.target_frame_time =
                     Duration::from_secs_f64(
                         1.0
                             / new_configured_fps.max(1) as f64
                     );
 
-                self.subtitle_overlay =
+                self.engine.subtitle_overlay =
                     new_overlay;
 
-                self.overlay_output_size =
+                self.engine.overlay_output_size =
                     self.window.size();
 
-                self.fps_warning_state =
+                self.engine.fps_warning_state =
                     FpsWarningState::Normal;
 
-                self.frame_times.clear();
+                self.engine.frame_times.clear();
 
                 unsafe {
                     if old_program
@@ -837,11 +840,11 @@ impl FrameRenderer {
                     }
                 }
 
-                self.last_shader_switch =
+                self.engine.last_shader_switch =
                     Instant::now();
 
                 log_active_shader(
-                    &self.active_shader
+                    &self.engine.active_shader
                 );
 
                 log_information(
@@ -856,7 +859,7 @@ impl FrameRenderer {
                     )
                 );
 
-                self.last_shader_switch =
+                self.engine.last_shader_switch =
                     Instant::now();
             }
         }
@@ -867,18 +870,18 @@ impl FrameRenderer {
         &mut self,
     ) {
         let elapsed =
-            self.last_frame.elapsed();
+            self.engine.last_frame.elapsed();
 
         if elapsed
-            < self.target_frame_time
+            < self.engine.target_frame_time
         {
             std::thread::sleep(
-                self.target_frame_time
+                self.engine.target_frame_time
                     - elapsed
             );
         }
 
-        self.last_frame =
+        self.engine.last_frame =
             Instant::now();
     }
 }
@@ -888,27 +891,27 @@ impl Drop for FrameRenderer {
     fn drop(
         &mut self,
     ) {
-        self.subtitle_overlay =
+        self.engine.subtitle_overlay =
             None;
 
-        self.texture_manager
+        self.engine.texture_manager
             .delete_all();
 
         unsafe {
-            if self.active_shader.program
+            if self.engine.active_shader.program
                 != 0
             {
                 gl::DeleteProgram(
-                    self.active_shader.program
+                    self.engine.active_shader.program
                 );
             }
 
-            if self.vao
+            if self.engine.vao
                 != 0
             {
                 gl::DeleteVertexArrays(
                     1,
-                    &self.vao,
+                    &self.engine.vao,
                 );
             }
         }
