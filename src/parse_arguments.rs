@@ -3,6 +3,11 @@ use crate::parse_texture_specification::{
     TextureSpecification,
 };
 
+use crate::manage_overrides::{
+    OverrideProperties,
+    OverrideTarget,
+};
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
     Run,
@@ -39,6 +44,21 @@ pub enum Command {
     ListPalettes,
 
     DeleteCache,
+
+    AddOverride {
+        target: OverrideTarget,
+        shader: String,
+        properties: OverrideProperties,
+    },
+
+    DeleteOverride {
+        target: OverrideTarget,
+        shader: String,
+    },
+
+    ListOverrides {
+        target: Option<OverrideTarget>,
+    },
 }
 
 
@@ -215,6 +235,30 @@ pub fn parse() -> Result<Command, String> {
         }
 
 
+        "--add-override" => {
+
+            parse_add_override(
+                &args[1..]
+            )
+        }
+
+
+        "--delete-override" => {
+
+            parse_delete_override(
+                &args[1..]
+            )
+        }
+
+
+        "--list-overrides" => {
+
+            parse_list_overrides(
+                &args[1..]
+            )
+        }
+
+
         "--delete-cache" => {
 
             require_no_extra_arguments(
@@ -273,6 +317,336 @@ pub fn parse() -> Result<Command, String> {
             )
         }
     }
+}
+
+
+fn parse_add_override(
+    args: &[String],
+) -> Result<Command, String> {
+
+    if args.len() < 3 {
+        return Err(
+            "--add-override requires TARGET, SHADER, and at least one property"
+                .to_string()
+        );
+    }
+
+    let target =
+        OverrideTarget::parse(
+            &args[0]
+        )?;
+
+    let shader =
+        parse_override_shader(
+            &args[1],
+            "--add-override",
+        )?;
+
+    let properties =
+        parse_override_properties(
+            &args[2..],
+            target,
+        )?;
+
+    Ok(
+        Command::AddOverride {
+            target,
+            shader,
+            properties,
+        }
+    )
+}
+
+
+fn parse_delete_override(
+    args: &[String],
+) -> Result<Command, String> {
+
+    if args.len() != 2 {
+        return Err(
+            "--delete-override requires exactly TARGET and SHADER"
+                .to_string()
+        );
+    }
+
+    let target =
+        OverrideTarget::parse(
+            &args[0]
+        )?;
+
+    let shader =
+        parse_override_shader(
+            &args[1],
+            "--delete-override",
+        )?;
+
+    Ok(
+        Command::DeleteOverride {
+            target,
+            shader,
+        }
+    )
+}
+
+
+fn parse_list_overrides(
+    args: &[String],
+) -> Result<Command, String> {
+
+    if args.len() > 1 {
+        return Err(
+            "--list-overrides accepts at most one TARGET"
+                .to_string()
+        );
+    }
+
+    let target =
+        args.first()
+            .map(
+                |value| OverrideTarget::parse(value)
+            )
+            .transpose()?;
+
+    Ok(
+        Command::ListOverrides {
+            target,
+        }
+    )
+}
+
+
+fn parse_override_shader(
+    value: &str,
+    option: &str,
+) -> Result<String, String> {
+
+    let value =
+        value.trim();
+
+    if value.is_empty()
+        || value.starts_with('-')
+    {
+        return Err(
+            format!(
+                "{} requires a shader filename",
+                option,
+            )
+        );
+    }
+
+    Ok(
+        value.to_string()
+    )
+}
+
+
+fn parse_override_properties(
+    args: &[String],
+    target: OverrideTarget,
+) -> Result<OverrideProperties, String> {
+
+    let mut properties =
+        OverrideProperties::default();
+
+    for token in args {
+        let (name, value) =
+            split_override_property(
+                token
+            )?;
+
+        match name
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "texture" => {
+                if properties.texture.is_some() {
+                    return Err(
+                        "Override property 'texture' may only be specified once"
+                            .to_string()
+                    );
+                }
+
+                let family =
+                    value.split(':')
+                        .next()
+                        .unwrap_or(value);
+
+                validate_texture_family(
+                    family
+                )?;
+
+                properties.texture =
+                    Some(
+                        value.to_ascii_lowercase()
+                    );
+            }
+
+            "palette" => {
+                if properties.palette.is_some() {
+                    return Err(
+                        "Override property 'palette' may only be specified once"
+                            .to_string()
+                    );
+                }
+
+                validate_texture_palette(
+                    value
+                )?;
+
+                properties.palette =
+                    Some(
+                        value.to_ascii_lowercase()
+                    );
+            }
+
+            "fps" => {
+                if properties.fps.is_some() {
+                    return Err(
+                        "Override property 'fps' may only be specified once"
+                            .to_string()
+                    );
+                }
+
+                let fps =
+                    value.parse::<u32>()
+                        .map_err(
+                            |_| {
+                                format!(
+                                    "Invalid override FPS '{}'; specify an integer from {} through {}",
+                                    value,
+                                    crate::define_constants::MIN_RENDER_FPS,
+                                    crate::define_constants::MAX_RENDER_FPS,
+                                )
+                            }
+                        )?;
+
+                if !(crate::define_constants::MIN_RENDER_FPS
+                    ..=crate::define_constants::MAX_RENDER_FPS)
+                    .contains(&fps)
+                {
+                    return Err(
+                        format!(
+                            "Override FPS {} is outside the supported range {}-{}",
+                            fps,
+                            crate::define_constants::MIN_RENDER_FPS,
+                            crate::define_constants::MAX_RENDER_FPS,
+                        )
+                    );
+                }
+
+                properties.fps =
+                    Some(fps);
+            }
+
+            "speed" => {
+                if properties.speed.is_some() {
+                    return Err(
+                        "Override property 'speed' may only be specified once"
+                            .to_string()
+                    );
+                }
+
+                let speed =
+                    value.parse::<f32>()
+                        .map_err(
+                            |_| {
+                                format!(
+                                    "Invalid override speed '{}'; specify a numeric multiplier",
+                                    value,
+                                )
+                            }
+                        )?;
+
+                let (minimum, maximum) =
+                    match target {
+                        OverrideTarget::Screensaver => (
+                            crate::define_constants::SCREENSAVER_SPEED_MIN,
+                            crate::define_constants::SCREENSAVER_SPEED_MAX,
+                        ),
+
+                        OverrideTarget::Wallpaper => (
+                            crate::define_constants::WALLPAPER_SPEED_MIN,
+                            crate::define_constants::WALLPAPER_SPEED_MAX,
+                        ),
+                    };
+
+                if !speed.is_finite()
+                    || !(minimum..=maximum)
+                        .contains(&speed)
+                {
+                    return Err(
+                        format!(
+                            "Override speed {} for {} is outside the supported range {}-{}",
+                            value,
+                            target.name(),
+                            minimum,
+                            maximum,
+                        )
+                    );
+                }
+
+                properties.speed =
+                    Some(speed);
+            }
+
+            other => {
+                return Err(
+                    format!(
+                        "Unknown override property '{}'; supported properties: texture, palette, fps, speed",
+                        other,
+                    )
+                );
+            }
+        }
+    }
+
+    if properties.is_empty() {
+        return Err(
+            "An override must define at least one property"
+                .to_string()
+        );
+    }
+
+    Ok(properties)
+}
+
+
+fn split_override_property(
+    token: &str,
+) -> Result<(&str, &str), String> {
+
+    let pair =
+        token.split_once('=')
+            .or_else(
+                || token.split_once(':')
+            )
+            .ok_or_else(
+                || {
+                    format!(
+                        "Invalid override property '{}'; use NAME:VALUE or NAME=VALUE",
+                        token,
+                    )
+                }
+            )?;
+
+    let name =
+        pair.0.trim();
+
+    let value =
+        pair.1.trim();
+
+    if name.is_empty()
+        || value.is_empty()
+    {
+        return Err(
+            format!(
+                "Invalid override property '{}'; both name and value are required",
+                token,
+            )
+        );
+    }
+
+    Ok((name, value))
 }
 
 
@@ -981,7 +1355,15 @@ pub fn print_help() {
              --list-palettes\n\
                  Display available procedural texture palettes.\n\
          \n\
-             --delete-cache\n\
+             --add-override TARGET SHADER PROPERTY [PROPERTY ...]\n\
+                 Add a complete screensaver or wallpaper shader override.\n\
+                 Properties: texture, palette, fps, speed.\n\
+                 PROPERTY may use NAME:VALUE or NAME=VALUE syntax.\n\
+         \n             --delete-override TARGET SHADER\n\
+                 Delete an existing screensaver or wallpaper shader override.\n\
+         \n             --list-overrides [TARGET]\n\
+                 List both override tables, or only the selected target.\n\
+         \n             --delete-cache\n\
                  Delete all Screenshaver cached/preprocessed shaders.\n\
          \n\
          Texture families:\n\
@@ -1010,6 +1392,9 @@ pub fn print_help() {
              screenshaver --preview-shader \"Heartfelt.glsl\"\n\
              screenshaver --preview-shader \"Heartfelt.glsl\" --texture clouds\n\
              screenshaver --preview-shader \"Heartfelt.glsl\" --palette mist\n\
+             screenshaver --add-override screensaver CandyWarp.fs texture:bricks palette:mist fps:24 speed:0.5\n\
+             screenshaver --delete-override wallpaper CandyWarp.fs\n\
+             screenshaver --list-overrides screensaver\n\
          \n\
          Configuration:\n\
              ~/.config/screenshaver/\n\

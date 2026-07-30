@@ -19,6 +19,7 @@ mod session_backend;
 
 mod manage_shader;
 mod manage_textures;
+mod manage_overrides;
 mod classify_shader;
 mod isf_types;
 mod parse_isf;
@@ -67,6 +68,60 @@ use std::sync::atomic::{
     Ordering,
 };
 use std::time::Duration;
+use std::io::{self, Write};
+
+
+
+fn confirm_override_replacement(
+    shader: &str,
+    target: crate::manage_overrides::OverrideTarget,
+) -> Result<bool, String> {
+
+    loop {
+        print!(
+            "Shader '{}' already has an override in [{}] -- delete it? [Y/n] ",
+            shader,
+            target.table_name(),
+        );
+
+        io::stdout()
+            .flush()
+            .map_err(
+                |error| error.to_string()
+            )?;
+
+        let mut response =
+            String::new();
+
+        io::stdin()
+            .read_line(
+                &mut response
+            )
+            .map_err(
+                |error| error.to_string()
+            )?;
+
+        match response
+            .trim()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "" | "y" | "yes" => {
+                return Ok(true);
+            }
+
+            "n" | "no" => {
+                return Ok(false);
+            }
+
+            _ => {
+                println!(
+                    "Please answer Y or n."
+                );
+            }
+        }
+    }
+}
 
 
 fn main() {
@@ -170,6 +225,164 @@ match command {
             }
         }
 
+
+        return;
+    }
+
+
+    crate::parse_arguments::Command::AddOverride {
+        target,
+        shader,
+        properties,
+    } => {
+
+        let cfg_path =
+            crate::locate_paths::config_path();
+
+        let exists =
+            match crate::manage_overrides::override_exists(
+                &cfg_path,
+                target,
+                &shader,
+            ) {
+                Ok(exists) => exists,
+
+                Err(error) => {
+                    eprintln!(
+                        "{}",
+                        error
+                    );
+
+                    return;
+                }
+            };
+
+        if exists {
+            let replace =
+                match confirm_override_replacement(
+                    &shader,
+                    target,
+                ) {
+                    Ok(replace) => replace,
+
+                    Err(error) => {
+                        eprintln!(
+                            "Unable to read confirmation: {}",
+                            error
+                        );
+
+                        return;
+                    }
+                };
+
+            if !replace {
+                println!(
+                    "Override addition cancelled."
+                );
+
+                return;
+            }
+
+            match crate::manage_overrides::replace_override(
+                &cfg_path,
+                target,
+                &shader,
+                properties,
+            ) {
+                Ok(()) => {
+                    println!(
+                        "Replaced {} override for {}.",
+                        target.name(),
+                        shader,
+                    );
+                }
+
+                Err(error) => {
+                    eprintln!(
+                        "{}",
+                        error
+                    );
+                }
+            }
+        } else {
+            match crate::manage_overrides::add_override(
+                &cfg_path,
+                target,
+                &shader,
+                properties,
+            ) {
+                Ok(()) => {
+                    println!(
+                        "Added {} override for {}.",
+                        target.name(),
+                        shader,
+                    );
+                }
+
+                Err(error) => {
+                    eprintln!(
+                        "{}",
+                        error
+                    );
+                }
+            }
+        }
+
+        return;
+    }
+
+
+    crate::parse_arguments::Command::DeleteOverride {
+        target,
+        shader,
+    } => {
+
+        let cfg_path =
+            crate::locate_paths::config_path();
+
+        match crate::manage_overrides::delete_override(
+            &cfg_path,
+            target,
+            &shader,
+        ) {
+            Ok(()) => {
+                println!(
+                    "Deleted {} override for {}.",
+                    target.name(),
+                    shader,
+                );
+            }
+
+            Err(error) => {
+                eprintln!(
+                    "{}",
+                    error
+                );
+            }
+        }
+
+        return;
+    }
+
+
+    crate::parse_arguments::Command::ListOverrides {
+        target,
+    } => {
+
+        let cfg_path =
+            crate::locate_paths::config_path();
+
+        if let Err(error) =
+            crate::manage_overrides::list_overrides(
+                &cfg_path,
+                target,
+            )
+        {
+            eprintln!(
+                "{}",
+                error
+            );
+        }
 
         return;
     }
