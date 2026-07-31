@@ -415,10 +415,15 @@ fn notify_wallpaper_metadata(
 fn notify_wallpaper_events(
     enabled: bool,
     frame_events: FrameRenderEvents,
+    tray_status: &crate::tray_icon::TrayStatusControl,
 ) {
     for event in frame_events.events {
         match event {
             FrameRenderEvent::ShaderChanged(metadata) => {
+                tray_status.set_active(
+                    metadata.shader_name.clone()
+                );
+
                 notify_wallpaper_metadata(
                     enabled,
                     &metadata,
@@ -462,6 +467,7 @@ fn run_window_loop(
     running: &AtomicBool,
     control: &WallpaperRuntimeControl,
     notifications_enabled: bool,
+    tray_status: &crate::tray_icon::TrayStatusControl,
 ) {
     diagnostic("Entering continuous X11 wallpaper render loop...");
 
@@ -495,6 +501,7 @@ fn run_window_loop(
         notify_wallpaper_events(
             notifications_enabled,
             status,
+            tray_status,
         );
 
         if paused {
@@ -540,6 +547,10 @@ impl WallpaperBackend for X11WallpaperBackend {
         running: Arc<AtomicBool>,
         control: WallpaperRuntimeControl,
     ) -> Result<(), String> {
+        runtime.tray_status
+            .set_starting();
+
+
         let display = self.connection.display();
 
         let glx_config =
@@ -623,6 +634,11 @@ impl WallpaperBackend for X11WallpaperBackend {
             let initial_metadata =
                 engine.current_metadata();
 
+            runtime.tray_status
+                .set_active(
+                    initial_metadata.shader_name.clone()
+                );
+
             notify_wallpaper_metadata(
                 runtime.notifications,
                 &initial_metadata,
@@ -635,6 +651,7 @@ impl WallpaperBackend for X11WallpaperBackend {
                 running.as_ref(),
                 &control,
                 runtime.notifications,
+                &runtime.tray_status,
             );
 
             // `engine` is dropped here while the GLX context is still current.

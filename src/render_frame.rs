@@ -38,6 +38,13 @@ pub struct FrameRenderer {
 
 
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FrameOutputPolicy {
+    PreserveAlpha,
+    ForceOpaque,
+}
+
+
 #[derive(Clone)]
 enum RenderFpsPolicy {
     Screensaver {
@@ -120,6 +127,7 @@ pub(crate) struct FrameRenderEngine {
         Option<crate::display_overlay::OpenGlOverlay>,
     overlay_output_size: (u32, u32),
     fps_policy: RenderFpsPolicy,
+    output_policy: FrameOutputPolicy,
     configured_fps: u32,
     fps_warning_state: FpsWarningState,
     fps_blink_visible: bool,
@@ -160,6 +168,7 @@ impl FrameRenderEngine {
                 global_rendered_fps,
                 fps_overrides,
             },
+            FrameOutputPolicy::PreserveAlpha,
             texture_policy,
             subtitles,
             true,
@@ -194,6 +203,7 @@ impl FrameRenderEngine {
             RenderFpsPolicy::Wallpaper(
                 fps_policy
             ),
+            FrameOutputPolicy::ForceOpaque,
             texture_policy,
             subtitles,
             false,
@@ -211,6 +221,7 @@ impl FrameRenderEngine {
             crate::load_config::AnimationSpeedPolicy,
         shader_directory: Option<PathBuf>,
         fps_policy: RenderFpsPolicy,
+        output_policy: FrameOutputPolicy,
         texture_policy:
             crate::load_config::TextureSelectionPolicy,
         subtitles: bool,
@@ -326,6 +337,7 @@ impl FrameRenderEngine {
                         output_height,
                     ),
                 fps_policy,
+                output_policy,
                 configured_fps,
                 fps_warning_state:
                     FpsWarningState::Normal,
@@ -386,6 +398,21 @@ impl FrameRenderEngine {
                 height as i32,
             );
 
+            if self.output_policy
+                == FrameOutputPolicy::ForceOpaque
+            {
+                gl::Disable(
+                    gl::BLEND
+                );
+            }
+
+            gl::ColorMask(
+                gl::TRUE,
+                gl::TRUE,
+                gl::TRUE,
+                gl::TRUE,
+            );
+
             gl::ClearColor(
                 0.0,
                 0.0,
@@ -396,6 +423,17 @@ impl FrameRenderEngine {
             gl::Clear(
                 gl::COLOR_BUFFER_BIT
             );
+
+            if self.output_policy
+                == FrameOutputPolicy::ForceOpaque
+            {
+                gl::ColorMask(
+                    gl::TRUE,
+                    gl::TRUE,
+                    gl::TRUE,
+                    gl::FALSE,
+                );
+            }
 
             gl::UseProgram(
                 program
@@ -460,6 +498,17 @@ impl FrameRenderEngine {
                 0,
                 3,
             );
+
+            if self.output_policy
+                == FrameOutputPolicy::ForceOpaque
+            {
+                gl::ColorMask(
+                    gl::TRUE,
+                    gl::TRUE,
+                    gl::TRUE,
+                    gl::TRUE,
+                );
+            }
 
             gl::Finish();
         }

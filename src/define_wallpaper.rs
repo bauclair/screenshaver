@@ -92,4 +92,8 @@ pub struct WallpaperRuntime {
 
     pub animation_speed_policy:
         crate::load_config::AnimationSpeedPolicy,
+
+    pub tray_status:
+        crate::tray_icon::TrayStatusControl,
 }
+

@@ -779,14 +779,20 @@ crate::parse_arguments::Command::ListPalettes => {
             crate::tray_icon::TrayCommand
         >();
 
+    let tray_status =
+        crate::tray_icon::TrayStatusControl::new(
+            cfg.wallpaper_enabled
+        );
+
+
     let _tray_handle =
         match crate::tray_icon::start(
             tray_command_sender,
             crate::tray_icon::TrayStatus {
                 screensaver_enabled:
                     cfg.screensaver_enabled,
-                wallpaper_enabled:
-                    cfg.wallpaper_enabled,
+                wallpaper:
+                    tray_status.clone(),
             },
         ) {
 
@@ -1145,6 +1151,8 @@ crate::parse_arguments::Command::ListPalettes => {
                 cfg.wallpaper_fps_policy,
             animation_speed_policy:
                 cfg.wallpaper_speed_policy,
+            tray_status:
+                tray_status.clone(),
         };
 
 

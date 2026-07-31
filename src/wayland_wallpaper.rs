@@ -874,6 +874,10 @@ pub fn run_egl_background_surface(
     _control: crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
 ) -> Result<(), String> {
 
+    runtime.tray_status
+        .set_starting();
+
+
     let active_shader =
         select_safe_wallpaper_shader(
             &mut shader_manager,
@@ -884,6 +888,12 @@ pub fn run_egl_background_surface(
     print_active_wallpaper_shader(
         &active_shader
     );
+
+
+    runtime.tray_status
+        .set_active(
+            active_shader.shader_name.clone()
+        );
 
 
     let (
@@ -2415,6 +2425,12 @@ fn render_mirror_frames(
                                     next_shader.clone();
 
 
+                                runtime.tray_status
+                                    .set_active(
+                                        current_shader.shader_name.clone()
+                                    );
+
+
                                 frame_times.clear();
 
 
@@ -2563,6 +2579,17 @@ fn render_mirror_frames(
                         native_target.height,
                     );
 
+                    gl::Disable(
+                        gl::BLEND
+                    );
+
+                    gl::ColorMask(
+                        gl::TRUE,
+                        gl::TRUE,
+                        gl::TRUE,
+                        gl::TRUE,
+                    );
+
                     gl::ClearColor(
                         0.0,
                         0.0,
@@ -2572,6 +2599,13 @@ fn render_mirror_frames(
 
                     gl::Clear(
                         gl::COLOR_BUFFER_BIT
+                    );
+
+                    gl::ColorMask(
+                        gl::TRUE,
+                        gl::TRUE,
+                        gl::TRUE,
+                        gl::FALSE,
                     );
 
                     gl::UseProgram(
@@ -2618,6 +2652,13 @@ fn render_mirror_frames(
                         gl::TRIANGLES,
                         0,
                         3,
+                    );
+
+                    gl::ColorMask(
+                        gl::TRUE,
+                        gl::TRUE,
+                        gl::TRUE,
+                        gl::TRUE,
                     );
                 }
 
