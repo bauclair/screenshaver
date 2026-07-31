@@ -85,6 +85,7 @@ pub(crate) struct FrameRenderEngine {
     last_shader_switch: Instant,
     shader_interval: u64,
     shader_manager: crate::manage_shader::ShaderManager,
+    shader_directory: Option<PathBuf>,
     texture_manager: crate::manage_textures::TextureManager,
     subtitles: bool,
     subtitle_placement:
@@ -128,6 +129,7 @@ impl FrameRenderEngine {
             shader_manager,
             shader_interval,
             animation_speed_policy,
+            None,
             RenderFpsPolicy::Screensaver {
                 global_rendered_fps,
                 fps_overrides,
@@ -143,6 +145,7 @@ impl FrameRenderEngine {
 
     pub(crate) fn new_for_wallpaper(
         shader_manager: crate::manage_shader::ShaderManager,
+        wallpaper_directory: &Path,
         shader_interval: u64,
         animation_speed_policy:
             crate::load_config::AnimationSpeedPolicy,
@@ -160,6 +163,7 @@ impl FrameRenderEngine {
             shader_manager,
             shader_interval,
             animation_speed_policy,
+            Some(wallpaper_directory.to_path_buf()),
             RenderFpsPolicy::Wallpaper(
                 fps_policy
             ),
@@ -177,6 +181,7 @@ impl FrameRenderEngine {
         shader_interval: u64,
         animation_speed_policy:
             crate::load_config::AnimationSpeedPolicy,
+        shader_directory: Option<PathBuf>,
         fps_policy: RenderFpsPolicy,
         texture_policy:
             crate::load_config::TextureSelectionPolicy,
@@ -192,7 +197,8 @@ impl FrameRenderEngine {
 
         let active_shader =
             select_safe_shader_program(
-                &mut shader_manager
+                &mut shader_manager,
+                shader_directory.as_deref(),
             )?;
 
         let animation_speed =
@@ -279,6 +285,7 @@ impl FrameRenderEngine {
                     Instant::now(),
                 shader_interval,
                 shader_manager,
+                shader_directory,
                 texture_manager,
                 subtitles,
                 subtitle_placement,
@@ -580,7 +587,8 @@ impl FrameRenderEngine {
         }
 
         match select_safe_shader_program(
-            &mut self.shader_manager
+            &mut self.shader_manager,
+            self.shader_directory.as_deref(),
         ) {
             Ok(new_shader) => {
                 if let Err(error) =
@@ -1249,6 +1257,7 @@ fn build_subtitle_overlay(
 
 fn select_safe_shader_program(
     shader_manager: &mut crate::manage_shader::ShaderManager,
+    shader_directory: Option<&Path>,
 ) -> Result<ActiveShader, String> {
     let maximum_attempts =
         shader_manager.shader_count();
@@ -1268,9 +1277,20 @@ fn select_safe_shader_program(
             )
         );
 
-        match crate::load_shader::load_shader(
-            &requested_shader_name
-        ) {
+        let loaded_shader =
+            if let Some(directory) = shader_directory {
+                crate::load_shader::load_shader_for_preview(
+                    &directory.join(
+                        &requested_shader_name
+                    )
+                )
+            } else {
+                crate::load_shader::load_shader(
+                    &requested_shader_name
+                )
+            };
+
+        match loaded_shader {
             crate::load_shader::ShaderLoadResult::Ready {
                 source,
                 shader_name,
