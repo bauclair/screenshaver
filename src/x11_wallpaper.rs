@@ -38,6 +38,7 @@ use crate::glx_context::{
     GlxFramebufferConfig,
 };
 use crate::manage_shader::ShaderManager;
+use crate::render_frame::FrameRenderEngine;
 use crate::manage_wallpaper_runtime::WallpaperRuntimeControl;
 use crate::wallpaper_backend::WallpaperBackend;
 use crate::x11_connection::X11Connection;
@@ -348,96 +349,39 @@ fn report_opengl_information() {
     );
 }
 
-fn render_diagnostic_frame(
+fn render_shared_engine_frame(
     display: *mut xlib::Display,
     wallpaper_window: &X11WallpaperWindow,
-) -> Result<(), String> {
-    diagnostic("Rendering diagnostic OpenGL frame...");
+    engine: &mut FrameRenderEngine,
+) {
+    diagnostic("Rendering shared-engine wallpaper frame...");
+
+    engine.render_frame(
+        wallpaper_window.width as u32,
+        wallpaper_window.height as u32,
+    );
 
     unsafe {
-        // Remove any stale error so every reported value belongs to this test.
-        while gl::GetError() != gl::NO_ERROR {}
-
-        let mut viewport = [0_i32; 4];
-        gl::GetIntegerv(gl::VIEWPORT, viewport.as_mut_ptr());
-
-        diagnostic(&format!(
-            "OpenGL viewport before update: {}, {}, {}, {}",
-            viewport[0], viewport[1], viewport[2], viewport[3],
-        ));
-
-        gl::Viewport(
-            0,
-            0,
-            wallpaper_window.width,
-            wallpaper_window.height,
-        );
-
-        let viewport_error = gl::GetError();
-        diagnostic(&format!(
-            "glViewport error: 0x{viewport_error:04X}"
-        ));
-
-        gl::ClearColor(0.0, 0.25, 1.0, 1.0);
-
-        let clear_color_error = gl::GetError();
-        diagnostic(&format!(
-            "glClearColor error: 0x{clear_color_error:04X}"
-        ));
-
-        gl::Clear(gl::COLOR_BUFFER_BIT);
-
-        let clear_error = gl::GetError();
-        diagnostic(&format!(
-            "glClear error: 0x{clear_error:04X}"
-        ));
-
-        gl::Finish();
-
-        let finish_error = gl::GetError();
-        diagnostic(&format!(
-            "glFinish error: 0x{finish_error:04X}"
-        ));
-
-        // Read one pixel from the back buffer before swapping.  A successful
-        // blue clear should report approximately RGBA 0, 64, 255, 255.
-        let mut pixel = [0_u8; 4];
-        gl::ReadBuffer(gl::BACK);
-        gl::ReadPixels(
-            wallpaper_window.width / 2,
-            wallpaper_window.height / 2,
-            1,
-            1,
-            gl::RGBA,
-            gl::UNSIGNED_BYTE,
-            pixel.as_mut_ptr() as *mut std::ffi::c_void,
-        );
-
-        let read_error = gl::GetError();
-        diagnostic(&format!(
-            "Back-buffer center pixel: R={} G={} B={} A={}; glReadPixels error: 0x{read_error:04X}",
-            pixel[0], pixel[1], pixel[2], pixel[3],
-        ));
-
         glx::glXSwapBuffers(
             display,
             wallpaper_window.glx_window,
         );
 
-        xlib::XSync(display, xlib::False);
-
-        let swap_error = gl::GetError();
-        diagnostic(&format!(
-            "OpenGL error after glXSwapBuffers: 0x{swap_error:04X}"
-        ));
+        xlib::XSync(
+            display,
+            xlib::False,
+        );
     }
 
-    diagnostic("Presented diagnostic OpenGL frame with glXSwapBuffers().");
-    Ok(())
+    engine.limit_fps();
+
+    diagnostic(
+        "Presented shared-engine wallpaper frame with glXSwapBuffers()."
+    );
 }
 
 fn run_window_loop() {
-    diagnostic("Displaying OpenGL diagnostic frame for five seconds...");
+    diagnostic("Displaying shared-engine wallpaper frame for five seconds...");
     thread::sleep(Duration::from_secs(5));
 }
 
@@ -462,10 +406,10 @@ impl WallpaperBackend for X11WallpaperBackend {
 
     fn run(
         self: Box<Self>,
-        _shader_manager: ShaderManager,
-        _wallpaper_directory: &Path,
-        _shader_interval: Option<Duration>,
-        _runtime: &WallpaperRuntime,
+        shader_manager: ShaderManager,
+        wallpaper_directory: &Path,
+        shader_interval: Option<Duration>,
+        runtime: &WallpaperRuntime,
         _running: Arc<AtomicBool>,
         _control: WallpaperRuntimeControl,
     ) -> Result<(), String> {
@@ -521,9 +465,43 @@ impl WallpaperBackend for X11WallpaperBackend {
         let render_result = (|| -> Result<(), String> {
             load_opengl_functions()?;
             report_opengl_information();
-            render_diagnostic_frame(display, &wallpaper_window)?;
+
+            let parsed_subtitle_placement =
+                crate::parse_subtitle_placement::parse(
+                    None
+                );
+
+            let mut engine =
+                FrameRenderEngine::new_for_wallpaper(
+                    shader_manager,
+                    wallpaper_directory,
+                    shader_interval
+                        .map(
+                            |interval| {
+                                interval.as_secs()
+                            }
+                        )
+                        .unwrap_or(
+                            0
+                        ),
+                    runtime.animation_speed_policy.clone(),
+                    runtime.fps_policy.clone(),
+                    runtime.texture_policy.clone(),
+                    false,
+                    parsed_subtitle_placement.placement,
+                    wallpaper_window.width as u32,
+                    wallpaper_window.height as u32,
+                )?;
+
+            render_shared_engine_frame(
+                display,
+                &wallpaper_window,
+                &mut engine,
+            );
+
             run_window_loop();
 
+            // `engine` is dropped here while the GLX context is still current.
             Ok(())
         })();
 
