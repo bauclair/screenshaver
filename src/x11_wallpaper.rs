@@ -42,7 +42,12 @@ use crate::glx_context::{
     GlxFramebufferConfig,
 };
 use crate::manage_shader::ShaderManager;
-use crate::render_frame::FrameRenderEngine;
+use crate::render_frame::{
+    FrameRenderEngine,
+    FrameRenderEvent,
+    FrameRenderMetadata,
+    FrameRenderEvents,
+};
 use crate::manage_wallpaper_runtime::WallpaperRuntimeControl;
 use crate::wallpaper_backend::WallpaperBackend;
 use crate::x11_connection::X11Connection;
@@ -357,11 +362,12 @@ fn render_shared_engine_frame(
     display: *mut xlib::Display,
     wallpaper_window: &X11WallpaperWindow,
     engine: &mut FrameRenderEngine,
-) {
-    engine.render_frame(
-        wallpaper_window.width as u32,
-        wallpaper_window.height as u32,
-    );
+) -> FrameRenderEvents {
+    let status =
+        engine.render_frame(
+            wallpaper_window.width as u32,
+            wallpaper_window.height as u32,
+        );
 
     unsafe {
         glx::glXSwapBuffers(
@@ -371,6 +377,66 @@ fn render_shared_engine_frame(
     }
 
     engine.limit_fps();
+
+    status
+}
+
+
+fn notify_wallpaper_metadata(
+    enabled: bool,
+    metadata: &FrameRenderMetadata,
+) {
+    let wallpaper_metadata =
+        crate::notify_wallpaper::WallpaperMetadata {
+            wallpaper:
+                metadata.shader_name.clone(),
+            animation_speed:
+                metadata.animation_speed,
+            texture:
+                metadata.texture.clone(),
+            palette:
+                metadata.palette.clone(),
+            fps:
+                metadata.configured_fps.max(1),
+            warning_state:
+                metadata.warning_state,
+        };
+
+    // Notification lifetime is controlled by notify_wallpaper and the desktop
+    // notification daemon. Normal and Warning notifications expire after five
+    // seconds; Critical notifications remain until dismissed by the user.
+    let _ = crate::notify_wallpaper::show(
+        enabled,
+        &wallpaper_metadata,
+    );
+}
+
+
+fn notify_wallpaper_events(
+    enabled: bool,
+    frame_events: FrameRenderEvents,
+) {
+    for event in frame_events.events {
+        match event {
+            FrameRenderEvent::ShaderChanged(metadata) => {
+                notify_wallpaper_metadata(
+                    enabled,
+                    &metadata,
+                );
+            }
+
+            FrameRenderEvent::PerformanceChanged(metadata) => {
+                if metadata.warning_state
+                    != crate::fps_monitor::FpsWarningState::Normal
+                {
+                    notify_wallpaper_metadata(
+                        enabled,
+                        &metadata,
+                    );
+                }
+            }
+        }
+    }
 }
 
 fn drain_x11_events(
@@ -395,6 +461,7 @@ fn run_window_loop(
     engine: &mut FrameRenderEngine,
     running: &AtomicBool,
     control: &WallpaperRuntimeControl,
+    notifications_enabled: bool,
 ) {
     diagnostic("Entering continuous X11 wallpaper render loop...");
 
@@ -418,10 +485,16 @@ fn run_window_loop(
             continue;
         }
 
-        render_shared_engine_frame(
-            display,
-            wallpaper_window,
-            engine,
+        let status =
+            render_shared_engine_frame(
+                display,
+                wallpaper_window,
+                engine,
+            );
+
+        notify_wallpaper_events(
+            notifications_enabled,
+            status,
         );
 
         if paused {
@@ -547,12 +620,21 @@ impl WallpaperBackend for X11WallpaperBackend {
                     wallpaper_window.height as u32,
                 )?;
 
+            let initial_metadata =
+                engine.current_metadata();
+
+            notify_wallpaper_metadata(
+                runtime.notifications,
+                &initial_metadata,
+            );
+
             run_window_loop(
                 display,
                 &wallpaper_window,
                 &mut engine,
                 running.as_ref(),
                 &control,
+                runtime.notifications,
             );
 
             // `engine` is dropped here while the GLX context is still current.

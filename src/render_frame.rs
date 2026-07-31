@@ -75,6 +75,31 @@ impl RenderFpsPolicy {
     }
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct FrameRenderMetadata {
+    pub shader_name: String,
+    pub animation_speed: f32,
+    pub texture: Option<String>,
+    pub palette: Option<String>,
+    pub configured_fps: u32,
+    pub warning_state: FpsWarningState,
+}
+
+
+#[derive(Clone, Debug)]
+pub(crate) enum FrameRenderEvent {
+    ShaderChanged(FrameRenderMetadata),
+    PerformanceChanged(FrameRenderMetadata),
+}
+
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct FrameRenderEvents {
+    pub events: Vec<FrameRenderEvent>,
+}
+
+
+
 pub(crate) struct FrameRenderEngine {
     active_shader: ActiveShader,
     vao: u32,
@@ -88,6 +113,7 @@ pub(crate) struct FrameRenderEngine {
     shader_directory: Option<PathBuf>,
     texture_manager: crate::manage_textures::TextureManager,
     subtitles: bool,
+    render_fps_warning_overlay: bool,
     subtitle_placement:
         crate::parse_subtitle_placement::SubtitlePlacement,
     subtitle_overlay:
@@ -136,6 +162,7 @@ impl FrameRenderEngine {
             },
             texture_policy,
             subtitles,
+            true,
             subtitle_placement,
             output_width,
             output_height,
@@ -169,6 +196,7 @@ impl FrameRenderEngine {
             ),
             texture_policy,
             subtitles,
+            false,
             subtitle_placement,
             output_width,
             output_height,
@@ -186,6 +214,7 @@ impl FrameRenderEngine {
         texture_policy:
             crate::load_config::TextureSelectionPolicy,
         subtitles: bool,
+        render_fps_warning_overlay: bool,
         subtitle_placement:
             crate::parse_subtitle_placement::SubtitlePlacement,
         output_width: u32,
@@ -288,6 +317,7 @@ impl FrameRenderEngine {
                 shader_directory,
                 texture_manager,
                 subtitles,
+                render_fps_warning_overlay,
                 subtitle_placement,
                 subtitle_overlay,
                 overlay_output_size:
@@ -445,11 +475,12 @@ impl FrameRenderEngine {
         &mut self,
         width: u32,
         height: u32,
-    ) {
-        self.maybe_switch_shader(
-            width,
-            height,
-        );
+    ) -> FrameRenderEvents {
+        let shader_changed =
+            self.maybe_switch_shader(
+                width,
+                height,
+            );
 
         let warning_state =
             self.render_scene(
@@ -497,8 +528,9 @@ impl FrameRenderEngine {
             };
 
         let warning_overlay_active =
-            self.fps_warning_state
-                != FpsWarningState::Normal;
+            self.render_fps_warning_overlay
+                && self.fps_warning_state
+                    != FpsWarningState::Normal;
 
         let overlay_should_display =
             self.subtitles
@@ -569,6 +601,59 @@ impl FrameRenderEngine {
             self.subtitle_overlay =
                 None;
         }
+
+        let mut events =
+            FrameRenderEvents::default();
+
+        if shader_changed {
+            events.events.push(
+                FrameRenderEvent::ShaderChanged(
+                    self.current_metadata()
+                )
+            );
+        }
+
+        if warning_changed {
+            events.events.push(
+                FrameRenderEvent::PerformanceChanged(
+                    self.current_metadata()
+                )
+            );
+        }
+
+        events
+    }
+
+
+    pub(crate) fn current_metadata(
+        &self,
+    ) -> FrameRenderMetadata {
+        let selection =
+            self.texture_manager
+                .active_specification_selection();
+
+        FrameRenderMetadata {
+            shader_name:
+                self.active_shader.shader_name.clone(),
+            animation_speed:
+                self.animation_speed,
+            texture:
+                selection.map(
+                    |(specification, _)| {
+                        specification.display_name()
+                    }
+                ),
+            palette:
+                selection.map(
+                    |(_, palette)| {
+                        palette.name().to_string()
+                    }
+                ),
+            configured_fps:
+                self.configured_fps.max(1),
+            warning_state:
+                self.fps_warning_state,
+        }
     }
 
 
@@ -576,14 +661,14 @@ impl FrameRenderEngine {
         &mut self,
         width: u32,
         height: u32,
-    ) {
+    ) -> bool {
         if self.shader_interval == 0
             || self.last_shader_switch
                 .elapsed()
                 .as_secs()
                 < self.shader_interval
         {
-            return;
+            return false;
         }
 
         match select_safe_shader_program(
@@ -616,7 +701,7 @@ impl FrameRenderEngine {
                     self.last_shader_switch =
                         Instant::now();
 
-                    return;
+                    return false;
                 }
 
                 self.texture_manager.configure_program(
@@ -737,6 +822,8 @@ impl FrameRenderEngine {
                 log_information(
                     "[RENDER] Shader switch complete"
                 );
+
+                true
             }
 
             Err(error) => {
@@ -748,6 +835,8 @@ impl FrameRenderEngine {
 
                 self.last_shader_switch =
                     Instant::now();
+
+                false
             }
         }
     }
@@ -939,7 +1028,7 @@ impl FrameRenderer {
         ) =
             self.window.drawable_size();
 
-        self.engine.render_frame(
+        let _ = self.engine.render_frame(
             width,
             height,
         );
