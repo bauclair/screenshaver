@@ -49,6 +49,56 @@ use wayland_protocols_wlr::layer_shell::v1::client::{
 };
 
 
+#[derive(Debug, Clone, Copy)]
+enum WallpaperLayerStrategy {
+    Background,
+    BottomCompatibility,
+}
+
+
+impl WallpaperLayerStrategy {
+    fn detect() -> Self {
+        if let Some(value) = std::env::var_os("SWAYSOCK") {
+            if !value.is_empty() {
+                return Self::BottomCompatibility;
+            }
+        }
+
+        for variable in [
+            "XDG_CURRENT_DESKTOP",
+            "DESKTOP_SESSION",
+        ] {
+            if let Ok(value) = std::env::var(variable) {
+                if value
+                    .to_ascii_lowercase()
+                    .contains("sway")
+                {
+                    return Self::BottomCompatibility;
+                }
+            }
+        }
+
+        Self::Background
+    }
+
+
+    fn layer(self) -> Layer {
+        match self {
+            Self::Background => Layer::Background,
+            Self::BottomCompatibility => Layer::Bottom,
+        }
+    }
+
+
+    fn description(self) -> &'static str {
+        match self {
+            Self::Background => "standard background layer",
+            Self::BottomCompatibility => "Sway bottom-layer compatibility",
+        }
+    }
+}
+
+
 #[derive(Debug, Clone, Default)]
 pub struct WallpaperTargetInfo {
     pub registry_name: u32,
@@ -876,6 +926,24 @@ pub fn run_egl_background_surface(
         state.targets.clone();
 
 
+    let wallpaper_layer_strategy =
+        WallpaperLayerStrategy::detect();
+
+
+    println!(
+        "Wayland wallpaper compatibility:"
+    );
+
+
+    println!(
+        "    Layer strategy: {}",
+        wallpaper_layer_strategy.description()
+    );
+
+
+    println!();
+
+
     println!(
         "Creating mirror-mode wallpaper surfaces:"
     );
@@ -927,7 +995,7 @@ pub fn run_egl_background_surface(
                 Some(
                     &target.output
                 ),
-                Layer::Background,
+                wallpaper_layer_strategy.layer(),
                 format!(
                     "screenshaver-wallpaper-{}",
                     target.info.registry_name,
