@@ -2,7 +2,7 @@
 //
 // Native X11 wallpaper backend using a GLX-selected visual.
 //
-// Stage 4D:
+// Stage 4E:
 //
 // ✓ Selects a modern GLX framebuffer configuration.
 // ✓ Creates the X11 window with the visual required by that configuration.
@@ -11,8 +11,9 @@
 // ✓ Creates and activates a GLX context.
 // ✓ Loads OpenGL functions through GLX.
 // ✓ Logs the OpenGL vendor, renderer, version, and GLSL version.
-// ✓ Clears the drawable to a diagnostic blue color.
-// ✓ Presents the OpenGL back buffer with glXSwapBuffers().
+// ✓ Renders continuously through the shared FrameRenderEngine.
+// ✓ Presents each frame with glXSwapBuffers().
+// ✓ Honors wallpaper pause/resume and shutdown control.
 // ✓ Releases GLX and X11 resources in dependency order.
 
 use std::ffi::{
@@ -21,7 +22,10 @@ use std::ffi::{
 };
 use std::path::Path;
 use std::sync::{
-    atomic::AtomicBool,
+    atomic::{
+        AtomicBool,
+        Ordering,
+    },
     Arc,
 };
 use std::thread;
@@ -354,8 +358,6 @@ fn render_shared_engine_frame(
     wallpaper_window: &X11WallpaperWindow,
     engine: &mut FrameRenderEngine,
 ) {
-    diagnostic("Rendering shared-engine wallpaper frame...");
-
     engine.render_frame(
         wallpaper_window.width as u32,
         wallpaper_window.height as u32,
@@ -366,23 +368,75 @@ fn render_shared_engine_frame(
             display,
             wallpaper_window.glx_window,
         );
-
-        xlib::XSync(
-            display,
-            xlib::False,
-        );
     }
 
     engine.limit_fps();
-
-    diagnostic(
-        "Presented shared-engine wallpaper frame with glXSwapBuffers()."
-    );
 }
 
-fn run_window_loop() {
-    diagnostic("Displaying shared-engine wallpaper frame for five seconds...");
-    thread::sleep(Duration::from_secs(5));
+fn drain_x11_events(
+    display: *mut xlib::Display,
+) {
+    unsafe {
+        while xlib::XPending(display) > 0 {
+            let mut event: xlib::XEvent =
+                std::mem::zeroed();
+
+            xlib::XNextEvent(
+                display,
+                &mut event,
+            );
+        }
+    }
+}
+
+fn run_window_loop(
+    display: *mut xlib::Display,
+    wallpaper_window: &X11WallpaperWindow,
+    engine: &mut FrameRenderEngine,
+    running: &AtomicBool,
+    control: &WallpaperRuntimeControl,
+) {
+    diagnostic("Entering continuous X11 wallpaper render loop...");
+
+    let mut paused = false;
+    let mut first_frame_presented = false;
+
+    while running.load(Ordering::SeqCst) {
+        drain_x11_events(display);
+
+        if control.pause_requested() {
+            if !paused {
+                paused = true;
+                control.acknowledge_paused();
+                diagnostic("X11 wallpaper rendering paused.");
+            }
+
+            thread::sleep(
+                Duration::from_millis(10)
+            );
+
+            continue;
+        }
+
+        render_shared_engine_frame(
+            display,
+            wallpaper_window,
+            engine,
+        );
+
+        if paused {
+            paused = false;
+            control.acknowledge_resumed_frame();
+            diagnostic("X11 wallpaper rendering resumed.");
+        }
+
+        if !first_frame_presented {
+            first_frame_presented = true;
+            diagnostic("Presented first continuous X11 wallpaper frame.");
+        }
+    }
+
+    diagnostic("Leaving continuous X11 wallpaper render loop...");
 }
 
 impl WallpaperBackend for X11WallpaperBackend {
@@ -410,8 +464,8 @@ impl WallpaperBackend for X11WallpaperBackend {
         wallpaper_directory: &Path,
         shader_interval: Option<Duration>,
         runtime: &WallpaperRuntime,
-        _running: Arc<AtomicBool>,
-        _control: WallpaperRuntimeControl,
+        running: Arc<AtomicBool>,
+        control: WallpaperRuntimeControl,
     ) -> Result<(), String> {
         let display = self.connection.display();
 
@@ -493,13 +547,13 @@ impl WallpaperBackend for X11WallpaperBackend {
                     wallpaper_window.height as u32,
                 )?;
 
-            render_shared_engine_frame(
+            run_window_loop(
                 display,
                 &wallpaper_window,
                 &mut engine,
+                running.as_ref(),
+                &control,
             );
-
-            run_window_loop();
 
             // `engine` is dropped here while the GLX context is still current.
             Ok(())
