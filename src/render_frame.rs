@@ -1039,11 +1039,6 @@ impl FrameRenderer {
                 );
 
 
-                wallpaper_control.resume_and_wait_for_frame(
-                    running
-                );
-
-
                 break;
             }
 
@@ -1061,6 +1056,13 @@ impl FrameRenderer {
                 );
             }
         }
+
+        // Always release a paused wallpaper renderer, regardless of whether
+        // the screensaver ended because of SDL input, a quit event, or the
+        // shared runtime flag changing state.
+        wallpaper_control.resume_and_wait_for_frame(
+            running
+        );
 
         log_information(
             "[RENDER] Leaving renderer-owned event loop"
