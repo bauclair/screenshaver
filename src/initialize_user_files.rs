@@ -96,6 +96,7 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 #     bricks             Brick/block wall textures.
 #     cells              Voronoi / lichen textures.
 #     clouds             Soft cloud and smoke textures.
+#     facets             Tetrahedral textures.
 #     hexagons           Hexagonal textures.
 #     marble             Marble and stone textures.
 #     mesh               Mesh textures.
