@@ -2245,16 +2245,42 @@ fn render_mirror_frames(
             }
 
 
-            if shader_interval
-                .map(
-                    |interval| {
-                        last_shader_switch.elapsed()
-                            >= interval
-                    }
-                )
-                .unwrap_or(
-                    false
-                )
+            if paused {
+                if let Some(paused_at) =
+                    pause_started.take()
+                {
+                    let paused_duration =
+                        paused_at.elapsed();
+
+
+                    start_time +=
+                        paused_duration;
+
+
+                    last_shader_switch +=
+                        paused_duration;
+                }
+
+
+                next_frame_deadline =
+                    Instant::now();
+
+
+                frame_times.clear();
+            }
+
+
+            if !paused
+                && shader_interval
+                    .map(
+                        |interval| {
+                            last_shader_switch.elapsed()
+                                >= interval
+                        }
+                    )
+                    .unwrap_or(
+                        false
+                    )
             {
                 last_shader_switch =
                     Instant::now();
@@ -2576,31 +2602,6 @@ fn render_mirror_frames(
                         println!();
                     }
                 }
-            }
-
-
-            if paused {
-                if let Some(paused_at) =
-                    pause_started.take()
-                {
-                    let paused_duration =
-                        paused_at.elapsed();
-
-
-                    start_time +=
-                        paused_duration;
-
-
-                    last_shader_switch +=
-                        paused_duration;
-                }
-
-
-                next_frame_deadline =
-                    Instant::now();
-
-
-                frame_times.clear();
             }
 
 

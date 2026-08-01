@@ -129,6 +129,7 @@ impl WallpaperRuntimeControl {
         self.pause_requested.load(
             Ordering::SeqCst
         )
+            || crate::control_wallpaper::external_pause_requested()
     }
 
 
@@ -140,6 +141,9 @@ impl WallpaperRuntimeControl {
             true,
             Ordering::SeqCst,
         );
+
+
+        crate::control_wallpaper::acknowledge_paused();
     }
 
 
@@ -157,6 +161,9 @@ impl WallpaperRuntimeControl {
             true,
             Ordering::SeqCst,
         );
+
+
+        crate::control_wallpaper::acknowledge_resumed_frame();
     }
 }
 
@@ -238,6 +245,11 @@ impl WallpaperRuntimeManager {
                         );
 
 
+                        crate::control_wallpaper::set_runtime_active(
+                            true
+                        );
+
+
                         for attempt in
                             1..=MAX_RESTART_ATTEMPTS
                         {
@@ -282,6 +294,11 @@ impl WallpaperRuntimeManager {
                                     thread_control.active.store(
                                         false,
                                         Ordering::SeqCst,
+                                    );
+
+
+                                    crate::control_wallpaper::set_runtime_active(
+                                        false
                                     );
 
 
@@ -350,6 +367,11 @@ impl WallpaperRuntimeManager {
                             false,
                             Ordering::SeqCst,
                         );
+
+
+                        crate::control_wallpaper::set_runtime_active(
+                            false
+                        );
                     }
                 )
                 .map_err(
@@ -411,6 +433,11 @@ impl WallpaperRuntimeManager {
                 );
             }
         }
+
+
+        crate::control_wallpaper::set_runtime_active(
+            false
+        );
     }
 }
 
@@ -423,3 +450,4 @@ impl Drop for WallpaperRuntimeManager {
         self.stop_and_join();
     }
 }
+

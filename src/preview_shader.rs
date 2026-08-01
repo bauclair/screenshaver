@@ -293,6 +293,10 @@ pub fn run_paths(
     );
 
 
+    let _wallpaper_pause_guard =
+        crate::control_wallpaper::WallpaperPauseGuard::acquire();
+
+
     let sdl =
         sdl2::init()
             .map_err(
