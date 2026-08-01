@@ -871,7 +871,7 @@ pub fn run_egl_background_surface(
     shader_interval: Option<Duration>,
     runtime: &crate::define_wallpaper::WallpaperRuntime,
     running: Arc<AtomicBool>,
-    _control: crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+    control: crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
 ) -> Result<(), String> {
 
     runtime.tray_status
@@ -1245,6 +1245,7 @@ pub fn run_egl_background_surface(
         shader_interval,
         runtime,
         &running,
+        &control,
     )?;
 
 
@@ -1575,6 +1576,7 @@ fn render_egl_wallpapers(
     shader_interval: Option<Duration>,
     runtime: &crate::define_wallpaper::WallpaperRuntime,
     running: &Arc<AtomicBool>,
+    control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
 ) -> Result<(), String> {
 
     let native_display =
@@ -1880,6 +1882,7 @@ fn render_egl_wallpapers(
             shader_interval,
             runtime,
             running,
+            control,
         );
 
 
@@ -1995,6 +1998,7 @@ fn render_mirror_frames(
     shader_interval: Option<Duration>,
     runtime: &crate::define_wallpaper::WallpaperRuntime,
     running: &Arc<AtomicBool>,
+    control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
 ) -> Result<(), String> {
 
     let mut program =
@@ -2151,6 +2155,14 @@ fn render_mirror_frames(
         crate::fps_monitor::FpsWarningState::Normal;
 
 
+    let mut paused =
+        false;
+
+
+    let mut pause_started: Option<Instant> =
+        None;
+
+
     let result =
         'render_loop: loop {
 
@@ -2200,6 +2212,36 @@ fn render_mirror_frames(
                 )
             {
                 break Ok(());
+            }
+
+
+            if control.pause_requested() {
+                if !paused {
+                    paused =
+                        true;
+
+
+                    pause_started =
+                        Some(
+                            Instant::now()
+                        );
+
+
+                    control.acknowledge_paused();
+
+
+                    println!(
+                        "Wayland wallpaper rendering paused."
+                    );
+                }
+
+
+                thread::sleep(
+                    Duration::from_millis(10)
+                );
+
+
+                continue 'render_loop;
             }
 
 
@@ -2537,6 +2579,31 @@ fn render_mirror_frames(
             }
 
 
+            if paused {
+                if let Some(paused_at) =
+                    pause_started.take()
+                {
+                    let paused_duration =
+                        paused_at.elapsed();
+
+
+                    start_time +=
+                        paused_duration;
+
+
+                    last_shader_switch +=
+                        paused_duration;
+                }
+
+
+                next_frame_deadline =
+                    Instant::now();
+
+
+                frame_times.clear();
+            }
+
+
             let elapsed =
                 start_time.elapsed();
 
@@ -2676,6 +2743,20 @@ fn render_mirror_frames(
                         )
                     );
                 }
+            }
+
+
+            if paused {
+                paused =
+                    false;
+
+
+                control.acknowledge_resumed_frame();
+
+
+                println!(
+                    "Wayland wallpaper rendering resumed."
+                );
             }
 
 
