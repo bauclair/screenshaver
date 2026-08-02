@@ -26,6 +26,9 @@
 *.bak
 *._gen.glsl
 
+# Release packages
+dist/
+
 # OS metadata
 .DS_Store
 Thumbs.db

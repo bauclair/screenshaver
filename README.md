@@ -54,6 +54,7 @@ Current texture families include:
 - Cells
 - Clouds
 - Hexagons
+- Facets
 - Marble
 - Mesh
 - Noise
