@@ -8,6 +8,20 @@ pub const MIN_RENDER_FPS: u32 = 16;
 pub const DEFAULT_RENDER_FPS: u32 = 30;
 pub const MAX_RENDER_FPS: u32 = 120;
 
+
+// Supported animation-speed limits.
+pub const PREVIEW_SPEED_MIN: f32 = 0.01;
+pub const PREVIEW_SPEED_DEFAULT: f32 = 1.0;
+pub const PREVIEW_SPEED_MAX: f32 = 10.0;
+
+pub const SCREENSAVER_SPEED_MIN: f32 = 0.01;
+pub const SCREENSAVER_SPEED_DEFAULT: f32 = 1.0;
+pub const SCREENSAVER_SPEED_MAX: f32 = 10.0;
+
+pub const WALLPAPER_SPEED_MIN: f32 = 0.01;
+pub const WALLPAPER_SPEED_DEFAULT: f32 = 0.025;
+pub const WALLPAPER_SPEED_MAX: f32 = 0.25;
+
 // Supported procedural texture primitive-count limits.
 pub const MIN_TEXTURE_PRIMITIVES: usize = 1;
 pub const MAX_TEXTURE_PRIMITIVES: usize = 1024;

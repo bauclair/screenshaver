@@ -48,7 +48,7 @@ impl FrameTimeWindow {
         &mut self,
         elapsed: Duration,
         configured_fps: u32,
-    ) -> crate::construct_text_overlay::FpsWarningState {
+    ) -> crate::fps_monitor::FpsWarningState {
         let now = Instant::now();
 
         self.samples.push_back(
@@ -76,7 +76,7 @@ impl FrameTimeWindow {
             self.samples.len() as u32;
 
         if sample_count == 0 {
-            return crate::construct_text_overlay::FpsWarningState::Normal;
+            return crate::fps_monitor::FpsWarningState::Normal;
         }
 
         let average_seconds =
@@ -89,13 +89,13 @@ impl FrameTimeWindow {
         if average_seconds
             > ideal_seconds * 2.0
         {
-            crate::construct_text_overlay::FpsWarningState::Critical
+            crate::fps_monitor::FpsWarningState::Critical
         } else if average_seconds
             > ideal_seconds * 1.5
         {
-            crate::construct_text_overlay::FpsWarningState::Warning
+            crate::fps_monitor::FpsWarningState::Warning
         } else {
-            crate::construct_text_overlay::FpsWarningState::Normal
+            crate::fps_monitor::FpsWarningState::Normal
         }
     }
 }
@@ -135,7 +135,7 @@ struct ActivePreviewShader {
         ),
 
     fps_warning_state:
-        crate::construct_text_overlay::FpsWarningState,
+        crate::fps_monitor::FpsWarningState,
 
     fps_blink_visible:
         bool,
@@ -163,6 +163,7 @@ pub fn run(
     shader_palette: Option<String>,
     interval_seconds: Option<u64>,
     command_line_fps: Option<u32>,
+    animation_speed: Option<f32>,
 ) -> Result<(), String> {
 
     match crate::preview_shader_directory::resolve_preview_target(
@@ -188,6 +189,7 @@ pub fn run(
                 shader_palette,
                 None,
                 command_line_fps,
+                animation_speed,
             )
         }
 
@@ -202,6 +204,7 @@ pub fn run(
                 shader_palette,
                 interval_seconds,
                 command_line_fps,
+                animation_speed,
             )
         }
     }
@@ -214,6 +217,7 @@ pub fn run_paths(
     shader_palette: Option<String>,
     interval_seconds: Option<u64>,
     command_line_fps: Option<u32>,
+    animation_speed: Option<f32>,
 ) -> Result<(), String> {
 
     if shader_paths.is_empty() {
@@ -222,6 +226,12 @@ pub fn run_paths(
                 .to_string()
         );
     }
+
+
+    let animation_speed =
+        animation_speed.unwrap_or(
+            1.0
+        );
 
 
     let config_result =
@@ -247,7 +257,7 @@ pub fn run_paths(
 
 
     let fps_overrides =
-        config.fps_overrides;
+        config.screensaver_fps_overrides;
 
 
     let texture_policy =
@@ -272,6 +282,19 @@ pub fn run_paths(
             shader_paths.len(),
         ),
     );
+
+
+    crate::logger::information(
+        &logfile,
+        &format!(
+            "[PREVIEW_SHADER] Animation speed: {:.3}x",
+            animation_speed,
+        ),
+    );
+
+
+    let _wallpaper_pause_guard =
+        crate::control_wallpaper::WallpaperPauseGuard::acquire();
 
 
     let sdl =
@@ -394,6 +417,7 @@ pub fn run_paths(
             global_rendered_fps,
             &fps_overrides,
             command_line_fps,
+            animation_speed,
             width,
             height,
         )?;
@@ -537,6 +561,7 @@ pub fn run_paths(
                         global_rendered_fps,
                         &fps_overrides,
                         command_line_fps,
+                        animation_speed,
                         window.size().0,
                         window.size().1,
                     ) {
@@ -621,13 +646,15 @@ pub fn run_paths(
             let elapsed =
                 active.start_time
                     .elapsed()
-                    .as_secs_f32();
+                    .as_secs_f32()
+                    * animation_speed;
 
 
             let delta =
                 active.previous_frame
                     .elapsed()
-                    .as_secs_f32();
+                    .as_secs_f32()
+                    * animation_speed;
 
 
             let shader_render_start =
@@ -756,7 +783,7 @@ pub fn run_paths(
 
 
             if active.fps_warning_state
-                == crate::construct_text_overlay::FpsWarningState::Critical
+                == crate::fps_monitor::FpsWarningState::Critical
                 && active.last_fps_blink.elapsed()
                     >= FPS_CRITICAL_BLINK_INTERVAL
             {
@@ -773,10 +800,10 @@ pub fn run_paths(
 
             let overlay_warning_state =
                 if active.fps_warning_state
-                    == crate::construct_text_overlay::FpsWarningState::Critical
+                    == crate::fps_monitor::FpsWarningState::Critical
                     && !active.fps_blink_visible
                 {
-                    crate::construct_text_overlay::FpsWarningState::CriticalHidden
+                    crate::fps_monitor::FpsWarningState::CriticalHidden
                 } else {
                     active.fps_warning_state
                 };
@@ -784,7 +811,7 @@ pub fn run_paths(
 
             let warning_overlay_active =
                 active.fps_warning_state
-                    != crate::construct_text_overlay::FpsWarningState::Normal;
+                    != crate::fps_monitor::FpsWarningState::Normal;
 
 
             let overlay_should_display =
@@ -972,6 +999,7 @@ fn load_first_usable_shader(
             crate::load_config::FpsOverride
         ],
     command_line_fps: Option<u32>,
+    animation_speed: f32,
     output_width: u32,
     output_height: u32,
 ) -> Result<
@@ -1025,6 +1053,7 @@ fn load_first_usable_shader(
             subtitles,
             subtitle_placement,
             configured_fps,
+            animation_speed,
             output_width,
             output_height,
         ) {
@@ -1069,6 +1098,7 @@ fn load_active_shader(
     subtitle_placement:
         crate::parse_subtitle_placement::SubtitlePlacement,
     configured_fps: u32,
+    animation_speed: f32,
     output_width: u32,
     output_height: u32,
 ) -> Result<
@@ -1223,7 +1253,13 @@ fn load_active_shader(
         crate::construct_text_overlay::OverlayDescriptor {
             shader:
                 Some(
-                    shader_name.clone()
+                    format!(
+                        "{} | {}",
+                        shader_name,
+                        format_animation_speed(
+                            animation_speed
+                        ),
+                    )
                 ),
 
             texture,
@@ -1239,7 +1275,7 @@ fn load_active_shader(
                 crate::display_overlay::OpenGlOverlay::new_with_fps_warning(
                     &overlay_descriptor,
                     configured_fps,
-                    crate::construct_text_overlay::FpsWarningState::Normal,
+                    crate::fps_monitor::FpsWarningState::Normal,
                     subtitle_placement,
                     output_width,
                     output_height,
@@ -1277,7 +1313,7 @@ fn load_active_shader(
                     output_height,
                 ),
             fps_warning_state:
-                crate::construct_text_overlay::FpsWarningState::Normal,
+                crate::fps_monitor::FpsWarningState::Normal,
             fps_blink_visible:
                 true,
             last_fps_blink:
@@ -1292,6 +1328,24 @@ fn load_active_shader(
                 0,
         }
     )
+}
+
+
+fn format_animation_speed(
+    speed: f32,
+) -> String {
+
+    if speed.fract()
+        == 0.0
+    {
+        format!(
+            "×{speed:.1}"
+        )
+    } else {
+        format!(
+            "×{speed}"
+        )
+    }
 }
 
 

@@ -1,6 +1,6 @@
 [package]
 name = "screenshaver"
-version = "0.4.4"
+version = "0.4.5"
 edition = "2024"
 
 [dependencies]
@@ -8,6 +8,7 @@ sdl2 = { version = "0.38", features = ["ttf"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
+toml_edit = "0.22"
 gl = "0.14"
 libc = "0.2"
 notify = "6"
@@ -15,10 +16,13 @@ ctrlc = "3.4"
 evdev = "0.13"
 zbus = "5"
 wayland-client = "0.31"
+wayland-egl = "0.32"
 wayland-protocols = { version = "0.32", features = ["staging", "client"] }
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 x11 = { version = "2.21", features = ["xlib", "xss"] }
 fs2 = "0.4"
 image = { version = "0.25", default-features = false, features = ["png"] }
 regex = "1"
 ksni = { version = "0.3", features = ["blocking"] }
+signal-hook = "0.3"

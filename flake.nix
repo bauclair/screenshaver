@@ -2,7 +2,7 @@
   description = "Screenshaver — a shader-based screensaver for Linux";
 
   inputs = {
-    # The exact nixpkgs revision will be recorded in flake.lock.
+    # The exact nixpkgs revision is recorded in flake.lock.
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   };
 
@@ -15,8 +15,8 @@
 
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
 
-      # Read the package version directly from Cargo.toml so it only needs to
-      # be updated in one place when a new Screenshaver release is prepared.
+      # Read the package version from Cargo.toml so release versions are
+      # maintained in one authoritative location.
       cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
       version = cargoToml.package.version;
 
@@ -25,8 +25,7 @@
           pname = "screenshaver";
           inherit version;
 
-          # Since this flake is stored in the Screenshaver repository, the
-          # flake source itself is the Cargo source tree.
+          # The flake source is the Cargo source tree.
           src = self;
 
           cargoLock = {
@@ -38,15 +37,23 @@
           ];
 
           buildInputs = with pkgs; [
+            # SDL/OpenGL rendering
             SDL2
             SDL2_ttf
             libGL
-            xorg.libX11
-            xorg.libXcursor
-            xorg.libXext
-            xorg.libXi
-            xorg.libXrandr
-            xorg.libXScrnSaver
+            libglvnd
+
+            # Native Wayland backend
+            wayland
+            wayland.dev
+
+            # Native X11/GLX backend and SDL X11 support
+            libx11
+            libxcursor
+            libxext
+            libxi
+            libxrandr
+            libxscrnsaver
           ];
 
           # Cargo installs the executable. Install the Linux desktop entry and
@@ -63,11 +70,12 @@
           '';
 
           meta = with pkgs.lib; {
-            description = "Shader-based screensaver for Linux";
+            description = "Feature-packed GLSL screensaver and viewer";
             longDescription = ''
               Screenshaver is a Linux screensaver written in Rust. It renders
-              GLSL shaders through SDL2 and OpenGL and supports multiple shader
-              formats and generated textures.
+              GLSL shaders through SDL2 and OpenGL and supports native Wayland
+              and X11 wallpaper backends, multiple shader formats, and generated
+              textures.
             '';
             homepage = "https://github.com/bauclair/screenshaver";
             license = licenses.gpl3Plus;

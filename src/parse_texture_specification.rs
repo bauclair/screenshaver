@@ -47,11 +47,15 @@ impl TextureSpecification {
     ///
     /// - `hexagons`
     /// - `hexagons:144`
+    /// - `facets`
+    /// - `facets:144`
     ///
     /// This method instead produces presentation text:
     ///
     /// - `Hexagons`
     /// - `Hexagons (144)`
+    /// - `Facets`
+    /// - `Facets (144)`
     pub fn display_name(
         &self,
     ) -> String {
@@ -377,6 +381,62 @@ mod tests {
 
 
     #[test]
+    fn facets_without_count_uses_default_primitive_count() {
+
+        let specification =
+            parse_texture_specification(
+                "facets"
+            )
+            .expect(
+                "The facets texture specification should parse"
+            );
+
+
+        assert_eq!(
+            specification.family,
+            TextureFamily::Facets
+        );
+
+        assert_eq!(
+            specification.requested_primitive_count,
+            DEFAULT_PRIMITIVE_COUNT
+        );
+
+        assert!(
+            !specification.count_was_explicit
+        );
+    }
+
+
+    #[test]
+    fn facets_with_count_preserves_count() {
+
+        let specification =
+            parse_texture_specification(
+                "facets:144"
+            )
+            .expect(
+                "The facets texture specification should parse"
+            );
+
+
+        assert_eq!(
+            specification.family,
+            TextureFamily::Facets
+        );
+
+        assert_eq!(
+            specification.requested_primitive_count,
+            144
+        );
+
+        assert!(
+            specification.count_was_explicit
+        );
+    }
+
+
+    #[test]
     fn texture_with_count_preserves_count() {
 
         let specification =
@@ -419,6 +479,30 @@ mod tests {
         assert_eq!(
             specification.family,
             TextureFamily::Hexagons
+        );
+
+        assert_eq!(
+            specification.requested_primitive_count,
+            32
+        );
+    }
+
+
+    #[test]
+    fn facets_family_is_case_insensitive() {
+
+        let specification =
+            parse_texture_specification(
+                "FaCeTs:32"
+            )
+            .expect(
+                "The facets texture specification should parse"
+            );
+
+
+        assert_eq!(
+            specification.family,
+            TextureFamily::Facets
         );
 
         assert_eq!(
@@ -495,6 +579,25 @@ mod tests {
 
 
     #[test]
+    fn facets_canonical_display_preserves_explicit_count() {
+
+        let specification =
+            parse_texture_specification(
+                "facets:144"
+            )
+            .expect(
+                "The facets texture specification should parse"
+            );
+
+
+        assert_eq!(
+            specification.to_string(),
+            "facets:144"
+        );
+    }
+
+
+    #[test]
     fn display_name_omits_defaulted_count() {
 
         let specification =
@@ -528,6 +631,25 @@ mod tests {
         assert_eq!(
             specification.display_name(),
             "Hexagons (144)"
+        );
+    }
+
+
+    #[test]
+    fn facets_display_name_includes_explicit_count() {
+
+        let specification =
+            parse_texture_specification(
+                "facets:144"
+            )
+            .expect(
+                "The facets texture specification should parse"
+            );
+
+
+        assert_eq!(
+            specification.display_name(),
+            "Facets (144)"
         );
     }
 

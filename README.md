@@ -12,7 +12,7 @@ read **[Collecting_GL_Shaders_for_Screenshaver.md](Collecting_GL_Shaders_for_Scr
 
 ## *Screensavers, reinvented.*
 
-Screenshaver is a modern, ISF- and ShaderToy-compatible screensaver for Linux that brings GPU-accelerated procedural graphics to the desktop.
+Screenshaver is a modern, ISF- and ShaderToy-compatible screensaver and wallpaper manager for Linux that brings GPU-accelerated procedural graphics to the desktop.
 
 Rather than displaying static images or pre-rendered animations, Screenshaver renders visual effects in real time using OpenGL fragment shaders. Every frame is generated live by your GPU, creating an effectively limitless variety of animated imagery.
 
@@ -22,6 +22,7 @@ Screenshaver was created with a simple philosophy:
 
 > A screensaver should be more than something that prevents screen burn-in.
 > It should be a living gallery of procedural art.
+> Wallpaper should be more than a static image.
 
 Screenshaver is designed to make discovering, rendering, and sharing shader-based artwork easy while remaining highly configurable and friendly to both casual users and developers.
 
@@ -87,10 +88,10 @@ Features, command-line options, configuration syntax, and procedural texture alg
 
 Bug reports, feature requests, testing, and pull requests are always welcome.
 
-Community feedback plays an important role in helping Screenshaver grow into the best procedural screensaver platform available for Linux.
+Community feedback plays an important role in helping Screenshaver grow into the best procedural screensaver and dynamic wallpaper manager available for Linux.
 Please send all Screenshaver bug reports and feature requests to screenshaver@proton.me.
 
 ---
 
-**Screenshaver** -- Not your parents' screensaver.
+**Screenshaver** -- It's not your parents' screensaver. And your wallpaper has never been more alive.
 

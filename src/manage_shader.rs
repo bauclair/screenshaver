@@ -37,8 +37,23 @@ impl ShaderManager {
         mode: ShaderMode,
     ) -> Self {
 
-        let shaders =
-            Self::load_shader_list();
+        Self::from_shader_list(
+            mode,
+            Self::load_shader_list(),
+        )
+    }
+
+
+    /// Create a shader manager from an existing shader-name list.
+    pub fn from_shader_list(
+        mode: ShaderMode,
+        mut shaders: Vec<String>,
+    ) -> Self {
+
+        shaders.sort();
+
+
+        shaders.dedup();
 
 
         if shaders.is_empty() {

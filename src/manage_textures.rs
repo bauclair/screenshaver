@@ -184,12 +184,16 @@ fn resolve_texture_selection(
             }
 
             None => {
-                if let Some(texture_override) =
+                if let Some(texture) =
                     shader_override
+                        .and_then(
+                            |texture_override| {
+                                texture_override.shader_texture.clone()
+                            }
+                        )
                 {
                     (
-                        texture_override
-                            .shader_texture,
+                        texture,
                         "shader override",
                     )
                 } else if let Some(texture) =
@@ -240,12 +244,16 @@ fn resolve_texture_selection(
             }
 
             None => {
-                if let Some(texture_override) =
+                if let Some(palette) =
                     shader_override
+                        .and_then(
+                            |texture_override| {
+                                texture_override.shader_palette
+                            }
+                        )
                 {
                     (
-                        texture_override
-                            .shader_palette,
+                        palette,
                         "shader override",
                     )
                 } else if let Some(palette) =

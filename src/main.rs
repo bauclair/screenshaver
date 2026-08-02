@@ -19,6 +19,7 @@ mod session_backend;
 
 mod manage_shader;
 mod manage_textures;
+mod manage_overrides;
 mod classify_shader;
 mod isf_types;
 mod parse_isf;
@@ -33,6 +34,7 @@ mod reject_shader;
 mod generate_bricks;
 mod generate_cellular;
 mod generate_clouds;
+mod generate_facets;
 mod generate_hexagons;
 mod generate_marble;
 mod generate_mesh;
@@ -49,12 +51,82 @@ mod construct_text_overlay;
 mod display_overlay;
 mod tray_icon;
 
+mod define_operation;
+mod define_wallpaper;
+mod configure_wallpaper;
+mod control_wallpaper;
+mod locate_wallpaper;
+mod manage_wallpaper;
+mod manage_wallpaper_runtime;
+mod notify_wallpaper;
+mod render_wallpaper;
+mod wayland_wallpaper;
+mod wallpaper_backend;
+mod x11_connection;
+mod x11_wallpaper;
+mod glx_context;
+mod fps_monitor;
+
 use std::sync::Arc;
 use std::sync::atomic::{
     AtomicBool,
     Ordering,
 };
 use std::time::Duration;
+use std::io::{self, Write};
+
+
+
+fn confirm_override_replacement(
+    shader: &str,
+    target: crate::manage_overrides::OverrideTarget,
+) -> Result<bool, String> {
+
+    loop {
+        print!(
+            "Shader '{}' already has an override in [{}] -- delete it? [Y/n] ",
+            shader,
+            target.table_name(),
+        );
+
+        io::stdout()
+            .flush()
+            .map_err(
+                |error| error.to_string()
+            )?;
+
+        let mut response =
+            String::new();
+
+        io::stdin()
+            .read_line(
+                &mut response
+            )
+            .map_err(
+                |error| error.to_string()
+            )?;
+
+        match response
+            .trim()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "" | "y" | "yes" => {
+                return Ok(true);
+            }
+
+            "n" | "no" => {
+                return Ok(false);
+            }
+
+            _ => {
+                println!(
+                    "Please answer Y or n."
+                );
+            }
+        }
+    }
+}
 
 
 fn main() {
@@ -163,6 +235,164 @@ match command {
     }
 
 
+    crate::parse_arguments::Command::AddOverride {
+        target,
+        shader,
+        properties,
+    } => {
+
+        let cfg_path =
+            crate::locate_paths::config_path();
+
+        let exists =
+            match crate::manage_overrides::override_exists(
+                &cfg_path,
+                target,
+                &shader,
+            ) {
+                Ok(exists) => exists,
+
+                Err(error) => {
+                    eprintln!(
+                        "{}",
+                        error
+                    );
+
+                    return;
+                }
+            };
+
+        if exists {
+            let replace =
+                match confirm_override_replacement(
+                    &shader,
+                    target,
+                ) {
+                    Ok(replace) => replace,
+
+                    Err(error) => {
+                        eprintln!(
+                            "Unable to read confirmation: {}",
+                            error
+                        );
+
+                        return;
+                    }
+                };
+
+            if !replace {
+                println!(
+                    "Override addition cancelled."
+                );
+
+                return;
+            }
+
+            match crate::manage_overrides::replace_override(
+                &cfg_path,
+                target,
+                &shader,
+                properties,
+            ) {
+                Ok(()) => {
+                    println!(
+                        "Replaced {} override for {}.",
+                        target.name(),
+                        shader,
+                    );
+                }
+
+                Err(error) => {
+                    eprintln!(
+                        "{}",
+                        error
+                    );
+                }
+            }
+        } else {
+            match crate::manage_overrides::add_override(
+                &cfg_path,
+                target,
+                &shader,
+                properties,
+            ) {
+                Ok(()) => {
+                    println!(
+                        "Added {} override for {}.",
+                        target.name(),
+                        shader,
+                    );
+                }
+
+                Err(error) => {
+                    eprintln!(
+                        "{}",
+                        error
+                    );
+                }
+            }
+        }
+
+        return;
+    }
+
+
+    crate::parse_arguments::Command::DeleteOverride {
+        target,
+        shader,
+    } => {
+
+        let cfg_path =
+            crate::locate_paths::config_path();
+
+        match crate::manage_overrides::delete_override(
+            &cfg_path,
+            target,
+            &shader,
+        ) {
+            Ok(()) => {
+                println!(
+                    "Deleted {} override for {}.",
+                    target.name(),
+                    shader,
+                );
+            }
+
+            Err(error) => {
+                eprintln!(
+                    "{}",
+                    error
+                );
+            }
+        }
+
+        return;
+    }
+
+
+    crate::parse_arguments::Command::ListOverrides {
+        target,
+    } => {
+
+        let cfg_path =
+            crate::locate_paths::config_path();
+
+        if let Err(error) =
+            crate::manage_overrides::list_overrides(
+                &cfg_path,
+                target,
+            )
+        {
+            eprintln!(
+                "{}",
+                error
+            );
+        }
+
+        return;
+    }
+
+
     crate::parse_arguments::Command::Help => {
 
         crate::parse_arguments::print_help();
@@ -209,6 +439,7 @@ crate::parse_arguments::Command::PreviewShader {
     shader_palette,
     interval_seconds,
     fps,
+    animation_speed,
 } => {
 
     match crate::preview_shader::run(
@@ -217,6 +448,7 @@ crate::parse_arguments::Command::PreviewShader {
         shader_palette,
         interval_seconds,
         fps,
+        animation_speed,
     ) {
 
         Ok(()) => {}
@@ -548,9 +780,21 @@ crate::parse_arguments::Command::ListPalettes => {
             crate::tray_icon::TrayCommand
         >();
 
+    let tray_status =
+        crate::tray_icon::TrayStatusControl::new(
+            cfg.wallpaper_enabled
+        );
+
+
     let _tray_handle =
         match crate::tray_icon::start(
-            tray_command_sender
+            tray_command_sender,
+            crate::tray_icon::TrayStatus {
+                screensaver_enabled:
+                    cfg.screensaver_enabled,
+                wallpaper:
+                    tray_status.clone(),
+            },
         ) {
 
             Ok(handle) => {
@@ -896,6 +1140,39 @@ crate::parse_arguments::Command::ListPalettes => {
     );
 
 
+    let wallpaper_runtime =
+        crate::define_wallpaper::WallpaperRuntime {
+            monitor_mode:
+                cfg.wallpaper.monitor_mode,
+            notifications:
+                cfg.wallpaper.notifications,
+            texture_policy:
+                cfg.wallpaper_texture_policy,
+            fps_policy:
+                cfg.wallpaper_fps_policy,
+            animation_speed_policy:
+                cfg.wallpaper_speed_policy,
+            tray_status:
+                tray_status.clone(),
+        };
+
+
+    let mut wallpaper_manager =
+        crate::manage_wallpaper_runtime::WallpaperRuntimeManager::start(
+            cfg.wallpaper_enabled,
+            cfg.wallpaper_mode.clone(),
+            wallpaper_runtime,
+            logfile.clone(),
+            Arc::clone(
+                &running
+            ),
+        );
+
+
+    let wallpaper_control =
+        wallpaper_manager.control();
+
+
     if cfg.debug_log {
 
         crate::logger::debug(
@@ -991,6 +1268,16 @@ crate::parse_arguments::Command::ListPalettes => {
         }
         }
 
+        if !cfg.screensaver_enabled {
+
+            std::thread::sleep(
+                Duration::from_millis(50)
+            );
+
+            continue;
+        }
+
+
         let session_state =
             match session.poll_state() {
 
@@ -1080,8 +1367,9 @@ crate::parse_arguments::Command::ListPalettes => {
                         &sdl,
                         shader_manager,
                         parsed_interval.seconds,
+                        cfg.screensaver_speed_policy.clone(),
                         cfg.global_rendered_fps,
-                        cfg.fps_overrides.clone(),
+                        cfg.screensaver_fps_overrides.clone(),
                         cfg.texture_policy.clone(),
                         cfg.subtitles,
                         cfg.subtitle_placement,
@@ -1118,7 +1406,8 @@ crate::parse_arguments::Command::ListPalettes => {
 
 
                 renderer.run(
-                    running.as_ref()
+                    running.as_ref(),
+                    &wallpaper_control,
                 );
 
 
@@ -1172,6 +1461,9 @@ crate::parse_arguments::Command::ListPalettes => {
             Duration::from_millis(50)
         );
     }
+
+
+    wallpaper_manager.stop_and_join();
 
 
     println!(

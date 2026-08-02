@@ -4,6 +4,8 @@ use std::process::Command;
 use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::ttf::FontStyle;
 
+pub use crate::fps_monitor::FpsWarningState;
+
 const BASELINE_HEIGHT: f32 = 1080.0;
 const MINIMUM_SCALE: f32 = 0.75;
 const MAXIMUM_SCALE: f32 = 2.0;
@@ -15,15 +17,6 @@ const BACKGROUND_RGBA: [u8; 4] = [0, 0, 0, 150];
 const TEXT_COLOR: Color = Color::RGBA(245, 245, 245, 255);
 const FPS_WARNING_COLOR: Color = Color::RGBA(255, 221, 64, 255);
 const FPS_CRITICAL_COLOR: Color = Color::RGBA(255, 72, 72, 255);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum FpsWarningState {
-    #[default]
-    Normal,
-    Warning,
-    Critical,
-    CriticalHidden,
-}
 
 #[derive(Debug, Clone, Default)]
 pub struct OverlayDescriptor {

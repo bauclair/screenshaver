@@ -52,12 +52,14 @@ pub enum TextureFamily {
     Bricks,
 
     Hexagons,
+
+    Facets,
 }
 
 
 impl TextureFamily {
 
-    pub const ALL: [TextureFamily; 8] = [
+    pub const ALL: [TextureFamily; 9] = [
 
 
         TextureFamily::Marble,
@@ -77,6 +79,8 @@ impl TextureFamily {
         TextureFamily::Bricks,
 
         TextureFamily::Hexagons,
+
+        TextureFamily::Facets,
     ];
 
 
@@ -116,6 +120,10 @@ impl TextureFamily {
 
             TextureFamily::Hexagons => {
                 "hexagons"
+            }
+
+            TextureFamily::Facets => {
+                "facets"
             }
 
         }
@@ -207,6 +215,12 @@ impl FromStr for TextureFamily {
             "hexagons" => {
                 Ok(
                     TextureFamily::Hexagons
+                )
+            }
+
+            "facets" => {
+                Ok(
+                    TextureFamily::Facets
                 )
             }
 
@@ -412,6 +426,14 @@ pub fn generate_from_specification(
             )
         }
 
+        TextureFamily::Facets => {
+            crate::generate_facets::generate(
+                palette,
+                seed,
+                specification.requested_primitive_count,
+            )
+        }
+
         TextureFamily::Bricks => {
             crate::generate_bricks::generate(
                 palette,
@@ -556,6 +578,15 @@ mod tests {
                 .parse::<TextureFamily>(),
             Ok(
                 TextureFamily::Clouds
+            )
+        );
+
+
+        assert_eq!(
+            "FaCeTs"
+                .parse::<TextureFamily>(),
+            Ok(
+                TextureFamily::Facets
             )
         );
     }

@@ -4,12 +4,14 @@
 , SDL2
 , SDL2_ttf
 , libGL
+, libglvnd
+, wayland
 , xorg
 }:
 
 rustPlatform.buildRustPackage rec {
   pname = "screenshaver";
-  version = "0.4.4";
+  version = "0.4.5";
 
   src = ./.;
 
@@ -25,9 +27,25 @@ rustPlatform.buildRustPackage rec {
     SDL2
     SDL2_ttf
     libGL
+    libglvnd
+    wayland
+    wayland.dev
     xorg.libX11
     xorg.libXScrnSaver
   ];
+
+
+
+preBuild = ''
+  echo "=== WAYLAND PKG-CONFIG DIAGNOSTICS ==="
+  echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH"
+  find ${wayland.dev} -name 'wayland-client.pc' -print
+  pkg-config --modversion wayland-client
+  pkg-config --libs wayland-client
+  echo "=== END DIAGNOSTICS ==="
+'';
+
+
 
   postInstall = ''
     install -Dm644 \
