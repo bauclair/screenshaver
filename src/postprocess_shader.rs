@@ -1,16 +1,36 @@
+use crate::render_fxaa::FxaaRenderer;
 use crate::render_passthrough::PassthroughRenderer;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PostprocessMethod {
+    Passthrough,
+    Fxaa,
+}
+
+impl PostprocessMethod {
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Passthrough => "passthrough",
+            Self::Fxaa => "FXAA",
+        }
+    }
+}
 
 /// Owns the off-screen scene framebuffer and the presentation pass.
 ///
-/// Milestone 1 supports only passthrough presentation. Future post-processing
-/// methods such as FXAA and SMAA can be added without changing the scene
-/// renderer's framebuffer ownership.
+/// Owns the shared scene target and selects the active presentation method.
+///
+/// FXAA is selected internally during the current visual-validation stage.
+/// Configuration and per-shader profile selection will be added only after
+/// the rendering path has been verified.
 pub(crate) struct PostprocessPipeline {
     framebuffer: u32,
     scene_texture: u32,
     width: u32,
     height: u32,
     passthrough: PassthroughRenderer,
+    fxaa: FxaaRenderer,
+    method: PostprocessMethod,
 }
 
 impl PostprocessPipeline {
@@ -21,6 +41,7 @@ impl PostprocessPipeline {
         validate_dimensions(width, height)?;
 
         let passthrough = PassthroughRenderer::new()?;
+        let fxaa = FxaaRenderer::new()?;
         let (framebuffer, scene_texture) = create_scene_target(width, height)?;
 
         Ok(Self {
@@ -29,6 +50,8 @@ impl PostprocessPipeline {
             width,
             height,
             passthrough,
+            fxaa,
+            method: PostprocessMethod::Fxaa,
         })
     }
 
@@ -53,7 +76,27 @@ impl PostprocessPipeline {
             gl::Disable(gl::BLEND);
         }
 
-        self.passthrough.render(self.scene_texture);
+        match self.method {
+            PostprocessMethod::Passthrough => {
+                self.passthrough.render(self.scene_texture);
+            }
+            PostprocessMethod::Fxaa => {
+                self.fxaa.render(
+                    self.scene_texture,
+                    self.width,
+                    self.height,
+                );
+            }
+        }
+    }
+
+    pub(crate) fn set_method(&mut self, method: PostprocessMethod) {
+        self.method = method;
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn method(&self) -> PostprocessMethod {
+        self.method
     }
 
     /// Recreates only the size-dependent scene target. The compiled

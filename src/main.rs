@@ -69,6 +69,7 @@ mod fps_monitor;
 
 mod postprocess_shader;
 mod render_passthrough;
+mod render_fxaa;
 
 use std::sync::Arc;
 use std::sync::atomic::{
