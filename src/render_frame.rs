@@ -108,6 +108,7 @@ pub(crate) struct FrameRenderEvents {
 
 
 pub(crate) struct FrameRenderEngine {
+    postprocess: crate::postprocess_shader::PostprocessPipeline,
     active_shader: ActiveShader,
     vao: u32,
     start_time: Instant,
@@ -299,6 +300,12 @@ impl FrameRenderEngine {
                 None
             };
 
+        let postprocess =
+            crate::postprocess_shader::PostprocessPipeline::new(
+                output_width,
+                output_height,
+            )?;
+
         let mut vao =
             0_u32;
 
@@ -315,6 +322,7 @@ impl FrameRenderEngine {
 
         Ok(
             Self {
+                postprocess,
                 active_shader,
                 vao,
                 start_time:
@@ -390,14 +398,26 @@ impl FrameRenderEngine {
         let shader_render_start =
             Instant::now();
 
-        unsafe {
-            gl::Viewport(
-                0,
-                0,
-                width as i32,
-                height as i32,
+        if let Err(error) =
+            self.postprocess.resize(
+                width,
+                height,
+            )
+        {
+            log_warning(
+                &format!(
+                    "[POSTPROCESS] Unable to resize scene target to {}x{}: {}",
+                    width,
+                    height,
+                    error,
+                )
             );
+        }
 
+        self.postprocess
+            .bind_scene_target();
+
+        unsafe {
             if self.output_policy
                 == FrameOutputPolicy::ForceOpaque
             {
@@ -509,7 +529,12 @@ impl FrameRenderEngine {
                     gl::TRUE,
                 );
             }
+        }
 
+        self.postprocess
+            .present_scene();
+
+        unsafe {
             gl::Finish();
         }
 

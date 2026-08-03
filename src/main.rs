@@ -67,6 +67,9 @@ mod x11_wallpaper;
 mod glx_context;
 mod fps_monitor;
 
+mod postprocess_shader;
+mod render_passthrough;
+
 use std::sync::Arc;
 use std::sync::atomic::{
     AtomicBool,
