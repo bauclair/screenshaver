@@ -5,6 +5,7 @@ use wayland_client::protocol::{
     wl_registry,
     wl_surface,
 };
+use std::collections::HashMap;
 use std::ffi::{
     c_char,
     c_void,
@@ -2103,6 +2104,57 @@ fn render_mirror_frames(
     );
 
 
+    let mut postprocess_pipelines =
+        HashMap::with_capacity(
+            native_targets.len()
+        );
+
+
+    for target in native_targets.iter() {
+        let width =
+            u32::try_from(
+                target.width
+            )
+            .map_err(
+                |_| {
+                    format!(
+                        "Wallpaper target {} has an invalid post-processing width: {}",
+                        target.info.registry_name,
+                        target.width,
+                    )
+                }
+            )?;
+
+
+        let height =
+            u32::try_from(
+                target.height
+            )
+            .map_err(
+                |_| {
+                    format!(
+                        "Wallpaper target {} has an invalid post-processing height: {}",
+                        target.info.registry_name,
+                        target.height,
+                    )
+                }
+            )?;
+
+
+        let pipeline =
+            crate::postprocess_shader::PostprocessPipeline::new(
+                width,
+                height,
+            )?;
+
+
+        postprocess_pipelines.insert(
+            target.info.registry_name,
+            pipeline,
+        );
+    }
+
+
     let mut i_time =
         uniform_location(
             program,
@@ -2178,6 +2230,7 @@ fn render_mirror_frames(
                 state,
                 egl_targets,
                 native_targets,
+                &mut postprocess_pipelines,
             )?;
 
 
@@ -2639,14 +2692,61 @@ fn render_mirror_frames(
                 }
 
 
-                unsafe {
-                    gl::Viewport(
-                        0,
-                        0,
-                        native_target.width,
-                        native_target.height,
-                    );
+                let postprocess =
+                    postprocess_pipelines
+                        .get_mut(
+                            &native_target.info.registry_name
+                        )
+                        .ok_or_else(
+                            || {
+                                format!(
+                                    "No post-processing pipeline exists for wallpaper target {}",
+                                    native_target.info.registry_name,
+                                )
+                            }
+                        )?;
 
+
+                let target_width =
+                    u32::try_from(
+                        native_target.width
+                    )
+                    .map_err(
+                        |_| {
+                            format!(
+                                "Wallpaper target {} has an invalid width: {}",
+                                native_target.info.registry_name,
+                                native_target.width,
+                            )
+                        }
+                    )?;
+
+
+                let target_height =
+                    u32::try_from(
+                        native_target.height
+                    )
+                    .map_err(
+                        |_| {
+                            format!(
+                                "Wallpaper target {} has an invalid height: {}",
+                                native_target.info.registry_name,
+                                native_target.height,
+                            )
+                        }
+                    )?;
+
+
+                postprocess.resize(
+                    target_width,
+                    target_height,
+                )?;
+
+
+                postprocess.bind_scene_target();
+
+
+                unsafe {
                     gl::Disable(
                         gl::BLEND
                     );
@@ -2729,6 +2829,9 @@ fn render_mirror_frames(
                         gl::TRUE,
                     );
                 }
+
+
+                postprocess.present_scene();
 
 
                 if unsafe {
@@ -2853,6 +2956,11 @@ fn render_mirror_frames(
         };
 
 
+    drop(
+        postprocess_pipelines
+    );
+
+
     texture_manager.delete_all();
 
 
@@ -2945,6 +3053,11 @@ fn remove_disconnected_targets(
     state: &mut WaylandState,
     egl_targets: &mut Vec<EglWallpaperTarget>,
     native_targets: &mut Vec<NativeWallpaperTarget>,
+    postprocess_pipelines:
+        &mut HashMap<
+            u32,
+            crate::postprocess_shader::PostprocessPipeline,
+        >,
 ) -> Result<(), String> {
 
     let removed_names =
@@ -2990,6 +3103,35 @@ fn remove_disconnected_targets(
                 )
             );
         };
+
+
+        let removed_surface =
+            egl_targets[
+                egl_index
+            ]
+            .surface;
+
+
+        if unsafe {
+            eglMakeCurrent(
+                display,
+                removed_surface,
+                removed_surface,
+                context,
+            )
+        } == EGL_FALSE
+        {
+            return Err(
+                egl_failure(
+                    "eglMakeCurrent before removing wallpaper post-processing resources"
+                )
+            );
+        }
+
+
+        postprocess_pipelines.remove(
+            &registry_name
+        );
 
 
         if unsafe {
