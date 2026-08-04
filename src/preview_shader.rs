@@ -403,6 +403,13 @@ pub fn run_paths(
         window.size();
 
 
+    let mut postprocess =
+        crate::postprocess_shader::PostprocessPipeline::new(
+            width,
+            height,
+        )?;
+
+
     let (
         mut active,
         mut active_index,
@@ -661,15 +668,16 @@ pub fn run_paths(
                 Instant::now();
 
 
+            postprocess.resize(
+                width,
+                height,
+            )?;
+
+
+            postprocess.bind_scene_target();
+
+
             unsafe {
-                gl::Viewport(
-                    0,
-                    0,
-                    width as i32,
-                    height as i32,
-                );
-
-
                 gl::ClearColor(
                     0.0,
                     0.0,
@@ -748,8 +756,13 @@ pub fn run_paths(
                     0,
                     3,
                 );
+            }
 
 
+            postprocess.present_scene();
+
+
+            unsafe {
                 gl::Finish();
             }
 
@@ -923,6 +936,11 @@ pub fn run_paths(
             );
         }
     }
+
+
+    drop(
+        postprocess
+    );
 
 
     drop(
