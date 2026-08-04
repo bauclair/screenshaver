@@ -105,7 +105,8 @@ pub(crate) struct PostprocessPipeline {
     scratch_target: RenderTarget,
     width: u32,
     height: u32,
-    precision: crate::select_render_precision::RenderTargetPrecision,
+    precision_selection:
+        crate::select_render_precision::RenderPrecisionSelection,
     passthrough: PassthroughRenderer,
     fxaa: FxaaRenderer,
     dithering: DitheringRenderer,
@@ -117,6 +118,8 @@ impl PostprocessPipeline {
     pub(crate) fn new(
         width: u32,
         height: u32,
+        profile:
+            crate::load_config::PostprocessProfile,
     ) -> Result<Self, String> {
         validate_dimensions(
             width,
@@ -132,38 +135,42 @@ impl PostprocessPipeline {
         let dithering =
             DitheringRenderer::new()?;
 
-        let precision =
-            crate::select_render_precision::RenderTargetPrecision::High;
+        let requested_precision =
+            profile.color_precision;
 
-        let scene_target =
-            RenderTarget::new(
+        let (
+            scene_target,
+            scratch_target,
+            precision_selection,
+        ) =
+            select_render_targets(
                 width,
                 height,
-                precision,
+                requested_precision,
             )?;
 
-        let scratch_target =
-            RenderTarget::new(
-                width,
-                height,
-                precision,
-            )?;
-
-        Ok(
+        let pipeline =
             Self {
                 scene_target,
                 scratch_target,
                 width,
                 height,
-                precision,
+                precision_selection,
                 passthrough,
                 fxaa,
                 dithering,
                 method:
-                    PostprocessMethod::Fxaa,
+                    method_for_profile(
+                        profile
+                    ),
                 dithering_level:
-                    DitheringLevel::Subtle,
-            }
+                    profile.dithering,
+            };
+
+        pipeline.log_precision_selection();
+
+        Ok(
+            pipeline
         )
     }
 
@@ -246,21 +253,43 @@ impl PostprocessPipeline {
         &mut self,
         profile:
             crate::load_config::PostprocessProfile,
-    ) {
+    ) -> Result<(), String> {
+
+        if profile.color_precision
+            != self.precision_selection.requested
+        {
+            let (
+                scene_target,
+                scratch_target,
+                precision_selection,
+            ) =
+                select_render_targets(
+                    self.width,
+                    self.height,
+                    profile.color_precision,
+                )?;
+
+            self.scene_target =
+                scene_target;
+
+            self.scratch_target =
+                scratch_target;
+
+            self.precision_selection =
+                precision_selection;
+
+            self.log_precision_selection();
+        }
 
         self.method =
-            match profile.anti_aliasing {
-                crate::render_fxaa::AntiAliasingMethod::Off => {
-                    PostprocessMethod::Passthrough
-                }
-
-                crate::render_fxaa::AntiAliasingMethod::Fxaa => {
-                    PostprocessMethod::Fxaa
-                }
-            };
+            method_for_profile(
+                profile
+            );
 
         self.dithering_level =
             profile.dithering;
+
+        Ok(())
     }
 
 
@@ -302,14 +331,14 @@ impl PostprocessPipeline {
             RenderTarget::new(
                 width,
                 height,
-                self.precision,
+                self.precision_selection.selected,
             )?;
 
         let replacement_scratch =
             RenderTarget::new(
                 width,
                 height,
-                self.precision,
+                self.precision_selection.selected,
             )?;
 
         self.scene_target =
@@ -328,10 +357,48 @@ impl PostprocessPipeline {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn precision(
+    pub(crate) fn precision_selection(
         &self,
-    ) -> crate::select_render_precision::RenderTargetPrecision {
-        self.precision
+    ) -> &crate::select_render_precision::RenderPrecisionSelection {
+        &self.precision_selection
+    }
+
+
+    pub(crate) fn log_precision_selection(
+        &self,
+    ) {
+        let selection =
+            &self.precision_selection;
+
+        let fallback =
+            if selection.fell_back {
+                "yes"
+            } else {
+                "no"
+            };
+
+        crate::logger::information(
+            &crate::locate_paths::runtime_log_path(),
+            &format!(
+                "[POSTPROCESS] Requested precision: {}; selected: {} ({}); fallback: {}",
+                selection.requested.name(),
+                selection.selected.name(),
+                selection.selected.internal_format_name(),
+                fallback,
+            ),
+        );
+
+        if let Some(reason) =
+            selection.fallback_reason.as_deref()
+        {
+            crate::logger::information(
+                &crate::locate_paths::runtime_log_path(),
+                &format!(
+                    "[POSTPROCESS] High-precision render targets were unavailable; standard precision was selected: {}",
+                    reason,
+                ),
+            );
+        }
     }
 
 
@@ -352,6 +419,23 @@ impl PostprocessPipeline {
         self.scene_target.texture
     }
 }
+
+fn method_for_profile(
+    profile:
+        crate::load_config::PostprocessProfile,
+) -> PostprocessMethod {
+
+    match profile.anti_aliasing {
+        crate::render_fxaa::AntiAliasingMethod::Off => {
+            PostprocessMethod::Passthrough
+        }
+
+        crate::render_fxaa::AntiAliasingMethod::Fxaa => {
+            PostprocessMethod::Fxaa
+        }
+    }
+}
+
 
 fn prepare_fullscreen_pass(
 ) {
@@ -387,6 +471,169 @@ fn bind_default_framebuffer(
         );
     }
 }
+
+fn create_render_targets(
+    width: u32,
+    height: u32,
+    precision:
+        crate::select_render_precision::RenderTargetPrecision,
+) -> Result<
+    (
+        RenderTarget,
+        RenderTarget,
+    ),
+    String,
+> {
+    let scene_target =
+        RenderTarget::new(
+            width,
+            height,
+            precision,
+        )?;
+
+    let scratch_target =
+        RenderTarget::new(
+            width,
+            height,
+            precision,
+        )?;
+
+    Ok(
+        (
+            scene_target,
+            scratch_target,
+        )
+    )
+}
+
+
+fn select_render_targets(
+    width: u32,
+    height: u32,
+    requested:
+        crate::select_render_precision::ColorPrecisionPolicy,
+) -> Result<
+    (
+        RenderTarget,
+        RenderTarget,
+        crate::select_render_precision::RenderPrecisionSelection,
+    ),
+    String,
+> {
+    use crate::select_render_precision::{
+        ColorPrecisionPolicy,
+        RenderPrecisionSelection,
+        RenderTargetPrecision,
+    };
+
+    match requested {
+        ColorPrecisionPolicy::Standard => {
+            let (
+                scene_target,
+                scratch_target,
+            ) =
+                create_render_targets(
+                    width,
+                    height,
+                    RenderTargetPrecision::Standard,
+                )?;
+
+            Ok(
+                (
+                    scene_target,
+                    scratch_target,
+                    RenderPrecisionSelection::direct(
+                        requested,
+                        RenderTargetPrecision::Standard,
+                    ),
+                )
+            )
+        }
+
+        ColorPrecisionPolicy::High => {
+            let (
+                scene_target,
+                scratch_target,
+            ) =
+                create_render_targets(
+                    width,
+                    height,
+                    RenderTargetPrecision::High,
+                )?;
+
+            Ok(
+                (
+                    scene_target,
+                    scratch_target,
+                    RenderPrecisionSelection::direct(
+                        requested,
+                        RenderTargetPrecision::High,
+                    ),
+                )
+            )
+        }
+
+        ColorPrecisionPolicy::Auto => {
+            match create_render_targets(
+                width,
+                height,
+                RenderTargetPrecision::High,
+            ) {
+                Ok(
+                    (
+                        scene_target,
+                        scratch_target,
+                    )
+                ) => {
+                    Ok(
+                        (
+                            scene_target,
+                            scratch_target,
+                            RenderPrecisionSelection::direct(
+                                requested,
+                                RenderTargetPrecision::High,
+                            ),
+                        )
+                    )
+                }
+
+                Err(high_error) => {
+                    let (
+                        scene_target,
+                        scratch_target,
+                    ) =
+                        create_render_targets(
+                            width,
+                            height,
+                            RenderTargetPrecision::Standard,
+                        )
+                        .map_err(
+                            |standard_error| {
+                                format!(
+                                    "Unable to create post-processing targets: high precision failed ({}); standard precision failed ({})",
+                                    high_error,
+                                    standard_error,
+                                )
+                            }
+                        )?;
+
+                    Ok(
+                        (
+                            scene_target,
+                            scratch_target,
+                            RenderPrecisionSelection::fallback(
+                                requested,
+                                RenderTargetPrecision::Standard,
+                                high_error,
+                            ),
+                        )
+                    )
+                }
+            }
+        }
+    }
+}
+
 
 fn create_render_target(
     width: u32,

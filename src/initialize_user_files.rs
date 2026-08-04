@@ -125,6 +125,7 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 #     speed:<animation-multiplier>
 #     anti_aliasing:<off|fxaa>
 #     dithering:<off|subtle>
+#     color_precision:<auto|standard|high>
 #
 # Property names and post-processing values are case-insensitive and are
 # normalized internally to lowercase.
@@ -133,20 +134,25 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 # global setting or normal random fallback.
 
 [screensaver_policies]
-# "CandyWarp.fs" = "texture:bricks palette:mist fps:24 speed:0.5 anti_aliasing:fxaa dithering:subtle"
+# "CandyWarp.fs" = "texture:bricks palette:mist fps:24 speed:0.5 anti_aliasing:fxaa dithering:subtle color_precision:high"
 
 [wallpaper_policies]
-# "CandyWarp.fs" = "fps:16 speed:0.125 anti_aliasing:off dithering:off"
+# "CandyWarp.fs" = "fps:16 speed:0.125 anti_aliasing:off dithering:off color_precision:standard"
 
 ################################
 # POST-PROCESSING
 ################################
 [postprocess]
-# Built-in defaults are used when either setting is omitted.
+# Built-in defaults are used when a setting is omitted.
 # Supported anti-aliasing values: off, fxaa
   anti_aliasing = "fxaa"
 # Supported dithering values: off, subtle
   dithering = "subtle"
+# Supported color-precision values:
+#     auto      Prefer RGBA16F and fall back to RGBA8 when unavailable.
+#     standard  Require RGBA8 render targets.
+#     high      Require RGBA16F render targets.
+  color_precision = "auto"
 
 ################################
 # PERFORMANCE

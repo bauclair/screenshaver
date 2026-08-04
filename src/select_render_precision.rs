@@ -97,3 +97,55 @@ impl RenderTargetPrecision {
         }
     }
 }
+
+#[derive(
+    Debug,
+    Clone,
+)]
+pub(crate) struct RenderPrecisionSelection {
+    pub requested:
+        ColorPrecisionPolicy,
+
+    pub selected:
+        RenderTargetPrecision,
+
+    pub fell_back:
+        bool,
+
+    pub fallback_reason:
+        Option<String>,
+}
+
+
+impl RenderPrecisionSelection {
+    pub(crate) fn direct(
+        requested: ColorPrecisionPolicy,
+        selected: RenderTargetPrecision,
+    ) -> Self {
+        Self {
+            requested,
+            selected,
+            fell_back:
+                false,
+            fallback_reason:
+                None,
+        }
+    }
+
+
+    pub(crate) fn fallback(
+        requested: ColorPrecisionPolicy,
+        selected: RenderTargetPrecision,
+        reason: String,
+    ) -> Self {
+        Self {
+            requested,
+            selected,
+            fell_back:
+                true,
+            fallback_reason:
+                Some(reason),
+        }
+    }
+}
+

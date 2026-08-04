@@ -310,20 +310,17 @@ impl FrameRenderEngine {
                 None
             };
 
-        let mut postprocess =
-            crate::postprocess_shader::PostprocessPipeline::new(
-                output_width,
-                output_height,
-            )?;
-
         let postprocess_profile =
             postprocess_policy.profile_for_shader(
                 &active_shader.shader_name
             );
 
-        postprocess.set_profile(
-            postprocess_profile
-        );
+        let postprocess =
+            crate::postprocess_shader::PostprocessPipeline::new(
+                output_width,
+                output_height,
+                postprocess_profile,
+            )?;
 
         let mut vao =
             0_u32;
@@ -863,9 +860,33 @@ impl FrameRenderEngine {
                 let old_program =
                     self.active_shader.program;
 
-                self.postprocess.set_profile(
-                    new_postprocess_profile
-                );
+                if let Err(error) =
+                    self.postprocess.set_profile(
+                        new_postprocess_profile
+                    )
+                {
+                    unsafe {
+                        if new_shader.program
+                            != 0
+                        {
+                            gl::DeleteProgram(
+                                new_shader.program
+                            );
+                        }
+                    }
+
+                    log_warning(
+                        &format!(
+                            "[POSTPROCESS] Unable to apply replacement shader profile: {}",
+                            error,
+                        )
+                    );
+
+                    self.last_shader_switch =
+                        Instant::now();
+
+                    return false;
+                }
 
                 self.active_shader =
                     new_shader;

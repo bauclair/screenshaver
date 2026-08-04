@@ -123,6 +123,9 @@ struct PostprocessSection {
 
     #[serde(default)]
     dithering: Option<String>,
+
+    #[serde(default)]
+    color_precision: Option<String>,
 }
 
 
@@ -231,6 +234,11 @@ pub struct ShaderPolicy {
     pub dithering:
         Option<
             crate::render_dithering::DitheringLevel
+        >,
+
+    pub color_precision:
+        Option<
+            crate::select_render_precision::ColorPrecisionPolicy
         >,
 }
 
@@ -418,6 +426,9 @@ pub(crate) struct PostprocessProfile {
 
     pub dithering:
         crate::render_dithering::DitheringLevel,
+
+    pub color_precision:
+        crate::select_render_precision::ColorPrecisionPolicy,
 }
 
 
@@ -432,6 +443,9 @@ impl Default for PostprocessProfile {
 
             dithering:
                 crate::render_dithering::DitheringLevel::Subtle,
+
+            color_precision:
+                crate::select_render_precision::ColorPrecisionPolicy::Auto,
         }
     }
 }
@@ -512,6 +526,17 @@ impl PostprocessPolicy {
                     )
                     .unwrap_or(
                         self.global_profile.dithering
+                    ),
+
+            color_precision:
+                shader_policy
+                    .and_then(
+                        |shader_policy| {
+                            shader_policy.color_precision
+                        }
+                    )
+                    .unwrap_or(
+                        self.global_profile.color_precision
                     ),
         }
     }
@@ -684,12 +709,27 @@ pub fn load_config(
         );
 
 
+    let (
+        global_color_precision,
+        color_precision_warning,
+    ) =
+        parse_global_color_precision(
+            raw.postprocess
+                .color_precision
+                .as_deref(),
+            built_in_postprocess_profile
+                .color_precision,
+        );
+
+
     let global_postprocess_profile =
         PostprocessProfile {
             anti_aliasing:
                 global_anti_aliasing,
             dithering:
                 global_dithering,
+            color_precision:
+                global_color_precision,
         };
 
 
@@ -1145,6 +1185,15 @@ pub fn load_config(
             ),
 
             format!(
+                "[CONFIG] postprocess.color_precision = {}",
+                config
+                    .screensaver_postprocess_policy
+                    .global_profile
+                    .color_precision
+                    .name(),
+            ),
+
+            format!(
                 "[CONFIG] screen_lock = {}",
                 config.screen_lock,
             ),
@@ -1208,6 +1257,15 @@ pub fn load_config(
 
     if let Some(warning) =
         dithering_warning
+    {
+        diagnostics.push(
+            warning
+        );
+    }
+
+
+    if let Some(warning) =
+        color_precision_warning
     {
         diagnostics.push(
             warning
@@ -1371,6 +1429,7 @@ fn parse_policy_specification(
     let mut animation_speed = None;
     let mut anti_aliasing = None;
     let mut dithering = None;
+    let mut color_precision = None;
 
 
     for token in
@@ -1565,10 +1624,29 @@ fn parse_policy_specification(
                     );
             }
 
+            "color_precision" => {
+                if color_precision.is_some() {
+                    return Err(duplicate_policy_property(
+                        &shader,
+                        target,
+                        "color_precision",
+                    ));
+                }
+
+                color_precision =
+                    Some(
+                        parse_policy_color_precision(
+                            &shader,
+                            value,
+                            target.table_name(),
+                        )?
+                    );
+            }
+
             other => {
                 return Err(
                     format!(
-                        "Unknown policy property '{}' for '{}' in [{}]; supported properties: texture, palette, fps, speed, anti_aliasing, dithering",
+                        "Unknown policy property '{}' for '{}' in [{}]; supported properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision",
                         other,
                         shader,
                         target.table_name(),
@@ -1585,6 +1663,7 @@ fn parse_policy_specification(
         && animation_speed.is_none()
         && anti_aliasing.is_none()
         && dithering.is_none()
+        && color_precision.is_none()
     {
         return Err(
             format!(
@@ -1605,6 +1684,7 @@ fn parse_policy_specification(
             animation_speed,
             anti_aliasing,
             dithering,
+            color_precision,
         }
     )
 }
@@ -1707,8 +1787,12 @@ fn format_shader_policy_diagnostic(
         .map(|level| level.name())
         .unwrap_or("<global>");
 
+    let color_precision = shader_policy.color_precision
+        .map(|precision| precision.name())
+        .unwrap_or("<global>");
+
     format!(
-        "[CONFIG] {} shader={} texture={} palette={} fps={} speed={} anti_aliasing={} dithering={}",
+        "[CONFIG] {} shader={} texture={} palette={} fps={} speed={} anti_aliasing={} dithering={} color_precision={}",
         table_name,
         shader_policy.shader,
         texture,
@@ -1717,6 +1801,7 @@ fn format_shader_policy_diagnostic(
         speed,
         anti_aliasing,
         dithering,
+        color_precision,
     )
 }
 
@@ -1796,6 +1881,52 @@ fn parse_policy_dithering(
             Err(
                 format!(
                     "Invalid dithering value '{}' for '{}' in [{}]; supported values: off, subtle",
+                    value,
+                    shader,
+                    table_name,
+                )
+            )
+        }
+    }
+}
+
+
+fn parse_policy_color_precision(
+    shader: &str,
+    value: &str,
+    table_name: &str,
+) -> Result<
+    crate::select_render_precision::ColorPrecisionPolicy,
+    String,
+> {
+
+    match value
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "auto" => {
+            Ok(
+                crate::select_render_precision::ColorPrecisionPolicy::Auto
+            )
+        }
+
+        "standard" => {
+            Ok(
+                crate::select_render_precision::ColorPrecisionPolicy::Standard
+            )
+        }
+
+        "high" => {
+            Ok(
+                crate::select_render_precision::ColorPrecisionPolicy::High
+            )
+        }
+
+        _ => {
+            Err(
+                format!(
+                    "Invalid color_precision value '{}' for '{}' in [{}]; supported values: auto, standard, high",
                     value,
                     shader,
                     table_name,
@@ -1894,6 +2025,58 @@ fn parse_global_dithering(
             Some(
                 format!(
                     "[CONFIG] WARNING: postprocess.dithering = '{}' is unsupported; using '{}'",
+                    value,
+                    fallback.name(),
+                )
+            ),
+        ),
+    }
+}
+
+
+fn parse_global_color_precision(
+    value: Option<&str>,
+    fallback:
+        crate::select_render_precision::ColorPrecisionPolicy,
+) -> (
+    crate::select_render_precision::ColorPrecisionPolicy,
+    Option<String>,
+) {
+
+    let Some(value) = value
+    else {
+        return (
+            fallback,
+            None,
+        );
+    };
+
+
+    match value
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "auto" => (
+            crate::select_render_precision::ColorPrecisionPolicy::Auto,
+            None,
+        ),
+
+        "standard" => (
+            crate::select_render_precision::ColorPrecisionPolicy::Standard,
+            None,
+        ),
+
+        "high" => (
+            crate::select_render_precision::ColorPrecisionPolicy::High,
+            None,
+        ),
+
+        _ => (
+            fallback,
+            Some(
+                format!(
+                    "[CONFIG] WARNING: postprocess.color_precision = '{}' is unsupported; using '{}'",
                     value,
                     fallback.name(),
                 )

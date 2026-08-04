@@ -2141,17 +2141,17 @@ fn render_mirror_frames(
             )?;
 
 
-        let mut pipeline =
+        let postprocess_profile =
+            runtime.postprocess_policy.profile_for_shader(
+                &active_shader.shader_name
+            );
+
+        let pipeline =
             crate::postprocess_shader::PostprocessPipeline::new(
                 width,
                 height,
+                postprocess_profile,
             )?;
-
-        pipeline.set_profile(
-            runtime.postprocess_policy.profile_for_shader(
-                &active_shader.shader_name
-            )
-        );
 
 
         postprocess_pipelines.insert(
@@ -2564,7 +2564,7 @@ fn render_mirror_frames(
                                 {
                                     pipeline.set_profile(
                                         postprocess_profile
-                                    );
+                                    )?;
                                 }
 
 

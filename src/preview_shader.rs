@@ -406,13 +406,6 @@ pub fn run_paths(
         window.size();
 
 
-    let mut postprocess =
-        crate::postprocess_shader::PostprocessPipeline::new(
-            width,
-            height,
-        )?;
-
-
     let (
         mut active,
         mut active_index,
@@ -433,11 +426,18 @@ pub fn run_paths(
         )?;
 
 
-    postprocess.set_profile(
+    let initial_postprocess_profile =
         postprocess_policy.profile_for_shader(
             &active.shader_name
-        )
-    );
+        );
+
+
+    let mut postprocess =
+        crate::postprocess_shader::PostprocessPipeline::new(
+            width,
+            height,
+            initial_postprocess_profile,
+        )?;
 
 
     let mut configured_fps =
@@ -603,7 +603,7 @@ pub fn run_paths(
                                 postprocess_policy.profile_for_shader(
                                     &active.shader_name
                                 )
-                            );
+                            )?;
 
 
                             configured_fps =
