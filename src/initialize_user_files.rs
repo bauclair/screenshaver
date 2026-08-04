@@ -78,7 +78,7 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 
 # Initial multi-monitor support renders the same shader independently on
 # every monitor. Each monitor uses its own native resolution while sharing
-# the shader, timeline, rotation schedule, textures, palettes, and overrides.
+# the shader, timeline, rotation schedule, textures, palettes, and policies.
 #
 # Supported values:
 #     mirror
@@ -115,22 +115,22 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 #     slate
 
 ################################
-# PER-SHADER OVERRIDES
+# PER-SHADER POLICIES
 ################################
-# Override properties may be written in any order.
+# Policy properties may be written in any order.
 # Supported properties are:
 #     texture:<family>
 #     palette:<palette>
 #     fps:<frames-per-second>
 #     speed:<animation-multiplier>
 #
-# Properties not included in an override continue to use the active mode's
+# Properties not included in an policy continue to use the active mode's
 # global setting or normal random fallback.
 
-[screensaver_overrides]
+[screensaver_policies]
 # "CandyWarp.fs" = "texture:bricks palette:mist fps:24 speed:0.5"
 
-[wallpaper_overrides]
+[wallpaper_policies]
 # "CandyWarp.fs" = "fps:16 speed:0.125"
 
 ################################

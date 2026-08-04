@@ -49,10 +49,10 @@ enum FrameOutputPolicy {
 enum RenderFpsPolicy {
     Screensaver {
         global_rendered_fps: u32,
-        fps_overrides: Vec<crate::load_config::FpsOverride>,
+        fps_policy_entries: Vec<crate::load_config::FpsPolicyEntry>,
     },
     Wallpaper(
-        crate::load_config::FpsSelectionPolicy,
+        crate::load_config::FpsPolicy,
     ),
 }
 
@@ -64,11 +64,11 @@ impl RenderFpsPolicy {
         match self {
             Self::Screensaver {
                 global_rendered_fps,
-                fps_overrides,
+                fps_policy_entries,
             } => {
                 resolve_shader_fps(
                     (*global_rendered_fps).max(1),
-                    fps_overrides,
+                    fps_policy_entries,
                     shader_name,
                 )
             }
@@ -148,12 +148,12 @@ impl FrameRenderEngine {
         animation_speed_policy:
             crate::load_config::AnimationSpeedPolicy,
         global_rendered_fps: u32,
-        fps_overrides:
+        fps_policy_entries:
             Vec<
-                crate::load_config::FpsOverride
+                crate::load_config::FpsPolicyEntry
             >,
         texture_policy:
-            crate::load_config::TextureSelectionPolicy,
+            crate::load_config::TexturePolicy,
         subtitles: bool,
         subtitle_placement:
             crate::parse_subtitle_placement::SubtitlePlacement,
@@ -167,7 +167,7 @@ impl FrameRenderEngine {
             None,
             RenderFpsPolicy::Screensaver {
                 global_rendered_fps,
-                fps_overrides,
+                fps_policy_entries,
             },
             FrameOutputPolicy::PreserveAlpha,
             texture_policy,
@@ -187,9 +187,9 @@ impl FrameRenderEngine {
         animation_speed_policy:
             crate::load_config::AnimationSpeedPolicy,
         fps_policy:
-            crate::load_config::FpsSelectionPolicy,
+            crate::load_config::FpsPolicy,
         texture_policy:
-            crate::load_config::TextureSelectionPolicy,
+            crate::load_config::TexturePolicy,
         subtitles: bool,
         subtitle_placement:
             crate::parse_subtitle_placement::SubtitlePlacement,
@@ -224,7 +224,7 @@ impl FrameRenderEngine {
         fps_policy: RenderFpsPolicy,
         output_policy: FrameOutputPolicy,
         texture_policy:
-            crate::load_config::TextureSelectionPolicy,
+            crate::load_config::TexturePolicy,
         subtitles: bool,
         render_fps_warning_overlay: bool,
         subtitle_placement:
@@ -924,12 +924,12 @@ impl FrameRenderer {
         animation_speed_policy:
             crate::load_config::AnimationSpeedPolicy,
         global_rendered_fps: u32,
-        fps_overrides:
+        fps_policy_entries:
             Vec<
-                crate::load_config::FpsOverride
+                crate::load_config::FpsPolicyEntry
             >,
         texture_policy:
-            crate::load_config::TextureSelectionPolicy,
+            crate::load_config::TexturePolicy,
         subtitles: bool,
         subtitle_placement:
             crate::parse_subtitle_placement::SubtitlePlacement,
@@ -1022,7 +1022,7 @@ impl FrameRenderer {
                 shader_interval,
                 animation_speed_policy,
                 global_rendered_fps,
-                fps_overrides,
+                fps_policy_entries,
                 texture_policy,
                 subtitles,
                 subtitle_placement,
@@ -1253,18 +1253,18 @@ impl Drop for FrameRenderEngine {
 
 fn resolve_shader_fps(
     global_rendered_fps: u32,
-    fps_overrides:
+    fps_policy_entries:
         &[
-            crate::load_config::FpsOverride
+            crate::load_config::FpsPolicyEntry
         ],
     shader_name: &str,
 ) -> u32 {
 
-    fps_overrides
+    fps_policy_entries
         .iter()
         .find(
-            |fps_override| {
-                fps_override
+            |fps_policy_entry| {
+                fps_policy_entry
                     .shader
                     .eq_ignore_ascii_case(
                         shader_name
@@ -1272,8 +1272,8 @@ fn resolve_shader_fps(
             }
         )
         .map(
-            |fps_override| {
-                fps_override.rendered_fps
+            |fps_policy_entry| {
+                fps_policy_entry.rendered_fps
             }
         )
         .unwrap_or(

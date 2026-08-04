@@ -19,8 +19,8 @@ use crate::generate_textures::{
     TextureFamily,
 };
 use crate::load_config::{
-    TextureOverride,
-    TextureSelectionPolicy,
+    TexturePolicyEntry,
+    TexturePolicy,
 };
 use crate::parse_texture_specification::{
     TextureSpecification,
@@ -136,7 +136,7 @@ struct TextureRequest {
 
 fn resolve_texture_selection(
     shader_name: &str,
-    policy: &TextureSelectionPolicy,
+    policy: &TexturePolicy,
     preview_selection: PreviewTextureSelection,
 ) -> (
     TextureRequest,
@@ -148,10 +148,10 @@ fn resolve_texture_selection(
         random_state();
 
 
-    let shader_override =
-        matching_override(
+    let shader_policy =
+        matching_policy(
             shader_name,
-            &policy.texture_overrides,
+            &policy.texture_policy_entries,
         );
 
 
@@ -185,16 +185,16 @@ fn resolve_texture_selection(
 
             None => {
                 if let Some(texture) =
-                    shader_override
+                    shader_policy
                         .and_then(
-                            |texture_override| {
-                                texture_override.shader_texture.clone()
+                            |texture_policy| {
+                                texture_policy.shader_texture.clone()
                             }
                         )
                 {
                     (
                         texture,
-                        "shader override",
+                        "shader policy",
                     )
                 } else if let Some(texture) =
                     policy.global_texture
@@ -245,16 +245,16 @@ fn resolve_texture_selection(
 
             None => {
                 if let Some(palette) =
-                    shader_override
+                    shader_policy
                         .and_then(
-                            |texture_override| {
-                                texture_override.shader_palette
+                            |texture_policy| {
+                                texture_policy.shader_palette
                             }
                         )
                 {
                     (
                         palette,
-                        "shader override",
+                        "shader policy",
                     )
                 } else if let Some(palette) =
                     policy.global_palette
@@ -368,18 +368,18 @@ fn random_palette(
 }
 
 
-fn matching_override<'a>(
+fn matching_policy<'a>(
     shader_name: &str,
-    overrides: &'a [TextureOverride],
+    overrides: &'a [TexturePolicyEntry],
 ) -> Option<
-    &'a TextureOverride
+    &'a TexturePolicyEntry
 > {
 
     overrides
         .iter()
         .find(
-            |texture_override| {
-                texture_override
+            |texture_policy| {
+                texture_policy
                     .shader
                     .eq_ignore_ascii_case(
                         shader_name
@@ -525,14 +525,14 @@ pub struct TextureManager {
     texture: Option<GpuTexture>,
     active_channels: [bool; CHANNEL_COUNT],
     policy:
-        TextureSelectionPolicy,
+        TexturePolicy,
 }
 
 
 impl TextureManager {
 
     pub fn new(
-        policy: TextureSelectionPolicy,
+        policy: TexturePolicy,
     ) -> Self {
 
         Self {
@@ -548,7 +548,7 @@ impl TextureManager {
     /// Satisfy the texture requirements of the selected shader.
     ///
     /// Resolve the selected shader's procedural texture through
-    /// per-shader override, global configuration, and random
+    /// per-shader policy, global configuration, and random
     /// fallback policy. The same generated texture is bound to
     /// every channel referenced by that shader.
     pub fn prepare_for_shader(
@@ -590,15 +590,15 @@ impl TextureManager {
             }
 
 
-            if matching_override(
+            if matching_policy(
                 shader_name,
-                &self.policy.texture_overrides,
+                &self.policy.texture_policy_entries,
             )
             .is_some()
             {
                 log_warning(
                     &format!(
-                        "[TEXTURE] Texture override configured for '{}', but the shader does not use texture channels; override ignored",
+                        "[TEXTURE] Texture override configured for '{}', but the shader does not use texture channels; policy ignored",
                         shader_name,
                     )
                 );
@@ -629,15 +629,15 @@ impl TextureManager {
             );
 
 
-        if matching_override(
+        if matching_policy(
             shader_name,
-            &self.policy.texture_overrides,
+            &self.policy.texture_policy_entries,
         )
         .is_some()
         {
             log_debug(
                 &format!(
-                    "[TEXTURE] Shader override matched: {}",
+                    "[TEXTURE] Shader policy matched: {}",
                     shader_name,
                 )
             );

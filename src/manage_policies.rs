@@ -11,7 +11,7 @@ use toml_edit::{
 
 //
 // ------------------------------------------------------------
-// Public override structures
+// Public policy structures
 // ------------------------------------------------------------
 //
 
@@ -22,7 +22,7 @@ use toml_edit::{
     PartialEq,
     Eq,
 )]
-pub enum OverrideTarget {
+pub enum PolicyTarget {
 
     Screensaver,
 
@@ -30,7 +30,7 @@ pub enum OverrideTarget {
 }
 
 
-impl OverrideTarget {
+impl PolicyTarget {
 
     pub fn parse(
         value: &str,
@@ -56,7 +56,7 @@ impl OverrideTarget {
             other => {
                 Err(
                     format!(
-                        "Unknown override target '{}'; supported targets: screensaver, wallpaper",
+                        "Unknown policy target '{}'; supported targets: screensaver, wallpaper",
                         other,
                     )
                 )
@@ -87,11 +87,11 @@ impl OverrideTarget {
 
         match self {
             Self::Screensaver => {
-                "screensaver_overrides"
+                "screensaver_policies"
             }
 
             Self::Wallpaper => {
-                "wallpaper_overrides"
+                "wallpaper_policies"
             }
         }
     }
@@ -104,7 +104,7 @@ impl OverrideTarget {
     Default,
     PartialEq,
 )]
-pub struct OverrideProperties {
+pub struct PolicyDefinition {
 
     pub texture:
         Option<String>,
@@ -120,7 +120,7 @@ pub struct OverrideProperties {
 }
 
 
-impl OverrideProperties {
+impl PolicyDefinition {
 
     pub fn is_empty(
         &self,
@@ -140,11 +140,11 @@ impl OverrideProperties {
 // ------------------------------------------------------------
 //
 
-pub fn add_override(
+pub fn add_policy(
     config_path: &Path,
-    target: OverrideTarget,
+    target: PolicyTarget,
     shader: &str,
-    properties: OverrideProperties,
+    properties: PolicyDefinition,
 ) -> Result<(), String> {
 
     let shader =
@@ -166,7 +166,7 @@ pub fn add_override(
 
 
     let table =
-        override_table_mut(
+        policy_table_mut(
             &mut document,
             target,
         )?;
@@ -180,7 +180,7 @@ pub fn add_override(
     {
         return Err(
             format!(
-                "Shader '{}' already has an override in [{}]",
+                "Shader '{}' already has an policy in [{}]",
                 existing_key,
                 target.table_name(),
             )
@@ -189,7 +189,7 @@ pub fn add_override(
 
 
     let specification =
-        format_override(
+        format_policy(
             &properties
         );
 
@@ -209,9 +209,9 @@ pub fn add_override(
 }
 
 
-pub fn override_exists(
+pub fn policy_exists(
     config_path: &Path,
-    target: OverrideTarget,
+    target: PolicyTarget,
     shader: &str,
 ) -> Result<bool, String> {
 
@@ -226,7 +226,7 @@ pub fn override_exists(
         )?;
 
     let Some(table) =
-        override_table(
+        policy_table(
             &document,
             target,
         )?
@@ -244,11 +244,11 @@ pub fn override_exists(
 }
 
 
-pub fn replace_override(
+pub fn replace_policy(
     config_path: &Path,
-    target: OverrideTarget,
+    target: PolicyTarget,
     shader: &str,
-    properties: OverrideProperties,
+    properties: PolicyDefinition,
 ) -> Result<(), String> {
 
     let shader =
@@ -267,7 +267,7 @@ pub fn replace_override(
         )?;
 
     let table =
-        override_table_mut(
+        policy_table_mut(
             &mut document,
             target,
         )?;
@@ -280,7 +280,7 @@ pub fn replace_override(
         .ok_or_else(
             || {
                 format!(
-                    "Shader '{}' does not have an override in [{}]",
+                    "Shader '{}' does not have an policy in [{}]",
                     shader,
                     target.table_name(),
                 )
@@ -295,7 +295,7 @@ pub fn replace_override(
         &shader
     ] =
         value(
-            format_override(
+            format_policy(
                 &properties
             )
         );
@@ -307,9 +307,9 @@ pub fn replace_override(
 }
 
 
-pub fn delete_override(
+pub fn delete_policy(
     config_path: &Path,
-    target: OverrideTarget,
+    target: PolicyTarget,
     shader: &str,
 ) -> Result<(), String> {
 
@@ -326,7 +326,7 @@ pub fn delete_override(
 
 
     let table =
-        override_table_mut(
+        policy_table_mut(
             &mut document,
             target,
         )?;
@@ -340,7 +340,7 @@ pub fn delete_override(
         .ok_or_else(
             || {
                 format!(
-                    "Shader '{}' does not have an override in [{}]",
+                    "Shader '{}' does not have an policy in [{}]",
                     shader,
                     target.table_name(),
                 )
@@ -360,9 +360,9 @@ pub fn delete_override(
 }
 
 
-pub fn list_overrides(
+pub fn list_policies(
     config_path: &Path,
-    target: Option<OverrideTarget>,
+    target: Option<PolicyTarget>,
 ) -> Result<(), String> {
 
     let document =
@@ -373,23 +373,23 @@ pub fn list_overrides(
 
     match target {
         Some(target) => {
-            print_override_table(
+            print_policy_table(
                 &document,
                 target,
             )?;
         }
 
         None => {
-            print_override_table(
+            print_policy_table(
                 &document,
-                OverrideTarget::Screensaver,
+                PolicyTarget::Screensaver,
             )?;
 
             println!();
 
-            print_override_table(
+            print_policy_table(
                 &document,
-                OverrideTarget::Wallpaper,
+                PolicyTarget::Wallpaper,
             )?;
         }
     }
@@ -458,9 +458,9 @@ fn save_document(
 }
 
 
-fn override_table_mut<'a>(
+fn policy_table_mut<'a>(
     document: &'a mut DocumentMut,
-    target: OverrideTarget,
+    target: PolicyTarget,
 ) -> Result<&'a mut Table, String> {
 
     let table_name =
@@ -501,9 +501,9 @@ fn override_table_mut<'a>(
 }
 
 
-fn override_table<'a>(
+fn policy_table<'a>(
     document: &'a DocumentMut,
-    target: OverrideTarget,
+    target: PolicyTarget,
 ) -> Result<Option<&'a Table>, String> {
 
     let table_name =
@@ -538,7 +538,7 @@ fn override_table<'a>(
 
 //
 // ------------------------------------------------------------
-// Override formatting and validation
+// Policy formatting and validation
 // ------------------------------------------------------------
 //
 
@@ -565,13 +565,13 @@ fn normalized_shader_name(
 
 
 fn validate_properties(
-    target: OverrideTarget,
-    properties: &OverrideProperties,
+    target: PolicyTarget,
+    properties: &PolicyDefinition,
 ) -> Result<(), String> {
 
     if properties.is_empty() {
         return Err(
-            "An override must define at least one property"
+            "An policy must define at least one property"
                 .to_string()
         );
     }
@@ -608,7 +608,7 @@ fn validate_properties(
         {
             return Err(
                 format!(
-                    "FPS override {} is outside the supported range {}-{}",
+                    "FPS policy {} is outside the supported range {}-{}",
                     fps,
                     crate::define_constants::MIN_RENDER_FPS,
                     crate::define_constants::MAX_RENDER_FPS,
@@ -626,12 +626,12 @@ fn validate_properties(
             maximum,
         ) =
             match target {
-                OverrideTarget::Screensaver => (
+                PolicyTarget::Screensaver => (
                     crate::define_constants::SCREENSAVER_SPEED_MIN,
                     crate::define_constants::SCREENSAVER_SPEED_MAX,
                 ),
 
-                OverrideTarget::Wallpaper => (
+                PolicyTarget::Wallpaper => (
                     crate::define_constants::WALLPAPER_SPEED_MIN,
                     crate::define_constants::WALLPAPER_SPEED_MAX,
                 ),
@@ -646,7 +646,7 @@ fn validate_properties(
         {
             return Err(
                 format!(
-                    "Speed override {} for {} is outside the supported range {}-{}",
+                    "Speed policy {} for {} is outside the supported range {}-{}",
                     speed,
                     target.name(),
                     minimum,
@@ -673,7 +673,7 @@ fn validate_property_text(
     if value.is_empty() {
         return Err(
             format!(
-                "Override property '{}' requires a value",
+                "Policy property '{}' requires a value",
                 property_name,
             )
         );
@@ -687,7 +687,7 @@ fn validate_property_text(
     {
         return Err(
             format!(
-                "Override property '{}' may not contain whitespace: '{}'",
+                "Policy property '{}' may not contain whitespace: '{}'",
                 property_name,
                 value,
             )
@@ -699,8 +699,8 @@ fn validate_property_text(
 }
 
 
-fn format_override(
-    properties: &OverrideProperties,
+fn format_policy(
+    properties: &PolicyDefinition,
 ) -> String {
 
     let mut tokens =
@@ -795,7 +795,7 @@ fn format_speed(
 
 //
 // ------------------------------------------------------------
-// Override lookup and display
+// Policy lookup and display
 // ------------------------------------------------------------
 //
 
@@ -826,7 +826,7 @@ fn matching_shader_key(
 
 
 #[derive(Debug)]
-struct OverrideRow {
+struct PolicyRow {
 
     shader:
         String,
@@ -846,7 +846,7 @@ struct OverrideRow {
 
 
 #[derive(Debug)]
-struct OverrideTableLayout {
+struct PolicyTableLayout {
 
     shader_width:
         usize,
@@ -865,13 +865,13 @@ struct OverrideTableLayout {
 }
 
 
-fn print_override_table(
+fn print_policy_table(
     document: &DocumentMut,
-    target: OverrideTarget,
+    target: PolicyTarget,
 ) -> Result<(), String> {
 
     println!(
-        "{} Overrides",
+        "{} Policies",
         display_target_name(
             target
         )
@@ -881,13 +881,13 @@ fn print_override_table(
 
 
     let Some(table) =
-        override_table(
+        policy_table(
             document,
             target,
         )?
     else {
         println!(
-            "No {} overrides defined.",
+            "No {} policies defined.",
             target.name(),
         );
 
@@ -896,7 +896,7 @@ fn print_override_table(
 
 
     let rows =
-        collect_override_rows(
+        collect_policy_rows(
             table,
             target,
         )?;
@@ -904,7 +904,7 @@ fn print_override_table(
 
     if rows.is_empty() {
         println!(
-            "No {} overrides defined.",
+            "No {} policies defined.",
             target.name(),
         );
 
@@ -913,12 +913,12 @@ fn print_override_table(
 
 
     let layout =
-        calculate_override_table_layout(
+        calculate_policy_table_layout(
             &rows
         );
 
 
-    print_override_table_header(
+    print_policy_table_header(
         &layout
     );
 
@@ -946,10 +946,10 @@ fn print_override_table(
 }
 
 
-fn collect_override_rows(
+fn collect_policy_rows(
     table: &Table,
-    target: OverrideTarget,
-) -> Result<Vec<OverrideRow>, String> {
+    target: PolicyTarget,
+) -> Result<Vec<PolicyRow>, String> {
 
     let mut entries =
         table.iter()
@@ -985,7 +985,7 @@ fn collect_override_rows(
                         .ok_or_else(
                             || {
                                 format!(
-                                    "Override '{}' in [{}] is not a string",
+                                    "Policy '{}' in [{}] is not a string",
                                     shader,
                                     target.table_name(),
                                 )
@@ -994,7 +994,7 @@ fn collect_override_rows(
 
 
                 let speed =
-                    match override_property_value(
+                    match policy_property_value(
                         specification,
                         "speed",
                     ) {
@@ -1004,7 +1004,7 @@ fn collect_override_rows(
                                     .map_err(
                                         |_| {
                                             format!(
-                                                "Invalid speed '{}' for override '{}' in [{}]",
+                                                "Invalid speed '{}' for policy '{}' in [{}]",
                                                 value,
                                                 shader,
                                                 target.table_name(),
@@ -1026,12 +1026,12 @@ fn collect_override_rows(
 
 
                 Ok(
-                    OverrideRow {
+                    PolicyRow {
                         shader:
                             shader.to_string(),
 
                         texture:
-                            override_property_value(
+                            policy_property_value(
                                 specification,
                                 "texture",
                             )
@@ -1039,7 +1039,7 @@ fn collect_override_rows(
                             .to_string(),
 
                         palette:
-                            override_property_value(
+                            policy_property_value(
                                 specification,
                                 "palette",
                             )
@@ -1047,7 +1047,7 @@ fn collect_override_rows(
                             .to_string(),
 
                         fps:
-                            override_property_value(
+                            policy_property_value(
                                 specification,
                                 "fps",
                             )
@@ -1063,11 +1063,11 @@ fn collect_override_rows(
 }
 
 
-fn calculate_override_table_layout(
-    rows: &[OverrideRow],
-) -> OverrideTableLayout {
+fn calculate_policy_table_layout(
+    rows: &[PolicyRow],
+) -> PolicyTableLayout {
 
-    OverrideTableLayout {
+    PolicyTableLayout {
         shader_width:
             rows.iter()
                 .map(
@@ -1136,8 +1136,8 @@ fn calculate_override_table_layout(
 }
 
 
-fn print_override_table_header(
-    layout: &OverrideTableLayout,
+fn print_policy_table_header(
+    layout: &PolicyTableLayout,
 ) {
 
     println!(
@@ -1176,7 +1176,7 @@ fn print_override_table_header(
 }
 
 
-fn override_property_value<'a>(
+fn policy_property_value<'a>(
     specification: &'a str,
     property: &str,
 ) -> Option<&'a str> {
@@ -1209,15 +1209,15 @@ fn override_property_value<'a>(
 
 
 fn display_target_name(
-    target: OverrideTarget,
+    target: PolicyTarget,
 ) -> &'static str {
 
     match target {
-        OverrideTarget::Screensaver => {
+        PolicyTarget::Screensaver => {
             "Screensaver"
         }
 
-        OverrideTarget::Wallpaper => {
+        PolicyTarget::Wallpaper => {
             "Wallpaper"
         }
     }

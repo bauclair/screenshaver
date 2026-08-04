@@ -162,11 +162,11 @@ struct RawToml {
     wallpaper: WallpaperSection,
 
     #[serde(default)]
-    screensaver_overrides:
+    screensaver_policies:
         BTreeMap<String, String>,
 
     #[serde(default)]
-    wallpaper_overrides:
+    wallpaper_policies:
         BTreeMap<String, String>,
 
     #[serde(default)]
@@ -188,7 +188,7 @@ struct RawToml {
     Debug,
     Clone,
 )]
-pub struct ShaderOverride {
+pub struct ShaderPolicy {
 
     pub shader:
         String,
@@ -219,9 +219,9 @@ pub struct AnimationSpeedPolicy {
 
     pub global_speed: f32,
 
-    pub shader_overrides:
+    pub shader_policies:
         Vec<
-            ShaderOverride
+            ShaderPolicy
         >,
 }
 
@@ -241,11 +241,11 @@ impl AnimationSpeedPolicy {
         }
 
 
-        self.shader_overrides
+        self.shader_policies
             .iter()
             .find(
-                |shader_override| {
-                    shader_override
+                |shader_policy| {
+                    shader_policy
                         .shader
                         .eq_ignore_ascii_case(
                             shader_name
@@ -253,8 +253,8 @@ impl AnimationSpeedPolicy {
                 }
             )
             .and_then(
-                |shader_override| {
-                    shader_override.animation_speed
+                |shader_policy| {
+                    shader_policy.animation_speed
                 }
             )
             .unwrap_or(
@@ -268,7 +268,7 @@ impl AnimationSpeedPolicy {
     Debug,
     Clone,
 )]
-pub struct TextureOverride {
+pub struct TexturePolicyEntry {
 
     pub shader:
         String,
@@ -289,7 +289,7 @@ pub struct TextureOverride {
     Debug,
     Clone,
 )]
-pub struct FpsOverride {
+pub struct FpsPolicyEntry {
 
     pub shader:
         String,
@@ -303,18 +303,18 @@ pub struct FpsOverride {
     Debug,
     Clone,
 )]
-pub struct FpsSelectionPolicy {
+pub struct FpsPolicy {
 
     pub global_rendered_fps: u32,
 
-    pub fps_overrides:
+    pub fps_policy_entries:
         Vec<
-            FpsOverride
+            FpsPolicyEntry
         >,
 }
 
 
-impl FpsSelectionPolicy {
+impl FpsPolicy {
 
     pub fn rendered_fps_for_shader(
         &self,
@@ -331,11 +331,11 @@ impl FpsSelectionPolicy {
         }
 
 
-        self.fps_overrides
+        self.fps_policy_entries
             .iter()
             .find(
-                |fps_override| {
-                    fps_override
+                |fps_policy_entry| {
+                    fps_policy_entry
                         .shader
                         .eq_ignore_ascii_case(
                             shader_name
@@ -343,8 +343,8 @@ impl FpsSelectionPolicy {
                 }
             )
             .map(
-                |fps_override| {
-                    fps_override.rendered_fps
+                |fps_policy_entry| {
+                    fps_policy_entry.rendered_fps
                 }
             )
             .unwrap_or(
@@ -361,7 +361,7 @@ impl FpsSelectionPolicy {
     Debug,
     Clone,
 )]
-pub struct TextureSelectionPolicy {
+pub struct TexturePolicy {
 
     pub global_texture:
         Option<
@@ -373,9 +373,9 @@ pub struct TextureSelectionPolicy {
             crate::palettes::Palette
         >,
 
-    pub texture_overrides:
+    pub texture_policy_entries:
         Vec<
-            TextureOverride
+            TexturePolicyEntry
         >,
 }
 
@@ -399,7 +399,7 @@ pub struct Config {
     pub idle_timeout: String,
 
     pub texture_policy:
-        TextureSelectionPolicy,
+        TexturePolicy,
 
     pub wallpaper:
         crate::define_wallpaper::WallpaperSettings,
@@ -407,20 +407,20 @@ pub struct Config {
     pub wallpaper_mode: String,
 
     pub wallpaper_texture_policy:
-        TextureSelectionPolicy,
+        TexturePolicy,
 
     pub screensaver_global_speed: f32,
 
     pub wallpaper_global_speed: f32,
 
-    pub screensaver_overrides:
+    pub screensaver_policies:
         Vec<
-            ShaderOverride
+            ShaderPolicy
         >,
 
-    pub wallpaper_overrides:
+    pub wallpaper_policies:
         Vec<
-            ShaderOverride
+            ShaderPolicy
         >,
 
     pub screensaver_speed_policy:
@@ -431,13 +431,13 @@ pub struct Config {
 
     pub global_rendered_fps: u32,
 
-    pub screensaver_fps_overrides:
+    pub screensaver_fps_policy_entries:
         Vec<
-            FpsOverride
+            FpsPolicyEntry
         >,
 
     pub wallpaper_fps_policy:
-        FpsSelectionPolicy,
+        FpsPolicy,
 
     pub screen_lock: bool,
 
@@ -553,51 +553,51 @@ pub fn load_config(
         )?;
 
 
-    let screensaver_overrides =
-        parse_override_table(
-            raw.screensaver_overrides,
-            OverrideTarget::Screensaver,
+    let screensaver_policies =
+        parse_policy_table(
+            raw.screensaver_policies,
+            PolicyTarget::Screensaver,
         )?;
 
 
-    let wallpaper_overrides =
-        parse_override_table(
-            raw.wallpaper_overrides,
-            OverrideTarget::Wallpaper,
+    let wallpaper_policies =
+        parse_policy_table(
+            raw.wallpaper_policies,
+            PolicyTarget::Wallpaper,
         )?;
 
 
-    let screensaver_texture_overrides =
-        texture_overrides_from(
-            &screensaver_overrides
+    let screensaver_texture_policy_entries =
+        texture_policy_entries_from(
+            &screensaver_policies
         );
 
 
-    let wallpaper_texture_overrides =
-        texture_overrides_from(
-            &wallpaper_overrides
+    let wallpaper_texture_policy_entries =
+        texture_policy_entries_from(
+            &wallpaper_policies
         );
 
 
     let texture_policy =
-        TextureSelectionPolicy {
+        TexturePolicy {
             global_texture:
                 screensaver_global_texture,
             global_palette:
                 screensaver_global_palette,
-            texture_overrides:
-                screensaver_texture_overrides,
+            texture_policy_entries:
+                screensaver_texture_policy_entries,
         };
 
 
     let wallpaper_texture_policy =
-        TextureSelectionPolicy {
+        TexturePolicy {
             global_texture:
                 wallpaper_global_texture,
             global_palette:
                 wallpaper_global_palette,
-            texture_overrides:
-                wallpaper_texture_overrides,
+            texture_policy_entries:
+                wallpaper_texture_policy_entries,
         };
 
 
@@ -652,23 +652,23 @@ pub fn load_config(
         );
 
 
-    let screensaver_fps_overrides =
-        fps_overrides_from(
-            &screensaver_overrides
+    let screensaver_fps_policy_entries =
+        fps_policy_entries_from(
+            &screensaver_policies
         );
 
 
-    let wallpaper_fps_overrides =
-        fps_overrides_from(
-            &wallpaper_overrides
+    let wallpaper_fps_policy_entries =
+        fps_policy_entries_from(
+            &wallpaper_policies
         );
 
 
     let wallpaper_fps_policy =
-        FpsSelectionPolicy {
+        FpsPolicy {
             global_rendered_fps,
-            fps_overrides:
-                wallpaper_fps_overrides,
+            fps_policy_entries:
+                wallpaper_fps_policy_entries,
         };
 
 
@@ -676,8 +676,8 @@ pub fn load_config(
         AnimationSpeedPolicy {
             global_speed:
                 screensaver_global_speed,
-            shader_overrides:
-                screensaver_overrides.clone(),
+            shader_policies:
+                screensaver_policies.clone(),
         };
 
 
@@ -685,8 +685,8 @@ pub fn load_config(
         AnimationSpeedPolicy {
             global_speed:
                 wallpaper_global_speed,
-            shader_overrides:
-                wallpaper_overrides.clone(),
+            shader_policies:
+                wallpaper_policies.clone(),
         };
 
 
@@ -740,9 +740,9 @@ pub fn load_config(
 
             wallpaper_global_speed,
 
-            screensaver_overrides,
+            screensaver_policies,
 
-            wallpaper_overrides,
+            wallpaper_policies,
 
             screensaver_speed_policy,
 
@@ -750,7 +750,7 @@ pub fn load_config(
 
             global_rendered_fps,
 
-            screensaver_fps_overrides,
+            screensaver_fps_policy_entries,
 
             wallpaper_fps_policy,
 
@@ -902,13 +902,13 @@ pub fn load_config(
             ),
 
             format!(
-                "[CONFIG] screensaver override count = {}",
-                config.screensaver_overrides.len(),
+                "[CONFIG] screensaver policy count = {}",
+                config.screensaver_policies.len(),
             ),
 
             format!(
-                "[CONFIG] wallpaper override count = {}",
-                config.wallpaper_overrides.len(),
+                "[CONFIG] wallpaper policy count = {}",
+                config.wallpaper_policies.len(),
             ),
 
             format!(
@@ -980,19 +980,19 @@ pub fn load_config(
 
     diagnostics.push(
         format!(
-            "[CONFIG] screensaver_overrides count = {}",
-            config.screensaver_overrides.len(),
+            "[CONFIG] screensaver_policies count = {}",
+            config.screensaver_policies.len(),
         )
     );
 
 
-    for shader_override in
-        &config.screensaver_overrides
+    for shader_policy in
+        &config.screensaver_policies
     {
         diagnostics.push(
-            format_shader_override_diagnostic(
-                "screensaver_overrides",
-                shader_override,
+            format_shader_policy_diagnostic(
+                "screensaver_policies",
+                shader_policy,
             )
         );
     }
@@ -1000,19 +1000,19 @@ pub fn load_config(
 
     diagnostics.push(
         format!(
-            "[CONFIG] wallpaper_overrides count = {}",
-            config.wallpaper_overrides.len(),
+            "[CONFIG] wallpaper_policies count = {}",
+            config.wallpaper_policies.len(),
         )
     );
 
 
-    for shader_override in
-        &config.wallpaper_overrides
+    for shader_policy in
+        &config.wallpaper_policies
     {
         diagnostics.push(
-            format_shader_override_diagnostic(
-                "wallpaper_overrides",
-                shader_override,
+            format_shader_policy_diagnostic(
+                "wallpaper_policies",
+                shader_policy,
             )
         );
     }
@@ -1030,25 +1030,25 @@ pub fn load_config(
 
 //
 // ------------------------------------------------------------
-// Per-mode shader override parsing
+// Per-mode shader policy parsing
 // ------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy)]
-enum OverrideTarget {
+enum PolicyTarget {
     Screensaver,
     Wallpaper,
 }
 
 
-impl OverrideTarget {
+impl PolicyTarget {
 
     fn table_name(
         self,
     ) -> &'static str {
 
         match self {
-            Self::Screensaver => "screensaver_overrides",
-            Self::Wallpaper => "wallpaper_overrides",
+            Self::Screensaver => "screensaver_policies",
+            Self::Wallpaper => "wallpaper_policies",
         }
     }
 
@@ -1071,19 +1071,19 @@ impl OverrideTarget {
 }
 
 
-fn parse_override_table(
-    raw_overrides: BTreeMap<String, String>,
-    target: OverrideTarget,
-) -> Result<Vec<ShaderOverride>, String> {
+fn parse_policy_table(
+    raw_policies: BTreeMap<String, String>,
+    target: PolicyTarget,
+) -> Result<Vec<ShaderPolicy>, String> {
 
-    let mut overrides =
+    let mut policies =
         Vec::with_capacity(
-            raw_overrides.len()
+            raw_policies.len()
         );
 
 
     for (shader, specification) in
-        raw_overrides
+        raw_policies
     {
         let shader =
             shader.trim().to_string();
@@ -1099,8 +1099,8 @@ fn parse_override_table(
         }
 
 
-        overrides.push(
-            parse_override_specification(
+        policies.push(
+            parse_policy_specification(
                 shader,
                 &specification,
                 target,
@@ -1109,15 +1109,15 @@ fn parse_override_table(
     }
 
 
-    Ok(overrides)
+    Ok(policies)
 }
 
 
-fn parse_override_specification(
+fn parse_policy_specification(
     shader: String,
     specification: &str,
-    target: OverrideTarget,
-) -> Result<ShaderOverride, String> {
+    target: PolicyTarget,
+) -> Result<ShaderPolicy, String> {
 
     let mut shader_texture = None;
     let mut shader_palette = None;
@@ -1133,7 +1133,7 @@ fn parse_override_specification(
                 .ok_or_else(
                     || {
                         format!(
-                            "Invalid override token '{}' for '{}' in [{}]; expected name:value",
+                            "Invalid policy token '{}' for '{}' in [{}]; expected name:value",
                             token,
                             shader,
                             target.table_name(),
@@ -1145,7 +1145,7 @@ fn parse_override_specification(
         if value.trim().is_empty() {
             return Err(
                 format!(
-                    "Override property '{}' for '{}' in [{}] requires a value",
+                    "Policy property '{}' for '{}' in [{}] requires a value",
                     name,
                     shader,
                     target.table_name(),
@@ -1157,7 +1157,7 @@ fn parse_override_specification(
         match name.trim().to_ascii_lowercase().as_str() {
             "texture" => {
                 if shader_texture.is_some() {
-                    return Err(duplicate_override_property(
+                    return Err(duplicate_policy_property(
                         &shader,
                         target,
                         "texture",
@@ -1176,7 +1176,7 @@ fn parse_override_specification(
 
             "palette" => {
                 if shader_palette.is_some() {
-                    return Err(duplicate_override_property(
+                    return Err(duplicate_policy_property(
                         &shader,
                         target,
                         "palette",
@@ -1195,7 +1195,7 @@ fn parse_override_specification(
 
             "fps" => {
                 if rendered_fps.is_some() {
-                    return Err(duplicate_override_property(
+                    return Err(duplicate_policy_property(
                         &shader,
                         target,
                         "fps",
@@ -1223,7 +1223,7 @@ fn parse_override_specification(
                 {
                     return Err(
                         format!(
-                            "FPS override {} for '{}' in [{}] is outside the supported range {}-{}",
+                            "FPS policy {} for '{}' in [{}] is outside the supported range {}-{}",
                             fps,
                             shader,
                             target.table_name(),
@@ -1238,7 +1238,7 @@ fn parse_override_specification(
 
             "speed" => {
                 if animation_speed.is_some() {
-                    return Err(duplicate_override_property(
+                    return Err(duplicate_policy_property(
                         &shader,
                         target,
                         "speed",
@@ -1266,7 +1266,7 @@ fn parse_override_specification(
                 {
                     return Err(
                         format!(
-                            "Speed override {} for '{}' in [{}] is outside the supported range {}-{}",
+                            "Speed policy {} for '{}' in [{}] is outside the supported range {}-{}",
                             value,
                             shader,
                             target.table_name(),
@@ -1282,7 +1282,7 @@ fn parse_override_specification(
             other => {
                 return Err(
                     format!(
-                        "Unknown override property '{}' for '{}' in [{}]; supported properties: texture, palette, fps, speed",
+                        "Unknown policy property '{}' for '{}' in [{}]; supported properties: texture, palette, fps, speed",
                         other,
                         shader,
                         target.table_name(),
@@ -1300,7 +1300,7 @@ fn parse_override_specification(
     {
         return Err(
             format!(
-                "Override for '{}' in [{}] does not define any properties",
+                "Policy for '{}' in [{}] does not define any properties",
                 shader,
                 target.table_name(),
             )
@@ -1309,7 +1309,7 @@ fn parse_override_specification(
 
 
     Ok(
-        ShaderOverride {
+        ShaderPolicy {
             shader,
             shader_texture,
             shader_palette,
@@ -1320,14 +1320,14 @@ fn parse_override_specification(
 }
 
 
-fn duplicate_override_property(
+fn duplicate_policy_property(
     shader: &str,
-    target: OverrideTarget,
+    target: PolicyTarget,
     property: &str,
 ) -> String {
 
     format!(
-        "Override property '{}' is specified more than once for '{}' in [{}]",
+        "Policy property '{}' is specified more than once for '{}' in [{}]",
         property,
         shader,
         target.table_name(),
@@ -1335,27 +1335,27 @@ fn duplicate_override_property(
 }
 
 
-fn texture_overrides_from(
-    shader_overrides: &[ShaderOverride],
-) -> Vec<TextureOverride> {
+fn texture_policy_entries_from(
+    shader_policies: &[ShaderPolicy],
+) -> Vec<TexturePolicyEntry> {
 
-    shader_overrides
+    shader_policies
         .iter()
         .filter(
-            |shader_override| {
-                shader_override.shader_texture.is_some()
-                    || shader_override.shader_palette.is_some()
+            |shader_policy| {
+                shader_policy.shader_texture.is_some()
+                    || shader_policy.shader_palette.is_some()
             }
         )
         .map(
-            |shader_override| {
-                TextureOverride {
+            |shader_policy| {
+                TexturePolicyEntry {
                     shader:
-                        shader_override.shader.clone(),
+                        shader_policy.shader.clone(),
                     shader_texture:
-                        shader_override.shader_texture.clone(),
+                        shader_policy.shader_texture.clone(),
                     shader_palette:
-                        shader_override.shader_palette,
+                        shader_policy.shader_palette,
                 }
             }
         )
@@ -1363,20 +1363,20 @@ fn texture_overrides_from(
 }
 
 
-fn fps_overrides_from(
-    shader_overrides: &[ShaderOverride],
-) -> Vec<FpsOverride> {
+fn fps_policy_entries_from(
+    shader_policies: &[ShaderPolicy],
+) -> Vec<FpsPolicyEntry> {
 
-    shader_overrides
+    shader_policies
         .iter()
         .filter_map(
-            |shader_override| {
-                shader_override.rendered_fps
+            |shader_policy| {
+                shader_policy.rendered_fps
                     .map(
                         |rendered_fps| {
-                            FpsOverride {
+                            FpsPolicyEntry {
                                 shader:
-                                    shader_override.shader.clone(),
+                                    shader_policy.shader.clone(),
                                 rendered_fps,
                             }
                         }
@@ -1387,32 +1387,32 @@ fn fps_overrides_from(
 }
 
 
-fn format_shader_override_diagnostic(
+fn format_shader_policy_diagnostic(
     table_name: &str,
-    shader_override: &ShaderOverride,
+    shader_policy: &ShaderPolicy,
 ) -> String {
 
-    let texture = shader_override.shader_texture
+    let texture = shader_policy.shader_texture
         .as_ref()
         .map(format_texture_specification)
         .unwrap_or_else(|| "<global>".to_string());
 
-    let palette = shader_override.shader_palette
+    let palette = shader_policy.shader_palette
         .map(|palette| palette.to_string())
         .unwrap_or_else(|| "<global>".to_string());
 
-    let fps = shader_override.rendered_fps
+    let fps = shader_policy.rendered_fps
         .map(|fps| fps.to_string())
         .unwrap_or_else(|| "<global>".to_string());
 
-    let speed = shader_override.animation_speed
+    let speed = shader_policy.animation_speed
         .map(|speed| speed.to_string())
         .unwrap_or_else(|| "<global>".to_string());
 
     format!(
         "[CONFIG] {} shader={} texture={} palette={} fps={} speed={}",
         table_name,
-        shader_override.shader,
+        shader_policy.shader,
         texture,
         palette,
         fps,
@@ -1556,7 +1556,7 @@ fn validate_rendered_fps(
 
 //
 // ------------------------------------------------------------
-// Per-shader FPS override parsing
+// Per-shader FPS policy parsing
 // ------------------------------------------------------------
 //
 
@@ -1725,7 +1725,7 @@ fn parse_shader_texture(
     {
         return Err(
             format!(
-                "[{}] override for '{}' requires a specific texture; 'random' is not permitted",
+                "[{}] policy for '{}' requires a specific texture; 'random' is not permitted",
                 table_name,
                 shader,
             )
@@ -1777,7 +1777,7 @@ fn parse_shader_palette(
     {
         return Err(
             format!(
-                "[{}] override for '{}' requires a specific palette; 'random' is not permitted",
+                "[{}] policy for '{}' requires a specific palette; 'random' is not permitted",
                 table_name,
                 shader,
             )

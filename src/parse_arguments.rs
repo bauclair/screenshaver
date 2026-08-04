@@ -3,9 +3,9 @@ use crate::parse_texture_specification::{
     TextureSpecification,
 };
 
-use crate::manage_overrides::{
-    OverrideProperties,
-    OverrideTarget,
+use crate::manage_policies::{
+    PolicyDefinition,
+    PolicyTarget,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -45,19 +45,19 @@ pub enum Command {
 
     DeleteCache,
 
-    AddOverride {
-        target: OverrideTarget,
+    AddPolicy {
+        target: PolicyTarget,
         shader: String,
-        properties: OverrideProperties,
+        properties: PolicyDefinition,
     },
 
-    DeleteOverride {
-        target: OverrideTarget,
+    DeletePolicy {
+        target: PolicyTarget,
         shader: String,
     },
 
-    ListOverrides {
-        target: Option<OverrideTarget>,
+    ListPolicies {
+        target: Option<PolicyTarget>,
     },
 }
 
@@ -237,25 +237,25 @@ pub fn parse() -> Result<Command, String> {
         }
 
 
-        "--add-override" => {
+        "--add-policy" => {
 
-            parse_add_override(
+            parse_add_policy(
                 &args[1..]
             )
         }
 
 
-        "--delete-override" => {
+        "--delete-policy" => {
 
-            parse_delete_override(
+            parse_delete_policy(
                 &args[1..]
             )
         }
 
 
-        "--list-overrides" => {
+        "--list-policies" => {
 
-            parse_list_overrides(
+            parse_list_policies(
                 &args[1..]
             )
         }
@@ -322,36 +322,36 @@ pub fn parse() -> Result<Command, String> {
 }
 
 
-fn parse_add_override(
+fn parse_add_policy(
     args: &[String],
 ) -> Result<Command, String> {
 
     if args.len() < 3 {
         return Err(
-            "--add-override requires TARGET, SHADER, and at least one property"
+            "--add-policy requires TARGET, SHADER, and at least one property"
                 .to_string()
         );
     }
 
     let target =
-        OverrideTarget::parse(
+        PolicyTarget::parse(
             &args[0]
         )?;
 
     let shader =
-        parse_override_shader(
+        parse_policy_shader(
             &args[1],
-            "--add-override",
+            "--add-policy",
         )?;
 
     let properties =
-        parse_override_properties(
+        parse_policy_definition(
             &args[2..],
             target,
         )?;
 
     Ok(
-        Command::AddOverride {
+        Command::AddPolicy {
             target,
             shader,
             properties,
@@ -360,30 +360,30 @@ fn parse_add_override(
 }
 
 
-fn parse_delete_override(
+fn parse_delete_policy(
     args: &[String],
 ) -> Result<Command, String> {
 
     if args.len() != 2 {
         return Err(
-            "--delete-override requires exactly TARGET and SHADER"
+            "--delete-policy requires exactly TARGET and SHADER"
                 .to_string()
         );
     }
 
     let target =
-        OverrideTarget::parse(
+        PolicyTarget::parse(
             &args[0]
         )?;
 
     let shader =
-        parse_override_shader(
+        parse_policy_shader(
             &args[1],
-            "--delete-override",
+            "--delete-policy",
         )?;
 
     Ok(
-        Command::DeleteOverride {
+        Command::DeletePolicy {
             target,
             shader,
         }
@@ -391,13 +391,13 @@ fn parse_delete_override(
 }
 
 
-fn parse_list_overrides(
+fn parse_list_policies(
     args: &[String],
 ) -> Result<Command, String> {
 
     if args.len() > 1 {
         return Err(
-            "--list-overrides accepts at most one TARGET"
+            "--list-policies accepts at most one TARGET"
                 .to_string()
         );
     }
@@ -405,19 +405,19 @@ fn parse_list_overrides(
     let target =
         args.first()
             .map(
-                |value| OverrideTarget::parse(value)
+                |value| PolicyTarget::parse(value)
             )
             .transpose()?;
 
     Ok(
-        Command::ListOverrides {
+        Command::ListPolicies {
             target,
         }
     )
 }
 
 
-fn parse_override_shader(
+fn parse_policy_shader(
     value: &str,
     option: &str,
 ) -> Result<String, String> {
@@ -442,17 +442,17 @@ fn parse_override_shader(
 }
 
 
-fn parse_override_properties(
+fn parse_policy_definition(
     args: &[String],
-    target: OverrideTarget,
-) -> Result<OverrideProperties, String> {
+    target: PolicyTarget,
+) -> Result<PolicyDefinition, String> {
 
     let mut properties =
-        OverrideProperties::default();
+        PolicyDefinition::default();
 
     for token in args {
         let (name, value) =
-            split_override_property(
+            split_policy_property(
                 token
             )?;
 
@@ -463,7 +463,7 @@ fn parse_override_properties(
             "texture" => {
                 if properties.texture.is_some() {
                     return Err(
-                        "Override property 'texture' may only be specified once"
+                        "Policy property 'texture' may only be specified once"
                             .to_string()
                     );
                 }
@@ -486,7 +486,7 @@ fn parse_override_properties(
             "palette" => {
                 if properties.palette.is_some() {
                     return Err(
-                        "Override property 'palette' may only be specified once"
+                        "Policy property 'palette' may only be specified once"
                             .to_string()
                     );
                 }
@@ -504,7 +504,7 @@ fn parse_override_properties(
             "fps" => {
                 if properties.fps.is_some() {
                     return Err(
-                        "Override property 'fps' may only be specified once"
+                        "Policy property 'fps' may only be specified once"
                             .to_string()
                     );
                 }
@@ -514,7 +514,7 @@ fn parse_override_properties(
                         .map_err(
                             |_| {
                                 format!(
-                                    "Invalid override FPS '{}'; specify an integer from {} through {}",
+                                    "Invalid policy FPS '{}'; specify an integer from {} through {}",
                                     value,
                                     crate::define_constants::MIN_RENDER_FPS,
                                     crate::define_constants::MAX_RENDER_FPS,
@@ -528,7 +528,7 @@ fn parse_override_properties(
                 {
                     return Err(
                         format!(
-                            "Override FPS {} is outside the supported range {}-{}",
+                            "Policy FPS {} is outside the supported range {}-{}",
                             fps,
                             crate::define_constants::MIN_RENDER_FPS,
                             crate::define_constants::MAX_RENDER_FPS,
@@ -543,7 +543,7 @@ fn parse_override_properties(
             "speed" => {
                 if properties.speed.is_some() {
                     return Err(
-                        "Override property 'speed' may only be specified once"
+                        "Policy property 'speed' may only be specified once"
                             .to_string()
                     );
                 }
@@ -553,7 +553,7 @@ fn parse_override_properties(
                         .map_err(
                             |_| {
                                 format!(
-                                    "Invalid override speed '{}'; specify a numeric multiplier",
+                                    "Invalid policy speed '{}'; specify a numeric multiplier",
                                     value,
                                 )
                             }
@@ -561,12 +561,12 @@ fn parse_override_properties(
 
                 let (minimum, maximum) =
                     match target {
-                        OverrideTarget::Screensaver => (
+                        PolicyTarget::Screensaver => (
                             crate::define_constants::SCREENSAVER_SPEED_MIN,
                             crate::define_constants::SCREENSAVER_SPEED_MAX,
                         ),
 
-                        OverrideTarget::Wallpaper => (
+                        PolicyTarget::Wallpaper => (
                             crate::define_constants::WALLPAPER_SPEED_MIN,
                             crate::define_constants::WALLPAPER_SPEED_MAX,
                         ),
@@ -578,7 +578,7 @@ fn parse_override_properties(
                 {
                     return Err(
                         format!(
-                            "Override speed {} for {} is outside the supported range {}-{}",
+                            "Policy speed {} for {} is outside the supported range {}-{}",
                             value,
                             target.name(),
                             minimum,
@@ -594,7 +594,7 @@ fn parse_override_properties(
             other => {
                 return Err(
                     format!(
-                        "Unknown override property '{}'; supported properties: texture, palette, fps, speed",
+                        "Unknown policy property '{}'; supported properties: texture, palette, fps, speed",
                         other,
                     )
                 );
@@ -604,7 +604,7 @@ fn parse_override_properties(
 
     if properties.is_empty() {
         return Err(
-            "An override must define at least one property"
+            "An policy must define at least one property"
                 .to_string()
         );
     }
@@ -613,7 +613,7 @@ fn parse_override_properties(
 }
 
 
-fn split_override_property(
+fn split_policy_property(
     token: &str,
 ) -> Result<(&str, &str), String> {
 
@@ -625,7 +625,7 @@ fn split_override_property(
             .ok_or_else(
                 || {
                     format!(
-                        "Invalid override property '{}'; use NAME:VALUE or NAME=VALUE",
+                        "Invalid policy property '{}'; use NAME:VALUE or NAME=VALUE",
                         token,
                     )
                 }
@@ -642,7 +642,7 @@ fn split_override_property(
     {
         return Err(
             format!(
-                "Invalid override property '{}'; both name and value are required",
+                "Invalid policy property '{}'; both name and value are required",
                 token,
             )
         );
@@ -1348,7 +1348,7 @@ pub fn print_help() {
                  Folder previews use a 30-second interval unless overridden.\n\
                  --speed accepts an animation multiplier from 0.01 through 10.0.\n\
                  The default animation speed is 1.0.\n\
-                 Command-line texture values override TOML selection values.\n\
+                 Command-line texture values take precedence over TOML selection values.\n\
                  --texture and --palette are accepted as shorter aliases.\n\
          \n\
              --list-textures\n\
@@ -1357,14 +1357,14 @@ pub fn print_help() {
              --list-palettes\n\
                  Display available procedural texture palettes.\n\
          \n\
-             --add-override TARGET SHADER PROPERTY [PROPERTY ...]\n\
-                 Add a complete screensaver or wallpaper shader override.\n\
+             --add-policy TARGET SHADER PROPERTY [PROPERTY ...]\n\
+                 Add a complete screensaver or wallpaper shader policy.\n\
                  Properties: texture, palette, fps, speed.\n\
                  PROPERTY may use NAME:VALUE or NAME=VALUE syntax.\n\
-         \n             --delete-override TARGET SHADER\n\
-                 Delete an existing screensaver or wallpaper shader override.\n\
-         \n             --list-overrides [TARGET]\n\
-                 List both override tables, or only the selected target.\n\
+         \n             --delete-policy TARGET SHADER\n\
+                 Delete an existing screensaver or wallpaper shader policy.\n\
+         \n             --list-policies [TARGET]\n\
+                 List both policy tables, or only the selected target.\n\
          \n             --delete-cache\n\
                  Delete all Screenshaver cached/preprocessed shaders.\n\
          \n\
@@ -1395,9 +1395,9 @@ pub fn print_help() {
              screenshaver --preview-shader \"Heartfelt.glsl\"\n\
              screenshaver --preview-shader \"Heartfelt.glsl\" --texture clouds\n\
              screenshaver --preview-shader \"Heartfelt.glsl\" --palette mist\n\
-             screenshaver --add-override screensaver CandyWarp.fs texture:bricks palette:mist fps:24 speed:0.5\n\
-             screenshaver --delete-override wallpaper CandyWarp.fs\n\
-             screenshaver --list-overrides screensaver\n\
+             screenshaver --add-policy screensaver CandyWarp.fs texture:bricks palette:mist fps:24 speed:0.5\n\
+             screenshaver --delete-policy wallpaper CandyWarp.fs\n\
+             screenshaver --list-policies screensaver\n\
          \n\
          Configuration:\n\
              ~/.config/screenshaver/\n\

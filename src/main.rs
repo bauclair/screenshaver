@@ -19,7 +19,7 @@ mod session_backend;
 
 mod manage_shader;
 mod manage_textures;
-mod manage_overrides;
+mod manage_policies;
 mod classify_shader;
 mod isf_types;
 mod parse_isf;
@@ -82,14 +82,14 @@ use std::io::{self, Write};
 
 
 
-fn confirm_override_replacement(
+fn confirm_policy_replacement(
     shader: &str,
-    target: crate::manage_overrides::OverrideTarget,
+    target: crate::manage_policies::PolicyTarget,
 ) -> Result<bool, String> {
 
     loop {
         print!(
-            "Shader '{}' already has an override in [{}] -- delete it? [Y/n] ",
+            "Shader '{}' already has an policy in [{}] -- delete it? [Y/n] ",
             shader,
             target.table_name(),
         );
@@ -240,7 +240,7 @@ match command {
     }
 
 
-    crate::parse_arguments::Command::AddOverride {
+    crate::parse_arguments::Command::AddPolicy {
         target,
         shader,
         properties,
@@ -250,7 +250,7 @@ match command {
             crate::locate_paths::config_path();
 
         let exists =
-            match crate::manage_overrides::override_exists(
+            match crate::manage_policies::policy_exists(
                 &cfg_path,
                 target,
                 &shader,
@@ -269,7 +269,7 @@ match command {
 
         if exists {
             let replace =
-                match confirm_override_replacement(
+                match confirm_policy_replacement(
                     &shader,
                     target,
                 ) {
@@ -287,13 +287,13 @@ match command {
 
             if !replace {
                 println!(
-                    "Override addition cancelled."
+                    "Policy addition cancelled."
                 );
 
                 return;
             }
 
-            match crate::manage_overrides::replace_override(
+            match crate::manage_policies::replace_policy(
                 &cfg_path,
                 target,
                 &shader,
@@ -301,7 +301,7 @@ match command {
             ) {
                 Ok(()) => {
                     println!(
-                        "Replaced {} override for {}.",
+                        "Replaced {} policy for {}.",
                         target.name(),
                         shader,
                     );
@@ -315,7 +315,7 @@ match command {
                 }
             }
         } else {
-            match crate::manage_overrides::add_override(
+            match crate::manage_policies::add_policy(
                 &cfg_path,
                 target,
                 &shader,
@@ -323,7 +323,7 @@ match command {
             ) {
                 Ok(()) => {
                     println!(
-                        "Added {} override for {}.",
+                        "Added {} policy for {}.",
                         target.name(),
                         shader,
                     );
@@ -342,7 +342,7 @@ match command {
     }
 
 
-    crate::parse_arguments::Command::DeleteOverride {
+    crate::parse_arguments::Command::DeletePolicy {
         target,
         shader,
     } => {
@@ -350,14 +350,14 @@ match command {
         let cfg_path =
             crate::locate_paths::config_path();
 
-        match crate::manage_overrides::delete_override(
+        match crate::manage_policies::delete_policy(
             &cfg_path,
             target,
             &shader,
         ) {
             Ok(()) => {
                 println!(
-                    "Deleted {} override for {}.",
+                    "Deleted {} policy for {}.",
                     target.name(),
                     shader,
                 );
@@ -375,7 +375,7 @@ match command {
     }
 
 
-    crate::parse_arguments::Command::ListOverrides {
+    crate::parse_arguments::Command::ListPolicies {
         target,
     } => {
 
@@ -383,7 +383,7 @@ match command {
             crate::locate_paths::config_path();
 
         if let Err(error) =
-            crate::manage_overrides::list_overrides(
+            crate::manage_policies::list_policies(
                 &cfg_path,
                 target,
             )
@@ -1374,7 +1374,7 @@ crate::parse_arguments::Command::ListPalettes => {
                         parsed_interval.seconds,
                         cfg.screensaver_speed_policy.clone(),
                         cfg.global_rendered_fps,
-                        cfg.screensaver_fps_overrides.clone(),
+                        cfg.screensaver_fps_policy_entries.clone(),
                         cfg.texture_policy.clone(),
                         cfg.subtitles,
                         cfg.subtitle_placement,
