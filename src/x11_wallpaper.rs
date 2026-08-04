@@ -625,6 +625,7 @@ impl WallpaperBackend for X11WallpaperBackend {
                     runtime.animation_speed_policy.clone(),
                     runtime.fps_policy.clone(),
                     runtime.texture_policy.clone(),
+                    runtime.postprocess_policy.clone(),
                     false,
                     parsed_subtitle_placement.placement,
                     wallpaper_window.width as u32,

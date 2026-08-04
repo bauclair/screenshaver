@@ -128,6 +128,8 @@ pub(crate) struct FrameRenderEngine {
         Option<crate::display_overlay::OpenGlOverlay>,
     overlay_output_size: (u32, u32),
     fps_policy: RenderFpsPolicy,
+    postprocess_policy:
+        crate::load_config::PostprocessPolicy,
     output_policy: FrameOutputPolicy,
     configured_fps: u32,
     fps_warning_state: FpsWarningState,
@@ -154,6 +156,8 @@ impl FrameRenderEngine {
             >,
         texture_policy:
             crate::load_config::TexturePolicy,
+        postprocess_policy:
+            crate::load_config::PostprocessPolicy,
         subtitles: bool,
         subtitle_placement:
             crate::parse_subtitle_placement::SubtitlePlacement,
@@ -171,6 +175,7 @@ impl FrameRenderEngine {
             },
             FrameOutputPolicy::PreserveAlpha,
             texture_policy,
+            postprocess_policy,
             subtitles,
             true,
             subtitle_placement,
@@ -190,6 +195,8 @@ impl FrameRenderEngine {
             crate::load_config::FpsPolicy,
         texture_policy:
             crate::load_config::TexturePolicy,
+        postprocess_policy:
+            crate::load_config::PostprocessPolicy,
         subtitles: bool,
         subtitle_placement:
             crate::parse_subtitle_placement::SubtitlePlacement,
@@ -206,6 +213,7 @@ impl FrameRenderEngine {
             ),
             FrameOutputPolicy::ForceOpaque,
             texture_policy,
+            postprocess_policy,
             subtitles,
             false,
             subtitle_placement,
@@ -225,6 +233,8 @@ impl FrameRenderEngine {
         output_policy: FrameOutputPolicy,
         texture_policy:
             crate::load_config::TexturePolicy,
+        postprocess_policy:
+            crate::load_config::PostprocessPolicy,
         subtitles: bool,
         render_fps_warning_overlay: bool,
         subtitle_placement:
@@ -300,11 +310,20 @@ impl FrameRenderEngine {
                 None
             };
 
-        let postprocess =
+        let mut postprocess =
             crate::postprocess_shader::PostprocessPipeline::new(
                 output_width,
                 output_height,
             )?;
+
+        let postprocess_profile =
+            postprocess_policy.profile_for_shader(
+                &active_shader.shader_name
+            );
+
+        postprocess.set_profile(
+            postprocess_profile
+        );
 
         let mut vao =
             0_u32;
@@ -345,6 +364,7 @@ impl FrameRenderEngine {
                         output_height,
                     ),
                 fps_policy,
+                postprocess_policy,
                 output_policy,
                 configured_fps,
                 fps_warning_state:
@@ -796,6 +816,12 @@ impl FrameRenderEngine {
                             &new_shader.shader_name
                         );
 
+                let new_postprocess_profile =
+                    self.postprocess_policy
+                        .profile_for_shader(
+                            &new_shader.shader_name
+                        );
+
                 let new_overlay =
                     if self.subtitles {
 
@@ -836,6 +862,10 @@ impl FrameRenderEngine {
 
                 let old_program =
                     self.active_shader.program;
+
+                self.postprocess.set_profile(
+                    new_postprocess_profile
+                );
 
                 self.active_shader =
                     new_shader;
@@ -930,6 +960,8 @@ impl FrameRenderer {
             >,
         texture_policy:
             crate::load_config::TexturePolicy,
+        postprocess_policy:
+            crate::load_config::PostprocessPolicy,
         subtitles: bool,
         subtitle_placement:
             crate::parse_subtitle_placement::SubtitlePlacement,
@@ -1024,6 +1056,7 @@ impl FrameRenderer {
                 global_rendered_fps,
                 fps_policy_entries,
                 texture_policy,
+                postprocess_policy,
                 subtitles,
                 subtitle_placement,
                 window_width,

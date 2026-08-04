@@ -229,21 +229,29 @@ impl PostprocessPipeline {
         }
     }
 
-    pub(crate) fn set_method(
+
+
+    pub(crate) fn set_profile(
         &mut self,
-        method: PostprocessMethod,
+        profile:
+            crate::load_config::PostprocessProfile,
     ) {
+
         self.method =
-            method;
+            match profile.anti_aliasing {
+                crate::render_fxaa::AntiAliasingMethod::Off => {
+                    PostprocessMethod::Passthrough
+                }
+
+                crate::render_fxaa::AntiAliasingMethod::Fxaa => {
+                    PostprocessMethod::Fxaa
+                }
+            };
+
+        self.dithering_level =
+            profile.dithering;
     }
 
-    pub(crate) fn set_dithering_level(
-        &mut self,
-        level: DitheringLevel,
-    ) {
-        self.dithering_level =
-            level;
-    }
 
     #[allow(dead_code)]
     pub(crate) fn method(

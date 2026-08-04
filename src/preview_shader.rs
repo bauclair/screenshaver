@@ -263,6 +263,9 @@ pub fn run_paths(
     let texture_policy =
         config.texture_policy;
 
+    let postprocess_policy =
+        config.screensaver_postprocess_policy;
+
 
     let preview_selection =
         parse_preview_selection(
@@ -430,6 +433,13 @@ pub fn run_paths(
         )?;
 
 
+    postprocess.set_profile(
+        postprocess_policy.profile_for_shader(
+            &active.shader_name
+        )
+    );
+
+
     let mut configured_fps =
         resolve_preview_fps(
             global_rendered_fps,
@@ -587,6 +597,13 @@ pub fn run_paths(
 
                             active =
                                 replacement;
+
+
+                            postprocess.set_profile(
+                                postprocess_policy.profile_for_shader(
+                                    &active.shader_name
+                                )
+                            );
 
 
                             configured_fps =

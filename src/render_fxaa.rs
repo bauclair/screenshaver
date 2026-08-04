@@ -1,3 +1,33 @@
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+)]
+pub(crate) enum AntiAliasingMethod {
+    Off,
+    Fxaa,
+}
+
+impl AntiAliasingMethod {
+    pub(crate) fn name(
+        self,
+    ) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Fxaa => "fxaa",
+        }
+    }
+
+    pub(crate) fn is_enabled(
+        self,
+    ) -> bool {
+        self != Self::Off
+    }
+}
+
+
 const FXAA_VERTEX_SHADER: &str = r#"
 #version 330 core
 

@@ -115,6 +115,17 @@ struct WallpaperSection {
 
 
 
+#[derive(Debug, Deserialize, Default)]
+struct PostprocessSection {
+
+    #[serde(default)]
+    anti_aliasing: Option<String>,
+
+    #[serde(default)]
+    dithering: Option<String>,
+}
+
+
 #[derive(Debug, Deserialize)]
 struct PerformanceSection {
 
@@ -170,6 +181,9 @@ struct RawToml {
         BTreeMap<String, String>,
 
     #[serde(default)]
+    postprocess: PostprocessSection,
+
+    #[serde(default)]
     performance: PerformanceSection,
 
     locking: LockingSection,
@@ -208,6 +222,16 @@ pub struct ShaderPolicy {
 
     pub animation_speed:
         Option<f32>,
+
+    pub anti_aliasing:
+        Option<
+            crate::render_fxaa::AntiAliasingMethod
+        >,
+
+    pub dithering:
+        Option<
+            crate::render_dithering::DitheringLevel
+        >,
 }
 
 
@@ -380,6 +404,121 @@ pub struct TexturePolicy {
 }
 
 
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+)]
+pub(crate) struct PostprocessProfile {
+
+    pub anti_aliasing:
+        crate::render_fxaa::AntiAliasingMethod,
+
+    pub dithering:
+        crate::render_dithering::DitheringLevel,
+}
+
+
+impl Default for PostprocessProfile {
+
+    fn default() -> Self {
+
+        Self {
+
+            anti_aliasing:
+                crate::render_fxaa::AntiAliasingMethod::Fxaa,
+
+            dithering:
+                crate::render_dithering::DitheringLevel::Subtle,
+        }
+    }
+}
+
+
+#[derive(
+    Debug,
+    Clone,
+)]
+pub(crate) struct PostprocessPolicy {
+
+    pub global_profile:
+        PostprocessProfile,
+
+    pub shader_policies:
+        Vec<
+            ShaderPolicy
+        >,
+}
+
+
+impl Default for PostprocessPolicy {
+
+    fn default() -> Self {
+
+        Self {
+
+            global_profile:
+                PostprocessProfile::default(),
+
+            shader_policies:
+                Vec::new(),
+        }
+    }
+}
+
+
+impl PostprocessPolicy {
+
+    pub(crate) fn profile_for_shader(
+        &self,
+        shader_name: &str,
+    ) -> PostprocessProfile {
+
+        let shader_policy =
+            self.shader_policies
+                .iter()
+                .find(
+                    |shader_policy| {
+                        shader_policy
+                            .shader
+                            .eq_ignore_ascii_case(
+                                shader_name
+                            )
+                    }
+                );
+
+
+        PostprocessProfile {
+
+            anti_aliasing:
+                shader_policy
+                    .and_then(
+                        |shader_policy| {
+                            shader_policy.anti_aliasing
+                        }
+                    )
+                    .unwrap_or(
+                        self.global_profile.anti_aliasing
+                    ),
+
+            dithering:
+                shader_policy
+                    .and_then(
+                        |shader_policy| {
+                            shader_policy.dithering
+                        }
+                    )
+                    .unwrap_or(
+                        self.global_profile.dithering
+                    ),
+        }
+    }
+}
+
+
+
 #[derive(Debug)]
 pub struct Config {
 
@@ -438,6 +577,12 @@ pub struct Config {
 
     pub wallpaper_fps_policy:
         FpsPolicy,
+
+    pub(crate) screensaver_postprocess_policy:
+        PostprocessPolicy,
+
+    pub(crate) wallpaper_postprocess_policy:
+        PostprocessPolicy,
 
     pub screen_lock: bool,
 
@@ -503,6 +648,49 @@ pub fn load_config(
                     err,
                 )
             })?;
+
+
+    //---------------------------------------------------------
+    // Parse global post-processing policy
+    //---------------------------------------------------------
+
+    let built_in_postprocess_profile =
+        PostprocessProfile::default();
+
+
+    let (
+        global_anti_aliasing,
+        anti_aliasing_warning,
+    ) =
+        parse_global_anti_aliasing(
+            raw.postprocess
+                .anti_aliasing
+                .as_deref(),
+            built_in_postprocess_profile
+                .anti_aliasing,
+        );
+
+
+    let (
+        global_dithering,
+        dithering_warning,
+    ) =
+        parse_global_dithering(
+            raw.postprocess
+                .dithering
+                .as_deref(),
+            built_in_postprocess_profile
+                .dithering,
+        );
+
+
+    let global_postprocess_profile =
+        PostprocessProfile {
+            anti_aliasing:
+                global_anti_aliasing,
+            dithering:
+                global_dithering,
+        };
 
 
     //---------------------------------------------------------
@@ -690,6 +878,24 @@ pub fn load_config(
         };
 
 
+    let screensaver_postprocess_policy =
+        PostprocessPolicy {
+            global_profile:
+                global_postprocess_profile,
+            shader_policies:
+                screensaver_policies.clone(),
+        };
+
+
+    let wallpaper_postprocess_policy =
+        PostprocessPolicy {
+            global_profile:
+                global_postprocess_profile,
+            shader_policies:
+                wallpaper_policies.clone(),
+        };
+
+
     let (
         log_level,
         log_level_warning,
@@ -753,6 +959,10 @@ pub fn load_config(
             screensaver_fps_policy_entries,
 
             wallpaper_fps_policy,
+
+            screensaver_postprocess_policy,
+
+            wallpaper_postprocess_policy,
 
             screen_lock:
                 raw.locking.screen_lock,
@@ -917,6 +1127,24 @@ pub fn load_config(
             ),
 
             format!(
+                "[CONFIG] postprocess.anti_aliasing = {}",
+                config
+                    .screensaver_postprocess_policy
+                    .global_profile
+                    .anti_aliasing
+                    .name(),
+            ),
+
+            format!(
+                "[CONFIG] postprocess.dithering = {}",
+                config
+                    .screensaver_postprocess_policy
+                    .global_profile
+                    .dithering
+                    .name(),
+            ),
+
+            format!(
                 "[CONFIG] screen_lock = {}",
                 config.screen_lock,
             ),
@@ -962,6 +1190,24 @@ pub fn load_config(
 
     if let Some(warning) =
         global_rendered_fps_warning
+    {
+        diagnostics.push(
+            warning
+        );
+    }
+
+
+    if let Some(warning) =
+        anti_aliasing_warning
+    {
+        diagnostics.push(
+            warning
+        );
+    }
+
+
+    if let Some(warning) =
+        dithering_warning
     {
         diagnostics.push(
             warning
@@ -1123,6 +1369,8 @@ fn parse_policy_specification(
     let mut shader_palette = None;
     let mut rendered_fps = None;
     let mut animation_speed = None;
+    let mut anti_aliasing = None;
+    let mut dithering = None;
 
 
     for token in
@@ -1279,10 +1527,48 @@ fn parse_policy_specification(
                 animation_speed = Some(speed);
             }
 
+            "anti_aliasing" => {
+                if anti_aliasing.is_some() {
+                    return Err(duplicate_policy_property(
+                        &shader,
+                        target,
+                        "anti_aliasing",
+                    ));
+                }
+
+                anti_aliasing =
+                    Some(
+                        parse_policy_anti_aliasing(
+                            &shader,
+                            value,
+                            target.table_name(),
+                        )?
+                    );
+            }
+
+            "dithering" => {
+                if dithering.is_some() {
+                    return Err(duplicate_policy_property(
+                        &shader,
+                        target,
+                        "dithering",
+                    ));
+                }
+
+                dithering =
+                    Some(
+                        parse_policy_dithering(
+                            &shader,
+                            value,
+                            target.table_name(),
+                        )?
+                    );
+            }
+
             other => {
                 return Err(
                     format!(
-                        "Unknown policy property '{}' for '{}' in [{}]; supported properties: texture, palette, fps, speed",
+                        "Unknown policy property '{}' for '{}' in [{}]; supported properties: texture, palette, fps, speed, anti_aliasing, dithering",
                         other,
                         shader,
                         target.table_name(),
@@ -1297,6 +1583,8 @@ fn parse_policy_specification(
         && shader_palette.is_none()
         && rendered_fps.is_none()
         && animation_speed.is_none()
+        && anti_aliasing.is_none()
+        && dithering.is_none()
     {
         return Err(
             format!(
@@ -1315,6 +1603,8 @@ fn parse_policy_specification(
             shader_palette,
             rendered_fps,
             animation_speed,
+            anti_aliasing,
+            dithering,
         }
     )
 }
@@ -1409,15 +1699,207 @@ fn format_shader_policy_diagnostic(
         .map(|speed| speed.to_string())
         .unwrap_or_else(|| "<global>".to_string());
 
+    let anti_aliasing = shader_policy.anti_aliasing
+        .map(|method| method.name())
+        .unwrap_or("<global>");
+
+    let dithering = shader_policy.dithering
+        .map(|level| level.name())
+        .unwrap_or("<global>");
+
     format!(
-        "[CONFIG] {} shader={} texture={} palette={} fps={} speed={}",
+        "[CONFIG] {} shader={} texture={} palette={} fps={} speed={} anti_aliasing={} dithering={}",
         table_name,
         shader_policy.shader,
         texture,
         palette,
         fps,
         speed,
+        anti_aliasing,
+        dithering,
     )
+}
+
+
+// ------------------------------------------------------------
+// Per-shader post-processing policy parsing
+// ------------------------------------------------------------
+//
+
+fn parse_policy_anti_aliasing(
+    shader: &str,
+    value: &str,
+    table_name: &str,
+) -> Result<
+    crate::render_fxaa::AntiAliasingMethod,
+    String,
+> {
+
+    match value
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "off" => {
+            Ok(
+                crate::render_fxaa::AntiAliasingMethod::Off
+            )
+        }
+
+        "fxaa" => {
+            Ok(
+                crate::render_fxaa::AntiAliasingMethod::Fxaa
+            )
+        }
+
+        _ => {
+            Err(
+                format!(
+                    "Invalid anti_aliasing value '{}' for '{}' in [{}]; supported values: off, fxaa",
+                    value,
+                    shader,
+                    table_name,
+                )
+            )
+        }
+    }
+}
+
+
+fn parse_policy_dithering(
+    shader: &str,
+    value: &str,
+    table_name: &str,
+) -> Result<
+    crate::render_dithering::DitheringLevel,
+    String,
+> {
+
+    match value
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "off" => {
+            Ok(
+                crate::render_dithering::DitheringLevel::Off
+            )
+        }
+
+        "subtle" => {
+            Ok(
+                crate::render_dithering::DitheringLevel::Subtle
+            )
+        }
+
+        _ => {
+            Err(
+                format!(
+                    "Invalid dithering value '{}' for '{}' in [{}]; supported values: off, subtle",
+                    value,
+                    shader,
+                    table_name,
+                )
+            )
+        }
+    }
+}
+
+
+// ------------------------------------------------------------
+// Global post-processing policy parsing
+// ------------------------------------------------------------
+//
+
+fn parse_global_anti_aliasing(
+    value: Option<&str>,
+    fallback: crate::render_fxaa::AntiAliasingMethod,
+) -> (
+    crate::render_fxaa::AntiAliasingMethod,
+    Option<String>,
+) {
+
+    let Some(value) = value
+    else {
+        return (
+            fallback,
+            None,
+        );
+    };
+
+
+    match value
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "off" => (
+            crate::render_fxaa::AntiAliasingMethod::Off,
+            None,
+        ),
+
+        "fxaa" => (
+            crate::render_fxaa::AntiAliasingMethod::Fxaa,
+            None,
+        ),
+
+        _ => (
+            fallback,
+            Some(
+                format!(
+                    "[CONFIG] WARNING: postprocess.anti_aliasing = '{}' is unsupported; using '{}'",
+                    value,
+                    fallback.name(),
+                )
+            ),
+        ),
+    }
+}
+
+
+fn parse_global_dithering(
+    value: Option<&str>,
+    fallback: crate::render_dithering::DitheringLevel,
+) -> (
+    crate::render_dithering::DitheringLevel,
+    Option<String>,
+) {
+
+    let Some(value) = value
+    else {
+        return (
+            fallback,
+            None,
+        );
+    };
+
+
+    match value
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "off" => (
+            crate::render_dithering::DitheringLevel::Off,
+            None,
+        ),
+
+        "subtle" => (
+            crate::render_dithering::DitheringLevel::Subtle,
+            None,
+        ),
+
+        _ => (
+            fallback,
+            Some(
+                format!(
+                    "[CONFIG] WARNING: postprocess.dithering = '{}' is unsupported; using '{}'",
+                    value,
+                    fallback.name(),
+                )
+            ),
+        ),
+    }
 }
 
 

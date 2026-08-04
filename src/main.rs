@@ -1157,6 +1157,8 @@ crate::parse_arguments::Command::ListPalettes => {
                 cfg.wallpaper_fps_policy,
             animation_speed_policy:
                 cfg.wallpaper_speed_policy,
+            postprocess_policy:
+                cfg.wallpaper_postprocess_policy,
             tray_status:
                 tray_status.clone(),
         };
@@ -1376,6 +1378,7 @@ crate::parse_arguments::Command::ListPalettes => {
                         cfg.global_rendered_fps,
                         cfg.screensaver_fps_policy_entries.clone(),
                         cfg.texture_policy.clone(),
+                        cfg.screensaver_postprocess_policy.clone(),
                         cfg.subtitles,
                         cfg.subtitle_placement,
                     ) {
