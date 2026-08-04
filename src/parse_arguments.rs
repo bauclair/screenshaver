@@ -591,10 +591,88 @@ fn parse_policy_definition(
                     Some(speed);
             }
 
+            "anti_aliasing" => {
+                if properties.anti_aliasing.is_some() {
+                    return Err(
+                        "Policy property 'anti_aliasing' may only be specified once"
+                            .to_string()
+                    );
+                }
+
+                let normalized =
+                    value.to_ascii_lowercase();
+
+                if !["off", "fxaa"].contains(
+                    &normalized.as_str()
+                ) {
+                    return Err(
+                        format!(
+                            "Invalid anti_aliasing value '{}'; supported values: off, fxaa",
+                            value,
+                        )
+                    );
+                }
+
+                properties.anti_aliasing =
+                    Some(normalized);
+            }
+
+            "dithering" => {
+                if properties.dithering.is_some() {
+                    return Err(
+                        "Policy property 'dithering' may only be specified once"
+                            .to_string()
+                    );
+                }
+
+                let normalized =
+                    value.to_ascii_lowercase();
+
+                if !["off", "subtle"].contains(
+                    &normalized.as_str()
+                ) {
+                    return Err(
+                        format!(
+                            "Invalid dithering value '{}'; supported values: off, subtle",
+                            value,
+                        )
+                    );
+                }
+
+                properties.dithering =
+                    Some(normalized);
+            }
+
+            "color_precision" => {
+                if properties.color_precision.is_some() {
+                    return Err(
+                        "Policy property 'color_precision' may only be specified once"
+                            .to_string()
+                    );
+                }
+
+                let normalized =
+                    value.to_ascii_lowercase();
+
+                if !["auto", "standard", "high"].contains(
+                    &normalized.as_str()
+                ) {
+                    return Err(
+                        format!(
+                            "Invalid color_precision value '{}'; supported values: auto, standard, high",
+                            value,
+                        )
+                    );
+                }
+
+                properties.color_precision =
+                    Some(normalized);
+            }
+
             other => {
                 return Err(
                     format!(
-                        "Unknown policy property '{}'; supported properties: texture, palette, fps, speed",
+                        "Unknown policy property '{}'; supported properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision",
                         other,
                     )
                 );
@@ -604,7 +682,7 @@ fn parse_policy_definition(
 
     if properties.is_empty() {
         return Err(
-            "An policy must define at least one property"
+            "A policy must define at least one property"
                 .to_string()
         );
     }
@@ -1359,7 +1437,7 @@ pub fn print_help() {
          \n\
              --add-policy TARGET SHADER PROPERTY [PROPERTY ...]\n\
                  Add a complete screensaver or wallpaper shader policy.\n\
-                 Properties: texture, palette, fps, speed.\n\
+                 Properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision.\n\
                  PROPERTY may use NAME:VALUE or NAME=VALUE syntax.\n\
          \n             --delete-policy TARGET SHADER\n\
                  Delete an existing screensaver or wallpaper shader policy.\n\
@@ -1395,7 +1473,7 @@ pub fn print_help() {
              screenshaver --preview-shader \"Heartfelt.glsl\"\n\
              screenshaver --preview-shader \"Heartfelt.glsl\" --texture clouds\n\
              screenshaver --preview-shader \"Heartfelt.glsl\" --palette mist\n\
-             screenshaver --add-policy screensaver CandyWarp.fs texture:bricks palette:mist fps:24 speed:0.5\n\
+             screenshaver --add-policy screensaver CandyWarp.fs texture:bricks palette:mist fps:24 speed:0.5 anti_aliasing:fxaa dithering:subtle color_precision:high\n\
              screenshaver --delete-policy wallpaper CandyWarp.fs\n\
              screenshaver --list-policies screensaver\n\
          \n\

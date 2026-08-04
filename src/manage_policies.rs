@@ -117,6 +117,15 @@ pub struct PolicyDefinition {
 
     pub speed:
         Option<f32>,
+
+    pub anti_aliasing:
+        Option<String>,
+
+    pub dithering:
+        Option<String>,
+
+    pub color_precision:
+        Option<String>,
 }
 
 
@@ -130,6 +139,9 @@ impl PolicyDefinition {
             && self.palette.is_none()
             && self.fps.is_none()
             && self.speed.is_none()
+            && self.anti_aliasing.is_none()
+            && self.dithering.is_none()
+            && self.color_precision.is_none()
     }
 }
 
@@ -571,7 +583,7 @@ fn validate_properties(
 
     if properties.is_empty() {
         return Err(
-            "An policy must define at least one property"
+            "A policy must define at least one property"
                 .to_string()
         );
     }
@@ -657,6 +669,36 @@ fn validate_properties(
     }
 
 
+    if let Some(value) =
+        properties.anti_aliasing.as_deref()
+    {
+        validate_named_policy_value(
+            "anti_aliasing",
+            value,
+            &["off", "fxaa"],
+        )?;
+    }
+
+    if let Some(value) =
+        properties.dithering.as_deref()
+    {
+        validate_named_policy_value(
+            "dithering",
+            value,
+            &["off", "subtle"],
+        )?;
+    }
+
+    if let Some(value) =
+        properties.color_precision.as_deref()
+    {
+        validate_named_policy_value(
+            "color_precision",
+            value,
+            &["auto", "standard", "high"],
+        )?;
+    }
+
     Ok(())
 }
 
@@ -699,13 +741,44 @@ fn validate_property_text(
 }
 
 
+fn validate_named_policy_value(
+    property_name: &str,
+    value: &str,
+    supported_values: &[&str],
+) -> Result<(), String> {
+    validate_property_text(
+        property_name,
+        value,
+    )?;
+
+    let normalized =
+        value.trim()
+            .to_ascii_lowercase();
+
+    if supported_values.contains(
+        &normalized.as_str()
+    ) {
+        return Ok(());
+    }
+
+    Err(
+        format!(
+            "Unsupported {} policy value '{}'; supported values: {}",
+            property_name,
+            value,
+            supported_values.join(", "),
+        )
+    )
+}
+
+
 fn format_policy(
     properties: &PolicyDefinition,
 ) -> String {
 
     let mut tokens =
         Vec::with_capacity(
-            4
+            7
         );
 
 
@@ -760,6 +833,39 @@ fn format_policy(
         );
     }
 
+
+    if let Some(value) =
+        properties.anti_aliasing.as_deref()
+    {
+        tokens.push(
+            format!(
+                "anti_aliasing:{}",
+                value.trim().to_ascii_lowercase(),
+            )
+        );
+    }
+
+    if let Some(value) =
+        properties.dithering.as_deref()
+    {
+        tokens.push(
+            format!(
+                "dithering:{}",
+                value.trim().to_ascii_lowercase(),
+            )
+        );
+    }
+
+    if let Some(value) =
+        properties.color_precision.as_deref()
+    {
+        tokens.push(
+            format!(
+                "color_precision:{}",
+                value.trim().to_ascii_lowercase(),
+            )
+        );
+    }
 
     tokens.join(
         " "
@@ -842,6 +948,15 @@ struct PolicyRow {
 
     speed:
         String,
+
+    anti_aliasing:
+        String,
+
+    dithering:
+        String,
+
+    color_precision:
+        String,
 }
 
 
@@ -861,6 +976,15 @@ struct PolicyTableLayout {
         usize,
 
     speed_width:
+        usize,
+
+    anti_aliasing_width:
+        usize,
+
+    dithering_width:
+        usize,
+
+    color_precision_width:
         usize,
 }
 
@@ -927,17 +1051,23 @@ fn print_policy_table(
         &rows
     {
         println!(
-            "{:<shader_width$}  {:<texture_width$}  {:<palette_width$}  {:>fps_width$}  {:>speed_width$}",
+            "{:<shader_width$}  {:<texture_width$}  {:<palette_width$}  {:>fps_width$}  {:>speed_width$}  {:<anti_aliasing_width$}  {:<dithering_width$}  {:<color_precision_width$}",
             row.shader,
             row.texture,
             row.palette,
             row.fps,
             row.speed,
+            row.anti_aliasing,
+            row.dithering,
+            row.color_precision,
             shader_width = layout.shader_width,
             texture_width = layout.texture_width,
             palette_width = layout.palette_width,
             fps_width = layout.fps_width,
             speed_width = layout.speed_width,
+            anti_aliasing_width = layout.anti_aliasing_width,
+            dithering_width = layout.dithering_width,
+            color_precision_width = layout.color_precision_width,
         );
     }
 
@@ -1055,6 +1185,30 @@ fn collect_policy_rows(
                             .to_string(),
 
                         speed,
+
+                        anti_aliasing:
+                            policy_property_value(
+                                specification,
+                                "anti_aliasing",
+                            )
+                            .unwrap_or("-")
+                            .to_string(),
+
+                        dithering:
+                            policy_property_value(
+                                specification,
+                                "dithering",
+                            )
+                            .unwrap_or("-")
+                            .to_string(),
+
+                        color_precision:
+                            policy_property_value(
+                                specification,
+                                "color_precision",
+                            )
+                            .unwrap_or("-")
+                            .to_string(),
                     }
                 )
             }
@@ -1132,6 +1286,45 @@ fn calculate_policy_table_layout(
                 .max(
                     "Speed".len()
                 ),
+
+        anti_aliasing_width:
+            rows.iter()
+                .map(
+                    |row| {
+                        row.anti_aliasing.len()
+                    }
+                )
+                .max()
+                .unwrap_or(0)
+                .max(
+                    "Anti-aliasing".len()
+                ),
+
+        dithering_width:
+            rows.iter()
+                .map(
+                    |row| {
+                        row.dithering.len()
+                    }
+                )
+                .max()
+                .unwrap_or(0)
+                .max(
+                    "Dithering".len()
+                ),
+
+        color_precision_width:
+            rows.iter()
+                .map(
+                    |row| {
+                        row.color_precision.len()
+                    }
+                )
+                .max()
+                .unwrap_or(0)
+                .max(
+                    "Color precision".len()
+                ),
     }
 }
 
@@ -1141,22 +1334,28 @@ fn print_policy_table_header(
 ) {
 
     println!(
-        "{:<shader_width$}  {:<texture_width$}  {:<palette_width$}  {:>fps_width$}  {:>speed_width$}",
+        "{:<shader_width$}  {:<texture_width$}  {:<palette_width$}  {:>fps_width$}  {:>speed_width$}  {:<anti_aliasing_width$}  {:<dithering_width$}  {:<color_precision_width$}",
         "Shader",
         "Texture",
         "Palette",
         "FPS",
         "Speed",
+        "Anti-aliasing",
+        "Dithering",
+        "Color precision",
         shader_width = layout.shader_width,
         texture_width = layout.texture_width,
         palette_width = layout.palette_width,
         fps_width = layout.fps_width,
         speed_width = layout.speed_width,
+        anti_aliasing_width = layout.anti_aliasing_width,
+        dithering_width = layout.dithering_width,
+        color_precision_width = layout.color_precision_width,
     );
 
 
     println!(
-        "{}  {}  {}  {}  {}",
+        "{}  {}  {}  {}  {}  {}  {}  {}",
         "-".repeat(
             layout.shader_width
         ),
@@ -1171,6 +1370,15 @@ fn print_policy_table_header(
         ),
         "-".repeat(
             layout.speed_width
+        ),
+        "-".repeat(
+            layout.anti_aliasing_width
+        ),
+        "-".repeat(
+            layout.dithering_width
+        ),
+        "-".repeat(
+            layout.color_precision_width
         ),
     );
 }
