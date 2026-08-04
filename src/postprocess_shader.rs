@@ -25,12 +25,14 @@ impl PostprocessMethod {
 struct RenderTarget {
     framebuffer: u32,
     texture: u32,
+    precision: crate::select_render_precision::RenderTargetPrecision,
 }
 
 impl RenderTarget {
     fn new(
         width: u32,
         height: u32,
+        precision: crate::select_render_precision::RenderTargetPrecision,
     ) -> Result<Self, String> {
         let (
             framebuffer,
@@ -39,12 +41,14 @@ impl RenderTarget {
             create_render_target(
                 width,
                 height,
+                precision,
             )?;
 
         Ok(
             Self {
                 framebuffer,
                 texture,
+                precision,
             }
         )
     }
@@ -101,6 +105,7 @@ pub(crate) struct PostprocessPipeline {
     scratch_target: RenderTarget,
     width: u32,
     height: u32,
+    precision: crate::select_render_precision::RenderTargetPrecision,
     passthrough: PassthroughRenderer,
     fxaa: FxaaRenderer,
     dithering: DitheringRenderer,
@@ -127,16 +132,21 @@ impl PostprocessPipeline {
         let dithering =
             DitheringRenderer::new()?;
 
+        let precision =
+            crate::select_render_precision::RenderTargetPrecision::High;
+
         let scene_target =
             RenderTarget::new(
                 width,
                 height,
+                precision,
             )?;
 
         let scratch_target =
             RenderTarget::new(
                 width,
                 height,
+                precision,
             )?;
 
         Ok(
@@ -145,6 +155,7 @@ impl PostprocessPipeline {
                 scratch_target,
                 width,
                 height,
+                precision,
                 passthrough,
                 fxaa,
                 dithering,
@@ -291,12 +302,14 @@ impl PostprocessPipeline {
             RenderTarget::new(
                 width,
                 height,
+                self.precision,
             )?;
 
         let replacement_scratch =
             RenderTarget::new(
                 width,
                 height,
+                self.precision,
             )?;
 
         self.scene_target =
@@ -313,6 +326,14 @@ impl PostprocessPipeline {
 
         Ok(())
     }
+
+    #[allow(dead_code)]
+    pub(crate) fn precision(
+        &self,
+    ) -> crate::select_render_precision::RenderTargetPrecision {
+        self.precision
+    }
+
 
     #[allow(dead_code)]
     pub(crate) fn dimensions(
@@ -370,6 +391,7 @@ fn bind_default_framebuffer(
 fn create_render_target(
     width: u32,
     height: u32,
+    precision: crate::select_render_precision::RenderTargetPrecision,
 ) -> Result<(u32, u32), String> {
     validate_dimensions(
         width,
@@ -439,12 +461,12 @@ fn create_render_target(
         gl::TexImage2D(
             gl::TEXTURE_2D,
             0,
-            gl::RGBA8 as i32,
+            precision.internal_format(),
             width as i32,
             height as i32,
             0,
-            gl::RGBA,
-            gl::UNSIGNED_BYTE,
+            precision.external_format(),
+            precision.pixel_type(),
             std::ptr::null(),
         );
 

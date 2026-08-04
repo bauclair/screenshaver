@@ -71,6 +71,7 @@ mod postprocess_shader;
 mod render_passthrough;
 mod render_fxaa;
 mod render_dithering;
+mod select_render_precision;
 
 use std::sync::Arc;
 use std::sync::atomic::{
