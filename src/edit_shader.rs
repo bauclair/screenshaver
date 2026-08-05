@@ -1,14 +1,16 @@
 //! Full-screen interactive shader-edit rendering session.
 //!
-//! This checkpoint renders one optional shader continuously. When no shader
-//! is supplied, the session displays a black full-screen window. Ordinary
-//! keyboard and mouse activity do not terminate edit mode.
+//! This checkpoint renders one optional shader continuously beneath an empty
+//! movable and resizable egui editor window. When no shader is supplied, the
+//! session displays a black full-screen background. Ordinary keyboard and mouse
+//! activity do not terminate edit mode.
 
 use std::collections::VecDeque;
 use std::path::{
     Path,
     PathBuf,
 };
+use std::sync::Arc;
 use std::time::{
     Duration,
     Instant,
@@ -16,6 +18,7 @@ use std::time::{
 
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
+use sdl2::mouse::MouseButton;
 use sdl2::video::{
     FullscreenType,
     GLProfile,
@@ -28,6 +31,378 @@ const FPS_AVERAGE_WINDOW: Duration =
 
 const FPS_CRITICAL_BLINK_INTERVAL: Duration =
     Duration::from_millis(500);
+
+
+/// Minimal egui integration for the first graphical-window checkpoint.
+///
+/// This owns only the egui context, OpenGL painter, pointer events, and the
+/// empty movable/resizable window. Shader controls are intentionally omitted.
+struct EditWindowOverlay {
+    context:
+        egui::Context,
+
+    painter:
+        egui_glow::Painter,
+
+    pending_events:
+        Vec<egui::Event>,
+
+    pointer_position:
+        egui::Pos2,
+
+    opened_at:
+        Instant,
+
+    window_open:
+        bool,
+}
+
+
+impl EditWindowOverlay {
+    fn new(
+        video: &sdl2::VideoSubsystem,
+    ) -> Result<Self, String> {
+
+        let glow_context =
+            unsafe {
+                glow::Context::from_loader_function(
+                    |symbol| {
+                        video.gl_get_proc_address(
+                            symbol
+                        ) as *const _
+                    }
+                )
+            };
+
+
+        let painter =
+            egui_glow::Painter::new(
+                Arc::new(
+                    glow_context
+                ),
+                "",
+                None,
+                false,
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to create egui OpenGL painter: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+        Ok(
+            Self {
+                context:
+                    egui::Context::default(),
+
+                painter,
+
+                pending_events:
+                    Vec::new(),
+
+                pointer_position:
+                    egui::Pos2::ZERO,
+
+                opened_at:
+                    Instant::now(),
+
+                window_open:
+                    true,
+            }
+        )
+    }
+
+
+    fn handle_event(
+        &mut self,
+        event: &Event,
+    ) {
+
+        match *event {
+            Event::MouseMotion {
+                x,
+                y,
+                ..
+            } => {
+                self.pointer_position =
+                    egui::pos2(
+                        x as f32,
+                        y as f32,
+                    );
+
+                self.pending_events.push(
+                    egui::Event::PointerMoved(
+                        self.pointer_position
+                    )
+                );
+            }
+
+            Event::MouseButtonDown {
+                mouse_btn,
+                x,
+                y,
+                ..
+            } => {
+                self.push_pointer_button(
+                    mouse_btn,
+                    x,
+                    y,
+                    true,
+                );
+            }
+
+            Event::MouseButtonUp {
+                mouse_btn,
+                x,
+                y,
+                ..
+            } => {
+                self.push_pointer_button(
+                    mouse_btn,
+                    x,
+                    y,
+                    false,
+                );
+            }
+
+            _ => {}
+        }
+    }
+
+
+    fn push_pointer_button(
+        &mut self,
+        mouse_button: MouseButton,
+        x: i32,
+        y: i32,
+        pressed: bool,
+    ) {
+
+        let Some(button) =
+            egui_pointer_button(
+                mouse_button
+            )
+        else {
+            return;
+        };
+
+
+        self.pointer_position =
+            egui::pos2(
+                x as f32,
+                y as f32,
+            );
+
+
+        self.pending_events.push(
+            egui::Event::PointerButton {
+                pos:
+                    self.pointer_position,
+
+                button,
+
+                pressed,
+
+                modifiers:
+                    egui::Modifiers::default(),
+            }
+        );
+    }
+
+
+    fn display(
+        &mut self,
+        window: &sdl2::video::Window,
+    ) -> bool {
+
+        let (
+            window_width,
+            window_height,
+        ) =
+            window.size();
+
+
+        let (
+            drawable_width,
+            drawable_height,
+        ) =
+            window.drawable_size();
+
+
+        let pixels_per_point =
+            if window_width == 0 {
+                1.0
+            } else {
+                (
+                    drawable_width as f32
+                        / window_width as f32
+                )
+                    .max(1.0)
+            };
+
+
+        let screen_size_points =
+            egui::vec2(
+                drawable_width as f32
+                    / pixels_per_point,
+                drawable_height as f32
+                    / pixels_per_point,
+            );
+
+
+        let mut raw_input =
+            egui::RawInput::default();
+
+        raw_input.screen_rect =
+            Some(
+                egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    screen_size_points,
+                )
+            );
+
+        raw_input.max_texture_side =
+            Some(
+                self.painter.max_texture_side()
+            );
+
+        raw_input.time =
+            Some(
+                self.opened_at.elapsed()
+                    .as_secs_f64()
+            );
+
+        raw_input.events =
+            std::mem::take(
+                &mut self.pending_events
+            );
+
+
+        let initial_size =
+            egui::vec2(
+                screen_size_points.x * 0.28,
+                screen_size_points.y * 0.32,
+            );
+
+        let maximum_size =
+            egui::vec2(
+                screen_size_points.x * 0.40,
+                screen_size_points.y * 0.3125,
+            );
+
+        let initial_position =
+            egui::pos2(
+                screen_size_points.x * 0.02,
+                screen_size_points.y * 0.02,
+            );
+
+
+        let mut window_open =
+            self.window_open;
+
+
+        let full_output =
+            self.context.run(
+                raw_input,
+                |context| {
+                    egui::Window::new(
+                        "Shader Editor"
+                    )
+                    .open(
+                        &mut window_open
+                    )
+                    .default_pos(
+                        initial_position
+                    )
+                    .default_size(
+                        initial_size
+                    )
+                    .min_size(
+                        egui::vec2(
+                            180.0,
+                            80.0,
+                        )
+                    )
+                    .max_size(
+                        maximum_size
+                    )
+                    .resizable(
+                        true
+                    )
+                    .show(
+                        context,
+                        |_ui| {}
+                    );
+                }
+            );
+
+
+        self.window_open =
+            window_open;
+
+
+        let clipped_primitives =
+            self.context.tessellate(
+                full_output.shapes,
+                full_output.pixels_per_point,
+            );
+
+
+        self.painter.paint_and_update_textures(
+            [
+                drawable_width,
+                drawable_height,
+            ],
+            full_output.pixels_per_point,
+            &clipped_primitives,
+            &full_output.textures_delta,
+        );
+
+
+        self.window_open
+    }
+
+
+    fn destroy(
+        &mut self,
+    ) {
+        self.painter.destroy();
+    }
+}
+
+
+fn egui_pointer_button(
+    button: MouseButton,
+) -> Option<egui::PointerButton> {
+
+    match button {
+        MouseButton::Left => {
+            Some(
+                egui::PointerButton::Primary
+            )
+        }
+
+        MouseButton::Right => {
+            Some(
+                egui::PointerButton::Secondary
+            )
+        }
+
+        MouseButton::Middle => {
+            Some(
+                egui::PointerButton::Middle
+            )
+        }
+
+        _ => {
+            None
+        }
+    }
+}
 
 
 struct FrameTimeWindow {
@@ -306,6 +681,12 @@ fn run_empty_session() -> Result<(), String> {
         );
 
 
+    let mut edit_window =
+        EditWindowOverlay::new(
+            &video
+        )?;
+
+
     let mut event_pump =
         sdl.event_pump()
             .map_err(
@@ -323,6 +704,10 @@ fn run_empty_session() -> Result<(), String> {
         for event in
             event_pump.poll_iter()
         {
+            edit_window.handle_event(
+                &event
+            );
+
             if edit_session_should_close(
                 &event
             ) {
@@ -359,12 +744,22 @@ fn run_empty_session() -> Result<(), String> {
         }
 
 
+        if !edit_window.display(
+            &window
+        ) {
+            break 'edit_session;
+        }
+
+
         window.gl_swap_window();
 
         std::thread::sleep(
             Duration::from_millis(10)
         );
     }
+
+
+    edit_window.destroy();
 
 
     drop(
@@ -585,6 +980,12 @@ fn run_paths(
         );
 
 
+    let mut edit_window =
+        EditWindowOverlay::new(
+            &video
+        )?;
+
+
     let (
         width,
         height,
@@ -686,6 +1087,10 @@ fn run_paths(
             for event in
                 event_pump.poll_iter()
             {
+                edit_window.handle_event(
+                    &event
+                );
+
                 match event {
 
                     ref event
@@ -1069,6 +1474,13 @@ fn run_paths(
             }
 
 
+            if !edit_window.display(
+                &window
+            ) {
+                break 'preview Ok(());
+            }
+
+
             window.gl_swap_window();
 
 
@@ -1117,6 +1529,9 @@ fn run_paths(
     drop(
         postprocess
     );
+
+
+    edit_window.destroy();
 
 
     drop(
