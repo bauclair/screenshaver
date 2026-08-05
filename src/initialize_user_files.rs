@@ -27,7 +27,7 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 #     bottom:right
   subtitle_placement = "bottom:center"
 # Screensaver shaders are loaded from:
-#     ~/.config/screenshaver/shaders/
+#     ~/.config/screenshaver/screensavers/
 
 # Displays a single predefined shader.
 # mode = "single:default.glsl"
@@ -154,7 +154,7 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 #     high      Require RGBA16F render targets.
   color_precision = "auto"
 # Supported render scaling values are from 0.25 to 2.0.
-  render_scale = 1.1
+  render_scale = 1.0
 
 ################################
 # PERFORMANCE
@@ -268,17 +268,17 @@ pub fn initialize() -> io::Result<PathBuf> {
 
     let cache_dir = config_dir.join("cache");
     let rejected_dir = config_dir.join("rejected");
-    let shaders_dir = config_dir.join("shaders");
+    let screensavers_dir = config_dir.join("screensavers");
     let wallpapers_dir = config_dir.join("wallpapers");
 
     let config_file = config_dir.join("screenshaver.toml");
-    let default_shader_file = shaders_dir.join("default.glsl");
+    let default_shader_file = screensavers_dir.join("default.glsl");
 
     // create_dir_all() creates missing parents and succeeds when the
     // directories already exist.
     fs::create_dir_all(&cache_dir)?;
     fs::create_dir_all(&rejected_dir)?;
-    fs::create_dir_all(&shaders_dir)?;
+    fs::create_dir_all(&screensavers_dir)?;
     fs::create_dir_all(&wallpapers_dir)?;
 
     create_file_if_missing(&config_file, DEFAULT_CONFIG)?;
