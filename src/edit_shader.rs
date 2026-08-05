@@ -83,6 +83,9 @@ struct EditWindowOverlay {
 
     pixels_per_point:
         f32,
+
+    displayed_fps:
+        Option<u32>,
 }
 
 
@@ -143,6 +146,9 @@ impl EditWindowOverlay {
 
                 pixels_per_point:
                     1.0,
+
+                displayed_fps:
+                    None,
             }
         )
     }
@@ -252,7 +258,8 @@ impl EditWindowOverlay {
     fn display(
         &mut self,
         window: &sdl2::video::Window,
-    ) -> bool {
+        resolved_fps: u32,
+    ) -> Option<u32> {
 
         let (
             window_width,
@@ -400,6 +407,15 @@ impl EditWindowOverlay {
         let mut window_open =
             self.window_open;
 
+        let mut displayed_fps =
+            self.displayed_fps
+                .unwrap_or(
+                    resolved_fps.clamp(
+                        crate::define_constants::MIN_RENDER_FPS,
+                        crate::define_constants::MAX_RENDER_FPS,
+                    )
+                );
+
         let full_output =
             self.context.run(
                 raw_input,
@@ -412,7 +428,7 @@ impl EditWindowOverlay {
 
 
                     egui::Window::new(
-                        "Shader Editor"
+                        "Shader Editor (ESC or Q to exit)"
                     )
                     .open(
                         &mut window_open
@@ -441,9 +457,49 @@ impl EditWindowOverlay {
                     .show(
                         context,
                         |ui| {
-                            // Empty egui windows auto-shrink to their contents.
-                            // Occupying the available body keeps this checkpoint's
-                            // deliberately empty editor panel at its chosen size.
+                            ui.horizontal(
+                                |ui| {
+                                    ui.label(
+                                        "FPS"
+                                    );
+
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(
+                                            egui::Align::Center
+                                        ),
+                                        |ui| {
+                                            ui.label(
+                                                format!(
+                                                    "{} FPS",
+                                                    displayed_fps,
+                                                )
+                                            );
+                                        }
+                                    );
+                                }
+                            );
+
+
+                            let slider_width =
+                                ui.available_width();
+
+                            ui.spacing_mut().slider_width =
+                                slider_width;
+
+                            ui.add(
+                                egui::Slider::new(
+                                    &mut displayed_fps,
+                                    crate::define_constants::MIN_RENDER_FPS
+                                        ..=crate::define_constants::MAX_RENDER_FPS,
+                                )
+                                .show_value(
+                                    false
+                                ),
+                            );
+
+
+                            // Preserve the established editor-window geometry while
+                            // this checkpoint contains only the first slider.
                             ui.allocate_space(
                                 ui.available_size()
                             );
@@ -455,6 +511,11 @@ impl EditWindowOverlay {
 
         self.window_open =
             window_open;
+
+        self.displayed_fps =
+            Some(
+                displayed_fps
+            );
 
         let clipped_primitives =
             self.context.tessellate(
@@ -474,7 +535,11 @@ impl EditWindowOverlay {
         );
 
 
-        self.window_open
+        if self.window_open {
+            Some(displayed_fps)
+        } else {
+            None
+        }
     }
 
 
@@ -917,9 +982,12 @@ fn run_empty_session() -> Result<(), String> {
         }
 
 
-        if !edit_window.display(
-            &window
-        ) {
+        if edit_window.display(
+            &window,
+            crate::define_constants::DEFAULT_RENDER_FPS,
+        )
+        .is_none()
+        {
             break 'edit_session;
         }
 
@@ -1647,10 +1715,49 @@ fn run_paths(
             }
 
 
-            if !edit_window.display(
-                &window
-            ) {
+            let Some(selected_fps) =
+                edit_window.display(
+                    &window,
+                    configured_fps,
+                )
+            else {
                 break 'preview Ok(());
+            };
+
+
+            if selected_fps
+                != configured_fps
+            {
+                configured_fps =
+                    selected_fps;
+
+                target_frame_time =
+                    Duration::from_secs_f64(
+                        1.0
+                            / configured_fps.max(1) as f64
+                    );
+
+                active.frame_times =
+                    FrameTimeWindow::new();
+
+                active.fps_warning_state =
+                    crate::fps_monitor::FpsWarningState::Normal;
+
+                active.fps_blink_visible =
+                    true;
+
+                active.last_fps_blink =
+                    Instant::now();
+
+                active.subtitle_overlay =
+                    None;
+
+                log_information(
+                    &format!(
+                        "[EDIT_SHADER] Live FPS target changed to {}",
+                        configured_fps,
+                    )
+                );
             }
 
 
