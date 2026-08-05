@@ -2768,6 +2768,13 @@ fn render_mirror_frames(
                 postprocess.bind_scene_target();
 
 
+                let (
+                    scene_width,
+                    scene_height,
+                ) =
+                    postprocess.scene_dimensions();
+
+
                 unsafe {
                     gl::Disable(
                         gl::BLEND
@@ -2816,8 +2823,8 @@ fn render_mirror_frames(
 
                     set_uniform_3f(
                         i_resolution,
-                        native_target.width as f32,
-                        native_target.height as f32,
+                        scene_width as f32,
+                        scene_height as f32,
                         1.0,
                     );
 

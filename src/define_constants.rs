@@ -22,6 +22,12 @@ pub const WALLPAPER_SPEED_MIN: f32 = 0.01;
 pub const WALLPAPER_SPEED_DEFAULT: f32 = 0.025;
 pub const WALLPAPER_SPEED_MAX: f32 = 0.25;
 
+
+// Supported render-scale limits.
+pub const RENDER_SCALE_MIN: f32 = 0.25;
+pub const RENDER_SCALE_DEFAULT: f32 = 1.0;
+pub const RENDER_SCALE_MAX: f32 = 2.0;
+
 // Supported procedural texture primitive-count limits.
 pub const MIN_TEXTURE_PRIMITIVES: usize = 1;
 pub const MAX_TEXTURE_PRIMITIVES: usize = 1024;
@@ -43,3 +49,4 @@ void main() {
     );
 }
 "#;
+

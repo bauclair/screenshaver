@@ -434,6 +434,13 @@ impl FrameRenderEngine {
         self.postprocess
             .bind_scene_target();
 
+        let (
+            scene_width,
+            scene_height,
+        ) =
+            self.postprocess
+                .scene_dimensions();
+
         unsafe {
             if self.output_policy
                 == FrameOutputPolicy::ForceOpaque
@@ -524,8 +531,8 @@ impl FrameRenderEngine {
             {
                 gl::Uniform3f(
                     resolution_location,
-                    width as f32,
-                    height as f32,
+                    scene_width as f32,
+                    scene_height as f32,
                     1.0,
                 );
             }

@@ -103,8 +103,11 @@ impl Drop for RenderTarget {
 pub(crate) struct PostprocessPipeline {
     scene_target: RenderTarget,
     scratch_target: RenderTarget,
-    width: u32,
-    height: u32,
+    output_width: u32,
+    output_height: u32,
+    scene_width: u32,
+    scene_height: u32,
+    render_scale: f32,
     precision_selection:
         crate::select_render_precision::RenderPrecisionSelection,
     passthrough: PassthroughRenderer,
@@ -116,15 +119,32 @@ pub(crate) struct PostprocessPipeline {
 
 impl PostprocessPipeline {
     pub(crate) fn new(
-        width: u32,
-        height: u32,
+        output_width: u32,
+        output_height: u32,
         profile:
             crate::load_config::PostprocessProfile,
     ) -> Result<Self, String> {
         validate_dimensions(
-            width,
-            height,
+            output_width,
+            output_height,
         )?;
+
+        let render_scale =
+            1.25_f32;
+
+        validate_render_scale(
+            render_scale
+        )?;
+
+        let (
+            scene_width,
+            scene_height,
+        ) =
+            scaled_dimensions(
+                output_width,
+                output_height,
+                render_scale,
+            )?;
 
         let passthrough =
             PassthroughRenderer::new()?;
@@ -144,8 +164,10 @@ impl PostprocessPipeline {
             precision_selection,
         ) =
             select_render_targets(
-                width,
-                height,
+                scene_width,
+                scene_height,
+                output_width,
+                output_height,
                 requested_precision,
             )?;
 
@@ -153,8 +175,11 @@ impl PostprocessPipeline {
             Self {
                 scene_target,
                 scratch_target,
-                width,
-                height,
+                output_width,
+                output_height,
+                scene_width,
+                scene_height,
+                render_scale,
                 precision_selection,
                 passthrough,
                 fxaa,
@@ -168,6 +193,7 @@ impl PostprocessPipeline {
             };
 
         pipeline.log_precision_selection();
+        pipeline.log_render_scale();
 
         Ok(
             pipeline
@@ -180,8 +206,8 @@ impl PostprocessPipeline {
         &self,
     ) {
         self.scene_target.bind(
-            self.width,
-            self.height,
+            self.scene_width,
+            self.scene_height,
         );
     }
 
@@ -197,8 +223,8 @@ impl PostprocessPipeline {
 
         if self.dithering_level.is_enabled() {
             self.scratch_target.bind(
-                self.width,
-                self.height,
+                self.output_width,
+                self.output_height,
             );
 
             self.render_primary_pass(
@@ -206,8 +232,8 @@ impl PostprocessPipeline {
             );
 
             bind_default_framebuffer(
-                self.width,
-                self.height,
+                self.output_width,
+                self.output_height,
             );
 
             self.dithering.render(
@@ -216,8 +242,8 @@ impl PostprocessPipeline {
             );
         } else {
             bind_default_framebuffer(
-                self.width,
-                self.height,
+                self.output_width,
+                self.output_height,
             );
 
             self.render_primary_pass(
@@ -240,8 +266,8 @@ impl PostprocessPipeline {
             PostprocessMethod::Fxaa => {
                 self.fxaa.render(
                     input_texture,
-                    self.width,
-                    self.height,
+                    self.scene_width,
+                    self.scene_height,
                 );
             }
         }
@@ -264,8 +290,10 @@ impl PostprocessPipeline {
                 precision_selection,
             ) =
                 select_render_targets(
-                    self.width,
-                    self.height,
+                    self.scene_width,
+                    self.scene_height,
+                    self.output_width,
+                    self.output_height,
                     profile.color_precision,
                 )?;
 
@@ -319,18 +347,28 @@ impl PostprocessPipeline {
             height,
         )?;
 
-        if self.width == width
-            && self.height == height
+        if self.output_width == width
+            && self.output_height == height
         {
             return Ok(());
         }
+
+        let (
+            scene_width,
+            scene_height,
+        ) =
+            scaled_dimensions(
+                width,
+                height,
+                self.render_scale,
+            )?;
 
         // Allocate both replacements before releasing either working target.
         // If allocation fails, the existing pipeline remains usable.
         let replacement_scene =
             RenderTarget::new(
-                width,
-                height,
+                scene_width,
+                scene_height,
                 self.precision_selection.selected,
             )?;
 
@@ -347,11 +385,19 @@ impl PostprocessPipeline {
         self.scratch_target =
             replacement_scratch;
 
-        self.width =
+        self.output_width =
             width;
 
-        self.height =
+        self.output_height =
             height;
+
+        self.scene_width =
+            scene_width;
+
+        self.scene_height =
+            scene_height;
+
+        self.log_render_scale();
 
         Ok(())
     }
@@ -406,11 +452,54 @@ impl PostprocessPipeline {
     pub(crate) fn dimensions(
         &self,
     ) -> (u32, u32) {
+        self.output_dimensions()
+    }
+
+
+    pub(crate) fn output_dimensions(
+        &self,
+    ) -> (u32, u32) {
         (
-            self.width,
-            self.height,
+            self.output_width,
+            self.output_height,
         )
     }
+
+
+    pub(crate) fn scene_dimensions(
+        &self,
+    ) -> (u32, u32) {
+        (
+            self.scene_width,
+            self.scene_height,
+        )
+    }
+
+
+    #[allow(dead_code)]
+    pub(crate) fn render_scale(
+        &self,
+    ) -> f32 {
+        self.render_scale
+    }
+
+
+    pub(crate) fn log_render_scale(
+        &self,
+    ) {
+        crate::logger::information(
+            &crate::locate_paths::runtime_log_path(),
+            &format!(
+                "[POSTPROCESS] Render scale: {:.3}; scene: {}x{}; output: {}x{}",
+                self.render_scale,
+                self.scene_width,
+                self.scene_height,
+                self.output_width,
+                self.output_height,
+            ),
+        );
+    }
+
 
     #[allow(dead_code)]
     pub(crate) fn scene_texture(
@@ -473,8 +562,10 @@ fn bind_default_framebuffer(
 }
 
 fn create_render_targets(
-    width: u32,
-    height: u32,
+    scene_width: u32,
+    scene_height: u32,
+    output_width: u32,
+    output_height: u32,
     precision:
         crate::select_render_precision::RenderTargetPrecision,
 ) -> Result<
@@ -486,15 +577,15 @@ fn create_render_targets(
 > {
     let scene_target =
         RenderTarget::new(
-            width,
-            height,
+            scene_width,
+            scene_height,
             precision,
         )?;
 
     let scratch_target =
         RenderTarget::new(
-            width,
-            height,
+            output_width,
+            output_height,
             precision,
         )?;
 
@@ -508,8 +599,10 @@ fn create_render_targets(
 
 
 fn select_render_targets(
-    width: u32,
-    height: u32,
+    scene_width: u32,
+    scene_height: u32,
+    output_width: u32,
+    output_height: u32,
     requested:
         crate::select_render_precision::ColorPrecisionPolicy,
 ) -> Result<
@@ -533,8 +626,10 @@ fn select_render_targets(
                 scratch_target,
             ) =
                 create_render_targets(
-                    width,
-                    height,
+                    scene_width,
+                    scene_height,
+                    output_width,
+                    output_height,
                     RenderTargetPrecision::Standard,
                 )?;
 
@@ -556,8 +651,10 @@ fn select_render_targets(
                 scratch_target,
             ) =
                 create_render_targets(
-                    width,
-                    height,
+                    scene_width,
+                    scene_height,
+                    output_width,
+                    output_height,
                     RenderTargetPrecision::High,
                 )?;
 
@@ -575,8 +672,10 @@ fn select_render_targets(
 
         ColorPrecisionPolicy::Auto => {
             match create_render_targets(
-                width,
-                height,
+                scene_width,
+                scene_height,
+                output_width,
+                output_height,
                 RenderTargetPrecision::High,
             ) {
                 Ok(
@@ -603,8 +702,10 @@ fn select_render_targets(
                         scratch_target,
                     ) =
                         create_render_targets(
-                            width,
-                            height,
+                            scene_width,
+                            scene_height,
+                            output_width,
+                            output_height,
                             RenderTargetPrecision::Standard,
                         )
                         .map_err(
@@ -797,6 +898,79 @@ unsafe fn delete_render_target(
         );
     }
 }
+
+fn validate_render_scale(
+    render_scale: f32,
+) -> Result<(), String> {
+    if !render_scale.is_finite()
+        || !(crate::define_constants::RENDER_SCALE_MIN
+            ..=crate::define_constants::RENDER_SCALE_MAX)
+            .contains(
+                &render_scale
+            )
+    {
+        return Err(
+            format!(
+                "Render scale {} is outside the supported range {:.2}-{:.2}",
+                render_scale,
+                crate::define_constants::RENDER_SCALE_MIN,
+                crate::define_constants::RENDER_SCALE_MAX,
+            )
+        );
+    }
+
+    Ok(())
+}
+
+
+fn scaled_dimensions(
+    output_width: u32,
+    output_height: u32,
+    render_scale: f32,
+) -> Result<(u32, u32), String> {
+    validate_dimensions(
+        output_width,
+        output_height,
+    )?;
+
+    validate_render_scale(
+        render_scale
+    )?;
+
+    let scene_width =
+        ((output_width as f64)
+            * render_scale as f64)
+            .round()
+            .max(1.0);
+
+    let scene_height =
+        ((output_height as f64)
+            * render_scale as f64)
+            .round()
+            .max(1.0);
+
+    if scene_width
+        > u32::MAX as f64
+        || scene_height
+            > u32::MAX as f64
+    {
+        return Err(
+            format!(
+                "Scaled render dimensions exceed the supported integer range: {:.0}x{:.0}",
+                scene_width,
+                scene_height,
+            )
+        );
+    }
+
+    Ok(
+        (
+            scene_width as u32,
+            scene_height as u32,
+        )
+    )
+}
+
 
 fn validate_dimensions(
     width: u32,

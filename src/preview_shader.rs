@@ -694,6 +694,13 @@ pub fn run_paths(
             postprocess.bind_scene_target();
 
 
+            let (
+                scene_width,
+                scene_height,
+            ) =
+                postprocess.scene_dimensions();
+
+
             unsafe {
                 gl::ClearColor(
                     0.0,
@@ -752,8 +759,8 @@ pub fn run_paths(
                 set_uniform_3f(
                     active.program,
                     b"iResolution\0",
-                    width as f32,
-                    height as f32,
+                    scene_width as f32,
+                    scene_height as f32,
                     1.0,
                 );
 
