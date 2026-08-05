@@ -39,6 +39,10 @@ pub enum Command {
         animation_speed: Option<f32>,
     },
 
+    EditShader {
+        shader_name: Option<String>,
+    },
+
     ListTextures,
 
     ListPalettes,
@@ -204,6 +208,14 @@ pub fn parse() -> Result<Command, String> {
         "--preview-shader" => {
 
             parse_preview_shader(
+                &args[1..]
+            )
+        }
+
+
+        "--edit-shader" => {
+
+            parse_edit_shader(
                 &args[1..]
             )
         }
@@ -727,6 +739,54 @@ fn split_policy_property(
     }
 
     Ok((name, value))
+}
+
+
+fn parse_edit_shader(
+    args: &[String],
+) -> Result<Command, String> {
+
+    if args.len() > 1 {
+        return Err(
+            "--edit-shader accepts at most one shader filename or path"
+                .to_string()
+        );
+    }
+
+
+    let shader_name =
+        match args.first() {
+            Some(value) => {
+                let value =
+                    value.trim();
+
+
+                if value.is_empty()
+                    || value.starts_with('-')
+                {
+                    return Err(
+                        "--edit-shader accepts an optional shader filename or path"
+                            .to_string()
+                    );
+                }
+
+
+                Some(
+                    value.to_string()
+                )
+            }
+
+            None => {
+                None
+            }
+        };
+
+
+    Ok(
+        Command::EditShader {
+            shader_name,
+        }
+    )
 }
 
 
@@ -1429,6 +1489,10 @@ pub fn print_help() {
                  Command-line texture values take precedence over TOML selection values.\n\
                  --texture and --palette are accepted as shorter aliases.\n\
          \n\
+             --edit-shader [PATH]\n\
+                 Open the full-screen interactive shader editor.\n\
+                 PATH is optional during the initial editor implementation.\n\
+         \n\
              --list-textures\n\
                  Display available procedural texture families.\n\
          \n\
@@ -1473,6 +1537,8 @@ pub fn print_help() {
              screenshaver --preview-shader \"Heartfelt.glsl\"\n\
              screenshaver --preview-shader \"Heartfelt.glsl\" --texture clouds\n\
              screenshaver --preview-shader \"Heartfelt.glsl\" --palette mist\n\
+             screenshaver --edit-shader\n\
+             screenshaver --edit-shader \"Heartfelt.glsl\"\n\
              screenshaver --add-policy screensaver CandyWarp.fs texture:bricks palette:mist fps:24 speed:0.5 anti_aliasing:fxaa dithering:subtle color_precision:high\n\
              screenshaver --delete-policy wallpaper CandyWarp.fs\n\
              screenshaver --list-policies screensaver\n\

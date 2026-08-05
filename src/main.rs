@@ -43,6 +43,7 @@ mod generate_radial;
 mod generate_textures;
 mod preview_texture;
 mod preview_shader;
+mod edit_shader;
 mod preview_shader_directory;
 mod palettes;
 mod display_texture;
@@ -176,6 +177,7 @@ let runtime_logfile =
         | crate::parse_arguments::Command::Start
         | crate::parse_arguments::Command::PreviewTexture { .. }
         | crate::parse_arguments::Command::PreviewShader { .. }
+        | crate::parse_arguments::Command::EditShader { .. }
         | crate::parse_arguments::Command::DeleteCache => {
 
             let logfile =
@@ -474,6 +476,43 @@ crate::parse_arguments::Command::PreviewShader {
                     logfile,
                     &format!(
                         "[PREVIEW_SHADER] {}",
+                        error,
+                    ),
+                );
+            }
+        }
+    }
+
+
+    return;
+}
+
+
+crate::parse_arguments::Command::EditShader {
+    shader_name,
+} => {
+
+    match crate::edit_shader::run(
+        shader_name
+    ) {
+
+        Ok(()) => {}
+
+        Err(error) => {
+
+            eprintln!(
+                "[SHADER EDITOR] {}",
+                error
+            );
+
+
+            if let Some(logfile) =
+                runtime_logfile.as_ref()
+            {
+                crate::logger::error(
+                    logfile,
+                    &format!(
+                        "[EDIT_SHADER] {}",
                         error,
                     ),
                 );
