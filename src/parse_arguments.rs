@@ -591,6 +591,46 @@ fn parse_policy_definition(
                     Some(speed);
             }
 
+            "render_scale" => {
+                if properties.render_scale.is_some() {
+                    return Err(
+                        "Policy property 'render_scale' may only be specified once"
+                            .to_string()
+                    );
+                }
+
+                let render_scale =
+                    value.parse::<f32>()
+                        .map_err(
+                            |_| {
+                                format!(
+                                    "Invalid policy render_scale '{}'; specify a number from {:.2} through {:.2}",
+                                    value,
+                                    crate::define_constants::RENDER_SCALE_MIN,
+                                    crate::define_constants::RENDER_SCALE_MAX,
+                                )
+                            }
+                        )?;
+
+                if !render_scale.is_finite()
+                    || !(crate::define_constants::RENDER_SCALE_MIN
+                        ..=crate::define_constants::RENDER_SCALE_MAX)
+                        .contains(&render_scale)
+                {
+                    return Err(
+                        format!(
+                            "Policy render_scale {} is outside the supported range {:.2}-{:.2}",
+                            value,
+                            crate::define_constants::RENDER_SCALE_MIN,
+                            crate::define_constants::RENDER_SCALE_MAX,
+                        )
+                    );
+                }
+
+                properties.render_scale =
+                    Some(render_scale);
+            }
+
             "anti_aliasing" => {
                 if properties.anti_aliasing.is_some() {
                     return Err(
@@ -672,7 +712,7 @@ fn parse_policy_definition(
             other => {
                 return Err(
                     format!(
-                        "Unknown policy property '{}'; supported properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision",
+                        "Unknown policy property '{}'; supported properties: texture, palette, fps, speed, render_scale, anti_aliasing, dithering, color_precision",
                         other,
                     )
                 );
@@ -1437,7 +1477,8 @@ pub fn print_help() {
          \n\
              --add-policy TARGET SHADER PROPERTY [PROPERTY ...]\n\
                  Add a complete screensaver or wallpaper shader policy.\n\
-                 Properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision.\n\
+                 Properties: texture, palette, fps, speed, render_scale, anti_aliasing, dithering, color_precision.\n\
+                 render_scale accepts a finite number from 0.25 through 2.0.\n\
                  PROPERTY may use NAME:VALUE or NAME=VALUE syntax.\n\
          \n             --delete-policy TARGET SHADER\n\
                  Delete an existing screensaver or wallpaper shader policy.\n\
@@ -1473,7 +1514,7 @@ pub fn print_help() {
              screenshaver --preview-shader \"Heartfelt.glsl\"\n\
              screenshaver --preview-shader \"Heartfelt.glsl\" --texture clouds\n\
              screenshaver --preview-shader \"Heartfelt.glsl\" --palette mist\n\
-             screenshaver --add-policy screensaver CandyWarp.fs texture:bricks palette:mist fps:24 speed:0.5 anti_aliasing:fxaa dithering:subtle color_precision:high\n\
+             screenshaver --add-policy screensaver CandyWarp.fs texture:bricks palette:mist fps:24 speed:0.5 render_scale:1.25 anti_aliasing:fxaa dithering:subtle color_precision:high\n\
              screenshaver --delete-policy wallpaper CandyWarp.fs\n\
              screenshaver --list-policies screensaver\n\
          \n\

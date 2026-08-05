@@ -123,6 +123,7 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 #     palette:<palette>
 #     fps:<frames-per-second>
 #     speed:<animation-multiplier>
+#     render_scale:<0.25-2.0>
 #     anti_aliasing:<off|fxaa>
 #     dithering:<off|subtle>
 #     color_precision:<auto|standard|high>
@@ -134,10 +135,10 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 # global setting or normal random fallback.
 
 [screensaver_policies]
-# "CandyWarp.fs" = "texture:bricks palette:mist fps:24 speed:0.5 anti_aliasing:fxaa dithering:subtle color_precision:high"
+# "CandyWarp.fs" = "texture:bricks palette:mist fps:24 speed:0.5 render_scale:1.25 anti_aliasing:fxaa dithering:subtle color_precision:high"
 
 [wallpaper_policies]
-# "CandyWarp.fs" = "fps:16 speed:0.125 anti_aliasing:off dithering:off color_precision:standard"
+# "CandyWarp.fs" = "fps:16 speed:0.125 render_scale:0.75 anti_aliasing:off dithering:off color_precision:standard"
 
 ################################
 # POST-PROCESSING
@@ -153,8 +154,9 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 #     standard  Require RGBA8 render targets.
 #     high      Require RGBA16F render targets.
   color_precision = "auto"
-# Supported render scaling values are from 0.25 to 2.0.
-  render_scale = 1.1
+# Supported render scaling values are from 0.25 through 2.0.
+# 1.0 renders at the output's native resolution.
+  render_scale = 1.0
 
 ################################
 # PERFORMANCE

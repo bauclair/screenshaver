@@ -118,6 +118,9 @@ pub struct PolicyDefinition {
     pub speed:
         Option<f32>,
 
+    pub render_scale:
+        Option<f32>,
+
     pub anti_aliasing:
         Option<String>,
 
@@ -139,6 +142,7 @@ impl PolicyDefinition {
             && self.palette.is_none()
             && self.fps.is_none()
             && self.speed.is_none()
+            && self.render_scale.is_none()
             && self.anti_aliasing.is_none()
             && self.dithering.is_none()
             && self.color_precision.is_none()
@@ -669,6 +673,28 @@ fn validate_properties(
     }
 
 
+    if let Some(render_scale) =
+        properties.render_scale
+    {
+        if !render_scale.is_finite()
+            || !(crate::define_constants::RENDER_SCALE_MIN
+                ..=crate::define_constants::RENDER_SCALE_MAX)
+                .contains(
+                    &render_scale
+                )
+        {
+            return Err(
+                format!(
+                    "Render-scale policy {} is outside the supported range {:.2}-{:.2}",
+                    render_scale,
+                    crate::define_constants::RENDER_SCALE_MIN,
+                    crate::define_constants::RENDER_SCALE_MAX,
+                )
+            );
+        }
+    }
+
+
     if let Some(value) =
         properties.anti_aliasing.as_deref()
     {
@@ -778,7 +804,7 @@ fn format_policy(
 
     let mut tokens =
         Vec::with_capacity(
-            7
+            8
         );
 
 
@@ -828,6 +854,20 @@ fn format_policy(
                 "speed:{}",
                 format_speed(
                     speed
+                ),
+            )
+        );
+    }
+
+
+    if let Some(render_scale) =
+        properties.render_scale
+    {
+        tokens.push(
+            format!(
+                "render_scale:{}",
+                format_speed(
+                    render_scale
                 ),
             )
         );
@@ -949,6 +989,9 @@ struct PolicyRow {
     speed:
         String,
 
+    render_scale:
+        String,
+
     anti_aliasing:
         String,
 
@@ -976,6 +1019,9 @@ struct PolicyTableLayout {
         usize,
 
     speed_width:
+        usize,
+
+    render_scale_width:
         usize,
 
     anti_aliasing_width:
@@ -1051,12 +1097,13 @@ fn print_policy_table(
         &rows
     {
         println!(
-            "{:<shader_width$}  {:<texture_width$}  {:<palette_width$}  {:>fps_width$}  {:>speed_width$}  {:<anti_aliasing_width$}  {:<dithering_width$}  {:<color_precision_width$}",
+            "{:<shader_width$}  {:<texture_width$}  {:<palette_width$}  {:>fps_width$}  {:>speed_width$}  {:>render_scale_width$}  {:<anti_aliasing_width$}  {:<dithering_width$}  {:<color_precision_width$}",
             row.shader,
             row.texture,
             row.palette,
             row.fps,
             row.speed,
+            row.render_scale,
             row.anti_aliasing,
             row.dithering,
             row.color_precision,
@@ -1065,6 +1112,7 @@ fn print_policy_table(
             palette_width = layout.palette_width,
             fps_width = layout.fps_width,
             speed_width = layout.speed_width,
+            render_scale_width = layout.render_scale_width,
             anti_aliasing_width = layout.anti_aliasing_width,
             dithering_width = layout.dithering_width,
             color_precision_width = layout.color_precision_width,
@@ -1155,6 +1203,54 @@ fn collect_policy_rows(
                     };
 
 
+                let render_scale =
+                    match policy_property_value(
+                        specification,
+                        "render_scale",
+                    ) {
+                        Some(value) => {
+                            let parsed =
+                                value.parse::<f32>()
+                                    .map_err(
+                                        |_| {
+                                            format!(
+                                                "Invalid render_scale '{}' for policy '{}' in [{}]",
+                                                value,
+                                                shader,
+                                                target.table_name(),
+                                            )
+                                        }
+                                    )?;
+
+                            if !parsed.is_finite()
+                                || !(crate::define_constants::RENDER_SCALE_MIN
+                                    ..=crate::define_constants::RENDER_SCALE_MAX)
+                                    .contains(&parsed)
+                            {
+                                return Err(
+                                    format!(
+                                        "render_scale '{}' for policy '{}' in [{}] is outside the supported range {:.2}-{:.2}",
+                                        value,
+                                        shader,
+                                        target.table_name(),
+                                        crate::define_constants::RENDER_SCALE_MIN,
+                                        crate::define_constants::RENDER_SCALE_MAX,
+                                    )
+                                );
+                            }
+
+                            format!(
+                                "{:.3}",
+                                parsed,
+                            )
+                        }
+
+                        None => {
+                            "-".to_string()
+                        }
+                    };
+
+
                 Ok(
                     PolicyRow {
                         shader:
@@ -1185,6 +1281,8 @@ fn collect_policy_rows(
                             .to_string(),
 
                         speed,
+
+                        render_scale,
 
                         anti_aliasing:
                             policy_property_value(
@@ -1287,6 +1385,19 @@ fn calculate_policy_table_layout(
                     "Speed".len()
                 ),
 
+        render_scale_width:
+            rows.iter()
+                .map(
+                    |row| {
+                        row.render_scale.len()
+                    }
+                )
+                .max()
+                .unwrap_or(0)
+                .max(
+                    "Render Scale".len()
+                ),
+
         anti_aliasing_width:
             rows.iter()
                 .map(
@@ -1334,12 +1445,13 @@ fn print_policy_table_header(
 ) {
 
     println!(
-        "{:<shader_width$}  {:<texture_width$}  {:<palette_width$}  {:>fps_width$}  {:>speed_width$}  {:<anti_aliasing_width$}  {:<dithering_width$}  {:<color_precision_width$}",
+        "{:<shader_width$}  {:<texture_width$}  {:<palette_width$}  {:>fps_width$}  {:>speed_width$}  {:>render_scale_width$}  {:<anti_aliasing_width$}  {:<dithering_width$}  {:<color_precision_width$}",
         "Shader",
         "Texture",
         "Palette",
         "FPS",
         "Speed",
+        "Render Scale",
         "Anti-aliasing",
         "Dithering",
         "Color precision",
@@ -1348,6 +1460,7 @@ fn print_policy_table_header(
         palette_width = layout.palette_width,
         fps_width = layout.fps_width,
         speed_width = layout.speed_width,
+        render_scale_width = layout.render_scale_width,
         anti_aliasing_width = layout.anti_aliasing_width,
         dithering_width = layout.dithering_width,
         color_precision_width = layout.color_precision_width,
@@ -1355,7 +1468,7 @@ fn print_policy_table_header(
 
 
     println!(
-        "{}  {}  {}  {}  {}  {}  {}  {}",
+        "{}  {}  {}  {}  {}  {}  {}  {}  {}",
         "-".repeat(
             layout.shader_width
         ),
@@ -1370,6 +1483,9 @@ fn print_policy_table_header(
         ),
         "-".repeat(
             layout.speed_width
+        ),
+        "-".repeat(
+            layout.render_scale_width
         ),
         "-".repeat(
             layout.anti_aliasing_width
