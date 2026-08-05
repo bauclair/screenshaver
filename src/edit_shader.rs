@@ -58,6 +58,14 @@ const EDIT_WINDOW_SCALE_MAX: f32 =
     1.80;
 
 
+#[derive(Clone, Copy)]
+struct SliderDragState {
+    anchor_value: f32,
+    anchor_pointer_x: f32,
+    shift_held: bool,
+}
+
+
 /// Minimal egui integration for the first graphical-window checkpoint.
 ///
 /// This owns only the egui context, OpenGL painter, pointer events, and the
@@ -86,6 +94,24 @@ struct EditWindowOverlay {
 
     displayed_fps:
         Option<u32>,
+
+    displayed_animation_speed:
+        Option<f32>,
+
+    displayed_render_scale:
+        Option<f32>,
+
+    shift_held:
+        bool,
+
+    fps_drag_state:
+        Option<SliderDragState>,
+
+    animation_speed_drag_state:
+        Option<SliderDragState>,
+
+    render_scale_drag_state:
+        Option<SliderDragState>,
 }
 
 
@@ -149,6 +175,24 @@ impl EditWindowOverlay {
 
                 displayed_fps:
                     None,
+
+                displayed_animation_speed:
+                    None,
+
+                displayed_render_scale:
+                    None,
+
+                shift_held:
+                    false,
+
+                fps_drag_state:
+                    None,
+
+                animation_speed_drag_state:
+                    None,
+
+                render_scale_drag_state:
+                    None,
             }
         )
     }
@@ -208,6 +252,31 @@ impl EditWindowOverlay {
                 );
             }
 
+            Event::KeyDown {
+                keycode:
+                    Some(
+                        Keycode::LShift
+                        | Keycode::RShift
+                    ),
+                repeat: false,
+                ..
+            } => {
+                self.shift_held =
+                    true;
+            }
+
+            Event::KeyUp {
+                keycode:
+                    Some(
+                        Keycode::LShift
+                        | Keycode::RShift
+                    ),
+                ..
+            } => {
+                self.shift_held =
+                    false;
+            }
+
             _ => {}
         }
     }
@@ -249,7 +318,12 @@ impl EditWindowOverlay {
                 pressed,
 
                 modifiers:
-                    egui::Modifiers::default(),
+                    egui::Modifiers {
+                        shift:
+                            self.shift_held,
+
+                        ..Default::default()
+                    },
             }
         );
     }
@@ -259,7 +333,9 @@ impl EditWindowOverlay {
         &mut self,
         window: &sdl2::video::Window,
         resolved_fps: u32,
-    ) -> Option<u32> {
+        resolved_animation_speed: f32,
+        resolved_render_scale: f32,
+    ) -> Option<(u32, f32, f32)> {
 
         let (
             window_width,
@@ -302,6 +378,14 @@ impl EditWindowOverlay {
 
         let mut raw_input =
             egui::RawInput::default();
+
+        raw_input.modifiers =
+            egui::Modifiers {
+                shift:
+                    self.shift_held,
+
+                ..Default::default()
+            };
 
         let screen_rect =
             egui::Rect::from_min_size(
@@ -416,6 +500,38 @@ impl EditWindowOverlay {
                     )
                 );
 
+        let mut displayed_animation_speed =
+            self.displayed_animation_speed
+                .unwrap_or(
+                    resolved_animation_speed.clamp(
+                        crate::define_constants::SCREENSAVER_SPEED_MIN,
+                        crate::define_constants::SCREENSAVER_SPEED_MAX,
+                    )
+                );
+
+        let mut displayed_render_scale =
+            self.displayed_render_scale
+                .unwrap_or(
+                    resolved_render_scale.clamp(
+                        crate::define_constants::RENDER_SCALE_MIN,
+                        crate::define_constants::RENDER_SCALE_MAX,
+                    )
+                );
+
+
+        let mut fps_drag_state =
+            self.fps_drag_state;
+
+        let mut animation_speed_drag_state =
+            self.animation_speed_drag_state;
+
+        let mut render_scale_drag_state =
+            self.render_scale_drag_state;
+
+        let shift_held =
+            self.shift_held;
+
+
         let full_output =
             self.context.run(
                 raw_input,
@@ -480,26 +596,117 @@ impl EditWindowOverlay {
                             );
 
 
-                            let slider_width =
-                                ui.available_width();
+                            let mut fps_value =
+                                displayed_fps as f32;
 
-                            ui.spacing_mut().slider_width =
-                                slider_width;
+                            draw_fine_slider(
+                                ui,
+                                &mut fps_value,
+                                crate::define_constants::MIN_RENDER_FPS as f32,
+                                crate::define_constants::MAX_RENDER_FPS as f32,
+                                shift_held,
+                                resolution_scale,
+                                &mut fps_drag_state,
+                            );
 
-                            ui.add(
-                                egui::Slider::new(
-                                    &mut displayed_fps,
-                                    crate::define_constants::MIN_RENDER_FPS
-                                        ..=crate::define_constants::MAX_RENDER_FPS,
-                                )
-                                .show_value(
-                                    false
-                                ),
+                            displayed_fps =
+                                fps_value.round()
+                                    .clamp(
+                                        crate::define_constants::MIN_RENDER_FPS as f32,
+                                        crate::define_constants::MAX_RENDER_FPS as f32,
+                                    ) as u32;
+
+
+                            ui.add_space(
+                                10.0 * resolution_scale
                             );
 
 
+                            ui.horizontal(
+                                |ui| {
+                                    ui.label(
+                                        "Animation Speed"
+                                    );
+
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(
+                                            egui::Align::Center
+                                        ),
+                                        |ui| {
+                                            ui.label(
+                                                format!(
+                                                    "{:.2}x",
+                                                    displayed_animation_speed,
+                                                )
+                                            );
+                                        }
+                                    );
+                                }
+                            );
+
+
+                            draw_fine_slider(
+                                ui,
+                                &mut displayed_animation_speed,
+                                crate::define_constants::SCREENSAVER_SPEED_MIN,
+                                crate::define_constants::SCREENSAVER_SPEED_MAX,
+                                shift_held,
+                                resolution_scale,
+                                &mut animation_speed_drag_state,
+                            );
+
+                            displayed_animation_speed =
+                                (displayed_animation_speed * 100.0)
+                                    .round()
+                                    / 100.0;
+
+
+                            ui.add_space(
+                                10.0 * resolution_scale
+                            );
+
+
+                            ui.horizontal(
+                                |ui| {
+                                    ui.label(
+                                        "Render Scale"
+                                    );
+
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(
+                                            egui::Align::Center
+                                        ),
+                                        |ui| {
+                                            ui.label(
+                                                format!(
+                                                    "{:.2}x",
+                                                    displayed_render_scale,
+                                                )
+                                            );
+                                        }
+                                    );
+                                }
+                            );
+
+
+                            draw_fine_slider(
+                                ui,
+                                &mut displayed_render_scale,
+                                crate::define_constants::RENDER_SCALE_MIN,
+                                crate::define_constants::RENDER_SCALE_MAX,
+                                shift_held,
+                                resolution_scale,
+                                &mut render_scale_drag_state,
+                            );
+
+                            displayed_render_scale =
+                                (displayed_render_scale * 100.0)
+                                    .round()
+                                    / 100.0;
+
+
                             // Preserve the established editor-window geometry while
-                            // this checkpoint contains only the first slider.
+                            // this checkpoint contains only the three core sliders.
                             ui.allocate_space(
                                 ui.available_size()
                             );
@@ -516,6 +723,25 @@ impl EditWindowOverlay {
             Some(
                 displayed_fps
             );
+
+        self.displayed_animation_speed =
+            Some(
+                displayed_animation_speed
+            );
+
+        self.displayed_render_scale =
+            Some(
+                displayed_render_scale
+            );
+
+        self.fps_drag_state =
+            fps_drag_state;
+
+        self.animation_speed_drag_state =
+            animation_speed_drag_state;
+
+        self.render_scale_drag_state =
+            render_scale_drag_state;
 
         let clipped_primitives =
             self.context.tessellate(
@@ -536,7 +762,13 @@ impl EditWindowOverlay {
 
 
         if self.window_open {
-            Some(displayed_fps)
+            Some(
+                (
+                    displayed_fps,
+                    displayed_animation_speed,
+                    displayed_render_scale,
+                )
+            )
         } else {
             None
         }
@@ -548,6 +780,166 @@ impl EditWindowOverlay {
     ) {
         self.painter.destroy();
     }
+}
+
+
+fn draw_fine_slider(
+    ui: &mut egui::Ui,
+    value: &mut f32,
+    minimum: f32,
+    maximum: f32,
+    shift_held: bool,
+    resolution_scale: f32,
+    drag_state: &mut Option<SliderDragState>,
+) -> egui::Response {
+
+    let desired_size =
+        egui::vec2(
+            ui.available_width(),
+            ui.spacing().interact_size.y,
+        );
+
+    let (rect, response) =
+        ui.allocate_exact_size(
+            desired_size,
+            egui::Sense::click_and_drag(),
+        );
+
+    let pointer_position =
+        response.interact_pointer_pos();
+
+    if response.drag_started() {
+        if let Some(pointer_position) =
+            pointer_position
+        {
+            *drag_state =
+                Some(
+                    SliderDragState {
+                        anchor_value:
+                            *value,
+
+                        anchor_pointer_x:
+                            pointer_position.x,
+
+                        shift_held,
+                    }
+                );
+        }
+    }
+
+    if response.dragged() {
+        if let (
+            Some(pointer_position),
+            Some(state),
+        ) = (
+            pointer_position,
+            drag_state.as_mut(),
+        ) {
+            if state.shift_held
+                != shift_held
+            {
+                state.anchor_value =
+                    *value;
+
+                state.anchor_pointer_x =
+                    pointer_position.x;
+
+                state.shift_held =
+                    shift_held;
+            }
+
+            let sensitivity =
+                if shift_held {
+                    0.1
+                } else {
+                    1.0
+                };
+
+            let value_delta =
+                (pointer_position.x
+                    - state.anchor_pointer_x)
+                    / rect.width().max(1.0)
+                    * (maximum - minimum)
+                    * sensitivity;
+
+            *value =
+                (state.anchor_value
+                    + value_delta)
+                    .clamp(
+                        minimum,
+                        maximum,
+                    );
+        }
+    } else if response.clicked() {
+        if let Some(pointer_position) =
+            pointer_position
+        {
+            let fraction =
+                ((pointer_position.x - rect.left())
+                    / rect.width().max(1.0))
+                    .clamp(
+                        0.0,
+                        1.0,
+                    );
+
+            *value =
+                minimum
+                    + fraction
+                        * (maximum - minimum);
+        }
+    } else {
+        *drag_state =
+            None;
+    }
+
+    let fraction =
+        ((*value - minimum)
+            / (maximum - minimum).max(f32::EPSILON))
+            .clamp(
+                0.0,
+                1.0,
+            );
+
+    let track_rect =
+        egui::Rect::from_center_size(
+            rect.center(),
+            egui::vec2(
+                rect.width(),
+                4.0 * resolution_scale,
+            ),
+        );
+
+    let widget_visuals =
+        if response.dragged() {
+            ui.visuals().widgets.active
+        } else if response.hovered() {
+            ui.visuals().widgets.hovered
+        } else {
+            ui.visuals().widgets.inactive
+        };
+
+    ui.painter().rect_filled(
+        track_rect,
+        track_rect.height() * 0.5,
+        widget_visuals.bg_fill,
+    );
+
+    let knob_center =
+        egui::pos2(
+            egui::lerp(
+                rect.left()..=rect.right(),
+                fraction,
+            ),
+            rect.center().y,
+        );
+
+    ui.painter().circle_filled(
+        knob_center,
+        7.0 * resolution_scale,
+        widget_visuals.fg_stroke.color,
+    );
+
+    response
 }
 
 
@@ -985,6 +1377,8 @@ fn run_empty_session() -> Result<(), String> {
         if edit_window.display(
             &window,
             crate::define_constants::DEFAULT_RENDER_FPS,
+            crate::define_constants::SCREENSAVER_SPEED_DEFAULT,
+            crate::define_constants::RENDER_SCALE_DEFAULT,
         )
         .is_none()
         {
@@ -1050,9 +1444,9 @@ fn run_paths(
     }
 
 
-    let animation_speed =
+    let mut animation_speed =
         animation_speed.unwrap_or(
-            1.0
+            crate::define_constants::SCREENSAVER_SPEED_DEFAULT
         );
 
 
@@ -1258,6 +1652,10 @@ fn run_paths(
         postprocess_policy.profile_for_shader(
             &active.shader_name
         );
+
+
+    let mut render_scale =
+        initial_postprocess_profile.render_scale;
 
 
     let mut postprocess =
@@ -1715,10 +2113,18 @@ fn run_paths(
             }
 
 
-            let Some(selected_fps) =
+            let Some(
+                (
+                    selected_fps,
+                    selected_animation_speed,
+                    selected_render_scale,
+                )
+            ) =
                 edit_window.display(
                     &window,
                     configured_fps,
+                    animation_speed,
+                    render_scale,
                 )
             else {
                 break 'preview Ok(());
@@ -1756,6 +2162,71 @@ fn run_paths(
                     &format!(
                         "[EDIT_SHADER] Live FPS target changed to {}",
                         configured_fps,
+                    )
+                );
+            }
+
+
+            if (
+                selected_animation_speed
+                    - animation_speed
+            )
+                .abs()
+                > f32::EPSILON
+            {
+                animation_speed =
+                    selected_animation_speed;
+
+                log_information(
+                    &format!(
+                        "[EDIT_SHADER] Live animation speed changed to {:.2}x",
+                        animation_speed,
+                    )
+                );
+            }
+
+
+            if (
+                selected_render_scale
+                    - render_scale
+            )
+                .abs()
+                > f32::EPSILON
+            {
+                let mut updated_profile =
+                    postprocess_policy.profile_for_shader(
+                        &active.shader_name
+                    );
+
+                updated_profile.render_scale =
+                    selected_render_scale;
+
+                postprocess.set_profile(
+                    updated_profile
+                )?;
+
+                render_scale =
+                    selected_render_scale;
+
+                active.frame_times =
+                    FrameTimeWindow::new();
+
+                active.fps_warning_state =
+                    crate::fps_monitor::FpsWarningState::Normal;
+
+                active.fps_blink_visible =
+                    true;
+
+                active.last_fps_blink =
+                    Instant::now();
+
+                active.subtitle_overlay =
+                    None;
+
+                log_information(
+                    &format!(
+                        "[EDIT_SHADER] Live render scale changed to {:.2}x",
+                        render_scale,
                     )
                 );
             }
