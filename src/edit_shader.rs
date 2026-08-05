@@ -33,6 +33,31 @@ const FPS_CRITICAL_BLINK_INTERVAL: Duration =
     Duration::from_millis(500);
 
 
+// Editor-window geometry is expressed as a fraction of the active display.
+// The maximum width and height multiply to exactly 0.125, limiting the
+// window to one eighth of the full-screen area.
+const EDIT_WINDOW_INITIAL_WIDTH_FRACTION: f32 =
+    0.38;
+
+const EDIT_WINDOW_INITIAL_HEIGHT_FRACTION: f32 =
+    0.30;
+
+const EDIT_WINDOW_MAXIMUM_WIDTH_FRACTION: f32 =
+    0.40;
+
+const EDIT_WINDOW_MAXIMUM_HEIGHT_FRACTION: f32 =
+    0.3125;
+
+const EDIT_WINDOW_REFERENCE_HEIGHT: f32 =
+    1080.0;
+
+const EDIT_WINDOW_SCALE_MIN: f32 =
+    0.80;
+
+const EDIT_WINDOW_SCALE_MAX: f32 =
+    1.80;
+
+
 /// Minimal egui integration for the first graphical-window checkpoint.
 ///
 /// This owns only the egui context, OpenGL painter, pointer events, and the
@@ -55,6 +80,9 @@ struct EditWindowOverlay {
 
     window_open:
         bool,
+
+    pixels_per_point:
+        f32,
 }
 
 
@@ -112,6 +140,9 @@ impl EditWindowOverlay {
 
                 window_open:
                     true,
+
+                pixels_per_point:
+                    1.0,
             }
         )
     }
@@ -130,8 +161,10 @@ impl EditWindowOverlay {
             } => {
                 self.pointer_position =
                     egui::pos2(
-                        x as f32,
-                        y as f32,
+                        x as f32
+                            / self.pixels_per_point,
+                        y as f32
+                            / self.pixels_per_point,
                     );
 
                 self.pending_events.push(
@@ -193,8 +226,10 @@ impl EditWindowOverlay {
 
         self.pointer_position =
             egui::pos2(
-                x as f32,
-                y as f32,
+                x as f32
+                    / self.pixels_per_point,
+                y as f32
+                    / self.pixels_per_point,
             );
 
 
@@ -254,16 +289,48 @@ impl EditWindowOverlay {
             );
 
 
+        self.pixels_per_point =
+            pixels_per_point;
+
+
         let mut raw_input =
             egui::RawInput::default();
 
+        let screen_rect =
+            egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                screen_size_points,
+            );
+
+
         raw_input.screen_rect =
             Some(
-                egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    screen_size_points,
-                )
+                screen_rect
             );
+
+
+        raw_input.viewports.insert(
+            egui::ViewportId::ROOT,
+            egui::ViewportInfo {
+                native_pixels_per_point:
+                    Some(
+                        pixels_per_point
+                    ),
+
+                inner_rect:
+                    Some(
+                        screen_rect
+                    ),
+
+                outer_rect:
+                    Some(
+                        screen_rect
+                    ),
+
+                ..Default::default()
+            },
+        );
+
 
         raw_input.max_texture_side =
             Some(
@@ -282,60 +349,105 @@ impl EditWindowOverlay {
             );
 
 
+        let resolution_scale =
+            (screen_size_points.y
+                / EDIT_WINDOW_REFERENCE_HEIGHT)
+                .clamp(
+                    EDIT_WINDOW_SCALE_MIN,
+                    EDIT_WINDOW_SCALE_MAX,
+                );
+
+
+        configure_editor_style(
+            &self.context,
+            resolution_scale,
+        );
+
+
         let initial_size =
             egui::vec2(
-                screen_size_points.x * 0.28,
-                screen_size_points.y * 0.32,
+                screen_size_points.x
+                    * EDIT_WINDOW_INITIAL_WIDTH_FRACTION,
+                screen_size_points.y
+                    * EDIT_WINDOW_INITIAL_HEIGHT_FRACTION,
             );
 
         let maximum_size =
             egui::vec2(
-                screen_size_points.x * 0.40,
-                screen_size_points.y * 0.3125,
+                screen_size_points.x
+                    * EDIT_WINDOW_MAXIMUM_WIDTH_FRACTION,
+                screen_size_points.y
+                    * EDIT_WINDOW_MAXIMUM_HEIGHT_FRACTION,
+            );
+
+        let minimum_size =
+            egui::vec2(
+                240.0 * resolution_scale,
+                110.0 * resolution_scale,
+            )
+            .min(
+                maximum_size
             );
 
         let initial_position =
             egui::pos2(
-                screen_size_points.x * 0.02,
-                screen_size_points.y * 0.02,
+                ((screen_size_points.x - initial_size.x) * 0.5)
+                    .max(0.0),
+                ((screen_size_points.y - initial_size.y) * 0.5)
+                    .max(0.0),
             );
-
 
         let mut window_open =
             self.window_open;
-
 
         let full_output =
             self.context.run(
                 raw_input,
                 |context| {
+                    let initial_rect =
+                        egui::Rect::from_min_size(
+                            initial_position,
+                            initial_size,
+                        );
+
+
                     egui::Window::new(
                         "Shader Editor"
                     )
                     .open(
                         &mut window_open
                     )
-                    .default_pos(
-                        initial_position
+                    .default_open(
+                        true
                     )
-                    .default_size(
-                        initial_size
+                    .collapsible(
+                        false
+                    )
+                    .default_rect(
+                        initial_rect
                     )
                     .min_size(
-                        egui::vec2(
-                            180.0,
-                            80.0,
-                        )
+                        minimum_size
                     )
                     .max_size(
                         maximum_size
+                    )
+                    .constrain_to(
+                        screen_rect
                     )
                     .resizable(
                         true
                     )
                     .show(
                         context,
-                        |_ui| {}
+                        |ui| {
+                            // Empty egui windows auto-shrink to their contents.
+                            // Occupying the available body keeps this checkpoint's
+                            // deliberately empty editor panel at its chosen size.
+                            ui.allocate_space(
+                                ui.available_size()
+                            );
+                        }
                     );
                 }
             );
@@ -343,7 +455,6 @@ impl EditWindowOverlay {
 
         self.window_open =
             window_open;
-
 
         let clipped_primitives =
             self.context.tessellate(
@@ -372,6 +483,68 @@ impl EditWindowOverlay {
     ) {
         self.painter.destroy();
     }
+}
+
+
+fn configure_editor_style(
+    context: &egui::Context,
+    resolution_scale: f32,
+) {
+
+    let mut style =
+        (*context.style()).clone();
+
+
+    style.spacing.item_spacing =
+        egui::vec2(
+            8.0 * resolution_scale,
+            6.0 * resolution_scale,
+        );
+
+    style.spacing.window_margin =
+        egui::Margin::same(
+            (8.0 * resolution_scale)
+                .round() as i8
+        );
+
+    style.spacing.button_padding =
+        egui::vec2(
+            8.0 * resolution_scale,
+            4.0 * resolution_scale,
+        );
+
+    style.spacing.interact_size.y =
+        18.0 * resolution_scale;
+
+    style.visuals.resize_corner_size =
+        12.0 * resolution_scale;
+
+
+    style.text_styles.insert(
+        egui::TextStyle::Body,
+        egui::FontId::proportional(
+            14.0 * resolution_scale
+        ),
+    );
+
+    style.text_styles.insert(
+        egui::TextStyle::Button,
+        egui::FontId::proportional(
+            14.0 * resolution_scale
+        ),
+    );
+
+    style.text_styles.insert(
+        egui::TextStyle::Heading,
+        egui::FontId::proportional(
+            16.0 * resolution_scale
+        ),
+    );
+
+
+    context.set_style(
+        style
+    );
 }
 
 
