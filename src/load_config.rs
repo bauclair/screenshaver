@@ -126,6 +126,9 @@ struct PostprocessSection {
 
     #[serde(default)]
     color_precision: Option<String>,
+
+    #[serde(default)]
+    render_scale: Option<f32>,
 }
 
 
@@ -240,6 +243,9 @@ pub struct ShaderPolicy {
         Option<
             crate::select_render_precision::ColorPrecisionPolicy
         >,
+
+    pub render_scale:
+        Option<f32>,
 }
 
 
@@ -417,7 +423,6 @@ pub struct TexturePolicy {
     Clone,
     Copy,
     PartialEq,
-    Eq,
 )]
 pub(crate) struct PostprocessProfile {
 
@@ -429,6 +434,9 @@ pub(crate) struct PostprocessProfile {
 
     pub color_precision:
         crate::select_render_precision::ColorPrecisionPolicy,
+
+    pub render_scale:
+        f32,
 }
 
 
@@ -446,6 +454,9 @@ impl Default for PostprocessProfile {
 
             color_precision:
                 crate::select_render_precision::ColorPrecisionPolicy::Auto,
+
+            render_scale:
+                crate::define_constants::RENDER_SCALE_DEFAULT,
         }
     }
 }
@@ -537,6 +548,17 @@ impl PostprocessPolicy {
                     )
                     .unwrap_or(
                         self.global_profile.color_precision
+                    ),
+
+            render_scale:
+                shader_policy
+                    .and_then(
+                        |shader_policy| {
+                            shader_policy.render_scale
+                        }
+                    )
+                    .unwrap_or(
+                        self.global_profile.render_scale
                     ),
         }
     }
@@ -722,6 +744,18 @@ pub fn load_config(
         );
 
 
+    let (
+        global_render_scale,
+        render_scale_warning,
+    ) =
+        parse_global_render_scale(
+            raw.postprocess
+                .render_scale,
+            built_in_postprocess_profile
+                .render_scale,
+        );
+
+
     let global_postprocess_profile =
         PostprocessProfile {
             anti_aliasing:
@@ -730,6 +764,8 @@ pub fn load_config(
                 global_dithering,
             color_precision:
                 global_color_precision,
+            render_scale:
+                global_render_scale,
         };
 
 
@@ -1194,6 +1230,14 @@ pub fn load_config(
             ),
 
             format!(
+                "[CONFIG] postprocess.render_scale = {:.3}",
+                config
+                    .screensaver_postprocess_policy
+                    .global_profile
+                    .render_scale,
+            ),
+
+            format!(
                 "[CONFIG] screen_lock = {}",
                 config.screen_lock,
             ),
@@ -1266,6 +1310,15 @@ pub fn load_config(
 
     if let Some(warning) =
         color_precision_warning
+    {
+        diagnostics.push(
+            warning
+        );
+    }
+
+
+    if let Some(warning) =
+        render_scale_warning
     {
         diagnostics.push(
             warning
@@ -1430,6 +1483,7 @@ fn parse_policy_specification(
     let mut anti_aliasing = None;
     let mut dithering = None;
     let mut color_precision = None;
+    let mut render_scale = None;
 
 
     for token in
@@ -1643,10 +1697,29 @@ fn parse_policy_specification(
                     );
             }
 
+            "render_scale" => {
+                if render_scale.is_some() {
+                    return Err(duplicate_policy_property(
+                        &shader,
+                        target,
+                        "render_scale",
+                    ));
+                }
+
+                render_scale =
+                    Some(
+                        parse_policy_render_scale(
+                            &shader,
+                            value,
+                            target.table_name(),
+                        )?
+                    );
+            }
+
             other => {
                 return Err(
                     format!(
-                        "Unknown policy property '{}' for '{}' in [{}]; supported properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision",
+                        "Unknown policy property '{}' for '{}' in [{}]; supported properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision, render_scale",
                         other,
                         shader,
                         target.table_name(),
@@ -1664,6 +1737,7 @@ fn parse_policy_specification(
         && anti_aliasing.is_none()
         && dithering.is_none()
         && color_precision.is_none()
+        && render_scale.is_none()
     {
         return Err(
             format!(
@@ -1685,6 +1759,7 @@ fn parse_policy_specification(
             anti_aliasing,
             dithering,
             color_precision,
+            render_scale,
         }
     )
 }
@@ -1791,8 +1866,23 @@ fn format_shader_policy_diagnostic(
         .map(|precision| precision.name())
         .unwrap_or("<global>");
 
+    let render_scale = shader_policy.render_scale
+        .map(
+            |render_scale| {
+                format!(
+                    "{:.3}",
+                    render_scale,
+                )
+            }
+        )
+        .unwrap_or_else(
+            || {
+                "<global>".to_string()
+            }
+        );
+
     format!(
-        "[CONFIG] {} shader={} texture={} palette={} fps={} speed={} anti_aliasing={} dithering={} color_precision={}",
+        "[CONFIG] {} shader={} texture={} palette={} fps={} speed={} anti_aliasing={} dithering={} color_precision={} render_scale={}",
         table_name,
         shader_policy.shader,
         texture,
@@ -1802,6 +1892,7 @@ fn format_shader_policy_diagnostic(
         anti_aliasing,
         dithering,
         color_precision,
+        render_scale,
     )
 }
 
@@ -1934,6 +2025,54 @@ fn parse_policy_color_precision(
             )
         }
     }
+}
+
+
+fn parse_policy_render_scale(
+    shader: &str,
+    value: &str,
+    table_name: &str,
+) -> Result<f32, String> {
+
+    let render_scale =
+        value.parse::<f32>()
+            .map_err(
+                |_| {
+                    format!(
+                        "Invalid render_scale '{}' for '{}' in [{}]; expected a number from {:.2} through {:.2}",
+                        value,
+                        shader,
+                        table_name,
+                        crate::define_constants::RENDER_SCALE_MIN,
+                        crate::define_constants::RENDER_SCALE_MAX,
+                    )
+                }
+            )?;
+
+
+    if !render_scale.is_finite()
+        || !(crate::define_constants::RENDER_SCALE_MIN
+            ..=crate::define_constants::RENDER_SCALE_MAX)
+            .contains(
+                &render_scale
+            )
+    {
+        return Err(
+            format!(
+                "render_scale {} for '{}' in [{}] is outside the supported range {:.2}-{:.2}",
+                value,
+                shader,
+                table_name,
+                crate::define_constants::RENDER_SCALE_MIN,
+                crate::define_constants::RENDER_SCALE_MAX,
+            )
+        );
+    }
+
+
+    Ok(
+        render_scale
+    )
 }
 
 
@@ -2083,6 +2222,52 @@ fn parse_global_color_precision(
             ),
         ),
     }
+}
+
+
+fn parse_global_render_scale(
+    value: Option<f32>,
+    fallback: f32,
+) -> (
+    f32,
+    Option<String>,
+) {
+
+    let Some(value) = value
+    else {
+        return (
+            fallback,
+            None,
+        );
+    };
+
+
+    if value.is_finite()
+        && (crate::define_constants::RENDER_SCALE_MIN
+            ..=crate::define_constants::RENDER_SCALE_MAX)
+            .contains(
+                &value
+            )
+    {
+        return (
+            value,
+            None,
+        );
+    }
+
+
+    (
+        fallback,
+        Some(
+            format!(
+                "[CONFIG] WARNING: postprocess.render_scale = '{}' is outside the supported range {:.2}-{:.2}; using '{:.3}'",
+                value,
+                crate::define_constants::RENDER_SCALE_MIN,
+                crate::define_constants::RENDER_SCALE_MAX,
+                fallback,
+            )
+        ),
+    )
 }
 
 

@@ -153,6 +153,8 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 #     standard  Require RGBA8 render targets.
 #     high      Require RGBA16F render targets.
   color_precision = "auto"
+# Supported render scaling values are from 0.25 to 2.0.
+  render_scale = 1.1
 
 ################################
 # PERFORMANCE

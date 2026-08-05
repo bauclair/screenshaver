@@ -130,7 +130,7 @@ impl PostprocessPipeline {
         )?;
 
         let render_scale =
-            1.25_f32;
+            profile.render_scale;
 
         validate_render_scale(
             render_scale
@@ -281,21 +281,49 @@ impl PostprocessPipeline {
             crate::load_config::PostprocessProfile,
     ) -> Result<(), String> {
 
-        if profile.color_precision
-            != self.precision_selection.requested
+        validate_render_scale(
+            profile.render_scale
+        )?;
+
+
+        let precision_changed =
+            profile.color_precision
+                != self.precision_selection.requested;
+
+        let render_scale_changed =
+            (profile.render_scale
+                - self.render_scale)
+                .abs()
+                > f32::EPSILON;
+
+
+        if precision_changed
+            || render_scale_changed
         {
+            let (
+                scene_width,
+                scene_height,
+            ) =
+                scaled_dimensions(
+                    self.output_width,
+                    self.output_height,
+                    profile.render_scale,
+                )?;
+
+
             let (
                 scene_target,
                 scratch_target,
                 precision_selection,
             ) =
                 select_render_targets(
-                    self.scene_width,
-                    self.scene_height,
+                    scene_width,
+                    scene_height,
                     self.output_width,
                     self.output_height,
                     profile.color_precision,
                 )?;
+
 
             self.scene_target =
                 scene_target;
@@ -303,11 +331,29 @@ impl PostprocessPipeline {
             self.scratch_target =
                 scratch_target;
 
+            self.scene_width =
+                scene_width;
+
+            self.scene_height =
+                scene_height;
+
+            self.render_scale =
+                profile.render_scale;
+
             self.precision_selection =
                 precision_selection;
 
-            self.log_precision_selection();
+
+            if precision_changed {
+                self.log_precision_selection();
+            }
+
+
+            if render_scale_changed {
+                self.log_render_scale();
+            }
         }
+
 
         self.method =
             method_for_profile(
@@ -316,6 +362,7 @@ impl PostprocessPipeline {
 
         self.dithering_level =
             profile.dithering;
+
 
         Ok(())
     }
