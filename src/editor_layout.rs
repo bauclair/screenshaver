@@ -172,6 +172,65 @@ pub enum DitheringSelection {
 }
 
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ColorPrecisionSelection {
+    Automatic,
+    High,
+    Standard,
+}
+
+
+impl ColorPrecisionSelection {
+    pub fn from_policy(
+        policy: crate::select_render_precision::ColorPrecisionPolicy,
+    ) -> Self {
+        match policy {
+            crate::select_render_precision::ColorPrecisionPolicy::Auto => {
+                Self::Automatic
+            }
+
+            crate::select_render_precision::ColorPrecisionPolicy::High => {
+                Self::High
+            }
+
+            crate::select_render_precision::ColorPrecisionPolicy::Standard => {
+                Self::Standard
+            }
+        }
+    }
+
+
+    pub fn policy(
+        self,
+    ) -> crate::select_render_precision::ColorPrecisionPolicy {
+        match self {
+            Self::Automatic => {
+                crate::select_render_precision::ColorPrecisionPolicy::Auto
+            }
+
+            Self::High => {
+                crate::select_render_precision::ColorPrecisionPolicy::High
+            }
+
+            Self::Standard => {
+                crate::select_render_precision::ColorPrecisionPolicy::Standard
+            }
+        }
+    }
+
+
+    pub fn display_name(
+        self,
+    ) -> &'static str {
+        match self {
+            Self::Automatic => "Automatic",
+            Self::High => "High Precision",
+            Self::Standard => "Standard Precision",
+        }
+    }
+}
+
+
 #[derive(Clone, Debug)]
 pub struct ShaderInformation {
     pub filename: String,
@@ -194,10 +253,13 @@ pub struct EditorOutput {
     pub primitive_count: u32,
     pub anti_aliasing: AntiAliasingSelection,
     pub dithering: DitheringSelection,
+    pub color_precision: ColorPrecisionSelection,
     pub policy_target_change_requested: Option<PolicyTarget>,
     pub save_requested: bool,
     pub cancel_requested: bool,
     pub delete_requested: bool,
+    pub browse_shader_requested: bool,
+    pub refresh_shader_requested: bool,
     pub window_open: bool,
 }
 
@@ -213,6 +275,7 @@ struct EditorConfiguration {
     primitive_count: u32,
     anti_aliasing: AntiAliasingSelection,
     dithering: DitheringSelection,
+    color_precision: ColorPrecisionSelection,
 }
 
 
@@ -227,6 +290,7 @@ impl EditorConfiguration {
         primitive_count: u32,
         anti_aliasing: AntiAliasingSelection,
         dithering: DitheringSelection,
+        color_precision: ColorPrecisionSelection,
     ) -> Self {
 
         Self {
@@ -245,6 +309,7 @@ impl EditorConfiguration {
             primitive_count,
             anti_aliasing,
             dithering,
+            color_precision,
         }
     }
 
@@ -280,6 +345,8 @@ impl EditorConfiguration {
                 != other.anti_aliasing
             || self.dithering
                 != other.dithering
+            || self.color_precision
+                != other.color_precision
     }
 }
 
@@ -342,6 +409,9 @@ pub struct EditWindowOverlay {
 
     dithering:
         DitheringSelection,
+
+    color_precision:
+        ColorPrecisionSelection,
 
     shift_held:
         bool,
@@ -447,6 +517,9 @@ impl EditWindowOverlay {
 
                 dithering:
                     DitheringSelection::Off,
+
+                color_precision:
+                    ColorPrecisionSelection::Automatic,
 
                 shift_held:
                     false,
@@ -603,6 +676,7 @@ impl EditWindowOverlay {
         resolved_render_scale: f32,
         resolved_anti_aliasing: AntiAliasingSelection,
         resolved_dithering: DitheringSelection,
+        resolved_color_precision: ColorPrecisionSelection,
         active_texture_selection: Option<(
             crate::parse_texture_specification::TextureSpecification,
             crate::palettes::Palette,
@@ -826,6 +900,9 @@ impl EditWindowOverlay {
         let mut dithering =
             self.dithering;
 
+        let mut color_precision =
+            self.color_precision;
+
 
         if self.initial_configuration.is_none() {
             anti_aliasing =
@@ -833,6 +910,9 @@ impl EditWindowOverlay {
 
             dithering =
                 resolved_dithering;
+
+            color_precision =
+                resolved_color_precision;
 
             if let Some((
                 specification,
@@ -872,6 +952,12 @@ impl EditWindowOverlay {
         let mut delete_requested =
             false;
 
+        let mut browse_shader_requested =
+            false;
+
+        let mut refresh_shader_requested =
+            false;
+
 
         let baseline_configuration =
             *self.initial_configuration
@@ -887,6 +973,7 @@ impl EditWindowOverlay {
                             primitive_count,
                             anti_aliasing,
                             dithering,
+                            color_precision,
                         )
                     }
                 );
@@ -910,6 +997,7 @@ impl EditWindowOverlay {
                 primitive_count,
                 anti_aliasing,
                 dithering,
+                color_precision,
             );
 
         let configuration_changed_before_ui =
@@ -975,6 +1063,9 @@ impl EditWindowOverlay {
                                 metrics,
                                 shader_loaded,
                                 shader_information,
+                                configuration_changed_before_ui,
+                                &mut browse_shader_requested,
+                                &mut refresh_shader_requested,
                                 &mut status_message,
                                 &mut hover_help_message,
                             );
@@ -1014,6 +1105,7 @@ impl EditWindowOverlay {
                                         metrics,
                                         &mut anti_aliasing,
                                         &mut dithering,
+                                        &mut color_precision,
                                         &mut hover_help_message,
                                     );
                                 },
@@ -1044,6 +1136,7 @@ impl EditWindowOverlay {
                                     primitive_count,
                                     anti_aliasing,
                                     dithering,
+                                    color_precision,
                                 );
 
                             let configuration_changed =
@@ -1097,6 +1190,7 @@ impl EditWindowOverlay {
                                         &mut primitive_count,
                                         &mut anti_aliasing,
                                         &mut dithering,
+                                        &mut color_precision,
                                         baseline_configuration,
                                         &mut fps_drag_state,
                                         &mut animation_speed_drag_state,
@@ -1192,6 +1286,9 @@ impl EditWindowOverlay {
         self.dithering =
             dithering;
 
+        self.color_precision =
+            color_precision;
+
         let clipped_primitives =
             self.context.tessellate(
                 full_output.shapes,
@@ -1232,6 +1329,8 @@ impl EditWindowOverlay {
 
             dithering,
 
+            color_precision,
+
             policy_target_change_requested,
 
             save_requested,
@@ -1239,6 +1338,10 @@ impl EditWindowOverlay {
             cancel_requested,
 
             delete_requested,
+
+            browse_shader_requested,
+
+            refresh_shader_requested,
 
             window_open:
                 self.window_open,
@@ -1263,6 +1366,7 @@ impl EditWindowOverlay {
         policy_target: Option<PolicyTarget>,
         anti_aliasing: AntiAliasingSelection,
         dithering: DitheringSelection,
+        color_precision: ColorPrecisionSelection,
         active_texture_selection: Option<(
             crate::parse_texture_specification::TextureSpecification,
             crate::palettes::Palette,
@@ -1299,6 +1403,9 @@ impl EditWindowOverlay {
 
         self.dithering =
             dithering;
+
+        self.color_precision =
+            color_precision;
 
         if let Some((
             specification,
@@ -1351,6 +1458,7 @@ impl EditWindowOverlay {
                     self.primitive_count,
                     self.anti_aliasing,
                     self.dithering,
+                    self.color_precision,
                 )
             );
     }
@@ -1380,6 +1488,7 @@ impl EditWindowOverlay {
                         self.primitive_count,
                         self.anti_aliasing,
                         self.dithering,
+                        self.color_precision,
                     )
                 );
         }
@@ -1421,6 +1530,9 @@ fn draw_shader_header_row(
     metrics: EditorMetrics,
     shader_loaded: bool,
     shader_information: Option<&ShaderInformation>,
+    configuration_changed: bool,
+    browse_shader_requested: &mut bool,
+    refresh_shader_requested: &mut bool,
     status_message: &mut String,
     hover_help_message: &mut Option<&'static str>,
 ) {
@@ -1480,11 +1592,35 @@ fn draw_shader_header_row(
                                             ui.add_enabled(
                                                 false,
                                                 egui::Button::new(
-                                                    "Recent shader placeholder"
+                                                    "Recent Files (empty)"
                                                 ),
                                             );
 
                                             ui.separator();
+
+                                            let browse_response =
+                                                ui.button(
+                                                    "Browse..."
+                                                );
+
+                                            update_hover_help(
+                                                &browse_response,
+                                                hover_help_message,
+                                                "Select a ShaderToy, ISF, or native GLSL shader file to load.",
+                                            );
+
+                                            if browse_response.clicked() {
+                                                if configuration_changed {
+                                                    *status_message =
+                                                        "Save or cancel the current changes before loading another shader."
+                                                            .to_string();
+                                                } else {
+                                                    *browse_shader_requested =
+                                                        true;
+                                                }
+
+                                                ui.close();
+                                            }
 
                                             let refresh_response =
                                                 ui.add_enabled(
@@ -1501,26 +1637,14 @@ fn draw_shader_header_row(
                                             );
 
                                             if refresh_response.clicked() {
-                                                *status_message =
-                                                    "Refresh Shader is not implemented in this checkpoint"
-                                                        .to_string();
-                                            }
-
-                                            let browse_response =
-                                                ui.button(
-                                                    "Browse..."
-                                                );
-
-                                            update_hover_help(
-                                                &browse_response,
-                                                hover_help_message,
-                                                "Select a shader file from another folder.",
-                                            );
-
-                                            if browse_response.clicked() {
-                                                *status_message =
-                                                    "Shader browsing is not implemented in this checkpoint"
-                                                        .to_string();
+                                                if configuration_changed {
+                                                    *status_message =
+                                                        "Save or cancel the current changes before refreshing the shader."
+                                                            .to_string();
+                                                } else {
+                                                    *refresh_shader_requested =
+                                                        true;
+                                                }
                                             }
 
                                             ui.separator();
@@ -2000,6 +2124,7 @@ fn draw_post_processing_panel(
     metrics: EditorMetrics,
     anti_aliasing: &mut AntiAliasingSelection,
     dithering: &mut DitheringSelection,
+    color_precision: &mut ColorPrecisionSelection,
     hover_help_message: &mut Option<&'static str>,
 ) {
     editor_theme::panel_frame(
@@ -2110,6 +2235,47 @@ fn draw_post_processing_panel(
                         &response,
                         hover_help_message,
                         "Reduce visible color banding in smooth gradients.",
+                    );
+                    ui.end_row();
+
+                    ui.label("Color Precision");
+
+                    let response =
+                        egui::ComboBox::from_id_source(
+                            "editor_color_precision"
+                        )
+                        .selected_text(
+                            color_precision.display_name()
+                        )
+                        .width(metrics.dropdown_width)
+                        .show_ui(
+                            ui,
+                            |ui| {
+                                ui.selectable_value(
+                                    color_precision,
+                                    ColorPrecisionSelection::Automatic,
+                                    "Automatic",
+                                );
+
+                                ui.selectable_value(
+                                    color_precision,
+                                    ColorPrecisionSelection::High,
+                                    "High Precision",
+                                );
+
+                                ui.selectable_value(
+                                    color_precision,
+                                    ColorPrecisionSelection::Standard,
+                                    "Standard Precision",
+                                );
+                            },
+                        )
+                        .response;
+
+                    update_hover_help(
+                        &response,
+                        hover_help_message,
+                        "Controls off-screen render-target precision. Higher precision can reduce banding but may use more GPU memory.",
                     );
                     ui.end_row();
                 },
@@ -2233,6 +2399,7 @@ fn draw_policy_actions_panel(
     primitive_count: &mut u32,
     anti_aliasing: &mut AntiAliasingSelection,
     dithering: &mut DitheringSelection,
+    color_precision: &mut ColorPrecisionSelection,
     baseline_configuration: EditorConfiguration,
     fps_drag_state: &mut Option<SliderDragState>,
     animation_speed_drag_state: &mut Option<SliderDragState>,
@@ -2334,6 +2501,8 @@ fn draw_policy_actions_panel(
                     baseline_configuration.anti_aliasing;
                 *dithering =
                     baseline_configuration.dithering;
+                *color_precision =
+                    baseline_configuration.color_precision;
                 *fps_drag_state =
                     None;
                 *animation_speed_drag_state =

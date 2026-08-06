@@ -32,6 +32,10 @@ const FPS_CRITICAL_BLINK_INTERVAL: Duration =
     Duration::from_millis(500);
 
 
+const FILE_DIALOG_FULLSCREEN_RESTORE_DELAY: Duration =
+    Duration::from_millis(125);
+
+
 struct FrameTimeWindow {
     samples: VecDeque<(Instant, Duration)>,
     total: Duration,
@@ -379,6 +383,7 @@ fn run_empty_session() -> Result<(), String> {
                 crate::define_constants::RENDER_SCALE_DEFAULT,
                 crate::editor_layout::AntiAliasingSelection::Fxaa,
                 crate::editor_layout::DitheringSelection::Subtle,
+                crate::editor_layout::ColorPrecisionSelection::Automatic,
                 None,
                 false,
                 false,
@@ -404,6 +409,31 @@ fn run_empty_session() -> Result<(), String> {
     drop(
         gl_context
     );
+
+
+    Ok(())
+}
+
+
+fn restore_editor_fullscreen(
+    window: &mut sdl2::video::Window,
+) -> Result<(), String> {
+
+    window
+        .set_fullscreen(
+            FullscreenType::Desktop
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to restore Shader Policy Editor fullscreen state: {}",
+                    error,
+                )
+            }
+        )?;
+
+
+    window.raise();
 
 
     Ok(())
@@ -823,6 +853,9 @@ fn run_paths(
         dithering_selection_from_level(
             live_postprocess_profile.dithering
         ),
+        color_precision_selection_from_policy(
+            live_postprocess_profile.color_precision
+        ),
         active.texture_manager
             .active_specification_selection(),
         startup_status,
@@ -867,6 +900,11 @@ fn run_paths(
         Instant::now();
 
 
+    let mut fullscreen_restore_requested_at:
+        Option<Instant> =
+        None;
+
+
     let result =
         'preview: loop {
 
@@ -892,6 +930,32 @@ fn run_paths(
                         // and do not automatically terminate the session.
                     }
                 }
+            }
+
+
+            if fullscreen_restore_requested_at
+                .is_some_and(
+                    |requested_at| {
+                        requested_at.elapsed()
+                            >= FILE_DIALOG_FULLSCREEN_RESTORE_DELAY
+                    }
+                )
+            {
+                if let Err(error) =
+                    restore_editor_fullscreen(
+                        &mut window
+                    )
+                {
+                    log_warning(
+                        &format!(
+                            "[EDIT_SHADER] Deferred fullscreen restoration failed: {}",
+                            error,
+                        )
+                    );
+                }
+
+                fullscreen_restore_requested_at =
+                    None;
             }
 
 
@@ -1326,6 +1390,10 @@ fn run_paths(
                         live_postprocess_profile
                             .dithering
                     ),
+                    color_precision_selection_from_policy(
+                        live_postprocess_profile
+                            .color_precision
+                    ),
                     active_texture_selection,
                     true,
                     active.channel_usage
@@ -1337,6 +1405,409 @@ fn run_paths(
 
             if !editor_output.window_open {
                 break 'preview Ok(());
+            }
+
+
+            if editor_output.browse_shader_requested {
+                let starting_directory =
+                    active.path
+                        .parent()
+                        .unwrap_or_else(
+                            || Path::new(".")
+                        );
+
+                let selected_path =
+                    rfd::FileDialog::new()
+                        .add_filter(
+                            "GL shader files",
+                            &[
+                                "glsl",
+                                "fs",
+                            ],
+                        )
+                        .set_directory(
+                            starting_directory
+                        )
+                        .pick_file();
+
+                if let Err(error) =
+                    restore_editor_fullscreen(
+                        &mut window
+                    )
+                {
+                    log_warning(
+                        &format!(
+                            "[EDIT_SHADER] Immediate fullscreen restoration failed: {}",
+                            error,
+                        )
+                    );
+                }
+
+                fullscreen_restore_requested_at =
+                    Some(
+                        Instant::now()
+                    );
+
+                let Some(selected_path) =
+                    selected_path
+                else {
+                    edit_window.set_status_message(
+                        "Shader loading canceled."
+                    );
+
+                    continue;
+                };
+
+                let selected_shader_name =
+                    selected_path
+                        .file_name()
+                        .and_then(
+                            |name| name.to_str()
+                        )
+                        .unwrap_or("")
+                        .to_string();
+
+                let new_screensaver_policy_exists =
+                    config.screensaver_policies
+                        .iter()
+                        .any(
+                            |policy| {
+                                policy.shader
+                                    .eq_ignore_ascii_case(
+                                        &selected_shader_name
+                                    )
+                            }
+                        );
+
+                let new_wallpaper_policy_exists =
+                    config.wallpaper_policies
+                        .iter()
+                        .any(
+                            |policy| {
+                                policy.shader
+                                    .eq_ignore_ascii_case(
+                                        &selected_shader_name
+                                    )
+                            }
+                        );
+
+                let new_editor_target =
+                    if new_wallpaper_policy_exists {
+                        Some(
+                            crate::editor_layout::PolicyTarget::Wallpaper
+                        )
+                    } else if new_screensaver_policy_exists {
+                        Some(
+                            crate::editor_layout::PolicyTarget::Screensaver
+                        )
+                    } else {
+                        None
+                    };
+
+                let (
+                    new_global_rendered_fps,
+                    new_fps_policy_entries,
+                    new_texture_policy,
+                    new_postprocess_policy,
+                    new_animation_speed,
+                    load_status,
+                ) =
+                    match new_editor_target {
+                        Some(
+                            crate::editor_layout::PolicyTarget::Wallpaper
+                        ) => {
+                            (
+                                config.wallpaper_fps_policy
+                                    .global_rendered_fps,
+                                config.wallpaper_fps_policy
+                                    .fps_policy_entries
+                                    .clone(),
+                                config.wallpaper_texture_policy
+                                    .clone(),
+                                config.wallpaper_postprocess_policy
+                                    .clone(),
+                                config.wallpaper_speed_policy
+                                    .animation_speed_for_shader(
+                                        &selected_shader_name,
+                                        command_line_animation_speed,
+                                    ),
+                                "Loaded shader with its existing Wallpaper policy."
+                                    .to_string(),
+                            )
+                        }
+
+                        Some(
+                            crate::editor_layout::PolicyTarget::Screensaver
+                        ) => {
+                            (
+                                config.global_rendered_fps,
+                                config.screensaver_fps_policy_entries
+                                    .clone(),
+                                config.texture_policy
+                                    .clone(),
+                                config.screensaver_postprocess_policy
+                                    .clone(),
+                                config.screensaver_speed_policy
+                                    .animation_speed_for_shader(
+                                        &selected_shader_name,
+                                        command_line_animation_speed,
+                                    ),
+                                "Loaded shader with its existing Screensaver policy."
+                                    .to_string(),
+                            )
+                        }
+
+                        None => {
+                            (
+                                config.global_rendered_fps,
+                                config.screensaver_fps_policy_entries
+                                    .clone(),
+                                config.texture_policy
+                                    .clone(),
+                                config.screensaver_postprocess_policy
+                                    .clone(),
+                                config.screensaver_speed_policy
+                                    .animation_speed_for_shader(
+                                        &selected_shader_name,
+                                        command_line_animation_speed,
+                                    ),
+                                "Loaded shader using resolved defaults. Select a policy target to create a policy."
+                                    .to_string(),
+                            )
+                        }
+                    };
+
+                let new_configured_fps =
+                    resolve_preview_fps(
+                        new_global_rendered_fps,
+                        &new_fps_policy_entries,
+                        command_line_fps,
+                        &selected_shader_name,
+                    );
+
+                match load_active_shader(
+                    &selected_path,
+                    &new_texture_policy,
+                    preview_selection,
+                    subtitles,
+                    subtitle_placement,
+                    new_configured_fps,
+                    new_animation_speed,
+                    width,
+                    height,
+                ) {
+                    Ok(mut replacement) => {
+                        let new_live_postprocess_profile =
+                            new_postprocess_policy
+                                .profile_for_shader(
+                                    &replacement.shader_name
+                                );
+
+                        postprocess.set_profile(
+                            new_live_postprocess_profile
+                        )?;
+
+                        destroy_active_shader(
+                            &mut active
+                        );
+
+                        std::mem::swap(
+                            &mut active,
+                            &mut replacement,
+                        );
+
+                        screensaver_policy_exists =
+                            new_screensaver_policy_exists;
+
+                        wallpaper_policy_exists =
+                            new_wallpaper_policy_exists;
+
+                        global_rendered_fps =
+                            new_global_rendered_fps;
+
+                        fps_policy_entries =
+                            new_fps_policy_entries;
+
+                        texture_policy =
+                            new_texture_policy;
+
+                        postprocess_policy =
+                            new_postprocess_policy;
+
+                        animation_speed =
+                            new_animation_speed;
+
+                        configured_fps =
+                            new_configured_fps;
+
+                        target_frame_time =
+                            Duration::from_secs_f64(
+                                1.0
+                                    / configured_fps.max(1) as f64
+                            );
+
+                        live_postprocess_profile =
+                            new_live_postprocess_profile;
+
+                        render_scale =
+                            live_postprocess_profile.render_scale;
+
+                        information_path =
+                            resolve_information_path(
+                                &active.path,
+                                &active.shader_name,
+                                new_editor_target,
+                            );
+
+                        synchronize_overlay_texture_metadata(
+                            &mut active
+                        );
+
+                        active.frame_times =
+                            FrameTimeWindow::new();
+
+                        active.fps_warning_state =
+                            crate::fps_monitor::FpsWarningState::Normal;
+
+                        active.fps_blink_visible =
+                            true;
+
+                        active.last_fps_blink =
+                            Instant::now();
+
+                        active.subtitle_overlay =
+                            None;
+
+                        edit_window.initialize_configuration(
+                            configured_fps,
+                            animation_speed,
+                            render_scale,
+                            new_editor_target,
+                            anti_aliasing_selection_from_method(
+                                live_postprocess_profile.anti_aliasing
+                            ),
+                            dithering_selection_from_level(
+                                live_postprocess_profile.dithering
+                            ),
+                            color_precision_selection_from_policy(
+                                live_postprocess_profile.color_precision
+                            ),
+                            active.texture_manager
+                                .active_specification_selection(),
+                            load_status,
+                        );
+
+                        log_information(
+                            &format!(
+                                "[EDIT_SHADER] Loaded shader from {}",
+                                active.path.display(),
+                            )
+                        );
+                    }
+
+                    Err(error) => {
+                        edit_window.set_status_message(
+                            format!(
+                                "Unable to load shader: {}",
+                                error,
+                            )
+                        );
+
+                        log_warning(
+                            &format!(
+                                "[EDIT_SHADER] Unable to load '{}': {}",
+                                selected_path.display(),
+                                error,
+                            )
+                        );
+                    }
+                }
+
+                continue;
+            }
+
+
+            if editor_output.refresh_shader_requested {
+                let refresh_path =
+                    active.path.clone();
+
+                match load_active_shader(
+                    &refresh_path,
+                    &texture_policy,
+                    preview_selection,
+                    subtitles,
+                    subtitle_placement,
+                    configured_fps,
+                    animation_speed,
+                    width,
+                    height,
+                ) {
+                    Ok(mut replacement) => {
+                        destroy_active_shader(
+                            &mut active
+                        );
+
+                        std::mem::swap(
+                            &mut active,
+                            &mut replacement,
+                        );
+
+                        information_path =
+                            resolve_information_path(
+                                &active.path,
+                                &active.shader_name,
+                                editor_output.policy_target,
+                            );
+
+                        edit_window.initialize_configuration(
+                            configured_fps,
+                            animation_speed,
+                            render_scale,
+                            editor_output.policy_target,
+                            anti_aliasing_selection_from_method(
+                                live_postprocess_profile.anti_aliasing
+                            ),
+                            dithering_selection_from_level(
+                                live_postprocess_profile.dithering
+                            ),
+                            color_precision_selection_from_policy(
+                                live_postprocess_profile.color_precision
+                            ),
+                            active.texture_manager
+                                .active_specification_selection(),
+                            format!(
+                                "Refreshed shader from disk: {}",
+                                active.shader_name,
+                            ),
+                        );
+
+                        log_information(
+                            &format!(
+                                "[EDIT_SHADER] Refreshed shader from {}",
+                                active.path.display(),
+                            )
+                        );
+                    }
+
+                    Err(error) => {
+                        edit_window.set_status_message(
+                            format!(
+                                "Unable to refresh shader: {}",
+                                error,
+                            )
+                        );
+
+                        log_warning(
+                            &format!(
+                                "[EDIT_SHADER] Unable to refresh '{}': {}",
+                                refresh_path.display(),
+                                error,
+                            )
+                        );
+                    }
+                }
+
+                continue;
             }
 
 
@@ -1458,6 +1929,10 @@ fn run_paths(
                         active.program
                     );
 
+                synchronize_overlay_texture_metadata(
+                    &mut active
+                );
+
                 active.frame_times =
                     FrameTimeWindow::new();
 
@@ -1532,6 +2007,9 @@ fn run_paths(
                     dithering_selection_from_level(
                         live_postprocess_profile.dithering
                     ),
+                    color_precision_selection_from_policy(
+                        live_postprocess_profile.color_precision
+                    ),
                     active.texture_manager
                         .active_specification_selection(),
                     status_message,
@@ -1579,6 +2057,9 @@ fn run_paths(
 
             let selected_dithering =
                 editor_output.dithering;
+
+            let selected_color_precision =
+                editor_output.color_precision;
 
 
             if selected_fps
@@ -1660,6 +2141,11 @@ fn run_paths(
                     selected_dithering
                 );
 
+            let selected_color_precision_policy =
+                color_precision_policy_from_selection(
+                    selected_color_precision
+                );
+
 
             if (
                 selected_render_scale
@@ -1671,6 +2157,8 @@ fn run_paths(
                     != live_postprocess_profile.anti_aliasing
                 || selected_dithering_level
                     != live_postprocess_profile.dithering
+                || selected_color_precision_policy
+                    != live_postprocess_profile.color_precision
             {
                 live_postprocess_profile.render_scale =
                     selected_render_scale;
@@ -1680,6 +2168,9 @@ fn run_paths(
 
                 live_postprocess_profile.dithering =
                     selected_dithering_level;
+
+                live_postprocess_profile.color_precision =
+                    selected_color_precision_policy;
 
                 postprocess.set_profile(
                     live_postprocess_profile
@@ -1705,12 +2196,15 @@ fn run_paths(
 
                 log_information(
                     &format!(
-                        "[EDIT_SHADER] Live post-processing changed: anti_aliasing={}, dithering={}, render_scale={:.2}",
+                        "[EDIT_SHADER] Live post-processing changed: anti_aliasing={}, dithering={}, color_precision={}, render_scale={:.2}",
                         live_postprocess_profile
                             .anti_aliasing
                             .name(),
                         live_postprocess_profile
                             .dithering
+                            .name(),
+                        live_postprocess_profile
+                            .color_precision
                             .name(),
                         render_scale,
                     )
@@ -1782,6 +2276,10 @@ fn run_paths(
                         .configure_program(
                             active.program
                         );
+
+                    synchronize_overlay_texture_metadata(
+                        &mut active
+                    );
 
                     active.subtitle_overlay =
                         None;
@@ -2589,6 +3087,66 @@ fn load_active_shader(
 }
 
 
+
+fn synchronize_overlay_texture_metadata(
+    active: &mut ActivePreviewShader,
+) {
+
+    let (
+        texture,
+        palette,
+    ) =
+        active.texture_manager
+            .active_specification_selection()
+            .map(
+                |(
+                    specification,
+                    palette,
+                )| {
+                    let texture_name =
+                        specification.display_name();
+
+
+                    let texture_description =
+                        if specification.count_was_explicit {
+
+                            texture_name
+
+                        } else {
+
+                            format!(
+                                "{} ({})",
+                                texture_name,
+                                specification.requested_primitive_count,
+                            )
+                        };
+
+
+                    (
+                        Some(
+                            texture_description
+                        ),
+                        Some(
+                            palette.to_string()
+                        ),
+                    )
+                }
+            )
+            .unwrap_or(
+                (
+                    None,
+                    None,
+                )
+            );
+
+
+    active.overlay_descriptor.texture =
+        texture;
+
+    active.overlay_descriptor.palette =
+        palette;
+}
+
 fn format_animation_speed(
     speed: f32,
 ) -> String {
@@ -2817,6 +3375,22 @@ fn dithering_level_from_selection(
             crate::render_dithering::DitheringLevel::Subtle
         }
     }
+}
+
+
+fn color_precision_selection_from_policy(
+    policy: crate::select_render_precision::ColorPrecisionPolicy,
+) -> crate::editor_layout::ColorPrecisionSelection {
+    crate::editor_layout::ColorPrecisionSelection::from_policy(
+        policy
+    )
+}
+
+
+fn color_precision_policy_from_selection(
+    selection: crate::editor_layout::ColorPrecisionSelection,
+) -> crate::select_render_precision::ColorPrecisionPolicy {
+    selection.policy()
 }
 
 
