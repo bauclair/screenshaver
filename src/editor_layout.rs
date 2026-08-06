@@ -55,13 +55,106 @@ pub enum PolicyTarget {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TextureSelection {
-    Current,
+    Marble,
+    Clouds,
+    Cellular,
+    Mesh,
+    Radial,
+    Noise,
+    Bricks,
+    Hexagons,
+    Facets,
+}
+
+
+impl TextureSelection {
+    pub fn from_family(
+        family: crate::generate_textures::TextureFamily,
+    ) -> Self {
+        match family {
+            crate::generate_textures::TextureFamily::Marble => Self::Marble,
+            crate::generate_textures::TextureFamily::Clouds => Self::Clouds,
+            crate::generate_textures::TextureFamily::Cellular => Self::Cellular,
+            crate::generate_textures::TextureFamily::Mesh => Self::Mesh,
+            crate::generate_textures::TextureFamily::Radial => Self::Radial,
+            crate::generate_textures::TextureFamily::Noise => Self::Noise,
+            crate::generate_textures::TextureFamily::Bricks => Self::Bricks,
+            crate::generate_textures::TextureFamily::Hexagons => Self::Hexagons,
+            crate::generate_textures::TextureFamily::Facets => Self::Facets,
+        }
+    }
+
+
+    pub fn family(
+        self,
+    ) -> crate::generate_textures::TextureFamily {
+        match self {
+            Self::Marble => crate::generate_textures::TextureFamily::Marble,
+            Self::Clouds => crate::generate_textures::TextureFamily::Clouds,
+            Self::Cellular => crate::generate_textures::TextureFamily::Cellular,
+            Self::Mesh => crate::generate_textures::TextureFamily::Mesh,
+            Self::Radial => crate::generate_textures::TextureFamily::Radial,
+            Self::Noise => crate::generate_textures::TextureFamily::Noise,
+            Self::Bricks => crate::generate_textures::TextureFamily::Bricks,
+            Self::Hexagons => crate::generate_textures::TextureFamily::Hexagons,
+            Self::Facets => crate::generate_textures::TextureFamily::Facets,
+        }
+    }
+
+
+    pub fn name(
+        self,
+    ) -> &'static str {
+        self.family().name()
+    }
 }
 
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PaletteSelection {
-    Current,
+    Slate,
+    Sandstone,
+    Lichen,
+    Mist,
+    Bronze,
+    Brick,
+}
+
+
+impl PaletteSelection {
+    pub fn from_palette(
+        palette: crate::palettes::Palette,
+    ) -> Self {
+        match palette {
+            crate::palettes::Palette::Slate => Self::Slate,
+            crate::palettes::Palette::Sandstone => Self::Sandstone,
+            crate::palettes::Palette::Lichen => Self::Lichen,
+            crate::palettes::Palette::Mist => Self::Mist,
+            crate::palettes::Palette::Bronze => Self::Bronze,
+            crate::palettes::Palette::Brick => Self::Brick,
+        }
+    }
+
+
+    pub fn palette(
+        self,
+    ) -> crate::palettes::Palette {
+        match self {
+            Self::Slate => crate::palettes::Palette::Slate,
+            Self::Sandstone => crate::palettes::Palette::Sandstone,
+            Self::Lichen => crate::palettes::Palette::Lichen,
+            Self::Mist => crate::palettes::Palette::Mist,
+            Self::Bronze => crate::palettes::Palette::Bronze,
+            Self::Brick => crate::palettes::Palette::Brick,
+        }
+    }
+
+
+    pub fn name(
+        self,
+    ) -> &'static str {
+        self.palette().name()
+    }
 }
 
 
@@ -90,6 +183,7 @@ pub struct EditorOutput {
     pub primitive_count: u32,
     pub anti_aliasing: AntiAliasingSelection,
     pub dithering: DitheringSelection,
+    pub policy_target_change_requested: Option<PolicyTarget>,
     pub save_requested: bool,
     pub cancel_requested: bool,
     pub delete_requested: bool,
@@ -329,10 +423,10 @@ impl EditWindowOverlay {
                     "Ready".to_string(),
 
                 texture:
-                    TextureSelection::Current,
+                    TextureSelection::Marble,
 
                 palette:
-                    PaletteSelection::Current,
+                    PaletteSelection::Slate,
 
                 primitive_count:
                     32,
@@ -496,6 +590,12 @@ impl EditWindowOverlay {
         resolved_fps: u32,
         resolved_animation_speed: f32,
         resolved_render_scale: f32,
+        resolved_anti_aliasing: AntiAliasingSelection,
+        resolved_dithering: DitheringSelection,
+        active_texture_selection: Option<(
+            crate::parse_texture_specification::TextureSpecification,
+            crate::palettes::Palette,
+        )>,
         shader_loaded: bool,
         texture_required: bool,
     ) -> EditorOutput {
@@ -714,6 +814,43 @@ impl EditWindowOverlay {
         let mut dithering =
             self.dithering;
 
+
+        if self.initial_configuration.is_none() {
+            anti_aliasing =
+                resolved_anti_aliasing;
+
+            dithering =
+                resolved_dithering;
+
+            if let Some((
+                specification,
+                active_palette,
+            )) = active_texture_selection
+            {
+                texture =
+                    TextureSelection::from_family(
+                        specification.family
+                    );
+
+                palette =
+                    PaletteSelection::from_palette(
+                        active_palette
+                    );
+
+                primitive_count =
+                    specification
+                        .requested_primitive_count
+                        .clamp(
+                            2,
+                            1024,
+                        ) as u32;
+            }
+        }
+
+
+        let mut policy_target_change_requested =
+            None;
+
         let mut save_requested =
             false;
 
@@ -922,7 +1059,9 @@ impl EditWindowOverlay {
                                     draw_policy_target_panel(
                                         &mut columns[0],
                                         metrics,
-                                        &mut policy_target,
+                                        policy_target,
+                                        configuration_changed,
+                                        &mut policy_target_change_requested,
                                         &mut status_message,
                                         &mut hover_help_message,
                                     );
@@ -1080,6 +1219,8 @@ impl EditWindowOverlay {
 
             dithering,
 
+            policy_target_change_requested,
+
             save_requested,
 
             cancel_requested,
@@ -1088,6 +1229,146 @@ impl EditWindowOverlay {
 
             window_open:
                 self.window_open,
+        }
+    }
+
+
+    pub fn set_status_message(
+        &mut self,
+        message: impl Into<String>,
+    ) {
+        self.status_message =
+            message.into();
+    }
+
+
+    pub fn initialize_configuration(
+        &mut self,
+        fps: u32,
+        animation_speed: f32,
+        render_scale: f32,
+        policy_target: Option<PolicyTarget>,
+        anti_aliasing: AntiAliasingSelection,
+        dithering: DitheringSelection,
+        active_texture_selection: Option<(
+            crate::parse_texture_specification::TextureSpecification,
+            crate::palettes::Palette,
+        )>,
+        status_message: impl Into<String>,
+    ) {
+        self.displayed_fps =
+            Some(
+                fps.clamp(
+                    crate::define_constants::MIN_RENDER_FPS,
+                    crate::define_constants::MAX_RENDER_FPS,
+                )
+            );
+
+        self.displayed_animation_speed =
+            Some(
+                normalize_editor_float(
+                    animation_speed
+                )
+            );
+
+        self.displayed_render_scale =
+            Some(
+                normalize_editor_float(
+                    render_scale
+                )
+            );
+
+        self.policy_target =
+            policy_target;
+
+        self.anti_aliasing =
+            anti_aliasing;
+
+        self.dithering =
+            dithering;
+
+        if let Some((
+            specification,
+            palette,
+        )) = active_texture_selection
+        {
+            self.texture =
+                TextureSelection::from_family(
+                    specification.family
+                );
+
+            self.palette =
+                PaletteSelection::from_palette(
+                    palette
+                );
+
+            self.primitive_count =
+                specification
+                    .requested_primitive_count
+                    .clamp(
+                        2,
+                        1024,
+                    ) as u32;
+        }
+
+        self.fps_drag_state =
+            None;
+
+        self.animation_speed_drag_state =
+            None;
+
+        self.render_scale_drag_state =
+            None;
+
+        self.status_message =
+            status_message.into();
+
+        self.initial_configuration =
+            Some(
+                EditorConfiguration::new(
+                    self.displayed_fps
+                        .unwrap_or(fps),
+                    self.displayed_animation_speed
+                        .unwrap_or(animation_speed),
+                    self.displayed_render_scale
+                        .unwrap_or(render_scale),
+                    self.policy_target,
+                    self.texture,
+                    self.palette,
+                    self.primitive_count,
+                    self.anti_aliasing,
+                    self.dithering,
+                )
+            );
+    }
+
+
+    pub fn accept_current_configuration(
+        &mut self,
+    ) {
+        if let (
+            Some(fps),
+            Some(animation_speed),
+            Some(render_scale),
+        ) = (
+            self.displayed_fps,
+            self.displayed_animation_speed,
+            self.displayed_render_scale,
+        ) {
+            self.initial_configuration =
+                Some(
+                    EditorConfiguration::new(
+                        fps,
+                        animation_speed,
+                        render_scale,
+                        self.policy_target,
+                        self.texture,
+                        self.palette,
+                        self.primitive_count,
+                        self.anti_aliasing,
+                        self.dithering,
+                    )
+                );
         }
     }
 
@@ -1432,66 +1713,100 @@ fn draw_texture_panel(
                         ui,
                         |ui| {
                             ui.label("Texture");
-                            let response =
+
+                            let texture_response =
                                 egui::ComboBox::from_id_source(
                                     "editor_texture_selection"
                                 )
-                                .selected_text("Current")
-                                .width(metrics.dropdown_width)
+                                .selected_text(
+                                    texture.name()
+                                )
+                                .width(
+                                    metrics.dropdown_width
+                                )
                                 .show_ui(
                                     ui,
                                     |ui| {
-                                        ui.selectable_value(
-                                            texture,
-                                            TextureSelection::Current,
-                                            "Current",
-                                        );
+                                        for selection in [
+                                            TextureSelection::Marble,
+                                            TextureSelection::Clouds,
+                                            TextureSelection::Cellular,
+                                            TextureSelection::Mesh,
+                                            TextureSelection::Radial,
+                                            TextureSelection::Noise,
+                                            TextureSelection::Bricks,
+                                            TextureSelection::Hexagons,
+                                            TextureSelection::Facets,
+                                        ] {
+                                            ui.selectable_value(
+                                                texture,
+                                                selection,
+                                                selection.name(),
+                                            );
+                                        }
                                     },
                                 )
                                 .response;
 
                             update_hover_help(
-                                &response,
+                                &texture_response,
                                 hover_help_message,
-                                "Select the procedural texture generated in memory for this shader.",
+                                "Select the procedural texture family generated in memory for this shader.",
                             );
                             ui.end_row();
 
                             ui.label("Palette");
-                            let response =
+
+                            let palette_response =
                                 egui::ComboBox::from_id_source(
                                     "editor_palette_selection"
                                 )
-                                .selected_text("Current")
-                                .width(metrics.dropdown_width)
+                                .selected_text(
+                                    palette.name()
+                                )
+                                .width(
+                                    metrics.dropdown_width
+                                )
                                 .show_ui(
                                     ui,
                                     |ui| {
-                                        ui.selectable_value(
-                                            palette,
-                                            PaletteSelection::Current,
-                                            "Current",
-                                        );
+                                        for selection in [
+                                            PaletteSelection::Slate,
+                                            PaletteSelection::Sandstone,
+                                            PaletteSelection::Lichen,
+                                            PaletteSelection::Mist,
+                                            PaletteSelection::Bronze,
+                                            PaletteSelection::Brick,
+                                        ] {
+                                            ui.selectable_value(
+                                                palette,
+                                                selection,
+                                                selection.name(),
+                                            );
+                                        }
                                     },
                                 )
                                 .response;
 
                             update_hover_help(
-                                &response,
+                                &palette_response,
                                 hover_help_message,
-                                "Select the built-in color palette applied to the generated texture.",
+                                "Select the built-in palette applied to the generated procedural texture.",
                             );
                             ui.end_row();
 
                             ui.label("Primitives");
-                            let response =
+
+                            let primitive_response =
                                 egui::ComboBox::from_id_source(
                                     "editor_primitive_count"
                                 )
                                 .selected_text(
                                     primitive_count.to_string()
                                 )
-                                .width(metrics.dropdown_width)
+                                .width(
+                                    metrics.dropdown_width
+                                )
                                 .show_ui(
                                     ui,
                                     |ui| {
@@ -1518,7 +1833,7 @@ fn draw_texture_panel(
                                 .response;
 
                             update_hover_help(
-                                &response,
+                                &primitive_response,
                                 hover_help_message,
                                 "Set the number of graphical elements used to generate the procedural texture.",
                             );
@@ -1668,7 +1983,9 @@ fn draw_post_processing_panel(
 fn draw_policy_target_panel(
     ui: &mut egui::Ui,
     metrics: EditorMetrics,
-    policy_target: &mut Option<PolicyTarget>,
+    policy_target: Option<PolicyTarget>,
+    configuration_changed: bool,
+    policy_target_change_requested: &mut Option<PolicyTarget>,
     status_message: &mut String,
     hover_help_message: &mut Option<&'static str>,
 ) {
@@ -1690,7 +2007,7 @@ fn draw_policy_target_panel(
 
             let screensaver_response =
                 ui.radio(
-                    *policy_target
+                    policy_target
                         == Some(
                             PolicyTarget::Screensaver
                         ),
@@ -1700,21 +2017,30 @@ fn draw_policy_target_panel(
             update_hover_help(
                 &screensaver_response,
                 hover_help_message,
-                "Save this policy for screensaver rendering.",
+                "Load or create the policy used for screensaver rendering.",
             );
 
-            if screensaver_response.clicked() {
-                *policy_target =
-                    Some(
+            if screensaver_response.clicked()
+                && policy_target
+                    != Some(
                         PolicyTarget::Screensaver
-                    );
-                *status_message =
-                    "Ready".to_string();
+                    )
+            {
+                if configuration_changed {
+                    *status_message =
+                        "Save or cancel the current changes before switching policy targets."
+                            .to_string();
+                } else {
+                    *policy_target_change_requested =
+                        Some(
+                            PolicyTarget::Screensaver
+                        );
+                }
             }
 
             let wallpaper_response =
                 ui.radio(
-                    *policy_target
+                    policy_target
                         == Some(
                             PolicyTarget::Wallpaper
                         ),
@@ -1724,16 +2050,25 @@ fn draw_policy_target_panel(
             update_hover_help(
                 &wallpaper_response,
                 hover_help_message,
-                "Save this policy for wallpaper rendering.",
+                "Load or create the policy used for wallpaper rendering.",
             );
 
-            if wallpaper_response.clicked() {
-                *policy_target =
-                    Some(
+            if wallpaper_response.clicked()
+                && policy_target
+                    != Some(
                         PolicyTarget::Wallpaper
-                    );
-                *status_message =
-                    "Ready".to_string();
+                    )
+            {
+                if configuration_changed {
+                    *status_message =
+                        "Save or cancel the current changes before switching policy targets."
+                            .to_string();
+                } else {
+                    *policy_target_change_requested =
+                        Some(
+                            PolicyTarget::Wallpaper
+                        );
+                }
             }
         },
     );
@@ -1814,7 +2149,7 @@ fn draw_policy_actions_panel(
                     true;
 
                 *status_message =
-                    "Save is not implemented in this checkpoint"
+                    "Saving policy..."
                         .to_string();
             }
 
