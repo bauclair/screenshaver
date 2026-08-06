@@ -371,15 +371,17 @@ fn run_empty_session() -> Result<(), String> {
         }
 
 
-        if edit_window.display(
-            &window,
-            crate::define_constants::DEFAULT_RENDER_FPS,
-            crate::define_constants::SCREENSAVER_SPEED_DEFAULT,
-            crate::define_constants::RENDER_SCALE_DEFAULT,
-            false,
-        )
-        .is_none()
-        {
+        let editor_output =
+            edit_window.display(
+                &window,
+                crate::define_constants::DEFAULT_RENDER_FPS,
+                crate::define_constants::SCREENSAVER_SPEED_DEFAULT,
+                crate::define_constants::RENDER_SCALE_DEFAULT,
+                false,
+                false,
+            );
+
+        if !editor_output.window_open {
             break 'edit_session;
         }
 
@@ -1111,23 +1113,56 @@ fn run_paths(
             }
 
 
-            let Some(
-                (
-                    selected_fps,
-                    selected_animation_speed,
-                    selected_render_scale,
-                )
-            ) =
+            let editor_output =
                 edit_window.display(
                     &window,
                     configured_fps,
                     animation_speed,
                     render_scale,
                     true,
-                )
-            else {
+                    active.channel_usage
+                        .uses_any_channel(),
+                );
+
+            if !editor_output.window_open {
                 break 'preview Ok(());
-            };
+            }
+
+            let selected_fps =
+                editor_output.fps;
+
+            let selected_animation_speed =
+                editor_output.animation_speed;
+
+            let selected_render_scale =
+                editor_output.render_scale;
+
+            let _policy_target =
+                editor_output.policy_target;
+
+            let _save_requested =
+                editor_output.save_requested;
+
+            let _cancel_requested =
+                editor_output.cancel_requested;
+
+            let _delete_requested =
+                editor_output.delete_requested;
+
+            let _texture =
+                editor_output.texture;
+
+            let _palette =
+                editor_output.palette;
+
+            let _primitive_count =
+                editor_output.primitive_count;
+
+            let _anti_aliasing =
+                editor_output.anti_aliasing;
+
+            let _dithering =
+                editor_output.dithering;
 
 
             if selected_fps

@@ -45,6 +45,7 @@ mod preview_texture;
 mod preview_shader;
 mod edit_shader;
 mod editor_layout;
+mod editor_theme;
 mod preview_shader_directory;
 mod palettes;
 mod display_texture;
