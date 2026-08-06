@@ -420,9 +420,12 @@ fn notify_wallpaper_events(
     for event in frame_events.events {
         match event {
             FrameRenderEvent::ShaderChanged(metadata) => {
-                tray_status.set_active(
-                    metadata.shader_name.clone()
-                );
+                if let Some(shader_path) = metadata.shader_path.clone() {
+                    tray_status.set_active(
+                        metadata.shader_name.clone(),
+                        shader_path,
+                    );
+                }
 
                 notify_wallpaper_metadata(
                     enabled,
@@ -476,6 +479,30 @@ fn run_window_loop(
 
     while running.load(Ordering::SeqCst) {
         drain_x11_events(display);
+
+        if let Some(reload) =
+            control.take_policy_reload()
+        {
+            match engine.reconfigure_active_wallpaper(
+                reload,
+                wallpaper_window.width as u32,
+                wallpaper_window.height as u32,
+            ) {
+                Ok(()) => {
+                    diagnostic(
+                        "X11 active wallpaper policy reloaded."
+                    );
+                }
+                Err(error) => {
+                    diagnostic(
+                        &format!(
+                            "Unable to reload X11 active wallpaper policy; keeping the previous settings: {}",
+                            error,
+                        )
+                    );
+                }
+            }
+        }
 
         if control.pause_requested() {
             if !paused {
@@ -635,10 +662,12 @@ impl WallpaperBackend for X11WallpaperBackend {
             let initial_metadata =
                 engine.current_metadata();
 
-            runtime.tray_status
-                .set_active(
-                    initial_metadata.shader_name.clone()
+            if let Some(shader_path) = initial_metadata.shader_path.clone() {
+                runtime.tray_status.set_active(
+                    initial_metadata.shader_name.clone(),
+                    shader_path,
                 );
+            }
 
             notify_wallpaper_metadata(
                 runtime.notifications,

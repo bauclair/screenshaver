@@ -1271,6 +1271,110 @@ crate::parse_arguments::Command::ListPalettes => {
             }
 
 
+            Ok(crate::tray_icon::TrayCommand::EditWallpaper) => {
+
+                println!(
+                    "[TRAY] Edit active wallpaper requested."
+                );
+
+                crate::logger::information(
+                    &logfile,
+                    "[TRAY] Edit active wallpaper requested",
+                );
+
+                let Some(active_wallpaper) =
+                    tray_status.active_wallpaper()
+                else {
+                    crate::logger::warning(
+                        &logfile,
+                        "[TRAY] Edit ignored because no active wallpaper shader is available",
+                    );
+                    continue;
+                };
+
+                wallpaper_control.request_pause_after_first_frame(
+                    running.as_ref()
+                );
+
+                let edit_result =
+                    crate::edit_shader::run_wallpaper_only(
+                        active_wallpaper.path.clone()
+                    );
+
+                if edit_result.is_ok() {
+                    let config_path =
+                        crate::locate_paths::config_path();
+
+                    match crate::load_config::load_config(
+                        &config_path
+                    ) {
+                        Ok(config_result) => {
+                            for diagnostic in
+                                &config_result.diagnostics
+                            {
+                                crate::logger::warning(
+                                    &logfile,
+                                    &format!(
+                                        "[TRAY] Configuration reload diagnostic: {}",
+                                        diagnostic,
+                                    ),
+                                );
+                            }
+
+                            wallpaper_control.request_policy_reload(
+                                crate::manage_wallpaper_runtime::WallpaperPolicyReload::from_config(
+                                    &config_result.config
+                                )
+                            );
+
+                            crate::logger::information(
+                                &logfile,
+                                "[TRAY] Queued active wallpaper policy reload",
+                            );
+                        }
+
+                        Err(error) => {
+                            crate::logger::error(
+                                &logfile,
+                                &format!(
+                                    "[TRAY] Unable to reload wallpaper configuration after editing: {}",
+                                    error,
+                                ),
+                            );
+                        }
+                    }
+                }
+
+                wallpaper_control.resume_and_wait_for_frame(
+                    running.as_ref()
+                );
+
+                match edit_result {
+                    Ok(()) => {
+                        crate::logger::information(
+                            &logfile,
+                            "[TRAY] Wallpaper Shader Policy Editor closed",
+                        );
+                    }
+
+                    Err(error) => {
+                        eprintln!(
+                            "[TRAY] Unable to edit active wallpaper: {}",
+                            error
+                        );
+
+                        crate::logger::error(
+                            &logfile,
+                            &format!(
+                                "[TRAY] Unable to edit active wallpaper: {}",
+                                error,
+                            ),
+                        );
+                    }
+                }
+            }
+
+
             Ok(crate::tray_icon::TrayCommand::Restart) => {
 
                 println!(

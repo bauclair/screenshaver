@@ -36,6 +36,10 @@ const FILE_DIALOG_FULLSCREEN_RESTORE_DELAY: Duration =
     Duration::from_millis(125);
 
 
+const RECENT_SHADER_LIMIT: usize =
+    8;
+
+
 struct FrameTimeWindow {
     samples: VecDeque<(Instant, Duration)>,
     total: Duration,
@@ -164,6 +168,12 @@ struct ActivePreviewShader {
 }
 
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EditorTargetRestriction {
+    Unrestricted,
+    WallpaperOnly,
+}
+
 pub fn run(
     shader_argument: Option<String>,
 ) -> Result<(), String> {
@@ -192,6 +202,7 @@ pub fn run(
                 None,
                 None,
                 None,
+                EditorTargetRestriction::Unrestricted,
             )
         }
 
@@ -209,6 +220,20 @@ pub fn run(
     }
 }
 
+
+pub fn run_wallpaper_only(
+    shader_path: PathBuf,
+) -> Result<(), String> {
+    run_paths(
+        vec![shader_path],
+        None,
+        None,
+        None,
+        None,
+        None,
+        EditorTargetRestriction::WallpaperOnly,
+    )
+}
 
 fn run_empty_session() -> Result<(), String> {
 
@@ -387,6 +412,10 @@ fn run_empty_session() -> Result<(), String> {
                 None,
                 false,
                 false,
+                false,
+                false,
+                false,
+                &[],
                 None,
             );
 
@@ -468,6 +497,7 @@ fn run_paths(
     interval_seconds: Option<u64>,
     command_line_fps: Option<u32>,
     animation_speed: Option<f32>,
+    target_restriction: EditorTargetRestriction,
 ) -> Result<(), String> {
 
     if shader_paths.is_empty() {
@@ -490,6 +520,10 @@ fn run_paths(
 
     let mut config =
         config_result.config;
+
+
+    let mut recent_shader_paths =
+        load_recent_shader_paths();
 
 
     let subtitles =
@@ -517,8 +551,32 @@ fn run_paths(
             .to_string();
 
 
+    let mut screensaver_target_available =
+        target_shader_path(
+            crate::editor_layout::PolicyTarget::Screensaver,
+            &shader_name_hint,
+        )
+        .is_file();
+
+
+    let mut wallpaper_target_available =
+        target_shader_path(
+            crate::editor_layout::PolicyTarget::Wallpaper,
+            &shader_name_hint,
+        )
+        .is_file();
+
+
+    if target_restriction
+        == EditorTargetRestriction::WallpaperOnly
+    {
+        screensaver_target_available = false;
+    }
+
+
     let mut screensaver_policy_exists =
-        config.screensaver_policies
+        screensaver_target_available
+            && config.screensaver_policies
             .iter()
             .any(
                 |policy| {
@@ -531,7 +589,8 @@ fn run_paths(
 
 
     let mut wallpaper_policy_exists =
-        config.wallpaper_policies
+        wallpaper_target_available
+            && config.wallpaper_policies
             .iter()
             .any(
                 |policy| {
@@ -544,7 +603,13 @@ fn run_paths(
 
 
     let initial_editor_target =
-        if wallpaper_policy_exists {
+        if target_restriction
+            == EditorTargetRestriction::WallpaperOnly
+        {
+            Some(
+                crate::editor_layout::PolicyTarget::Wallpaper
+            )
+        } else if wallpaper_policy_exists {
             Some(
                 crate::editor_layout::PolicyTarget::Wallpaper
             )
@@ -661,7 +726,15 @@ fn run_paths(
 
 
     let _wallpaper_pause_guard =
-        crate::control_wallpaper::WallpaperPauseGuard::acquire();
+        if target_restriction
+            == EditorTargetRestriction::Unrestricted
+        {
+            Some(
+                crate::control_wallpaper::WallpaperPauseGuard::acquire()
+            )
+        } else {
+            None
+        };
 
 
     let sdl =
@@ -1398,6 +1471,11 @@ fn run_paths(
                     true,
                     active.channel_usage
                         .uses_any_channel(),
+                    screensaver_target_available,
+                    wallpaper_target_available,
+                    target_restriction
+                        == EditorTargetRestriction::WallpaperOnly,
+                    &recent_shader_paths,
                     Some(
                         &shader_information
                     ),
@@ -1408,45 +1486,97 @@ fn run_paths(
             }
 
 
-            if editor_output.browse_shader_requested {
-                let starting_directory =
-                    active.path
-                        .parent()
-                        .unwrap_or_else(
-                            || Path::new(".")
+            if editor_output.clear_recent_files_requested {
+                recent_shader_paths.clear();
+
+                match save_recent_shader_paths(
+                    &recent_shader_paths
+                ) {
+                    Ok(()) => {
+                        edit_window.set_status_message(
+                            "Recent shader-file history cleared."
+                        );
+                    }
+
+                    Err(error) => {
+                        edit_window.set_status_message(
+                            format!(
+                                "Recent files were cleared for this session, but the history file could not be updated: {}",
+                                error,
+                            )
                         );
 
-                let selected_path =
-                    rfd::FileDialog::new()
-                        .add_filter(
-                            "GL shader files",
-                            &[
-                                "glsl",
-                                "fs",
-                            ],
-                        )
-                        .set_directory(
-                            starting_directory
-                        )
-                        .pick_file();
-
-                if let Err(error) =
-                    restore_editor_fullscreen(
-                        &mut window
-                    )
-                {
-                    log_warning(
-                        &format!(
-                            "[EDIT_SHADER] Immediate fullscreen restoration failed: {}",
-                            error,
-                        )
-                    );
+                        log_warning(
+                            &format!(
+                                "[EDIT_SHADER] Unable to clear recent shader history: {}",
+                                error,
+                            )
+                        );
+                    }
                 }
+            }
 
-                fullscreen_restore_requested_at =
-                    Some(
-                        Instant::now()
+
+            let recent_selected_path =
+                editor_output.recent_shader_requested
+                    .and_then(
+                        |index| {
+                            recent_shader_paths
+                                .get(index)
+                                .cloned()
+                        }
                     );
+
+
+            if editor_output.browse_shader_requested
+                || recent_selected_path.is_some()
+            {
+                let selected_path =
+                    if editor_output.browse_shader_requested {
+                        let starting_directory =
+                            active.path
+                                .parent()
+                                .unwrap_or_else(
+                                    || Path::new(".")
+                                );
+
+                        let selected_path =
+                            rfd::FileDialog::new()
+                                .add_filter(
+                                    "GL shader files",
+                                    &[
+                                        "glsl",
+                                        "fs",
+                                    ],
+                                )
+                                .set_directory(
+                                    starting_directory
+                                )
+                                .pick_file();
+
+                        if let Err(error) =
+                            restore_editor_fullscreen(
+                                &mut window
+                            )
+                        {
+                            log_warning(
+                                &format!(
+                                    "[EDIT_SHADER] Immediate fullscreen restoration failed: {}",
+                                    error,
+                                )
+                            );
+                        }
+
+                        fullscreen_restore_requested_at =
+                            Some(
+                                Instant::now()
+                            );
+
+                        selected_path
+                    } else {
+                        recent_selected_path
+                    };
+
 
                 let Some(selected_path) =
                     selected_path
@@ -1458,6 +1588,30 @@ fn run_paths(
                     continue;
                 };
 
+
+                if !selected_path.is_file() {
+                    recent_shader_paths.retain(
+                        |path| {
+                            path != &selected_path
+                        }
+                    );
+
+                    let _ =
+                        save_recent_shader_paths(
+                            &recent_shader_paths
+                        );
+
+                    edit_window.set_status_message(
+                        format!(
+                            "Recent shader file no longer exists: {}",
+                            selected_path.display(),
+                        )
+                    );
+
+                    continue;
+                };
+
+
                 let selected_shader_name =
                     selected_path
                         .file_name()
@@ -1467,8 +1621,29 @@ fn run_paths(
                         .unwrap_or("")
                         .to_string();
 
+                let mut new_screensaver_target_available =
+                    target_shader_path(
+                        crate::editor_layout::PolicyTarget::Screensaver,
+                        &selected_shader_name,
+                    )
+                    .is_file();
+
+                let mut new_wallpaper_target_available =
+                    target_shader_path(
+                        crate::editor_layout::PolicyTarget::Wallpaper,
+                        &selected_shader_name,
+                    )
+                    .is_file();
+
+                if target_restriction
+                    == EditorTargetRestriction::WallpaperOnly
+                {
+                    new_screensaver_target_available = false;
+                }
+
                 let new_screensaver_policy_exists =
-                    config.screensaver_policies
+                    new_screensaver_target_available
+                        && config.screensaver_policies
                         .iter()
                         .any(
                             |policy| {
@@ -1480,7 +1655,8 @@ fn run_paths(
                         );
 
                 let new_wallpaper_policy_exists =
-                    config.wallpaper_policies
+                    new_wallpaper_target_available
+                        && config.wallpaper_policies
                         .iter()
                         .any(
                             |policy| {
@@ -1492,7 +1668,13 @@ fn run_paths(
                         );
 
                 let new_editor_target =
-                    if new_wallpaper_policy_exists {
+                    if target_restriction
+                        == EditorTargetRestriction::WallpaperOnly
+                    {
+                        Some(
+                            crate::editor_layout::PolicyTarget::Wallpaper
+                        )
+                    } else if new_wallpaper_policy_exists {
                         Some(
                             crate::editor_layout::PolicyTarget::Wallpaper
                         )
@@ -1616,6 +1798,12 @@ fn run_paths(
                             &mut replacement,
                         );
 
+                        screensaver_target_available =
+                            new_screensaver_target_available;
+
+                        wallpaper_target_available =
+                            new_wallpaper_target_available;
+
                         screensaver_policy_exists =
                             new_screensaver_policy_exists;
 
@@ -1703,6 +1891,31 @@ fn run_paths(
                                 active.path.display(),
                             )
                         );
+
+                        promote_recent_shader_path(
+                            &mut recent_shader_paths,
+                            active.path.clone(),
+                        );
+
+                        if let Err(error) =
+                            save_recent_shader_paths(
+                                &recent_shader_paths
+                            )
+                        {
+                            log_warning(
+                                &format!(
+                                    "[EDIT_SHADER] Shader loaded, but recent-file history could not be saved: {}",
+                                    error,
+                                )
+                            );
+
+                            edit_window.set_status_message(
+                                format!(
+                                    "Shader loaded, but recent-file history could not be saved: {}",
+                                    error,
+                                )
+                            );
+                        }
                     }
 
                     Err(error) => {
@@ -1814,6 +2027,33 @@ fn run_paths(
             if let Some(requested_target) =
                 editor_output.policy_target_change_requested
             {
+                let target_available =
+                    match requested_target {
+                        crate::editor_layout::PolicyTarget::Screensaver => {
+                            screensaver_target_available
+                        }
+
+                        crate::editor_layout::PolicyTarget::Wallpaper => {
+                            wallpaper_target_available
+                        }
+                    };
+
+                if !target_available {
+                    edit_window.set_status_message(
+                        match requested_target {
+                            crate::editor_layout::PolicyTarget::Screensaver => {
+                                "This shader cannot use a Screensaver policy because it does not exist in the screensavers folder."
+                            }
+
+                            crate::editor_layout::PolicyTarget::Wallpaper => {
+                                "This shader cannot use a Wallpaper policy because it does not exist in the wallpapers folder."
+                            }
+                        }
+                    );
+
+                    continue;
+                }
+
                 let target_policy_exists =
                     match requested_target {
                         crate::editor_layout::PolicyTarget::Screensaver => {
@@ -2307,6 +2547,25 @@ fn run_paths(
                     continue;
                 };
 
+                let selected_target_available =
+                    match policy_target {
+                        crate::editor_layout::PolicyTarget::Screensaver => {
+                            screensaver_target_available
+                        }
+
+                        crate::editor_layout::PolicyTarget::Wallpaper => {
+                            wallpaper_target_available
+                        }
+                    };
+
+                if !selected_target_available {
+                    edit_window.set_status_message(
+                        "The selected policy target is unavailable because the shader file is missing from its target folder."
+                    );
+
+                    continue;
+                }
+
                 let texture_specification =
                     if active.channel_usage
                         .uses_any_channel()
@@ -2428,7 +2687,8 @@ fn run_paths(
                                     reloaded_config.config;
 
                                 screensaver_policy_exists =
-                                    config.screensaver_policies
+                                    screensaver_target_available
+                                        && config.screensaver_policies
                                         .iter()
                                         .any(
                                             |policy| {
@@ -2440,7 +2700,8 @@ fn run_paths(
                                         );
 
                                 wallpaper_policy_exists =
-                                    config.wallpaper_policies
+                                    wallpaper_target_available
+                                        && config.wallpaper_policies
                                         .iter()
                                         .any(
                                             |policy| {
@@ -2573,6 +2834,24 @@ fn run_paths(
     result
 }
 
+
+
+fn target_shader_path(
+    target: crate::editor_layout::PolicyTarget,
+    shader_name: &str,
+) -> PathBuf {
+    match target {
+        crate::editor_layout::PolicyTarget::Screensaver => {
+            crate::locate_paths::screensaver_shader_dir()
+                .join(shader_name)
+        }
+
+        crate::editor_layout::PolicyTarget::Wallpaper => {
+            crate::locate_paths::wallpaper_shader_dir()
+                .join(shader_name)
+        }
+    }
+}
 
 
 fn resolve_information_path(
@@ -3190,6 +3469,195 @@ fn destroy_active_shader(
                 0;
         }
     }
+}
+
+
+fn load_recent_shader_paths() -> Vec<PathBuf> {
+    let history_path =
+        crate::locate_paths::recent_shader_history_path();
+
+    let Ok(text) =
+        std::fs::read_to_string(
+            &history_path
+        )
+    else {
+        return Vec::new();
+    };
+
+
+    let Ok(stored_paths) =
+        serde_json::from_str::<Vec<String>>(
+            &text
+        )
+    else {
+        log_warning(
+            &format!(
+                "[EDIT_SHADER] Ignoring invalid recent shader history at {}",
+                history_path.display(),
+            )
+        );
+
+        return Vec::new();
+    };
+
+
+    let mut recent_paths =
+        Vec::new();
+
+
+    for stored_path in stored_paths {
+        let path =
+            PathBuf::from(
+                stored_path
+            );
+
+        if !path.is_file()
+            || !is_supported_shader_path(
+                &path
+            )
+            || recent_paths.iter().any(
+                |existing| {
+                    existing == &path
+                }
+            )
+        {
+            continue;
+        }
+
+        recent_paths.push(
+            path
+        );
+
+        if recent_paths.len()
+            >= RECENT_SHADER_LIMIT
+        {
+            break;
+        }
+    }
+
+
+    let _ =
+        save_recent_shader_paths(
+            &recent_paths
+        );
+
+
+    recent_paths
+}
+
+
+fn save_recent_shader_paths(
+    recent_paths: &[PathBuf],
+) -> Result<(), String> {
+
+    let history_path =
+        crate::locate_paths::recent_shader_history_path();
+
+
+    if let Some(parent) =
+        history_path.parent()
+    {
+        std::fs::create_dir_all(
+            parent
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to create recent-history folder {}: {}",
+                    parent.display(),
+                    error,
+                )
+            }
+        )?;
+    }
+
+
+    let stored_paths:
+        Vec<String> =
+        recent_paths
+            .iter()
+            .take(
+                RECENT_SHADER_LIMIT
+            )
+            .map(
+                |path| {
+                    path.to_string_lossy()
+                        .into_owned()
+                }
+            )
+            .collect();
+
+
+    let serialized =
+        serde_json::to_string_pretty(
+            &stored_paths
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to serialize recent shader history: {}",
+                    error,
+                )
+            }
+        )?;
+
+
+    std::fs::write(
+        &history_path,
+        serialized,
+    )
+    .map_err(
+        |error| {
+            format!(
+                "Unable to write recent shader history {}: {}",
+                history_path.display(),
+                error,
+            )
+        }
+    )
+}
+
+
+fn promote_recent_shader_path(
+    recent_paths: &mut Vec<PathBuf>,
+    path: PathBuf,
+) {
+    recent_paths.retain(
+        |existing| {
+            existing != &path
+        }
+    );
+
+    recent_paths.insert(
+        0,
+        path,
+    );
+
+    recent_paths.truncate(
+        RECENT_SHADER_LIMIT
+    );
+}
+
+
+fn is_supported_shader_path(
+    path: &Path,
+) -> bool {
+    path.extension()
+        .and_then(
+            |extension| {
+                extension.to_str()
+            }
+        )
+        .is_some_and(
+            |extension| {
+                extension.eq_ignore_ascii_case(
+                    "glsl"
+                )
+                    || extension.eq_ignore_ascii_case(
+                        "fs"
+                    )
+            }
+        )
 }
 
 

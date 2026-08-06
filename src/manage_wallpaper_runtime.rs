@@ -5,6 +5,7 @@ use std::sync::{
         Ordering,
     },
     Arc,
+    Mutex,
 };
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -15,12 +16,45 @@ const RESTART_DELAY_SECONDS: u64 = 2;
 
 
 #[derive(Clone)]
+pub(crate) struct WallpaperPolicyReload {
+    pub(crate) animation_speed_policy:
+        crate::load_config::AnimationSpeedPolicy,
+    pub(crate) fps_policy:
+        crate::load_config::FpsPolicy,
+    pub(crate) texture_policy:
+        crate::load_config::TexturePolicy,
+    pub(crate) postprocess_policy:
+        crate::load_config::PostprocessPolicy,
+}
+
+
+impl WallpaperPolicyReload {
+    pub(crate) fn from_config(
+        config: &crate::load_config::Config,
+    ) -> Self {
+        Self {
+            animation_speed_policy:
+                config.wallpaper_speed_policy.clone(),
+            fps_policy:
+                config.wallpaper_fps_policy.clone(),
+            texture_policy:
+                config.wallpaper_texture_policy.clone(),
+            postprocess_policy:
+                config.wallpaper_postprocess_policy.clone(),
+        }
+    }
+}
+
+
+#[derive(Clone)]
 pub struct WallpaperRuntimeControl {
     enabled: bool,
     active: Arc<AtomicBool>,
     pause_requested: Arc<AtomicBool>,
     pause_acknowledged: Arc<AtomicBool>,
     resume_frame_ready: Arc<AtomicBool>,
+    pending_policy_reload:
+        Arc<Mutex<Option<WallpaperPolicyReload>>>,
 }
 
 
@@ -36,6 +70,8 @@ impl WallpaperRuntimeControl {
             pause_requested: Arc::new(AtomicBool::new(false)),
             pause_acknowledged: Arc::new(AtomicBool::new(false)),
             resume_frame_ready: Arc::new(AtomicBool::new(true)),
+            pending_policy_reload:
+                Arc::new(Mutex::new(None)),
         }
     }
 
@@ -118,6 +154,32 @@ impl WallpaperRuntimeControl {
             std::thread::sleep(
                 Duration::from_millis(1)
             );
+        }
+    }
+
+
+    pub(crate) fn request_policy_reload(
+        &self,
+        reload: WallpaperPolicyReload,
+    ) {
+        match self.pending_policy_reload.lock() {
+            Ok(mut pending) => {
+                *pending = Some(reload);
+            }
+            Err(poisoned) => {
+                let mut pending = poisoned.into_inner();
+                *pending = Some(reload);
+            }
+        }
+    }
+
+
+    pub(crate) fn take_policy_reload(
+        &self,
+    ) -> Option<WallpaperPolicyReload> {
+        match self.pending_policy_reload.lock() {
+            Ok(mut pending) => pending.take(),
+            Err(poisoned) => poisoned.into_inner().take(),
         }
     }
 

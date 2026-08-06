@@ -4,6 +4,7 @@
 //! input translation. Rendering and shader-session behavior remain in
 //! `edit_shader`.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -259,6 +260,8 @@ pub struct EditorOutput {
     pub cancel_requested: bool,
     pub delete_requested: bool,
     pub browse_shader_requested: bool,
+    pub recent_shader_requested: Option<usize>,
+    pub clear_recent_files_requested: bool,
     pub refresh_shader_requested: bool,
     pub window_open: bool,
 }
@@ -683,6 +686,10 @@ impl EditWindowOverlay {
         )>,
         shader_loaded: bool,
         texture_required: bool,
+        screensaver_target_available: bool,
+        wallpaper_target_available: bool,
+        screensaver_target_session_restricted: bool,
+        recent_shader_paths: &[PathBuf],
         shader_information: Option<&ShaderInformation>,
     ) -> EditorOutput {
 
@@ -955,6 +962,12 @@ impl EditWindowOverlay {
         let mut browse_shader_requested =
             false;
 
+        let mut recent_shader_requested =
+            None;
+
+        let mut clear_recent_files_requested =
+            false;
+
         let mut refresh_shader_requested =
             false;
 
@@ -1064,7 +1077,10 @@ impl EditWindowOverlay {
                                 shader_loaded,
                                 shader_information,
                                 configuration_changed_before_ui,
+                                recent_shader_paths,
                                 &mut browse_shader_requested,
+                                &mut recent_shader_requested,
+                                &mut clear_recent_files_requested,
                                 &mut refresh_shader_requested,
                                 &mut status_message,
                                 &mut hover_help_message,
@@ -1074,42 +1090,69 @@ impl EditWindowOverlay {
                                 metrics.panel_gap
                             );
 
+                            let policy_controls_enabled =
+                                policy_target.is_some();
+
                             ui.columns(
                                 3,
                                 |columns| {
-                                    draw_render_panel(
-                                        &mut columns[0],
-                                        metrics,
-                                        shift_held,
-                                        &mut displayed_fps,
-                                        &mut displayed_animation_speed,
-                                        &mut displayed_render_scale,
-                                        &mut fps_drag_state,
-                                        &mut animation_speed_drag_state,
-                                        &mut render_scale_drag_state,
-                                        &mut hover_help_message,
+                                    columns[0].add_enabled_ui(
+                                        policy_controls_enabled,
+                                        |ui| {
+                                            draw_render_panel(
+                                                ui,
+                                                metrics,
+                                                shift_held,
+                                                &mut displayed_fps,
+                                                &mut displayed_animation_speed,
+                                                &mut displayed_render_scale,
+                                                &mut fps_drag_state,
+                                                &mut animation_speed_drag_state,
+                                                &mut render_scale_drag_state,
+                                                &mut hover_help_message,
+                                            );
+                                        },
                                     );
 
-                                    draw_texture_panel(
-                                        &mut columns[1],
-                                        metrics,
-                                        texture_required,
-                                        &mut texture,
-                                        &mut palette,
-                                        &mut primitive_count,
-                                        &mut hover_help_message,
+                                    columns[1].add_enabled_ui(
+                                        policy_controls_enabled,
+                                        |ui| {
+                                            draw_texture_panel(
+                                                ui,
+                                                metrics,
+                                                texture_required,
+                                                &mut texture,
+                                                &mut palette,
+                                                &mut primitive_count,
+                                                &mut hover_help_message,
+                                            );
+                                        },
                                     );
 
-                                    draw_post_processing_panel(
-                                        &mut columns[2],
-                                        metrics,
-                                        &mut anti_aliasing,
-                                        &mut dithering,
-                                        &mut color_precision,
-                                        &mut hover_help_message,
+                                    columns[2].add_enabled_ui(
+                                        policy_controls_enabled,
+                                        |ui| {
+                                            draw_post_processing_panel(
+                                                ui,
+                                                metrics,
+                                                &mut anti_aliasing,
+                                                &mut dithering,
+                                                &mut color_precision,
+                                                &mut hover_help_message,
+                                            );
+                                        },
                                     );
                                 },
                             );
+
+                            if !policy_controls_enabled
+                                && hover_help_message.is_none()
+                            {
+                                hover_help_message =
+                                    Some(
+                                        "Select a Policy Target before changing shader settings."
+                                    );
+                            }
 
                             displayed_animation_speed =
                                 normalize_editor_float(
@@ -1167,6 +1210,9 @@ impl EditWindowOverlay {
                                         metrics,
                                         policy_target,
                                         configuration_changed,
+                                        screensaver_target_available,
+                                        wallpaper_target_available,
+                                        screensaver_target_session_restricted,
                                         &mut policy_target_change_requested,
                                         &mut status_message,
                                         &mut hover_help_message,
@@ -1340,6 +1386,10 @@ impl EditWindowOverlay {
             delete_requested,
 
             browse_shader_requested,
+
+            recent_shader_requested,
+
+            clear_recent_files_requested,
 
             refresh_shader_requested,
 
@@ -1531,7 +1581,10 @@ fn draw_shader_header_row(
     shader_loaded: bool,
     shader_information: Option<&ShaderInformation>,
     configuration_changed: bool,
+    recent_shader_paths: &[PathBuf],
     browse_shader_requested: &mut bool,
+    recent_shader_requested: &mut Option<usize>,
+    clear_recent_files_requested: &mut bool,
     refresh_shader_requested: &mut bool,
     status_message: &mut String,
     hover_help_message: &mut Option<&'static str>,
@@ -1589,12 +1642,60 @@ fn draw_shader_header_row(
                                     ui.menu_button(
                                         "Load Shader",
                                         |ui| {
-                                            ui.add_enabled(
-                                                false,
-                                                egui::Button::new(
-                                                    "Recent Files (empty)"
-                                                ),
-                                            );
+                                            if recent_shader_paths.is_empty() {
+                                                ui.add_enabled(
+                                                    false,
+                                                    egui::Button::new(
+                                                        "Recent Files (empty)"
+                                                    ),
+                                                );
+                                            } else {
+                                                for (
+                                                    index,
+                                                    path,
+                                                ) in recent_shader_paths
+                                                    .iter()
+                                                    .enumerate()
+                                                {
+                                                    let display_name =
+                                                        path.file_name()
+                                                            .and_then(
+                                                                |name| {
+                                                                    name.to_str()
+                                                                }
+                                                            )
+                                                            .unwrap_or(
+                                                                "Unnamed shader"
+                                                            );
+
+                                                    let recent_response =
+                                                        ui.button(
+                                                            display_name
+                                                        );
+
+                                                    recent_response
+                                                        .clone()
+                                                        .on_hover_text(
+                                                            path.display()
+                                                                .to_string()
+                                                        );
+
+                                                    if recent_response.clicked() {
+                                                        if configuration_changed {
+                                                            *status_message =
+                                                                "Save or cancel the current changes before loading another shader."
+                                                                    .to_string();
+                                                        } else {
+                                                            *recent_shader_requested =
+                                                                Some(
+                                                                    index
+                                                                );
+                                                        }
+
+                                                        ui.close();
+                                                    }
+                                                }
+                                            }
 
                                             ui.separator();
 
@@ -1651,7 +1752,7 @@ fn draw_shader_header_row(
 
                                             let clear_response =
                                                 ui.add_enabled(
-                                                    false,
+                                                    !recent_shader_paths.is_empty(),
                                                     egui::Button::new(
                                                         "Clear Recent Files"
                                                     ),
@@ -1662,6 +1763,13 @@ fn draw_shader_header_row(
                                                 hover_help_message,
                                                 "Remove saved shader-file history. No shader files will be deleted.",
                                             );
+
+                                            if clear_response.clicked() {
+                                                *clear_recent_files_requested =
+                                                    true;
+
+                                                ui.close();
+                                            }
                                         },
                                     );
                                 },
@@ -2290,6 +2398,9 @@ fn draw_policy_target_panel(
     metrics: EditorMetrics,
     policy_target: Option<PolicyTarget>,
     configuration_changed: bool,
+    screensaver_target_available: bool,
+    wallpaper_target_available: bool,
+    screensaver_target_session_restricted: bool,
     policy_target_change_requested: &mut Option<PolicyTarget>,
     status_message: &mut String,
     hover_help_message: &mut Option<&'static str>,
@@ -2311,18 +2422,27 @@ fn draw_policy_target_panel(
             );
 
             let screensaver_response =
-                ui.radio(
-                    policy_target
-                        == Some(
-                            PolicyTarget::Screensaver
-                        ),
-                    "Screensaver",
+                ui.add_enabled(
+                    screensaver_target_available,
+                    egui::RadioButton::new(
+                        policy_target
+                            == Some(
+                                PolicyTarget::Screensaver
+                            ),
+                        "Screensaver",
+                    ),
                 );
 
             update_hover_help(
                 &screensaver_response,
                 hover_help_message,
-                "Load or create the policy used for screensaver rendering.",
+                if screensaver_target_available {
+                    "Load or create the policy used for screensaver rendering."
+                } else if screensaver_target_session_restricted {
+                    "This editing session was opened for the active wallpaper. Only the Wallpaper policy can be edited."
+                } else {
+                    "This shader is unavailable for Screensaver use because it does not exist in the screensavers folder."
+                },
             );
 
             if screensaver_response.clicked()
@@ -2331,7 +2451,9 @@ fn draw_policy_target_panel(
                         PolicyTarget::Screensaver
                     )
             {
-                if configuration_changed {
+                if configuration_changed
+                    && policy_target.is_some()
+                {
                     *status_message =
                         "Save or cancel the current changes before switching policy targets."
                             .to_string();
@@ -2344,18 +2466,25 @@ fn draw_policy_target_panel(
             }
 
             let wallpaper_response =
-                ui.radio(
-                    policy_target
-                        == Some(
-                            PolicyTarget::Wallpaper
-                        ),
-                    "Wallpaper",
+                ui.add_enabled(
+                    wallpaper_target_available,
+                    egui::RadioButton::new(
+                        policy_target
+                            == Some(
+                                PolicyTarget::Wallpaper
+                            ),
+                        "Wallpaper",
+                    ),
                 );
 
             update_hover_help(
                 &wallpaper_response,
                 hover_help_message,
-                "Load or create the policy used for wallpaper rendering.",
+                if wallpaper_target_available {
+                    "Load or create the policy used for wallpaper rendering."
+                } else {
+                    "This shader is unavailable for Wallpaper use because it does not exist in the wallpapers folder."
+                },
             );
 
             if wallpaper_response.clicked()
@@ -2364,7 +2493,9 @@ fn draw_policy_target_panel(
                         PolicyTarget::Wallpaper
                     )
             {
-                if configuration_changed {
+                if configuration_changed
+                    && policy_target.is_some()
+                {
                     *status_message =
                         "Save or cancel the current changes before switching policy targets."
                             .to_string();

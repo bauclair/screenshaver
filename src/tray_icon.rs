@@ -1,3 +1,4 @@
+use std::path::{Path, PathBuf};
 use std::sync::{
     mpsc::Sender,
     Arc,
@@ -17,6 +18,7 @@ const TOOLTIP_DESCRIPTION: &str = "Waiting for idle...";
 /// Commands that can be requested through the system tray menu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrayCommand {
+    EditWallpaper,
     Restart,
     Stop,
 }
@@ -26,7 +28,25 @@ pub enum TrayCommand {
 pub enum WallpaperTrayStatus {
     Disabled,
     Starting,
-    Active(String),
+    Active(ActiveWallpaperInfo),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActiveWallpaperInfo {
+    pub display_name: String,
+    pub path: PathBuf,
+}
+
+impl ActiveWallpaperInfo {
+    pub fn new(
+        display_name: impl Into<String>,
+        path: impl Into<PathBuf>,
+    ) -> Self {
+        Self {
+            display_name: display_name.into(),
+            path: path.into(),
+        }
+    }
 }
 
 /// Cloneable controller shared with wallpaper renderers.
@@ -90,13 +110,32 @@ impl TrayStatusControl {
 
     pub fn set_active(
         &self,
-        wallpaper: impl Into<String>,
+        display_name: impl Into<String>,
+        path: impl Into<PathBuf>,
     ) {
         self.set_wallpaper_status(
             WallpaperTrayStatus::Active(
-                wallpaper.into()
+                ActiveWallpaperInfo::new(
+                    display_name,
+                    path,
+                )
             )
         );
+    }
+
+    pub fn active_wallpaper(
+        &self,
+    ) -> Option<ActiveWallpaperInfo> {
+        let status = match self.wallpaper_status.read() {
+            Ok(status) => status.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        };
+
+        match status {
+            WallpaperTrayStatus::Active(info) => Some(info),
+            WallpaperTrayStatus::Disabled
+            | WallpaperTrayStatus::Starting => None,
+        }
     }
 
     pub fn set_disabled(
@@ -192,10 +231,8 @@ impl TrayStatusControl {
                 "Starting...".to_string()
             }
 
-            WallpaperTrayStatus::Active(
-                wallpaper
-            ) => {
-                wallpaper
+            WallpaperTrayStatus::Active(info) => {
+                info.display_name
             }
         }
     }
@@ -327,6 +364,24 @@ impl Tray for ScreenshaverTray {
                         .wallpaper
                         .wallpaper_label(),
                 enabled: false,
+                ..Default::default()
+            }
+            .into(),
+            StandardItem {
+                label:
+                    "Edit".into(),
+                icon_name:
+                    "document-edit".into(),
+                enabled:
+                    self.status.wallpaper.active_wallpaper().is_some(),
+                activate:
+                    Box::new(
+                        |tray: &mut Self| {
+                            tray.send_command(
+                                TrayCommand::EditWallpaper
+                            );
+                        }
+                    ),
                 ..Default::default()
             }
             .into(),

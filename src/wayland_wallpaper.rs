@@ -891,10 +891,10 @@ pub fn run_egl_background_surface(
     );
 
 
-    runtime.tray_status
-        .set_active(
-            active_shader.shader_name.clone()
-        );
+    runtime.tray_status.set_active(
+        active_shader.shader_name.clone(),
+        wallpaper_directory.join(&active_shader.manager_name),
+    );
 
 
     let (
@@ -2274,6 +2274,109 @@ fn render_mirror_frames(
             }
 
 
+            if let Some(reload) =
+                control.take_policy_reload()
+            {
+                let mut replacement_texture_manager =
+                    crate::manage_textures::TextureManager::new(
+                        reload.texture_policy.clone()
+                    );
+
+                match replacement_texture_manager.prepare_for_shader(
+                    &current_shader.shader_name,
+                    current_shader.channel_usage,
+                ) {
+                    Ok(()) => {
+                        let replacement_profile =
+                            reload.postprocess_policy
+                                .profile_for_shader(
+                                    &current_shader.shader_name
+                                );
+
+                        let mut profile_error =
+                            None;
+
+                        for pipeline in
+                            postprocess_pipelines.values_mut()
+                        {
+                            if let Err(error) =
+                                pipeline.set_profile(
+                                    replacement_profile
+                                )
+                            {
+                                profile_error =
+                                    Some(error);
+                                break;
+                            }
+                        }
+
+                        if let Some(error) =
+                            profile_error
+                        {
+                            replacement_texture_manager.delete_all();
+                            println!(
+                                "Unable to reload Wayland active wallpaper policy; keeping the previous settings: {}",
+                                error,
+                            );
+                        } else {
+                            replacement_texture_manager.configure_program(
+                                program
+                            );
+
+                            texture_manager.delete_all();
+                            texture_manager =
+                                replacement_texture_manager;
+
+                            animation_speed =
+                                reload.animation_speed_policy
+                                    .animation_speed_for_shader(
+                                        &current_shader.shader_name,
+                                        None,
+                                    );
+
+                            rendered_fps =
+                                reload.fps_policy
+                                    .rendered_fps_for_shader(
+                                        &current_shader.shader_name,
+                                        None,
+                                    );
+
+                            frame_duration =
+                                frame_duration_for_fps(
+                                    rendered_fps
+                                );
+
+                            next_frame_deadline =
+                                Instant::now();
+
+                            frame_times.clear();
+                            fps_warning_state =
+                                crate::fps_monitor::FpsWarningState::Normal;
+
+                            notify_active_wallpaper(
+                                runtime.notifications,
+                                &current_shader,
+                                &texture_manager,
+                                rendered_fps,
+                                animation_speed,
+                                fps_warning_state,
+                            );
+
+                            println!(
+                                "Wayland active wallpaper policy reloaded."
+                            );
+                        }
+                    }
+
+                    Err(error) => {
+                        println!(
+                            "Unable to reload Wayland active wallpaper texture policy; keeping the previous settings: {}",
+                            error,
+                        );
+                    }
+                }
+            }
+
             if control.pause_requested() {
                 if !paused {
                     paused =
@@ -2568,10 +2671,10 @@ fn render_mirror_frames(
                                 }
 
 
-                                runtime.tray_status
-                                    .set_active(
-                                        current_shader.shader_name.clone()
-                                    );
+                                runtime.tray_status.set_active(
+                                    current_shader.shader_name.clone(),
+                                    wallpaper_directory.join(&current_shader.manager_name),
+                                );
 
 
                                 frame_times.clear();

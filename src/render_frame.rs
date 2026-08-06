@@ -19,6 +19,7 @@ const MOUSE_MOTION_EXIT_THRESHOLD: i32 = 4;
 struct ActiveShader {
     program: u32,
     shader_name: String,
+    source_path: Option<PathBuf>,
     channel_usage: crate::preprocess_shader::ShaderChannelUsage,
     shader_inputs: Vec<crate::isf_types::ShaderInput>,
     built_in_default: bool,
@@ -85,6 +86,7 @@ impl RenderFpsPolicy {
 #[derive(Clone, Debug)]
 pub(crate) struct FrameRenderMetadata {
     pub shader_name: String,
+    pub shader_path: Option<PathBuf>,
     pub animation_speed: f32,
     pub texture: Option<String>,
     pub palette: Option<String>,
@@ -381,6 +383,108 @@ impl FrameRenderEngine {
                     Instant::now(),
             }
         )
+    }
+
+
+    pub(crate) fn reconfigure_active_wallpaper(
+        &mut self,
+        reload: crate::manage_wallpaper_runtime::WallpaperPolicyReload,
+        width: u32,
+        height: u32,
+    ) -> Result<(), String> {
+        let shader_name =
+            self.active_shader.shader_name.clone();
+
+        let mut replacement_texture_manager =
+            crate::manage_textures::TextureManager::new(
+                reload.texture_policy.clone()
+            );
+
+        replacement_texture_manager.prepare_for_shader(
+            &shader_name,
+            self.active_shader.channel_usage,
+        )?;
+
+        let replacement_animation_speed =
+            reload.animation_speed_policy
+                .animation_speed_for_shader(
+                    &shader_name,
+                    None,
+                );
+
+        let replacement_configured_fps =
+            reload.fps_policy
+                .rendered_fps_for_shader(
+                    &shader_name,
+                    None,
+                );
+
+        let replacement_postprocess_profile =
+            reload.postprocess_policy
+                .profile_for_shader(
+                    &shader_name
+                );
+
+        self.postprocess.resize(
+            width,
+            height,
+        )?;
+
+        self.postprocess.set_profile(
+            replacement_postprocess_profile
+        )?;
+
+        replacement_texture_manager.configure_program(
+            self.active_shader.program
+        );
+
+        self.texture_manager.delete_all();
+        self.texture_manager =
+            replacement_texture_manager;
+
+        self.animation_speed_policy =
+            reload.animation_speed_policy;
+        self.animation_speed =
+            replacement_animation_speed;
+
+        self.fps_policy =
+            RenderFpsPolicy::Wallpaper(
+                reload.fps_policy
+            );
+        self.configured_fps =
+            replacement_configured_fps.max(1);
+        self.target_frame_time =
+            Duration::from_secs_f64(
+                1.0 / self.configured_fps as f64
+            );
+        self.last_frame =
+            Instant::now();
+
+        self.postprocess_policy =
+            reload.postprocess_policy;
+
+        self.subtitle_overlay =
+            None;
+        self.overlay_output_size =
+            (width, height);
+        self.fps_warning_state =
+            FpsWarningState::Normal;
+        self.fps_blink_visible =
+            true;
+        self.last_fps_blink =
+            Instant::now();
+        self.frame_times.clear();
+
+        log_information(
+            &format!(
+                "[RENDER] Reconfigured active wallpaper '{}' (speed {:.3}x, {} FPS)",
+                shader_name,
+                self.animation_speed,
+                self.configured_fps,
+            )
+        );
+
+        Ok(())
     }
 
 
@@ -733,6 +837,8 @@ impl FrameRenderEngine {
         FrameRenderMetadata {
             shader_name:
                 self.active_shader.shader_name.clone(),
+            shader_path:
+                self.active_shader.source_path.clone(),
             animation_speed:
                 self.animation_speed,
             texture:
@@ -1535,6 +1641,9 @@ fn select_safe_shader_program(
                             ActiveShader {
                                 program,
                                 shader_name,
+                                source_path: shader_directory.map(
+                                    |directory| directory.join(&requested_shader_name)
+                                ),
                                 channel_usage,
                                 shader_inputs,
                                 built_in_default,
@@ -1628,6 +1737,7 @@ fn select_safe_shader_program(
                 ActiveShader {
                     program,
                     shader_name,
+                    source_path: None,
                     channel_usage,
                     shader_inputs,
                     built_in_default,
