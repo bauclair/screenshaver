@@ -382,6 +382,7 @@ fn run_empty_session() -> Result<(), String> {
                 None,
                 false,
                 false,
+                None,
             );
 
         if !editor_output.window_open {
@@ -763,6 +764,14 @@ fn run_paths(
             width,
             height,
         )?;
+
+
+    let mut information_path =
+        resolve_information_path(
+            &active.path,
+            &active.shader_name,
+            initial_editor_target,
+        );
 
 
     let initial_postprocess_profile =
@@ -1256,6 +1265,53 @@ fn run_paths(
                     .active_specification_selection();
 
 
+            let shader_information =
+                crate::editor_layout::ShaderInformation {
+                    filename:
+                        information_path
+                            .file_name()
+                            .and_then(
+                                |name| name.to_str()
+                            )
+                            .unwrap_or(
+                                &active.shader_name
+                            )
+                            .to_string(),
+
+                    folder:
+                        information_path
+                            .parent()
+                            .unwrap_or_else(
+                                || Path::new(".")
+                            )
+                            .display()
+                            .to_string(),
+
+                    shader_type:
+                        describe_shader_type(
+                            &information_path
+                        ),
+
+                    policies:
+                        describe_policy_availability(
+                            screensaver_policy_exists,
+                            wallpaper_policy_exists,
+                        ),
+
+                    texture_usage:
+                        if active.channel_usage
+                            .uses_any_channel()
+                        {
+                            "Required".to_string()
+                        } else {
+                            "Not required".to_string()
+                        },
+
+                    status:
+                        "Loaded and rendering".to_string(),
+                };
+
+
             let editor_output =
                 edit_window.display(
                     &window,
@@ -1274,6 +1330,9 @@ fn run_paths(
                     true,
                     active.channel_usage
                         .uses_any_channel(),
+                    Some(
+                        &shader_information
+                    ),
                 );
 
             if !editor_output.window_open {
@@ -1424,6 +1483,16 @@ fn run_paths(
 
                 active.subtitle_overlay =
                     None;
+
+                information_path =
+                    resolve_information_path(
+                        &active.path,
+                        &active.shader_name,
+                        Some(
+                            requested_target
+                        ),
+                    );
+
 
                 let target_name =
                     match requested_target {
@@ -2004,6 +2073,127 @@ fn run_paths(
 
 
     result
+}
+
+
+
+fn resolve_information_path(
+    loaded_path: &Path,
+    shader_name: &str,
+    policy_target: Option<crate::editor_layout::PolicyTarget>,
+) -> PathBuf {
+
+    let target_path =
+        match policy_target {
+            Some(
+                crate::editor_layout::PolicyTarget::Screensaver
+            ) => {
+                crate::locate_paths::screensaver_shader_dir()
+                    .join(
+                        shader_name
+                    )
+            }
+
+            Some(
+                crate::editor_layout::PolicyTarget::Wallpaper
+            ) => {
+                crate::locate_paths::wallpaper_shader_dir()
+                    .join(
+                        shader_name
+                    )
+            }
+
+            None => {
+                return loaded_path.to_path_buf();
+            }
+        };
+
+
+    if target_path.is_file() {
+        target_path
+    } else {
+        loaded_path.to_path_buf()
+    }
+}
+
+
+fn describe_policy_availability(
+    screensaver_policy_exists: bool,
+    wallpaper_policy_exists: bool,
+) -> String {
+    match (
+        screensaver_policy_exists,
+        wallpaper_policy_exists,
+    ) {
+        (
+            true,
+            true,
+        ) => {
+            "Screensaver + Wallpaper"
+                .to_string()
+        }
+
+        (
+            true,
+            false,
+        ) => {
+            "Screensaver"
+                .to_string()
+        }
+
+        (
+            false,
+            true,
+        ) => {
+            "Wallpaper"
+                .to_string()
+        }
+
+        (
+            false,
+            false,
+        ) => {
+            "None"
+                .to_string()
+        }
+    }
+}
+
+
+fn describe_shader_type(
+    path: &Path,
+) -> String {
+    let extension =
+        path.extension()
+            .and_then(
+                |value| {
+                    value.to_str()
+                }
+            )
+            .unwrap_or("")
+            .to_ascii_lowercase();
+
+    if extension == "fs" {
+        return "ISF".to_string();
+    }
+
+    let source =
+        std::fs::read_to_string(
+            path
+        )
+        .unwrap_or_default();
+
+    if source.contains(
+        "\"ISFVSN\""
+    ) {
+        "ISF".to_string()
+    } else if source.contains(
+        "mainImage"
+    ) {
+        "ShaderToy".to_string()
+    } else {
+        "Native GLSL".to_string()
+    }
 }
 
 

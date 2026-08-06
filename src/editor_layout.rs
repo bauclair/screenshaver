@@ -172,6 +172,17 @@ pub enum DitheringSelection {
 }
 
 
+#[derive(Clone, Debug)]
+pub struct ShaderInformation {
+    pub filename: String,
+    pub folder: String,
+    pub shader_type: String,
+    pub policies: String,
+    pub texture_usage: String,
+    pub status: String,
+}
+
+
 #[derive(Clone, Copy, Debug)]
 pub struct EditorOutput {
     pub fps: u32,
@@ -598,6 +609,7 @@ impl EditWindowOverlay {
         )>,
         shader_loaded: bool,
         texture_required: bool,
+        shader_information: Option<&ShaderInformation>,
     ) -> EditorOutput {
 
         let (
@@ -962,6 +974,7 @@ impl EditWindowOverlay {
                                 ui,
                                 metrics,
                                 shader_loaded,
+                                shader_information,
                                 &mut status_message,
                                 &mut hover_help_message,
                             );
@@ -1407,9 +1420,25 @@ fn draw_shader_header_row(
     ui: &mut egui::Ui,
     metrics: EditorMetrics,
     shader_loaded: bool,
+    shader_information: Option<&ShaderInformation>,
     status_message: &mut String,
     hover_help_message: &mut Option<&'static str>,
 ) {
+    let current_shader_name =
+        shader_information
+            .map(
+                |information| {
+                    information.filename.as_str()
+                }
+            )
+            .unwrap_or(
+                if shader_loaded {
+                    "Loaded shader"
+                } else {
+                    "No shader loaded"
+                }
+            );
+
     ui.columns(
         2,
         |columns| {
@@ -1426,13 +1455,19 @@ fn draw_shader_header_row(
                                 "Current Shader:"
                             );
 
-                            ui.label(
-                                if shader_loaded {
-                                    "Loaded shader"
-                                } else {
-                                    "No shader loaded"
-                                }
-                            );
+                            let shader_name_response =
+                                ui.label(
+                                    current_shader_name
+                                );
+
+                            if let Some(information) =
+                                shader_information
+                            {
+                                shader_name_response
+                                    .on_hover_text(
+                                        information.folder.as_str()
+                                    );
+                            }
 
                             ui.with_layout(
                                 egui::Layout::right_to_left(
@@ -1537,29 +1572,133 @@ fn draw_shader_header_row(
                     .show(
                         ui,
                         |ui| {
-                            ui.label("Path:");
-                            ui.label("Provided by editor session");
-                            ui.end_row();
+                            if let Some(information) =
+                                shader_information
+                            {
+                                ui.label("Filename:");
+                                ui.label(
+                                    information.filename.as_str()
+                                );
+                                ui.end_row();
 
-                            ui.label("Type:");
-                            ui.label("Shader file");
-                            ui.end_row();
+                                ui.label("Folder:");
+                                let folder_response =
+                                    ui.label(
+                                        truncate_middle(
+                                            information.folder.as_str(),
+                                            42,
+                                        )
+                                    );
 
-                            ui.label("Status:");
-                            ui.label(
-                                if shader_loaded {
-                                    "Loaded"
-                                } else {
-                                    "No shader loaded"
-                                }
-                            );
-                            ui.end_row();
+                                folder_response.on_hover_text(
+                                    information.folder.as_str()
+                                );
+                                ui.end_row();
+
+                                ui.label("Type:");
+                                ui.label(
+                                    information.shader_type.as_str()
+                                );
+                                ui.end_row();
+
+                                ui.label("Policies:");
+                                ui.label(
+                                    information.policies.as_str()
+                                );
+                                ui.end_row();
+
+                                ui.label("Texture:");
+                                ui.label(
+                                    information.texture_usage.as_str()
+                                );
+                                ui.end_row();
+
+                                ui.label("Status:");
+                                ui.label(
+                                    information.status.as_str()
+                                );
+                                ui.end_row();
+                            } else {
+                                ui.label("Filename:");
+                                ui.label("No shader loaded");
+                                ui.end_row();
+
+                                ui.label("Folder:");
+                                ui.label("—");
+                                ui.end_row();
+
+                                ui.label("Type:");
+                                ui.label("—");
+                                ui.end_row();
+
+                                ui.label("Policies:");
+                                ui.label("None");
+                                ui.end_row();
+
+                                ui.label("Texture:");
+                                ui.label("Not applicable");
+                                ui.end_row();
+
+                                ui.label("Status:");
+                                ui.label("No shader loaded");
+                                ui.end_row();
+                            }
                         },
                     );
                 },
             );
         },
     );
+}
+
+
+fn truncate_middle(
+    value: &str,
+    maximum_characters: usize,
+) -> String {
+    let character_count =
+        value.chars().count();
+
+    if character_count
+        <= maximum_characters
+        || maximum_characters < 7
+    {
+        return value.to_string();
+    }
+
+    let retained_characters =
+        maximum_characters - 3;
+
+    let leading_characters =
+        retained_characters / 2;
+
+    let trailing_characters =
+        retained_characters
+            - leading_characters;
+
+    let leading =
+        value.chars()
+            .take(
+                leading_characters
+            )
+            .collect::<String>();
+
+    let trailing =
+        value.chars()
+            .rev()
+            .take(
+                trailing_characters
+            )
+            .collect::<String>()
+            .chars()
+            .rev()
+            .collect::<String>();
+
+    format!(
+        "{}...{}",
+        leading,
+        trailing,
+    )
 }
 
 
