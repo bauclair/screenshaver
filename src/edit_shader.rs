@@ -172,6 +172,7 @@ struct ActivePreviewShader {
 enum EditorTargetRestriction {
     Unrestricted,
     WallpaperOnly,
+    ScreensaverOnly,
 }
 
 pub fn run(
@@ -232,6 +233,21 @@ pub fn run_wallpaper_only(
         None,
         None,
         EditorTargetRestriction::WallpaperOnly,
+    )
+}
+
+
+pub fn run_screensaver_only(
+    shader_path: PathBuf,
+) -> Result<(), String> {
+    run_paths(
+        vec![shader_path],
+        None,
+        None,
+        None,
+        None,
+        None,
+        EditorTargetRestriction::ScreensaverOnly,
     )
 }
 
@@ -415,6 +431,7 @@ fn run_empty_session() -> Result<(), String> {
                 false,
                 false,
                 false,
+                false,
                 &[],
                 None,
             );
@@ -567,10 +584,14 @@ fn run_paths(
         .is_file();
 
 
-    if target_restriction
-        == EditorTargetRestriction::WallpaperOnly
-    {
-        screensaver_target_available = false;
+    match target_restriction {
+        EditorTargetRestriction::WallpaperOnly => {
+            screensaver_target_available = false;
+        }
+        EditorTargetRestriction::ScreensaverOnly => {
+            wallpaper_target_available = false;
+        }
+        EditorTargetRestriction::Unrestricted => {}
     }
 
 
@@ -608,6 +629,12 @@ fn run_paths(
         {
             Some(
                 crate::editor_layout::PolicyTarget::Wallpaper
+            )
+        } else if target_restriction
+            == EditorTargetRestriction::ScreensaverOnly
+        {
+            Some(
+                crate::editor_layout::PolicyTarget::Screensaver
             )
         } else if wallpaper_policy_exists {
             Some(
@@ -1475,6 +1502,8 @@ fn run_paths(
                     wallpaper_target_available,
                     target_restriction
                         == EditorTargetRestriction::WallpaperOnly,
+                    target_restriction
+                        == EditorTargetRestriction::ScreensaverOnly,
                     &recent_shader_paths,
                     Some(
                         &shader_information
@@ -1635,10 +1664,14 @@ fn run_paths(
                     )
                     .is_file();
 
-                if target_restriction
-                    == EditorTargetRestriction::WallpaperOnly
-                {
-                    new_screensaver_target_available = false;
+                match target_restriction {
+                    EditorTargetRestriction::WallpaperOnly => {
+                        new_screensaver_target_available = false;
+                    }
+                    EditorTargetRestriction::ScreensaverOnly => {
+                        new_wallpaper_target_available = false;
+                    }
+                    EditorTargetRestriction::Unrestricted => {}
                 }
 
                 let new_screensaver_policy_exists =
@@ -1673,6 +1706,12 @@ fn run_paths(
                     {
                         Some(
                             crate::editor_layout::PolicyTarget::Wallpaper
+                        )
+                    } else if target_restriction
+                        == EditorTargetRestriction::ScreensaverOnly
+                    {
+                        Some(
+                            crate::editor_layout::PolicyTarget::Screensaver
                         )
                     } else if new_wallpaper_policy_exists {
                         Some(

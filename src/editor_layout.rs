@@ -689,6 +689,7 @@ impl EditWindowOverlay {
         screensaver_target_available: bool,
         wallpaper_target_available: bool,
         screensaver_target_session_restricted: bool,
+        wallpaper_target_session_restricted: bool,
         recent_shader_paths: &[PathBuf],
         shader_information: Option<&ShaderInformation>,
     ) -> EditorOutput {
@@ -1213,6 +1214,7 @@ impl EditWindowOverlay {
                                         screensaver_target_available,
                                         wallpaper_target_available,
                                         screensaver_target_session_restricted,
+                                        wallpaper_target_session_restricted,
                                         &mut policy_target_change_requested,
                                         &mut status_message,
                                         &mut hover_help_message,
@@ -2401,6 +2403,7 @@ fn draw_policy_target_panel(
     screensaver_target_available: bool,
     wallpaper_target_available: bool,
     screensaver_target_session_restricted: bool,
+    wallpaper_target_session_restricted: bool,
     policy_target_change_requested: &mut Option<PolicyTarget>,
     status_message: &mut String,
     hover_help_message: &mut Option<&'static str>,
@@ -2482,6 +2485,8 @@ fn draw_policy_target_panel(
                 hover_help_message,
                 if wallpaper_target_available {
                     "Load or create the policy used for wallpaper rendering."
+                } else if wallpaper_target_session_restricted {
+                    "This editing session was opened for the active screensaver. Only the Screensaver policy can be edited."
                 } else {
                     "This shader is unavailable for Wallpaper use because it does not exist in the wallpapers folder."
                 },

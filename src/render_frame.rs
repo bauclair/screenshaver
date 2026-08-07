@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use sdl2::event::Event;
+use sdl2::keyboard::{Keycode, Mod};
 use sdl2::video::{GLContext, GLProfile, Window};
 
 use crate::fps_monitor::{
@@ -14,6 +15,13 @@ use crate::fps_monitor::{
 
 const INPUT_STARTUP_GRACE: Duration = Duration::from_millis(750);
 const MOUSE_MOTION_EXIT_THRESHOLD: i32 = 4;
+
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ScreensaverRunOutcome {
+    Exit,
+    EditCurrentShader(PathBuf),
+}
 
 #[derive(Debug)]
 struct ActiveShader {
@@ -1215,7 +1223,7 @@ impl FrameRenderer {
         &mut self,
         running: &AtomicBool,
         wallpaper_control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
-    ) {
+    ) -> ScreensaverRunOutcome {
         log_information(
             "[RENDER] Entering renderer-owned event loop"
         );
@@ -1223,42 +1231,44 @@ impl FrameRenderer {
         let mut first_frame_presented =
             false;
 
-
-        while running.load(Ordering::SeqCst) {
-            if self.pump_events() {
-                log_information(
-                    "[RENDER] User input requested renderer exit"
-                );
-
-
-                break;
+        let outcome = loop {
+            if !running.load(Ordering::SeqCst) {
+                break ScreensaverRunOutcome::Exit;
             }
 
+            match self.pump_events() {
+                Some(outcome) => {
+                    break outcome;
+                }
+                None => {}
+            }
 
             self.render_frame();
-
 
             if !first_frame_presented {
                 first_frame_presented =
                     true;
 
-
                 wallpaper_control.request_pause_after_first_frame(
                     running
                 );
             }
-        }
+        };
 
-        // Always release a paused wallpaper renderer, regardless of whether
-        // the screensaver ended because of SDL input, a quit event, or the
-        // shared runtime flag changing state.
-        wallpaper_control.resume_and_wait_for_frame(
-            running
-        );
+        // Keep wallpaper rendering paused while the active screensaver is
+        // handed to the policy editor. A replacement screensaver renderer
+        // will retain that pause until the user finally disengages it.
+        if outcome == ScreensaverRunOutcome::Exit {
+            wallpaper_control.resume_and_wait_for_frame(
+                running
+            );
+        }
 
         log_information(
             "[RENDER] Leaving renderer-owned event loop"
         );
+
+        outcome
     }
 
 
@@ -1283,7 +1293,7 @@ impl FrameRenderer {
 
     fn pump_events(
         &mut self,
-    ) -> bool {
+    ) -> Option<ScreensaverRunOutcome> {
         let mouse_motion_enabled =
             self.renderer_started.elapsed()
                 >= INPUT_STARTUP_GRACE;
@@ -1299,7 +1309,7 @@ impl FrameRenderer {
                         "[RENDER] SDL quit event received"
                     );
 
-                    return true;
+                    return Some(ScreensaverRunOutcome::Exit);
                 }
 
                 Event::Window {
@@ -1314,13 +1324,40 @@ impl FrameRenderer {
                 }
 
                 Event::KeyDown {
+                    keycode: Some(Keycode::E),
+                    keymod,
+                    repeat: false,
+                    ..
+                } if edit_shortcut_modifiers_allowed(keymod) => {
+                    if let Some(shader_path) =
+                        self.engine.current_metadata().shader_path
+                    {
+                        log_information(
+                            "[RENDER] E pressed: editing active screensaver shader"
+                        );
+
+                        return Some(
+                            ScreensaverRunOutcome::EditCurrentShader(
+                                shader_path
+                            )
+                        );
+                    }
+
+                    log_warning(
+                        "[RENDER] E pressed, but the active shader has no editable source path; exiting normally"
+                    );
+
+                    return Some(ScreensaverRunOutcome::Exit);
+                }
+
+                Event::KeyDown {
                     ..
                 } => {
                     log_information(
                         "[RENDER] SDL keydown event: exiting"
                     );
 
-                    return true;
+                    return Some(ScreensaverRunOutcome::Exit);
                 }
 
                 Event::MouseButtonDown {
@@ -1330,7 +1367,7 @@ impl FrameRenderer {
                         "[RENDER] SDL mouse button event: exiting"
                     );
 
-                    return true;
+                    return Some(ScreensaverRunOutcome::Exit);
                 }
 
                 Event::MouseWheel {
@@ -1340,7 +1377,7 @@ impl FrameRenderer {
                         "[RENDER] SDL mouse wheel event: exiting"
                     );
 
-                    return true;
+                    return Some(ScreensaverRunOutcome::Exit);
                 }
 
                 Event::MouseMotion {
@@ -1367,7 +1404,7 @@ impl FrameRenderer {
                             )
                         );
 
-                        return true;
+                        return Some(ScreensaverRunOutcome::Exit);
                     }
                 }
 
@@ -1375,10 +1412,21 @@ impl FrameRenderer {
             }
         }
 
-        false
+        None
     }
 
 
+}
+
+
+fn edit_shortcut_modifiers_allowed(
+    keymod: Mod,
+) -> bool {
+    let allowed_lock_modifiers =
+        Mod::NUMMOD | Mod::CAPSMOD;
+
+    (keymod & !allowed_lock_modifiers)
+        == Mod::NOMOD
 }
 
 
@@ -1641,9 +1689,23 @@ fn select_safe_shader_program(
                             ActiveShader {
                                 program,
                                 shader_name,
-                                source_path: shader_directory.map(
-                                    |directory| directory.join(&requested_shader_name)
-                                ),
+                                source_path:
+                                    if built_in_default {
+                                        None
+                                    } else if let Some(directory) = shader_directory {
+                                        Some(
+                                            directory.join(
+                                                &requested_shader_name
+                                            )
+                                        )
+                                    } else {
+                                        Some(
+                                            crate::locate_paths::screensaver_shader_dir()
+                                                .join(
+                                                    &requested_shader_name
+                                                )
+                                        )
+                                    },
                                 channel_usage,
                                 shader_inputs,
                                 built_in_default,

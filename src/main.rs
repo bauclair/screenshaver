@@ -723,7 +723,7 @@ crate::parse_arguments::Command::ListPalettes => {
         };
 
 
-    let cfg =
+    let mut cfg =
         result.config;
 
 
@@ -1467,145 +1467,252 @@ crate::parse_arguments::Command::ListPalettes => {
                     "[SESSION] Session idle: engaging renderer",
                 );
 
-
                 println!(
                     "[MAIN] Session idle: engaging renderer"
                 );
 
-
-                let shader_mode =
+                let configured_shader_mode =
                     match cfg.mode
                         .split(':')
                         .next()
                         .unwrap_or("single")
                     {
-
                         "single" => {
-
                             crate::manage_shader::ShaderMode::Single(
                                 parsed_mode.argument.clone()
                             )
                         }
-
-
                         "random" => {
-
                             crate::manage_shader::ShaderMode::Random
                         }
-
-
                         "ordered" => {
-
                             crate::manage_shader::ShaderMode::Ordered
                         }
-
-
                         _ => {
-
                             crate::manage_shader::ShaderMode::Single(
                                 parsed_mode.argument.clone()
                             )
                         }
                     };
 
+                let mut next_shader_mode =
+                    configured_shader_mode.clone();
 
-                let shader_manager =
-                    crate::manage_shader::ShaderManager::new(
-                        shader_mode
-                    );
+                let mut next_shader_interval =
+                    parsed_interval.seconds;
 
+                let mut next_initial_shader:
+                    Option<String> =
+                    None;
 
-                let mut renderer =
-                    match crate::render_frame::FrameRenderer::new(
-                        &sdl,
-                        shader_manager,
-                        parsed_interval.seconds,
-                        cfg.screensaver_speed_policy.clone(),
-                        cfg.global_rendered_fps,
-                        cfg.screensaver_fps_policy_entries.clone(),
-                        cfg.texture_policy.clone(),
-                        cfg.screensaver_postprocess_policy.clone(),
-                        cfg.subtitles,
-                        cfg.subtitle_placement,
-                    ) {
+                'screensaver_session: loop {
+                    let shader_manager =
+                        if let Some(initial_shader) =
+                            next_initial_shader.take()
+                        {
+                            crate::manage_shader::ShaderManager::new_with_initial_shader(
+                                next_shader_mode.clone(),
+                                initial_shader,
+                            )
+                        } else {
+                            crate::manage_shader::ShaderManager::new(
+                                next_shader_mode.clone()
+                            )
+                        };
 
-                        Ok(renderer) => renderer,
+                    let mut renderer =
+                        match crate::render_frame::FrameRenderer::new(
+                            &sdl,
+                            shader_manager,
+                            next_shader_interval,
+                            cfg.screensaver_speed_policy.clone(),
+                            cfg.global_rendered_fps,
+                            cfg.screensaver_fps_policy_entries.clone(),
+                            cfg.texture_policy.clone(),
+                            cfg.screensaver_postprocess_policy.clone(),
+                            cfg.subtitles,
+                            cfg.subtitle_placement,
+                        ) {
+                            Ok(renderer) => renderer,
 
-                        Err(error) => {
+                            Err(error) => {
+                                eprintln!(
+                                    "[MAIN] Renderer initialization failed: {}",
+                                    error
+                                );
 
-                            eprintln!(
-                                "[MAIN] Renderer initialization failed: {}",
-                                error
-                            );
+                                crate::logger::error(
+                                    &logfile,
+                                    &format!(
+                                        "[RENDER] Renderer initialization failed: {}",
+                                        error,
+                                    ),
+                                );
 
+                                wallpaper_control.resume_and_wait_for_frame(
+                                    running.as_ref()
+                                );
 
-                            crate::logger::error(
-                                &logfile,
-                                &format!(
-                                    "[RENDER] Renderer initialization failed: {}",
-                                    error,
-                                ),
-                            );
-
-
-                            break;
-                        }
-                    };
-
-
-                crate::logger::information(
-                    &logfile,
-                    "[RENDER] Renderer started",
-                );
-
-
-                renderer.run(
-                    running.as_ref(),
-                    &wallpaper_control,
-                );
-
-
-                if running.load(Ordering::SeqCst) {
+                                break 'screensaver_session;
+                            }
+                        };
 
                     crate::logger::information(
                         &logfile,
-                        "[SESSION] User input: disengaging renderer",
+                        "[RENDER] Renderer started",
                     );
 
+                    let renderer_outcome =
+                        renderer.run(
+                            running.as_ref(),
+                            &wallpaper_control,
+                        );
 
-                    println!(
-                        "[MAIN] User input: disengaging renderer"
-                    );
+                    drop(renderer);
+
+                    match renderer_outcome {
+                        crate::render_frame::ScreensaverRunOutcome::Exit => {
+                            if running.load(Ordering::SeqCst) {
+                                crate::logger::information(
+                                    &logfile,
+                                    "[SESSION] User input: disengaging renderer",
+                                );
+
+                                println!(
+                                    "[MAIN] User input: disengaging renderer"
+                                );
+                            }
+
+                            break 'screensaver_session;
+                        }
+
+                        crate::render_frame::ScreensaverRunOutcome::EditCurrentShader(
+                            shader_path
+                        ) => {
+                            crate::logger::information(
+                                &logfile,
+                                &format!(
+                                    "[SESSION] Editing active screensaver shader: {}",
+                                    shader_path.display(),
+                                ),
+                            );
+
+                            let edit_result =
+                                crate::edit_shader::run_screensaver_only(
+                                    shader_path.clone()
+                                );
+
+                            if let Err(error) = &edit_result {
+                                eprintln!(
+                                    "[SCREENSAVER EDIT] {}",
+                                    error
+                                );
+
+                                crate::logger::error(
+                                    &logfile,
+                                    &format!(
+                                        "[SCREENSAVER EDIT] {}",
+                                        error,
+                                    ),
+                                );
+                            }
+
+                            let config_path =
+                                crate::locate_paths::config_path();
+
+                            match crate::load_config::load_config(
+                                &config_path
+                            ) {
+                                Ok(config_result) => {
+                                    for diagnostic in
+                                        &config_result.diagnostics
+                                    {
+                                        crate::logger::warning(
+                                            &logfile,
+                                            &format!(
+                                                "[SCREENSAVER EDIT] Configuration reload diagnostic: {}",
+                                                diagnostic,
+                                            ),
+                                        );
+                                    }
+
+                                    cfg = config_result.config;
+                                }
+
+                                Err(error) => {
+                                    crate::logger::error(
+                                        &logfile,
+                                        &format!(
+                                            "[SCREENSAVER EDIT] Unable to reload configuration: {}",
+                                            error,
+                                        ),
+                                    );
+                                }
+                            }
+
+                            let Some(shader_name) =
+                                shader_path
+                                    .file_name()
+                                    .and_then(
+                                        |name| name.to_str()
+                                    )
+                                    .map(
+                                        str::to_string
+                                    )
+                            else {
+                                crate::logger::error(
+                                    &logfile,
+                                    "[SCREENSAVER EDIT] Active shader path has no valid filename",
+                                );
+
+                                wallpaper_control.resume_and_wait_for_frame(
+                                    running.as_ref()
+                                );
+
+                                break 'screensaver_session;
+                            };
+
+                            next_shader_mode =
+                                configured_shader_mode.clone();
+
+                            next_shader_interval =
+                                parsed_interval.seconds;
+
+                            next_initial_shader =
+                                Some(shader_name);
+
+                            if edit_result.is_ok() {
+                                crate::logger::information(
+                                    &logfile,
+                                    "[SCREENSAVER EDIT] Resuming edited screensaver shader",
+                                );
+                            } else {
+                                crate::logger::warning(
+                                    &logfile,
+                                    "[SCREENSAVER EDIT] Editor failed; resuming the previous shader with the best available configuration",
+                                );
+                            }
+                        }
+                    }
                 }
 
-
-                drop(renderer);
-
-
                 if running.load(Ordering::SeqCst) {
-
                     if cfg.debug_log {
-
                         crate::logger::debug(
                             &logfile,
                             "[MAIN] Returning to session loop",
                         );
                     }
 
-
                     println!(
                         "[MAIN] Returning to session loop..."
                     );
 
-
                     continue;
-
                 } else {
-
                     break;
                 }
             }
-
 
             crate::query_session::SessionState::Active => {}
         }

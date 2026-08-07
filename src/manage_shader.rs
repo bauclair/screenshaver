@@ -27,6 +27,9 @@ pub struct ShaderManager {
 
     mode:
         ShaderMode,
+
+    resume_shader:
+        Option<String>,
 }
 
 
@@ -41,6 +44,61 @@ impl ShaderManager {
             mode,
             Self::load_shader_list(),
         )
+    }
+
+
+    /// Create a shader manager that presents one requested shader first, then
+    /// continues using the configured selection mode.
+    pub fn new_with_initial_shader(
+        mode: ShaderMode,
+        initial_shader: String,
+    ) -> Self {
+
+        let mut manager =
+            Self::from_shader_list(
+                mode,
+                Self::load_shader_list(),
+            );
+
+
+        if manager.shaders.contains(
+            &initial_shader
+        ) {
+
+            if matches!(
+                manager.mode,
+                ShaderMode::Ordered
+            ) {
+                if let Some(position) =
+                    manager.shaders.iter()
+                        .position(
+                            |shader| shader == &initial_shader
+                        )
+                {
+                    manager.index =
+                        if manager.shaders.is_empty() {
+                            0
+                        } else {
+                            (position + 1)
+                                % manager.shaders.len()
+                        };
+                }
+            }
+
+            manager.resume_shader =
+                Some(initial_shader);
+
+        } else {
+            log_warning(
+                &format!(
+                    "[SHADER] Requested resume shader '{}' is unavailable; continuing with configured selection mode",
+                    initial_shader
+                )
+            );
+        }
+
+
+        manager
     }
 
 
@@ -72,6 +130,9 @@ impl ShaderManager {
                 0,
 
             mode,
+
+            resume_shader:
+                None,
         }
     }
 
@@ -237,6 +298,13 @@ impl ShaderManager {
     pub fn next(
         &mut self,
     ) -> Option<String> {
+
+        if let Some(shader) =
+            self.resume_shader.take()
+        {
+            return Some(shader);
+        }
+
 
         match &self.mode {
 
