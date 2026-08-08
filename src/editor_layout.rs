@@ -14,22 +14,16 @@ use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::mouse::MouseButton;
 
-// Editor-window geometry is expressed as a fraction of the active display.
-// Initial and maximum dimensions are bounded against the active display.
-// The 0.68 by 0.68 maximum occupies 46.24% of the usable display area.
-const EDIT_WINDOW_INITIAL_WIDTH_FRACTION: f32 =
-    0.62;
+// The multi-tabbed editor is intentionally compact so that as much of the
+// live shader as possible remains visible around it.  These reference
+// dimensions come directly from the approved Qt Designer mock-up.
+const EDIT_WINDOW_REFERENCE_WIDTH: f32 =
+    645.0;
 
-const EDIT_WINDOW_INITIAL_HEIGHT_FRACTION: f32 =
-    0.62;
+const EDIT_WINDOW_REFERENCE_HEIGHT_PIXELS: f32 =
+    658.0;
 
-const EDIT_WINDOW_MAXIMUM_WIDTH_FRACTION: f32 =
-    0.68;
-
-const EDIT_WINDOW_MAXIMUM_HEIGHT_FRACTION: f32 =
-    0.68;
-
-const EDIT_WINDOW_REFERENCE_HEIGHT: f32 =
+const EDIT_WINDOW_REFERENCE_DISPLAY_HEIGHT: f32 =
     1080.0;
 
 const EDIT_WINDOW_SCALE_MIN: f32 =
@@ -37,6 +31,9 @@ const EDIT_WINDOW_SCALE_MIN: f32 =
 
 const EDIT_WINDOW_SCALE_MAX: f32 =
     1.80;
+
+const EDIT_TABBED_CONTENT_HEIGHT: f32 =
+    338.0;
 
 
 #[derive(Clone, Copy)]
@@ -51,6 +48,21 @@ struct SliderDragState {
 pub enum PolicyTarget {
     Screensaver,
     Wallpaper,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EditorTab {
+    Policies,
+    Rendering,
+    Textures,
+    PostProcessing,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PolicySortColumn {
+    Filename,
+    Texture,
+    PolicyType,
 }
 
 
@@ -243,7 +255,37 @@ pub struct ShaderInformation {
 }
 
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
+pub struct PolicyDisplayRow {
+    pub filename: String,
+    pub texture: bool,
+    pub policy_target: PolicyTarget,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PolicyRowReference {
+    pub filename: String,
+    pub policy_target: PolicyTarget,
+}
+
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PolicyRowCommand {
+    Edit,
+    RefreshShader,
+    DeletePolicy,
+    DeleteShader,
+}
+
+
+#[derive(Clone, Debug)]
+struct PendingConfirmation {
+    row: PolicyRowReference,
+    command: PolicyRowCommand,
+}
+
+
+#[derive(Clone, Debug)]
 pub struct EditorOutput {
     pub fps: u32,
     pub animation_speed: f32,
@@ -263,6 +305,8 @@ pub struct EditorOutput {
     pub recent_shader_requested: Option<usize>,
     pub clear_recent_files_requested: bool,
     pub refresh_shader_requested: bool,
+    pub policy_row_command_requested:
+        Option<(PolicyRowReference, PolicyRowCommand)>,
     pub window_open: bool,
 }
 
@@ -416,6 +460,21 @@ pub struct EditWindowOverlay {
     color_precision:
         ColorPrecisionSelection,
 
+    active_tab:
+        EditorTab,
+
+    policy_sort_column:
+        PolicySortColumn,
+
+    policy_sort_ascending:
+        bool,
+
+    selected_policy_row:
+        Option<PolicyRowReference>,
+
+    pending_confirmation:
+        Option<PendingConfirmation>,
+
     shift_held:
         bool,
 
@@ -429,6 +488,11 @@ pub struct EditWindowOverlay {
         Option<SliderDragState>,
 }
 
+
+// ============================================================
+// MAIN WINDOW
+// ============================================================
+// Copy/paste replacement boundary for this editor section.
 
 impl EditWindowOverlay {
     pub fn new(
@@ -523,6 +587,21 @@ impl EditWindowOverlay {
 
                 color_precision:
                     ColorPrecisionSelection::Automatic,
+
+                active_tab:
+                    EditorTab::Policies,
+
+                policy_sort_column:
+                    PolicySortColumn::Filename,
+
+                policy_sort_ascending:
+                    true,
+
+                selected_policy_row:
+                    None,
+
+                pending_confirmation:
+                    None,
 
                 shift_held:
                     false,
@@ -692,6 +771,7 @@ impl EditWindowOverlay {
         wallpaper_target_session_restricted: bool,
         recent_shader_paths: &[PathBuf],
         shader_information: Option<&ShaderInformation>,
+        policy_rows: &[PolicyDisplayRow],
     ) -> EditorOutput {
 
         let (
@@ -799,7 +879,7 @@ impl EditWindowOverlay {
 
         let resolution_scale =
             (screen_size_points.y
-                / EDIT_WINDOW_REFERENCE_HEIGHT)
+                / EDIT_WINDOW_REFERENCE_DISPLAY_HEIGHT)
                 .clamp(
                     EDIT_WINDOW_SCALE_MIN,
                     EDIT_WINDOW_SCALE_MAX,
@@ -817,30 +897,37 @@ impl EditWindowOverlay {
             );
 
 
-        let initial_size =
+        let requested_size =
             egui::vec2(
-                screen_size_points.x
-                    * EDIT_WINDOW_INITIAL_WIDTH_FRACTION,
-                screen_size_points.y
-                    * EDIT_WINDOW_INITIAL_HEIGHT_FRACTION,
+                EDIT_WINDOW_REFERENCE_WIDTH
+                    * resolution_scale,
+                EDIT_WINDOW_REFERENCE_HEIGHT_PIXELS
+                    * resolution_scale,
             );
+
+        let available_size =
+            egui::vec2(
+                (screen_size_points.x
+                    - 24.0 * resolution_scale)
+                    .max(320.0),
+                (screen_size_points.y
+                    - 24.0 * resolution_scale)
+                    .max(320.0),
+            );
+
+        let initial_size =
+            requested_size.min(
+                available_size
+            );
+
+        // Keep this checkpoint faithful to the Qt mock-up.  Tabs are being
+        // introduced specifically to reduce the editor footprint, so the
+        // window is deliberately non-resizable for this first format test.
+        let minimum_size =
+            initial_size;
 
         let maximum_size =
-            egui::vec2(
-                screen_size_points.x
-                    * EDIT_WINDOW_MAXIMUM_WIDTH_FRACTION,
-                screen_size_points.y
-                    * EDIT_WINDOW_MAXIMUM_HEIGHT_FRACTION,
-            );
-
-        let minimum_size =
-            egui::vec2(
-                460.0 * resolution_scale,
-                500.0 * resolution_scale,
-            )
-            .min(
-                maximum_size
-            );
+            initial_size;
 
         let initial_position =
             egui::pos2(
@@ -999,6 +1086,25 @@ impl EditWindowOverlay {
         let shift_held =
             self.shift_held;
 
+        let mut active_tab =
+            self.active_tab;
+
+        let mut policy_sort_column =
+            self.policy_sort_column;
+
+        let mut policy_sort_ascending =
+            self.policy_sort_ascending;
+
+        let mut selected_policy_row =
+            self.selected_policy_row.clone();
+
+        let mut pending_confirmation =
+            self.pending_confirmation.clone();
+
+        let mut policy_row_command_requested:
+            Option<(PolicyRowReference, PolicyRowCommand)> =
+            None;
+
 
         let current_configuration_before_ui =
             EditorConfiguration::new(
@@ -1063,111 +1169,19 @@ impl EditWindowOverlay {
                         screen_rect
                     )
                     .resizable(
-                        true
+                        false
                     )
                     .show(
                         context,
                         |ui| {
+                            ui.set_enabled(
+                                pending_confirmation
+                                    .is_none()
+                            );
+
                             let mut hover_help_message:
                                 Option<&'static str> =
                                 None;
-
-                            draw_shader_header_row(
-                                ui,
-                                metrics,
-                                shader_loaded,
-                                shader_information,
-                                configuration_changed_before_ui,
-                                recent_shader_paths,
-                                &mut browse_shader_requested,
-                                &mut recent_shader_requested,
-                                &mut clear_recent_files_requested,
-                                &mut refresh_shader_requested,
-                                &mut status_message,
-                                &mut hover_help_message,
-                            );
-
-                            ui.add_space(
-                                metrics.panel_gap
-                            );
-
-                            let policy_controls_enabled =
-                                policy_target.is_some();
-
-                            ui.columns(
-                                3,
-                                |columns| {
-                                    columns[0].add_enabled_ui(
-                                        policy_controls_enabled,
-                                        |ui| {
-                                            draw_render_panel(
-                                                ui,
-                                                metrics,
-                                                shift_held,
-                                                &mut displayed_fps,
-                                                &mut displayed_animation_speed,
-                                                &mut displayed_render_scale,
-                                                &mut fps_drag_state,
-                                                &mut animation_speed_drag_state,
-                                                &mut render_scale_drag_state,
-                                                &mut hover_help_message,
-                                            );
-                                        },
-                                    );
-
-                                    columns[1].add_enabled_ui(
-                                        policy_controls_enabled,
-                                        |ui| {
-                                            draw_texture_panel(
-                                                ui,
-                                                metrics,
-                                                texture_required,
-                                                &mut texture,
-                                                &mut palette,
-                                                &mut primitive_count,
-                                                &mut hover_help_message,
-                                            );
-                                        },
-                                    );
-
-                                    columns[2].add_enabled_ui(
-                                        policy_controls_enabled,
-                                        |ui| {
-                                            draw_post_processing_panel(
-                                                ui,
-                                                metrics,
-                                                &mut anti_aliasing,
-                                                &mut dithering,
-                                                &mut color_precision,
-                                                &mut hover_help_message,
-                                            );
-                                        },
-                                    );
-                                },
-                            );
-
-                            if !policy_controls_enabled
-                                && hover_help_message.is_none()
-                            {
-                                hover_help_message =
-                                    Some(
-                                        "Select a Policy Target before changing shader settings."
-                                    );
-                            }
-
-                            displayed_animation_speed =
-                                normalize_editor_float(
-                                    displayed_animation_speed
-                                );
-
-                            displayed_render_scale =
-                                normalize_editor_float(
-                                    displayed_render_scale
-                                );
-
-                            ui.add_space(
-                                metrics.panel_gap
-                            );
 
                             let current_configuration =
                                 EditorConfiguration::new(
@@ -1200,59 +1214,156 @@ impl EditWindowOverlay {
                             let can_cancel =
                                 configuration_changed;
 
-                            let can_delete_shader =
-                                false;
+                            // -----------------------------------------------------------------
+                            // Permanent header: Load Shader + Policy Target + Shader Information
+                            // -----------------------------------------------------------------
+                            draw_compact_header(
+                                ui,
+                                metrics,
+                                shader_information,
+                                configuration_changed,
+                                recent_shader_paths,
+                                policy_target,
+                                screensaver_target_available,
+                                wallpaper_target_available,
+                                screensaver_target_session_restricted,
+                                wallpaper_target_session_restricted,
+                                &mut browse_shader_requested,
+                                &mut recent_shader_requested,
+                                &mut clear_recent_files_requested,
+                                &mut policy_target_change_requested,
+                                &mut status_message,
+                                &mut hover_help_message,
+                            );
 
-                            ui.columns(
-                                3,
-                                |columns| {
-                                    draw_policy_target_panel(
-                                        &mut columns[0],
-                                        metrics,
-                                        policy_target,
-                                        configuration_changed,
-                                        screensaver_target_available,
-                                        wallpaper_target_available,
-                                        screensaver_target_session_restricted,
-                                        wallpaper_target_session_restricted,
-                                        &mut policy_target_change_requested,
-                                        &mut status_message,
-                                        &mut hover_help_message,
+                            ui.add_space(
+                                6.0 * metrics.scale
+                            );
+
+                            let policy_controls_enabled =
+                                policy_target.is_some();
+
+                            // -------------------------------------------------------------
+                            // Embedded notebook corresponding to the Qt Designer QTabWidget.
+                            // -------------------------------------------------------------
+                            draw_editor_tab_bar(
+                                ui,
+                                metrics,
+                                &mut active_tab,
+                            );
+
+                            editor_theme::panel_frame(
+                                ui,
+                                metrics,
+                            )
+                            .show(
+                                ui,
+                                |ui| {
+                                    ui.set_min_height(
+                                        EDIT_TABBED_CONTENT_HEIGHT
+                                            * resolution_scale
                                     );
 
-                                    draw_policy_actions_panel(
-                                        &mut columns[1],
-                                        metrics,
-                                        can_save,
-                                        can_cancel,
-                                        can_delete_shader,
-                                        &mut save_requested,
-                                        &mut cancel_requested,
-                                        &mut delete_requested,
-                                        &mut displayed_fps,
-                                        &mut displayed_animation_speed,
-                                        &mut displayed_render_scale,
-                                        &mut policy_target,
-                                        &mut texture,
-                                        &mut palette,
-                                        &mut primitive_count,
-                                        &mut anti_aliasing,
-                                        &mut dithering,
-                                        &mut color_precision,
-                                        baseline_configuration,
-                                        &mut fps_drag_state,
-                                        &mut animation_speed_drag_state,
-                                        &mut render_scale_drag_state,
-                                        &mut status_message,
-                                        &mut hover_help_message,
-                                    );
+                                    match active_tab {
+                                        EditorTab::Policies => {
+                                            draw_policies_tab(
+                                                ui,
+                                                metrics,
+                                                policy_rows,
+                                                &mut policy_sort_column,
+                                                &mut policy_sort_ascending,
+                                                &mut selected_policy_row,
+                                                &mut pending_confirmation,
+                                                &mut policy_row_command_requested,
+                                            );
+                                        }
 
-                                    draw_about_panel(
-                                        &mut columns[2],
-                                        metrics,
-                                    );
+                                        EditorTab::Rendering => {
+                                            ui.add_enabled_ui(
+                                                policy_controls_enabled,
+                                                |ui| {
+                                                    draw_render_panel(
+                                                        ui,
+                                                        metrics,
+                                                        shift_held,
+                                                        &mut displayed_fps,
+                                                        &mut displayed_animation_speed,
+                                                        &mut displayed_render_scale,
+                                                        &mut fps_drag_state,
+                                                        &mut animation_speed_drag_state,
+                                                        &mut render_scale_drag_state,
+                                                        &mut hover_help_message,
+                                                    );
+                                                },
+                                            );
+                                        }
+
+                                        EditorTab::Textures => {
+                                            ui.add_enabled_ui(
+                                                policy_controls_enabled,
+                                                |ui| {
+                                                    draw_texture_panel(
+                                                        ui,
+                                                        metrics,
+                                                        texture_required,
+                                                        &mut texture,
+                                                        &mut palette,
+                                                        &mut primitive_count,
+                                                        &mut hover_help_message,
+                                                    );
+
+                                                    ui.add_space(
+                                                        8.0 * metrics.scale
+                                                    );
+
+                                                    draw_color_picker_placeholder(
+                                                        ui,
+                                                        metrics,
+                                                        palette,
+                                                    );
+                                                },
+                                            );
+                                        }
+
+                                        EditorTab::PostProcessing => {
+                                            ui.add_enabled_ui(
+                                                policy_controls_enabled,
+                                                |ui| {
+                                                    draw_post_processing_tab(
+                                                        ui,
+                                                        metrics,
+                                                        &mut anti_aliasing,
+                                                        &mut dithering,
+                                                        &mut color_precision,
+                                                        &mut hover_help_message,
+                                                    );
+                                                },
+                                            );
+                                        }
+                                    }
+
+                                    if !policy_controls_enabled
+                                        && active_tab
+                                            != EditorTab::Policies
+                                        && hover_help_message.is_none()
+                                    {
+                                        hover_help_message =
+                                            Some(
+                                                "Select a Policy Target before changing shader settings."
+                                            );
+                                    }
                                 },
                             );
+
+                            displayed_animation_speed =
+                                normalize_editor_float(
+                                    displayed_animation_speed
+                                );
+
+                            displayed_render_scale =
+                                normalize_editor_float(
+                                    displayed_render_scale
+                                );
 
                             if !can_save
                                 && configuration_changed
@@ -1264,7 +1375,39 @@ impl EditWindowOverlay {
                             }
 
                             ui.add_space(
-                                metrics.panel_gap
+                                7.0 * metrics.scale
+                            );
+
+                            // --------------------------------------------------------
+                            // Permanent command row from the approved Qt mock-up.
+                            // --------------------------------------------------------
+                            draw_compact_action_row(
+                                ui,
+                                metrics,
+                                can_save,
+                                can_cancel,
+                                &mut save_requested,
+                                &mut cancel_requested,
+                                &mut displayed_fps,
+                                &mut displayed_animation_speed,
+                                &mut displayed_render_scale,
+                                &mut policy_target,
+                                &mut texture,
+                                &mut palette,
+                                &mut primitive_count,
+                                &mut anti_aliasing,
+                                &mut dithering,
+                                &mut color_precision,
+                                baseline_configuration,
+                                &mut fps_drag_state,
+                                &mut animation_speed_drag_state,
+                                &mut render_scale_drag_state,
+                                &mut status_message,
+                                &mut hover_help_message,
+                            );
+
+                            ui.add_space(
+                                5.0 * metrics.scale
                             );
 
                             let displayed_status: &str =
@@ -1275,19 +1418,42 @@ impl EditWindowOverlay {
                                         status_message.as_str(),
                                 };
 
-                            draw_status_panel(
+                            draw_compact_status_row(
                                 ui,
                                 metrics,
+                                shader_information,
                                 displayed_status,
                                 configuration_changed,
                             );
                         }
                     );
+
+                    draw_policy_confirmation_modal(
+                        context,
+                        &mut pending_confirmation,
+                        &mut policy_row_command_requested,
+                    );
                 }
             );
 
+
         self.window_open =
             window_open;
+
+        self.active_tab =
+            active_tab;
+
+        self.policy_sort_column =
+            policy_sort_column;
+
+        self.policy_sort_ascending =
+            policy_sort_ascending;
+
+        self.selected_policy_row =
+            selected_policy_row;
+
+        self.pending_confirmation =
+            pending_confirmation;
 
         self.displayed_fps =
             Some(
@@ -1394,6 +1560,8 @@ impl EditWindowOverlay {
             clear_recent_files_requested,
 
             refresh_shader_requested,
+
+            policy_row_command_requested,
 
             window_open:
                 self.window_open,
@@ -1577,307 +1745,626 @@ fn update_hover_help(
 }
 
 
-fn draw_shader_header_row(
+
+fn draw_editor_tab_bar(
     ui: &mut egui::Ui,
     metrics: EditorMetrics,
-    shader_loaded: bool,
+    active_tab: &mut EditorTab,
+) {
+    ui.horizontal(
+        |ui| {
+            for (
+                tab,
+                label,
+            ) in [
+                (
+                    EditorTab::Policies,
+                    "Policies",
+                ),
+                (
+                    EditorTab::Rendering,
+                    "Rendering",
+                ),
+                (
+                    EditorTab::Textures,
+                    "Textures",
+                ),
+                (
+                    EditorTab::PostProcessing,
+                    "Post-Processing",
+                ),
+            ] {
+                let selected =
+                    *active_tab == tab;
+
+                let response =
+                    ui.selectable_label(
+                        selected,
+                        egui::RichText::new(
+                            label
+                        )
+                        .strong(),
+                    );
+
+                if response.clicked() {
+                    *active_tab =
+                        tab;
+                }
+
+                ui.add_space(
+                    3.0 * metrics.scale
+                );
+            }
+        },
+    );
+}
+
+
+#[allow(clippy::too_many_arguments)]
+fn draw_compact_header(
+    ui: &mut egui::Ui,
+    metrics: EditorMetrics,
     shader_information: Option<&ShaderInformation>,
     configuration_changed: bool,
     recent_shader_paths: &[PathBuf],
+    policy_target: Option<PolicyTarget>,
+    screensaver_target_available: bool,
+    wallpaper_target_available: bool,
+    screensaver_target_session_restricted: bool,
+    wallpaper_target_session_restricted: bool,
     browse_shader_requested: &mut bool,
     recent_shader_requested: &mut Option<usize>,
     clear_recent_files_requested: &mut bool,
-    refresh_shader_requested: &mut bool,
+    policy_target_change_requested: &mut Option<PolicyTarget>,
     status_message: &mut String,
     hover_help_message: &mut Option<&'static str>,
 ) {
-    let current_shader_name =
-        shader_information
-            .map(
-                |information| {
-                    information.filename.as_str()
-                }
-            )
-            .unwrap_or(
-                if shader_loaded {
-                    "Loaded shader"
-                } else {
-                    "No shader loaded"
-                }
-            );
-
-    ui.columns(
-        2,
-        |columns| {
-            editor_theme::panel_frame(
-                &columns[0],
-                metrics,
-            )
-            .show(
-                &mut columns[0],
+    ui.horizontal(
+        |ui| {
+            ui.scope(
                 |ui| {
-                    ui.horizontal(
-                        |ui| {
-                            ui.strong(
-                                "Current Shader:"
+                    let button_blue =
+                        egui::Color32::from_rgb(
+                            45,
+                            92,
+                            155,
+                        );
+
+                    {
+                        let visuals =
+                            ui.visuals_mut();
+
+                        let borderless =
+                            egui::Stroke::new(
+                                0.0,
+                                egui::Color32::TRANSPARENT,
                             );
 
-                            let shader_name_response =
-                                ui.label(
-                                    current_shader_name
-                                );
+                        visuals.widgets.inactive.bg_fill =
+                            button_blue;
+                        visuals.widgets.inactive.bg_stroke =
+                            borderless;
 
-                            if let Some(information) =
-                                shader_information
-                            {
-                                shader_name_response
-                                    .on_hover_text(
-                                        information.folder.as_str()
-                                    );
-                            }
+                        visuals.widgets.hovered.bg_fill =
+                            button_blue;
+                        visuals.widgets.hovered.bg_stroke =
+                            borderless;
 
-                            ui.with_layout(
-                                egui::Layout::right_to_left(
-                                    egui::Align::Center
+                        visuals.widgets.active.bg_fill =
+                            button_blue;
+                        visuals.widgets.active.bg_stroke =
+                            borderless;
+
+                        visuals.widgets.open.bg_fill =
+                            button_blue;
+                        visuals.widgets.open.bg_stroke =
+                            borderless;
+
+                        visuals.widgets.inactive.fg_stroke.color =
+                            egui::Color32::WHITE;
+
+                        visuals.widgets.hovered.fg_stroke.color =
+                            egui::Color32::WHITE;
+
+                        visuals.widgets.active.fg_stroke.color =
+                            egui::Color32::WHITE;
+
+                        visuals.widgets.open.fg_stroke.color =
+                            egui::Color32::WHITE;
+                    }
+
+                ui.menu_button(
+                    egui::RichText::new(
+                        "  Load Shader  "
+                    )
+                    .strong()
+                    .color(
+                        egui::Color32::WHITE
+                    ),
+                    |ui| {
+                        if recent_shader_paths.is_empty() {
+                            ui.add_enabled(
+                                false,
+                                egui::Button::new(
+                                    "Recent Files (empty)"
                                 ),
-                                |ui| {
-                                    ui.menu_button(
-                                        "Load Shader",
-                                        |ui| {
-                                            if recent_shader_paths.is_empty() {
-                                                ui.add_enabled(
-                                                    false,
-                                                    egui::Button::new(
-                                                        "Recent Files (empty)"
-                                                    ),
-                                                );
-                                            } else {
-                                                for (
-                                                    index,
-                                                    path,
-                                                ) in recent_shader_paths
-                                                    .iter()
-                                                    .enumerate()
-                                                {
-                                                    let display_name =
-                                                        path.file_name()
-                                                            .and_then(
-                                                                |name| {
-                                                                    name.to_str()
-                                                                }
-                                                            )
-                                                            .unwrap_or(
-                                                                "Unnamed shader"
-                                                            );
-
-                                                    let recent_response =
-                                                        ui.button(
-                                                            display_name
-                                                        );
-
-                                                    recent_response
-                                                        .clone()
-                                                        .on_hover_text(
-                                                            path.display()
-                                                                .to_string()
-                                                        );
-
-                                                    if recent_response.clicked() {
-                                                        if configuration_changed {
-                                                            *status_message =
-                                                                "Save or cancel the current changes before loading another shader."
-                                                                    .to_string();
-                                                        } else {
-                                                            *recent_shader_requested =
-                                                                Some(
-                                                                    index
-                                                                );
-                                                        }
-
-                                                        ui.close();
-                                                    }
-                                                }
-                                            }
-
-                                            ui.separator();
-
-                                            let browse_response =
-                                                ui.button(
-                                                    "Browse..."
-                                                );
-
-                                            update_hover_help(
-                                                &browse_response,
-                                                hover_help_message,
-                                                "Select a ShaderToy, ISF, or native GLSL shader file to load.",
-                                            );
-
-                                            if browse_response.clicked() {
-                                                if configuration_changed {
-                                                    *status_message =
-                                                        "Save or cancel the current changes before loading another shader."
-                                                            .to_string();
-                                                } else {
-                                                    *browse_shader_requested =
-                                                        true;
-                                                }
-
-                                                ui.close();
-                                            }
-
-                                            let refresh_response =
-                                                ui.add_enabled(
-                                                    shader_loaded,
-                                                    egui::Button::new(
-                                                        "Refresh Shader"
-                                                    ),
-                                                );
-
-                                            update_hover_help(
-                                                &refresh_response,
-                                                hover_help_message,
-                                                "Re-read the current shader file from disk and update the preview.",
-                                            );
-
-                                            if refresh_response.clicked() {
-                                                if configuration_changed {
-                                                    *status_message =
-                                                        "Save or cancel the current changes before refreshing the shader."
-                                                            .to_string();
-                                                } else {
-                                                    *refresh_shader_requested =
-                                                        true;
-                                                }
-                                            }
-
-                                            ui.separator();
-
-                                            let clear_response =
-                                                ui.add_enabled(
-                                                    !recent_shader_paths.is_empty(),
-                                                    egui::Button::new(
-                                                        "Clear Recent Files"
-                                                    ),
-                                                );
-
-                                            update_hover_help(
-                                                &clear_response,
-                                                hover_help_message,
-                                                "Remove saved shader-file history. No shader files will be deleted.",
-                                            );
-
-                                            if clear_response.clicked() {
-                                                *clear_recent_files_requested =
-                                                    true;
-
-                                                ui.close();
-                                            }
-                                        },
-                                    );
-                                },
                             );
-                        },
-                    );
+                        } else {
+                            for (
+                                index,
+                                path,
+                            ) in recent_shader_paths
+                                .iter()
+                                .enumerate()
+                            {
+                                let display_name =
+                                    path.file_name()
+                                        .and_then(
+                                            |name| {
+                                                name.to_str()
+                                            }
+                                        )
+                                        .unwrap_or(
+                                            "Unnamed shader"
+                                        );
+    
+                                let response =
+                                    ui.button(
+                                        display_name
+                                    );
+    
+                                response
+                                    .clone()
+                                    .on_hover_text(
+                                        path.display()
+                                            .to_string()
+                                    );
+    
+                                if response.clicked() {
+                                    if configuration_changed {
+                                        *status_message =
+                                            "Save or cancel the current changes before loading another shader."
+                                                .to_string();
+                                    } else {
+                                        *recent_shader_requested =
+                                            Some(index);
+                                    }
+    
+                                    ui.close();
+                                }
+                            }
+                        }
+    
+                        ui.separator();
+    
+                        if ui.button(
+                            "Browse..."
+                        )
+                        .clicked()
+                        {
+                            if configuration_changed {
+                                *status_message =
+                                    "Save or cancel the current changes before loading another shader."
+                                        .to_string();
+                            } else {
+                                *browse_shader_requested =
+                                    true;
+                            }
+    
+                            ui.close();
+                        }
+    
+                        if ui.add_enabled(
+                            !recent_shader_paths.is_empty(),
+                            egui::Button::new(
+                                "Clear Recent Files"
+                            ),
+                        )
+                        .clicked()
+                        {
+                            *clear_recent_files_requested =
+                                true;
+    
+                            ui.close();
+                        }
+                    },
+                );
                 },
             );
 
-            editor_theme::panel_frame(
-                &columns[1],
-                metrics,
-            )
-            .show(
-                &mut columns[1],
+            ui.with_layout(
+                egui::Layout::right_to_left(
+                    egui::Align::Center
+                ),
                 |ui| {
-                    editor_theme::section_heading(
-                        ui,
-                        "Shader Information",
-                    );
+                    let selected_text =
+                        match policy_target {
+                            Some(
+                                PolicyTarget::Screensaver
+                            ) =>
+                                "Screensaver",
+                            Some(
+                                PolicyTarget::Wallpaper
+                            ) =>
+                                "Wallpaper",
+                            None =>
+                                "Select...",
+                        };
 
-                    egui::Grid::new(
-                        "editor_shader_information_grid"
+                    egui::ComboBox::from_id_source(
+                        "editor_compact_policy_target"
                     )
-                    .num_columns(2)
-                    .spacing(
-                        egui::vec2(
-                            8.0 * metrics.scale,
-                            2.0 * metrics.scale,
-                        )
+                    .selected_text(
+                        selected_text
                     )
-                    .show(
+                    .width(
+                        130.0 * metrics.scale
+                    )
+                    .show_ui(
                         ui,
                         |ui| {
-                            if let Some(information) =
-                                shader_information
+                            let screensaver_response =
+                                ui.add_enabled(
+                                    screensaver_target_available,
+                                    egui::SelectableLabel::new(
+                                        policy_target
+                                            == Some(
+                                                PolicyTarget::Screensaver
+                                            ),
+                                        "Screensaver",
+                                    ),
+                                );
+
+                            update_hover_help(
+                                &screensaver_response,
+                                hover_help_message,
+                                if screensaver_target_available {
+                                    "Load or create the policy used for screensaver rendering."
+                                } else if screensaver_target_session_restricted {
+                                    "This editing session was opened for the active wallpaper. Only the Wallpaper policy can be edited."
+                                } else {
+                                    "This shader is unavailable for Screensaver use because it does not exist in the screensavers folder."
+                                },
+                            );
+
+                            if screensaver_response.clicked()
+                                && policy_target
+                                    != Some(
+                                        PolicyTarget::Screensaver
+                                    )
                             {
-                                ui.label("Filename:");
-                                ui.label(
-                                    information.filename.as_str()
+                                if configuration_changed
+                                    && policy_target.is_some()
+                                {
+                                    *status_message =
+                                        "Save or cancel the current changes before switching policy targets."
+                                            .to_string();
+                                } else {
+                                    *policy_target_change_requested =
+                                        Some(
+                                            PolicyTarget::Screensaver
+                                        );
+                                }
+
+                                ui.close();
+                            }
+
+                            let wallpaper_response =
+                                ui.add_enabled(
+                                    wallpaper_target_available,
+                                    egui::SelectableLabel::new(
+                                        policy_target
+                                            == Some(
+                                                PolicyTarget::Wallpaper
+                                            ),
+                                        "Wallpaper",
+                                    ),
                                 );
-                                ui.end_row();
 
-                                ui.label("Folder:");
-                                let folder_response =
-                                    ui.label(
-                                        truncate_middle(
-                                            information.folder.as_str(),
-                                            42,
-                                        )
-                                    );
+                            update_hover_help(
+                                &wallpaper_response,
+                                hover_help_message,
+                                if wallpaper_target_available {
+                                    "Load or create the policy used for wallpaper rendering."
+                                } else if wallpaper_target_session_restricted {
+                                    "This editing session was opened for the active screensaver. Only the Screensaver policy can be edited."
+                                } else {
+                                    "This shader is unavailable for Wallpaper use because it does not exist in the wallpapers folder."
+                                },
+                            );
 
-                                folder_response.on_hover_text(
-                                    information.folder.as_str()
-                                );
-                                ui.end_row();
+                            if wallpaper_response.clicked()
+                                && policy_target
+                                    != Some(
+                                        PolicyTarget::Wallpaper
+                                    )
+                            {
+                                if configuration_changed
+                                    && policy_target.is_some()
+                                {
+                                    *status_message =
+                                        "Save or cancel the current changes before switching policy targets."
+                                            .to_string();
+                                } else {
+                                    *policy_target_change_requested =
+                                        Some(
+                                            PolicyTarget::Wallpaper
+                                        );
+                                }
 
-                                ui.label("Type:");
-                                ui.label(
-                                    information.shader_type.as_str()
-                                );
-                                ui.end_row();
-
-                                ui.label("Policies:");
-                                ui.label(
-                                    information.policies.as_str()
-                                );
-                                ui.end_row();
-
-                                ui.label("Texture:");
-                                ui.label(
-                                    information.texture_usage.as_str()
-                                );
-                                ui.end_row();
-
-                                ui.label("Status:");
-                                ui.label(
-                                    information.status.as_str()
-                                );
-                                ui.end_row();
-                            } else {
-                                ui.label("Filename:");
-                                ui.label("No shader loaded");
-                                ui.end_row();
-
-                                ui.label("Folder:");
-                                ui.label("—");
-                                ui.end_row();
-
-                                ui.label("Type:");
-                                ui.label("—");
-                                ui.end_row();
-
-                                ui.label("Policies:");
-                                ui.label("None");
-                                ui.end_row();
-
-                                ui.label("Texture:");
-                                ui.label("Not applicable");
-                                ui.end_row();
-
-                                ui.label("Status:");
-                                ui.label("No shader loaded");
-                                ui.end_row();
+                                ui.close();
                             }
                         },
+                    );
+
+                    ui.label(
+                        egui::RichText::new(
+                            "Policy Target:"
+                        )
+                        .strong(),
+                    );
+                },
+            );
+        },
+    );
+
+    ui.add_space(
+        4.0 * metrics.scale
+    );
+
+    let (
+        filename,
+        folder,
+        shader_type,
+        policies,
+    ) =
+        if let Some(information) =
+            shader_information
+        {
+            (
+                information.filename.as_str(),
+                information.folder.as_str(),
+                information.shader_type.as_str(),
+                information.policies.as_str(),
+            )
+        } else {
+            (
+                "No shader loaded",
+                "—",
+                "—",
+                "None",
+            )
+        };
+
+    egui::Grid::new(
+        "editor_compact_shader_information"
+    )
+    .num_columns(2)
+    .min_col_width(
+        82.0 * metrics.scale
+    )
+    .spacing(
+        egui::vec2(
+            8.0 * metrics.scale,
+            1.0 * metrics.scale,
+        )
+    )
+    .show(
+        ui,
+        |ui| {
+            ui.label("Filename:");
+            ui.label(filename);
+            ui.end_row();
+
+            ui.label("Folder:");
+            let folder_response =
+                ui.label(
+                    truncate_middle(
+                        folder,
+                        66,
+                    )
+                );
+            folder_response.on_hover_text(
+                folder
+            );
+            ui.end_row();
+
+            ui.label("Type:");
+            ui.label(shader_type);
+            ui.end_row();
+
+            ui.label("Policies:");
+            ui.label(policies);
+            ui.end_row();
+        },
+    );
+}
+
+
+// ------------------------------------------------------------
+// MAIN WINDOW SUPPORT
+// ------------------------------------------------------------
+
+fn draw_compact_action_row(
+    ui: &mut egui::Ui,
+    metrics: EditorMetrics,
+    can_save: bool,
+    can_cancel: bool,
+    save_requested: &mut bool,
+    cancel_requested: &mut bool,
+    displayed_fps: &mut u32,
+    displayed_animation_speed: &mut f32,
+    displayed_render_scale: &mut f32,
+    policy_target: &mut Option<PolicyTarget>,
+    texture: &mut TextureSelection,
+    palette: &mut PaletteSelection,
+    primitive_count: &mut u32,
+    anti_aliasing: &mut AntiAliasingSelection,
+    dithering: &mut DitheringSelection,
+    color_precision: &mut ColorPrecisionSelection,
+    baseline_configuration: EditorConfiguration,
+    fps_drag_state: &mut Option<SliderDragState>,
+    animation_speed_drag_state: &mut Option<SliderDragState>,
+    render_scale_drag_state: &mut Option<SliderDragState>,
+    status_message: &mut String,
+    hover_help_message: &mut Option<&'static str>,
+) {
+    let button_size =
+        egui::vec2(
+            103.0 * metrics.scale,
+            28.0 * metrics.scale,
+        );
+
+    ui.horizontal(
+        |ui| {
+            let save_response =
+                ui.add_enabled(
+                    can_save,
+                    egui::Button::new(
+                        "Save Policy"
+                    )
+                    .min_size(
+                        button_size
+                    )
+                    .fill(
+                        egui::Color32::from_rgb(
+                            44,
+                            126,
+                            72,
+                        )
+                    ),
+                );
+
+            update_hover_help(
+                &save_response,
+                hover_help_message,
+                "Save the current per-shader policy.",
+            );
+
+            if save_response.clicked() {
+                *save_requested =
+                    true;
+
+                *status_message =
+                    "Saving policy..."
+                        .to_string();
+            }
+
+            let cancel_response =
+                ui.add_enabled(
+                    can_cancel,
+                    egui::Button::new(
+                        "Cancel"
+                    )
+                    .min_size(
+                        egui::vec2(
+                            72.0 * metrics.scale,
+                            button_size.y,
+                        )
+                    ),
+                );
+
+            update_hover_help(
+                &cancel_response,
+                hover_help_message,
+                "Discard changes made during this editor session.",
+            );
+
+            if cancel_response.clicked() {
+                *cancel_requested =
+                    true;
+
+                *displayed_fps =
+                    baseline_configuration.fps;
+                *displayed_animation_speed =
+                    baseline_configuration.animation_speed;
+                *displayed_render_scale =
+                    baseline_configuration.render_scale;
+                *policy_target =
+                    baseline_configuration.policy_target;
+                *texture =
+                    baseline_configuration.texture;
+                *palette =
+                    baseline_configuration.palette;
+                *primitive_count =
+                    baseline_configuration.primitive_count;
+                *anti_aliasing =
+                    baseline_configuration.anti_aliasing;
+                *dithering =
+                    baseline_configuration.dithering;
+                *color_precision =
+                    baseline_configuration.color_precision;
+                *fps_drag_state =
+                    None;
+                *animation_speed_drag_state =
+                    None;
+                *render_scale_drag_state =
+                    None;
+                *status_message =
+                    "Changes canceled"
+                        .to_string();
+            }
+
+        },
+    );
+}
+
+
+fn draw_compact_status_row(
+    ui: &mut egui::Ui,
+    _metrics: EditorMetrics,
+    _shader_information: Option<&ShaderInformation>,
+    displayed_status: &str,
+    configuration_changed: bool,
+) {
+    ui.separator();
+
+    ui.horizontal(
+        |ui| {
+            // Left side is reserved exclusively for transient
+            // Information / Warning / Error messages.  Suppress steady-state
+            // "ready / loaded and rendering" text so it does not compete with
+            // the policy-modification status on the right.
+            let informational_status =
+                if displayed_status
+                    .eq_ignore_ascii_case(
+                        "Ready"
+                    )
+                    || displayed_status
+                        .to_ascii_lowercase()
+                        .contains(
+                            "loaded and rendering"
+                        )
+                {
+                    ""
+                } else {
+                    displayed_status
+                };
+
+            ui.label(
+                truncate_middle(
+                    informational_status,
+                    72,
+                )
+            );
+
+            ui.with_layout(
+                egui::Layout::right_to_left(
+                    egui::Align::Center
+                ),
+                |ui| {
+                    let changed_text =
+                        if configuration_changed {
+                            "Status: Modified"
+                        } else {
+                            "Status: Unchanged"
+                        };
+
+                    ui.label(
+                        egui::RichText::new(
+                            changed_text
+                        )
+                        .strong(),
                     );
                 },
             );
@@ -1936,6 +2423,714 @@ fn truncate_middle(
 }
 
 
+// ======================== END MAIN WINDOW ===================
+
+// ============================================================
+// POLICIES TAB
+// ============================================================
+// Copy/paste replacement boundary for this editor section.
+//
+// One egui::Grid owns BOTH headers and data.  Every grid cell allocates an
+// explicitly left-to-right child UI so neither the header nor data text can
+// be centered by add_sized().
+//
+// Row interaction:
+//   single left-click  = select row
+//   double left-click  = request Edit Policy
+//   right-click        = context menu
+//
+// Destructive context-menu choices never execute directly.  They open a
+// modal confirmation dialog containing the row-specific filename and target.
+
+fn draw_policies_tab(
+    ui: &mut egui::Ui,
+    metrics: EditorMetrics,
+    policy_rows: &[PolicyDisplayRow],
+    sort_column: &mut PolicySortColumn,
+    sort_ascending: &mut bool,
+    selected_row: &mut Option<PolicyRowReference>,
+    pending_confirmation: &mut Option<PendingConfirmation>,
+    command_requested:
+        &mut Option<(PolicyRowReference, PolicyRowCommand)>,
+) {
+    fn header_text(
+        label: &str,
+        column: PolicySortColumn,
+        sort_column: PolicySortColumn,
+        sort_ascending: bool,
+    ) -> String {
+        if column == sort_column {
+            format!(
+                "{} {}",
+                label,
+                if sort_ascending {
+                    "▲"
+                } else {
+                    "▼"
+                },
+            )
+        } else {
+            label.to_string()
+        }
+    }
+
+    fn apply_sort_request(
+        requested_column: PolicySortColumn,
+        sort_column: &mut PolicySortColumn,
+        sort_ascending: &mut bool,
+    ) {
+        if *sort_column == requested_column {
+            *sort_ascending =
+                !*sort_ascending;
+        } else {
+            *sort_column =
+                requested_column;
+
+            *sort_ascending =
+                true;
+        }
+    }
+
+    fn left_aligned_cell(
+        ui: &mut egui::Ui,
+        width: f32,
+        height: f32,
+        text: impl Into<egui::WidgetText>,
+        sense: egui::Sense,
+        selected: bool,
+    ) -> egui::Response {
+        ui.allocate_ui_with_layout(
+            egui::vec2(
+                width,
+                height,
+            ),
+            egui::Layout::left_to_right(
+                egui::Align::Center
+            ),
+            |ui| {
+                let response =
+                    ui.selectable_label(
+                        selected,
+                        text,
+                    );
+
+                if sense
+                    == egui::Sense::hover()
+                {
+                    response
+                        .interact(
+                            egui::Sense::hover()
+                        )
+                } else {
+                    response
+                }
+            },
+        )
+        .inner
+    }
+
+    let mut rows =
+        policy_rows.to_vec();
+
+    rows.sort_by(
+        |left, right| {
+            let ordering =
+                match *sort_column {
+                    PolicySortColumn::Filename =>
+                        left.filename
+                            .to_ascii_lowercase()
+                            .cmp(
+                                &right.filename
+                                    .to_ascii_lowercase()
+                            ),
+
+                    PolicySortColumn::Texture =>
+                        left.texture.cmp(
+                            &right.texture
+                        ),
+
+                    PolicySortColumn::PolicyType =>
+                        policy_target_name(
+                            left.policy_target
+                        )
+                        .cmp(
+                            policy_target_name(
+                                right.policy_target
+                            )
+                        ),
+                };
+
+            if *sort_ascending {
+                ordering
+            } else {
+                ordering.reverse()
+            }
+        },
+    );
+
+    let spacing =
+        10.0 * metrics.scale;
+
+    let usable_width =
+        (
+            ui.available_width()
+                - 18.0 * metrics.scale
+                - spacing * 2.0
+        )
+        .max(
+            320.0 * metrics.scale
+        );
+
+    let filename_width =
+        usable_width * 0.56;
+
+    let texture_width =
+        usable_width * 0.16;
+
+    let policy_width =
+        usable_width
+            - filename_width
+            - texture_width;
+
+    let row_height =
+        ui.spacing()
+            .interact_size
+            .y;
+
+    egui::ScrollArea::vertical()
+        .auto_shrink(
+            [
+                false,
+                false,
+            ]
+        )
+        .max_height(
+            292.0 * metrics.scale
+        )
+        .show(
+            ui,
+            |ui| {
+                egui::Grid::new(
+                    "editor_policy_table_grid"
+                )
+                .num_columns(3)
+                .spacing(
+                    egui::vec2(
+                        spacing,
+                        3.0 * metrics.scale,
+                    )
+                )
+                .min_col_width(0.0)
+                .striped(true)
+                .show(
+                    ui,
+                    |ui| {
+                        let filename_header =
+                            left_aligned_cell(
+                                ui,
+                                filename_width,
+                                row_height,
+                                egui::RichText::new(
+                                    header_text(
+                                        "Filename",
+                                        PolicySortColumn::Filename,
+                                        *sort_column,
+                                        *sort_ascending,
+                                    )
+                                )
+                                .strong(),
+                                egui::Sense::click(),
+                                false,
+                            );
+
+                        let texture_header =
+                            left_aligned_cell(
+                                ui,
+                                texture_width,
+                                row_height,
+                                egui::RichText::new(
+                                    header_text(
+                                        "Texture",
+                                        PolicySortColumn::Texture,
+                                        *sort_column,
+                                        *sort_ascending,
+                                    )
+                                )
+                                .strong(),
+                                egui::Sense::click(),
+                                false,
+                            );
+
+                        let policy_header =
+                            left_aligned_cell(
+                                ui,
+                                policy_width,
+                                row_height,
+                                egui::RichText::new(
+                                    header_text(
+                                        "Policy Type",
+                                        PolicySortColumn::PolicyType,
+                                        *sort_column,
+                                        *sort_ascending,
+                                    )
+                                )
+                                .strong(),
+                                egui::Sense::click(),
+                                false,
+                            );
+
+                        ui.end_row();
+
+                        if filename_header.clicked() {
+                            apply_sort_request(
+                                PolicySortColumn::Filename,
+                                sort_column,
+                                sort_ascending,
+                            );
+                        }
+
+                        if texture_header.clicked() {
+                            apply_sort_request(
+                                PolicySortColumn::Texture,
+                                sort_column,
+                                sort_ascending,
+                            );
+                        }
+
+                        if policy_header.clicked() {
+                            apply_sort_request(
+                                PolicySortColumn::PolicyType,
+                                sort_column,
+                                sort_ascending,
+                            );
+                        }
+
+                        if rows.is_empty() {
+                            left_aligned_cell(
+                                ui,
+                                filename_width,
+                                row_height,
+                                egui::RichText::new(
+                                    "No shader policies are currently defined."
+                                )
+                                .weak(),
+                                egui::Sense::hover(),
+                                false,
+                            );
+
+                            left_aligned_cell(
+                                ui,
+                                texture_width,
+                                row_height,
+                                "",
+                                egui::Sense::hover(),
+                                false,
+                            );
+
+                            left_aligned_cell(
+                                ui,
+                                policy_width,
+                                row_height,
+                                "",
+                                egui::Sense::hover(),
+                                false,
+                            );
+
+                            ui.end_row();
+                            return;
+                        }
+
+                        for row in rows {
+                            let row_reference =
+                                PolicyRowReference {
+                                    filename:
+                                        row.filename.clone(),
+
+                                    policy_target:
+                                        row.policy_target,
+                                };
+
+                            let row_selected =
+                                selected_row
+                                    .as_ref()
+                                    .is_some_and(
+                                        |selected| {
+                                            selected.filename
+                                                .eq_ignore_ascii_case(
+                                                    &row_reference.filename
+                                                )
+                                                && selected.policy_target
+                                                    == row_reference.policy_target
+                                        }
+                                    );
+
+                            let filename_response =
+                                left_aligned_cell(
+                                    ui,
+                                    filename_width,
+                                    row_height,
+                                    row.filename,
+                                    egui::Sense::click(),
+                                    row_selected,
+                                );
+
+                            let texture_response =
+                                left_aligned_cell(
+                                    ui,
+                                    texture_width,
+                                    row_height,
+                                    if row.texture {
+                                        "Yes"
+                                    } else {
+                                        "No"
+                                    },
+                                    egui::Sense::click(),
+                                    row_selected,
+                                );
+
+                            let policy_response =
+                                left_aligned_cell(
+                                    ui,
+                                    policy_width,
+                                    row_height,
+                                    policy_target_name(
+                                        row.policy_target
+                                    ),
+                                    egui::Sense::click(),
+                                    row_selected,
+                                );
+
+                            ui.end_row();
+
+                            let row_clicked =
+                                filename_response.clicked()
+                                    || texture_response.clicked()
+                                    || policy_response.clicked();
+
+                            let row_double_clicked =
+                                filename_response.double_clicked()
+                                    || texture_response.double_clicked()
+                                    || policy_response.double_clicked();
+
+                            if row_clicked {
+                                *selected_row =
+                                    Some(
+                                        row_reference.clone()
+                                    );
+                            }
+
+                            if row_double_clicked {
+                                *selected_row =
+                                    Some(
+                                        row_reference.clone()
+                                    );
+
+                                *command_requested =
+                                    Some(
+                                        (
+                                            row_reference.clone(),
+                                            PolicyRowCommand::Edit,
+                                        )
+                                    );
+                            }
+
+                            // Any cell may open the same row context menu.
+                            let mut show_context_menu =
+                                |response: &egui::Response| {
+                                    response.context_menu(
+                                        |ui| {
+                                            if ui.button(
+                                                "Edit Policy..."
+                                            )
+                                            .clicked()
+                                            {
+                                                *selected_row =
+                                                    Some(
+                                                        row_reference.clone()
+                                                    );
+
+                                                *command_requested =
+                                                    Some(
+                                                        (
+                                                            row_reference.clone(),
+                                                            PolicyRowCommand::Edit,
+                                                        )
+                                                    );
+
+                                                ui.close();
+                                            }
+
+                                            if ui.button(
+                                                "Refresh Shader"
+                                            )
+                                            .clicked()
+                                            {
+                                                *selected_row =
+                                                    Some(
+                                                        row_reference.clone()
+                                                    );
+
+                                                *command_requested =
+                                                    Some(
+                                                        (
+                                                            row_reference.clone(),
+                                                            PolicyRowCommand::RefreshShader,
+                                                        )
+                                                    );
+
+                                                ui.close();
+                                            }
+
+                                            ui.separator();
+
+                                            if ui.button(
+                                                "Delete Policy..."
+                                            )
+                                            .clicked()
+                                            {
+                                                *selected_row =
+                                                    Some(
+                                                        row_reference.clone()
+                                                    );
+
+                                                *pending_confirmation =
+                                                    Some(
+                                                        PendingConfirmation {
+                                                            row:
+                                                                row_reference.clone(),
+
+                                                            command:
+                                                                PolicyRowCommand::DeletePolicy,
+                                                        }
+                                                    );
+
+                                                ui.close();
+                                            }
+
+                                            if ui.button(
+                                                "Delete Shader..."
+                                            )
+                                            .clicked()
+                                            {
+                                                *selected_row =
+                                                    Some(
+                                                        row_reference.clone()
+                                                    );
+
+                                                *pending_confirmation =
+                                                    Some(
+                                                        PendingConfirmation {
+                                                            row:
+                                                                row_reference.clone(),
+
+                                                            command:
+                                                                PolicyRowCommand::DeleteShader,
+                                                        }
+                                                    );
+
+                                                ui.close();
+                                            }
+                                        },
+                                    );
+                                };
+
+                            show_context_menu(
+                                &filename_response
+                            );
+                            show_context_menu(
+                                &texture_response
+                            );
+                            show_context_menu(
+                                &policy_response
+                            );
+                        }
+                    },
+                );
+            },
+        );
+}
+
+
+fn draw_policy_confirmation_modal(
+    context: &egui::Context,
+    pending_confirmation: &mut Option<PendingConfirmation>,
+    command_requested:
+        &mut Option<(PolicyRowReference, PolicyRowCommand)>,
+) {
+    let Some(confirmation) =
+        pending_confirmation.clone()
+    else {
+        return;
+    };
+
+    let target_name =
+        policy_target_name(
+            confirmation.row.policy_target
+        );
+
+    let title =
+        match confirmation.command {
+            PolicyRowCommand::DeletePolicy =>
+                "Delete Policy?",
+
+            PolicyRowCommand::DeleteShader =>
+                "Delete Shader?",
+
+            _ =>
+                return,
+        };
+
+    let mut keep_open =
+        true;
+
+    egui::Window::new(
+        title
+    )
+    .id(
+        egui::Id::new(
+            "editor_destructive_confirmation"
+        )
+    )
+    .collapsible(false)
+    .resizable(false)
+    .movable(false)
+    .anchor(
+        egui::Align2::CENTER_CENTER,
+        egui::Vec2::ZERO,
+    )
+    .open(
+        &mut keep_open
+    )
+    .show(
+        context,
+        |ui| {
+            match confirmation.command {
+                PolicyRowCommand::DeletePolicy => {
+                    ui.label(
+                        format!(
+                            "Delete the {} policy for:",
+                            target_name,
+                        )
+                    );
+
+                    ui.add_space(6.0);
+
+                    ui.strong(
+                        &confirmation.row.filename
+                    );
+
+                    ui.add_space(8.0);
+
+                    ui.label(
+                        "The shader file will not be deleted."
+                    );
+                }
+
+                PolicyRowCommand::DeleteShader => {
+                    ui.label(
+                        format!(
+                            "Permanently delete this {} shader:",
+                            target_name,
+                        )
+                    );
+
+                    ui.add_space(6.0);
+
+                    ui.strong(
+                        &confirmation.row.filename
+                    );
+
+                    ui.add_space(8.0);
+
+                    ui.label(
+                        format!(
+                            "The associated {} policy will also be deleted.",
+                            target_name,
+                        )
+                    );
+
+                    ui.label(
+                        match confirmation.row.policy_target {
+                            PolicyTarget::Screensaver =>
+                                "Any Wallpaper shader or Wallpaper policy with the same filename will not be changed.",
+
+                            PolicyTarget::Wallpaper =>
+                                "Any Screensaver shader or Screensaver policy with the same filename will not be changed.",
+                        }
+                    );
+                }
+
+                _ => {}
+            }
+
+            ui.add_space(14.0);
+
+            ui.horizontal(
+                |ui| {
+                    if ui.button(
+                        "Yes"
+                    )
+                    .clicked()
+                    {
+                        *command_requested =
+                            Some(
+                                (
+                                    confirmation.row.clone(),
+                                    confirmation.command,
+                                )
+                            );
+
+                        *pending_confirmation =
+                            None;
+                    }
+
+                    if ui.button(
+                        "Cancel"
+                    )
+                    .clicked()
+                    {
+                        *pending_confirmation =
+                            None;
+                    }
+                },
+            );
+        },
+    );
+
+    if !keep_open {
+        *pending_confirmation =
+            None;
+    }
+}
+
+
+fn policy_target_name(
+    target: PolicyTarget,
+) -> &'static str {
+    match target {
+        PolicyTarget::Screensaver =>
+            "Screensaver",
+
+        PolicyTarget::Wallpaper =>
+            "Wallpaper",
+    }
+}
+
+
+// ======================== END POLICIES TAB ==================
+
+// ============================================================
+// RENDERING TAB
+// ============================================================
+// Copy/paste replacement boundary for this editor section.
+//
+// Rendering uses one common three-column Grid:
+//     description | slider | value
+//
+// Animation Speed uses a split logarithmic scale.  The midpoint is exactly
+// 1.0x.  The left half covers minimum speed through 1.0x; the right half
+// covers 1.0x through maximum speed (currently 10.0x).
+
 fn draw_render_panel(
     ui: &mut egui::Ui,
     metrics: EditorMetrics,
@@ -1948,27 +3143,57 @@ fn draw_render_panel(
     render_scale_drag_state: &mut Option<SliderDragState>,
     hover_help_message: &mut Option<&'static str>,
 ) {
-    editor_theme::panel_frame(
+    editor_theme::section_heading(
         ui,
-        metrics,
+        "Render Controls",
+    );
+
+    ui.add_space(
+        metrics.row_gap
+    );
+
+    let horizontal_spacing =
+        10.0 * metrics.scale;
+
+    let available_width =
+        ui.available_width();
+
+    let label_width =
+        128.0 * metrics.scale;
+
+    let value_width =
+        74.0 * metrics.scale;
+
+    let slider_width =
+        (
+            available_width
+                - label_width
+                - value_width
+                - horizontal_spacing * 2.0
+        )
+        .max(
+            180.0 * metrics.scale
+        );
+
+    egui::Grid::new(
+        "editor_render_controls_grid"
     )
+    .num_columns(3)
+    .spacing(
+        egui::vec2(
+            horizontal_spacing,
+            metrics.row_gap,
+        )
+    )
+    .min_col_width(0.0)
     .show(
         ui,
         |ui| {
-            editor_theme::section_heading(
-                ui,
-                "Render Controls",
-            );
-
-            ui.add_space(
-                metrics.row_gap
-            );
-
             let mut fps_value =
                 *displayed_fps as f32;
 
             let fps_response =
-                draw_editor_slider_row(
+                draw_aligned_slider_grid_row(
                     ui,
                     "FPS (Max)",
                     &format!(
@@ -1980,6 +3205,9 @@ fn draw_render_panel(
                     crate::define_constants::MAX_RENDER_FPS as f32,
                     shift_held,
                     metrics,
+                    label_width,
+                    slider_width,
+                    value_width,
                     fps_drag_state,
                 );
 
@@ -1997,7 +3225,7 @@ fn draw_render_panel(
                     ) as u32;
 
             let speed_response =
-                draw_editor_slider_row(
+                draw_aligned_log_speed_grid_row(
                     ui,
                     "Animation Speed",
                     &format!(
@@ -2009,17 +3237,20 @@ fn draw_render_panel(
                     crate::define_constants::SCREENSAVER_SPEED_MAX,
                     shift_held,
                     metrics,
+                    label_width,
+                    slider_width,
+                    value_width,
                     animation_speed_drag_state,
                 );
 
             update_hover_help(
                 &speed_response,
                 hover_help_message,
-                "Adjust shader animation speed independently of frame rate. Hold Shift for fine adjustment.",
+                "Adjust animation speed on a logarithmic scale. The slider midpoint is 1.0x. Hold Shift for fine adjustment.",
             );
 
             let scale_response =
-                draw_editor_slider_row(
+                draw_aligned_slider_grid_row(
                     ui,
                     "Render Scale",
                     &format!(
@@ -2031,6 +3262,9 @@ fn draw_render_panel(
                     crate::define_constants::RENDER_SCALE_MAX,
                     shift_held,
                     metrics,
+                    label_width,
+                    slider_width,
+                    value_width,
                     render_scale_drag_state,
                 );
 
@@ -2044,6 +3278,609 @@ fn draw_render_panel(
 }
 
 
+fn draw_aligned_slider_grid_row(
+    ui: &mut egui::Ui,
+    label: &str,
+    displayed_value: &str,
+    value: &mut f32,
+    minimum: f32,
+    maximum: f32,
+    shift_held: bool,
+    metrics: EditorMetrics,
+    label_width: f32,
+    slider_width: f32,
+    value_width: f32,
+    drag_state: &mut Option<SliderDragState>,
+) -> egui::Response {
+    draw_slider_label_cell(
+        ui,
+        label,
+        label_width,
+    );
+
+    let response =
+        ui.allocate_ui_with_layout(
+            egui::vec2(
+                slider_width,
+                ui.spacing().interact_size.y,
+            ),
+            egui::Layout::left_to_right(
+                egui::Align::Center
+            ),
+            |ui| {
+                ui.set_width(
+                    slider_width
+                );
+
+                draw_fine_slider(
+                    ui,
+                    value,
+                    minimum,
+                    maximum,
+                    shift_held,
+                    metrics.scale,
+                    drag_state,
+                )
+            },
+        )
+        .inner;
+
+    draw_slider_value_cell(
+        ui,
+        displayed_value,
+        value_width,
+    );
+
+    ui.end_row();
+
+    response
+}
+
+
+fn draw_aligned_log_speed_grid_row(
+    ui: &mut egui::Ui,
+    label: &str,
+    displayed_value: &str,
+    value: &mut f32,
+    minimum: f32,
+    maximum: f32,
+    shift_held: bool,
+    metrics: EditorMetrics,
+    label_width: f32,
+    slider_width: f32,
+    value_width: f32,
+    drag_state: &mut Option<SliderDragState>,
+) -> egui::Response {
+    draw_slider_label_cell(
+        ui,
+        label,
+        label_width,
+    );
+
+    let response =
+        ui.allocate_ui_with_layout(
+            egui::vec2(
+                slider_width,
+                ui.spacing().interact_size.y,
+            ),
+            egui::Layout::left_to_right(
+                egui::Align::Center
+            ),
+            |ui| {
+                ui.set_width(
+                    slider_width
+                );
+
+                draw_log_animation_speed_slider(
+                    ui,
+                    value,
+                    minimum,
+                    maximum,
+                    shift_held,
+                    metrics.scale,
+                    drag_state,
+                )
+            },
+        )
+        .inner;
+
+    draw_slider_value_cell(
+        ui,
+        displayed_value,
+        value_width,
+    );
+
+    ui.end_row();
+
+    response
+}
+
+
+fn draw_slider_label_cell(
+    ui: &mut egui::Ui,
+    label: &str,
+    width: f32,
+) {
+    ui.allocate_ui_with_layout(
+        egui::vec2(
+            width,
+            ui.spacing().interact_size.y,
+        ),
+        egui::Layout::left_to_right(
+            egui::Align::Center
+        ),
+        |ui| {
+            ui.label(label);
+        },
+    );
+}
+
+
+fn draw_slider_value_cell(
+    ui: &mut egui::Ui,
+    displayed_value: &str,
+    width: f32,
+) {
+    ui.allocate_ui_with_layout(
+        egui::vec2(
+            width,
+            ui.spacing().interact_size.y,
+        ),
+        egui::Layout::left_to_right(
+            egui::Align::Center
+        ),
+        |ui| {
+            ui.label(
+                displayed_value
+            );
+        },
+    );
+}
+
+
+// Standard linear slider used by FPS and Render Scale.
+
+fn draw_fine_slider(
+    ui: &mut egui::Ui,
+    value: &mut f32,
+    minimum: f32,
+    maximum: f32,
+    shift_held: bool,
+    resolution_scale: f32,
+    drag_state: &mut Option<SliderDragState>,
+) -> egui::Response {
+    let desired_size =
+        egui::vec2(
+            ui.available_width(),
+            ui.spacing().interact_size.y,
+        );
+
+    let (rect, response) =
+        ui.allocate_exact_size(
+            desired_size,
+            egui::Sense::click_and_drag(),
+        );
+
+    let pointer_position =
+        response.interact_pointer_pos();
+
+    if response.drag_started() {
+        if let Some(pointer_position) =
+            pointer_position
+        {
+            *drag_state =
+                Some(
+                    SliderDragState {
+                        anchor_value:
+                            *value,
+
+                        anchor_pointer_x:
+                            pointer_position.x,
+
+                        shift_held,
+                    }
+                );
+        }
+    }
+
+    if response.dragged() {
+        if let (
+            Some(pointer_position),
+            Some(state),
+        ) = (
+            pointer_position,
+            drag_state.as_mut(),
+        ) {
+            if state.shift_held
+                != shift_held
+            {
+                state.anchor_value =
+                    *value;
+
+                state.anchor_pointer_x =
+                    pointer_position.x;
+
+                state.shift_held =
+                    shift_held;
+            }
+
+            let sensitivity =
+                if shift_held {
+                    0.1
+                } else {
+                    1.0
+                };
+
+            let value_delta =
+                (pointer_position.x
+                    - state.anchor_pointer_x)
+                    / rect.width().max(1.0)
+                    * (maximum - minimum)
+                    * sensitivity;
+
+            *value =
+                (state.anchor_value
+                    + value_delta)
+                    .clamp(
+                        minimum,
+                        maximum,
+                    );
+        }
+    } else if response.clicked() {
+        if let Some(pointer_position) =
+            pointer_position
+        {
+            let fraction =
+                ((pointer_position.x - rect.left())
+                    / rect.width().max(1.0))
+                    .clamp(
+                        0.0,
+                        1.0,
+                    );
+
+            *value =
+                minimum
+                    + fraction
+                        * (maximum - minimum);
+        }
+    } else {
+        *drag_state =
+            None;
+    }
+
+    paint_slider(
+        ui,
+        rect,
+        response.clone(),
+        ((*value - minimum)
+            / (maximum - minimum).max(f32::EPSILON))
+            .clamp(
+                0.0,
+                1.0,
+            ),
+        resolution_scale,
+    );
+
+    response
+}
+
+
+// Animation-speed slider.  Position is piecewise logarithmic:
+//   0.00 .. 0.50 = minimum .. 1.0x
+//   0.50 .. 1.00 = 1.0x .. maximum
+
+fn draw_log_animation_speed_slider(
+    ui: &mut egui::Ui,
+    value: &mut f32,
+    minimum: f32,
+    maximum: f32,
+    shift_held: bool,
+    resolution_scale: f32,
+    drag_state: &mut Option<SliderDragState>,
+) -> egui::Response {
+    let desired_size =
+        egui::vec2(
+            ui.available_width(),
+            ui.spacing().interact_size.y,
+        );
+
+    let (rect, response) =
+        ui.allocate_exact_size(
+            desired_size,
+            egui::Sense::click_and_drag(),
+        );
+
+    let pointer_position =
+        response.interact_pointer_pos();
+
+    let current_fraction =
+        animation_speed_to_slider_fraction(
+            *value,
+            minimum,
+            maximum,
+        );
+
+    if response.drag_started() {
+        if let Some(pointer_position) =
+            pointer_position
+        {
+            *drag_state =
+                Some(
+                    SliderDragState {
+                        // For this slider, anchor_value stores the normalized
+                        // slider position rather than the animation speed.
+                        anchor_value:
+                            current_fraction,
+
+                        anchor_pointer_x:
+                            pointer_position.x,
+
+                        shift_held,
+                    }
+                );
+        }
+    }
+
+    if response.dragged() {
+        if let (
+            Some(pointer_position),
+            Some(state),
+        ) = (
+            pointer_position,
+            drag_state.as_mut(),
+        ) {
+            if state.shift_held
+                != shift_held
+            {
+                state.anchor_value =
+                    animation_speed_to_slider_fraction(
+                        *value,
+                        minimum,
+                        maximum,
+                    );
+
+                state.anchor_pointer_x =
+                    pointer_position.x;
+
+                state.shift_held =
+                    shift_held;
+            }
+
+            let sensitivity =
+                if shift_held {
+                    0.1
+                } else {
+                    1.0
+                };
+
+            let fraction_delta =
+                (pointer_position.x
+                    - state.anchor_pointer_x)
+                    / rect.width().max(1.0)
+                    * sensitivity;
+
+            let new_fraction =
+                (state.anchor_value
+                    + fraction_delta)
+                    .clamp(
+                        0.0,
+                        1.0,
+                    );
+
+            *value =
+                animation_speed_from_slider_fraction(
+                    new_fraction,
+                    minimum,
+                    maximum,
+                );
+        }
+    } else if response.clicked() {
+        if let Some(pointer_position) =
+            pointer_position
+        {
+            let fraction =
+                ((pointer_position.x - rect.left())
+                    / rect.width().max(1.0))
+                    .clamp(
+                        0.0,
+                        1.0,
+                    );
+
+            *value =
+                animation_speed_from_slider_fraction(
+                    fraction,
+                    minimum,
+                    maximum,
+                );
+        }
+    } else {
+        *drag_state =
+            None;
+    }
+
+    paint_slider(
+        ui,
+        rect,
+        response.clone(),
+        animation_speed_to_slider_fraction(
+            *value,
+            minimum,
+            maximum,
+        ),
+        resolution_scale,
+    );
+
+    response
+}
+
+
+fn animation_speed_to_slider_fraction(
+    value: f32,
+    minimum: f32,
+    maximum: f32,
+) -> f32 {
+    let minimum =
+        minimum.max(
+            f32::MIN_POSITIVE
+        );
+
+    let maximum =
+        maximum.max(
+            1.0
+        );
+
+    let value =
+        value.clamp(
+            minimum,
+            maximum,
+        );
+
+    if value <= 1.0 {
+        if minimum >= 1.0 {
+            return 0.5;
+        }
+
+        let ratio =
+            (value / minimum)
+                .ln()
+                / (1.0 / minimum)
+                    .ln();
+
+        (ratio * 0.5)
+            .clamp(
+                0.0,
+                0.5,
+            )
+    } else {
+        if maximum <= 1.0 {
+            return 0.5;
+        }
+
+        let ratio =
+            value.ln()
+                / maximum.ln();
+
+        (0.5 + ratio * 0.5)
+            .clamp(
+                0.5,
+                1.0,
+            )
+    }
+}
+
+
+fn animation_speed_from_slider_fraction(
+    fraction: f32,
+    minimum: f32,
+    maximum: f32,
+) -> f32 {
+    let fraction =
+        fraction.clamp(
+            0.0,
+            1.0,
+        );
+
+    let minimum =
+        minimum.max(
+            f32::MIN_POSITIVE
+        );
+
+    let maximum =
+        maximum.max(
+            1.0
+        );
+
+    if fraction <= 0.5 {
+        if minimum >= 1.0 {
+            return 1.0;
+        }
+
+        let local =
+            fraction / 0.5;
+
+        minimum
+            * (1.0 / minimum)
+                .powf(
+                    local
+                )
+    } else {
+        if maximum <= 1.0 {
+            return 1.0;
+        }
+
+        let local =
+            (fraction - 0.5)
+                / 0.5;
+
+        maximum.powf(
+            local
+        )
+    }
+}
+
+
+fn paint_slider(
+    ui: &egui::Ui,
+    rect: egui::Rect,
+    response: egui::Response,
+    fraction: f32,
+    resolution_scale: f32,
+) {
+    let track_rect =
+        egui::Rect::from_center_size(
+            rect.center(),
+            egui::vec2(
+                rect.width(),
+                4.0 * resolution_scale,
+            ),
+        );
+
+    let widget_visuals =
+        if response.dragged() {
+            ui.visuals().widgets.active
+        } else if response.hovered() {
+            ui.visuals().widgets.hovered
+        } else {
+            ui.visuals().widgets.inactive
+        };
+
+    ui.painter().rect_filled(
+        track_rect,
+        track_rect.height() * 0.5,
+        widget_visuals.bg_fill,
+    );
+
+    let knob_center =
+        egui::pos2(
+            egui::lerp(
+                rect.left()..=rect.right(),
+                fraction.clamp(
+                    0.0,
+                    1.0,
+                ),
+            ),
+            rect.center().y,
+        );
+
+    ui.painter().circle_filled(
+        knob_center,
+        7.0 * resolution_scale,
+        widget_visuals.fg_stroke.color,
+    );
+}
+
+
+// ======================== END RENDERING TAB =================
+
+// ============================================================
+// TEXTURES TAB
+// ============================================================
+// Copy/paste replacement boundary for this editor section.
+//
+// Texture and palette selectors remain compact.  Primitives uses nearly the
+// full tab width.  egui's slider_width setting is explicitly overridden here
+// because add_sized() alone does not reliably lengthen an egui::Slider.
+
 fn draw_texture_panel(
     ui: &mut egui::Ui,
     metrics: EditorMetrics,
@@ -2053,180 +3890,441 @@ fn draw_texture_panel(
     primitive_count: &mut u32,
     hover_help_message: &mut Option<&'static str>,
 ) {
-    editor_theme::panel_frame(
+    editor_theme::section_heading(
         ui,
-        metrics,
-    )
-    .show(
-        ui,
+        "Texture Settings",
+    );
+
+    ui.add_space(
+        metrics.row_gap
+    );
+
+    ui.add_enabled_ui(
+        texture_required,
         |ui| {
-            editor_theme::section_heading(
-                ui,
-                "Texture Settings",
+            let label_width =
+                88.0 * metrics.scale;
+
+            let value_width =
+                54.0 * metrics.scale;
+
+            let horizontal_spacing =
+                10.0 * metrics.scale;
+
+            // Texture row.
+            ui.horizontal(
+                |ui| {
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(
+                            label_width,
+                            ui.spacing()
+                                .interact_size
+                                .y,
+                        ),
+                        egui::Layout::left_to_right(
+                            egui::Align::Center
+                        ),
+                        |ui| {
+                            ui.label(
+                                "Texture"
+                            );
+                        },
+                    );
+
+                    let texture_response =
+                        egui::ComboBox::from_id_source(
+                            "editor_texture_selection"
+                        )
+                        .selected_text(
+                            texture.name()
+                        )
+                        .width(
+                            metrics.dropdown_width
+                        )
+                        .show_ui(
+                            ui,
+                            |ui| {
+                                // Resource lists are presented
+                                // alphanumerically.
+                                for selection in [
+                                    TextureSelection::Bricks,
+                                    TextureSelection::Cellular,
+                                    TextureSelection::Clouds,
+                                    TextureSelection::Facets,
+                                    TextureSelection::Hexagons,
+                                    TextureSelection::Marble,
+                                    TextureSelection::Mesh,
+                                    TextureSelection::Noise,
+                                    TextureSelection::Radial,
+                                ] {
+                                    ui.selectable_value(
+                                        texture,
+                                        selection,
+                                        selection.name(),
+                                    );
+                                }
+                            },
+                        )
+                        .response;
+
+                    update_hover_help(
+                        &texture_response,
+                        hover_help_message,
+                        "Select the procedural texture family generated in memory for this shader.",
+                    );
+                },
             );
 
             ui.add_space(
                 metrics.row_gap
             );
 
-            ui.add_enabled_ui(
-                texture_required,
+            // Palette row.
+            ui.horizontal(
                 |ui| {
-                    egui::Grid::new(
-                        "editor_texture_settings_grid"
-                    )
-                    .num_columns(2)
-                    .spacing(
+                    ui.allocate_ui_with_layout(
                         egui::vec2(
-                            8.0 * metrics.scale,
-                            metrics.row_gap,
-                        )
-                    )
-                    .show(
-                        ui,
+                            label_width,
+                            ui.spacing()
+                                .interact_size
+                                .y,
+                        ),
+                        egui::Layout::left_to_right(
+                            egui::Align::Center
+                        ),
                         |ui| {
-                            ui.label("Texture");
-
-                            let texture_response =
-                                egui::ComboBox::from_id_source(
-                                    "editor_texture_selection"
-                                )
-                                .selected_text(
-                                    texture.name()
-                                )
-                                .width(
-                                    metrics.dropdown_width
-                                )
-                                .show_ui(
-                                    ui,
-                                    |ui| {
-                                        for selection in [
-                                            TextureSelection::Marble,
-                                            TextureSelection::Clouds,
-                                            TextureSelection::Cellular,
-                                            TextureSelection::Mesh,
-                                            TextureSelection::Radial,
-                                            TextureSelection::Noise,
-                                            TextureSelection::Bricks,
-                                            TextureSelection::Hexagons,
-                                            TextureSelection::Facets,
-                                        ] {
-                                            ui.selectable_value(
-                                                texture,
-                                                selection,
-                                                selection.name(),
-                                            );
-                                        }
-                                    },
-                                )
-                                .response;
-
-                            update_hover_help(
-                                &texture_response,
-                                hover_help_message,
-                                "Select the procedural texture family generated in memory for this shader.",
+                            ui.label(
+                                "Palette"
                             );
-                            ui.end_row();
+                        },
+                    );
 
-                            ui.label("Palette");
+                    let palette_response =
+                        egui::ComboBox::from_id_source(
+                            "editor_palette_selection"
+                        )
+                        .selected_text(
+                            palette.name()
+                        )
+                        .width(
+                            metrics.dropdown_width
+                        )
+                        .show_ui(
+                            ui,
+                            |ui| {
+                                // Resource lists are presented
+                                // alphanumerically.
+                                for selection in [
+                                    PaletteSelection::Brick,
+                                    PaletteSelection::Bronze,
+                                    PaletteSelection::Lichen,
+                                    PaletteSelection::Mist,
+                                    PaletteSelection::Sandstone,
+                                    PaletteSelection::Slate,
+                                ] {
+                                    ui.selectable_value(
+                                        palette,
+                                        selection,
+                                        selection.name(),
+                                    );
+                                }
+                            },
+                        )
+                        .response;
 
-                            let palette_response =
-                                egui::ComboBox::from_id_source(
-                                    "editor_palette_selection"
-                                )
-                                .selected_text(
-                                    palette.name()
-                                )
-                                .width(
-                                    metrics.dropdown_width
-                                )
-                                .show_ui(
-                                    ui,
-                                    |ui| {
-                                        for selection in [
-                                            PaletteSelection::Slate,
-                                            PaletteSelection::Sandstone,
-                                            PaletteSelection::Lichen,
-                                            PaletteSelection::Mist,
-                                            PaletteSelection::Bronze,
-                                            PaletteSelection::Brick,
-                                        ] {
-                                            ui.selectable_value(
-                                                palette,
-                                                selection,
-                                                selection.name(),
-                                            );
-                                        }
-                                    },
-                                )
-                                .response;
+                    update_hover_help(
+                        &palette_response,
+                        hover_help_message,
+                        "Select the built-in palette applied to the generated procedural texture.",
+                    );
+                },
+            );
 
-                            update_hover_help(
-                                &palette_response,
-                                hover_help_message,
-                                "Select the built-in palette applied to the generated procedural texture.",
+            ui.add_space(
+                metrics.row_gap
+            );
+
+            // Primitives row.
+            const PRIMITIVE_VALUES: [u32; 10] =
+                [
+                    2,
+                    4,
+                    8,
+                    16,
+                    32,
+                    64,
+                    128,
+                    256,
+                    512,
+                    1024,
+                ];
+
+            let current_index =
+                PRIMITIVE_VALUES
+                    .iter()
+                    .position(
+                        |value| {
+                            value
+                                == primitive_count
+                        }
+                    )
+                    .unwrap_or(0);
+
+            let mut primitive_index =
+                current_index as f32;
+
+            let primitive_slider_width =
+                (
+                    ui.available_width()
+                        - label_width
+                        - value_width
+                        - horizontal_spacing * 2.0
+                )
+                .max(
+                    260.0 * metrics.scale
+                );
+
+            let mut primitive_response =
+                None;
+
+            ui.horizontal(
+                |ui| {
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(
+                            label_width,
+                            ui.spacing()
+                                .interact_size
+                                .y,
+                        ),
+                        egui::Layout::left_to_right(
+                            egui::Align::Center
+                        ),
+                        |ui| {
+                            ui.label(
+                                "Primitives"
                             );
-                            ui.end_row();
+                        },
+                    );
 
-                            ui.label("Primitives");
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(
+                            primitive_slider_width,
+                            ui.spacing()
+                                .interact_size
+                                .y,
+                        ),
+                        egui::Layout::left_to_right(
+                            egui::Align::Center
+                        ),
+                        |ui| {
+                            ui.spacing_mut()
+                                .slider_width =
+                                primitive_slider_width;
 
-                            let primitive_response =
-                                egui::ComboBox::from_id_source(
-                                    "editor_primitive_count"
-                                )
-                                .selected_text(
-                                    primitive_count.to_string()
-                                )
-                                .width(
-                                    metrics.dropdown_width
-                                )
-                                .show_ui(
-                                    ui,
-                                    |ui| {
-                                        for value in [
-                                            2_u32,
-                                            4,
-                                            8,
-                                            16,
-                                            32,
-                                            64,
-                                            128,
-                                            256,
-                                            512,
-                                            1024,
-                                        ] {
-                                            ui.selectable_value(
-                                                primitive_count,
-                                                value,
-                                                value.to_string(),
-                                            );
-                                        }
-                                    },
-                                )
-                                .response;
+                            primitive_response =
+                                Some(
+                                    ui.add(
+                                        egui::Slider::new(
+                                            &mut primitive_index,
+                                            0.0..=(
+                                                PRIMITIVE_VALUES.len()
+                                                    - 1
+                                            ) as f32,
+                                        )
+                                        .show_value(false),
+                                    )
+                                );
+                        },
+                    );
 
-                            update_hover_help(
-                                &primitive_response,
-                                hover_help_message,
-                                "Set the number of graphical elements used to generate the procedural texture.",
+                    let selected_index =
+                        primitive_index
+                            .round()
+                            .clamp(
+                                0.0,
+                                (
+                                    PRIMITIVE_VALUES.len()
+                                        - 1
+                                ) as f32,
+                            ) as usize;
+
+                    *primitive_count =
+                        PRIMITIVE_VALUES[
+                            selected_index
+                        ];
+
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(
+                            value_width,
+                            ui.spacing()
+                                .interact_size
+                                .y,
+                        ),
+                        egui::Layout::left_to_right(
+                            egui::Align::Center
+                        ),
+                        |ui| {
+                            ui.label(
+                                primitive_count
+                                    .to_string()
                             );
-                            ui.end_row();
                         },
                     );
                 },
             );
 
-            if !texture_required {
-                ui.label(
-                    egui::RichText::new(
-                        "Not required by this shader"
-                    )
-                    .weak(),
+            if let Some(primitive_response) =
+                primitive_response
+            {
+                update_hover_help(
+                    &primitive_response,
+                    hover_help_message,
+                    "Set the number of graphical elements used to generate the procedural texture.",
                 );
             }
         },
     );
+
+    if !texture_required {
+        ui.label(
+            egui::RichText::new(
+                "Not required by this shader"
+            )
+            .weak(),
+        );
+    }
 }
+
+
+// Texture-tab custom palette placeholder.
+
+fn draw_color_picker_placeholder(
+    ui: &mut egui::Ui,
+    metrics: EditorMetrics,
+    palette: PaletteSelection,
+) {
+    ui.separator();
+
+    ui.horizontal(
+        |ui| {
+            ui.label(
+                "Palette Color:"
+            );
+
+            egui::ComboBox::from_id_source(
+                "editor_palette_named_color_placeholder"
+            )
+            .selected_text(
+                palette.name()
+            )
+            .width(
+                130.0 * metrics.scale
+            )
+            .show_ui(
+                ui,
+                |ui| {
+                    ui.add_enabled(
+                        false,
+                        egui::Button::new(
+                            "Named color presets"
+                        ),
+                    );
+                },
+            );
+
+            let mut placeholder_hex =
+                "#bc4a3c".to_string();
+
+            ui.add_enabled(
+                false,
+                egui::TextEdit::singleline(
+                    &mut placeholder_hex
+                )
+                .desired_width(
+                    90.0 * metrics.scale
+                ),
+            );
+        },
+    );
+
+    ui.add_space(
+        6.0 * metrics.scale
+    );
+
+    ui.allocate_ui_with_layout(
+        egui::vec2(
+            230.0 * metrics.scale,
+            165.0 * metrics.scale,
+        ),
+        egui::Layout::centered_and_justified(
+            egui::Direction::LeftToRight
+        ),
+        |ui| {
+            ui.label(
+                egui::RichText::new(
+                    "[ Color Picker / Color Wheel ]"
+                )
+                .weak(),
+            );
+        },
+    );
+}
+
+
+// ======================== END TEXTURES TAB ==================
+
+// ============================================================
+// POST-PROCESSING TAB
+// ============================================================
+// Copy/paste replacement boundary for this editor section.
+
+fn draw_post_processing_tab(
+    ui: &mut egui::Ui,
+    metrics: EditorMetrics,
+    anti_aliasing: &mut AntiAliasingSelection,
+    dithering: &mut DitheringSelection,
+    color_precision: &mut ColorPrecisionSelection,
+    hover_help_message: &mut Option<&'static str>,
+) {
+    draw_post_processing_panel(
+        ui,
+        metrics,
+        anti_aliasing,
+        dithering,
+        color_precision,
+        hover_help_message,
+    );
+
+    ui.add_space(
+        8.0 * metrics.scale
+    );
+
+    ui.horizontal(
+        |ui| {
+            ui.label(
+                "Bloom:"
+            );
+
+            ui.add_enabled(
+                false,
+                egui::Button::new(
+                    "Highlight (planned)"
+                )
+                .min_size(
+                    egui::vec2(
+                        150.0 * metrics.scale,
+                        0.0,
+                    )
+                ),
+            );
+        },
+    );
+}
+
+
+#[allow(clippy::too_many_arguments)]
+
+
 
 
 fn draw_post_processing_panel(
@@ -2394,6 +4492,14 @@ fn draw_post_processing_panel(
     );
 }
 
+
+// ==================== END POST-PROCESSING TAB ===============
+
+// ------------------------------------------------------------
+// LEGACY / SHARED SUPPORT
+// ------------------------------------------------------------
+// Retained for compatibility while the multi-tabbed editor settles.
+// These helpers are not part of the tab replacement blocks above.
 
 fn draw_policy_target_panel(
     ui: &mut egui::Ui,
@@ -2762,275 +4868,6 @@ fn draw_status_panel(
 }
 
 
-fn draw_editor_slider_row(
-    ui: &mut egui::Ui,
-    label: &str,
-    displayed_value: &str,
-    value: &mut f32,
-    minimum: f32,
-    maximum: f32,
-    shift_held: bool,
-    metrics: EditorMetrics,
-    drag_state: &mut Option<SliderDragState>,
-) -> egui::Response {
-    let available_width =
-        ui.available_width();
-
-    let slider_width =
-        (
-            available_width
-                - metrics.label_width
-                - metrics.slider_value_width
-                - 16.0 * metrics.scale
-        )
-        .max(
-            48.0 * metrics.scale
-        );
-
-    let mut slider_response =
-        None;
-
-    egui::Grid::new(
-        format!(
-            "editor_slider_grid_{}",
-            label,
-        )
-    )
-    .num_columns(3)
-    .spacing(
-        egui::vec2(
-            8.0 * metrics.scale,
-            metrics.row_gap,
-        )
-    )
-    .show(
-        ui,
-        |ui| {
-            ui.allocate_ui_with_layout(
-                egui::vec2(
-                    metrics.label_width,
-                    ui.spacing().interact_size.y,
-                ),
-                egui::Layout::left_to_right(
-                    egui::Align::Center
-                ),
-                |ui| {
-                    ui.label(label);
-                },
-            );
-
-            ui.allocate_ui_with_layout(
-                egui::vec2(
-                    slider_width,
-                    ui.spacing().interact_size.y,
-                ),
-                egui::Layout::left_to_right(
-                    egui::Align::Center
-                ),
-                |ui| {
-                    slider_response =
-                        Some(
-                            draw_fine_slider(
-                                ui,
-                                value,
-                                minimum,
-                                maximum,
-                                shift_held,
-                                metrics.scale,
-                                drag_state,
-                            )
-                        );
-                },
-            );
-
-            ui.allocate_ui_with_layout(
-                egui::vec2(
-                    metrics.slider_value_width,
-                    ui.spacing().interact_size.y,
-                ),
-                egui::Layout::right_to_left(
-                    egui::Align::Center
-                ),
-                |ui| {
-                    ui.label(
-                        displayed_value
-                    );
-                },
-            );
-
-            ui.end_row();
-        },
-    );
-
-    slider_response.unwrap_or_else(
-        || {
-            ui.allocate_response(
-                egui::Vec2::ZERO,
-                egui::Sense::hover(),
-            )
-        }
-    )
-}
-
-
-fn draw_fine_slider(
-    ui: &mut egui::Ui,
-    value: &mut f32,
-    minimum: f32,
-    maximum: f32,
-    shift_held: bool,
-    resolution_scale: f32,
-    drag_state: &mut Option<SliderDragState>,
-) -> egui::Response {
-
-    let desired_size =
-        egui::vec2(
-            ui.available_width(),
-            ui.spacing().interact_size.y,
-        );
-
-    let (rect, response) =
-        ui.allocate_exact_size(
-            desired_size,
-            egui::Sense::click_and_drag(),
-        );
-
-    let pointer_position =
-        response.interact_pointer_pos();
-
-    if response.drag_started() {
-        if let Some(pointer_position) =
-            pointer_position
-        {
-            *drag_state =
-                Some(
-                    SliderDragState {
-                        anchor_value:
-                            *value,
-
-                        anchor_pointer_x:
-                            pointer_position.x,
-
-                        shift_held,
-                    }
-                );
-        }
-    }
-
-    if response.dragged() {
-        if let (
-            Some(pointer_position),
-            Some(state),
-        ) = (
-            pointer_position,
-            drag_state.as_mut(),
-        ) {
-            if state.shift_held
-                != shift_held
-            {
-                state.anchor_value =
-                    *value;
-
-                state.anchor_pointer_x =
-                    pointer_position.x;
-
-                state.shift_held =
-                    shift_held;
-            }
-
-            let sensitivity =
-                if shift_held {
-                    0.1
-                } else {
-                    1.0
-                };
-
-            let value_delta =
-                (pointer_position.x
-                    - state.anchor_pointer_x)
-                    / rect.width().max(1.0)
-                    * (maximum - minimum)
-                    * sensitivity;
-
-            *value =
-                (state.anchor_value
-                    + value_delta)
-                    .clamp(
-                        minimum,
-                        maximum,
-                    );
-        }
-    } else if response.clicked() {
-        if let Some(pointer_position) =
-            pointer_position
-        {
-            let fraction =
-                ((pointer_position.x - rect.left())
-                    / rect.width().max(1.0))
-                    .clamp(
-                        0.0,
-                        1.0,
-                    );
-
-            *value =
-                minimum
-                    + fraction
-                        * (maximum - minimum);
-        }
-    } else {
-        *drag_state =
-            None;
-    }
-
-    let fraction =
-        ((*value - minimum)
-            / (maximum - minimum).max(f32::EPSILON))
-            .clamp(
-                0.0,
-                1.0,
-            );
-
-    let track_rect =
-        egui::Rect::from_center_size(
-            rect.center(),
-            egui::vec2(
-                rect.width(),
-                4.0 * resolution_scale,
-            ),
-        );
-
-    let widget_visuals =
-        if response.dragged() {
-            ui.visuals().widgets.active
-        } else if response.hovered() {
-            ui.visuals().widgets.hovered
-        } else {
-            ui.visuals().widgets.inactive
-        };
-
-    ui.painter().rect_filled(
-        track_rect,
-        track_rect.height() * 0.5,
-        widget_visuals.bg_fill,
-    );
-
-    let knob_center =
-        egui::pos2(
-            egui::lerp(
-                rect.left()..=rect.right(),
-                fraction,
-            ),
-            rect.center().y,
-        );
-
-    ui.painter().circle_filled(
-        knob_center,
-        7.0 * resolution_scale,
-        widget_visuals.fg_stroke.color,
-    );
-
-    response
-}
 
 
 fn egui_pointer_button(

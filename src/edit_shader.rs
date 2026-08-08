@@ -434,6 +434,7 @@ fn run_empty_session() -> Result<(), String> {
                 false,
                 &[],
                 None,
+                &[],
             );
 
         if !editor_output.window_open {
@@ -537,6 +538,12 @@ fn run_paths(
 
     let mut config =
         config_result.config;
+
+
+    let mut policy_display_rows =
+        build_policy_display_rows(
+            &config
+        );
 
 
     let mut recent_shader_paths =
@@ -1508,6 +1515,7 @@ fn run_paths(
                     Some(
                         &shader_information
                     ),
+                    &policy_display_rows,
                 );
 
             if !editor_output.window_open {
@@ -1557,11 +1565,44 @@ fn run_paths(
                     );
 
 
+            let policy_row_open_request =
+                editor_output
+                    .policy_row_command_requested
+                    .as_ref()
+                    .filter(
+                        |(
+                            _row,
+                            command,
+                        )| {
+                            matches!(
+                                *command,
+                                crate::editor_layout::PolicyRowCommand::Edit
+                                    | crate::editor_layout::PolicyRowCommand::RefreshShader
+                            )
+                        }
+                    )
+                    .cloned();
+
+
             if editor_output.browse_shader_requested
                 || recent_selected_path.is_some()
+                || policy_row_open_request.is_some()
             {
                 let selected_path =
-                    if editor_output.browse_shader_requested {
+                    if let Some((
+                        row,
+                        _command,
+                    )) =
+                        policy_row_open_request
+                            .as_ref()
+                    {
+                        Some(
+                            target_shader_path(
+                                row.policy_target,
+                                &row.filename,
+                            )
+                        )
+                    } else if editor_output.browse_shader_requested {
                         let starting_directory =
                             active.path
                                 .parent()
@@ -1700,8 +1741,28 @@ fn run_paths(
                             }
                         );
 
+                let row_forced_target =
+                    policy_row_open_request
+                        .as_ref()
+                        .map(
+                            |(
+                                row,
+                                _command,
+                            )| {
+                                row.policy_target
+                            }
+                        );
+
+
                 let new_editor_target =
-                    if target_restriction
+                    if let Some(
+                        row_forced_target
+                    ) = row_forced_target
+                    {
+                        Some(
+                            row_forced_target
+                        )
+                    } else if target_restriction
                         == EditorTargetRestriction::WallpaperOnly
                     {
                         Some(
@@ -2725,6 +2786,11 @@ fn run_paths(
                                 config =
                                     reloaded_config.config;
 
+                                policy_display_rows =
+                                    build_policy_display_rows(
+                                        &config
+                                    );
+
                                 screensaver_policy_exists =
                                     screensaver_target_available
                                         && config.screensaver_policies
@@ -2800,9 +2866,255 @@ fn run_paths(
             }
 
 
+            if let Some((
+                row,
+                command,
+            )) =
+                editor_output
+                    .policy_row_command_requested
+                    .as_ref()
+            {
+                match command {
+                    crate::editor_layout::PolicyRowCommand::DeletePolicy => {
+                        let manage_target =
+                            match row.policy_target {
+                                crate::editor_layout::PolicyTarget::Screensaver => {
+                                    crate::manage_policies::PolicyTarget::Screensaver
+                                }
+
+                                crate::editor_layout::PolicyTarget::Wallpaper => {
+                                    crate::manage_policies::PolicyTarget::Wallpaper
+                                }
+                            };
+
+                        let config_path =
+                            crate::locate_paths::config_path();
+
+                        match crate::manage_policies::delete_policy(
+                            &config_path,
+                            manage_target,
+                            &row.filename,
+                        ) {
+                            Ok(()) => {
+                                match crate::load_config::load_config(
+                                    &config_path
+                                ) {
+                                    Ok(reloaded_config) => {
+                                        config =
+                                            reloaded_config.config;
+
+                                        policy_display_rows =
+                                            build_policy_display_rows(
+                                                &config
+                                            );
+
+                                        screensaver_policy_exists =
+                                            screensaver_target_available
+                                                && config.screensaver_policies
+                                                .iter()
+                                                .any(
+                                                    |policy| {
+                                                        policy.shader
+                                                            .eq_ignore_ascii_case(
+                                                                &active.shader_name
+                                                            )
+                                                    }
+                                                );
+
+                                        wallpaper_policy_exists =
+                                            wallpaper_target_available
+                                                && config.wallpaper_policies
+                                                .iter()
+                                                .any(
+                                                    |policy| {
+                                                        policy.shader
+                                                            .eq_ignore_ascii_case(
+                                                                &active.shader_name
+                                                            )
+                                                    }
+                                                );
+                                    }
+
+                                    Err(error) => {
+                                        log_warning(
+                                            &format!(
+                                                "[EDIT_SHADER] Policy deleted, but configuration reload failed: {}",
+                                                error,
+                                            )
+                                        );
+                                    }
+                                }
+
+                                edit_window.set_status_message(
+                                    format!(
+                                        "{} policy deleted for {}",
+                                        manage_target.name(),
+                                        row.filename,
+                                    )
+                                );
+
+                                log_information(
+                                    &format!(
+                                        "[EDIT_SHADER] Deleted {} policy for {}",
+                                        manage_target.name(),
+                                        row.filename,
+                                    )
+                                );
+                            }
+
+                            Err(error) => {
+                                edit_window.set_status_message(
+                                    format!(
+                                        "Unable to delete policy: {}",
+                                        error,
+                                    )
+                                );
+
+                                log_warning(
+                                    &format!(
+                                        "[EDIT_SHADER] Unable to delete {} policy for {}: {}",
+                                        manage_target.name(),
+                                        row.filename,
+                                        error,
+                                    )
+                                );
+                            }
+                        }
+
+                        continue;
+                    }
+
+                    crate::editor_layout::PolicyRowCommand::DeleteShader => {
+                        let manage_target =
+                            match row.policy_target {
+                                crate::editor_layout::PolicyTarget::Screensaver => {
+                                    crate::manage_policies::PolicyTarget::Screensaver
+                                }
+
+                                crate::editor_layout::PolicyTarget::Wallpaper => {
+                                    crate::manage_policies::PolicyTarget::Wallpaper
+                                }
+                            };
+
+                        let shader_path =
+                            target_shader_path(
+                                row.policy_target,
+                                &row.filename,
+                            );
+
+                        let config_path =
+                            crate::locate_paths::config_path();
+
+                        let policy_delete_result =
+                            crate::manage_policies::delete_policy(
+                                &config_path,
+                                manage_target,
+                                &row.filename,
+                            );
+
+                        match policy_delete_result {
+                            Ok(()) => {
+                                match std::fs::remove_file(
+                                    &shader_path
+                                ) {
+                                    Ok(()) => {
+                                        match crate::load_config::load_config(
+                                            &config_path
+                                        ) {
+                                            Ok(reloaded_config) => {
+                                                config =
+                                                    reloaded_config.config;
+
+                                                policy_display_rows =
+                                                    build_policy_display_rows(
+                                                        &config
+                                                    );
+                                            }
+
+                                            Err(error) => {
+                                                log_warning(
+                                                    &format!(
+                                                        "[EDIT_SHADER] Shader/policy deleted, but configuration reload failed: {}",
+                                                        error,
+                                                    )
+                                                );
+                                            }
+                                        }
+
+                                        edit_window.set_status_message(
+                                            format!(
+                                                "{} shader and associated {} policy deleted: {}",
+                                                manage_target.name(),
+                                                manage_target.name(),
+                                                row.filename,
+                                            )
+                                        );
+
+                                        log_information(
+                                            &format!(
+                                                "[EDIT_SHADER] Deleted {} shader {} and its policy",
+                                                manage_target.name(),
+                                                shader_path.display(),
+                                            )
+                                        );
+                                    }
+
+                                    Err(error) => {
+                                        edit_window.set_status_message(
+                                            format!(
+                                                "{} policy was deleted, but the shader file could not be deleted: {}",
+                                                manage_target.name(),
+                                                error,
+                                            )
+                                        );
+
+                                        log_warning(
+                                            &format!(
+                                                "[EDIT_SHADER] Deleted {} policy for {}, but failed to delete shader file {}: {}",
+                                                manage_target.name(),
+                                                row.filename,
+                                                shader_path.display(),
+                                                error,
+                                            )
+                                        );
+                                    }
+                                }
+                            }
+
+                            Err(error) => {
+                                edit_window.set_status_message(
+                                    format!(
+                                        "Shader was not deleted because its associated policy could not be deleted: {}",
+                                        error,
+                                    )
+                                );
+
+                                log_warning(
+                                    &format!(
+                                        "[EDIT_SHADER] Refusing to delete shader {} because {} policy deletion failed: {}",
+                                        shader_path.display(),
+                                        manage_target.name(),
+                                        error,
+                                    )
+                                );
+                            }
+                        }
+
+                        continue;
+                    }
+
+                    crate::editor_layout::PolicyRowCommand::Edit
+                    | crate::editor_layout::PolicyRowCommand::RefreshShader => {
+                        // These commands are handled by the shader-load branch
+                        // above so the row target is loaded explicitly.
+                    }
+                }
+            }
+
+
             if editor_output.delete_requested {
                 edit_window.set_status_message(
-                    "Delete Shader will be wired after confirmation handling is added"
+                    "Delete Shader is available from the Policies row context menu."
                 );
             }
 
@@ -3010,6 +3322,57 @@ fn describe_shader_type(
     } else {
         "Native GLSL".to_string()
     }
+}
+
+
+fn build_policy_display_rows(
+    config: &crate::load_config::Config,
+) -> Vec<crate::editor_layout::PolicyDisplayRow> {
+    let mut rows =
+        Vec::with_capacity(
+            config.screensaver_policies.len()
+                + config.wallpaper_policies.len()
+        );
+
+    rows.extend(
+        config.screensaver_policies
+            .iter()
+            .map(
+                |policy| {
+                    crate::editor_layout::PolicyDisplayRow {
+                        filename:
+                            policy.shader.clone(),
+
+                        texture:
+                            policy.shader_texture.is_some(),
+
+                        policy_target:
+                            crate::editor_layout::PolicyTarget::Screensaver,
+                    }
+                }
+            )
+    );
+
+    rows.extend(
+        config.wallpaper_policies
+            .iter()
+            .map(
+                |policy| {
+                    crate::editor_layout::PolicyDisplayRow {
+                        filename:
+                            policy.shader.clone(),
+
+                        texture:
+                            policy.shader_texture.is_some(),
+
+                        policy_target:
+                            crate::editor_layout::PolicyTarget::Wallpaper,
+                    }
+                }
+            )
+    );
+
+    rows
 }
 
 
