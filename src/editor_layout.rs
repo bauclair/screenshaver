@@ -69,6 +69,17 @@ enum PolicySortColumn {
 
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PolicyNavigation {
+    First,
+    Last,
+    Previous,
+    Next,
+    PagePrevious,
+    PageNext,
+}
+
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TextureSelection {
     Marble,
     Clouds,
@@ -626,6 +637,9 @@ pub struct EditWindowOverlay {
     selected_policy_row:
         Option<PolicyRowReference>,
 
+    pending_policy_navigation:
+        Option<PolicyNavigation>,
+
     pending_confirmation:
         Option<PendingConfirmation>,
 
@@ -760,6 +774,9 @@ impl EditWindowOverlay {
                 selected_policy_row:
                     None,
 
+                pending_policy_navigation:
+                    None,
+
                 pending_confirmation:
                     None,
 
@@ -837,6 +854,83 @@ impl EditWindowOverlay {
                     y,
                     false,
                 );
+            }
+
+            Event::MouseWheel {
+                y,
+                ..
+            } => {
+                self.pending_events.push(
+                    egui::Event::MouseWheel {
+                        unit:
+                            egui::MouseWheelUnit::Line,
+
+                        delta:
+                            egui::vec2(
+                                0.0,
+                                y as f32,
+                            ),
+
+                        modifiers:
+                            egui::Modifiers {
+                                shift:
+                                    self.shift_held,
+
+                                ..Default::default()
+                            },
+                    }
+                );
+            }
+
+            Event::KeyDown {
+                keycode:
+                    Some(keycode),
+                repeat,
+                ..
+            } if self.active_tab == EditorTab::Policies
+                && matches!(
+                    keycode,
+                    Keycode::Home
+                        | Keycode::End
+                        | Keycode::Up
+                        | Keycode::Down
+                        | Keycode::PageUp
+                        | Keycode::PageDown
+                ) =>
+            {
+                let navigation =
+                    match keycode {
+                        Keycode::Home =>
+                            PolicyNavigation::First,
+
+                        Keycode::End =>
+                            PolicyNavigation::Last,
+
+                        Keycode::Up =>
+                            PolicyNavigation::Previous,
+
+                        Keycode::Down =>
+                            PolicyNavigation::Next,
+
+                        Keycode::PageUp =>
+                            PolicyNavigation::PagePrevious,
+
+                        Keycode::PageDown =>
+                            PolicyNavigation::PageNext,
+
+                        _ =>
+                            unreachable!(),
+                    };
+
+                // SDL key-repeat is useful here: holding an arrow key should
+                // continue moving through the policy list.
+                let _ =
+                    repeat;
+
+                self.pending_policy_navigation =
+                    Some(
+                        navigation
+                    );
             }
 
             Event::KeyDown {
@@ -1265,6 +1359,9 @@ impl EditWindowOverlay {
         let mut selected_policy_row =
             self.selected_policy_row.clone();
 
+        let mut pending_policy_navigation =
+            self.pending_policy_navigation.take();
+
         let mut pending_confirmation =
             self.pending_confirmation.clone();
 
@@ -1439,6 +1536,7 @@ impl EditWindowOverlay {
                                                 &mut policy_sort_column,
                                                 &mut policy_sort_ascending,
                                                 &mut selected_policy_row,
+                                                &mut pending_policy_navigation,
                                                 &mut pending_confirmation,
                                                 &mut policy_row_command_requested,
                                             );
@@ -2711,6 +2809,7 @@ fn draw_policies_tab(
     sort_column: &mut PolicySortColumn,
     sort_ascending: &mut bool,
     selected_row: &mut Option<PolicyRowReference>,
+    pending_navigation: &mut Option<PolicyNavigation>,
     pending_confirmation: &mut Option<PendingConfirmation>,
     command_requested:
         &mut Option<(PolicyRowReference, PolicyRowCommand)>,
@@ -2834,6 +2933,106 @@ fn draw_policies_tab(
             }
         },
     );
+
+
+    let mut keyboard_selected_row:
+        Option<PolicyRowReference> =
+        None;
+
+    if let Some(navigation) =
+        pending_navigation.take()
+    {
+        if !rows.is_empty() {
+            const PAGE_STEP: usize =
+                10;
+
+            let current_index =
+                selected_row
+                    .as_ref()
+                    .and_then(
+                        |selected| {
+                            rows.iter()
+                                .position(
+                                    |row| {
+                                        row.filename
+                                            .eq_ignore_ascii_case(
+                                                &selected.filename
+                                            )
+                                            && row.policy_target
+                                                == selected.policy_target
+                                    }
+                                )
+                        }
+                    );
+
+            let new_index =
+                match navigation {
+                    PolicyNavigation::First =>
+                        0,
+
+                    PolicyNavigation::Last =>
+                        rows.len() - 1,
+
+                    PolicyNavigation::Previous =>
+                        current_index
+                            .unwrap_or(0)
+                            .saturating_sub(1),
+
+                    PolicyNavigation::Next =>
+                        current_index
+                            .map(
+                                |index| {
+                                    (index + 1)
+                                        .min(
+                                            rows.len() - 1
+                                        )
+                                }
+                            )
+                            .unwrap_or(0),
+
+                    PolicyNavigation::PagePrevious =>
+                        current_index
+                            .unwrap_or(0)
+                            .saturating_sub(
+                                PAGE_STEP
+                            ),
+
+                    PolicyNavigation::PageNext =>
+                        current_index
+                            .map(
+                                |index| {
+                                    (index + PAGE_STEP)
+                                        .min(
+                                            rows.len() - 1
+                                        )
+                                }
+                            )
+                            .unwrap_or(0),
+                };
+
+            let row =
+                &rows[new_index];
+
+            let row_reference =
+                PolicyRowReference {
+                    filename:
+                        row.filename.clone(),
+
+                    policy_target:
+                        row.policy_target,
+                };
+
+            *selected_row =
+                Some(
+                    row_reference.clone()
+                );
+
+            keyboard_selected_row =
+                Some(
+                    row_reference
+                );
+        }
+    }
 
     let spacing =
         10.0 * metrics.scale;
@@ -3082,6 +3281,26 @@ fn draw_policies_tab(
                                 .on_hover_text(
                                     &row.full_path
                                 );
+
+                            if keyboard_selected_row
+                                .as_ref()
+                                .is_some_and(
+                                    |selected| {
+                                        selected.filename
+                                            .eq_ignore_ascii_case(
+                                                &row_reference.filename
+                                            )
+                                            && selected.policy_target
+                                                == row_reference.policy_target
+                                    }
+                                )
+                            {
+                                filename_response.scroll_to_me(
+                                    Some(
+                                        egui::Align::Center
+                                    )
+                                );
+                            }
 
                             let status_response =
                                 left_aligned_cell(
