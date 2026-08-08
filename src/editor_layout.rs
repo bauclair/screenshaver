@@ -433,6 +433,8 @@ pub struct PolicyRowReference {
 pub enum PolicyRowCommand {
     Edit,
     RefreshShader,
+    MoveToScreensavers,
+    MoveToWallpapers,
     DeletePolicy,
     DeleteShader,
 }
@@ -3274,7 +3276,7 @@ fn draw_policies_tab(
                                     ui,
                                     filename_width,
                                     row_height,
-                                    row.filename,
+                                    &row.filename,
                                     egui::Sense::click(),
                                     row_selected,
                                 )
@@ -3440,6 +3442,91 @@ fn draw_policies_tab(
 
                                             ui.separator();
 
+                                            ui.menu_button(
+                                                "Move to",
+                                                |ui| {
+                                                    let current_path =
+                                                        PathBuf::from(
+                                                            &row.full_path
+                                                        );
+
+                                                    let screensaver_destination =
+                                                        crate::locate_paths::screensaver_shader_dir()
+                                                            .join(
+                                                                &row.filename
+                                                            );
+
+                                                    let wallpaper_destination =
+                                                        crate::locate_paths::wallpaper_shader_dir()
+                                                            .join(
+                                                                &row.filename
+                                                            );
+
+                                                    let can_move =
+                                                        row.accessible;
+
+                                                    if ui.add_enabled(
+                                                        can_move
+                                                            && current_path
+                                                                != screensaver_destination,
+                                                        egui::Button::new(
+                                                            "/screensavers"
+                                                        ),
+                                                    )
+                                                    .clicked()
+                                                    {
+                                                        *selected_row =
+                                                            Some(
+                                                                row_reference.clone()
+                                                            );
+
+                                                        *pending_confirmation =
+                                                            Some(
+                                                                PendingConfirmation {
+                                                                    row:
+                                                                        row_reference.clone(),
+
+                                                                    command:
+                                                                        PolicyRowCommand::MoveToScreensavers,
+                                                                }
+                                                            );
+
+                                                        ui.close();
+                                                    }
+
+                                                    if ui.add_enabled(
+                                                        can_move
+                                                            && current_path
+                                                                != wallpaper_destination,
+                                                        egui::Button::new(
+                                                            "/wallpapers"
+                                                        ),
+                                                    )
+                                                    .clicked()
+                                                    {
+                                                        *selected_row =
+                                                            Some(
+                                                                row_reference.clone()
+                                                            );
+
+                                                        *pending_confirmation =
+                                                            Some(
+                                                                PendingConfirmation {
+                                                                    row:
+                                                                        row_reference.clone(),
+
+                                                                    command:
+                                                                        PolicyRowCommand::MoveToWallpapers,
+                                                                }
+                                                            );
+
+                                                        ui.close();
+                                                    }
+                                                },
+                                            );
+
+                                            ui.separator();
+
                                             if ui.button(
                                                 "Delete Policy..."
                                             )
@@ -3530,6 +3617,12 @@ fn draw_policy_confirmation_modal(
 
     let title =
         match confirmation.command {
+            PolicyRowCommand::MoveToScreensavers =>
+                "Move Shader?",
+
+            PolicyRowCommand::MoveToWallpapers =>
+                "Move Shader?",
+
             PolicyRowCommand::DeletePolicy =>
                 "Delete Policy?",
 
@@ -3565,6 +3658,40 @@ fn draw_policy_confirmation_modal(
         context,
         |ui| {
             match confirmation.command {
+                PolicyRowCommand::MoveToScreensavers
+                | PolicyRowCommand::MoveToWallpapers => {
+                    let destination =
+                        match confirmation.command {
+                            PolicyRowCommand::MoveToScreensavers =>
+                                "/screensavers",
+
+                            PolicyRowCommand::MoveToWallpapers =>
+                                "/wallpapers",
+
+                            _ =>
+                                unreachable!(),
+                        };
+
+                    ui.label(
+                        format!(
+                            "Move this shader to {}:",
+                            destination,
+                        )
+                    );
+
+                    ui.add_space(6.0);
+
+                    ui.strong(
+                        &confirmation.row.filename
+                    );
+
+                    ui.add_space(8.0);
+
+                    ui.label(
+                        "Existing Screensaver and Wallpaper policy paths will be updated automatically."
+                    );
+                }
+
                 PolicyRowCommand::DeletePolicy => {
                     ui.label(
                         format!(

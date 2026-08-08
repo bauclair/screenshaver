@@ -331,6 +331,114 @@ pub fn policy_exists(
 }
 
 
+
+pub fn reconcile_shader_move(
+    config_path: &Path,
+    shader: &str,
+    destination_path: &Path,
+) -> Result<(), String> {
+
+    let shader =
+        normalized_shader_name(
+            shader
+        )?;
+
+    if !destination_path.is_absolute() {
+        return Err(
+            format!(
+                "Moved shader path must be absolute: {}",
+                destination_path.display(),
+            )
+        );
+    }
+
+    let mut document =
+        load_document(
+            config_path
+        )?;
+
+    let screensaver_managed_path =
+        crate::locate_paths::screensaver_shader_dir()
+            .join(
+                &shader
+            );
+
+    let wallpaper_managed_path =
+        crate::locate_paths::wallpaper_shader_dir()
+            .join(
+                &shader
+            );
+
+    for target in [
+        PolicyTarget::Screensaver,
+        PolicyTarget::Wallpaper,
+    ] {
+        let policy_exists =
+            policy_table(
+                &document,
+                target,
+            )?
+            .and_then(
+                |table| {
+                    matching_shader_key(
+                        table,
+                        &shader,
+                    )
+                }
+            )
+            .is_some();
+
+        if !policy_exists {
+            continue;
+        }
+
+        let managed_path =
+            match target {
+                PolicyTarget::Screensaver =>
+                    &screensaver_managed_path,
+
+                PolicyTarget::Wallpaper =>
+                    &wallpaper_managed_path,
+            };
+
+        if destination_path == managed_path {
+            set_source_path_metadata(
+                &mut document,
+                target,
+                &shader,
+                None,
+            )?;
+        } else {
+            let destination_text =
+                destination_path
+                    .to_str()
+                    .ok_or_else(
+                        || {
+                            format!(
+                                "Moved shader path is not valid UTF-8: {}",
+                                destination_path.display(),
+                            )
+                        }
+                    )?;
+
+            set_source_path_metadata(
+                &mut document,
+                target,
+                &shader,
+                Some(
+                    destination_text
+                ),
+            )?;
+        }
+    }
+
+    save_document(
+        config_path,
+        &document,
+    )
+}
+
+
 pub fn policy_source_path(
     config_path: &Path,
     target: PolicyTarget,

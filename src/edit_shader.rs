@@ -271,7 +271,7 @@ fn run_empty_session() -> Result<(), String> {
     let mut config =
         config_result.config;
 
-    let policy_display_rows =
+    let mut policy_display_rows =
         build_policy_display_rows(
             &config
         );
@@ -616,6 +616,93 @@ fn run_empty_session() -> Result<(), String> {
                 );
 
             break 'edit_session;
+        }
+
+
+        if let Some((
+            row,
+            command,
+        )) =
+            editor_output
+                .policy_row_command_requested
+                .as_ref()
+        {
+            if let Some(destination_target) =
+                policy_move_destination(
+                    *command
+                )
+            {
+                match move_policy_shader(
+                    &config,
+                    row,
+                    destination_target,
+                ) {
+                    Ok(destination_path) => {
+                        match crate::load_config::load_config(
+                            &crate::locate_paths::config_path()
+                        ) {
+                            Ok(reloaded_config) => {
+                                config =
+                                    reloaded_config.config;
+
+                                policy_display_rows =
+                                    build_policy_display_rows(
+                                        &config
+                                    );
+
+                                edit_window.set_status_message(
+                                    format!(
+                                        "Shader moved to {}.",
+                                        destination_path
+                                            .parent()
+                                            .map(
+                                                |path| path.display().to_string()
+                                            )
+                                            .unwrap_or_default(),
+                                    )
+                                );
+
+                                log_information(
+                                    &format!(
+                                        "[EDIT_SHADER] Moved shader {} to {}",
+                                        row.filename,
+                                        destination_path.display(),
+                                    )
+                                );
+                            }
+
+                            Err(error) => {
+                                edit_window.set_status_message(
+                                    "Shader moved; configuration reload failed."
+                                );
+
+                                log_warning(
+                                    &format!(
+                                        "[EDIT_SHADER] Shader moved, but configuration reload failed: {}",
+                                        error,
+                                    )
+                                );
+                            }
+                        }
+                    }
+
+                    Err(error) => {
+                        edit_window.set_status_message(
+                            error.clone()
+                        );
+
+                        log_warning(
+                            &format!(
+                                "[EDIT_SHADER] Unable to move shader {}: {}",
+                                row.filename,
+                                error,
+                            )
+                        );
+                    }
+                }
+
+                continue;
+            }
         }
 
 
@@ -3493,6 +3580,88 @@ fn run_paths(
                     .as_ref()
             {
                 match command {
+                    crate::editor_layout::PolicyRowCommand::MoveToScreensavers
+                    | crate::editor_layout::PolicyRowCommand::MoveToWallpapers => {
+                        let Some(destination_target) =
+                            policy_move_destination(
+                                *command
+                            )
+                        else {
+                            unreachable!();
+                        };
+
+                        match move_policy_shader(
+                            &config,
+                            row,
+                            destination_target,
+                        ) {
+                            Ok(destination_path) => {
+                                match crate::load_config::load_config(
+                                    &crate::locate_paths::config_path()
+                                ) {
+                                    Ok(reloaded_config) => {
+                                        config =
+                                            reloaded_config.config;
+
+                                        policy_display_rows =
+                                            build_policy_display_rows(
+                                                &config
+                                            );
+
+                                        edit_window.set_status_message(
+                                            format!(
+                                                "Shader moved to {}.",
+                                                destination_path
+                                                    .parent()
+                                                    .map(
+                                                        |path| path.display().to_string()
+                                                    )
+                                                    .unwrap_or_default(),
+                                            )
+                                        );
+
+                                        log_information(
+                                            &format!(
+                                                "[EDIT_SHADER] Moved shader {} to {}",
+                                                row.filename,
+                                                destination_path.display(),
+                                            )
+                                        );
+                                    }
+
+                                    Err(error) => {
+                                        edit_window.set_status_message(
+                                            "Shader moved; configuration reload failed."
+                                        );
+
+                                        log_warning(
+                                            &format!(
+                                                "[EDIT_SHADER] Shader moved, but configuration reload failed: {}",
+                                                error,
+                                            )
+                                        );
+                                    }
+                                }
+                            }
+
+                            Err(error) => {
+                                edit_window.set_status_message(
+                                    error.clone()
+                                );
+
+                                log_warning(
+                                    &format!(
+                                        "[EDIT_SHADER] Unable to move shader {}: {}",
+                                        row.filename,
+                                        error,
+                                    )
+                                );
+                            }
+                        }
+
+                        continue;
+                    }
+
                     crate::editor_layout::PolicyRowCommand::DeletePolicy => {
                         let manage_target =
                             match row.policy_target {
@@ -3930,6 +4099,154 @@ fn paths_refer_to_same_shader(
             loaded_path
                 == managed_path
         }
+    }
+}
+
+
+
+fn move_policy_shader(
+    config: &crate::load_config::Config,
+    row: &crate::editor_layout::PolicyRowReference,
+    destination_target: crate::editor_layout::PolicyTarget,
+) -> Result<PathBuf, String> {
+
+    let source_path =
+        resolve_policy_shader_path(
+            config,
+            row.policy_target,
+            &row.filename,
+        );
+
+    if !source_path.is_file() {
+        return Err(
+            format!(
+                "Shader file is unavailable: {}",
+                source_path.display(),
+            )
+        );
+    }
+
+    let destination_directory =
+        match destination_target {
+            crate::editor_layout::PolicyTarget::Screensaver =>
+                crate::locate_paths::screensaver_shader_dir(),
+
+            crate::editor_layout::PolicyTarget::Wallpaper =>
+                crate::locate_paths::wallpaper_shader_dir(),
+        };
+
+    std::fs::create_dir_all(
+        &destination_directory
+    )
+    .map_err(
+        |error| {
+            format!(
+                "Unable to create destination directory {} ({})",
+                destination_directory.display(),
+                error,
+            )
+        }
+    )?;
+
+    let destination_path =
+        destination_directory
+            .join(
+                &row.filename
+            );
+
+    if source_path == destination_path {
+        return Ok(
+            destination_path
+        );
+    }
+
+    if destination_path.exists() {
+        return Err(
+            format!(
+                "Shader already exists in {}.",
+                match destination_target {
+                    crate::editor_layout::PolicyTarget::Screensaver =>
+                        "/screensavers",
+
+                    crate::editor_layout::PolicyTarget::Wallpaper =>
+                        "/wallpapers",
+                }
+            )
+        );
+    }
+
+    std::fs::rename(
+        &source_path,
+        &destination_path,
+    )
+    .map_err(
+        |error| {
+            format!(
+                "Unable to move shader from {} to {} ({})",
+                source_path.display(),
+                destination_path.display(),
+                error,
+            )
+        }
+    )?;
+
+    let config_path =
+        crate::locate_paths::config_path();
+
+    if let Err(error) =
+        crate::manage_policies::reconcile_shader_move(
+            &config_path,
+            &row.filename,
+            &destination_path,
+        )
+    {
+        let rollback_result =
+            std::fs::rename(
+                &destination_path,
+                &source_path,
+            );
+
+        return Err(
+            match rollback_result {
+                Ok(()) =>
+                    format!(
+                        "Shader move was rolled back because policy paths could not be updated: {}",
+                        error,
+                    ),
+
+                Err(rollback_error) =>
+                    format!(
+                        "Policy paths could not be updated after moving the shader: {}. Rollback also failed: {}",
+                        error,
+                        rollback_error,
+                    ),
+            }
+        );
+    }
+
+    Ok(
+        destination_path
+    )
+}
+
+
+fn policy_move_destination(
+    command: crate::editor_layout::PolicyRowCommand,
+) -> Option<crate::editor_layout::PolicyTarget> {
+
+    match command {
+        crate::editor_layout::PolicyRowCommand::MoveToScreensavers =>
+            Some(
+                crate::editor_layout::PolicyTarget::Screensaver
+            ),
+
+        crate::editor_layout::PolicyRowCommand::MoveToWallpapers =>
+            Some(
+                crate::editor_layout::PolicyTarget::Wallpaper
+            ),
+
+        _ =>
+            None,
     }
 }
 
