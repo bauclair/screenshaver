@@ -17,6 +17,7 @@ mod delete_cache;
 mod query_session;
 mod session_backend;
 
+mod manage_configuration;
 mod manage_shader;
 mod manage_textures;
 mod manage_policies;
@@ -179,6 +180,7 @@ let runtime_logfile =
         | crate::parse_arguments::Command::Start
         | crate::parse_arguments::Command::PreviewTexture { .. }
         | crate::parse_arguments::Command::PreviewShader { .. }
+        | crate::parse_arguments::Command::Control { .. }
         | crate::parse_arguments::Command::EditShader { .. }
         | crate::parse_arguments::Command::DeleteCache => {
 
@@ -478,6 +480,43 @@ crate::parse_arguments::Command::PreviewShader {
                     logfile,
                     &format!(
                         "[PREVIEW_SHADER] {}",
+                        error,
+                    ),
+                );
+            }
+        }
+    }
+
+
+    return;
+}
+
+
+crate::parse_arguments::Command::Control {
+    shader_name,
+} => {
+
+    match crate::edit_shader::run(
+        shader_name
+    ) {
+
+        Ok(()) => {}
+
+        Err(error) => {
+
+            eprintln!(
+                "[CONTROL CENTER] {}",
+                error
+            );
+
+
+            if let Some(logfile) =
+                runtime_logfile.as_ref()
+            {
+                crate::logger::error(
+                    logfile,
+                    &format!(
+                        "[CONTROL_CENTER] {}",
                         error,
                     ),
                 );

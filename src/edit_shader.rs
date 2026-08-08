@@ -204,6 +204,7 @@ pub fn run(
                 None,
                 None,
                 EditorTargetRestriction::Unrestricted,
+                None,
             )
         }
 
@@ -233,6 +234,9 @@ pub fn run_wallpaper_only(
         None,
         None,
         EditorTargetRestriction::WallpaperOnly,
+        Some(
+            crate::editor_layout::PolicyTarget::Wallpaper
+        ),
     )
 }
 
@@ -248,13 +252,32 @@ pub fn run_screensaver_only(
         None,
         None,
         EditorTargetRestriction::ScreensaverOnly,
+        Some(
+            crate::editor_layout::PolicyTarget::Screensaver
+        ),
     )
 }
 
 fn run_empty_session() -> Result<(), String> {
 
-    let _wallpaper_pause_guard =
+    let wallpaper_pause_guard =
         crate::control_wallpaper::WallpaperPauseGuard::acquire();
+
+    let config_result =
+        crate::load_config::load_config(
+            &crate::locate_paths::config_path()
+        )?;
+
+    let mut config =
+        config_result.config;
+
+    let policy_display_rows =
+        build_policy_display_rows(
+            &config
+        );
+
+    let mut recent_shader_paths =
+        load_recent_shader_paths();
 
 
     let sdl =
@@ -299,7 +322,7 @@ fn run_empty_session() -> Result<(), String> {
     let mut window =
         video
             .window(
-                "Screenshaver Shader Policy Editor",
+                "Screenshaver Control Center",
                 0,
                 0,
             )
@@ -371,6 +394,16 @@ fn run_empty_session() -> Result<(), String> {
             )?;
 
 
+    let mut policy_open_request:
+        Option<(
+            PathBuf,
+            Option<
+                crate::editor_layout::PolicyTarget
+            >,
+        )> =
+        None;
+
+
     'edit_session: loop {
 
         for event in
@@ -432,10 +465,324 @@ fn run_empty_session() -> Result<(), String> {
                 false,
                 false,
                 false,
-                &[],
+                &recent_shader_paths,
                 None,
-                &[],
+                &policy_display_rows,
+                Some(&config),
             );
+
+        if editor_output.control_configuration_save_requested {
+            if let Some(control_configuration) =
+                editor_output.control_configuration.as_ref()
+            {
+                match save_control_configuration(
+                    control_configuration,
+                ) {
+                    Ok(reloaded_config) => {
+                        config =
+                            reloaded_config;
+
+                        edit_window.accept_control_configuration();
+
+                        edit_window.set_status_message(
+                            "Configuration saved."
+                        );
+
+                        log_information(
+                            "[EDIT_SHADER] Configuration saved from empty Control Center session"
+                        );
+                    }
+
+                    Err(error) => {
+                        edit_window.set_status_message(
+                            "Configuration save failed."
+                        );
+
+                        log_warning(
+                            &format!(
+                                "[EDIT_SHADER] Unable to save configuration: {}",
+                                error,
+                            )
+                        );
+                    }
+                }
+            }
+        }
+
+
+        let recent_selected_path =
+            editor_output.recent_shader_requested
+                .and_then(
+                    |index| {
+                        recent_shader_paths
+                            .get(index)
+                            .cloned()
+                    }
+                );
+
+
+        if editor_output.browse_shader_requested
+            || recent_selected_path.is_some()
+        {
+            let selected_path =
+                if editor_output.browse_shader_requested {
+                    let starting_directory =
+                        crate::locate_paths::screensaver_shader_dir();
+
+                    let selected_path =
+                        rfd::FileDialog::new()
+                            .add_filter(
+                                "GL shader files",
+                                &[
+                                    "glsl",
+                                    "fs",
+                                ],
+                            )
+                            .set_directory(
+                                &starting_directory
+                            )
+                            .pick_file();
+
+                    if let Err(error) =
+                        restore_editor_fullscreen(
+                            &mut window
+                        )
+                    {
+                        log_warning(
+                            &format!(
+                                "[EDIT_SHADER] Immediate fullscreen restoration failed: {}",
+                                error,
+                            )
+                        );
+                    }
+
+                    selected_path
+                } else {
+                    recent_selected_path
+                };
+
+
+            let Some(selected_path) =
+                selected_path
+            else {
+                edit_window.set_status_message(
+                    "Shader loading canceled."
+                );
+
+                continue;
+            };
+
+
+            if !selected_path.is_file() {
+                recent_shader_paths.retain(
+                    |path| {
+                        path != &selected_path
+                    }
+                );
+
+                let _ =
+                    save_recent_shader_paths(
+                        &recent_shader_paths
+                    );
+
+                edit_window.set_status_message(
+                    format!(
+                        "Shader file no longer exists: {}",
+                        selected_path.display(),
+                    )
+                );
+
+                continue;
+            }
+
+
+            promote_recent_shader_path(
+                &mut recent_shader_paths,
+                selected_path.clone(),
+            );
+
+            let _ =
+                save_recent_shader_paths(
+                    &recent_shader_paths
+                );
+
+
+            policy_open_request =
+                Some(
+                    (
+                        selected_path,
+                        None,
+                    )
+                );
+
+            break 'edit_session;
+        }
+
+
+        if let Some((
+            row,
+            command,
+        )) =
+            editor_output
+                .policy_row_command_requested
+                .as_ref()
+                .filter(
+                    |(
+                        _row,
+                        command,
+                    )| {
+                        matches!(
+                            *command,
+                            crate::editor_layout::PolicyRowCommand::Edit
+                                | crate::editor_layout::PolicyRowCommand::RefreshShader
+                        )
+                    }
+                )
+        {
+            let selected_path =
+                resolve_policy_shader_path(
+                    &config,
+                    row.policy_target,
+                    &row.filename,
+                );
+
+
+            if !selected_path.is_file() {
+                edit_window.set_status_message(
+                    format!(
+                        "Policy shader file is unavailable: {}",
+                        selected_path.display(),
+                    )
+                );
+
+                continue;
+            }
+
+
+            policy_open_request =
+                Some(
+                    (
+                        selected_path,
+                        Some(
+                            row.policy_target
+                        ),
+                    )
+                );
+
+            break 'edit_session;
+        }
+
+
+        if let Some((
+            target,
+            index,
+        )) =
+            editor_output.control_single_recent_requested
+        {
+            if let Some(path) =
+                recent_shader_paths
+                    .get(index)
+            {
+                if let Some(filename) =
+                    path.file_name()
+                        .and_then(
+                            |name| {
+                                name.to_str()
+                            }
+                        )
+                {
+                    edit_window.set_control_single_filename(
+                        target,
+                        filename,
+                    );
+
+                    edit_window.set_status_message(
+                        "Single shader selected."
+                    );
+                }
+            }
+        }
+
+
+        if let Some(target) =
+            editor_output.control_single_browse_requested
+        {
+            let starting_directory =
+                match target {
+                    crate::editor_layout::PolicyTarget::Screensaver => {
+                        crate::locate_paths::screensaver_shader_dir()
+                    }
+
+                    crate::editor_layout::PolicyTarget::Wallpaper => {
+                        crate::locate_paths::wallpaper_shader_dir()
+                    }
+                };
+
+            let selected_path =
+                rfd::FileDialog::new()
+                    .add_filter(
+                        "GL shader files",
+                        &[
+                            "glsl",
+                            "fs",
+                        ],
+                    )
+                    .set_directory(
+                        &starting_directory
+                    )
+                    .pick_file();
+
+            if let Some(selected_path) =
+                selected_path
+            {
+                if let Some(filename) =
+                    selected_path
+                        .file_name()
+                        .and_then(
+                            |name| {
+                                name.to_str()
+                            }
+                        )
+                {
+                    edit_window.set_control_single_filename(
+                        target,
+                        filename,
+                    );
+
+                    promote_recent_shader_path(
+                        &mut recent_shader_paths,
+                        selected_path.clone(),
+                    );
+
+                    let _ =
+                        save_recent_shader_paths(
+                            &recent_shader_paths
+                        );
+
+                    edit_window.set_status_message(
+                        "Single shader selected."
+                    );
+                }
+            } else {
+                edit_window.set_status_message(
+                    "Shader selection canceled."
+                );
+            }
+
+            if let Err(error) =
+                restore_editor_fullscreen(
+                    &mut window
+                )
+            {
+                log_warning(
+                    &format!(
+                        "[EDIT_SHADER] Immediate fullscreen restoration failed: {}",
+                        error,
+                    )
+                );
+            }
+        }
+
 
         if !editor_output.window_open {
             break 'edit_session;
@@ -453,9 +800,58 @@ fn run_empty_session() -> Result<(), String> {
     edit_window.destroy();
 
 
+    // The empty Control Center session owns SDL's single EventPump.
+    // Drop it, along with the empty-session window/context objects,
+    // before starting a shader-loaded Control Center session.
+    drop(
+        event_pump
+    );
+
+
     drop(
         gl_context
     );
+
+
+    drop(
+        window
+    );
+
+
+    drop(
+        video
+    );
+
+
+    drop(
+        sdl
+    );
+
+
+    drop(
+        wallpaper_pause_guard
+    );
+
+
+    if let Some((
+        shader_path,
+        policy_target,
+    )) =
+        policy_open_request
+    {
+        return run_paths(
+            vec![
+                shader_path
+            ],
+            None,
+            None,
+            None,
+            None,
+            None,
+            EditorTargetRestriction::Unrestricted,
+            policy_target,
+        );
+    }
 
 
     Ok(())
@@ -473,7 +869,7 @@ fn restore_editor_fullscreen(
         .map_err(
             |error| {
                 format!(
-                    "Unable to restore Shader Policy Editor fullscreen state: {}",
+                    "Unable to restore Screenshaver Control Center fullscreen state: {}",
                     error,
                 )
             }
@@ -516,6 +912,10 @@ fn run_paths(
     command_line_fps: Option<u32>,
     animation_speed: Option<f32>,
     target_restriction: EditorTargetRestriction,
+    requested_initial_target:
+        Option<
+            crate::editor_layout::PolicyTarget
+        >,
 ) -> Result<(), String> {
 
     if shader_paths.is_empty() {
@@ -576,7 +976,9 @@ fn run_paths(
 
 
     let mut screensaver_target_available =
-        target_shader_path(
+        target_restriction
+            == EditorTargetRestriction::Unrestricted
+        || target_shader_path(
             crate::editor_layout::PolicyTarget::Screensaver,
             &shader_name_hint,
         )
@@ -584,7 +986,9 @@ fn run_paths(
 
 
     let mut wallpaper_target_available =
-        target_shader_path(
+        target_restriction
+            == EditorTargetRestriction::Unrestricted
+        || target_shader_path(
             crate::editor_layout::PolicyTarget::Wallpaper,
             &shader_name_hint,
         )
@@ -602,16 +1006,25 @@ fn run_paths(
     }
 
 
+    let initial_shader_path =
+        shader_paths
+            .first()
+            .expect(
+                "shader_paths was checked for emptiness"
+            );
+
+
     let mut screensaver_policy_exists =
         screensaver_target_available
             && config.screensaver_policies
             .iter()
             .any(
                 |policy| {
-                    policy.shader
-                        .eq_ignore_ascii_case(
-                            &shader_name_hint
-                        )
+                    policy_applies_to_path(
+                        policy,
+                        crate::editor_layout::PolicyTarget::Screensaver,
+                        initial_shader_path,
+                    )
                 }
             );
 
@@ -622,16 +1035,25 @@ fn run_paths(
             .iter()
             .any(
                 |policy| {
-                    policy.shader
-                        .eq_ignore_ascii_case(
-                            &shader_name_hint
-                        )
+                    policy_applies_to_path(
+                        policy,
+                        crate::editor_layout::PolicyTarget::Wallpaper,
+                        initial_shader_path,
+                    )
                 }
             );
 
 
     let initial_editor_target =
-        if target_restriction
+        if let Some(
+            requested_initial_target
+        ) =
+            requested_initial_target
+        {
+            Some(
+                requested_initial_target
+            )
+        } else if target_restriction
             == EditorTargetRestriction::WallpaperOnly
         {
             Some(
@@ -815,7 +1237,7 @@ fn run_paths(
     let mut window =
         video
             .window(
-                "Screenshaver Shader Policy Editor",
+                "Screenshaver Control Center",
                 0,
                 0,
             )
@@ -1516,10 +1938,170 @@ fn run_paths(
                         &shader_information
                     ),
                     &policy_display_rows,
+                    Some(&config),
                 );
+
+            if editor_output.control_configuration_save_requested {
+                if let Some(control_configuration) =
+                    editor_output.control_configuration.as_ref()
+                {
+                    match save_control_configuration(
+                        control_configuration,
+                    ) {
+                        Ok(reloaded_config) => {
+                            config =
+                                reloaded_config;
+
+                            policy_display_rows =
+                                build_policy_display_rows(
+                                    &config
+                                );
+
+                            edit_window.accept_control_configuration();
+
+                            edit_window.set_status_message(
+                                "Configuration saved."
+                            );
+
+                            log_information(
+                                "[EDIT_SHADER] Configuration saved from Control Center"
+                            );
+                        }
+
+                        Err(error) => {
+                            edit_window.set_status_message(
+                                "Configuration save failed."
+                            );
+
+                            log_warning(
+                                &format!(
+                                    "[EDIT_SHADER] Unable to save configuration: {}",
+                                    error,
+                                )
+                            );
+                        }
+                    }
+                }
+            }
 
             if !editor_output.window_open {
                 break 'preview Ok(());
+            }
+
+
+            if let Some((
+                target,
+                index,
+            )) =
+                editor_output.control_single_recent_requested
+            {
+                if let Some(path) =
+                    recent_shader_paths
+                        .get(index)
+                {
+                    if let Some(filename) =
+                        path.file_name()
+                            .and_then(
+                                |name| {
+                                    name.to_str()
+                                }
+                            )
+                    {
+                        edit_window.set_control_single_filename(
+                            target,
+                            filename,
+                        );
+
+                        edit_window.set_status_message(
+                            "Single shader selected."
+                        );
+                    }
+                }
+            }
+
+
+            if let Some(target) =
+                editor_output.control_single_browse_requested
+            {
+                let starting_directory =
+                    match target {
+                        crate::editor_layout::PolicyTarget::Screensaver => {
+                            crate::locate_paths::screensaver_shader_dir()
+                        }
+
+                        crate::editor_layout::PolicyTarget::Wallpaper => {
+                            crate::locate_paths::wallpaper_shader_dir()
+                        }
+                    };
+
+                let selected_path =
+                    rfd::FileDialog::new()
+                        .add_filter(
+                            "GL shader files",
+                            &[
+                                "glsl",
+                                "fs",
+                            ],
+                        )
+                        .set_directory(
+                            &starting_directory
+                        )
+                        .pick_file();
+
+                if let Some(selected_path) =
+                    selected_path
+                {
+                    if let Some(filename) =
+                        selected_path
+                            .file_name()
+                            .and_then(
+                                |name| {
+                                    name.to_str()
+                                }
+                            )
+                    {
+                        edit_window.set_control_single_filename(
+                            target,
+                            filename,
+                        );
+
+                        promote_recent_shader_path(
+                        &mut recent_shader_paths,
+                        selected_path.clone(),
+                    );
+
+                        let _ =
+                            save_recent_shader_paths(
+                                &recent_shader_paths
+                            );
+
+                        edit_window.set_status_message(
+                            "Single shader selected."
+                        );
+                    }
+                } else {
+                    edit_window.set_status_message(
+                        "Shader selection canceled."
+                    );
+                }
+
+                if let Err(error) =
+                    restore_editor_fullscreen(
+                        &mut window
+                    )
+                {
+                    log_warning(
+                        &format!(
+                            "[EDIT_SHADER] Immediate fullscreen restoration failed: {}",
+                            error,
+                        )
+                    );
+                }
+
+                fullscreen_restore_requested_at =
+                    Some(
+                        Instant::now()
+                    );
             }
 
 
@@ -1597,7 +2179,8 @@ fn run_paths(
                             .as_ref()
                     {
                         Some(
-                            target_shader_path(
+                            resolve_policy_shader_path(
+                                &config,
                                 row.policy_target,
                                 &row.filename,
                             )
@@ -1660,23 +2243,32 @@ fn run_paths(
 
 
                 if !selected_path.is_file() {
-                    recent_shader_paths.retain(
-                        |path| {
-                            path != &selected_path
-                        }
-                    );
-
-                    let _ =
-                        save_recent_shader_paths(
-                            &recent_shader_paths
+                    if policy_row_open_request.is_some() {
+                        edit_window.set_status_message(
+                            format!(
+                                "Policy shader file is unavailable: {}",
+                                selected_path.display(),
+                            )
+                        );
+                    } else {
+                        recent_shader_paths.retain(
+                            |path| {
+                                path != &selected_path
+                            }
                         );
 
-                    edit_window.set_status_message(
-                        format!(
-                            "Recent shader file no longer exists: {}",
-                            selected_path.display(),
-                        )
-                    );
+                        let _ =
+                            save_recent_shader_paths(
+                                &recent_shader_paths
+                            );
+
+                        edit_window.set_status_message(
+                            format!(
+                                "Recent shader file no longer exists: {}",
+                                selected_path.display(),
+                            )
+                        );
+                    }
 
                     continue;
                 };
@@ -1692,14 +2284,18 @@ fn run_paths(
                         .to_string();
 
                 let mut new_screensaver_target_available =
-                    target_shader_path(
+                    target_restriction
+                        == EditorTargetRestriction::Unrestricted
+                    || target_shader_path(
                         crate::editor_layout::PolicyTarget::Screensaver,
                         &selected_shader_name,
                     )
                     .is_file();
 
                 let mut new_wallpaper_target_available =
-                    target_shader_path(
+                    target_restriction
+                        == EditorTargetRestriction::Unrestricted
+                    || target_shader_path(
                         crate::editor_layout::PolicyTarget::Wallpaper,
                         &selected_shader_name,
                     )
@@ -1721,10 +2317,11 @@ fn run_paths(
                         .iter()
                         .any(
                             |policy| {
-                                policy.shader
-                                    .eq_ignore_ascii_case(
-                                        &selected_shader_name
-                                    )
+                                policy_applies_to_path(
+                                    policy,
+                                    crate::editor_layout::PolicyTarget::Screensaver,
+                                    &selected_path,
+                                )
                             }
                         );
 
@@ -1734,10 +2331,11 @@ fn run_paths(
                         .iter()
                         .any(
                             |policy| {
-                                policy.shader
-                                    .eq_ignore_ascii_case(
-                                        &selected_shader_name
-                                    )
+                                policy_applies_to_path(
+                                    policy,
+                                    crate::editor_layout::PolicyTarget::Wallpaper,
+                                    &selected_path,
+                                )
                             }
                         );
 
@@ -2756,24 +3354,44 @@ fn run_paths(
                 let config_path =
                     crate::locate_paths::config_path();
 
+                let managed_target_path =
+                    target_shader_path(
+                        policy_target,
+                        &active.shader_name,
+                    );
+
+                let external_source_path =
+                    if paths_refer_to_same_shader(
+                        &active.path,
+                        &managed_target_path,
+                    ) {
+                        None
+                    } else {
+                        Some(
+                            active.path.as_path()
+                        )
+                    };
+
                 let save_result =
                     if crate::manage_policies::policy_exists(
                         &config_path,
                         manage_target,
                         &active.shader_name,
                     )? {
-                        crate::manage_policies::replace_policy(
+                        crate::manage_policies::replace_policy_with_source_path(
                             &config_path,
                             manage_target,
                             &active.shader_name,
                             properties,
+                            external_source_path,
                         )
                     } else {
-                        crate::manage_policies::add_policy(
+                        crate::manage_policies::add_policy_with_source_path(
                             &config_path,
                             manage_target,
                             &active.shader_name,
                             properties,
+                            external_source_path,
                         )
                     };
 
@@ -2997,7 +3615,8 @@ fn run_paths(
                             };
 
                         let shader_path =
-                            target_shader_path(
+                            resolve_policy_shader_path(
+                                &config,
                                 row.policy_target,
                                 &row.filename,
                             );
@@ -3187,6 +3806,134 @@ fn run_paths(
 
 
 
+
+fn resolved_shader_policy_path(
+    policy: &crate::load_config::ShaderPolicy,
+    target: crate::editor_layout::PolicyTarget,
+) -> PathBuf {
+
+    policy.source_path
+        .clone()
+        .unwrap_or_else(
+            || {
+                target_shader_path(
+                    target,
+                    &policy.shader,
+                )
+            }
+        )
+}
+
+
+fn resolve_policy_shader_path(
+    config: &crate::load_config::Config,
+    target: crate::editor_layout::PolicyTarget,
+    shader_name: &str,
+) -> PathBuf {
+
+    let policies =
+        match target {
+            crate::editor_layout::PolicyTarget::Screensaver => {
+                &config.screensaver_policies
+            }
+
+            crate::editor_layout::PolicyTarget::Wallpaper => {
+                &config.wallpaper_policies
+            }
+        };
+
+
+    policies
+        .iter()
+        .find(
+            |policy| {
+                policy.shader
+                    .eq_ignore_ascii_case(
+                        shader_name
+                    )
+            }
+        )
+        .map(
+            |policy| {
+                resolved_shader_policy_path(
+                    policy,
+                    target,
+                )
+            }
+        )
+        .unwrap_or_else(
+            || {
+                target_shader_path(
+                    target,
+                    shader_name,
+                )
+            }
+        )
+}
+
+
+fn policy_applies_to_path(
+    policy: &crate::load_config::ShaderPolicy,
+    target: crate::editor_layout::PolicyTarget,
+    loaded_path: &Path,
+) -> bool {
+
+    let Some(loaded_name) =
+        loaded_path
+            .file_name()
+            .and_then(
+                |name| {
+                    name.to_str()
+                }
+            )
+    else {
+        return false;
+    };
+
+
+    if !policy.shader
+        .eq_ignore_ascii_case(
+            loaded_name
+        )
+    {
+        return false;
+    }
+
+
+    paths_refer_to_same_shader(
+        loaded_path,
+        &resolved_shader_policy_path(
+            policy,
+            target,
+        ),
+    )
+}
+
+fn paths_refer_to_same_shader(
+    loaded_path: &Path,
+    managed_path: &Path,
+) -> bool {
+
+    match (
+        loaded_path.canonicalize(),
+        managed_path.canonicalize(),
+    ) {
+        (
+            Ok(loaded_path),
+            Ok(managed_path),
+        ) => {
+            loaded_path
+                == managed_path
+        }
+
+        _ => {
+            loaded_path
+                == managed_path
+        }
+    }
+}
+
+
 fn target_shader_path(
     target: crate::editor_layout::PolicyTarget,
     shader_name: &str,
@@ -3237,7 +3984,9 @@ fn resolve_information_path(
         };
 
 
-    if target_path.is_file() {
+    if loaded_path.is_file() {
+        loaded_path.to_path_buf()
+    } else if target_path.is_file() {
         target_path
     } else {
         loaded_path.to_path_buf()
@@ -3328,20 +4077,37 @@ fn describe_shader_type(
 fn build_policy_display_rows(
     config: &crate::load_config::Config,
 ) -> Vec<crate::editor_layout::PolicyDisplayRow> {
+
     let mut rows =
         Vec::with_capacity(
             config.screensaver_policies.len()
                 + config.wallpaper_policies.len()
         );
 
+
     rows.extend(
         config.screensaver_policies
             .iter()
             .map(
                 |policy| {
+                    let resolved_path =
+                        resolved_shader_policy_path(
+                            policy,
+                            crate::editor_layout::PolicyTarget::Screensaver,
+                        );
+
+
                     crate::editor_layout::PolicyDisplayRow {
                         filename:
                             policy.shader.clone(),
+
+                        full_path:
+                            resolved_path
+                                .display()
+                                .to_string(),
+
+                        accessible:
+                            resolved_path.is_file(),
 
                         texture:
                             policy.shader_texture.is_some(),
@@ -3353,14 +4119,30 @@ fn build_policy_display_rows(
             )
     );
 
+
     rows.extend(
         config.wallpaper_policies
             .iter()
             .map(
                 |policy| {
+                    let resolved_path =
+                        resolved_shader_policy_path(
+                            policy,
+                            crate::editor_layout::PolicyTarget::Wallpaper,
+                        );
+
+
                     crate::editor_layout::PolicyDisplayRow {
                         filename:
                             policy.shader.clone(),
+
+                        full_path:
+                            resolved_path
+                                .display()
+                                .to_string(),
+
+                        accessible:
+                            resolved_path.is_file(),
 
                         texture:
                             policy.shader_texture.is_some(),
@@ -3372,9 +4154,9 @@ fn build_policy_display_rows(
             )
     );
 
+
     rows
 }
-
 
 fn resolve_preview_fps(
     global_rendered_fps: u32,
@@ -4154,6 +4936,201 @@ fn discard_startup_input(
             )
         );
     }
+}
+
+
+fn save_control_configuration(
+    control:
+        &crate::editor_layout::ControlConfiguration,
+) -> Result<crate::load_config::Config, String> {
+
+    fn parse_global_texture(
+        value: &str,
+    ) -> Result<
+        Option<
+            crate::parse_texture_specification::TextureSpecification
+        >,
+        String,
+    > {
+        let normalized =
+            value
+                .trim()
+                .to_ascii_lowercase();
+
+        if normalized.is_empty()
+            || normalized == "random"
+        {
+            return Ok(
+                None
+            );
+        }
+
+        crate::parse_texture_specification::parse_texture_specification(
+            &normalized
+        )
+        .map(
+            Some
+        )
+    }
+
+
+    fn parse_global_palette(
+        value: &str,
+    ) -> Result<
+        Option<
+            crate::palettes::Palette
+        >,
+        String,
+    > {
+        let normalized =
+            value
+                .trim()
+                .to_ascii_lowercase();
+
+        if normalized.is_empty()
+            || normalized == "random"
+        {
+            return Ok(
+                None
+            );
+        }
+
+        crate::palettes::Palette::from_name(
+            &normalized
+        )
+        .map(
+            Some
+        )
+    }
+
+
+    fn build_mode(
+        display: &str,
+        interval_seconds: u64,
+        single_filename: &str,
+    ) -> Result<String, String> {
+
+        match display
+            .trim()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "ordered" => {
+                crate::manage_configuration::format_rotation_mode(
+                    crate::manage_configuration::RotationMode::Ordered,
+                    interval_seconds,
+                )
+            }
+
+            "random" => {
+                crate::manage_configuration::format_rotation_mode(
+                    crate::manage_configuration::RotationMode::Random,
+                    interval_seconds,
+                )
+            }
+            "single" => {
+                let filename =
+                    single_filename
+                        .trim();
+
+                if filename.is_empty() {
+                    Err(
+                        "Single display mode requires a shader filename."
+                            .to_string()
+                    )
+                } else {
+                    Ok(
+                        format!(
+                            "single:{}",
+                            filename,
+                        )
+                    )
+                }
+            }
+
+            other => {
+                Err(
+                    format!(
+                        "Unsupported display mode '{}'.",
+                        other,
+                    )
+                )
+            }
+        }
+    }
+
+
+    let updates =
+        crate::manage_configuration::ConfigurationUpdates {
+            screensaver_enabled:
+                control.screensaver_enabled,
+
+            subtitles:
+                control.subtitles,
+
+            screensaver_mode:
+                build_mode(
+                    &control.screensaver_display,
+                    control.screensaver_interval_seconds,
+                    &control.screensaver_single_filename,
+                )?,
+
+            idle_timeout:
+                control.idle_timeout.clone(),
+
+            screensaver_global_texture:
+                parse_global_texture(
+                    &control.screensaver_global_texture
+                )?,
+
+            screensaver_global_palette:
+                parse_global_palette(
+                    &control.screensaver_global_palette
+                )?,
+
+            wallpaper_enabled:
+                control.wallpaper_enabled,
+
+            notifications:
+                control.notifications,
+
+            wallpaper_mode:
+                build_mode(
+                    &control.wallpaper_display,
+                    control.wallpaper_interval_seconds,
+                    &control.wallpaper_single_filename,
+                )?,
+
+            wallpaper_global_texture:
+                parse_global_texture(
+                    &control.wallpaper_global_texture
+                )?,
+
+            wallpaper_global_palette:
+                parse_global_palette(
+                    &control.wallpaper_global_palette
+                )?,
+        };
+
+
+    let config_path =
+        crate::locate_paths::config_path();
+
+
+    crate::manage_configuration::save_configuration(
+        &config_path,
+        &updates,
+    )?;
+
+
+    crate::load_config::load_config(
+        &config_path
+    )
+    .map(
+        |result| {
+            result.config
+        }
+    )
 }
 
 

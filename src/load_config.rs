@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 
 //
@@ -187,6 +187,24 @@ struct RawToml {
         BTreeMap<String, String>,
 
     #[serde(default)]
+    screensaver_external_paths:
+        BTreeMap<String, String>,
+
+    #[serde(default)]
+    wallpaper_external_paths:
+        BTreeMap<String, String>,
+
+    // Transitional compatibility for the first external-path checkpoint.
+    // New writes use *_external_paths exclusively.
+    #[serde(default)]
+    screensaver_shader_paths:
+        BTreeMap<String, String>,
+
+    #[serde(default)]
+    wallpaper_shader_paths:
+        BTreeMap<String, String>,
+
+    #[serde(default)]
     postprocess: PostprocessSection,
 
     #[serde(default)]
@@ -212,6 +230,12 @@ pub struct ShaderPolicy {
 
     pub shader:
         String,
+
+    // None means the shader uses the normal managed directory for
+    // its policy target. Some(path) identifies an explicitly
+    // configured shader stored outside the managed directory.
+    pub source_path:
+        Option<PathBuf>,
 
     pub shader_texture:
         Option<
@@ -817,9 +841,24 @@ pub fn load_config(
         )?;
 
 
+    let screensaver_external_paths =
+        merge_external_path_tables(
+            raw.screensaver_shader_paths,
+            raw.screensaver_external_paths,
+        );
+
+
+    let wallpaper_external_paths =
+        merge_external_path_tables(
+            raw.wallpaper_shader_paths,
+            raw.wallpaper_external_paths,
+        );
+
+
     let screensaver_policies =
         parse_policy_table(
             raw.screensaver_policies,
+            screensaver_external_paths,
             PolicyTarget::Screensaver,
         )?;
 
@@ -827,6 +866,7 @@ pub fn load_config(
     let wallpaper_policies =
         parse_policy_table(
             raw.wallpaper_policies,
+            wallpaper_external_paths,
             PolicyTarget::Wallpaper,
         )?;
 
@@ -1410,6 +1450,17 @@ impl PolicyTarget {
     }
 
 
+    fn path_table_name(
+        self,
+    ) -> &'static str {
+
+        match self {
+            Self::Screensaver => "screensaver_external_paths",
+            Self::Wallpaper => "wallpaper_external_paths",
+        }
+    }
+
+
     fn speed_range(
         self,
     ) -> (f32, f32) {
@@ -1428,8 +1479,56 @@ impl PolicyTarget {
 }
 
 
+
+fn merge_external_path_tables(
+    legacy_paths: BTreeMap<String, String>,
+    external_paths: BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
+
+    let mut merged =
+        legacy_paths;
+
+
+    for (
+        shader,
+        path,
+    ) in external_paths
+    {
+        let existing_key =
+            merged
+                .keys()
+                .find(
+                    |key| {
+                        key.eq_ignore_ascii_case(
+                            &shader
+                        )
+                    }
+                )
+                .cloned();
+
+
+        if let Some(existing_key) =
+            existing_key
+        {
+            merged.remove(
+                &existing_key
+            );
+        }
+
+
+        merged.insert(
+            shader,
+            path,
+        );
+    }
+
+
+    merged
+}
+
 fn parse_policy_table(
     raw_policies: BTreeMap<String, String>,
+    mut raw_shader_paths: BTreeMap<String, String>,
     target: PolicyTarget,
 ) -> Result<Vec<ShaderPolicy>, String> {
 
@@ -1456,9 +1555,18 @@ fn parse_policy_table(
         }
 
 
+        let source_path =
+            take_policy_source_path(
+                &mut raw_shader_paths,
+                &shader,
+                target,
+            )?;
+
+
         policies.push(
             parse_policy_specification(
                 shader,
+                source_path,
                 &specification,
                 target,
             )?
@@ -1466,12 +1574,96 @@ fn parse_policy_table(
     }
 
 
+    // Path entries without matching policies are intentionally inert.
+    // This keeps configuration loading tolerant of stale hand-edited
+    // metadata while preserving the rule that an external shader cannot
+    // enter normal operation without an actual policy.
     Ok(policies)
 }
 
 
+fn take_policy_source_path(
+    raw_shader_paths: &mut BTreeMap<String, String>,
+    shader: &str,
+    target: PolicyTarget,
+) -> Result<Option<PathBuf>, String> {
+
+    let matching_key =
+        raw_shader_paths
+            .keys()
+            .find(
+                |key| {
+                    key.eq_ignore_ascii_case(
+                        shader
+                    )
+                }
+            )
+            .cloned();
+
+
+    let Some(matching_key) =
+        matching_key
+    else {
+        return Ok(
+            None
+        );
+    };
+
+
+    let raw_path =
+        raw_shader_paths
+            .remove(
+                &matching_key
+            )
+            .unwrap_or_default();
+
+
+    let raw_path =
+        raw_path.trim();
+
+
+    if raw_path.is_empty() {
+        return Err(
+            format!(
+                "[{}] path for '{}' may not be empty",
+                target.path_table_name(),
+                shader,
+            )
+        );
+    }
+
+
+    let path =
+        PathBuf::from(
+            raw_path
+        );
+
+
+    if !path.is_absolute() {
+        return Err(
+            format!(
+                "[{}] path for '{}' must be absolute: {}",
+                target.path_table_name(),
+                shader,
+                raw_path,
+            )
+        );
+    }
+
+
+    // Do not require the file to exist while loading configuration.
+    // A missing external file must leave its policy visible so the
+    // Control Center can report and eventually repair the reference.
+    Ok(
+        Some(
+            path
+        )
+    )
+}
+
 fn parse_policy_specification(
     shader: String,
+    source_path: Option<PathBuf>,
     specification: &str,
     target: PolicyTarget,
 ) -> Result<ShaderPolicy, String> {
@@ -1752,6 +1944,7 @@ fn parse_policy_specification(
     Ok(
         ShaderPolicy {
             shader,
+            source_path,
             shader_texture,
             shader_palette,
             rendered_fps,
@@ -1837,6 +2030,22 @@ fn format_shader_policy_diagnostic(
     shader_policy: &ShaderPolicy,
 ) -> String {
 
+    let source_path =
+        shader_policy
+            .source_path
+            .as_ref()
+            .map(
+                |path| {
+                    path.display()
+                        .to_string()
+                }
+            )
+            .unwrap_or_else(
+                || {
+                    "<managed>".to_string()
+                }
+            );
+
     let texture = shader_policy.shader_texture
         .as_ref()
         .map(format_texture_specification)
@@ -1882,9 +2091,10 @@ fn format_shader_policy_diagnostic(
         );
 
     format!(
-        "[CONFIG] {} shader={} texture={} palette={} fps={} speed={} anti_aliasing={} dithering={} color_precision={} render_scale={}",
+        "[CONFIG] {} shader={} source={} texture={} palette={} fps={} speed={} anti_aliasing={} dithering={} color_precision={} render_scale={}",
         table_name,
         shader_policy.shader,
+        source_path,
         texture,
         palette,
         fps,

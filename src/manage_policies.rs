@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use toml_edit::{
     value,
@@ -95,6 +95,38 @@ impl PolicyTarget {
             }
         }
     }
+
+
+    pub fn path_table_name(
+        self,
+    ) -> &'static str {
+
+        match self {
+            Self::Screensaver => {
+                "screensaver_external_paths"
+            }
+
+            Self::Wallpaper => {
+                "wallpaper_external_paths"
+            }
+        }
+    }
+
+
+    fn legacy_path_table_name(
+        self,
+    ) -> &'static str {
+
+        match self {
+            Self::Screensaver => {
+                "screensaver_shader_paths"
+            }
+
+            Self::Wallpaper => {
+                "wallpaper_shader_paths"
+            }
+        }
+    }
 }
 
 
@@ -163,6 +195,24 @@ pub fn add_policy(
     properties: PolicyDefinition,
 ) -> Result<(), String> {
 
+    add_policy_with_source_path(
+        config_path,
+        target,
+        shader,
+        properties,
+        None,
+    )
+}
+
+
+pub fn add_policy_with_source_path(
+    config_path: &Path,
+    target: PolicyTarget,
+    shader: &str,
+    properties: PolicyDefinition,
+    source_path: Option<&Path>,
+) -> Result<(), String> {
+
     let shader =
         normalized_shader_name(
             shader
@@ -175,47 +225,69 @@ pub fn add_policy(
     )?;
 
 
+    let normalized_source_path =
+        normalize_source_path(
+            source_path
+        )?;
+
+
     let mut document =
         load_document(
             config_path
         )?;
 
 
-    let table =
-        policy_table_mut(
-            &mut document,
-            target,
-        )?;
-
-
-    if let Some(existing_key) =
-        matching_shader_key(
-            table,
-            &shader,
-        )
     {
-        return Err(
-            format!(
-                "Shader '{}' already has an policy in [{}]",
-                existing_key,
-                target.table_name(),
+        let table =
+            policy_table_mut(
+                &mut document,
+                target,
+            )?;
+
+
+        if let Some(existing_key) =
+            matching_shader_key(
+                table,
+                &shader,
             )
-        );
+        {
+            return Err(
+                format!(
+                    "Shader '{}' already has an policy in [{}]",
+                    existing_key,
+                    target.table_name(),
+                )
+            );
+        }
+
+
+        let specification =
+            format_policy(
+                &properties
+            );
+
+
+        table[
+            &shader
+        ] =
+            value(
+                specification
+            );
     }
 
 
-    let specification =
-        format_policy(
-            &properties
-        );
-
-
-    table[
-        &shader
-    ] =
-        value(
-            specification
-        );
+    if let Some(source_path) =
+        normalized_source_path
+    {
+        set_source_path_metadata(
+            &mut document,
+            target,
+            &shader,
+            Some(
+                &source_path
+            ),
+        )?;
+    }
 
 
     save_document(
@@ -223,7 +295,6 @@ pub fn add_policy(
         &document,
     )
 }
-
 
 pub fn policy_exists(
     config_path: &Path,
@@ -260,6 +331,116 @@ pub fn policy_exists(
 }
 
 
+pub fn policy_source_path(
+    config_path: &Path,
+    target: PolicyTarget,
+    shader: &str,
+) -> Result<Option<PathBuf>, String> {
+
+    let shader =
+        normalized_shader_name(
+            shader
+        )?;
+
+
+    let document =
+        load_document(
+            config_path
+        )?;
+
+
+    for table_name in [
+        target.path_table_name(),
+        target.legacy_path_table_name(),
+    ] {
+        let Some(item) =
+            document.get(
+                table_name
+            )
+        else {
+            continue;
+        };
+
+
+        let table =
+            item.as_table()
+                .ok_or_else(
+                    || {
+                        format!(
+                            "[{}] exists but is not a TOML table",
+                            table_name,
+                        )
+                    }
+                )?;
+
+
+        let Some(existing_key) =
+            matching_shader_key(
+                table,
+                &shader,
+            )
+        else {
+            continue;
+        };
+
+
+        let raw_path =
+            table
+                .get(
+                    &existing_key
+                )
+                .and_then(
+                    |item| {
+                        item.as_value()
+                    }
+                )
+                .and_then(
+                    |value| {
+                        value.as_str()
+                    }
+                )
+                .ok_or_else(
+                    || {
+                        format!(
+                            "Shader path '{}' in [{}] must be a TOML string",
+                            existing_key,
+                            table_name,
+                        )
+                    }
+                )?;
+
+
+        let path =
+            PathBuf::from(
+                raw_path
+            );
+
+
+        if !path.is_absolute() {
+            return Err(
+                format!(
+                    "Shader path '{}' in [{}] must be absolute: {}",
+                    existing_key,
+                    table_name,
+                    raw_path,
+                )
+            );
+        }
+
+
+        return Ok(
+            Some(
+                path
+            )
+        );
+    }
+
+
+    Ok(
+        None
+    )
+}
+
 pub fn replace_policy(
     config_path: &Path,
     target: PolicyTarget,
@@ -267,61 +448,139 @@ pub fn replace_policy(
     properties: PolicyDefinition,
 ) -> Result<(), String> {
 
+    // Legacy callers update only policy properties.  Preserve any
+    // existing external source-path metadata.
+    replace_policy_internal(
+        config_path,
+        target,
+        shader,
+        properties,
+        SourcePathUpdate::Preserve,
+    )
+}
+
+
+pub fn replace_policy_with_source_path(
+    config_path: &Path,
+    target: PolicyTarget,
+    shader: &str,
+    properties: PolicyDefinition,
+    source_path: Option<&Path>,
+) -> Result<(), String> {
+
+    let normalized_source_path =
+        normalize_source_path(
+            source_path
+        )?;
+
+
+    replace_policy_internal(
+        config_path,
+        target,
+        shader,
+        properties,
+        SourcePathUpdate::Set(
+            normalized_source_path
+        ),
+    )
+}
+
+
+enum SourcePathUpdate {
+    Preserve,
+    Set(
+        Option<String>
+    ),
+}
+
+
+fn replace_policy_internal(
+    config_path: &Path,
+    target: PolicyTarget,
+    shader: &str,
+    properties: PolicyDefinition,
+    source_path_update: SourcePathUpdate,
+) -> Result<(), String> {
+
     let shader =
         normalized_shader_name(
             shader
         )?;
+
 
     validate_properties(
         target,
         &properties
     )?;
 
+
     let mut document =
         load_document(
             config_path
         )?;
 
-    let table =
-        policy_table_mut(
-            &mut document,
-            target,
-        )?;
 
-    let existing_key =
-        matching_shader_key(
-            table,
-            &shader,
-        )
-        .ok_or_else(
-            || {
-                format!(
-                    "Shader '{}' does not have an policy in [{}]",
-                    shader,
-                    target.table_name(),
-                )
-            }
-        )?;
+    {
+        let table =
+            policy_table_mut(
+                &mut document,
+                target,
+            )?;
 
-    table.remove(
-        &existing_key
-    );
 
-    table[
-        &shader
-    ] =
-        value(
-            format_policy(
-                &properties
+        let existing_key =
+            matching_shader_key(
+                table,
+                &shader,
             )
+            .ok_or_else(
+                || {
+                    format!(
+                        "Shader '{}' does not have an policy in [{}]",
+                        shader,
+                        target.table_name(),
+                    )
+                }
+            )?;
+
+
+        table.remove(
+            &existing_key
         );
+
+
+        table[
+            &shader
+        ] =
+            value(
+                format_policy(
+                    &properties
+                )
+            );
+    }
+
+
+    match source_path_update {
+        SourcePathUpdate::Preserve => {}
+
+        SourcePathUpdate::Set(
+            source_path
+        ) => {
+            set_source_path_metadata(
+                &mut document,
+                target,
+                &shader,
+                source_path.as_deref(),
+            )?;
+        }
+    }
+
 
     save_document(
         config_path,
         &document,
     )
 }
-
 
 pub fn delete_policy(
     config_path: &Path,
@@ -367,6 +626,13 @@ pub fn delete_policy(
     table.remove(
         &existing_key
     );
+
+
+    remove_source_path_metadata(
+        &mut document,
+        target,
+        &shader,
+    )?;
 
 
     save_document(
@@ -551,6 +817,270 @@ fn policy_table<'a>(
         )
 }
 
+
+fn source_path_table_mut<'a>(
+    document: &'a mut DocumentMut,
+    target: PolicyTarget,
+) -> Result<&'a mut Table, String> {
+
+    let table_name =
+        target.path_table_name();
+
+
+    if !document.contains_key(
+        table_name
+    ) {
+        let mut table =
+            Table::new();
+
+        table.set_implicit(
+            false
+        );
+
+        document[
+            table_name
+        ] =
+            Item::Table(
+                table
+            );
+    }
+
+
+    document[
+        table_name
+    ]
+        .as_table_mut()
+        .ok_or_else(
+            || {
+                format!(
+                    "[{}] exists but is not a TOML table",
+                    table_name,
+                )
+            }
+        )
+}
+
+
+fn source_path_table<'a>(
+    document: &'a DocumentMut,
+    target: PolicyTarget,
+) -> Result<Option<&'a Table>, String> {
+
+    let table_name =
+        target.path_table_name();
+
+
+    let Some(item) =
+        document.get(
+            table_name
+        )
+    else {
+        return Ok(
+            None
+        );
+    };
+
+
+    item.as_table()
+        .map(
+            Some
+        )
+        .ok_or_else(
+            || {
+                format!(
+                    "[{}] exists but is not a TOML table",
+                    table_name,
+                )
+            }
+        )
+}
+
+
+fn normalize_source_path(
+    source_path: Option<&Path>,
+) -> Result<Option<String>, String> {
+
+    let Some(source_path) =
+        source_path
+    else {
+        return Ok(
+            None
+        );
+    };
+
+
+    if !source_path.is_absolute() {
+        return Err(
+            format!(
+                "External shader path must be absolute: {}",
+                source_path.display(),
+            )
+        );
+    }
+
+
+    let source_path =
+        source_path
+            .to_str()
+            .ok_or_else(
+                || {
+                    format!(
+                        "External shader path is not valid UTF-8: {}",
+                        source_path.display(),
+                    )
+                }
+            )?
+            .trim();
+
+
+    if source_path.is_empty() {
+        return Err(
+            "External shader path may not be empty"
+                .to_string()
+        );
+    }
+
+
+    Ok(
+        Some(
+            source_path.to_string()
+        )
+    )
+}
+
+
+fn set_source_path_metadata(
+    document: &mut DocumentMut,
+    target: PolicyTarget,
+    shader: &str,
+    source_path: Option<&str>,
+) -> Result<(), String> {
+
+    match source_path {
+        Some(source_path) => {
+            let table =
+                source_path_table_mut(
+                    document,
+                    target,
+                )?;
+
+
+            if let Some(existing_key) =
+                matching_shader_key(
+                    table,
+                    shader,
+                )
+            {
+                table.remove(
+                    &existing_key
+                );
+            }
+
+
+            table[
+                shader
+            ] =
+                value(
+                    source_path
+                );
+
+
+            remove_source_path_metadata_from_named_table(
+                document,
+                target.legacy_path_table_name(),
+                shader,
+            )?;
+        }
+
+        None => {
+            remove_source_path_metadata(
+                document,
+                target,
+                shader,
+            )?;
+        }
+    }
+
+
+    Ok(())
+}
+
+
+fn remove_source_path_metadata(
+    document: &mut DocumentMut,
+    target: PolicyTarget,
+    shader: &str,
+) -> Result<(), String> {
+
+    remove_source_path_metadata_from_named_table(
+        document,
+        target.path_table_name(),
+        shader,
+    )?;
+
+
+    remove_source_path_metadata_from_named_table(
+        document,
+        target.legacy_path_table_name(),
+        shader,
+    )
+}
+
+
+fn remove_source_path_metadata_from_named_table(
+    document: &mut DocumentMut,
+    table_name: &str,
+    shader: &str,
+) -> Result<(), String> {
+
+    let should_remove_table =
+        {
+            let Some(item) =
+                document.get_mut(
+                    table_name
+                )
+            else {
+                return Ok(());
+            };
+
+
+            let table =
+                item.as_table_mut()
+                    .ok_or_else(
+                        || {
+                            format!(
+                                "[{}] exists but is not a TOML table",
+                                table_name,
+                            )
+                        }
+                    )?;
+
+
+            if let Some(existing_key) =
+                matching_shader_key(
+                    table,
+                    shader,
+                )
+            {
+                table.remove(
+                    &existing_key
+                );
+            }
+
+
+            table.is_empty()
+        };
+
+
+    if should_remove_table {
+        document.remove(
+            table_name
+        );
+    }
+
+
+    Ok(())
+}
 
 //
 // ------------------------------------------------------------

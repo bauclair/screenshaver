@@ -1,4 +1,4 @@
-//! Graphical layout and input handling for the Shader Policy Editor.
+//! Graphical layout and input handling for the Screenshaver Control Center.
 //!
 //! This module owns the egui window, controls, layout, styling, and SDL-to-egui
 //! input translation. Rendering and shader-session behavior remain in
@@ -56,11 +56,13 @@ enum EditorTab {
     Rendering,
     Textures,
     PostProcessing,
+    Config,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PolicySortColumn {
     Filename,
+    Status,
     Texture,
     PolicyType,
 }
@@ -255,9 +257,156 @@ pub struct ShaderInformation {
 }
 
 
+
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ControlConfiguration {
+    pub screensaver_enabled: bool,
+    pub subtitles: bool,
+    pub screensaver_display: String,
+    pub screensaver_interval_seconds: u64,
+    pub screensaver_single_filename: String,
+    pub idle_timeout: String,
+    pub screensaver_global_texture: String,
+    pub screensaver_global_palette: String,
+    pub wallpaper_enabled: bool,
+    pub notifications: bool,
+    pub wallpaper_display: String,
+    pub wallpaper_interval_seconds: u64,
+    pub wallpaper_single_filename: String,
+    pub wallpaper_global_texture: String,
+    pub wallpaper_global_palette: String,
+}
+
+impl ControlConfiguration {
+    pub fn from_config(
+        config: &crate::load_config::Config,
+    ) -> Self {
+        let (
+            screensaver_display,
+            screensaver_interval_seconds,
+            screensaver_single_filename,
+        ) =
+            split_display_mode(&config.mode);
+
+        let (
+            wallpaper_display,
+            wallpaper_interval_seconds,
+            wallpaper_single_filename,
+        ) =
+            split_display_mode(&config.wallpaper_mode);
+
+        Self {
+            screensaver_enabled: config.screensaver_enabled,
+            subtitles: config.subtitles,
+            screensaver_display,
+            screensaver_interval_seconds,
+            screensaver_single_filename,
+            idle_timeout: config.idle_timeout.clone(),
+            screensaver_global_texture:
+                config.texture_policy.global_texture.as_ref()
+                    .map(format_texture_specification)
+                    .unwrap_or_else(|| "random".to_string()),
+            screensaver_global_palette:
+                config.texture_policy.global_palette
+                    .map(|palette| palette.name().to_string())
+                    .unwrap_or_else(|| "random".to_string()),
+            wallpaper_enabled: config.wallpaper_enabled,
+            notifications: config.wallpaper.notifications,
+            wallpaper_display,
+            wallpaper_interval_seconds,
+            wallpaper_single_filename,
+            wallpaper_global_texture:
+                config.wallpaper_texture_policy.global_texture.as_ref()
+                    .map(format_texture_specification)
+                    .unwrap_or_else(|| "random".to_string()),
+            wallpaper_global_palette:
+                config.wallpaper_texture_policy.global_palette
+                    .map(|palette| palette.name().to_string())
+                    .unwrap_or_else(|| "random".to_string()),
+        }
+    }
+}
+
+fn split_display_mode(
+    mode: &str,
+) -> (String, u64, String) {
+
+    const DEFAULT_INTERVAL_SECONDS: u64 =
+        600;
+
+    let mut parts =
+        mode.splitn(
+            2,
+            ':'
+        );
+
+    let name =
+        parts
+            .next()
+            .unwrap_or(
+                "random"
+            )
+            .trim()
+            .to_ascii_lowercase();
+
+    let argument =
+        parts
+            .next()
+            .unwrap_or("")
+            .trim();
+
+    match name.as_str() {
+        "ordered"
+        | "random" => (
+            name,
+            argument
+                .parse::<u64>()
+                .ok()
+                .filter(
+                    |value| {
+                        *value > 0
+                    }
+                )
+                .unwrap_or(
+                    DEFAULT_INTERVAL_SECONDS
+                ),
+            String::new(),
+        ),
+
+        "single" => (
+            "single".to_string(),
+            DEFAULT_INTERVAL_SECONDS,
+            argument.to_string(),
+        ),
+
+        _ => (
+            "random".to_string(),
+            DEFAULT_INTERVAL_SECONDS,
+            String::new(),
+        ),
+    }
+}
+
+fn format_texture_specification(
+    texture: &crate::parse_texture_specification::TextureSpecification,
+) -> String {
+    if texture.count_was_explicit {
+        format!(
+            "{}:{}",
+            texture.family.name(),
+            texture.requested_primitive_count,
+        )
+    } else {
+        texture.family.name().to_string()
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct PolicyDisplayRow {
     pub filename: String,
+    pub full_path: String,
+    pub accessible: bool,
     pub texture: bool,
     pub policy_target: PolicyTarget,
 }
@@ -307,6 +456,11 @@ pub struct EditorOutput {
     pub refresh_shader_requested: bool,
     pub policy_row_command_requested:
         Option<(PolicyRowReference, PolicyRowCommand)>,
+    pub control_configuration: Option<ControlConfiguration>,
+    pub control_configuration_dirty: bool,
+    pub control_configuration_save_requested: bool,
+    pub control_single_browse_requested: Option<PolicyTarget>,
+    pub control_single_recent_requested: Option<(PolicyTarget, usize)>,
     pub window_open: bool,
 }
 
@@ -475,6 +629,12 @@ pub struct EditWindowOverlay {
     pending_confirmation:
         Option<PendingConfirmation>,
 
+    control_configuration:
+        Option<ControlConfiguration>,
+
+    control_configuration_baseline:
+        Option<ControlConfiguration>,
+
     shift_held:
         bool,
 
@@ -601,6 +761,12 @@ impl EditWindowOverlay {
                     None,
 
                 pending_confirmation:
+                    None,
+
+                control_configuration:
+                    None,
+
+                control_configuration_baseline:
                     None,
 
                 shift_held:
@@ -772,6 +938,7 @@ impl EditWindowOverlay {
         recent_shader_paths: &[PathBuf],
         shader_information: Option<&ShaderInformation>,
         policy_rows: &[PolicyDisplayRow],
+        loaded_configuration: Option<&crate::load_config::Config>,
     ) -> EditorOutput {
 
         let (
@@ -1105,33 +1272,32 @@ impl EditWindowOverlay {
             Option<(PolicyRowReference, PolicyRowCommand)> =
             None;
 
+        let mut control_configuration_save_requested =
+            false;
 
-        let current_configuration_before_ui =
-            EditorConfiguration::new(
-                displayed_fps,
-                displayed_animation_speed,
-                displayed_render_scale,
-                policy_target,
-                texture,
-                palette,
-                primitive_count,
-                anti_aliasing,
-                dithering,
-                color_precision,
-            );
+        let mut control_single_browse_requested =
+            None;
 
-        let configuration_changed_before_ui =
-            current_configuration_before_ui
-                .differs_from(
-                    baseline_configuration
-                );
+        let mut control_single_recent_requested =
+            None;
+
+        if self.control_configuration.is_none() {
+            if let Some(config) = loaded_configuration {
+                let snapshot = ControlConfiguration::from_config(config);
+                self.control_configuration = Some(snapshot.clone());
+                self.control_configuration_baseline = Some(snapshot);
+            }
+        }
+
+        let mut control_configuration =
+            self.control_configuration.clone();
+
+        let control_configuration_baseline =
+            self.control_configuration_baseline.clone();
+
 
         let editor_title =
-            if configuration_changed_before_ui {
-                "* Shader Policy Editor (ESC or Q to exit)"
-            } else {
-                "Shader Policy Editor (ESC or Q to exit)"
-            };
+            "Screenshaver Control Center (ESC or Q to exit)";
 
 
         let full_output =
@@ -1340,11 +1506,29 @@ impl EditWindowOverlay {
                                                 },
                                             );
                                         }
+
+                                        EditorTab::Config => {
+                                            draw_config_tab(
+                                                ui,
+                                                metrics,
+                                                &mut control_configuration,
+                                                control_configuration_baseline.as_ref(),
+                                                recent_shader_paths,
+                                                &mut clear_recent_files_requested,
+                                                &mut control_configuration_save_requested,
+                                                &mut control_single_browse_requested,
+                                                &mut control_single_recent_requested,
+                                                &mut status_message,
+                                                &mut hover_help_message,
+                                            );
+                                        }
                                     }
 
                                     if !policy_controls_enabled
                                         && active_tab
                                             != EditorTab::Policies
+                                        && active_tab
+                                            != EditorTab::Config
                                         && hover_help_message.is_none()
                                     {
                                         hover_help_message =
@@ -1418,12 +1602,19 @@ impl EditWindowOverlay {
                                         status_message.as_str(),
                                 };
 
+                            let control_configuration_dirty =
+                                control_configuration.as_ref()
+                                    .zip(control_configuration_baseline.as_ref())
+                                    .map(|(current, baseline)| current != baseline)
+                                    .unwrap_or(false);
+
                             draw_compact_status_row(
                                 ui,
                                 metrics,
                                 shader_information,
                                 displayed_status,
                                 configuration_changed,
+                                control_configuration_dirty,
                             );
                         }
                     );
@@ -1454,6 +1645,9 @@ impl EditWindowOverlay {
 
         self.pending_confirmation =
             pending_confirmation;
+
+        self.control_configuration =
+            control_configuration.clone();
 
         self.displayed_fps =
             Some(
@@ -1562,6 +1756,20 @@ impl EditWindowOverlay {
             refresh_shader_requested,
 
             policy_row_command_requested,
+
+            control_configuration_dirty:
+                control_configuration.as_ref()
+                    .zip(control_configuration_baseline.as_ref())
+                    .map(|(current, baseline)| current != baseline)
+                    .unwrap_or(false),
+
+            control_configuration,
+
+            control_configuration_save_requested,
+
+            control_single_browse_requested,
+
+            control_single_recent_requested,
 
             window_open:
                 self.window_open,
@@ -1714,6 +1922,42 @@ impl EditWindowOverlay {
         }
     }
 
+    pub fn accept_control_configuration(
+        &mut self,
+    ) {
+        self.control_configuration_baseline =
+            self.control_configuration.clone();
+    }
+
+
+    pub fn set_control_single_filename(
+        &mut self,
+        target: PolicyTarget,
+        filename: impl Into<String>,
+    ) {
+        let Some(configuration) =
+            self.control_configuration.as_mut()
+        else {
+            return;
+        };
+
+        let filename =
+            filename.into();
+
+        match target {
+            PolicyTarget::Screensaver => {
+                configuration.screensaver_single_filename =
+                    filename;
+            }
+
+            PolicyTarget::Wallpaper => {
+                configuration.wallpaper_single_filename =
+                    filename;
+            }
+        }
+    }
+
+
 
     pub fn destroy(
         &mut self,
@@ -1772,6 +2016,10 @@ fn draw_editor_tab_bar(
                 (
                     EditorTab::PostProcessing,
                     "Post-Processing",
+                ),
+                (
+                    EditorTab::Config,
+                    "Configuration",
                 ),
             ] {
                 let selected =
@@ -2313,9 +2561,10 @@ fn draw_compact_action_row(
 fn draw_compact_status_row(
     ui: &mut egui::Ui,
     _metrics: EditorMetrics,
-    _shader_information: Option<&ShaderInformation>,
+    shader_information: Option<&ShaderInformation>,
     displayed_status: &str,
-    configuration_changed: bool,
+    policy_changed: bool,
+    control_configuration_dirty: bool,
 ) {
     ui.separator();
 
@@ -2353,16 +2602,29 @@ fn draw_compact_status_row(
                     egui::Align::Center
                 ),
                 |ui| {
-                    let changed_text =
-                        if configuration_changed {
-                            "Status: Modified"
+                    let policy_text =
+                        if shader_information.is_none() {
+                            "Policy: --"
+                        } else if policy_changed {
+                            "Policy: Modified"
                         } else {
-                            "Status: Unchanged"
+                            "Policy: Unchanged"
+                        };
+
+                    let config_text =
+                        if control_configuration_dirty {
+                            "Config: Modified"
+                        } else {
+                            "Config: Unchanged"
                         };
 
                     ui.label(
                         egui::RichText::new(
-                            changed_text
+                            format!(
+                                "{}   {}",
+                                policy_text,
+                                config_text,
+                            )
                         )
                         .strong(),
                     );
@@ -2544,6 +2806,11 @@ fn draw_policies_tab(
                                     .to_ascii_lowercase()
                             ),
 
+                    PolicySortColumn::Status =>
+                        left.accessible.cmp(
+                            &right.accessible
+                        ),
+
                     PolicySortColumn::Texture =>
                         left.texture.cmp(
                             &right.texture
@@ -2575,21 +2842,25 @@ fn draw_policies_tab(
         (
             ui.available_width()
                 - 18.0 * metrics.scale
-                - spacing * 2.0
+                - spacing * 3.0
         )
         .max(
             320.0 * metrics.scale
         );
 
     let filename_width =
-        usable_width * 0.56;
+        usable_width * 0.48;
+
+    let status_width =
+        usable_width * 0.12;
 
     let texture_width =
-        usable_width * 0.16;
+        usable_width * 0.15;
 
     let policy_width =
         usable_width
             - filename_width
+            - status_width
             - texture_width;
 
     let row_height =
@@ -2613,7 +2884,7 @@ fn draw_policies_tab(
                 egui::Grid::new(
                     "editor_policy_table_grid"
                 )
-                .num_columns(3)
+                .num_columns(4)
                 .spacing(
                     egui::vec2(
                         spacing,
@@ -2634,6 +2905,24 @@ fn draw_policies_tab(
                                     header_text(
                                         "Filename",
                                         PolicySortColumn::Filename,
+                                        *sort_column,
+                                        *sort_ascending,
+                                    )
+                                )
+                                .strong(),
+                                egui::Sense::click(),
+                                false,
+                            );
+
+                        let status_header =
+                            left_aligned_cell(
+                                ui,
+                                status_width,
+                                row_height,
+                                egui::RichText::new(
+                                    header_text(
+                                        "Status",
+                                        PolicySortColumn::Status,
                                         *sort_column,
                                         *sort_ascending,
                                     )
@@ -2689,6 +2978,14 @@ fn draw_policies_tab(
                             );
                         }
 
+                        if status_header.clicked() {
+                            apply_sort_request(
+                                PolicySortColumn::Status,
+                                sort_column,
+                                sort_ascending,
+                            );
+                        }
+
                         if texture_header.clicked() {
                             apply_sort_request(
                                 PolicySortColumn::Texture,
@@ -2714,6 +3011,15 @@ fn draw_policies_tab(
                                     "No shader policies are currently defined."
                                 )
                                 .weak(),
+                                egui::Sense::hover(),
+                                false,
+                            );
+
+                            left_aligned_cell(
+                                ui,
+                                status_width,
+                                row_height,
+                                "",
                                 egui::Sense::hover(),
                                 false,
                             );
@@ -2772,6 +3078,36 @@ fn draw_policies_tab(
                                     row.filename,
                                     egui::Sense::click(),
                                     row_selected,
+                                )
+                                .on_hover_text(
+                                    &row.full_path
+                                );
+
+                            let status_response =
+                                left_aligned_cell(
+                                    ui,
+                                    status_width,
+                                    row_height,
+                                    if row.accessible {
+                                        "✅"
+                                    } else {
+                                        "❌"
+                                    },
+                                    egui::Sense::click(),
+                                    row_selected,
+                                )
+                                .on_hover_text(
+                                    if row.accessible {
+                                        format!(
+                                            "Shader is accessible:\n{}",
+                                            row.full_path,
+                                        )
+                                    } else {
+                                        format!(
+                                            "Shader file cannot be accessed:\n{}",
+                                            row.full_path,
+                                        )
+                                    }
                                 );
 
                             let texture_response =
@@ -2804,11 +3140,13 @@ fn draw_policies_tab(
 
                             let row_clicked =
                                 filename_response.clicked()
+                                    || status_response.clicked()
                                     || texture_response.clicked()
                                     || policy_response.clicked();
 
                             let row_double_clicked =
                                 filename_response.double_clicked()
+                                    || status_response.double_clicked()
                                     || texture_response.double_clicked()
                                     || policy_response.double_clicked();
 
@@ -2936,6 +3274,9 @@ fn draw_policies_tab(
 
                             show_context_menu(
                                 &filename_response
+                            );
+                            show_context_menu(
+                                &status_response
                             );
                             show_context_menu(
                                 &texture_response
@@ -4493,6 +4834,571 @@ fn draw_post_processing_panel(
 }
 
 
+
+
+// ============================================================
+// CONFIG TAB
+// ============================================================
+// Configuration-tab editing state.  Persistence is coordinated by
+// edit_shader.rs through manage_configuration.rs.
+
+fn draw_config_tab(
+    ui: &mut egui::Ui,
+    metrics: EditorMetrics,
+    configuration: &mut Option<ControlConfiguration>,
+    baseline: Option<&ControlConfiguration>,
+    recent_shader_paths: &[PathBuf],
+    clear_recent_files_requested: &mut bool,
+    save_requested: &mut bool,
+    single_browse_requested: &mut Option<PolicyTarget>,
+    single_recent_requested: &mut Option<(PolicyTarget, usize)>,
+    status_message: &mut String,
+    hover_help_message: &mut Option<&'static str>,
+) {
+    let Some(configuration) =
+        configuration.as_mut()
+    else {
+        ui.label(
+            egui::RichText::new(
+                "Configuration is not available."
+            )
+            .weak(),
+        );
+        return;
+    };
+
+    let texture_choices = [
+        "bricks",
+        "cells",
+        "clouds",
+        "facets",
+        "hexagons",
+        "marble",
+        "mesh",
+        "noise",
+        "radial",
+        "random",
+    ];
+
+    let palette_choices = [
+        "brick",
+        "bronze",
+        "lichen",
+        "mist",
+        "random",
+        "sandstone",
+        "slate",
+    ];
+
+    ui.columns(
+        2,
+        |columns| {
+            draw_config_target_column(
+                &mut columns[0],
+                metrics,
+                "Screensavers",
+                PolicyTarget::Screensaver,
+                &mut configuration.screensaver_enabled,
+                Some(
+                    &mut configuration.subtitles
+                ),
+                None,
+                &mut configuration.screensaver_display,
+                &mut configuration.screensaver_interval_seconds,
+                &mut configuration.screensaver_single_filename,
+                Some(
+                    &mut configuration.idle_timeout
+                ),
+                &mut configuration.screensaver_global_texture,
+                &mut configuration.screensaver_global_palette,
+                &texture_choices,
+                &palette_choices,
+                recent_shader_paths,
+                clear_recent_files_requested,
+                single_browse_requested,
+                single_recent_requested,
+                status_message,
+                hover_help_message,
+            );
+
+            draw_config_target_column(
+                &mut columns[1],
+                metrics,
+                "Wallpapers",
+                PolicyTarget::Wallpaper,
+                &mut configuration.wallpaper_enabled,
+                None,
+                Some(
+                    &mut configuration.notifications
+                ),
+                &mut configuration.wallpaper_display,
+                &mut configuration.wallpaper_interval_seconds,
+                &mut configuration.wallpaper_single_filename,
+                None,
+                &mut configuration.wallpaper_global_texture,
+                &mut configuration.wallpaper_global_palette,
+                &texture_choices,
+                &palette_choices,
+                recent_shader_paths,
+                clear_recent_files_requested,
+                single_browse_requested,
+                single_recent_requested,
+                status_message,
+                hover_help_message,
+            );
+        },
+    );
+
+    ui.add_space(
+        8.0 * metrics.scale
+    );
+
+    ui.separator();
+
+    let dirty =
+        baseline
+            .map(
+                |baseline| {
+                    &*configuration
+                        != baseline
+                }
+            )
+            .unwrap_or(
+                false
+            );
+
+    let single_filename_missing =
+        (
+            configuration.screensaver_display
+                == "single"
+                && configuration
+                    .screensaver_single_filename
+                    .trim()
+                    .is_empty()
+        )
+        || (
+            configuration.wallpaper_display
+                == "single"
+                && configuration
+                    .wallpaper_single_filename
+                    .trim()
+                    .is_empty()
+        );
+
+    ui.horizontal(
+        |ui| {
+            let save_response =
+                ui.add_enabled(
+                    dirty
+                        && !single_filename_missing,
+                    egui::Button::new(
+                        "Save Configuration"
+                    ),
+                );
+
+            update_hover_help(
+                &save_response,
+                hover_help_message,
+                if single_filename_missing {
+                    "Select a shader filename before saving Single display mode."
+                } else {
+                    "Save configuration changes."
+                },
+            );
+
+            if save_response.clicked() {
+                *save_requested =
+                    true;
+
+                *status_message =
+                    "Saving configuration..."
+                        .to_string();
+            }
+
+            let cancel_response =
+                ui.add_enabled(
+                    dirty,
+                    egui::Button::new(
+                        "Cancel"
+                    ),
+                );
+
+            update_hover_help(
+                &cancel_response,
+                hover_help_message,
+                "Discard unsaved configuration changes.",
+            );
+
+            if cancel_response.clicked() {
+                if let Some(baseline) =
+                    baseline
+                {
+                    *configuration =
+                        baseline.clone();
+
+                    *status_message =
+                        "Configuration changes discarded."
+                            .to_string();
+                }
+            }
+        },
+    );
+}
+
+
+#[allow(clippy::too_many_arguments)]
+fn draw_config_target_column(
+    ui: &mut egui::Ui,
+    metrics: EditorMetrics,
+    heading: &str,
+    target: PolicyTarget,
+    enabled: &mut bool,
+    subtitles: Option<&mut bool>,
+    notifications: Option<&mut bool>,
+    display_mode: &mut String,
+    interval_seconds: &mut u64,
+    single_filename: &mut String,
+    idle_timeout: Option<&mut String>,
+    global_texture: &mut String,
+    global_palette: &mut String,
+    texture_choices: &[&str],
+    palette_choices: &[&str],
+    recent_shader_paths: &[PathBuf],
+    clear_recent_files_requested: &mut bool,
+    single_browse_requested: &mut Option<PolicyTarget>,
+    single_recent_requested: &mut Option<(PolicyTarget, usize)>,
+    status_message: &mut String,
+    hover_help_message: &mut Option<&'static str>,
+) {
+    const DEFAULT_INTERVAL_SECONDS: u64 =
+        600;
+
+    ui.heading(
+        heading
+    );
+
+    ui.add_space(
+        4.0 * metrics.scale
+    );
+
+    ui.checkbox(
+        enabled,
+        "Enabled",
+    );
+
+    if let Some(subtitles) =
+        subtitles
+    {
+        ui.checkbox(
+            subtitles,
+            "Subtitles",
+        );
+    }
+
+    if let Some(notifications) =
+        notifications
+    {
+        ui.checkbox(
+            notifications,
+            "Notifications",
+        );
+    }
+
+    ui.add_space(
+        5.0 * metrics.scale
+    );
+
+    egui::Grid::new(
+        format!(
+            "config_grid_{}",
+            heading,
+        )
+    )
+    .num_columns(
+        2
+    )
+    .spacing(
+        egui::vec2(
+            8.0 * metrics.scale,
+            6.0 * metrics.scale,
+        )
+    )
+    .show(
+        ui,
+        |ui| {
+            ui.label(
+                "Display"
+            );
+
+            let previous_display_mode =
+                display_mode.clone();
+
+            egui::ComboBox::from_id_source(
+                format!(
+                    "config_display_{}",
+                    heading,
+                )
+            )
+            .selected_text(
+                display_mode.as_str()
+            )
+            .show_ui(
+                ui,
+                |ui| {
+                    // Alphanumeric order is intentional.
+                    for choice in [
+                        "ordered",
+                        "random",
+                        "single",
+                    ] {
+                        ui.selectable_value(
+                            display_mode,
+                            choice.to_string(),
+                            choice,
+                        );
+                    }
+                },
+            );
+
+            if previous_display_mode
+                == "single"
+                && display_mode.as_str()
+                    != "single"
+            {
+                // A rotating mode always receives a known-good interval
+                // when it is selected from Single mode.
+                *interval_seconds =
+                    DEFAULT_INTERVAL_SECONDS;
+            }
+
+            if display_mode.as_str()
+                != "single"
+                && *interval_seconds == 0
+            {
+                *interval_seconds =
+                    DEFAULT_INTERVAL_SECONDS;
+            }
+
+            ui.end_row();
+
+            if display_mode.as_str()
+                == "single"
+            {
+                ui.label(
+                    "Filename"
+                );
+
+                let displayed_filename =
+                    if single_filename
+                        .trim()
+                        .is_empty()
+                    {
+                        "<select shader>"
+                    } else {
+                        single_filename
+                            .as_str()
+                    };
+
+                ui.menu_button(
+                    displayed_filename,
+                    |ui| {
+                        if recent_shader_paths
+                            .is_empty()
+                        {
+                            ui.add_enabled(
+                                false,
+                                egui::Button::new(
+                                    "Recent Files (empty)"
+                                ),
+                            );
+                        } else {
+                            for (
+                                index,
+                                path,
+                            ) in recent_shader_paths
+                                .iter()
+                                .enumerate()
+                            {
+                                let display_name =
+                                    path
+                                        .file_name()
+                                        .and_then(
+                                            |name| {
+                                                name.to_str()
+                                            }
+                                        )
+                                        .unwrap_or(
+                                            "Unnamed shader"
+                                        );
+
+                                let response =
+                                    ui.button(
+                                        display_name
+                                    );
+
+                                response
+                                    .clone()
+                                    .on_hover_text(
+                                        path.display()
+                                            .to_string()
+                                    );
+
+                                if response.clicked() {
+                                    *single_recent_requested =
+                                        Some(
+                                            (
+                                                target,
+                                                index,
+                                            )
+                                        );
+
+                                    ui.close();
+                                }
+                            }
+                        }
+
+                        ui.separator();
+
+                        if ui.button(
+                            "Browse..."
+                        )
+                        .clicked()
+                        {
+                            *single_browse_requested =
+                                Some(
+                                    target
+                                );
+
+                            ui.close();
+                        }
+
+                        if ui.add_enabled(
+                            !recent_shader_paths.is_empty(),
+                            egui::Button::new(
+                                "Clear Recent Files"
+                            ),
+                        )
+                        .clicked()
+                        {
+                            *clear_recent_files_requested =
+                                true;
+
+                            ui.close();
+                        }
+                    },
+                );
+
+                ui.end_row();
+            } else {
+                ui.label(
+                    "Every"
+                );
+
+                ui.horizontal(
+                    |ui| {
+                        ui.add(
+                            egui::DragValue::new(
+                                interval_seconds
+                            )
+                            .clamp_range(
+                                1..=86400
+                            ),
+                        );
+
+                        ui.label(
+                            "seconds"
+                        );
+                    },
+                );
+
+                ui.end_row();
+            }
+
+            if let Some(idle_timeout) =
+                idle_timeout
+            {
+                ui.label(
+                    "After idle"
+                );
+
+                ui.text_edit_singleline(
+                    idle_timeout
+                );
+
+                ui.end_row();
+            }
+
+            ui.label(
+                "Default texture"
+            );
+
+            egui::ComboBox::from_id_source(
+                format!(
+                    "config_texture_{}",
+                    heading,
+                )
+            )
+            .selected_text(
+                global_texture.as_str()
+            )
+            .show_ui(
+                ui,
+                |ui| {
+                    for choice in texture_choices {
+                        ui.selectable_value(
+                            global_texture,
+                            (*choice).to_string(),
+                            *choice,
+                        );
+                    }
+                },
+            );
+
+            ui.end_row();
+
+            ui.label(
+                "Default palette"
+            );
+
+            egui::ComboBox::from_id_source(
+                format!(
+                    "config_palette_{}",
+                    heading,
+                )
+            )
+            .selected_text(
+                global_palette.as_str()
+            )
+            .show_ui(
+                ui,
+                |ui| {
+                    for choice in palette_choices {
+                        ui.selectable_value(
+                            global_palette,
+                            (*choice).to_string(),
+                            *choice,
+                        );
+                    }
+                },
+            );
+
+            ui.end_row();
+        },
+    );
+
+    if display_mode.as_str()
+        == "single"
+        && single_filename
+            .trim()
+            .is_empty()
+    {
+        *status_message =
+            "Select a shader for Single display mode."
+                .to_string();
+    }
+}
+
+// ======================== END CONFIG TAB =====================
 // ==================== END POST-PROCESSING TAB ===============
 
 // ------------------------------------------------------------
