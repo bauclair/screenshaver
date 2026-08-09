@@ -226,6 +226,11 @@ pub fn run(
 pub fn run_wallpaper_only(
     shader_path: PathBuf,
 ) -> Result<(), String> {
+    // The system-tray Edit command opens the full Control Center, merely
+    // seeding it with the currently active wallpaper and selecting the
+    // Wallpaper policy target initially.  It must not remain restricted to
+    // Wallpaper policies, because the user may load another shader and edit
+    // either its Screensaver or Wallpaper policy from the same session.
     run_paths(
         vec![shader_path],
         None,
@@ -233,7 +238,7 @@ pub fn run_wallpaper_only(
         None,
         None,
         None,
-        EditorTargetRestriction::WallpaperOnly,
+        EditorTargetRestriction::Unrestricted,
         Some(
             crate::editor_layout::PolicyTarget::Wallpaper
         ),
@@ -1086,11 +1091,22 @@ fn run_paths(
 
     match target_restriction {
         EditorTargetRestriction::WallpaperOnly => {
+            // A tray-launched Wallpaper-only edit session is opened from the
+            // wallpaper runtime's already-resolved active shader path.  That
+            // path may legitimately be external to /wallpapers, so the
+            // requested Wallpaper target is authoritative for this session.
             screensaver_target_available = false;
+            wallpaper_target_available = true;
         }
+
         EditorTargetRestriction::ScreensaverOnly => {
+            // Likewise, a Screensaver-only session may be editing a
+            // policy-backed external shader rather than a file physically
+            // stored in /screensavers.
+            screensaver_target_available = true;
             wallpaper_target_available = false;
         }
+
         EditorTargetRestriction::Unrestricted => {}
     }
 
@@ -2394,11 +2410,20 @@ fn run_paths(
 
                 match target_restriction {
                     EditorTargetRestriction::WallpaperOnly => {
+                        // The tray-launched Wallpaper-only session remains
+                        // authoritative even after the user loads a different
+                        // shader, including one from an external location.
                         new_screensaver_target_available = false;
+                        new_wallpaper_target_available = true;
                     }
+
                     EditorTargetRestriction::ScreensaverOnly => {
+                        // Preserve the equivalent rule for Screensaver-only
+                        // sessions after changing the loaded shader.
+                        new_screensaver_target_available = true;
                         new_wallpaper_target_available = false;
                     }
+
                     EditorTargetRestriction::Unrestricted => {}
                 }
 
