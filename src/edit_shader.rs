@@ -715,6 +715,266 @@ fn run_empty_session() -> Result<(), String> {
 
         if let Some((
             row,
+            crate::editor_layout::PolicyRowCommand::DeletePolicy,
+        )) =
+            editor_output
+                .policy_row_command_requested
+                .as_ref()
+        {
+            let manage_target =
+                match row.policy_target {
+                    crate::editor_layout::PolicyTarget::Screensaver => {
+                        crate::manage_policies::PolicyTarget::Screensaver
+                    }
+
+                    crate::editor_layout::PolicyTarget::Wallpaper => {
+                        crate::manage_policies::PolicyTarget::Wallpaper
+                    }
+                };
+
+
+            let config_path =
+                crate::locate_paths::config_path();
+
+
+            match crate::manage_policies::delete_policy_by_key(
+                &config_path,
+                manage_target,
+                &row.policy_key,
+            ) {
+                Ok(()) => {
+
+                    match crate::load_config::load_config(
+                        &config_path
+                    ) {
+                        Ok(reloaded_config) => {
+
+                            config =
+                                reloaded_config.config;
+
+
+                            policy_display_rows =
+                                build_policy_display_rows(
+                                    &config
+                                );
+                        }
+
+
+                        Err(error) => {
+
+                            log_warning(
+                                &format!(
+                                    "[EDIT_SHADER] Policy deleted from empty Control Center session, but configuration reload failed: {}",
+                                    error,
+                                )
+                            );
+                        }
+                    }
+
+
+                    edit_window.set_status_message(
+                        format!(
+                            "{} policy deleted for {}",
+                            manage_target.name(),
+                            row.filename,
+                        )
+                    );
+
+
+                    log_information(
+                        &format!(
+                            "[EDIT_SHADER] Deleted {} policy for {} from empty Control Center session",
+                            manage_target.name(),
+                            row.filename,
+                        )
+                    );
+                }
+
+
+                Err(error) => {
+
+                    edit_window.set_status_message(
+                        format!(
+                            "Unable to delete policy: {}",
+                            error,
+                        )
+                    );
+
+
+                    log_warning(
+                        &format!(
+                            "[EDIT_SHADER] Unable to delete {} policy for {} from empty Control Center session: {}",
+                            manage_target.name(),
+                            row.filename,
+                            error,
+                        )
+                    );
+                }
+            }
+
+
+            continue;
+        }
+
+
+        if let Some((
+            row,
+            crate::editor_layout::PolicyRowCommand::DeleteShader,
+        )) =
+            editor_output
+                .policy_row_command_requested
+                .as_ref()
+        {
+            let manage_target =
+                match row.policy_target {
+                    crate::editor_layout::PolicyTarget::Screensaver => {
+                        crate::manage_policies::PolicyTarget::Screensaver
+                    }
+
+                    crate::editor_layout::PolicyTarget::Wallpaper => {
+                        crate::manage_policies::PolicyTarget::Wallpaper
+                    }
+                };
+
+
+            let shader_path =
+                PathBuf::from(
+                    &row.full_path
+                );
+
+
+            let config_path =
+                crate::locate_paths::config_path();
+
+
+            if !shader_path.is_file() {
+                edit_window.set_status_message(
+                    format!(
+                        "Shader file is unavailable: {}",
+                        shader_path.display(),
+                    )
+                );
+
+
+                log_warning(
+                    &format!(
+                        "[EDIT_SHADER] Refusing to delete unavailable shader {} from empty Control Center session",
+                        shader_path.display(),
+                    )
+                );
+
+
+                continue;
+            }
+
+
+            match crate::manage_policies::delete_policy_by_key(
+                &config_path,
+                manage_target,
+                &row.policy_key,
+            ) {
+                Ok(()) => {
+                    match std::fs::remove_file(
+                        &shader_path
+                    ) {
+                        Ok(()) => {
+                            match crate::load_config::load_config(
+                                &config_path
+                            ) {
+                                Ok(reloaded_config) => {
+                                    config =
+                                        reloaded_config.config;
+
+
+                                    policy_display_rows =
+                                        build_policy_display_rows(
+                                            &config
+                                        );
+                                }
+
+
+                                Err(error) => {
+                                    log_warning(
+                                        &format!(
+                                            "[EDIT_SHADER] Shader/policy deleted from empty Control Center session, but configuration reload failed: {}",
+                                            error,
+                                        )
+                                    );
+                                }
+                            }
+
+
+                            edit_window.set_status_message(
+                                format!(
+                                    "{} shader and associated {} policy deleted: {}",
+                                    manage_target.name(),
+                                    manage_target.name(),
+                                    row.filename,
+                                )
+                            );
+
+
+                            log_information(
+                                &format!(
+                                    "[EDIT_SHADER] Deleted {} shader {} and its policy from empty Control Center session",
+                                    manage_target.name(),
+                                    shader_path.display(),
+                                )
+                            );
+                        }
+
+
+                        Err(error) => {
+                            edit_window.set_status_message(
+                                format!(
+                                    "{} policy was deleted, but the shader file could not be deleted: {}",
+                                    manage_target.name(),
+                                    error,
+                                )
+                            );
+
+
+                            log_warning(
+                                &format!(
+                                    "[EDIT_SHADER] Deleted {} policy for {}, but failed to delete shader file {} from empty Control Center session: {}",
+                                    manage_target.name(),
+                                    row.filename,
+                                    shader_path.display(),
+                                    error,
+                                )
+                            );
+                        }
+                    }
+                }
+
+
+                Err(error) => {
+                    edit_window.set_status_message(
+                        format!(
+                            "Shader was not deleted because its associated policy could not be deleted: {}",
+                            error,
+                        )
+                    );
+
+
+                    log_warning(
+                        &format!(
+                            "[EDIT_SHADER] Refusing to delete shader {} from empty Control Center session because {} policy deletion failed: {}",
+                            shader_path.display(),
+                            manage_target.name(),
+                            error,
+                        )
+                    );
+                }
+            }
+
+
+            continue;
+        }
+
+
+        if let Some((
+            row,
             command,
         )) =
             editor_output
@@ -4289,6 +4549,13 @@ fn move_policy_shader(
             &config_path,
             &source_path,
             &destination_path,
+            match destination_target {
+                crate::editor_layout::PolicyTarget::Screensaver =>
+                    crate::manage_policies::PolicyTarget::Screensaver,
+
+                crate::editor_layout::PolicyTarget::Wallpaper =>
+                    crate::manage_policies::PolicyTarget::Wallpaper,
+            },
         )
     {
         let rollback_result =

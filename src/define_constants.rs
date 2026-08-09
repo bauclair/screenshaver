@@ -20,7 +20,7 @@ pub const SCREENSAVER_SPEED_MAX: f32 = 10.0;
 
 pub const WALLPAPER_SPEED_MIN: f32 = 0.01;
 pub const WALLPAPER_SPEED_DEFAULT: f32 = 0.025;
-pub const WALLPAPER_SPEED_MAX: f32 = 0.25;
+pub const WALLPAPER_SPEED_MAX: f32 = 10.0;
 
 
 // Supported render-scale limits.

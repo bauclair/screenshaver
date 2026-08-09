@@ -79,9 +79,10 @@ pub fn cache_path(
 }
 
 
-/// Dry-run garbage collection for normal Screenshaver startup.
-/// No files are deleted by this checkpoint.
-pub fn report_stale_cache_entries(
+/// Garbage-collect stale managed shader-cache objects during normal
+/// Screenshaver startup. Only 64-character hexadecimal cache objects
+/// created by Screenshaver are eligible for automatic deletion.
+pub fn delete_stale_cache_entries(
 ) -> Result<(), String> {
 
     let valid_keys =
@@ -92,7 +93,7 @@ pub fn report_stale_cache_entries(
 
     if !cache_dir.exists() {
         log_debug(
-            "[CACHE] Garbage-collection dry run: cache directory does not exist"
+            "[CACHE] Garbage collection: cache directory does not exist"
         );
         return Ok(());
     }
@@ -122,6 +123,8 @@ pub fn report_stale_cache_entries(
 
     let mut cache_objects = 0usize;
     let mut stale_objects = 0usize;
+    let mut deleted_objects = 0usize;
+    let mut delete_failures = 0usize;
 
     for entry in entries {
         let entry = entry.map_err(
@@ -160,20 +163,43 @@ pub fn report_stale_cache_entries(
 
         if !valid_keys.contains(name) {
             stale_objects += 1;
-            log_information(
-                &format!(
-                    "[CACHE] Garbage-collection dry run: would delete stale cache object {}",
-                    name,
-                )
-            );
+
+            match std::fs::remove_file(
+                &path
+            ) {
+                Ok(()) => {
+                    deleted_objects += 1;
+
+                    log_information(
+                        &format!(
+                            "[CACHE] Deleted stale cache object {}",
+                            name,
+                        )
+                    );
+                }
+
+                Err(error) => {
+                    delete_failures += 1;
+
+                    log_warning(
+                        &format!(
+                            "[CACHE] Unable to delete stale cache object '{}': {}",
+                            path.display(),
+                            error,
+                        )
+                    );
+                }
+            }
         }
     }
 
     log_information(
         &format!(
-            "[CACHE] Garbage-collection dry run complete: {} cache objects inspected, {} stale",
+            "[CACHE] Garbage collection complete: {} cache objects inspected, {} stale, {} deleted, {} delete failures",
             cache_objects,
             stale_objects,
+            deleted_objects,
+            delete_failures,
         )
     );
 
@@ -254,5 +280,14 @@ fn log_information(
 
     let logfile = crate::locate_paths::runtime_log_path();
     crate::logger::information(&logfile, message);
+}
+
+
+fn log_warning(
+    message: &str,
+) {
+
+    let logfile = crate::locate_paths::runtime_log_path();
+    crate::logger::warning(&logfile, message);
 }
 

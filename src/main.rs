@@ -861,12 +861,12 @@ crate::parse_arguments::Command::ListPalettes => {
 
 
     if let Err(error) =
-        crate::manage_cache::report_stale_cache_entries()
+        crate::manage_cache::delete_stale_cache_entries()
     {
         crate::logger::warning(
             &logfile,
             &format!(
-                "[CACHE] Garbage-collection dry run was skipped: {}",
+                "[CACHE] Garbage collection was skipped: {}",
                 error,
             ),
         );

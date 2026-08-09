@@ -655,6 +655,7 @@ pub fn reconcile_shader_move_from_source(
     config_path: &Path,
     original_source_path: &Path,
     destination_path: &Path,
+    destination_target: PolicyTarget,
 ) -> Result<(), String> {
 
     if !destination_path.is_absolute() {
@@ -666,15 +667,61 @@ pub fn reconcile_shader_move_from_source(
         );
     }
 
+
+    let destination_name =
+        destination_path
+            .file_name()
+            .and_then(
+                |name| name.to_str()
+            )
+            .ok_or_else(
+                || {
+                    format!(
+                        "Moved shader filename is not valid UTF-8: {}",
+                        destination_path.display(),
+                    )
+                }
+            )?;
+
+
+    let expected_destination =
+        managed_shader_path(
+            destination_target,
+            destination_name,
+        );
+
+
+    if !paths_refer_to_same_source(
+        destination_path,
+        &expected_destination,
+    ) {
+        return Err(
+            format!(
+                "Destination '{}' is not the managed {} shader location for '{}'",
+                destination_path.display(),
+                destination_target.name(),
+                destination_name,
+            )
+        );
+    }
+
+
     let original_source_path =
         canonical_or_absolute(
             original_source_path
         )?;
 
+
     let mut document =
         load_document(
             config_path
         )?;
+
+
+    let mut matching_policies:
+        Vec<(PolicyTarget, String)> =
+        Vec::new();
+
 
     for target in [
         PolicyTarget::Screensaver,
@@ -697,6 +744,7 @@ pub fn reconcile_shader_move_from_source(
             )
             .unwrap_or_default();
 
+
         for key in keys {
             let resolved =
                 resolved_policy_source_path(
@@ -705,55 +753,170 @@ pub fn reconcile_shader_move_from_source(
                     &key,
                 )?;
 
-            if !paths_refer_to_same_source(
+
+            if paths_refer_to_same_source(
                 &resolved,
                 &original_source_path,
             ) {
-                continue;
-            }
-
-            let display_name =
-                policy_display_name_from_key(
-                    &key
+                matching_policies.push(
+                    (
+                        target,
+                        key,
+                    )
                 );
-
-            let managed_path =
-                managed_shader_path(
-                    target,
-                    display_name,
-                );
-
-            if paths_refer_to_same_source(
-                destination_path,
-                &managed_path,
-            ) {
-                remove_source_path_metadata(
-                    &mut document,
-                    target,
-                    &key,
-                )?;
-            } else {
-                let destination_text =
-                    destination_path
-                        .to_str()
-                        .ok_or_else(
-                            || {
-                                format!(
-                                    "Moved shader path is not valid UTF-8: {}",
-                                    destination_path.display(),
-                                )
-                            }
-                        )?;
-
-                set_source_path_metadata(
-                    &mut document,
-                    target,
-                    &key,
-                    Some(destination_text),
-                )?;
             }
         }
     }
+
+
+    if matching_policies.len() > 1 {
+        return Err(
+            format!(
+                "Shader '{}' has multiple policies referring to the same source path; move canceled to avoid choosing which policy settings should survive",
+                destination_name,
+            )
+        );
+    }
+
+
+    let Some((
+        source_target,
+        source_key,
+    )) =
+        matching_policies
+            .into_iter()
+            .next()
+    else {
+        // The file can still be moved even if it has no policy.
+        return save_document(
+            config_path,
+            &document,
+        );
+    };
+
+
+    if source_target
+        == destination_target
+    {
+        // The destination directory is authoritative.  A policy for a
+        // managed shader no longer needs external-path metadata.
+        remove_source_path_metadata(
+            &mut document,
+            source_target,
+            &source_key,
+        )?;
+
+
+        return save_document(
+            config_path,
+            &document,
+        );
+    }
+
+
+    // A move between managed shader directories is also a policy-target
+    // conversion.  Refuse to overwrite an existing destination policy.
+    if let Some(existing_destination_key) =
+        matching_policy_key_for_source(
+            &document,
+            destination_target,
+            destination_name,
+            destination_path,
+        )?
+    {
+        return Err(
+            format!(
+                "Cannot change the {} policy for '{}' to {} because destination policy '{}' already refers to the managed destination shader",
+                source_target.name(),
+                destination_name,
+                destination_target.name(),
+                existing_destination_key,
+            )
+        );
+    }
+
+
+    let source_item =
+        policy_table(
+            &document,
+            source_target,
+        )?
+        .and_then(
+            |table| table.get(
+                &source_key
+            )
+        )
+        .cloned()
+        .ok_or_else(
+            || {
+                format!(
+                    "Policy '{}' disappeared from [{}] while reconciling the shader move",
+                    source_key,
+                    source_target.table_name(),
+                )
+            }
+        )?;
+
+
+    let destination_key =
+        {
+            let destination_table =
+                policy_table_mut(
+                    &mut document,
+                    destination_target,
+                )?;
+
+
+            unique_policy_storage_key(
+                destination_table,
+                destination_name,
+                destination_path,
+            )
+        };
+
+
+    {
+        let destination_table =
+            policy_table_mut(
+                &mut document,
+                destination_target,
+            )?;
+
+
+        destination_table[
+            &destination_key
+        ] =
+            source_item;
+    }
+
+
+    remove_source_path_metadata(
+        &mut document,
+        destination_target,
+        &destination_key,
+    )?;
+
+
+    {
+        let source_table =
+            policy_table_mut(
+                &mut document,
+                source_target,
+            )?;
+
+
+        source_table.remove(
+            &source_key
+        );
+    }
+
+
+    remove_source_path_metadata(
+        &mut document,
+        source_target,
+        &source_key,
+    )?;
+
 
     save_document(
         config_path,

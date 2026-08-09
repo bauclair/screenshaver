@@ -1824,8 +1824,17 @@ impl EditWindowOverlay {
                                 7.0 * metrics.scale
                             );
 
+                            let control_configuration_dirty =
+                                control_configuration.as_ref()
+                                    .zip(control_configuration_baseline.as_ref())
+                                    .map(|(current, baseline)| current != baseline)
+                                    .unwrap_or(false);
+
+
                             // --------------------------------------------------------
                             // Permanent command row from the approved Qt mock-up.
+                            // Policy/Config state is shown in a compact text box on
+                            // the right side of this same row.
                             // --------------------------------------------------------
                             draw_compact_action_row(
                                 ui,
@@ -1850,6 +1859,9 @@ impl EditWindowOverlay {
                                 &mut render_scale_drag_state,
                                 &mut status_message,
                                 &mut hover_help_message,
+                                shader_information,
+                                configuration_changed,
+                                control_configuration_dirty,
                             );
 
                             ui.add_space(
@@ -1864,19 +1876,10 @@ impl EditWindowOverlay {
                                         status_message.as_str(),
                                 };
 
-                            let control_configuration_dirty =
-                                control_configuration.as_ref()
-                                    .zip(control_configuration_baseline.as_ref())
-                                    .map(|(current, baseline)| current != baseline)
-                                    .unwrap_or(false);
-
                             draw_compact_status_row(
                                 ui,
                                 metrics,
-                                shader_information,
                                 displayed_status,
-                                configuration_changed,
-                                control_configuration_dirty,
                             );
                         }
                     );
@@ -2718,6 +2721,9 @@ fn draw_compact_action_row(
     render_scale_drag_state: &mut Option<SliderDragState>,
     status_message: &mut String,
     hover_help_message: &mut Option<&'static str>,
+    shader_information: Option<&ShaderInformation>,
+    policy_changed: bool,
+    control_configuration_dirty: bool,
 ) {
     let button_size =
         egui::vec2(
@@ -2815,6 +2821,66 @@ fn draw_compact_action_row(
                         .to_string();
             }
 
+
+            let policy_text =
+                if shader_information.is_none() {
+                    "Policy: --"
+                } else if policy_changed {
+                    "Policy: Modified"
+                } else {
+                    "Policy: Unchanged"
+                };
+
+
+            let config_text =
+                if control_configuration_dirty {
+                    "Config: Modified"
+                } else {
+                    "Config: Unchanged"
+                };
+
+
+            ui.with_layout(
+                egui::Layout::right_to_left(
+                    egui::Align::Center
+                ),
+                |ui| {
+                    egui::Frame::group(
+                        ui.style()
+                    )
+                    .inner_margin(
+                        egui::Margin::symmetric(
+                            (8.0 * metrics.scale)
+                                .round()
+                                .clamp(
+                                    i8::MIN as f32,
+                                    i8::MAX as f32,
+                                ) as i8,
+                            (3.0 * metrics.scale)
+                                .round()
+                                .clamp(
+                                    i8::MIN as f32,
+                                    i8::MAX as f32,
+                                ) as i8,
+                        )
+                    )
+                    .show(
+                        ui,
+                        |ui| {
+                            ui.label(
+                                egui::RichText::new(
+                                    format!(
+                                        "{}   {}",
+                                        policy_text,
+                                        config_text,
+                                    )
+                                )
+                                .strong(),
+                            );
+                        },
+                    );
+                },
+            );
         },
     );
 }
@@ -2823,78 +2889,39 @@ fn draw_compact_action_row(
 fn draw_compact_status_row(
     ui: &mut egui::Ui,
     _metrics: EditorMetrics,
-    shader_information: Option<&ShaderInformation>,
     displayed_status: &str,
-    policy_changed: bool,
-    control_configuration_dirty: bool,
 ) {
     ui.separator();
 
-    ui.horizontal(
-        |ui| {
-            // Left side is reserved exclusively for transient
-            // Information / Warning / Error messages.  Suppress steady-state
-            // "ready / loaded and rendering" text so it does not compete with
-            // the policy-modification status on the right.
-            let informational_status =
-                if displayed_status
-                    .eq_ignore_ascii_case(
-                        "Ready"
-                    )
-                    || displayed_status
-                        .to_ascii_lowercase()
-                        .contains(
-                            "loaded and rendering"
-                        )
-                {
-                    ""
-                } else {
-                    displayed_status
-                };
-
-            ui.label(
-                truncate_middle(
-                    informational_status,
-                    72,
+    // The status bar is now reserved exclusively for transient
+    // Information / Warning / Error messages.  Persistent Policy and Config
+    // dirty-state indicators are drawn in a dedicated text box beside
+    // the Save/Cancel controls.
+    let informational_status =
+        if displayed_status
+            .eq_ignore_ascii_case(
+                "Ready"
+            )
+            || displayed_status
+                .to_ascii_lowercase()
+                .contains(
+                    "loaded and rendering"
                 )
-            );
+        {
+            ""
+        } else {
+            displayed_status
+        };
 
-            ui.with_layout(
-                egui::Layout::right_to_left(
-                    egui::Align::Center
-                ),
-                |ui| {
-                    let policy_text =
-                        if shader_information.is_none() {
-                            "Policy: --"
-                        } else if policy_changed {
-                            "Policy: Modified"
-                        } else {
-                            "Policy: Unchanged"
-                        };
-
-                    let config_text =
-                        if control_configuration_dirty {
-                            "Config: Modified"
-                        } else {
-                            "Config: Unchanged"
-                        };
-
-                    ui.label(
-                        egui::RichText::new(
-                            format!(
-                                "{}   {}",
-                                policy_text,
-                                config_text,
-                            )
-                        )
-                        .strong(),
-                    );
-                },
-            );
-        },
+    ui.label(
+        truncate_middle(
+            informational_status,
+            96,
+        )
     );
 }
+
+
 
 
 fn truncate_middle(
@@ -3861,9 +3888,43 @@ fn draw_policy_confirmation_modal(
 
                     ui.add_space(8.0);
 
-                    ui.label(
-                        "Existing Screensaver and Wallpaper policy paths will be updated automatically."
-                    );
+                    let destination_target =
+                        match confirmation.command {
+                            PolicyRowCommand::MoveToScreensavers =>
+                                PolicyTarget::Screensaver,
+
+                            PolicyRowCommand::MoveToWallpapers =>
+                                PolicyTarget::Wallpaper,
+
+                            _ =>
+                                unreachable!(),
+                        };
+
+
+                    if confirmation.row.policy_target
+                        != destination_target
+                    {
+                        ui.label(
+                            format!(
+                                "The existing {} policy will be changed to a {} policy. All policy settings will be preserved.",
+                                policy_target_name(
+                                    confirmation.row.policy_target
+                                ),
+                                policy_target_name(
+                                    destination_target
+                                ),
+                            )
+                        );
+                    } else {
+                        ui.label(
+                            format!(
+                                "The existing {} policy will be retained and its path will be updated automatically.",
+                                policy_target_name(
+                                    confirmation.row.policy_target
+                                ),
+                            )
+                        );
+                    }
                 }
 
                 PolicyRowCommand::DeletePolicy => {
