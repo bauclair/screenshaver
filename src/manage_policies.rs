@@ -1,12 +1,17 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use sha2::{Digest, Sha256};
+
 use toml_edit::{
     value,
     DocumentMut,
     Item,
     Table,
 };
+
+
+const POLICY_ID_SEPARATOR: &str = "::screenshaver-path::";
 
 
 //
@@ -332,6 +337,431 @@ pub fn policy_exists(
 
 
 
+pub fn policy_exists_for_source(
+    config_path: &Path,
+    target: PolicyTarget,
+    shader: &str,
+    source_path: &Path,
+) -> Result<bool, String> {
+
+    let shader =
+        normalized_shader_name(
+            shader
+        )?;
+
+    let document =
+        load_document(
+            config_path
+        )?;
+
+    Ok(
+        matching_policy_key_for_source(
+            &document,
+            target,
+            &shader,
+            source_path,
+        )?
+        .is_some()
+    )
+}
+
+
+pub fn add_policy_for_source(
+    config_path: &Path,
+    target: PolicyTarget,
+    shader: &str,
+    properties: PolicyDefinition,
+    source_path: &Path,
+) -> Result<(), String> {
+
+    let shader =
+        normalized_shader_name(
+            shader
+        )?;
+
+    validate_properties(
+        target,
+        &properties
+    )?;
+
+    let source_path =
+        canonical_or_absolute(
+            source_path
+        )?;
+
+    let mut document =
+        load_document(
+            config_path
+        )?;
+
+    if let Some(existing_key) =
+        matching_policy_key_for_source(
+            &document,
+            target,
+            &shader,
+            &source_path,
+        )?
+    {
+        return Err(
+            format!(
+                "Shader '{}' at '{}' already has an policy in [{}]",
+                shader,
+                source_path.display(),
+                target.table_name(),
+            )
+        );
+    }
+
+    let storage_key =
+        {
+            let table =
+                policy_table_mut(
+                    &mut document,
+                    target,
+                )?;
+
+            unique_policy_storage_key(
+                table,
+                &shader,
+                &source_path,
+            )
+        };
+
+    {
+        let table =
+            policy_table_mut(
+                &mut document,
+                target,
+            )?;
+
+        table[
+            &storage_key
+        ] =
+            value(
+                format_policy(
+                    &properties
+                )
+            );
+    }
+
+    let managed_path =
+        managed_shader_path(
+            target,
+            &shader,
+        );
+
+    if paths_refer_to_same_source(
+        &source_path,
+        &managed_path,
+    ) {
+        remove_source_path_metadata(
+            &mut document,
+            target,
+            &storage_key,
+        )?;
+    } else {
+        let source_text =
+            source_path
+                .to_str()
+                .ok_or_else(
+                    || {
+                        format!(
+                            "Shader path is not valid UTF-8: {}",
+                            source_path.display(),
+                        )
+                    }
+                )?;
+
+        set_source_path_metadata(
+            &mut document,
+            target,
+            &storage_key,
+            Some(source_text),
+        )?;
+    }
+
+    save_document(
+        config_path,
+        &document,
+    )
+}
+
+
+pub fn replace_policy_for_source(
+    config_path: &Path,
+    target: PolicyTarget,
+    shader: &str,
+    properties: PolicyDefinition,
+    source_path: &Path,
+) -> Result<(), String> {
+
+    let shader =
+        normalized_shader_name(
+            shader
+        )?;
+
+    validate_properties(
+        target,
+        &properties
+    )?;
+
+    let source_path =
+        canonical_or_absolute(
+            source_path
+        )?;
+
+    let mut document =
+        load_document(
+            config_path
+        )?;
+
+    let storage_key =
+        matching_policy_key_for_source(
+            &document,
+            target,
+            &shader,
+            &source_path,
+        )?
+        .ok_or_else(
+            || {
+                format!(
+                    "Shader '{}' at '{}' does not have an policy in [{}]",
+                    shader,
+                    source_path.display(),
+                    target.table_name(),
+                )
+            }
+        )?;
+
+    {
+        let table =
+            policy_table_mut(
+                &mut document,
+                target,
+            )?;
+
+        table[
+            &storage_key
+        ] =
+            value(
+                format_policy(
+                    &properties
+                )
+            );
+    }
+
+    let managed_path =
+        managed_shader_path(
+            target,
+            &shader,
+        );
+
+    if paths_refer_to_same_source(
+        &source_path,
+        &managed_path,
+    ) {
+        remove_source_path_metadata(
+            &mut document,
+            target,
+            &storage_key,
+        )?;
+    } else {
+        let source_text =
+            source_path
+                .to_str()
+                .ok_or_else(
+                    || {
+                        format!(
+                            "Shader path is not valid UTF-8: {}",
+                            source_path.display(),
+                        )
+                    }
+                )?;
+
+        set_source_path_metadata(
+            &mut document,
+            target,
+            &storage_key,
+            Some(source_text),
+        )?;
+    }
+
+    save_document(
+        config_path,
+        &document,
+    )
+}
+
+
+pub fn delete_policy_by_key(
+    config_path: &Path,
+    target: PolicyTarget,
+    policy_key: &str,
+) -> Result<(), String> {
+
+    let mut document =
+        load_document(
+            config_path
+        )?;
+
+    let table =
+        policy_table_mut(
+            &mut document,
+            target,
+        )?;
+
+    let existing_key =
+        table
+            .iter()
+            .find_map(
+                |(key, _)| {
+                    if key.eq_ignore_ascii_case(
+                        policy_key
+                    ) {
+                        Some(key.to_string())
+                    } else {
+                        None
+                    }
+                }
+            )
+            .ok_or_else(
+                || {
+                    format!(
+                        "Policy key '{}' does not exist in [{}]",
+                        policy_key,
+                        target.table_name(),
+                    )
+                }
+            )?;
+
+    table.remove(
+        &existing_key
+    );
+
+    remove_source_path_metadata(
+        &mut document,
+        target,
+        &existing_key,
+    )?;
+
+    save_document(
+        config_path,
+        &document,
+    )
+}
+
+
+pub fn reconcile_shader_move_from_source(
+    config_path: &Path,
+    original_source_path: &Path,
+    destination_path: &Path,
+) -> Result<(), String> {
+
+    if !destination_path.is_absolute() {
+        return Err(
+            format!(
+                "Moved shader path must be absolute: {}",
+                destination_path.display(),
+            )
+        );
+    }
+
+    let original_source_path =
+        canonical_or_absolute(
+            original_source_path
+        )?;
+
+    let mut document =
+        load_document(
+            config_path
+        )?;
+
+    for target in [
+        PolicyTarget::Screensaver,
+        PolicyTarget::Wallpaper,
+    ] {
+        let keys =
+            policy_table(
+                &document,
+                target,
+            )?
+            .map(
+                |table| {
+                    table
+                        .iter()
+                        .map(
+                            |(key, _)| key.to_string()
+                        )
+                        .collect::<Vec<_>>()
+                }
+            )
+            .unwrap_or_default();
+
+        for key in keys {
+            let resolved =
+                resolved_policy_source_path(
+                    &document,
+                    target,
+                    &key,
+                )?;
+
+            if !paths_refer_to_same_source(
+                &resolved,
+                &original_source_path,
+            ) {
+                continue;
+            }
+
+            let display_name =
+                policy_display_name_from_key(
+                    &key
+                );
+
+            let managed_path =
+                managed_shader_path(
+                    target,
+                    display_name,
+                );
+
+            if paths_refer_to_same_source(
+                destination_path,
+                &managed_path,
+            ) {
+                remove_source_path_metadata(
+                    &mut document,
+                    target,
+                    &key,
+                )?;
+            } else {
+                let destination_text =
+                    destination_path
+                        .to_str()
+                        .ok_or_else(
+                            || {
+                                format!(
+                                    "Moved shader path is not valid UTF-8: {}",
+                                    destination_path.display(),
+                                )
+                            }
+                        )?;
+
+                set_source_path_metadata(
+                    &mut document,
+                    target,
+                    &key,
+                    Some(destination_text),
+                )?;
+            }
+        }
+    }
+
+    save_document(
+        config_path,
+        &document,
+    )
+}
+
+
 pub fn reconcile_shader_move(
     config_path: &Path,
     shader: &str,
@@ -556,9 +986,19 @@ pub fn external_policy_paths(
         if let Some(source_path) =
             source_path
         {
+            let display_name =
+                source_path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .map(str::to_string)
+                    .unwrap_or_else(|| {
+                        policy_display_name_from_key(shader)
+                            .to_string()
+                    });
+
             paths.push(
                 (
-                    shader.to_string(),
+                    display_name,
                     source_path,
                 )
             );
@@ -1717,6 +2157,284 @@ fn format_speed(
 
 
     value
+}
+
+
+pub fn policy_display_name_from_key(
+    key: &str,
+) -> &str {
+
+    let Some((name, suffix)) =
+        key.rsplit_once(
+            POLICY_ID_SEPARATOR
+        )
+    else {
+        return key;
+    };
+
+    if suffix.len() == 64
+        && suffix
+            .bytes()
+            .all(
+                |byte| byte.is_ascii_hexdigit()
+            )
+    {
+        name
+    } else {
+        key
+    }
+}
+
+
+fn unique_policy_storage_key(
+    table: &Table,
+    shader: &str,
+    source_path: &Path,
+) -> String {
+
+    let filename_in_use =
+        table
+            .iter()
+            .any(
+                |(key, _)| {
+                    policy_display_name_from_key(key)
+                        .eq_ignore_ascii_case(
+                            shader
+                        )
+                }
+            );
+
+    if !filename_in_use {
+        return shader.to_string();
+    }
+
+    let mut hasher =
+        Sha256::new();
+
+    hasher.update(
+        source_path
+            .as_os_str()
+            .as_encoded_bytes()
+    );
+
+    let digest =
+        format!(
+            "{:x}",
+            hasher.finalize()
+        );
+
+    format!(
+        "{}{}{}",
+        shader,
+        POLICY_ID_SEPARATOR,
+        digest,
+    )
+}
+
+
+fn matching_policy_key_for_source(
+    document: &DocumentMut,
+    target: PolicyTarget,
+    shader: &str,
+    source_path: &Path,
+) -> Result<Option<String>, String> {
+
+    let Some(table) =
+        policy_table(
+            document,
+            target,
+        )?
+    else {
+        return Ok(None);
+    };
+
+    for (key, _) in table.iter() {
+        if !policy_display_name_from_key(key)
+            .eq_ignore_ascii_case(
+                shader
+            )
+        {
+            continue;
+        }
+
+        let resolved =
+            resolved_policy_source_path(
+                document,
+                target,
+                key,
+            )?;
+
+        if paths_refer_to_same_source(
+            &resolved,
+            source_path,
+        ) {
+            return Ok(
+                Some(
+                    key.to_string()
+                )
+            );
+        }
+    }
+
+    Ok(None)
+}
+
+
+fn resolved_policy_source_path(
+    document: &DocumentMut,
+    target: PolicyTarget,
+    policy_key: &str,
+) -> Result<PathBuf, String> {
+
+    for table_name in [
+        target.path_table_name(),
+        target.legacy_path_table_name(),
+    ] {
+        let Some(item) =
+            document.get(
+                table_name
+            )
+        else {
+            continue;
+        };
+
+        let table =
+            item
+                .as_table()
+                .ok_or_else(
+                    || {
+                        format!(
+                            "[{}] exists but is not a TOML table",
+                            table_name,
+                        )
+                    }
+                )?;
+
+        let Some(existing_key) =
+            table
+                .iter()
+                .find_map(
+                    |(key, _)| {
+                        if key.eq_ignore_ascii_case(
+                            policy_key
+                        ) {
+                            Some(key.to_string())
+                        } else {
+                            None
+                        }
+                    }
+                )
+        else {
+            continue;
+        };
+
+        let raw_path =
+            table
+                .get(
+                    &existing_key
+                )
+                .and_then(
+                    |item| item.as_value()
+                )
+                .and_then(
+                    |value| value.as_str()
+                )
+                .ok_or_else(
+                    || {
+                        format!(
+                            "Shader path '{}' in [{}] must be a TOML string",
+                            existing_key,
+                            table_name,
+                        )
+                    }
+                )?;
+
+        return Ok(
+            PathBuf::from(
+                raw_path
+            )
+        );
+    }
+
+    Ok(
+        managed_shader_path(
+            target,
+            policy_display_name_from_key(
+                policy_key
+            ),
+        )
+    )
+}
+
+
+fn managed_shader_path(
+    target: PolicyTarget,
+    shader: &str,
+) -> PathBuf {
+
+    match target {
+        PolicyTarget::Screensaver => {
+            crate::locate_paths::screensaver_shader_dir()
+                .join(shader)
+        }
+
+        PolicyTarget::Wallpaper => {
+            crate::locate_paths::wallpaper_shader_dir()
+                .join(shader)
+        }
+    }
+}
+
+
+fn canonical_or_absolute(
+    path: &Path,
+) -> Result<PathBuf, String> {
+
+    if let Ok(canonical) =
+        path.canonicalize()
+    {
+        return Ok(canonical);
+    }
+
+    if path.is_absolute() {
+        return Ok(
+            path.to_path_buf()
+        );
+    }
+
+    std::env::current_dir()
+        .map(
+            |directory| directory.join(path)
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to resolve shader path '{}': {}",
+                    path.display(),
+                    error,
+                )
+            }
+        )
+}
+
+
+fn paths_refer_to_same_source(
+    left: &Path,
+    right: &Path,
+) -> bool {
+
+    match (
+        left.canonicalize(),
+        right.canonicalize(),
+    ) {
+        (Ok(left), Ok(right)) => {
+            left == right
+        }
+
+        _ => {
+            left == right
+        }
+    }
 }
 
 

@@ -428,7 +428,10 @@ pub fn run_paths(
 
     let initial_postprocess_profile =
         postprocess_policy.profile_for_shader(
-            &active.shader_name
+            &active.shader_name,
+            Some(
+                active.path.as_path()
+            ),
         );
 
 
@@ -601,7 +604,10 @@ pub fn run_paths(
 
                             postprocess.set_profile(
                                 postprocess_policy.profile_for_shader(
-                                    &active.shader_name
+                                    &active.shader_name,
+                                    Some(
+                                        active.path.as_path()
+                                    ),
                                 )
                             )?;
 

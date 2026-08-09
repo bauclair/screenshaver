@@ -182,17 +182,18 @@ impl ShaderManager {
 
         shaders.sort_by(
             |left, right| {
-                left.name.cmp(
-                    &right.name
-                )
-            }
-        );
-
-
-        shaders.dedup_by(
-            |left, right| {
                 left.name
-                    == right.name
+                    .cmp(
+                        &right.name
+                    )
+                    .then_with(
+                        || {
+                            left.source_path
+                                .cmp(
+                                    &right.source_path
+                                )
+                        }
+                    )
             }
         );
 
@@ -355,26 +356,6 @@ impl ShaderManager {
                         continue;
                     }
 
-                    if shaders.iter()
-                        .any(
-                            |shader| {
-                                shader.name
-                                    .eq_ignore_ascii_case(
-                                        &name
-                                    )
-                            }
-                        )
-                    {
-                        log_warning(
-                            &format!(
-                                "[SHADER] External screensaver shader '{}' was ignored because that filename already exists in the managed inventory",
-                                name,
-                            )
-                        );
-
-                        continue;
-                    }
-
                     shaders.push(
                         ShaderEntry::with_source_path(
                             name,
@@ -396,9 +377,18 @@ impl ShaderManager {
 
         shaders.sort_by(
             |left, right| {
-                left.name.cmp(
-                    &right.name
-                )
+                left.name
+                    .cmp(
+                        &right.name
+                    )
+                    .then_with(
+                        || {
+                            left.source_path
+                                .cmp(
+                                    &right.source_path
+                                )
+                        }
+                    )
             }
         );
 

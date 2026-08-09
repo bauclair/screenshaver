@@ -136,6 +136,7 @@ struct TextureRequest {
 
 fn resolve_texture_selection(
     shader_name: &str,
+    source_path: Option<&std::path::Path>,
     policy: &TexturePolicy,
     preview_selection: PreviewTextureSelection,
 ) -> (
@@ -151,6 +152,7 @@ fn resolve_texture_selection(
     let shader_policy =
         matching_policy(
             shader_name,
+            source_path,
             &policy.texture_policy_entries,
         );
 
@@ -370,22 +372,75 @@ fn random_palette(
 
 fn matching_policy<'a>(
     shader_name: &str,
+    source_path: Option<&std::path::Path>,
     overrides: &'a [TexturePolicyEntry],
 ) -> Option<
     &'a TexturePolicyEntry
 > {
 
+    if let Some(source_path) =
+        source_path
+    {
+        if let Some(policy) =
+            overrides
+                .iter()
+                .find(
+                    |texture_policy| {
+                        texture_policy.source_path
+                            .as_deref()
+                            .is_some_and(
+                                |policy_path| {
+                                    paths_refer_to_same_file(
+                                        policy_path,
+                                        source_path,
+                                    )
+                                }
+                            )
+                    }
+                )
+        {
+            return Some(
+                policy
+            );
+        }
+    }
+
+
     overrides
         .iter()
         .find(
             |texture_policy| {
-                texture_policy
-                    .shader
-                    .eq_ignore_ascii_case(
-                        shader_name
-                    )
+                texture_policy.source_path.is_none()
+                    && texture_policy
+                        .shader
+                        .eq_ignore_ascii_case(
+                            shader_name
+                        )
             }
         )
+}
+
+
+fn paths_refer_to_same_file(
+    left: &std::path::Path,
+    right: &std::path::Path,
+) -> bool {
+
+    match (
+        std::fs::canonicalize(left),
+        std::fs::canonicalize(right),
+    ) {
+        (
+            Ok(left),
+            Ok(right),
+        ) => {
+            left == right
+        }
+
+        _ => {
+            left == right
+        }
+    }
 }
 
 
@@ -557,8 +612,24 @@ impl TextureManager {
         channel_usage: ShaderChannelUsage,
     ) -> Result<(), String> {
 
-        self.prepare_for_shader_with_selection(
+        self.prepare_for_shader_with_path(
             shader_name,
+            None,
+            channel_usage,
+        )
+    }
+
+
+    pub fn prepare_for_shader_with_path(
+        &mut self,
+        shader_name: &str,
+        source_path: Option<&std::path::Path>,
+        channel_usage: ShaderChannelUsage,
+    ) -> Result<(), String> {
+
+        self.prepare_for_shader_with_path_and_selection(
+            shader_name,
+            source_path,
             channel_usage,
             PreviewTextureSelection::default(),
         )
@@ -568,6 +639,23 @@ impl TextureManager {
     pub fn prepare_for_shader_with_selection(
         &mut self,
         shader_name: &str,
+        channel_usage: ShaderChannelUsage,
+        preview_selection: PreviewTextureSelection,
+    ) -> Result<(), String> {
+
+        self.prepare_for_shader_with_path_and_selection(
+            shader_name,
+            None,
+            channel_usage,
+            preview_selection,
+        )
+    }
+
+
+    fn prepare_for_shader_with_path_and_selection(
+        &mut self,
+        shader_name: &str,
+        source_path: Option<&std::path::Path>,
         channel_usage: ShaderChannelUsage,
         preview_selection: PreviewTextureSelection,
     ) -> Result<(), String> {
@@ -592,6 +680,7 @@ impl TextureManager {
 
             if matching_policy(
                 shader_name,
+                source_path,
                 &self.policy.texture_policy_entries,
             )
             .is_some()
@@ -624,6 +713,7 @@ impl TextureManager {
         ) =
             resolve_texture_selection(
                 shader_name,
+                source_path,
                 &self.policy,
                 preview_selection,
             );
@@ -631,6 +721,7 @@ impl TextureManager {
 
         if matching_policy(
             shader_name,
+            source_path,
             &self.policy.texture_policy_entries,
         )
         .is_some()

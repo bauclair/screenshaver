@@ -2027,8 +2027,11 @@ fn render_mirror_frames(
 
 
     if let Err(error) =
-        texture_manager.prepare_for_shader(
+        texture_manager.prepare_for_shader_with_path(
             &active_shader.shader_name,
+            Some(
+                active_shader.source_path.as_path()
+            ),
             active_shader.channel_usage,
         )
     {
@@ -2058,6 +2061,9 @@ fn render_mirror_frames(
         runtime.animation_speed_policy
             .animation_speed_for_shader(
                 &active_shader.shader_name,
+                Some(
+                    active_shader.source_path.as_path()
+                ),
                 None,
             );
 
@@ -2065,6 +2071,9 @@ fn render_mirror_frames(
     let mut rendered_fps =
         runtime.fps_policy.rendered_fps_for_shader(
             &active_shader.shader_name,
+            Some(
+                active_shader.source_path.as_path()
+            ),
             None,
         );
 
@@ -2154,7 +2163,10 @@ fn render_mirror_frames(
 
         let postprocess_profile =
             runtime.postprocess_policy.profile_for_shader(
-                &active_shader.shader_name
+                &active_shader.shader_name,
+                Some(
+                    active_shader.source_path.as_path()
+                ),
             );
 
         let pipeline =
@@ -2293,15 +2305,21 @@ fn render_mirror_frames(
                         reload.texture_policy.clone()
                     );
 
-                match replacement_texture_manager.prepare_for_shader(
+                match replacement_texture_manager.prepare_for_shader_with_path(
                     &current_shader.shader_name,
+                    Some(
+                        current_shader.source_path.as_path()
+                    ),
                     current_shader.channel_usage,
                 ) {
                     Ok(()) => {
                         let replacement_profile =
                             reload.postprocess_policy
                                 .profile_for_shader(
-                                    &current_shader.shader_name
+                                    &current_shader.shader_name,
+                                    Some(
+                                        current_shader.source_path.as_path()
+                                    ),
                                 );
 
                         let mut profile_error =
@@ -2342,6 +2360,9 @@ fn render_mirror_frames(
                                 reload.animation_speed_policy
                                     .animation_speed_for_shader(
                                         &current_shader.shader_name,
+                                        Some(
+                                            current_shader.source_path.as_path()
+                                        ),
                                         None,
                                     );
 
@@ -2349,6 +2370,9 @@ fn render_mirror_frames(
                                 reload.fps_policy
                                     .rendered_fps_for_shader(
                                         &current_shader.shader_name,
+                                        Some(
+                                            current_shader.source_path.as_path()
+                                        ),
                                         None,
                                     );
 
@@ -2504,8 +2528,11 @@ fn render_mirror_frames(
                                 if let Err(
                                     error
                                 ) =
-                                    next_texture_manager.prepare_for_shader(
+                                    next_texture_manager.prepare_for_shader_with_path(
                                         &next_shader.shader_name,
+                                        Some(
+                                            next_shader.source_path.as_path()
+                                        ),
                                         next_shader.channel_usage,
                                     )
                                 {
@@ -2641,6 +2668,9 @@ fn render_mirror_frames(
                                     runtime.animation_speed_policy
                                         .animation_speed_for_shader(
                                             &next_shader.shader_name,
+                                            Some(
+                                                next_shader.source_path.as_path()
+                                            ),
                                             None,
                                         );
 
@@ -2648,6 +2678,9 @@ fn render_mirror_frames(
                                 rendered_fps =
                                     runtime.fps_policy.rendered_fps_for_shader(
                                         &next_shader.shader_name,
+                                        Some(
+                                            next_shader.source_path.as_path()
+                                        ),
                                         None,
                                     );
 
@@ -2669,7 +2702,10 @@ fn render_mirror_frames(
                                 let postprocess_profile =
                                     runtime.postprocess_policy
                                         .profile_for_shader(
-                                            &current_shader.shader_name
+                                            &current_shader.shader_name,
+                                            Some(
+                                                current_shader.source_path.as_path()
+                                            ),
                                         );
 
 

@@ -228,6 +228,9 @@ struct RawToml {
 )]
 pub struct ShaderPolicy {
 
+    pub policy_key:
+        String,
+
     pub shader:
         String,
 
@@ -293,6 +296,7 @@ impl AnimationSpeedPolicy {
     pub fn animation_speed_for_shader(
         &self,
         shader_name: &str,
+        source_path: Option<&Path>,
         command_line_speed: Option<f32>,
     ) -> f32 {
 
@@ -303,26 +307,139 @@ impl AnimationSpeedPolicy {
         }
 
 
-        self.shader_policies
-            .iter()
-            .find(
-                |shader_policy| {
-                    shader_policy
-                        .shader
+        matching_shader_policy(
+            &self.shader_policies,
+            shader_name,
+            source_path,
+        )
+        .and_then(
+            |shader_policy| {
+                shader_policy.animation_speed
+            }
+        )
+        .unwrap_or(
+            self.global_speed
+        )
+    }
+}
+
+
+fn paths_refer_to_same_file(
+    left: &Path,
+    right: &Path,
+) -> bool {
+
+    match (
+        std::fs::canonicalize(left),
+        std::fs::canonicalize(right),
+    ) {
+        (
+            Ok(left),
+            Ok(right),
+        ) => {
+            left == right
+        }
+
+        _ => {
+            left == right
+        }
+    }
+}
+
+
+fn matching_shader_policy<'a>(
+    policies: &'a [ShaderPolicy],
+    shader_name: &str,
+    source_path: Option<&Path>,
+) -> Option<&'a ShaderPolicy> {
+
+    if let Some(source_path) =
+        source_path
+    {
+        if let Some(policy) =
+            policies
+                .iter()
+                .find(
+                    |policy| {
+                        policy.source_path
+                            .as_deref()
+                            .is_some_and(
+                                |policy_path| {
+                                    paths_refer_to_same_file(
+                                        policy_path,
+                                        source_path,
+                                    )
+                                }
+                            )
+                    }
+                )
+        {
+            return Some(
+                policy
+            );
+        }
+    }
+
+
+    policies
+        .iter()
+        .find(
+            |policy| {
+                policy.source_path.is_none()
+                    && policy.shader
                         .eq_ignore_ascii_case(
                             shader_name
                         )
-                }
-            )
-            .and_then(
-                |shader_policy| {
-                    shader_policy.animation_speed
-                }
-            )
-            .unwrap_or(
-                self.global_speed
-            )
+            }
+        )
+}
+
+
+fn matching_fps_policy<'a>(
+    policies: &'a [FpsPolicyEntry],
+    shader_name: &str,
+    source_path: Option<&Path>,
+) -> Option<&'a FpsPolicyEntry> {
+
+    if let Some(source_path) =
+        source_path
+    {
+        if let Some(policy) =
+            policies
+                .iter()
+                .find(
+                    |policy| {
+                        policy.source_path
+                            .as_deref()
+                            .is_some_and(
+                                |policy_path| {
+                                    paths_refer_to_same_file(
+                                        policy_path,
+                                        source_path,
+                                    )
+                                }
+                            )
+                    }
+                )
+        {
+            return Some(
+                policy
+            );
+        }
     }
+
+
+    policies
+        .iter()
+        .find(
+            |policy| {
+                policy.source_path.is_none()
+                    && policy.shader
+                        .eq_ignore_ascii_case(
+                            shader_name
+                        )
+            }
+        )
 }
 
 
@@ -334,6 +451,9 @@ pub struct TexturePolicyEntry {
 
     pub shader:
         String,
+
+    pub source_path:
+        Option<PathBuf>,
 
     pub shader_texture:
         Option<
@@ -355,6 +475,9 @@ pub struct FpsPolicyEntry {
 
     pub shader:
         String,
+
+    pub source_path:
+        Option<PathBuf>,
 
     pub rendered_fps:
         u32,
@@ -381,6 +504,7 @@ impl FpsPolicy {
     pub fn rendered_fps_for_shader(
         &self,
         shader_name: &str,
+        source_path: Option<&Path>,
         command_line_fps: Option<u32>,
     ) -> u32 {
 
@@ -393,28 +517,22 @@ impl FpsPolicy {
         }
 
 
-        self.fps_policy_entries
-            .iter()
-            .find(
-                |fps_policy_entry| {
-                    fps_policy_entry
-                        .shader
-                        .eq_ignore_ascii_case(
-                            shader_name
-                        )
-                }
-            )
-            .map(
-                |fps_policy_entry| {
-                    fps_policy_entry.rendered_fps
-                }
-            )
-            .unwrap_or(
-                self.global_rendered_fps
-            )
-            .max(
-                1
-            )
+        matching_fps_policy(
+            &self.fps_policy_entries,
+            shader_name,
+            source_path,
+        )
+        .map(
+            |fps_policy_entry| {
+                fps_policy_entry.rendered_fps
+            }
+        )
+        .unwrap_or(
+            self.global_rendered_fps
+        )
+        .max(
+            1
+        )
     }
 }
 
@@ -523,20 +641,15 @@ impl PostprocessPolicy {
     pub(crate) fn profile_for_shader(
         &self,
         shader_name: &str,
+        source_path: Option<&Path>,
     ) -> PostprocessProfile {
 
         let shader_policy =
-            self.shader_policies
-                .iter()
-                .find(
-                    |shader_policy| {
-                        shader_policy
-                            .shader
-                            .eq_ignore_ascii_case(
-                                shader_name
-                            )
-                    }
-                );
+            matching_shader_policy(
+                &self.shader_policies,
+                shader_name,
+                source_path,
+            );
 
 
         PostprocessProfile {
@@ -1538,17 +1651,17 @@ fn parse_policy_table(
         );
 
 
-    for (shader, specification) in
+    for (policy_key, specification) in
         raw_policies
     {
-        let shader =
-            shader.trim().to_string();
+        let policy_key =
+            policy_key.trim().to_string();
 
 
-        if shader.is_empty() {
+        if policy_key.is_empty() {
             return Err(
                 format!(
-                    "[{}] contains an empty shader name",
+                    "[{}] contains an empty shader policy key",
                     target.table_name(),
                 )
             );
@@ -1558,13 +1671,34 @@ fn parse_policy_table(
         let source_path =
             take_policy_source_path(
                 &mut raw_shader_paths,
-                &shader,
+                &policy_key,
                 target,
             )?;
 
 
+        let shader =
+            source_path
+                .as_ref()
+                .and_then(
+                    |path| {
+                        path.file_name()
+                            .and_then(|name| name.to_str())
+                    }
+                )
+                .map(str::to_string)
+                .unwrap_or_else(
+                    || {
+                        crate::manage_policies::policy_display_name_from_key(
+                            &policy_key
+                        )
+                        .to_string()
+                    }
+                );
+
+
         policies.push(
             parse_policy_specification(
+                policy_key,
                 shader,
                 source_path,
                 &specification,
@@ -1662,6 +1796,7 @@ fn take_policy_source_path(
 }
 
 fn parse_policy_specification(
+    policy_key: String,
     shader: String,
     source_path: Option<PathBuf>,
     specification: &str,
@@ -1943,6 +2078,7 @@ fn parse_policy_specification(
 
     Ok(
         ShaderPolicy {
+            policy_key,
             shader,
             source_path,
             shader_texture,
@@ -1990,6 +2126,8 @@ fn texture_policy_entries_from(
                 TexturePolicyEntry {
                     shader:
                         shader_policy.shader.clone(),
+                    source_path:
+                        shader_policy.source_path.clone(),
                     shader_texture:
                         shader_policy.shader_texture.clone(),
                     shader_palette:
@@ -2015,6 +2153,8 @@ fn fps_policy_entries_from(
                             FpsPolicyEntry {
                                 shader:
                                     shader_policy.shader.clone(),
+                                source_path:
+                                    shader_policy.source_path.clone(),
                                 rendered_fps,
                             }
                         }

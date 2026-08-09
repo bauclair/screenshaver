@@ -13,6 +13,7 @@ mod parse_texture_specification;
 mod define_constants;
 mod locate_paths;
 mod delete_cache;
+mod manage_cache;
 
 mod query_session;
 mod session_backend;
@@ -857,6 +858,20 @@ crate::parse_arguments::Command::ListPalettes => {
                 return;
             }
         };
+
+
+    if let Err(error) =
+        crate::manage_cache::report_stale_cache_entries()
+    {
+        crate::logger::warning(
+            &logfile,
+            &format!(
+                "[CACHE] Garbage-collection dry run was skipped: {}",
+                error,
+            ),
+        );
+    }
+
 
     let (
         tray_command_sender,

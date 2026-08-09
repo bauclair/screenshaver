@@ -143,14 +143,32 @@ fn load_shader_path_internal(
                 };
             }
 
-            let processed = if let Some(cached) = try_load_cached_shader(source_path) {
-                cached
-            } else {
-                if let Err(error) = write_cached_shader(source_path, &report.source) {
-                    log_warning(&format!("[CACHE] Failed to write cache entry: {error}"));
-                }
-                report.source
-            };
+            let processed =
+                if let Some(cached) =
+                    try_load_cached_shader(
+                        source_path,
+                        &source,
+                    )
+                {
+                    cached
+                } else {
+
+                    if let Err(error) =
+                        write_cached_shader(
+                            source_path,
+                            &source,
+                            &report.source,
+                        )
+                    {
+                        log_warning(
+                            &format!(
+                                "[CACHE] Failed to write cache entry: {error}"
+                            )
+                        );
+                    }
+
+                    report.source
+                };
 
             ShaderLoadResult::Ready {
                 source: processed,
@@ -253,7 +271,8 @@ fn load_shader_path_internal(
             let processed =
                 if let Some(cached) =
                     try_load_cached_shader(
-                        source_path
+                        source_path,
+                        &source,
                     )
                 {
                     cached
@@ -262,6 +281,7 @@ fn load_shader_path_internal(
                     if let Err(error) =
                         write_cached_shader(
                             source_path,
+                            &source,
                             &report.source,
                         )
                     {
@@ -390,63 +410,140 @@ fn log_report(applied: &[String], warnings: &[String], reasons: &[String]) {
     }
 }
 
-fn try_load_cached_shader(source_path: &Path) -> Option<String> {
-    let cache_path = generated_cache_path(source_path);
+fn try_load_cached_shader(
+    source_path: &Path,
+    source: &str,
+) -> Option<String> {
+
+    let cache_path =
+        match crate::manage_cache::cache_path(
+            source_path,
+            source.as_bytes(),
+        ) {
+            Ok(path) => path,
+
+            Err(error) => {
+                log_warning(
+                    &format!(
+                        "[CACHE] Unable to determine cache path: {}",
+                        error,
+                    )
+                );
+
+                return None;
+            }
+        };
+
 
     if !cache_path.exists() {
-        log_debug(&format!("[CACHE] Miss: {}", cache_path.display()));
+
+        log_debug(
+            &format!(
+                "[CACHE] Miss: {}",
+                cache_path.display()
+            )
+        );
+
         return None;
     }
 
-    if cache_is_stale(source_path, &cache_path) {
-        log_debug(&format!("[CACHE] Stale: {}", cache_path.display()));
-        return None;
-    }
 
-    match std::fs::read_to_string(&cache_path) {
-        Ok(source) => {
-            log_debug(&format!("[CACHE] Hit: {}", cache_path.display()));
-            Some(source)
+    match std::fs::read_to_string(
+        &cache_path
+    ) {
+
+        Ok(cached_source) => {
+
+            log_debug(
+                &format!(
+                    "[CACHE] Hit: {}",
+                    cache_path.display()
+                )
+            );
+
+
+            Some(
+                cached_source
+            )
         }
+
+
         Err(error) => {
-            log_warning(&format!(
-                "[CACHE] Failed to read cache entry '{}': {}",
-                cache_path.display(),
-                error
-            ));
+
+            log_warning(
+                &format!(
+                    "[CACHE] Failed to read cache entry '{}': {}",
+                    cache_path.display(),
+                    error,
+                )
+            );
+
+
             None
         }
     }
 }
 
-fn cache_is_stale(source_path: &Path, cache_path: &Path) -> bool {
-    let source_modified = std::fs::metadata(source_path).and_then(|m| m.modified());
-    let cache_modified = std::fs::metadata(cache_path).and_then(|m| m.modified());
 
-    match (source_modified, cache_modified) {
-        (Ok(source_time), Ok(cache_time)) => cache_time < source_time,
-        _ => true,
-    }
+fn write_cached_shader(
+    source_path: &Path,
+    source: &str,
+    processed: &str,
+) -> Result<PathBuf, String> {
+
+    let cache_dir =
+        crate::locate_paths::shader_cache_dir();
+
+
+    std::fs::create_dir_all(
+        &cache_dir
+    )
+    .map_err(
+        |error| {
+            format!(
+                "Unable to create cache directory '{}': {}",
+                cache_dir.display(),
+                error,
+            )
+        }
+    )?;
+
+
+    let output_path =
+        crate::manage_cache::cache_path(
+            source_path,
+            source.as_bytes(),
+        )?;
+
+
+    std::fs::write(
+        &output_path,
+        processed,
+    )
+    .map_err(
+        |error| {
+            format!(
+                "Unable to write cache entry '{}': {}",
+                output_path.display(),
+                error,
+            )
+        }
+    )?;
+
+
+    log_debug(
+        &format!(
+            "[CACHE] Cache entry written: {}",
+            output_path.display()
+        )
+    );
+
+
+    Ok(
+        output_path
+    )
 }
 
-fn write_cached_shader(source_path: &Path, processed: &str) -> std::io::Result<PathBuf> {
-    let cache_dir = crate::locate_paths::shader_cache_dir();
-    std::fs::create_dir_all(&cache_dir)?;
-    let output_path = generated_cache_path(source_path);
-    std::fs::write(&output_path, processed)?;
-    log_debug(&format!("[CACHE] Cache entry written: {}", output_path.display()));
-    Ok(output_path)
-}
-
-fn generated_cache_path(source_path: &Path) -> PathBuf {
-    let stem = source_path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("shader");
-
-    crate::locate_paths::shader_cache_dir()
-        .join(format!("{stem}._gen.glsl"))
-}
 
 pub fn cleanup_generated_shaders() {
     let directory = crate::locate_paths::shader_cache_dir();

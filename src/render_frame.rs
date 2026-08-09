@@ -69,6 +69,7 @@ impl RenderFpsPolicy {
     fn rendered_fps_for_shader(
         &self,
         shader_name: &str,
+        source_path: Option<&Path>,
     ) -> u32 {
         match self {
             Self::Screensaver {
@@ -79,11 +80,13 @@ impl RenderFpsPolicy {
                     (*global_rendered_fps).max(1),
                     fps_policy_entries,
                     shader_name,
+                    source_path,
                 )
             }
             Self::Wallpaper(policy) => {
                 policy.rendered_fps_for_shader(
                     shader_name,
+                    source_path,
                     None,
                 )
             }
@@ -265,6 +268,7 @@ impl FrameRenderEngine {
         let animation_speed =
             animation_speed_policy.animation_speed_for_shader(
                 &active_shader.shader_name,
+                active_shader.source_path.as_deref(),
                 None,
             );
 
@@ -284,8 +288,9 @@ impl FrameRenderEngine {
                 texture_policy
             );
 
-        texture_manager.prepare_for_shader(
+        texture_manager.prepare_for_shader_with_path(
             &active_shader.shader_name,
+            active_shader.source_path.as_deref(),
             active_shader.channel_usage,
         )?;
 
@@ -295,7 +300,8 @@ impl FrameRenderEngine {
 
         let configured_fps =
             fps_policy.rendered_fps_for_shader(
-                &active_shader.shader_name
+                &active_shader.shader_name,
+                active_shader.source_path.as_deref(),
             );
 
         let subtitle_overlay =
@@ -322,7 +328,8 @@ impl FrameRenderEngine {
 
         let postprocess_profile =
             postprocess_policy.profile_for_shader(
-                &active_shader.shader_name
+                &active_shader.shader_name,
+                active_shader.source_path.as_deref(),
             );
 
         let postprocess =
@@ -408,8 +415,9 @@ impl FrameRenderEngine {
                 reload.texture_policy.clone()
             );
 
-        replacement_texture_manager.prepare_for_shader(
+        replacement_texture_manager.prepare_for_shader_with_path(
             &shader_name,
+            self.active_shader.source_path.as_deref(),
             self.active_shader.channel_usage,
         )?;
 
@@ -417,6 +425,7 @@ impl FrameRenderEngine {
             reload.animation_speed_policy
                 .animation_speed_for_shader(
                     &shader_name,
+                    self.active_shader.source_path.as_deref(),
                     None,
                 );
 
@@ -424,13 +433,15 @@ impl FrameRenderEngine {
             reload.fps_policy
                 .rendered_fps_for_shader(
                     &shader_name,
+                    self.active_shader.source_path.as_deref(),
                     None,
                 );
 
         let replacement_postprocess_profile =
             reload.postprocess_policy
                 .profile_for_shader(
-                    &shader_name
+                    &shader_name,
+                    self.active_shader.source_path.as_deref(),
                 );
 
         self.postprocess.resize(
@@ -889,8 +900,9 @@ impl FrameRenderEngine {
         ) {
             Ok(new_shader) => {
                 if let Err(error) =
-                    self.texture_manager.prepare_for_shader(
+                    self.texture_manager.prepare_for_shader_with_path(
                         &new_shader.shader_name,
+                        new_shader.source_path.as_deref(),
                         new_shader.channel_usage,
                     )
                 {
@@ -924,6 +936,7 @@ impl FrameRenderEngine {
                     self.animation_speed_policy
                         .animation_speed_for_shader(
                             &new_shader.shader_name,
+                            new_shader.source_path.as_deref(),
                             None,
                         );
 
@@ -931,13 +944,15 @@ impl FrameRenderEngine {
                 let new_configured_fps =
                     self.fps_policy
                         .rendered_fps_for_shader(
-                            &new_shader.shader_name
+                            &new_shader.shader_name,
+                            new_shader.source_path.as_deref(),
                         );
 
                 let new_postprocess_profile =
                     self.postprocess_policy
                         .profile_for_shader(
-                            &new_shader.shader_name
+                            &new_shader.shader_name,
+                            new_shader.source_path.as_deref(),
                         );
 
                 let new_overlay =
@@ -1466,6 +1481,29 @@ impl Drop for FrameRenderEngine {
 }
 
 
+fn paths_refer_to_same_file(
+    left: &Path,
+    right: &Path,
+) -> bool {
+
+    match (
+        std::fs::canonicalize(left),
+        std::fs::canonicalize(right),
+    ) {
+        (
+            Ok(left),
+            Ok(right),
+        ) => {
+            left == right
+        }
+
+        _ => {
+            left == right
+        }
+    }
+}
+
+
 fn resolve_shader_fps(
     global_rendered_fps: u32,
     fps_policy_entries:
@@ -1473,17 +1511,47 @@ fn resolve_shader_fps(
             crate::load_config::FpsPolicyEntry
         ],
     shader_name: &str,
+    source_path: Option<&Path>,
 ) -> u32 {
+
+    if let Some(source_path) =
+        source_path
+    {
+        if let Some(entry) =
+            fps_policy_entries
+                .iter()
+                .find(
+                    |entry| {
+                        entry.source_path
+                            .as_deref()
+                            .is_some_and(
+                                |policy_path| {
+                                    paths_refer_to_same_file(
+                                        policy_path,
+                                        source_path,
+                                    )
+                                }
+                            )
+                    }
+                )
+        {
+            return entry.rendered_fps.max(
+                1
+            );
+        }
+    }
+
 
     fps_policy_entries
         .iter()
         .find(
             |fps_policy_entry| {
-                fps_policy_entry
-                    .shader
-                    .eq_ignore_ascii_case(
-                        shader_name
-                    )
+                fps_policy_entry.source_path.is_none()
+                    && fps_policy_entry
+                        .shader
+                        .eq_ignore_ascii_case(
+                            shader_name
+                        )
             }
         )
         .map(

@@ -415,6 +415,7 @@ fn format_texture_specification(
 
 #[derive(Clone, Debug)]
 pub struct PolicyDisplayRow {
+    pub policy_key: String,
     pub filename: String,
     pub full_path: String,
     pub accessible: bool,
@@ -424,7 +425,9 @@ pub struct PolicyDisplayRow {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PolicyRowReference {
+    pub policy_key: String,
     pub filename: String,
+    pub full_path: String,
     pub policy_target: PolicyTarget,
 }
 
@@ -3115,9 +3118,9 @@ fn draw_policies_tab(
                             rows.iter()
                                 .position(
                                     |row| {
-                                        row.filename
+                                        row.policy_key
                                             .eq_ignore_ascii_case(
-                                                &selected.filename
+                                                &selected.policy_key
                                             )
                                             && row.policy_target
                                                 == selected.policy_target
@@ -3176,8 +3179,14 @@ fn draw_policies_tab(
 
             let row_reference =
                 PolicyRowReference {
+                    policy_key:
+                        row.policy_key.clone(),
+
                     filename:
                         row.filename.clone(),
+
+                    full_path:
+                        row.full_path.clone(),
 
                     policy_target:
                         row.policy_target,
@@ -3409,8 +3418,14 @@ fn draw_policies_tab(
                         for row in rows {
                             let row_reference =
                                 PolicyRowReference {
+                                    policy_key:
+                                        row.policy_key.clone(),
+
                                     filename:
                                         row.filename.clone(),
+
+                                    full_path:
+                                        row.full_path.clone(),
 
                                     policy_target:
                                         row.policy_target,
@@ -3421,9 +3436,9 @@ fn draw_policies_tab(
                                     .as_ref()
                                     .is_some_and(
                                         |selected| {
-                                            selected.filename
+                                            selected.policy_key
                                                 .eq_ignore_ascii_case(
-                                                    &row_reference.filename
+                                                    &row_reference.policy_key
                                                 )
                                                 && selected.policy_target
                                                     == row_reference.policy_target
@@ -3447,9 +3462,9 @@ fn draw_policies_tab(
                                 .as_ref()
                                 .is_some_and(
                                     |selected| {
-                                        selected.filename
+                                        selected.policy_key
                                             .eq_ignore_ascii_case(
-                                                &row_reference.filename
+                                                &row_reference.policy_key
                                             )
                                             && selected.policy_target
                                                 == row_reference.policy_target

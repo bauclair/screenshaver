@@ -734,10 +734,8 @@ fn run_empty_session() -> Result<(), String> {
                 )
         {
             let selected_path =
-                resolve_policy_shader_path(
-                    &config,
-                    row.policy_target,
-                    &row.filename,
+                PathBuf::from(
+                    &row.full_path
                 );
 
 
@@ -1189,72 +1187,38 @@ fn run_paths(
         mut texture_policy,
         mut postprocess_policy,
         mut animation_speed,
-        startup_status,
     ) =
+        editor_policy_context_for_path(
+            &config,
+            initial_editor_target,
+            initial_shader_path,
+            command_line_animation_speed,
+        );
+
+
+    let startup_status =
         match initial_editor_target {
+
             Some(
                 crate::editor_layout::PolicyTarget::Wallpaper
             ) => {
-                (
-                    config.wallpaper_fps_policy
-                        .global_rendered_fps,
-                    config.wallpaper_fps_policy
-                        .fps_policy_entries
-                        .clone(),
-                    config.wallpaper_texture_policy
-                        .clone(),
-                    config.wallpaper_postprocess_policy
-                        .clone(),
-                    config.wallpaper_speed_policy
-                        .animation_speed_for_shader(
-                            &shader_name_hint,
-                            command_line_animation_speed,
-                        ),
-                    "Loaded existing Wallpaper policy for this shader."
-                        .to_string(),
-                )
+                "Loaded existing Wallpaper policy for this shader."
+                    .to_string()
             }
 
             Some(
                 crate::editor_layout::PolicyTarget::Screensaver
             ) => {
-                (
-                    config.global_rendered_fps,
-                    config.screensaver_fps_policy_entries
-                        .clone(),
-                    config.texture_policy
-                        .clone(),
-                    config.screensaver_postprocess_policy
-                        .clone(),
-                    config.screensaver_speed_policy
-                        .animation_speed_for_shader(
-                            &shader_name_hint,
-                            command_line_animation_speed,
-                        ),
-                    "Loaded existing Screensaver policy for this shader."
-                        .to_string(),
-                )
+                "Loaded existing Screensaver policy for this shader."
+                    .to_string()
             }
 
             None => {
-                (
-                    config.global_rendered_fps,
-                    config.screensaver_fps_policy_entries
-                        .clone(),
-                    config.texture_policy
-                        .clone(),
-                    config.screensaver_postprocess_policy
-                        .clone(),
-                    config.screensaver_speed_policy
-                        .animation_speed_for_shader(
-                            &shader_name_hint,
-                            command_line_animation_speed,
-                        ),
-                    "No existing shader policy found. Select a policy target to create one."
-                        .to_string(),
-                )
+                "No existing shader policy found. Select a policy target to create one."
+                    .to_string()
             }
         };
+
 
 
     let preview_selection =
@@ -1440,7 +1404,10 @@ fn run_paths(
 
     let initial_postprocess_profile =
         postprocess_policy.profile_for_shader(
-            &active.shader_name
+            &active.shader_name,
+            Some(
+                active.path.as_path()
+            ),
         );
 
 
@@ -1642,7 +1609,10 @@ fn run_paths(
 
                             postprocess.set_profile(
                                 postprocess_policy.profile_for_shader(
-                                    &active.shader_name
+                                    &active.shader_name,
+                                    Some(
+                                        active.path.as_path()
+                                    ),
                                 )
                             )?;
 
@@ -2286,10 +2256,8 @@ fn run_paths(
                             .as_ref()
                     {
                         Some(
-                            resolve_policy_shader_path(
-                                &config,
-                                row.policy_target,
-                                &row.filename,
+                            PathBuf::from(
+                                &row.full_path
                             )
                         )
                     } else if editor_output.browse_shader_requested {
@@ -2506,72 +2474,38 @@ fn run_paths(
                     new_texture_policy,
                     new_postprocess_policy,
                     new_animation_speed,
-                    load_status,
                 ) =
+                    editor_policy_context_for_path(
+                        &config,
+                        new_editor_target,
+                        &selected_path,
+                        command_line_animation_speed,
+                    );
+
+
+                let load_status =
                     match new_editor_target {
+
                         Some(
                             crate::editor_layout::PolicyTarget::Wallpaper
                         ) => {
-                            (
-                                config.wallpaper_fps_policy
-                                    .global_rendered_fps,
-                                config.wallpaper_fps_policy
-                                    .fps_policy_entries
-                                    .clone(),
-                                config.wallpaper_texture_policy
-                                    .clone(),
-                                config.wallpaper_postprocess_policy
-                                    .clone(),
-                                config.wallpaper_speed_policy
-                                    .animation_speed_for_shader(
-                                        &selected_shader_name,
-                                        command_line_animation_speed,
-                                    ),
-                                "Loaded shader with its existing Wallpaper policy."
-                                    .to_string(),
-                            )
+                            "Loaded shader with its existing Wallpaper policy."
+                                .to_string()
                         }
 
                         Some(
                             crate::editor_layout::PolicyTarget::Screensaver
                         ) => {
-                            (
-                                config.global_rendered_fps,
-                                config.screensaver_fps_policy_entries
-                                    .clone(),
-                                config.texture_policy
-                                    .clone(),
-                                config.screensaver_postprocess_policy
-                                    .clone(),
-                                config.screensaver_speed_policy
-                                    .animation_speed_for_shader(
-                                        &selected_shader_name,
-                                        command_line_animation_speed,
-                                    ),
-                                "Loaded shader with its existing Screensaver policy."
-                                    .to_string(),
-                            )
+                            "Loaded shader with its existing Screensaver policy."
+                                .to_string()
                         }
 
                         None => {
-                            (
-                                config.global_rendered_fps,
-                                config.screensaver_fps_policy_entries
-                                    .clone(),
-                                config.texture_policy
-                                    .clone(),
-                                config.screensaver_postprocess_policy
-                                    .clone(),
-                                config.screensaver_speed_policy
-                                    .animation_speed_for_shader(
-                                        &selected_shader_name,
-                                        command_line_animation_speed,
-                                    ),
-                                "Loaded shader using resolved defaults. Select a policy target to create a policy."
-                                    .to_string(),
-                            )
+                            "Loaded shader using resolved defaults. Select a policy target to create a policy."
+                                .to_string()
                         }
                     };
+
 
                 let new_configured_fps =
                     resolve_preview_fps(
@@ -2596,7 +2530,10 @@ fn run_paths(
                         let new_live_postprocess_profile =
                             new_postprocess_policy
                                 .profile_for_shader(
-                                    &replacement.shader_name
+                                    &replacement.shader_name,
+                                    Some(
+                                        replacement.path.as_path()
+                                    ),
                                 );
 
                         postprocess.set_profile(
@@ -2879,57 +2816,22 @@ fn run_paths(
                         }
                     };
 
-                match requested_target {
-                    crate::editor_layout::PolicyTarget::Screensaver => {
-                        global_rendered_fps =
-                            config.global_rendered_fps;
+                (
+                    global_rendered_fps,
+                    fps_policy_entries,
+                    texture_policy,
+                    postprocess_policy,
+                    animation_speed,
+                ) =
+                    editor_policy_context_for_path(
+                        &config,
+                        Some(
+                            requested_target
+                        ),
+                        &active.path,
+                        command_line_animation_speed,
+                    );
 
-                        fps_policy_entries =
-                            config.screensaver_fps_policy_entries
-                                .clone();
-
-                        texture_policy =
-                            config.texture_policy
-                                .clone();
-
-                        postprocess_policy =
-                            config.screensaver_postprocess_policy
-                                .clone();
-
-                        animation_speed =
-                            config.screensaver_speed_policy
-                                .animation_speed_for_shader(
-                                    &active.shader_name,
-                                    command_line_animation_speed,
-                                );
-                    }
-
-                    crate::editor_layout::PolicyTarget::Wallpaper => {
-                        global_rendered_fps =
-                            config.wallpaper_fps_policy
-                                .global_rendered_fps;
-
-                        fps_policy_entries =
-                            config.wallpaper_fps_policy
-                                .fps_policy_entries
-                                .clone();
-
-                        texture_policy =
-                            config.wallpaper_texture_policy
-                                .clone();
-
-                        postprocess_policy =
-                            config.wallpaper_postprocess_policy
-                                .clone();
-
-                        animation_speed =
-                            config.wallpaper_speed_policy
-                                .animation_speed_for_shader(
-                                    &active.shader_name,
-                                    command_line_animation_speed,
-                                );
-                    }
-                }
 
                 configured_fps =
                     resolve_preview_fps(
@@ -2947,7 +2849,10 @@ fn run_paths(
 
                 live_postprocess_profile =
                     postprocess_policy.profile_for_shader(
-                        &active.shader_name
+                        &active.shader_name,
+                        Some(
+                            active.path.as_path()
+                        ),
                     );
 
                 postprocess.set_profile(
@@ -3470,44 +3375,27 @@ fn run_paths(
                 let config_path =
                     crate::locate_paths::config_path();
 
-                let managed_target_path =
-                    target_shader_path(
-                        policy_target,
-                        &active.shader_name,
-                    );
-
-                let external_source_path =
-                    if paths_refer_to_same_shader(
-                        &active.path,
-                        &managed_target_path,
-                    ) {
-                        None
-                    } else {
-                        Some(
-                            active.path.as_path()
-                        )
-                    };
-
                 let save_result =
-                    if crate::manage_policies::policy_exists(
+                    if crate::manage_policies::policy_exists_for_source(
                         &config_path,
                         manage_target,
                         &active.shader_name,
+                        &active.path,
                     )? {
-                        crate::manage_policies::replace_policy_with_source_path(
+                        crate::manage_policies::replace_policy_for_source(
                             &config_path,
                             manage_target,
                             &active.shader_name,
                             properties,
-                            external_source_path,
+                            &active.path,
                         )
                     } else {
-                        crate::manage_policies::add_policy_with_source_path(
+                        crate::manage_policies::add_policy_for_source(
                             &config_path,
                             manage_target,
                             &active.shader_name,
                             properties,
-                            external_source_path,
+                            &active.path,
                         )
                     };
 
@@ -3531,10 +3419,11 @@ fn run_paths(
                                         .iter()
                                         .any(
                                             |policy| {
-                                                policy.shader
-                                                    .eq_ignore_ascii_case(
-                                                        &active.shader_name
-                                                    )
+                                                policy_applies_to_path(
+                                                    policy,
+                                                    crate::editor_layout::PolicyTarget::Screensaver,
+                                                    &active.path,
+                                                )
                                             }
                                         );
 
@@ -3544,10 +3433,11 @@ fn run_paths(
                                         .iter()
                                         .any(
                                             |policy| {
-                                                policy.shader
-                                                    .eq_ignore_ascii_case(
-                                                        &active.shader_name
-                                                    )
+                                                policy_applies_to_path(
+                                                    policy,
+                                                    crate::editor_layout::PolicyTarget::Wallpaper,
+                                                    &active.path,
+                                                )
                                             }
                                         );
                             }
@@ -3706,10 +3596,10 @@ fn run_paths(
                         let config_path =
                             crate::locate_paths::config_path();
 
-                        match crate::manage_policies::delete_policy(
+                        match crate::manage_policies::delete_policy_by_key(
                             &config_path,
                             manage_target,
-                            &row.filename,
+                            &row.policy_key,
                         ) {
                             Ok(()) => {
                                 match crate::load_config::load_config(
@@ -3813,20 +3703,18 @@ fn run_paths(
                             };
 
                         let shader_path =
-                            resolve_policy_shader_path(
-                                &config,
-                                row.policy_target,
-                                &row.filename,
+                            PathBuf::from(
+                                &row.full_path
                             );
 
                         let config_path =
                             crate::locate_paths::config_path();
 
                         let policy_delete_result =
-                            crate::manage_policies::delete_policy(
+                            crate::manage_policies::delete_policy_by_key(
                                 &config_path,
                                 manage_target,
-                                &row.filename,
+                                &row.policy_key,
                             );
 
                         match policy_delete_result {
@@ -4070,6 +3958,182 @@ fn resolve_policy_shader_path(
 }
 
 
+
+fn editor_policy_context_for_path(
+    config: &crate::load_config::Config,
+    target: Option<crate::editor_layout::PolicyTarget>,
+    loaded_path: &Path,
+    command_line_animation_speed: Option<f32>,
+) -> (
+    u32,
+    Vec<crate::load_config::FpsPolicyEntry>,
+    crate::load_config::TexturePolicy,
+    crate::load_config::PostprocessPolicy,
+    f32,
+) {
+
+    let (
+        global_rendered_fps,
+        base_texture_policy,
+        base_postprocess_policy,
+        global_animation_speed,
+        policies,
+    ) =
+        match target {
+
+            Some(
+                crate::editor_layout::PolicyTarget::Wallpaper
+            ) => (
+                config.wallpaper_fps_policy
+                    .global_rendered_fps,
+                &config.wallpaper_texture_policy,
+                &config.wallpaper_postprocess_policy,
+                config.wallpaper_speed_policy
+                    .global_speed,
+                &config.wallpaper_policies,
+            ),
+
+            Some(
+                crate::editor_layout::PolicyTarget::Screensaver
+            ) => (
+                config.global_rendered_fps,
+                &config.texture_policy,
+                &config.screensaver_postprocess_policy,
+                config.screensaver_speed_policy
+                    .global_speed,
+                &config.screensaver_policies,
+            ),
+
+            None => (
+                config.global_rendered_fps,
+                &config.texture_policy,
+                &config.screensaver_postprocess_policy,
+                config.screensaver_speed_policy
+                    .global_speed,
+                &config.screensaver_policies,
+            ),
+        };
+
+
+    let matching_policy =
+        target.and_then(
+            |resolved_target| {
+                policies
+                    .iter()
+                    .find(
+                        |policy| {
+                            policy_applies_to_path(
+                                policy,
+                                resolved_target,
+                                loaded_path,
+                            )
+                        }
+                    )
+            }
+        );
+
+
+    let fps_policy_entries =
+        matching_policy
+            .and_then(
+                |policy| {
+                    policy.rendered_fps
+                        .map(
+                            |rendered_fps| {
+                                crate::load_config::FpsPolicyEntry {
+                                    shader:
+                                        policy.shader.clone(),
+                                    source_path:
+                                        policy.source_path.clone(),
+                                    rendered_fps,
+                                }
+                            }
+                        )
+                }
+            )
+            .into_iter()
+            .collect();
+
+
+    let texture_policy_entries =
+        matching_policy
+            .filter(
+                |policy| {
+                    policy.shader_texture.is_some()
+                        || policy.shader_palette.is_some()
+                }
+            )
+            .map(
+                |policy| {
+                    crate::load_config::TexturePolicyEntry {
+                        shader:
+                            policy.shader.clone(),
+                        source_path:
+                            policy.source_path.clone(),
+                        shader_texture:
+                            policy.shader_texture.clone(),
+                        shader_palette:
+                            policy.shader_palette,
+                    }
+                }
+            )
+            .into_iter()
+            .collect();
+
+
+    let texture_policy =
+        crate::load_config::TexturePolicy {
+            global_texture:
+                base_texture_policy
+                    .global_texture
+                    .clone(),
+            global_palette:
+                base_texture_policy
+                    .global_palette,
+            texture_policy_entries,
+        };
+
+
+    let postprocess_policy =
+        crate::load_config::PostprocessPolicy {
+            global_profile:
+                base_postprocess_policy
+                    .global_profile,
+            shader_policies:
+                matching_policy
+                    .cloned()
+                    .into_iter()
+                    .collect(),
+        };
+
+
+    let animation_speed =
+        command_line_animation_speed
+            .or_else(
+                || {
+                    matching_policy
+                        .and_then(
+                            |policy| {
+                                policy.animation_speed
+                            }
+                        )
+                }
+            )
+            .unwrap_or(
+                global_animation_speed
+            );
+
+
+    (
+        global_rendered_fps,
+        fps_policy_entries,
+        texture_policy,
+        postprocess_policy,
+        animation_speed,
+    )
+}
+
+
 fn policy_applies_to_path(
     policy: &crate::load_config::ShaderPolicy,
     target: crate::editor_layout::PolicyTarget,
@@ -4140,10 +4204,8 @@ fn move_policy_shader(
 ) -> Result<PathBuf, String> {
 
     let source_path =
-        resolve_policy_shader_path(
-            config,
-            row.policy_target,
-            &row.filename,
+        PathBuf::from(
+            &row.full_path
         );
 
     if !source_path.is_file() {
@@ -4223,9 +4285,9 @@ fn move_policy_shader(
         crate::locate_paths::config_path();
 
     if let Err(error) =
-        crate::manage_policies::reconcile_shader_move(
+        crate::manage_policies::reconcile_shader_move_from_source(
             &config_path,
-            &row.filename,
+            &source_path,
             &destination_path,
         )
     {
@@ -4444,6 +4506,9 @@ fn build_policy_display_rows(
 
 
                     crate::editor_layout::PolicyDisplayRow {
+                        policy_key:
+                            policy.policy_key.clone(),
+
                         filename:
                             policy.shader.clone(),
 
@@ -4479,6 +4544,9 @@ fn build_policy_display_rows(
 
 
                     crate::editor_layout::PolicyDisplayRow {
+                        policy_key:
+                            policy.policy_key.clone(),
+
                         filename:
                             policy.shader.clone(),
 
