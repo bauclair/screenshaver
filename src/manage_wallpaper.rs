@@ -185,7 +185,7 @@ pub fn run(
     }
 
 
-    let shader_names =
+    let mut shader_entries =
         shader_files
             .iter()
             .filter_map(
@@ -199,7 +199,10 @@ pub fn run(
                         )
                         .map(
                             |name| {
-                                name.to_string()
+                                crate::manage_shader::ShaderEntry::with_source_path(
+                                    name.to_string(),
+                                    shader_file.clone(),
+                                )
                             }
                         )
                 }
@@ -207,10 +210,69 @@ pub fn run(
             .collect::<Vec<_>>();
 
 
+    let config_path =
+        crate::locate_paths::config_path();
+
+    match crate::manage_policies::external_policy_paths(
+        &config_path,
+        crate::manage_policies::PolicyTarget::Wallpaper,
+    ) {
+        Ok(external_paths) => {
+            for (
+                name,
+                source_path,
+            ) in external_paths
+            {
+                if !source_path.is_file() {
+                    eprintln!(
+                        "[WALLPAPER] External wallpaper shader '{}' is unavailable: {}",
+                        name,
+                        source_path.display(),
+                    );
+
+                    continue;
+                }
+
+                if shader_entries.iter()
+                    .any(
+                        |shader| {
+                            shader.name
+                                .eq_ignore_ascii_case(
+                                    &name
+                                )
+                        }
+                    )
+                {
+                    eprintln!(
+                        "[WALLPAPER] External wallpaper shader '{}' was ignored because that filename already exists in the managed inventory",
+                        name,
+                    );
+
+                    continue;
+                }
+
+                shader_entries.push(
+                    crate::manage_shader::ShaderEntry::with_source_path(
+                        name,
+                        source_path,
+                    )
+                );
+            }
+        }
+
+        Err(error) => {
+            eprintln!(
+                "[WALLPAPER] Unable to load external wallpaper shader paths: {}",
+                error,
+            );
+        }
+    }
+
+
     let shader_manager =
-        crate::manage_shader::ShaderManager::from_shader_list(
+        crate::manage_shader::ShaderManager::from_shader_entries(
             shader_mode,
-            shader_names,
+            shader_entries,
         );
 
 

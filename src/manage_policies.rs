@@ -439,6 +439,149 @@ pub fn reconcile_shader_move(
 }
 
 
+/// Return external source paths that belong to actual policies for the
+/// requested target.  Stale path-table entries without a corresponding
+/// policy are ignored.
+pub fn external_policy_paths(
+    config_path: &Path,
+    target: PolicyTarget,
+) -> Result<Vec<(String, PathBuf)>, String> {
+
+    let document =
+        load_document(
+            config_path
+        )?;
+
+    let Some(policy_table) =
+        policy_table(
+            &document,
+            target,
+        )?
+    else {
+        return Ok(
+            Vec::new()
+        );
+    };
+
+    let mut paths =
+        Vec::new();
+
+    for (
+        shader,
+        _,
+    ) in policy_table.iter()
+    {
+        let mut source_path =
+            None;
+
+        for table_name in [
+            target.path_table_name(),
+            target.legacy_path_table_name(),
+        ] {
+            let Some(item) =
+                document.get(
+                    table_name
+                )
+            else {
+                continue;
+            };
+
+            let table =
+                item.as_table()
+                    .ok_or_else(
+                        || {
+                            format!(
+                                "[{}] exists but is not a TOML table",
+                                table_name,
+                            )
+                        }
+                    )?;
+
+            let Some(existing_key) =
+                matching_shader_key(
+                    table,
+                    shader,
+                )
+            else {
+                continue;
+            };
+
+            let raw_path =
+                table
+                    .get(
+                        &existing_key
+                    )
+                    .and_then(
+                        |item| {
+                            item.as_value()
+                        }
+                    )
+                    .and_then(
+                        |value| {
+                            value.as_str()
+                        }
+                    )
+                    .ok_or_else(
+                        || {
+                            format!(
+                                "Shader path '{}' in [{}] must be a TOML string",
+                                existing_key,
+                                table_name,
+                            )
+                        }
+                    )?;
+
+            let path =
+                PathBuf::from(
+                    raw_path
+                );
+
+            if !path.is_absolute() {
+                return Err(
+                    format!(
+                        "Shader path '{}' in [{}] must be absolute: {}",
+                        existing_key,
+                        table_name,
+                        raw_path,
+                    )
+                );
+            }
+
+            source_path =
+                Some(path);
+
+            break;
+        }
+
+        if let Some(source_path) =
+            source_path
+        {
+            paths.push(
+                (
+                    shader.to_string(),
+                    source_path,
+                )
+            );
+        }
+    }
+
+    paths.sort_by(
+        |left, right| {
+            left.0
+                .to_ascii_lowercase()
+                .cmp(
+                    &right.0
+                        .to_ascii_lowercase()
+                )
+        }
+    );
+
+    Ok(
+        paths
+    )
+}
+
+
 pub fn policy_source_path(
     config_path: &Path,
     target: PolicyTarget,

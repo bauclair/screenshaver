@@ -465,6 +465,8 @@ fn run_empty_session() -> Result<(), String> {
                 false,
                 false,
                 false,
+                false,
+                false,
                 &recent_shader_paths,
                 None,
                 &policy_display_rows,
@@ -2014,6 +2016,8 @@ fn run_paths(
                     true,
                     active.channel_usage
                         .uses_any_channel(),
+                    screensaver_policy_exists,
+                    wallpaper_policy_exists,
                     screensaver_target_available,
                     wallpaper_target_available,
                     target_restriction

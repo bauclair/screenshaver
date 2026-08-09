@@ -1645,11 +1645,28 @@ fn select_safe_shader_program(
     for _ in
         0..maximum_attempts
     {
-        let Some(requested_shader_name) =
-            shader_manager.next()
+        let Some(requested_shader) =
+            shader_manager.next_entry()
         else {
             break;
         };
+
+        let requested_shader_name =
+            requested_shader.name.clone();
+
+        let resolved_source_path =
+            requested_shader.source_path.clone()
+                .or_else(
+                    || {
+                        shader_directory.map(
+                            |directory| {
+                                directory.join(
+                                    &requested_shader_name
+                                )
+                            }
+                        )
+                    }
+                );
 
         log_debug(
             &format!(
@@ -1658,11 +1675,30 @@ fn select_safe_shader_program(
         );
 
         let loaded_shader =
-            if let Some(directory) = shader_directory {
-                crate::load_shader::load_shader_for_preview(
-                    &directory.join(
-                        &requested_shader_name
+            if shader_directory.is_none()
+                && resolved_source_path
+                    .as_ref()
+                    .is_some_and(
+                        |path| {
+                            *path
+                                == crate::locate_paths::screensaver_shader_dir()
+                                    .join(
+                                        &requested_shader_name
+                                    )
+                        }
                     )
+            {
+                // Preserve managed-screensaver quarantine semantics.
+                crate::load_shader::load_shader(
+                    &requested_shader_name
+                )
+            } else if let Some(source_path) =
+                resolved_source_path.as_ref()
+            {
+                // Wallpaper and external shaders are loaded explicitly and
+                // are never quarantined from their source location.
+                crate::load_shader::load_shader_for_preview(
+                    source_path
                 )
             } else {
                 crate::load_shader::load_shader(
@@ -1692,19 +1728,18 @@ fn select_safe_shader_program(
                                 source_path:
                                     if built_in_default {
                                         None
-                                    } else if let Some(directory) = shader_directory {
-                                        Some(
-                                            directory.join(
-                                                &requested_shader_name
-                                            )
-                                        )
                                     } else {
-                                        Some(
-                                            crate::locate_paths::screensaver_shader_dir()
-                                                .join(
-                                                    &requested_shader_name
-                                                )
-                                        )
+                                        resolved_source_path.clone()
+                                            .or_else(
+                                                || {
+                                                    Some(
+                                                        crate::locate_paths::screensaver_shader_dir()
+                                                            .join(
+                                                                &requested_shader_name
+                                                            )
+                                                    )
+                                                }
+                                            )
                                     },
                                 channel_usage,
                                 shader_inputs,

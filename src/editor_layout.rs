@@ -935,6 +935,145 @@ impl EditWindowOverlay {
                     );
             }
 
+            Event::TextInput {
+                ref text,
+                ..
+            } => {
+                self.pending_events.push(
+                    egui::Event::Text(
+                        text.clone()
+                    )
+                );
+            }
+
+            Event::KeyDown {
+                keycode:
+                    Some(keycode),
+                repeat,
+                ..
+            } if matches!(
+                keycode,
+                Keycode::Backspace
+                    | Keycode::Delete
+                    | Keycode::Left
+                    | Keycode::Right
+                    | Keycode::Return
+                    | Keycode::KpEnter
+                    | Keycode::Escape
+                    | Keycode::Tab
+            ) =>
+            {
+                let key =
+                    match keycode {
+                        Keycode::Backspace =>
+                            egui::Key::Backspace,
+
+                        Keycode::Delete =>
+                            egui::Key::Delete,
+
+                        Keycode::Left =>
+                            egui::Key::ArrowLeft,
+
+                        Keycode::Right =>
+                            egui::Key::ArrowRight,
+
+                        Keycode::Return
+                        | Keycode::KpEnter =>
+                            egui::Key::Enter,
+
+                        Keycode::Escape =>
+                            egui::Key::Escape,
+
+                        Keycode::Tab =>
+                            egui::Key::Tab,
+
+                        _ =>
+                            unreachable!(),
+                    };
+
+                self.pending_events.push(
+                    egui::Event::Key {
+                        key,
+                        physical_key:
+                            None,
+                        pressed:
+                            true,
+                        repeat,
+                        modifiers:
+                            egui::Modifiers {
+                                shift:
+                                    self.shift_held,
+
+                                ..Default::default()
+                            },
+                    }
+                );
+            }
+
+            Event::KeyUp {
+                keycode:
+                    Some(keycode),
+                ..
+            } if matches!(
+                keycode,
+                Keycode::Backspace
+                    | Keycode::Delete
+                    | Keycode::Left
+                    | Keycode::Right
+                    | Keycode::Return
+                    | Keycode::KpEnter
+                    | Keycode::Escape
+                    | Keycode::Tab
+            ) =>
+            {
+                let key =
+                    match keycode {
+                        Keycode::Backspace =>
+                            egui::Key::Backspace,
+
+                        Keycode::Delete =>
+                            egui::Key::Delete,
+
+                        Keycode::Left =>
+                            egui::Key::ArrowLeft,
+
+                        Keycode::Right =>
+                            egui::Key::ArrowRight,
+
+                        Keycode::Return
+                        | Keycode::KpEnter =>
+                            egui::Key::Enter,
+
+                        Keycode::Escape =>
+                            egui::Key::Escape,
+
+                        Keycode::Tab =>
+                            egui::Key::Tab,
+
+                        _ =>
+                            unreachable!(),
+                    };
+
+                self.pending_events.push(
+                    egui::Event::Key {
+                        key,
+                        physical_key:
+                            None,
+                        pressed:
+                            false,
+                        repeat:
+                            false,
+                        modifiers:
+                            egui::Modifiers {
+                                shift:
+                                    self.shift_held,
+
+                                ..Default::default()
+                            },
+                    }
+                );
+            }
+
             Event::KeyDown {
                 keycode:
                     Some(
@@ -1027,6 +1166,8 @@ impl EditWindowOverlay {
         )>,
         shader_loaded: bool,
         texture_required: bool,
+        screensaver_policy_exists: bool,
+        wallpaper_policy_exists: bool,
         screensaver_target_available: bool,
         wallpaper_target_available: bool,
         screensaver_target_session_restricted: bool,
@@ -1472,9 +1613,27 @@ impl EditWindowOverlay {
                                 shader_loaded
                                     && policy_target.is_some();
 
+                            let current_policy_exists =
+                                match policy_target {
+                                    Some(PolicyTarget::Screensaver) => {
+                                        screensaver_policy_exists
+                                    }
+
+                                    Some(PolicyTarget::Wallpaper) => {
+                                        wallpaper_policy_exists
+                                    }
+
+                                    None => {
+                                        false
+                                    }
+                                };
+
                             let can_save =
-                                configuration_changed
-                                    && mandatory_information_complete;
+                                mandatory_information_complete
+                                    && (
+                                        configuration_changed
+                                            || !current_policy_exists
+                                    );
 
                             let can_cancel =
                                 configuration_changed;

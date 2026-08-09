@@ -12,7 +12,7 @@ use std::ffi::{
     CString,
 };
 use std::os::fd::AsRawFd;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::ptr;
 use std::sync::{
     atomic::{
@@ -691,6 +691,7 @@ pub fn probe_capabilities(
 #[derive(Debug, Clone)]
 struct ActiveWallpaperShader {
     manager_name: String,
+    source_path: PathBuf,
     source: String,
     shader_name: String,
     channel_usage:
@@ -714,18 +715,27 @@ fn select_safe_wallpaper_shader(
         0..maximum_attempts
     {
         let Some(
-            requested_shader_name
+            requested_shader
         ) =
-            shader_manager.next()
+            shader_manager.next_entry()
         else {
             break;
         };
 
 
+        let requested_shader_name =
+            requested_shader.name.clone();
+
+
         let shader_path =
-            wallpaper_directory.join(
-                &requested_shader_name
-            );
+            requested_shader.source_path
+                .unwrap_or_else(
+                    || {
+                        wallpaper_directory.join(
+                            &requested_shader_name
+                        )
+                    }
+                );
 
 
         println!(
@@ -752,6 +762,7 @@ fn select_safe_wallpaper_shader(
                 return Ok(
                     ActiveWallpaperShader {
                         manager_name: requested_shader_name,
+                        source_path: shader_path,
                         source,
                         shader_name,
                         channel_usage,
@@ -893,7 +904,7 @@ pub fn run_egl_background_surface(
 
     runtime.tray_status.set_active(
         active_shader.shader_name.clone(),
-        wallpaper_directory.join(&active_shader.manager_name),
+        active_shader.source_path.clone(),
     );
 
 
@@ -2673,7 +2684,7 @@ fn render_mirror_frames(
 
                                 runtime.tray_status.set_active(
                                     current_shader.shader_name.clone(),
-                                    wallpaper_directory.join(&current_shader.manager_name),
+                                    current_shader.source_path.clone(),
                                 );
 
 
