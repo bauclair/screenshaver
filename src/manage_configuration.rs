@@ -52,7 +52,7 @@ pub struct ConfigurationUpdates {
     /// None means "random".
     pub screensaver_global_palette:
         Option<
-            crate::palettes::Palette
+            crate::palettes::PaletteColor
         >,
 
 
@@ -74,7 +74,7 @@ pub struct ConfigurationUpdates {
     /// None means "random".
     pub wallpaper_global_palette:
         Option<
-            crate::palettes::Palette
+            crate::palettes::PaletteColor
         >,
 }
 
@@ -809,15 +809,14 @@ fn format_global_texture(
 fn format_global_palette(
     palette:
         Option<
-            &crate::palettes::Palette
+            &crate::palettes::PaletteColor
         >,
 ) -> String {
 
     palette
         .map(
             |palette| {
-                palette.name()
-                    .to_string()
+                palette.to_hex()
             }
         )
         .unwrap_or_else(

@@ -1467,7 +1467,7 @@ let texture =
             ) => {
                 Some(
                     crate::manage_textures::PreviewSelectionValue::Specific(
-                        crate::palettes::Palette::from_name(
+                        crate::palettes::PaletteColor::parse_hex(
                             name
                         )?
                     )

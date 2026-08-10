@@ -18,7 +18,7 @@ const TOOLTIP_DESCRIPTION: &str = "Waiting for idle...";
 /// Commands that can be requested through the system tray menu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrayCommand {
-    EditWallpaper,
+    Edit,
     Restart,
     Stop,
 }
@@ -372,13 +372,12 @@ impl Tray for ScreenshaverTray {
                     "Edit".into(),
                 icon_name:
                     "document-edit".into(),
-                enabled:
-                    self.status.wallpaper.active_wallpaper().is_some(),
+                enabled: true,
                 activate:
                     Box::new(
                         |tray: &mut Self| {
                             tray.send_command(
-                                TrayCommand::EditWallpaper
+                                TrayCommand::Edit
                             );
                         }
                     ),

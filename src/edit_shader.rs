@@ -3566,8 +3566,8 @@ fn run_paths(
                     {
                         Some(
                             selected_palette
-                                .name()
-                                .to_string()
+                                .palette()
+                                .to_hex()
                         )
                     } else {
                         None
@@ -3635,19 +3635,32 @@ fn run_paths(
                 let config_path =
                     crate::locate_paths::config_path();
 
+                // Policies belong to the shader copy for the selected runtime
+                // target, not necessarily to the copy that is currently active
+                // in the editor. A shader opened from the wallpaper directory
+                // may also have a screensaver copy (and vice versa). Using
+                // active.path here incorrectly associates the second policy
+                // with the first target's file, causing that runtime to miss the
+                // policy and fall back to its global texture/palette defaults.
+                let policy_source_path =
+                    target_shader_path(
+                        policy_target,
+                        &active.shader_name,
+                    );
+
                 let save_result =
                     if crate::manage_policies::policy_exists_for_source(
                         &config_path,
                         manage_target,
                         &active.shader_name,
-                        &active.path,
+                        &policy_source_path,
                     )? {
                         crate::manage_policies::replace_policy_for_source(
                             &config_path,
                             manage_target,
                             &active.shader_name,
                             properties,
-                            &active.path,
+                            &policy_source_path,
                         )
                     } else {
                         crate::manage_policies::add_policy_for_source(
@@ -3655,7 +3668,7 @@ fn run_paths(
                             manage_target,
                             &active.shader_name,
                             properties,
-                            &active.path,
+                            &policy_source_path,
                         )
                     };
 
@@ -3673,6 +3686,12 @@ fn run_paths(
                                         &config
                                     );
 
+                                let screensaver_policy_path =
+                                    target_shader_path(
+                                        crate::editor_layout::PolicyTarget::Screensaver,
+                                        &active.shader_name,
+                                    );
+
                                 screensaver_policy_exists =
                                     screensaver_target_available
                                         && config.screensaver_policies
@@ -3682,10 +3701,16 @@ fn run_paths(
                                                 policy_applies_to_path(
                                                     policy,
                                                     crate::editor_layout::PolicyTarget::Screensaver,
-                                                    &active.path,
+                                                    &screensaver_policy_path,
                                                 )
                                             }
                                         );
+
+                                let wallpaper_policy_path =
+                                    target_shader_path(
+                                        crate::editor_layout::PolicyTarget::Wallpaper,
+                                        &active.shader_name,
+                                    );
 
                                 wallpaper_policy_exists =
                                     wallpaper_target_available
@@ -3696,7 +3721,7 @@ fn run_paths(
                                                 policy_applies_to_path(
                                                     policy,
                                                     crate::editor_layout::PolicyTarget::Wallpaper,
-                                                    &active.path,
+                                                    &wallpaper_policy_path,
                                                 )
                                             }
                                         );
@@ -5568,7 +5593,7 @@ let texture =
             ) => {
                 Some(
                     crate::manage_textures::PreviewSelectionValue::Specific(
-                        crate::palettes::Palette::from_name(
+                        crate::palettes::PaletteColor::parse_hex(
                             name
                         )?
                     )
@@ -5659,7 +5684,7 @@ fn save_control_configuration(
         value: &str,
     ) -> Result<
         Option<
-            crate::palettes::Palette
+            crate::palettes::PaletteColor
         >,
         String,
     > {
@@ -5676,7 +5701,7 @@ fn save_control_configuration(
             );
         }
 
-        crate::palettes::Palette::from_name(
+        crate::palettes::PaletteColor::parse_hex(
             &normalized
         )
         .map(

@@ -1325,35 +1325,40 @@ crate::parse_arguments::Command::ListPalettes => {
             }
 
 
-            Ok(crate::tray_icon::TrayCommand::EditWallpaper) => {
+            Ok(crate::tray_icon::TrayCommand::Edit) => {
 
                 println!(
-                    "[TRAY] Edit active wallpaper requested."
+                    "[TRAY] Control Center requested."
                 );
 
                 crate::logger::information(
                     &logfile,
-                    "[TRAY] Edit active wallpaper requested",
+                    "[TRAY] Control Center requested",
                 );
 
-                let Some(active_wallpaper) =
-                    tray_status.active_wallpaper()
-                else {
-                    crate::logger::warning(
-                        &logfile,
-                        "[TRAY] Edit ignored because no active wallpaper shader is available",
+                let active_wallpaper =
+                    tray_status.active_wallpaper();
+
+                if active_wallpaper.is_some() {
+                    wallpaper_control.request_pause_after_first_frame(
+                        running.as_ref()
                     );
-                    continue;
-                };
-
-                wallpaper_control.request_pause_after_first_frame(
-                    running.as_ref()
-                );
+                }
 
                 let edit_result =
-                    crate::edit_shader::run_wallpaper_only(
-                        active_wallpaper.path.clone()
-                    );
+                    match active_wallpaper {
+                        Some(active_wallpaper) => {
+                            crate::edit_shader::run_wallpaper_only(
+                                active_wallpaper.path
+                            )
+                        }
+
+                        None => {
+                            crate::edit_shader::run(
+                                None
+                            )
+                        }
+                    };
 
                 if edit_result.is_ok() {
                     let config_path =
@@ -1375,15 +1380,17 @@ crate::parse_arguments::Command::ListPalettes => {
                                 );
                             }
 
+                            cfg = config_result.config;
+
                             wallpaper_control.request_policy_reload(
                                 crate::manage_wallpaper_runtime::WallpaperPolicyReload::from_config(
-                                    &config_result.config
+                                    &cfg
                                 )
                             );
 
                             crate::logger::information(
                                 &logfile,
-                                "[TRAY] Queued active wallpaper policy reload",
+                                "[TRAY] Reloaded configuration after Control Center closed",
                             );
                         }
 
@@ -1391,7 +1398,7 @@ crate::parse_arguments::Command::ListPalettes => {
                             crate::logger::error(
                                 &logfile,
                                 &format!(
-                                    "[TRAY] Unable to reload wallpaper configuration after editing: {}",
+                                    "[TRAY] Unable to reload configuration after editing: {}",
                                     error,
                                 ),
                             );
@@ -1399,28 +1406,30 @@ crate::parse_arguments::Command::ListPalettes => {
                     }
                 }
 
-                wallpaper_control.resume_and_wait_for_frame(
-                    running.as_ref()
-                );
+                if tray_status.active_wallpaper().is_some() {
+                    wallpaper_control.resume_and_wait_for_frame(
+                        running.as_ref()
+                    );
+                }
 
                 match edit_result {
                     Ok(()) => {
                         crate::logger::information(
                             &logfile,
-                            "[TRAY] Wallpaper Shader Policy Editor closed",
+                            "[TRAY] Control Center closed",
                         );
                     }
 
                     Err(error) => {
                         eprintln!(
-                            "[TRAY] Unable to edit active wallpaper: {}",
+                            "[TRAY] Unable to open Control Center: {}",
                             error
                         );
 
                         crate::logger::error(
                             &logfile,
                             &format!(
-                                "[TRAY] Unable to edit active wallpaper: {}",
+                                "[TRAY] Unable to open Control Center: {}",
                                 error,
                             ),
                         );

@@ -137,49 +137,35 @@ impl TextureSelection {
 
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PaletteSelection {
-    Slate,
-    Sandstone,
-    Lichen,
-    Mist,
-    Bronze,
-    Brick,
-}
+pub struct PaletteSelection(
+    crate::palettes::PaletteColor
+);
 
 
 impl PaletteSelection {
-    pub fn from_palette(
-        palette: crate::palettes::Palette,
+    pub const fn from_palette(
+        palette: crate::palettes::PaletteColor,
     ) -> Self {
-        match palette {
-            crate::palettes::Palette::Slate => Self::Slate,
-            crate::palettes::Palette::Sandstone => Self::Sandstone,
-            crate::palettes::Palette::Lichen => Self::Lichen,
-            crate::palettes::Palette::Mist => Self::Mist,
-            crate::palettes::Palette::Bronze => Self::Bronze,
-            crate::palettes::Palette::Brick => Self::Brick,
-        }
+
+        Self(
+            palette
+        )
     }
 
 
-    pub fn palette(
+    pub const fn palette(
         self,
-    ) -> crate::palettes::Palette {
-        match self {
-            Self::Slate => crate::palettes::Palette::Slate,
-            Self::Sandstone => crate::palettes::Palette::Sandstone,
-            Self::Lichen => crate::palettes::Palette::Lichen,
-            Self::Mist => crate::palettes::Palette::Mist,
-            Self::Bronze => crate::palettes::Palette::Bronze,
-            Self::Brick => crate::palettes::Palette::Brick,
-        }
+    ) -> crate::palettes::PaletteColor {
+
+        self.0
     }
 
 
     pub fn name(
         self,
-    ) -> &'static str {
-        self.palette().name()
+    ) -> String {
+
+        self.0.to_hex()
     }
 }
 
@@ -320,7 +306,7 @@ impl ControlConfiguration {
                     .unwrap_or_else(|| "random".to_string()),
             screensaver_global_palette:
                 config.texture_policy.global_palette
-                    .map(|palette| palette.name().to_string())
+                    .map(|palette| palette.to_hex())
                     .unwrap_or_else(|| "random".to_string()),
             wallpaper_enabled: config.wallpaper_enabled,
             notifications: config.wallpaper.notifications,
@@ -333,7 +319,7 @@ impl ControlConfiguration {
                     .unwrap_or_else(|| "random".to_string()),
             wallpaper_global_palette:
                 config.wallpaper_texture_policy.global_palette
-                    .map(|palette| palette.name().to_string())
+                    .map(|palette| palette.to_hex())
                     .unwrap_or_else(|| "random".to_string()),
         }
     }
@@ -618,6 +604,9 @@ pub struct EditWindowOverlay {
     palette:
         PaletteSelection,
 
+    palette_hex_input:
+        String,
+
     primitive_count:
         u32,
 
@@ -753,7 +742,21 @@ impl EditWindowOverlay {
                     TextureSelection::Marble,
 
                 palette:
-                    PaletteSelection::Slate,
+                    PaletteSelection::from_palette(
+                        crate::palettes::PaletteColor::new(
+                            99,
+                            119,
+                            134,
+                        )
+                    ),
+
+                palette_hex_input:
+                    crate::palettes::PaletteColor::new(
+                        99,
+                        119,
+                        134,
+                    )
+                    .to_hex(),
 
                 primitive_count:
                     32,
@@ -1165,7 +1168,7 @@ impl EditWindowOverlay {
         resolved_color_precision: ColorPrecisionSelection,
         active_texture_selection: Option<(
             crate::parse_texture_specification::TextureSpecification,
-            crate::palettes::Palette,
+            crate::palettes::PaletteColor,
         )>,
         shader_loaded: bool,
         texture_required: bool,
@@ -1393,6 +1396,9 @@ impl EditWindowOverlay {
         let mut palette =
             self.palette;
 
+        let mut palette_hex_input =
+            self.palette_hex_input.clone();
+
         let mut primitive_count =
             self.primitive_count;
 
@@ -1430,6 +1436,9 @@ impl EditWindowOverlay {
                     PaletteSelection::from_palette(
                         active_palette
                     );
+
+                palette_hex_input =
+                    palette.name();
 
                 primitive_count =
                     specification
@@ -1744,10 +1753,19 @@ impl EditWindowOverlay {
                                                         8.0 * metrics.scale
                                                     );
 
+                                                    if palette
+                                                        != self.palette
+                                                    {
+                                                        palette_hex_input =
+                                                            palette.name();
+                                                    }
+
                                                     draw_color_picker_placeholder(
                                                         ui,
                                                         metrics,
-                                                        palette,
+                                                        &mut palette,
+                                                        &mut palette_hex_input,
+                                                        &mut hover_help_message,
                                                     );
                                                 },
                                             );
@@ -1950,6 +1968,9 @@ impl EditWindowOverlay {
         self.palette =
             palette;
 
+        self.palette_hex_input =
+            palette_hex_input;
+
         self.primitive_count =
             primitive_count;
 
@@ -2062,7 +2083,7 @@ impl EditWindowOverlay {
         color_precision: ColorPrecisionSelection,
         active_texture_selection: Option<(
             crate::parse_texture_specification::TextureSpecification,
-            crate::palettes::Palette,
+            crate::palettes::PaletteColor,
         )>,
         status_message: impl Into<String>,
     ) {
@@ -2114,6 +2135,9 @@ impl EditWindowOverlay {
                 PaletteSelection::from_palette(
                     palette
                 );
+
+            self.palette_hex_input =
+                self.palette.name();
 
             self.primitive_count =
                 specification
@@ -4901,71 +4925,6 @@ fn draw_texture_panel(
                 metrics.row_gap
             );
 
-            // Palette row.
-            ui.horizontal(
-                |ui| {
-                    ui.allocate_ui_with_layout(
-                        egui::vec2(
-                            label_width,
-                            ui.spacing()
-                                .interact_size
-                                .y,
-                        ),
-                        egui::Layout::left_to_right(
-                            egui::Align::Center
-                        ),
-                        |ui| {
-                            ui.label(
-                                "Palette"
-                            );
-                        },
-                    );
-
-                    let palette_response =
-                        egui::ComboBox::from_id_source(
-                            "editor_palette_selection"
-                        )
-                        .selected_text(
-                            palette.name()
-                        )
-                        .width(
-                            metrics.dropdown_width
-                        )
-                        .show_ui(
-                            ui,
-                            |ui| {
-                                // Resource lists are presented
-                                // alphanumerically.
-                                for selection in [
-                                    PaletteSelection::Brick,
-                                    PaletteSelection::Bronze,
-                                    PaletteSelection::Lichen,
-                                    PaletteSelection::Mist,
-                                    PaletteSelection::Sandstone,
-                                    PaletteSelection::Slate,
-                                ] {
-                                    ui.selectable_value(
-                                        palette,
-                                        selection,
-                                        selection.name(),
-                                    );
-                                }
-                            },
-                        )
-                        .response;
-
-                    update_hover_help(
-                        &palette_response,
-                        hover_help_message,
-                        "Select the built-in palette applied to the generated procedural texture.",
-                    );
-                },
-            );
-
-            ui.add_space(
-                metrics.row_gap
-            );
-
             // Primitives row.
             const PRIMITIVE_VALUES: [u32; 10] =
                 [
@@ -5123,7 +5082,9 @@ fn draw_texture_panel(
 fn draw_color_picker_placeholder(
     ui: &mut egui::Ui,
     metrics: EditorMetrics,
-    palette: PaletteSelection,
+    palette: &mut PaletteSelection,
+    palette_hex_input: &mut String,
+    hover_help_message: &mut Option<&'static str>,
 ) {
     ui.separator();
 
@@ -5133,6 +5094,9 @@ fn draw_color_picker_placeholder(
                 "Palette Color:"
             );
 
+            // Named presets remain a placeholder for the later curated-color
+            // phase.  The authoritative palette value is the hexadecimal
+            // field immediately to the right.
             egui::ComboBox::from_id_source(
                 "editor_palette_named_color_placeholder"
             )
@@ -5154,18 +5118,65 @@ fn draw_color_picker_placeholder(
                 },
             );
 
-            let mut placeholder_hex =
-                "#bc4a3c".to_string();
+            let hex_response =
+                ui.add(
+                    egui::TextEdit::singleline(
+                        palette_hex_input
+                    )
+                    .desired_width(
+                        90.0 * metrics.scale
+                    )
+                    .hint_text(
+                        "#rrggbb"
+                    ),
+                );
 
-            ui.add_enabled(
-                false,
-                egui::TextEdit::singleline(
-                    &mut placeholder_hex
-                )
-                .desired_width(
-                    90.0 * metrics.scale
-                ),
+            update_hover_help(
+                &hex_response,
+                hover_help_message,
+                "Enter a palette color using six-digit hexadecimal notation (#rrggbb).",
             );
+
+            if hex_response.changed() {
+                // Do not reject intermediate text while the user is typing.
+                // As soon as the field contains a valid #rrggbb value, make
+                // that color authoritative and allow the live shader preview
+                // to regenerate its texture immediately.
+                if let Ok(color) =
+                    crate::palettes::PaletteColor::parse_hex(
+                        palette_hex_input
+                    )
+                {
+                    *palette =
+                        PaletteSelection::from_palette(
+                            color
+                        );
+                }
+            }
+
+            if hex_response.lost_focus() {
+                match crate::palettes::PaletteColor::parse_hex(
+                    palette_hex_input
+                ) {
+                    Ok(color) => {
+                        *palette =
+                            PaletteSelection::from_palette(
+                                color
+                            );
+
+                        *palette_hex_input =
+                            color.to_hex();
+                    }
+
+                    Err(_) => {
+                        // Never leave an invalid string displayed as though it
+                        // were the active palette.  Revert to the last valid
+                        // palette value when editing finishes.
+                        *palette_hex_input =
+                            palette.name();
+                    }
+                }
+            }
         },
     );
 
@@ -5462,13 +5473,13 @@ fn draw_config_tab(
     ];
 
     let palette_choices = [
-        "brick",
-        "bronze",
-        "lichen",
-        "mist",
+        "#637786",
+        "#707b52",
+        "#808e9c",
+        "#93633b",
+        "#9a422a",
+        "#a1825b",
         "random",
-        "sandstone",
-        "slate",
     ];
 
     ui.columns(

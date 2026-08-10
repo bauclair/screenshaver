@@ -247,7 +247,7 @@ pub struct ShaderPolicy {
 
     pub shader_palette:
         Option<
-            crate::palettes::Palette
+            crate::palettes::PaletteColor
         >,
 
     pub rendered_fps:
@@ -462,7 +462,7 @@ pub struct TexturePolicyEntry {
 
     pub shader_palette:
         Option<
-            crate::palettes::Palette
+            crate::palettes::PaletteColor
         >,
 }
 
@@ -550,7 +550,7 @@ pub struct TexturePolicy {
 
     pub global_palette:
         Option<
-            crate::palettes::Palette
+            crate::palettes::PaletteColor
         >,
 
     pub texture_policy_entries:
@@ -1272,11 +1272,13 @@ pub fn load_config(
                     .global_palette
                     .map(
                         |palette| {
-                            palette.name()
+                            palette.to_hex()
                         }
                     )
-                    .unwrap_or(
-                        "random"
+                    .unwrap_or_else(
+                        || {
+                            "random".to_string()
+                        }
                     ),
             ),
 
@@ -1312,11 +1314,13 @@ pub fn load_config(
                     .global_palette
                     .map(
                         |palette| {
-                            palette.name()
+                            palette.to_hex()
                         }
                     )
-                    .unwrap_or(
-                        "random"
+                    .unwrap_or_else(
+                        || {
+                            "random".to_string()
+                        }
                     ),
             ),
 
@@ -2850,7 +2854,7 @@ fn parse_global_palette(
     value: Option<&str>,
 ) -> Result<
     Option<
-        crate::palettes::Palette
+        crate::palettes::PaletteColor
     >,
     String,
 > {
@@ -2880,7 +2884,7 @@ fn parse_global_palette(
     }
 
 
-    crate::palettes::Palette::from_name(
+    crate::palettes::PaletteColor::parse_hex(
         &normalized
     )
     .map(
@@ -2961,7 +2965,7 @@ fn parse_shader_palette(
     value: &str,
     table_name: &str,
 ) -> Result<
-    crate::palettes::Palette,
+    crate::palettes::PaletteColor,
     String,
 > {
 
@@ -2985,7 +2989,7 @@ fn parse_shader_palette(
     }
 
 
-    crate::palettes::Palette::from_name(
+    crate::palettes::PaletteColor::parse_hex(
         &normalized
     )
     .map_err(

@@ -97,25 +97,8 @@ const VALID_PREVIEW_TEXTURE_FAMILIES: [&str; 9] = [
 ];
 
 
-const VALID_TEXTURE_PALETTES: [&str; 7] = [
-    "random",
-    "slate",
-    "sandstone",
-    "lichen",
-    "mist",
-    "bronze",
-    "brick",
-];
-
-
-const VALID_PREVIEW_TEXTURE_PALETTES: [&str; 6] = [
-    "slate",
-    "sandstone",
-    "lichen",
-    "mist",
-    "bronze",
-    "brick",
-];
+const RANDOM_PALETTE_VALUE: &str =
+    "random";
 
 
 const RESERVED_OPTIONS: [&str; 5] = [
@@ -1414,11 +1397,9 @@ fn validate_preview_texture_palette(
     value: &str,
 ) -> Result<(), String> {
 
-    validate_named_value(
+    validate_hex_palette(
         value,
-        "texture palette",
-        VALID_PREVIEW_TEXTURE_PALETTES
-            .as_slice(),
+        false,
     )
 }
 
@@ -1440,11 +1421,51 @@ fn validate_texture_palette(
     value: &str,
 ) -> Result<(), String> {
 
-    validate_named_value(
+    validate_hex_palette(
         value,
-        "texture palette",
-        VALID_TEXTURE_PALETTES
-            .as_slice(),
+        true,
+    )
+}
+
+
+fn validate_hex_palette(
+    value: &str,
+    allow_random: bool,
+) -> Result<(), String> {
+
+    let normalized =
+        value.trim();
+
+
+    if allow_random
+        && normalized.eq_ignore_ascii_case(
+            RANDOM_PALETTE_VALUE
+        )
+    {
+        return Ok(());
+    }
+
+
+    crate::palettes::PaletteColor::parse_hex(
+        normalized
+    )
+    .map(
+        |_| ()
+    )
+    .map_err(
+        |_| {
+            if allow_random {
+                format!(
+                    "Invalid texture palette '{}'; specify #rrggbb or random",
+                    value,
+                )
+            } else {
+                format!(
+                    "Invalid texture palette '{}'; specify #rrggbb",
+                    value,
+                )
+            }
+        }
     )
 }
 
@@ -1535,13 +1556,13 @@ pub fn print_help() {
              -V, --version\n\
                  Display the Screenshaver version.\n\
          \n\
-             --preview-texture --family FAMILY[:COUNT] [--palette PALETTE]\n\
+             --preview-texture --family FAMILY[:COUNT] [--palette #RRGGBB]\n\
                  Preview one procedurally generated texture.\n\
                  COUNT may range from 1 through 1024.\n\
                  This command does not consult screenshaver.toml.\n\
          \n\
              --preview-shader PATH [--interval SECONDS] [--fps FPS] [--speed MULTIPLIER]\n\
-                              [--texture FAMILY[:COUNT]] [--palette PALETTE]\n\
+                              [--texture FAMILY[:COUNT]] [--palette #RRGGBB|random]\n\
                  Preview one shader or all shaders directly inside a folder.\n\
                  Folder previews use a 30-second interval unless overridden.\n\
                  --speed accepts an animation multiplier from 0.01 through 10.0.\n\
@@ -1597,14 +1618,14 @@ pub fn print_help() {
              screenshaver --start\n\
              screenshaver --stop\n\
              screenshaver --preview-texture --family noise:1024\n\
-             screenshaver --preview-texture --family marble --palette sandstone\n\
+             screenshaver --preview-texture --family marble --palette #a1825b\n\
              screenshaver --preview-shader \"Heartfelt.glsl\"\n\
              screenshaver --preview-shader \"Heartfelt.glsl\" --texture clouds\n\
-             screenshaver --preview-shader \"Heartfelt.glsl\" --palette mist\n\
+             screenshaver --preview-shader \"Heartfelt.glsl\" --palette #808e9c\n\
              screenshaver --control\n\
              screenshaver --control \"Heartfelt.glsl\"\n\
              screenshaver --edit-shader \"Heartfelt.glsl\"\n\
-             screenshaver --add-policy screensaver CandyWarp.fs texture:bricks palette:mist fps:24 speed:0.5 anti_aliasing:fxaa dithering:subtle color_precision:high\n\
+             screenshaver --add-policy screensaver CandyWarp.fs texture:bricks palette:#808e9c fps:24 speed:0.5 anti_aliasing:fxaa dithering:subtle color_precision:high\n\
              screenshaver --delete-policy wallpaper CandyWarp.fs\n\
              screenshaver --list-policies screensaver\n\
          \n\

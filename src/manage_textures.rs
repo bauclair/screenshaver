@@ -25,7 +25,7 @@ use crate::load_config::{
 use crate::parse_texture_specification::{
     TextureSpecification,
 };
-use crate::palettes::Palette;
+use crate::palettes::PaletteColor;
 use crate::preprocess_shader::ShaderChannelUsage;
 
 
@@ -114,7 +114,7 @@ pub struct PreviewTextureSelection {
 
     pub palette:
         Option<
-            PreviewSelectionValue<Palette>
+            PreviewSelectionValue<PaletteColor>
         >,
 }
 
@@ -130,7 +130,7 @@ pub struct PreviewTextureSelection {
 )]
 struct TextureRequest {
     texture: TextureSpecification,
-    palette: Palette,
+    palette: PaletteColor,
     seed: u64,
 }
 
@@ -355,18 +355,44 @@ fn random_primitive_count(
 
 fn random_palette(
     state: &mut u64,
-) -> Palette {
+) -> PaletteColor {
 
-    let palette_index =
-        random_index(
-            state,
-            Palette::ALL.len(),
+    let random_value =
+        splitmix64(
+            state
         );
 
 
-    Palette::ALL[
-        palette_index
-    ]
+    let red =
+        (
+            random_value
+                & 0xFF
+        ) as u8;
+
+
+    let green =
+        (
+            (
+                random_value >> 8
+            )
+                & 0xFF
+        ) as u8;
+
+
+    let blue =
+        (
+            (
+                random_value >> 16
+            )
+                & 0xFF
+        ) as u8;
+
+
+    PaletteColor::new(
+        red,
+        green,
+        blue,
+    )
 }
 
 
@@ -566,7 +592,7 @@ struct GpuTexture {
     specification:
         TextureSpecification,
 
-    palette: Palette,
+    palette: PaletteColor,
     seed: u64,
 }
 
@@ -818,7 +844,7 @@ impl TextureManager {
         &self,
     ) -> Option<(
         TextureSpecification,
-        Palette,
+        PaletteColor,
     )> {
 
         self.texture

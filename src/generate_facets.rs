@@ -20,7 +20,7 @@ use crate::generate_textures::{
     TextureFamily,
     TEXTURE_SIZE,
 };
-use crate::palettes::Palette;
+use crate::palettes::PaletteColor;
 
 // ============================================================
 // Facet-generation parameters
@@ -46,7 +46,7 @@ const MIDDLE_EDGE_VALUE: f32 = 0.52;
 const SHADOW_APEX_VALUE: f32 = 0.42;
 const SHADOW_EDGE_VALUE: f32 = 0.24;
 
-/// Palette value at the center of a recessed seam.
+/// PaletteColor value at the center of a recessed seam.
 const SEAM_VALUE: f32 = 0.08;
 
 /// Width of shared tetrahedron boundaries in normalized barycentric units.
@@ -105,7 +105,7 @@ struct Barycentric {
 // ============================================================
 
 pub fn generate(
-    palette: Palette,
+    palette: PaletteColor,
     seed: u64,
     requested_primitive_count: usize,
 ) -> Result<GeneratedTexture, String> {
@@ -628,7 +628,11 @@ mod tests {
     #[test]
     fn generated_texture_has_standard_dimensions() {
         let texture = generate(
-            Palette::Mist,
+            PaletteColor::new(
+            128,
+            142,
+            156,
+        ),
             1,
             288,
         )
