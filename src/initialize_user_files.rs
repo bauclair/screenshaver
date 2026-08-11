@@ -104,15 +104,10 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 #     radial             Radial textures.
 #     random             Randomly select a texture family.
 #
-# Color palettes available for compatible texture-based shaders:
+# Palette colors for compatible texture-based shaders:
 #
-#     brick
-#     bronze
-#     lichen
-#     mist
-#     sandstone
-#     random
-#     slate
+#     #rrggbb            Explicit hexadecimal RGB color.
+#     random             Randomly select a hexadecimal RGB color.
 
 ################################
 # PER-SHADER POLICIES
@@ -120,7 +115,7 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 # Policy properties may be written in any order.
 # Supported properties are:
 #     texture:<family>
-#     palette:<palette>
+#     palette:<#rrggbb|random>
 #     fps:<frames-per-second>
 #     speed:<animation-multiplier>
 #     anti_aliasing:<off|fxaa>
@@ -134,7 +129,7 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 # global setting or normal random fallback.
 
 [screensaver_policies]
-# "CandyWarp.fs" = "texture:bricks palette:mist fps:24 speed:0.5 anti_aliasing:fxaa dithering:subtle color_precision:high"
+# "CandyWarp.fs" = "texture:bricks palette:#808e9c fps:24 speed:0.5 anti_aliasing:fxaa dithering:subtle color_precision:high"
 
 [wallpaper_policies]
 # "CandyWarp.fs" = "fps:16 speed:0.125 anti_aliasing:off dithering:off color_precision:standard"

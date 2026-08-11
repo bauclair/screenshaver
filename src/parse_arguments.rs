@@ -49,8 +49,6 @@ pub enum Command {
 
     ListTextures,
 
-    ListPalettes,
-
     DeleteCache,
 
     AddPolicy {
@@ -226,20 +224,6 @@ pub fn parse() -> Result<Command, String> {
 
             Ok(
                 Command::ListTextures
-            )
-        }
-
-
-        "--list-palettes" => {
-
-            require_no_extra_arguments(
-                &args,
-                "--list-palettes",
-            )?;
-
-
-            Ok(
-                Command::ListPalettes
             )
         }
 
@@ -1581,9 +1565,6 @@ pub fn print_help() {
              --list-textures\n\
                  Display available procedural texture families.\n\
          \n\
-             --list-palettes\n\
-                 Display available procedural texture palettes.\n\
-         \n\
              --add-policy TARGET SHADER PROPERTY [PROPERTY ...]\n\
                  Add a complete screensaver or wallpaper shader policy.\n\
                  Properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision.\n\
@@ -1606,13 +1587,9 @@ pub fn print_help() {
              noise\n\
              radial\n\
          \n\
-         Texture palettes:\n\
-             brick\n\
-             bronze\n\
-             lichen\n\
-             mist\n\
-             sandstone\n\
-             slate\n\
+         Texture palette colors:\n\
+             Use #RRGGBB for an explicit hexadecimal RGB color.\n\
+             Use random where supported to select a random RGB color.\n\
          \n\
          Examples:\n\
              screenshaver --start\n\

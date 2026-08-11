@@ -286,36 +286,8 @@ fn random_palette(
     seed: u64,
 ) -> PaletteColor {
 
-    let mixed =
+    PaletteColor::random_from_seed(
         seed
-            .wrapping_add(
-                0x9E3779B97F4A7C15
-            )
-            .rotate_left(
-                17
-            )
-            .wrapping_mul(
-                0xBF58476D1CE4E5B9
-            );
-
-
-    PaletteColor::new(
-        (
-            mixed
-                & 0xFF
-        ) as u8,
-        (
-            (
-                mixed >> 8
-            )
-                & 0xFF
-        ) as u8,
-        (
-            (
-                mixed >> 16
-            )
-                & 0xFF
-        ) as u8,
     )
 }
 

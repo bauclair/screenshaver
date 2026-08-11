@@ -642,39 +642,6 @@ crate::parse_arguments::Command::ListTextures => {
 }
 
 
-crate::parse_arguments::Command::ListPalettes => {
-
-    println!(
-        "Available texture palettes:"
-    );
-
-    println!(
-        "    slate"
-    );
-
-    println!(
-        "    sandstone"
-    );
-
-    println!(
-        "    lichen"
-    );
-
-    println!(
-        "    mist"
-    );
-
-    println!(
-        "    bronze"
-    );
-
-    println!(
-        "    brick"
-    );
-
-    return;
-}
-
 }
 
      let identity =

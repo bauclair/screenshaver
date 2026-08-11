@@ -357,41 +357,8 @@ fn random_palette(
     state: &mut u64,
 ) -> PaletteColor {
 
-    let random_value =
-        splitmix64(
-            state
-        );
-
-
-    let red =
-        (
-            random_value
-                & 0xFF
-        ) as u8;
-
-
-    let green =
-        (
-            (
-                random_value >> 8
-            )
-                & 0xFF
-        ) as u8;
-
-
-    let blue =
-        (
-            (
-                random_value >> 16
-            )
-                & 0xFF
-        ) as u8;
-
-
-    PaletteColor::new(
-        red,
-        green,
-        blue,
+    PaletteColor::random_from_state(
+        state
     )
 }
 

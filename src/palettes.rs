@@ -98,6 +98,53 @@ impl PaletteColor {
     }
 
 
+    /// Generate a random palette color from an existing SplitMix64 state.
+    pub fn random_from_state(
+        state: &mut u64,
+    ) -> Self {
+
+        let random_value =
+            splitmix64(
+                state
+            );
+
+
+        Self::new(
+            (
+                random_value
+                    & 0xFF
+            ) as u8,
+            (
+                (
+                    random_value >> 8
+                )
+                    & 0xFF
+            ) as u8,
+            (
+                (
+                    random_value >> 16
+                )
+                    & 0xFF
+            ) as u8,
+        )
+    }
+
+
+    /// Generate a random palette color from a standalone seed.
+    pub fn random_from_seed(
+        seed: u64,
+    ) -> Self {
+
+        let mut state =
+            seed;
+
+
+        Self::random_from_state(
+            &mut state
+        )
+    }
+
+
     pub fn parse_hex(
         value: &str,
     ) -> Result<Self, String> {
@@ -324,12 +371,8 @@ impl fmt::Display for PaletteColor {
 
 
 // ============================================================
-// Transitional Palette compatibility
+// Palette display helpers
 // ============================================================
-//
-// PaletteColor is the authoritative palette type.  The Palette alias and
-// name() display helper remain temporarily so texture-generator and editor
-// call sites can be renamed independently of this cleanup.
 
 impl PaletteColor {
 
@@ -342,10 +385,49 @@ impl PaletteColor {
 }
 
 
-/// Transitional source-level alias.  `Palette` and `PaletteColor` are the
-/// exact same Rust type.
-pub type Palette =
-    PaletteColor;
+fn splitmix64(
+    state: &mut u64,
+) -> u64 {
+
+    *state =
+        state.wrapping_add(
+            0x9E37_79B9_7F4A_7C15
+        );
+
+
+    let mut value =
+        *state;
+
+
+    value =
+        (
+            value
+                ^ (
+                    value >> 30
+                )
+        )
+        .wrapping_mul(
+            0xBF58_476D_1CE4_E5B9
+        );
+
+
+    value =
+        (
+            value
+                ^ (
+                    value >> 27
+                )
+        )
+        .wrapping_mul(
+            0x94D0_49BB_1331_11EB
+        );
+
+
+    value
+        ^ (
+            value >> 31
+        )
+}
 
 
 // ============================================================
