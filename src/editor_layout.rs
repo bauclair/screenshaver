@@ -6677,27 +6677,27 @@ fn draw_standalone_visual_color_picker(
         );
 
 
-    let available_width =
-        ui.available_width()
-            .max(
-                180.0 * metrics.scale
-            );
-
-
     let hue_width =
         18.0 * metrics.scale;
 
     let gap =
         8.0 * metrics.scale;
 
+
+    // Keep the picker inside a predictable horizontal footprint so the
+    // Textures tab cannot widen the Control Center window.
+    let picker_total_width =
+        220.0 * metrics.scale;
+
+
     let field_width =
         (
-            available_width
+            picker_total_width
                 - hue_width
                 - gap
         )
         .max(
-            150.0 * metrics.scale
+            140.0 * metrics.scale
         );
 
     let field_height =
@@ -6765,11 +6765,14 @@ fn draw_standalone_visual_color_picker(
     }
 
 
-    ui.add_space(
-        6.0 * metrics.scale
-    );
+}
 
 
+fn draw_palette_color_swatch(
+    ui: &mut egui::Ui,
+    metrics: EditorMetrics,
+    color: egui::Color32,
+) {
     let swatch_size =
         egui::vec2(
             72.0 * metrics.scale,
@@ -6791,7 +6794,7 @@ fn draw_standalone_visual_color_picker(
         .rect_filled(
             swatch_rect,
             3.0 * metrics.scale,
-            *color,
+            color,
         );
 
 
@@ -7347,73 +7350,100 @@ fn draw_color_picker_placeholder(
                 "Choose a curated palette color. The selected color is written to the hexadecimal field.",
             );
 
-            let hex_response =
-                ui.add(
-                    egui::TextEdit::singleline(
-                        palette_hex_input
-                    )
-                    .desired_width(
-                        90.0 * metrics.scale
-                    )
-                    .hint_text(
-                        "#rrggbb"
-                    ),
-                );
+            ui.vertical(
+                |ui| {
+                    let hex_response =
+                        ui.add(
+                            egui::TextEdit::singleline(
+                                palette_hex_input
+                            )
+                            .desired_width(
+                                74.0 * metrics.scale
+                            )
+                            .hint_text(
+                                "#rrggbb"
+                            ),
+                        );
 
-            update_hover_help(
-                &hex_response,
-                hover_help_message,
-                "Enter a palette color using six-digit hexadecimal notation (#rrggbb).",
+                    update_hover_help(
+                        &hex_response,
+                        hover_help_message,
+                        "Enter a palette color using six-digit hexadecimal notation (#rrggbb).",
+                    );
+
+                    if hex_response.changed() {
+                        // Do not reject intermediate text while the user is typing.
+                        // As soon as the field contains a valid #rrggbb value, make
+                        // that color authoritative and allow the live shader preview
+                        // to regenerate its texture immediately.
+                        if let Ok(color) =
+                            crate::palettes::PaletteColor::parse_hex(
+                                palette_hex_input
+                            )
+                        {
+                            *palette =
+                                PaletteSelection::from_palette(
+                                    color
+                                );
+                        }
+                    }
+
+                    if hex_response.lost_focus() {
+                        match crate::palettes::PaletteColor::parse_hex(
+                            palette_hex_input
+                        ) {
+                            Ok(color) => {
+                                *palette =
+                                    PaletteSelection::from_palette(
+                                        color
+                                    );
+
+                                *palette_hex_input =
+                                    color.to_hex();
+                            }
+
+                            Err(_) => {
+                                // Never leave an invalid string displayed as though it
+                                // were the active palette.  Revert to the last valid
+                                // palette value when editing finishes.
+                                *palette_hex_input =
+                                    palette.name();
+                            }
+                        }
+                    }
+
+
+                    ui.add_space(
+                        6.0 * metrics.scale
+                    );
+
+
+                    draw_palette_color_swatch(
+                        ui,
+                        metrics,
+                        *color_picker_preview,
+                    );
+                },
             );
 
-            if hex_response.changed() {
-                // Do not reject intermediate text while the user is typing.
-                // As soon as the field contains a valid #rrggbb value, make
-                // that color authoritative and allow the live shader preview
-                // to regenerate its texture immediately.
-                if let Ok(color) =
-                    crate::palettes::PaletteColor::parse_hex(
-                        palette_hex_input
-                    )
-                {
-                    *palette =
-                        PaletteSelection::from_palette(
-                            color
-                        );
-                }
-            }
 
-            if hex_response.lost_focus() {
-                match crate::palettes::PaletteColor::parse_hex(
-                    palette_hex_input
-                ) {
-                    Ok(color) => {
-                        *palette =
-                            PaletteSelection::from_palette(
-                                color
-                            );
-
-                        *palette_hex_input =
-                            color.to_hex();
-                    }
-
-                    Err(_) => {
-                        // Never leave an invalid string displayed as though it
-                        // were the active palette.  Revert to the last valid
-                        // palette value when editing finishes.
-                        *palette_hex_input =
-                            palette.name();
-                    }
-                }
-            }
-
-
-            draw_standalone_visual_color_picker(
-                ui,
-                metrics,
-                color_picker_preview,
-                palette,
-                palette_hex_input,
+            ui.allocate_ui_with_layout(
+                egui::vec2(
+                    220.0 * metrics.scale,
+                    ui.available_height(),
+                ),
+                egui::Layout::top_down(
+                    egui::Align::LEFT
+                ),
+                |ui| {
+                    draw_standalone_visual_color_picker(
+                        ui,
+                        metrics,
+                        color_picker_preview,
+                        palette,
+                        palette_hex_input,
+                    );
+                },
             );
         },
     );
