@@ -1760,12 +1760,19 @@ impl EditWindowOverlay {
                                                             palette.name();
                                                     }
 
-                                                    draw_color_picker_placeholder(
-                                                        ui,
-                                                        metrics,
-                                                        &mut palette,
-                                                        &mut palette_hex_input,
-                                                        &mut hover_help_message,
+                                                    ui.with_layout(
+                                                        egui::Layout::bottom_up(
+                                                            egui::Align::LEFT
+                                                        ),
+                                                        |ui| {
+                                                            draw_color_picker_placeholder(
+                                                                ui,
+                                                                metrics,
+                                                                &mut palette,
+                                                                &mut palette_hex_input,
+                                                                &mut hover_help_message,
+                                                            );
+                                                        },
                                                     );
                                                 },
                                             );
@@ -3283,10 +3290,19 @@ fn draw_policies_tab(
             - status_width
             - texture_width;
 
+    // Curated color rows do not need the full standard interactive-control
+    // height.  Use a compact row so more swatches fit in the popup without
+    // crowding the Textures-tab action buttons below it.
     let row_height =
-        ui.spacing()
-            .interact_size
-            .y;
+        (
+            ui.spacing()
+                .interact_size
+                .y
+            - 5.0 * metrics.scale
+        )
+        .max(
+            18.0 * metrics.scale
+        );
 
     egui::ScrollArea::vertical()
         .auto_shrink(
@@ -5077,7 +5093,150 @@ fn draw_texture_panel(
 }
 
 
-// Texture-tab custom palette placeholder.
+fn curated_palette_color_button(
+    ui: &mut egui::Ui,
+    metrics: EditorMetrics,
+    entry: &crate::palettes::CuratedPaletteColor,
+    selected: bool,
+) -> egui::Response {
+
+    let row_height =
+        ui.spacing()
+            .interact_size
+            .y;
+
+
+    let desired_size =
+        egui::vec2(
+            128.0 * metrics.scale,
+            row_height,
+        );
+
+
+    let (
+        rect,
+        response,
+    ) =
+        ui.allocate_exact_size(
+            desired_size,
+            egui::Sense::click(),
+        );
+
+
+    if ui.is_rect_visible(
+        rect
+    ) {
+        let visuals =
+            ui.style()
+                .interact_selectable(
+                    &response,
+                    selected,
+                );
+
+
+        ui.painter()
+            .rect_filled(
+                rect,
+                visuals.rounding(),
+                visuals.bg_fill,
+            );
+
+
+        ui.painter()
+            .rect_stroke(
+                rect,
+                visuals.rounding(),
+                visuals.bg_stroke,
+                egui::StrokeKind::Inside,
+            );
+
+
+        let swatch_size =
+            14.0 * metrics.scale;
+
+
+        let swatch_rect =
+            egui::Rect::from_min_size(
+                egui::pos2(
+                    rect.left()
+                        + 6.0 * metrics.scale,
+                    rect.center().y
+                        - swatch_size * 0.5,
+                ),
+                egui::vec2(
+                    swatch_size,
+                    swatch_size,
+                ),
+            );
+
+
+        let color =
+            entry.color;
+
+
+        ui.painter()
+            .rect_filled(
+                swatch_rect,
+                2.0 * metrics.scale,
+                egui::Color32::from_rgb(
+                    color.red(),
+                    color.green(),
+                    color.blue(),
+                ),
+            );
+
+
+        ui.painter()
+            .rect_stroke(
+                swatch_rect,
+                2.0 * metrics.scale,
+                egui::Stroke::new(
+                    1.0,
+                    ui.visuals()
+                        .widgets
+                        .noninteractive
+                        .fg_stroke
+                        .color,
+                ),
+                egui::StrokeKind::Inside,
+            );
+
+
+        let mut entry_font =
+            egui::TextStyle::Button.resolve(
+                ui.style()
+            );
+
+
+        entry_font.size =
+            (
+                entry_font.size - 1.0
+            )
+            .max(
+                1.0
+            );
+
+
+        ui.painter()
+            .text(
+                egui::pos2(
+                    swatch_rect.right()
+                        + 7.0 * metrics.scale,
+                    rect.center().y,
+                ),
+                egui::Align2::LEFT_CENTER,
+                entry.name,
+                entry_font,
+                visuals.text_color(),
+            );
+    }
+
+
+    response
+}
+
+
+// Texture-tab curated palette selector and authoritative hexadecimal field.
 
 fn draw_color_picker_placeholder(
     ui: &mut egui::Ui,
@@ -5094,28 +5253,136 @@ fn draw_color_picker_placeholder(
                 "Palette Color:"
             );
 
-            // Named presets remain a placeholder for the later curated-color
-            // phase.  The authoritative palette value is the hexadecimal
-            // field immediately to the right.
-            egui::ComboBox::from_id_source(
-                "editor_palette_named_color_placeholder"
-            )
-            .selected_text(
-                palette.name()
-            )
-            .width(
-                130.0 * metrics.scale
-            )
-            .show_ui(
-                ui,
-                |ui| {
-                    ui.add_enabled(
-                        false,
-                        egui::Button::new(
-                            "Named color presets"
-                        ),
+            let selected_curated_color =
+                crate::palettes::curated_color_for_palette(
+                    palette.palette()
+                );
+
+
+            let curated_selected_text =
+                selected_curated_color
+                    .map(
+                        |entry| {
+                            entry.name
+                        }
+                    )
+                    .unwrap_or(
+                        "Custom Color"
                     );
-                },
+
+
+            let curated_button_response =
+                ui.add(
+                    egui::Button::new(
+                        curated_selected_text
+                    )
+                    .min_size(
+                        egui::vec2(
+                            130.0 * metrics.scale,
+                            ui.spacing()
+                                .interact_size
+                                .y,
+                        )
+                    )
+                );
+
+
+            let popup_id =
+                egui::Popup::default_response_id(
+                    &curated_button_response
+                );
+
+
+            let _ =
+                egui::Popup::menu(
+                    &curated_button_response
+                )
+                .id(
+                    popup_id
+                )
+                .align(
+                    egui::RectAlign::TOP_START
+                )
+                .align_alternatives(
+                    &[]
+                )
+                .width(
+                    130.0 * metrics.scale
+                )
+                .show(
+                    |ui| {
+                        ui.spacing_mut()
+                            .item_spacing
+                            .y =
+                            0.0;
+
+
+                        egui::ScrollArea::vertical()
+                            .max_height(
+                                325.0 * metrics.scale
+                            )
+                            .show(
+                                ui,
+                                |ui| {
+                                    for family in [
+                                        crate::palettes::CuratedColorFamily::Red,
+                                        crate::palettes::CuratedColorFamily::Orange,
+                                        crate::palettes::CuratedColorFamily::Yellow,
+                                        crate::palettes::CuratedColorFamily::Green,
+                                        crate::palettes::CuratedColorFamily::Blue,
+                                        crate::palettes::CuratedColorFamily::Indigo,
+                                        crate::palettes::CuratedColorFamily::Violet,
+                                        crate::palettes::CuratedColorFamily::Grayscale,
+                                    ] {
+                                        for entry in
+                                            crate::palettes::curated_colors_for_family(
+                                                family
+                                            )
+                                        {
+                                            let selected =
+                                                entry.color
+                                                    == palette.palette();
+
+
+                                            let response =
+                                                curated_palette_color_button(
+                                                    ui,
+                                                    metrics,
+                                                    entry,
+                                                    selected,
+                                                );
+
+
+                                            if response.clicked() {
+                                                *palette =
+                                                    PaletteSelection::from_palette(
+                                                        entry.color
+                                                    );
+
+                                                *palette_hex_input =
+                                                    entry.color.to_hex();
+
+                                                egui::Popup::close_id(
+                                                    ui.ctx(),
+                                                    popup_id,
+                                                );
+                                            }
+                                        }
+                                    }
+                                },
+                            );
+                    },
+                );
+
+
+            let curated_response =
+                curated_button_response;
+
+
+            update_hover_help(
+                &curated_response,
+                hover_help_message,
+                "Choose a curated palette color. The selected color is written to the hexadecimal field.",
             );
 
             let hex_response =
@@ -5177,27 +5444,13 @@ fn draw_color_picker_placeholder(
                     }
                 }
             }
-        },
-    );
 
-    ui.add_space(
-        6.0 * metrics.scale
-    );
 
-    ui.allocate_ui_with_layout(
-        egui::vec2(
-            230.0 * metrics.scale,
-            165.0 * metrics.scale,
-        ),
-        egui::Layout::centered_and_justified(
-            egui::Direction::LeftToRight
-        ),
-        |ui| {
-            ui.label(
-                egui::RichText::new(
-                    "[ Color Picker / Color Wheel ]"
-                )
-                .weak(),
+            ui.add_enabled(
+                false,
+                egui::Button::new(
+                    "Color Picker"
+                ),
             );
         },
     );

@@ -371,6 +371,201 @@ impl fmt::Display for PaletteColor {
 
 
 // ============================================================
+// Curated palette-color helper catalog
+// ============================================================
+//
+// These colors are UI conveniences only.  Screenshaver continues to store and
+// process the canonical #rrggbb value; curated names are never configuration
+// values.  Each family is intentionally ordered from light to dark.
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+)]
+pub enum CuratedColorFamily {
+    Grayscale,
+    Red,
+    Orange,
+    Yellow,
+    Green,
+    Blue,
+    Indigo,
+    Violet,
+}
+
+
+impl CuratedColorFamily {
+
+    pub const ALL: [Self; 8] = [
+        Self::Grayscale,
+        Self::Red,
+        Self::Orange,
+        Self::Yellow,
+        Self::Green,
+        Self::Blue,
+        Self::Indigo,
+        Self::Violet,
+    ];
+
+
+    pub const fn name(
+        self,
+    ) -> &'static str {
+
+        match self {
+            Self::Grayscale => "Grayscale",
+            Self::Red => "Red",
+            Self::Orange => "Orange",
+            Self::Yellow => "Yellow",
+            Self::Green => "Green",
+            Self::Blue => "Blue",
+            Self::Indigo => "Indigo",
+            Self::Violet => "Violet",
+        }
+    }
+}
+
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+)]
+pub struct CuratedPaletteColor {
+    pub family: CuratedColorFamily,
+    pub name: &'static str,
+    pub color: PaletteColor,
+}
+
+
+impl CuratedPaletteColor {
+
+    pub const fn new(
+        family: CuratedColorFamily,
+        name: &'static str,
+        color: PaletteColor,
+    ) -> Self {
+
+        Self {
+            family,
+            name,
+            color,
+        }
+    }
+}
+
+
+pub const CURATED_PALETTE_COLORS: [CuratedPaletteColor; 56] = [
+    // Grayscale: light -> dark
+    CuratedPaletteColor::new(CuratedColorFamily::Grayscale, "White", PaletteColor::new(255, 255, 255)),
+    CuratedPaletteColor::new(CuratedColorFamily::Grayscale, "Pearl", PaletteColor::new(232, 232, 228)),
+    CuratedPaletteColor::new(CuratedColorFamily::Grayscale, "Silver", PaletteColor::new(192, 192, 192)),
+    CuratedPaletteColor::new(CuratedColorFamily::Grayscale, "Gray", PaletteColor::new(128, 128, 128)),
+    CuratedPaletteColor::new(CuratedColorFamily::Grayscale, "Slate Gray", PaletteColor::new(112, 128, 144)),
+    CuratedPaletteColor::new(CuratedColorFamily::Grayscale, "Charcoal", PaletteColor::new(70, 70, 70)),
+    CuratedPaletteColor::new(CuratedColorFamily::Grayscale, "Graphite", PaletteColor::new(45, 45, 45)),
+
+    // Red: light -> dark
+    CuratedPaletteColor::new(CuratedColorFamily::Red, "Blush", PaletteColor::new(255, 183, 197)),
+    CuratedPaletteColor::new(CuratedColorFamily::Red, "Salmon", PaletteColor::new(250, 128, 114)),
+    CuratedPaletteColor::new(CuratedColorFamily::Red, "Coral Red", PaletteColor::new(255, 82, 82)),
+    CuratedPaletteColor::new(CuratedColorFamily::Red, "Scarlet", PaletteColor::new(255, 36, 0)),
+    CuratedPaletteColor::new(CuratedColorFamily::Red, "Crimson", PaletteColor::new(220, 20, 60)),
+    CuratedPaletteColor::new(CuratedColorFamily::Red, "Ruby", PaletteColor::new(180, 20, 50)),
+    CuratedPaletteColor::new(CuratedColorFamily::Red, "Burgundy", PaletteColor::new(128, 0, 32)),
+
+    // Orange: light -> dark
+    CuratedPaletteColor::new(CuratedColorFamily::Orange, "Peach", PaletteColor::new(255, 203, 164)),
+    CuratedPaletteColor::new(CuratedColorFamily::Orange, "Apricot", PaletteColor::new(251, 174, 96)),
+    CuratedPaletteColor::new(CuratedColorFamily::Orange, "Tangerine", PaletteColor::new(242, 133, 0)),
+    CuratedPaletteColor::new(CuratedColorFamily::Orange, "Pumpkin", PaletteColor::new(255, 117, 24)),
+    CuratedPaletteColor::new(CuratedColorFamily::Orange, "Burnt Orange", PaletteColor::new(204, 85, 0)),
+    CuratedPaletteColor::new(CuratedColorFamily::Orange, "Copper", PaletteColor::new(184, 115, 51)),
+    CuratedPaletteColor::new(CuratedColorFamily::Orange, "Russet", PaletteColor::new(128, 70, 27)),
+
+    // Yellow: light -> dark
+    CuratedPaletteColor::new(CuratedColorFamily::Yellow, "Pale Lemon", PaletteColor::new(255, 250, 170)),
+    CuratedPaletteColor::new(CuratedColorFamily::Yellow, "Lemon", PaletteColor::new(255, 244, 79)),
+    CuratedPaletteColor::new(CuratedColorFamily::Yellow, "Daffodil", PaletteColor::new(255, 225, 53)),
+    CuratedPaletteColor::new(CuratedColorFamily::Yellow, "Golden Yellow", PaletteColor::new(255, 192, 0)),
+    CuratedPaletteColor::new(CuratedColorFamily::Yellow, "Honey", PaletteColor::new(218, 165, 32)),
+    CuratedPaletteColor::new(CuratedColorFamily::Yellow, "Mustard", PaletteColor::new(181, 148, 16)),
+    CuratedPaletteColor::new(CuratedColorFamily::Yellow, "Dark Gold", PaletteColor::new(139, 105, 20)),
+
+    // Green: light -> dark
+    CuratedPaletteColor::new(CuratedColorFamily::Green, "Mint", PaletteColor::new(170, 240, 190)),
+    CuratedPaletteColor::new(CuratedColorFamily::Green, "Spring Green", PaletteColor::new(95, 210, 120)),
+    CuratedPaletteColor::new(CuratedColorFamily::Green, "Grass", PaletteColor::new(76, 175, 80)),
+    CuratedPaletteColor::new(CuratedColorFamily::Green, "Emerald", PaletteColor::new(46, 160, 100)),
+    CuratedPaletteColor::new(CuratedColorFamily::Green, "Forest", PaletteColor::new(34, 139, 34)),
+    CuratedPaletteColor::new(CuratedColorFamily::Green, "Moss", PaletteColor::new(100, 120, 65)),
+    CuratedPaletteColor::new(CuratedColorFamily::Green, "Dark Green", PaletteColor::new(20, 90, 45)),
+
+    // Blue: light -> dark
+    CuratedPaletteColor::new(CuratedColorFamily::Blue, "Powder Blue", PaletteColor::new(176, 224, 230)),
+    CuratedPaletteColor::new(CuratedColorFamily::Blue, "Sky", PaletteColor::new(135, 206, 235)),
+    CuratedPaletteColor::new(CuratedColorFamily::Blue, "Azure", PaletteColor::new(70, 160, 230)),
+    CuratedPaletteColor::new(CuratedColorFamily::Blue, "Cerulean", PaletteColor::new(0, 123, 167)),
+    CuratedPaletteColor::new(CuratedColorFamily::Blue, "Cobalt", PaletteColor::new(0, 71, 171)),
+    CuratedPaletteColor::new(CuratedColorFamily::Blue, "Sapphire", PaletteColor::new(15, 82, 186)),
+    CuratedPaletteColor::new(CuratedColorFamily::Blue, "Navy", PaletteColor::new(0, 0, 128)),
+
+    // Indigo: light -> dark
+    CuratedPaletteColor::new(CuratedColorFamily::Indigo, "Pale Periwinkle", PaletteColor::new(204, 204, 255)),
+    CuratedPaletteColor::new(CuratedColorFamily::Indigo, "Periwinkle", PaletteColor::new(160, 160, 230)),
+    CuratedPaletteColor::new(CuratedColorFamily::Indigo, "Iris", PaletteColor::new(93, 63, 211)),
+    CuratedPaletteColor::new(CuratedColorFamily::Indigo, "Indigo", PaletteColor::new(75, 0, 130)),
+    CuratedPaletteColor::new(CuratedColorFamily::Indigo, "Deep Indigo", PaletteColor::new(63, 30, 110)),
+    CuratedPaletteColor::new(CuratedColorFamily::Indigo, "Midnight Indigo", PaletteColor::new(45, 35, 95)),
+    CuratedPaletteColor::new(CuratedColorFamily::Indigo, "Dark Indigo", PaletteColor::new(35, 20, 70)),
+
+    // Violet: light -> dark
+    CuratedPaletteColor::new(CuratedColorFamily::Violet, "Lavender", PaletteColor::new(230, 210, 245)),
+    CuratedPaletteColor::new(CuratedColorFamily::Violet, "Mauve", PaletteColor::new(210, 160, 220)),
+    CuratedPaletteColor::new(CuratedColorFamily::Violet, "Orchid", PaletteColor::new(218, 112, 214)),
+    CuratedPaletteColor::new(CuratedColorFamily::Violet, "Violet", PaletteColor::new(143, 0, 255)),
+    CuratedPaletteColor::new(CuratedColorFamily::Violet, "Amethyst", PaletteColor::new(153, 102, 204)),
+    CuratedPaletteColor::new(CuratedColorFamily::Violet, "Plum", PaletteColor::new(142, 69, 133)),
+    CuratedPaletteColor::new(CuratedColorFamily::Violet, "Dark Violet", PaletteColor::new(90, 35, 105)),
+];
+
+
+pub fn curated_colors_for_family(
+    family: CuratedColorFamily,
+) -> impl Iterator<Item = &'static CuratedPaletteColor> {
+
+    CURATED_PALETTE_COLORS
+        .iter()
+        .filter(
+            move |entry| {
+                entry.family == family
+            }
+        )
+}
+
+
+pub fn curated_color_for_palette(
+    color: PaletteColor,
+) -> Option<&'static CuratedPaletteColor> {
+
+    CURATED_PALETTE_COLORS
+        .iter()
+        .find(
+            |entry| {
+                entry.color == color
+            }
+        )
+}
+
+
+// ============================================================
 // Palette display helpers
 // ============================================================
 
@@ -1094,6 +1289,71 @@ mod tests {
             ).map_rgba(
                 0.0
             )
+        );
+    }
+
+
+    #[test]
+    fn curated_catalog_contains_seven_colors_per_family() {
+
+        assert_eq!(
+            CURATED_PALETTE_COLORS.len(),
+            56
+        );
+
+
+        for family in
+            CuratedColorFamily::ALL
+        {
+            assert_eq!(
+                curated_colors_for_family(
+                    family
+                )
+                .count(),
+                7,
+                "unexpected curated color count for {}",
+                family.name(),
+            );
+        }
+    }
+
+
+    #[test]
+    fn curated_catalog_lookup_matches_exact_palette_color() {
+
+        let pumpkin =
+            curated_color_for_palette(
+                PaletteColor::new(
+                    255,
+                    117,
+                    24,
+                )
+            )
+            .expect(
+                "Pumpkin should be present in curated catalog"
+            );
+
+
+        assert_eq!(
+            pumpkin.name,
+            "Pumpkin"
+        );
+
+        assert_eq!(
+            pumpkin.family,
+            CuratedColorFamily::Orange
+        );
+
+
+        assert!(
+            curated_color_for_palette(
+                PaletteColor::new(
+                    1,
+                    2,
+                    3,
+                )
+            )
+            .is_none()
         );
     }
 
