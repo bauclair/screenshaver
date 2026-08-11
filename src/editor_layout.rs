@@ -607,6 +607,9 @@ pub struct EditWindowOverlay {
     palette_hex_input:
         String,
 
+    color_picker_preview:
+        egui::Color32,
+
     primitive_count:
         u32,
 
@@ -757,6 +760,13 @@ impl EditWindowOverlay {
                         134,
                     )
                     .to_hex(),
+
+                color_picker_preview:
+                    egui::Color32::from_rgb(
+                        99,
+                        119,
+                        134,
+                    ),
 
                 primitive_count:
                     32,
@@ -1399,6 +1409,9 @@ impl EditWindowOverlay {
         let mut palette_hex_input =
             self.palette_hex_input.clone();
 
+        let mut color_picker_preview =
+            self.color_picker_preview;
+
         let mut primitive_count =
             self.primitive_count;
 
@@ -1750,7 +1763,7 @@ impl EditWindowOverlay {
                                                     );
 
                                                     ui.add_space(
-                                                        8.0 * metrics.scale
+                                                        metrics.row_gap
                                                     );
 
                                                     if palette
@@ -1760,19 +1773,13 @@ impl EditWindowOverlay {
                                                             palette.name();
                                                     }
 
-                                                    ui.with_layout(
-                                                        egui::Layout::bottom_up(
-                                                            egui::Align::LEFT
-                                                        ),
-                                                        |ui| {
-                                                            draw_color_picker_placeholder(
-                                                                ui,
-                                                                metrics,
-                                                                &mut palette,
-                                                                &mut palette_hex_input,
-                                                                &mut hover_help_message,
-                                                            );
-                                                        },
+                                                    draw_color_picker_placeholder(
+                                                        ui,
+                                                        metrics,
+                                                        &mut palette,
+                                                        &mut palette_hex_input,
+                                                        &mut color_picker_preview,
+                                                        &mut hover_help_message,
                                                     );
                                                 },
                                             );
@@ -1977,6 +1984,9 @@ impl EditWindowOverlay {
 
         self.palette_hex_input =
             palette_hex_input;
+
+        self.color_picker_preview =
+            color_picker_preview;
 
         self.primitive_count =
             primitive_count;
@@ -4848,32 +4858,64 @@ fn draw_texture_panel(
     metrics: EditorMetrics,
     texture_required: bool,
     texture: &mut TextureSelection,
-    palette: &mut PaletteSelection,
+    _palette: &mut PaletteSelection,
     primitive_count: &mut u32,
     hover_help_message: &mut Option<&'static str>,
 ) {
-    editor_theme::section_heading(
-        ui,
-        "Texture Settings",
-    );
-
-    ui.add_space(
-        metrics.row_gap
-    );
-
     ui.add_enabled_ui(
         texture_required,
         |ui| {
+            const PRIMITIVE_VALUES: [u32; 10] = [
+                2,
+                4,
+                8,
+                16,
+                32,
+                64,
+                128,
+                256,
+                512,
+                1024,
+            ];
+
+
+            let current_index =
+                PRIMITIVE_VALUES
+                    .iter()
+                    .position(
+                        |value| {
+                            value
+                                == primitive_count
+                        }
+                    )
+                    .unwrap_or(0);
+
+
+            let mut primitive_index =
+                current_index as f32;
+
+
             let label_width =
-                88.0 * metrics.scale;
+                120.0 * metrics.scale;
 
-            let value_width =
-                54.0 * metrics.scale;
+            let dropdown_width =
+                130.0 * metrics.scale;
 
-            let horizontal_spacing =
-                10.0 * metrics.scale;
+            let primitives_label_width =
+                58.0 * metrics.scale;
 
-            // Texture row.
+            let primitive_value_width =
+                42.0 * metrics.scale;
+
+            let inter_control_gap =
+                12.0 * metrics.scale;
+
+
+            ui.set_width(
+                ui.available_width()
+            );
+
+
             ui.horizontal(
                 |ui| {
                     ui.allocate_ui_with_layout(
@@ -4888,10 +4930,11 @@ fn draw_texture_panel(
                         ),
                         |ui| {
                             ui.label(
-                                "Texture"
+                                "Texture:"
                             );
                         },
                     );
+
 
                     let texture_response =
                         egui::ComboBox::from_id_source(
@@ -4901,13 +4944,11 @@ fn draw_texture_panel(
                             texture.name()
                         )
                         .width(
-                            metrics.dropdown_width
+                            dropdown_width
                         )
                         .show_ui(
                             ui,
                             |ui| {
-                                // Resource lists are presented
-                                // alphanumerically.
                                 for selection in [
                                     TextureSelection::Bricks,
                                     TextureSelection::Cellular,
@@ -4929,66 +4970,22 @@ fn draw_texture_panel(
                         )
                         .response;
 
+
                     update_hover_help(
                         &texture_response,
                         hover_help_message,
                         "Select the procedural texture family generated in memory for this shader.",
                     );
-                },
-            );
 
-            ui.add_space(
-                metrics.row_gap
-            );
 
-            // Primitives row.
-            const PRIMITIVE_VALUES: [u32; 10] =
-                [
-                    2,
-                    4,
-                    8,
-                    16,
-                    32,
-                    64,
-                    128,
-                    256,
-                    512,
-                    1024,
-                ];
+                    ui.add_space(
+                        inter_control_gap
+                    );
 
-            let current_index =
-                PRIMITIVE_VALUES
-                    .iter()
-                    .position(
-                        |value| {
-                            value
-                                == primitive_count
-                        }
-                    )
-                    .unwrap_or(0);
 
-            let mut primitive_index =
-                current_index as f32;
-
-            let primitive_slider_width =
-                (
-                    ui.available_width()
-                        - label_width
-                        - value_width
-                        - horizontal_spacing * 2.0
-                )
-                .max(
-                    260.0 * metrics.scale
-                );
-
-            let mut primitive_response =
-                None;
-
-            ui.horizontal(
-                |ui| {
                     ui.allocate_ui_with_layout(
                         egui::vec2(
-                            label_width,
+                            primitives_label_width,
                             ui.spacing()
                                 .interact_size
                                 .y,
@@ -5003,36 +5000,51 @@ fn draw_texture_panel(
                         },
                     );
 
-                    ui.allocate_ui_with_layout(
-                        egui::vec2(
-                            primitive_slider_width,
-                            ui.spacing()
-                                .interact_size
-                                .y,
-                        ),
-                        egui::Layout::left_to_right(
-                            egui::Align::Center
-                        ),
-                        |ui| {
-                            ui.spacing_mut()
-                                .slider_width =
-                                primitive_slider_width;
 
-                            primitive_response =
-                                Some(
-                                    ui.add(
-                                        egui::Slider::new(
-                                            &mut primitive_index,
-                                            0.0..=(
-                                                PRIMITIVE_VALUES.len()
-                                                    - 1
-                                            ) as f32,
-                                        )
-                                        .show_value(false),
+                    let primitive_slider_width =
+                        (
+                            ui.available_width()
+                                - primitive_value_width
+                                - ui.spacing()
+                                    .item_spacing
+                                    .x
+                        )
+                        .max(
+                            90.0 * metrics.scale
+                        );
+
+
+                    let primitive_response =
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(
+                                primitive_slider_width,
+                                ui.spacing()
+                                    .interact_size
+                                    .y,
+                            ),
+                            egui::Layout::left_to_right(
+                                egui::Align::Center
+                            ),
+                            |ui| {
+                                ui.spacing_mut()
+                                    .slider_width =
+                                    primitive_slider_width;
+
+
+                                ui.add(
+                                    egui::Slider::new(
+                                        &mut primitive_index,
+                                        0.0..=(
+                                            PRIMITIVE_VALUES.len()
+                                                - 1
+                                        ) as f32,
                                     )
-                                );
-                        },
-                    );
+                                    .show_value(false),
+                                )
+                            },
+                        )
+                        .inner;
+
 
                     let selected_index =
                         primitive_index
@@ -5045,14 +5057,16 @@ fn draw_texture_panel(
                                 ) as f32,
                             ) as usize;
 
+
                     *primitive_count =
                         PRIMITIVE_VALUES[
                             selected_index
                         ];
 
+
                     ui.allocate_ui_with_layout(
                         egui::vec2(
-                            value_width,
+                            primitive_value_width,
                             ui.spacing()
                                 .interact_size
                                 .y,
@@ -5067,31 +5081,18 @@ fn draw_texture_panel(
                             );
                         },
                     );
+
+
+                    update_hover_help(
+                        &primitive_response,
+                        hover_help_message,
+                        "Set the number of graphical elements used to generate the procedural texture.",
+                    );
                 },
             );
-
-            if let Some(primitive_response) =
-                primitive_response
-            {
-                update_hover_help(
-                    &primitive_response,
-                    hover_help_message,
-                    "Set the number of graphical elements used to generate the procedural texture.",
-                );
-            }
         },
     );
-
-    if !texture_required {
-        ui.label(
-            egui::RichText::new(
-                "Not required by this shader"
-            )
-            .weak(),
-        );
-    }
 }
-
 
 fn curated_palette_color_button(
     ui: &mut egui::Ui,
@@ -5236,6 +5237,537 @@ fn curated_palette_color_button(
 }
 
 
+fn draw_standalone_visual_color_picker(
+    ui: &mut egui::Ui,
+    metrics: EditorMetrics,
+    color: &mut egui::Color32,
+    palette: &mut PaletteSelection,
+    palette_hex_input: &mut String,
+) {
+    let active_palette_color =
+        palette.palette();
+
+
+    let active_picker_color =
+        egui::Color32::from_rgb(
+            active_palette_color.red(),
+            active_palette_color.green(),
+            active_palette_color.blue(),
+        );
+
+
+    if active_picker_color
+        != *color
+    {
+        *color =
+            active_picker_color;
+    }
+
+
+    let mut hsva =
+        egui::ecolor::Hsva::from(
+            *color
+        );
+
+
+    let available_width =
+        ui.available_width()
+            .max(
+                180.0 * metrics.scale
+            );
+
+
+    let hue_width =
+        18.0 * metrics.scale;
+
+    let gap =
+        8.0 * metrics.scale;
+
+    let field_width =
+        (
+            available_width
+                - hue_width
+                - gap
+        )
+        .max(
+            150.0 * metrics.scale
+        );
+
+    let field_height =
+        field_width;
+
+
+    ui.horizontal(
+        |ui| {
+            draw_saturation_value_field(
+                ui,
+                egui::vec2(
+                    field_width,
+                    field_height,
+                ),
+                &mut hsva,
+            );
+
+
+            ui.add_space(
+                gap
+            );
+
+
+            draw_hue_strip(
+                ui,
+                egui::vec2(
+                    hue_width,
+                    field_height,
+                ),
+                &mut hsva,
+            );
+        },
+    );
+
+
+    let selected_color =
+        egui::Color32::from(
+            hsva
+        );
+
+
+    if selected_color
+        != *color
+    {
+        *color =
+            selected_color;
+
+
+        let palette_color =
+            crate::palettes::PaletteColor::new(
+                selected_color.r(),
+                selected_color.g(),
+                selected_color.b(),
+            );
+
+
+        *palette =
+            PaletteSelection::from_palette(
+                palette_color
+            );
+
+
+        *palette_hex_input =
+            palette_color.to_hex();
+    }
+
+
+    ui.add_space(
+        6.0 * metrics.scale
+    );
+
+
+    let swatch_size =
+        egui::vec2(
+            72.0 * metrics.scale,
+            24.0 * metrics.scale,
+        );
+
+
+    let (
+        swatch_rect,
+        _swatch_response,
+    ) =
+        ui.allocate_exact_size(
+            swatch_size,
+            egui::Sense::hover(),
+        );
+
+
+    ui.painter()
+        .rect_filled(
+            swatch_rect,
+            3.0 * metrics.scale,
+            *color,
+        );
+
+
+    ui.painter()
+        .rect_stroke(
+            swatch_rect,
+            3.0 * metrics.scale,
+            egui::Stroke::new(
+                1.0,
+                ui.visuals()
+                    .widgets
+                    .noninteractive
+                    .fg_stroke
+                    .color,
+            ),
+            egui::StrokeKind::Inside,
+        );
+}
+
+
+fn draw_saturation_value_field(
+    ui: &mut egui::Ui,
+    size: egui::Vec2,
+    hsva: &mut egui::ecolor::Hsva,
+) {
+    let (
+        rect,
+        response,
+    ) =
+        ui.allocate_exact_size(
+            size,
+            egui::Sense::click_and_drag(),
+        );
+
+
+    let mesh_resolution =
+        24_usize;
+
+
+    if ui.is_rect_visible(
+        rect
+    ) {
+        let mut mesh =
+            egui::Mesh::default();
+
+
+        for y_index in
+            0..=mesh_resolution
+        {
+            let y_fraction =
+                y_index as f32
+                    / mesh_resolution as f32;
+
+            let value =
+                1.0 - y_fraction;
+
+
+            for x_index in
+                0..=mesh_resolution
+            {
+                let x_fraction =
+                    x_index as f32
+                        / mesh_resolution as f32;
+
+                let saturation =
+                    x_fraction;
+
+
+                let position =
+                    egui::pos2(
+                        egui::lerp(
+                            rect.x_range(),
+                            x_fraction,
+                        ),
+                        egui::lerp(
+                            rect.y_range(),
+                            y_fraction,
+                        ),
+                    );
+
+
+                let color =
+                    egui::Color32::from(
+                        egui::ecolor::Hsva::new(
+                            hsva.h,
+                            saturation,
+                            value,
+                            1.0,
+                        )
+                    );
+
+
+                mesh.vertices.push(
+                    egui::epaint::Vertex {
+                        pos:
+                            position,
+                        uv:
+                            egui::Pos2::ZERO,
+                        color,
+                    }
+                );
+            }
+        }
+
+
+        for y_index in
+            0..mesh_resolution
+        {
+            for x_index in
+                0..mesh_resolution
+            {
+                let row_width =
+                    mesh_resolution + 1;
+
+                let top_left =
+                    (
+                        y_index * row_width
+                            + x_index
+                    ) as u32;
+
+                let top_right =
+                    top_left + 1;
+
+                let bottom_left =
+                    top_left
+                        + row_width as u32;
+
+                let bottom_right =
+                    bottom_left + 1;
+
+
+                mesh.add_triangle(
+                    top_left,
+                    top_right,
+                    bottom_right,
+                );
+
+                mesh.add_triangle(
+                    top_left,
+                    bottom_right,
+                    bottom_left,
+                );
+            }
+        }
+
+
+        ui.painter()
+            .add(
+                egui::Shape::mesh(
+                    mesh
+                )
+            );
+
+
+        ui.painter()
+            .rect_stroke(
+                rect,
+                2.0,
+                egui::Stroke::new(
+                    1.0,
+                    ui.visuals()
+                        .widgets
+                        .noninteractive
+                        .bg_stroke
+                        .color,
+                ),
+                egui::StrokeKind::Inside,
+            );
+
+
+        let marker_position =
+            egui::pos2(
+                egui::lerp(
+                    rect.x_range(),
+                    hsva.s,
+                ),
+                egui::lerp(
+                    rect.y_range(),
+                    1.0 - hsva.v,
+                ),
+            );
+
+
+        ui.painter()
+            .circle_stroke(
+                marker_position,
+                5.0,
+                egui::Stroke::new(
+                    2.0,
+                    if hsva.v > 0.55 {
+                        egui::Color32::BLACK
+                    } else {
+                        egui::Color32::WHITE
+                    },
+                ),
+            );
+    }
+
+
+    if response.dragged()
+        || response.clicked()
+    {
+        if let Some(pointer) =
+            response.interact_pointer_pos()
+        {
+            hsva.s =
+                (
+                    (
+                        pointer.x
+                            - rect.left()
+                    )
+                        / rect.width()
+                )
+                .clamp(
+                    0.0,
+                    1.0,
+                );
+
+            hsva.v =
+                (
+                    1.0
+                        - (
+                            (
+                                pointer.y
+                                    - rect.top()
+                            )
+                                / rect.height()
+                        )
+                )
+                .clamp(
+                    0.0,
+                    1.0,
+                );
+        }
+    }
+}
+
+
+fn draw_hue_strip(
+    ui: &mut egui::Ui,
+    size: egui::Vec2,
+    hsva: &mut egui::ecolor::Hsva,
+) {
+    let (
+        rect,
+        response,
+    ) =
+        ui.allocate_exact_size(
+            size,
+            egui::Sense::click_and_drag(),
+        );
+
+
+    if ui.is_rect_visible(
+        rect
+    ) {
+        let segments =
+            36_usize;
+
+
+        for index in
+            0..segments
+        {
+            let top_fraction =
+                index as f32
+                    / segments as f32;
+
+            let bottom_fraction =
+                (
+                    index + 1
+                ) as f32
+                    / segments as f32;
+
+
+            let segment_rect =
+                egui::Rect::from_min_max(
+                    egui::pos2(
+                        rect.left(),
+                        egui::lerp(
+                            rect.y_range(),
+                            top_fraction,
+                        ),
+                    ),
+                    egui::pos2(
+                        rect.right(),
+                        egui::lerp(
+                            rect.y_range(),
+                            bottom_fraction,
+                        ),
+                    ),
+                );
+
+
+            let color =
+                egui::Color32::from(
+                    egui::ecolor::Hsva::new(
+                        top_fraction,
+                        1.0,
+                        1.0,
+                        1.0,
+                    )
+                );
+
+
+            ui.painter()
+                .rect_filled(
+                    segment_rect,
+                    0.0,
+                    color,
+                );
+        }
+
+
+        ui.painter()
+            .rect_stroke(
+                rect,
+                2.0,
+                egui::Stroke::new(
+                    1.0,
+                    ui.visuals()
+                        .widgets
+                        .noninteractive
+                        .bg_stroke
+                        .color,
+                ),
+                egui::StrokeKind::Inside,
+            );
+
+
+        let marker_y =
+            egui::lerp(
+                rect.y_range(),
+                hsva.h,
+            );
+
+
+        ui.painter()
+            .line_segment(
+                [
+                    egui::pos2(
+                        rect.left() - 3.0,
+                        marker_y,
+                    ),
+                    egui::pos2(
+                        rect.right() + 3.0,
+                        marker_y,
+                    ),
+                ],
+                egui::Stroke::new(
+                    2.0,
+                    ui.visuals()
+                        .widgets
+                        .active
+                        .fg_stroke
+                        .color,
+                ),
+            );
+    }
+
+
+    if response.dragged()
+        || response.clicked()
+    {
+        if let Some(pointer) =
+            response.interact_pointer_pos()
+        {
+            hsva.h =
+                (
+                    (
+                        pointer.y
+                            - rect.top()
+                    )
+                        / rect.height()
+                )
+                .clamp(
+                    0.0,
+                    1.0,
+                );
+        }
+    }
+}
+
+
 // Texture-tab curated palette selector and authoritative hexadecimal field.
 
 fn draw_color_picker_placeholder(
@@ -5243,15 +5775,40 @@ fn draw_color_picker_placeholder(
     metrics: EditorMetrics,
     palette: &mut PaletteSelection,
     palette_hex_input: &mut String,
+    color_picker_preview: &mut egui::Color32,
     hover_help_message: &mut Option<&'static str>,
 ) {
-    ui.separator();
+    let label_width =
+        120.0 * metrics.scale;
+
+    let dropdown_width =
+        130.0 * metrics.scale;
+
+
+    ui.set_width(
+        ui.available_width()
+    );
+
 
     ui.horizontal(
         |ui| {
-            ui.label(
-                "Palette Color:"
+            ui.allocate_ui_with_layout(
+                egui::vec2(
+                    label_width,
+                    ui.spacing()
+                        .interact_size
+                        .y,
+                ),
+                egui::Layout::left_to_right(
+                    egui::Align::Center
+                ),
+                |ui| {
+                    ui.label(
+                        "Palette Color:"
+                    );
+                },
             );
+
 
             let selected_curated_color =
                 crate::palettes::curated_color_for_palette(
@@ -5272,18 +5829,16 @@ fn draw_color_picker_placeholder(
 
 
             let curated_button_response =
-                ui.add(
+                ui.add_sized(
+                    [
+                        dropdown_width,
+                        ui.spacing()
+                            .interact_size
+                            .y,
+                    ],
                     egui::Button::new(
                         curated_selected_text
-                    )
-                    .min_size(
-                        egui::vec2(
-                            130.0 * metrics.scale,
-                            ui.spacing()
-                                .interact_size
-                                .y,
-                        )
-                    )
+                    ),
                 );
 
 
@@ -5301,13 +5856,13 @@ fn draw_color_picker_placeholder(
                     popup_id
                 )
                 .align(
-                    egui::RectAlign::TOP_START
+                    egui::RectAlign::BOTTOM_START
                 )
                 .align_alternatives(
                     &[]
                 )
                 .width(
-                    130.0 * metrics.scale
+                    dropdown_width
                 )
                 .show(
                     |ui| {
@@ -5319,7 +5874,7 @@ fn draw_color_picker_placeholder(
 
                         egui::ScrollArea::vertical()
                             .max_height(
-                                325.0 * metrics.scale
+                                235.0 * metrics.scale
                             )
                             .show(
                                 ui,
@@ -5446,11 +6001,12 @@ fn draw_color_picker_placeholder(
             }
 
 
-            ui.add_enabled(
-                false,
-                egui::Button::new(
-                    "Color Picker"
-                ),
+            draw_standalone_visual_color_picker(
+                ui,
+                metrics,
+                color_picker_preview,
+                palette,
+                palette_hex_input,
             );
         },
     );
