@@ -409,6 +409,22 @@ pub struct PolicyDisplayRow {
     pub policy_target: PolicyTarget,
 }
 
+#[derive(Clone, Debug)]
+pub struct BulkCreateCandidate {
+    pub path: PathBuf,
+    pub forced_target: Option<PolicyTarget>,
+    pub texture_required: bool,
+}
+
+
+#[derive(Clone, Debug)]
+pub struct BulkCreateRequest {
+    pub candidates: Vec<BulkCreateCandidate>,
+    pub external_target: Option<PolicyTarget>,
+    pub rejected_count: usize,
+}
+
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PolicyRowReference {
     pub policy_key: String,
@@ -450,9 +466,15 @@ pub struct EditorOutput {
     pub color_precision: ColorPrecisionSelection,
     pub policy_target_change_requested: Option<PolicyTarget>,
     pub save_requested: bool,
+    pub bulk_save_requested: bool,
+    pub bulk_selected_policy_rows:
+        Vec<PolicyRowReference>,
     pub cancel_requested: bool,
     pub delete_requested: bool,
     pub browse_shader_requested: bool,
+    pub bulk_create_browse_requested: bool,
+    pub bulk_create_requested:
+        Option<BulkCreateRequest>,
     pub recent_shader_requested: Option<usize>,
     pub clear_recent_files_requested: bool,
     pub refresh_shader_requested: bool,
@@ -586,6 +608,21 @@ pub struct EditWindowOverlay {
     pending_exit_confirmation:
         bool,
 
+    pending_bulk_save_confirmation:
+        bool,
+
+    pending_bulk_create_candidates:
+        Option<Vec<BulkCreateCandidate>>,
+
+    pending_bulk_create_rejected_count:
+        usize,
+
+    pending_bulk_create_external_target:
+        Option<PolicyTarget>,
+
+    policy_creation_pending:
+        bool,
+
     pixels_per_point:
         f32,
 
@@ -642,6 +679,9 @@ pub struct EditWindowOverlay {
 
     selected_policy_row:
         Option<PolicyRowReference>,
+
+    bulk_selected_policy_rows:
+        Vec<PolicyRowReference>,
 
     pending_policy_navigation:
         Option<PolicyNavigation>,
@@ -735,6 +775,21 @@ impl EditWindowOverlay {
                 pending_exit_confirmation:
                     false,
 
+                pending_bulk_save_confirmation:
+                    false,
+
+                pending_bulk_create_candidates:
+                    None,
+
+                pending_bulk_create_rejected_count:
+                    0,
+
+                pending_bulk_create_external_target:
+                    None,
+
+                policy_creation_pending:
+                    false,
+
                 pixels_per_point:
                     1.0,
 
@@ -806,6 +861,9 @@ impl EditWindowOverlay {
 
                 selected_policy_row:
                     None,
+
+                bulk_selected_policy_rows:
+                    Vec::new(),
 
                 pending_policy_navigation:
                     None,
@@ -1440,6 +1498,72 @@ impl EditWindowOverlay {
             self.color_precision;
 
 
+        // A shader physically located in one of Screenshaver's managed
+        // runtime folders has exactly one available policy target.  Enforce
+        // that target here as well as in edit_shader.rs so the Control Center
+        // cannot display "Select..." or retain a stale opposite target.
+        let forced_policy_target =
+            match (
+                screensaver_target_available,
+                wallpaper_target_available,
+            ) {
+                (
+                    true,
+                    false,
+                ) => {
+                    Some(
+                        PolicyTarget::Screensaver
+                    )
+                }
+
+                (
+                    false,
+                    true,
+                ) => {
+                    Some(
+                        PolicyTarget::Wallpaper
+                    )
+                }
+
+                _ => {
+                    None
+                }
+            };
+
+
+        if let Some(
+            forced_policy_target
+        ) =
+            forced_policy_target
+        {
+            policy_target =
+                Some(
+                    forced_policy_target
+                );
+
+            self.policy_target =
+                Some(
+                    forced_policy_target
+                );
+
+
+            let forced_policy_exists =
+                match forced_policy_target {
+                    PolicyTarget::Screensaver => {
+                        screensaver_policy_exists
+                    }
+
+                    PolicyTarget::Wallpaper => {
+                        wallpaper_policy_exists
+                    }
+                };
+
+
+            self.policy_creation_pending =
+                !forced_policy_exists;
+        }
+
+
         if self.initial_configuration.is_none() {
             anti_aliasing =
                 resolved_anti_aliasing;
@@ -1485,6 +1609,9 @@ impl EditWindowOverlay {
         let mut save_requested =
             false;
 
+        let mut bulk_save_requested =
+            false;
+
         let mut cancel_requested =
             false;
 
@@ -1493,6 +1620,13 @@ impl EditWindowOverlay {
 
         let mut browse_shader_requested =
             false;
+
+        let mut bulk_create_browse_requested =
+            false;
+
+        let mut bulk_create_requested:
+            Option<BulkCreateRequest> =
+            None;
 
         let mut recent_shader_requested =
             None;
@@ -1542,6 +1676,9 @@ impl EditWindowOverlay {
         let mut selected_policy_row =
             self.selected_policy_row.clone();
 
+        let mut bulk_selected_policy_rows =
+            self.bulk_selected_policy_rows.clone();
+
         let mut pending_policy_navigation =
             self.pending_policy_navigation.take();
 
@@ -1584,6 +1721,36 @@ impl EditWindowOverlay {
 
         let editor_title =
             "Screenshaver Control Center (ESC or Q to exit)";
+
+
+        let bulk_edit_mode =
+            bulk_selected_policy_rows.len() > 1;
+
+
+        let bulk_texture_required =
+            if bulk_edit_mode {
+                bulk_selected_policy_rows
+                    .iter()
+                    .any(
+                        |selected| {
+                            policy_rows
+                                .iter()
+                                .any(
+                                    |row| {
+                                        row.policy_target
+                                            == selected.policy_target
+                                            && row.policy_key
+                                                .eq_ignore_ascii_case(
+                                                    &selected.policy_key
+                                                )
+                                            && row.texture
+                                    }
+                                )
+                        }
+                    )
+            } else {
+                texture_required
+            };
 
 
         let full_output =
@@ -1630,6 +1797,8 @@ impl EditWindowOverlay {
                                 pending_confirmation
                                     .is_none()
                                     && !self.pending_exit_confirmation
+                                    && !self.pending_bulk_save_confirmation
+                                    && self.pending_bulk_create_candidates.is_none()
                             );
 
                             let mut hover_help_message:
@@ -1675,6 +1844,11 @@ impl EditWindowOverlay {
                                     }
                                 };
 
+                            let policy_dirty =
+                                configuration_changed
+                                    || self.policy_creation_pending;
+
+
                             let can_save =
                                 mandatory_information_complete
                                     && (
@@ -1688,23 +1862,29 @@ impl EditWindowOverlay {
                             // -----------------------------------------------------------------
                             // Permanent header: Load Shader + Policy Target + Shader Information
                             // -----------------------------------------------------------------
-                            draw_compact_header(
-                                ui,
-                                metrics,
-                                shader_information,
-                                configuration_changed,
-                                recent_shader_paths,
-                                policy_target,
-                                screensaver_target_available,
-                                wallpaper_target_available,
-                                screensaver_target_session_restricted,
-                                wallpaper_target_session_restricted,
-                                &mut browse_shader_requested,
-                                &mut recent_shader_requested,
-                                &mut clear_recent_files_requested,
-                                &mut policy_target_change_requested,
-                                &mut status_message,
-                                &mut hover_help_message,
+                            ui.add_enabled_ui(
+                                !bulk_edit_mode,
+                                |ui| {
+                                    draw_compact_header(
+                                        ui,
+                                        metrics,
+                                        shader_information,
+                                        configuration_changed,
+                                        recent_shader_paths,
+                                        policy_target,
+                                        screensaver_target_available,
+                                        wallpaper_target_available,
+                                        screensaver_target_session_restricted,
+                                        wallpaper_target_session_restricted,
+                                        &mut browse_shader_requested,
+                                        &mut bulk_create_browse_requested,
+                                        &mut recent_shader_requested,
+                                        &mut clear_recent_files_requested,
+                                        &mut policy_target_change_requested,
+                                        &mut status_message,
+                                        &mut hover_help_message,
+                                    );
+                                },
                             );
 
                             ui.add_space(
@@ -1712,7 +1892,8 @@ impl EditWindowOverlay {
                             );
 
                             let policy_controls_enabled =
-                                policy_target.is_some();
+                                policy_target.is_some()
+                                    || bulk_edit_mode;
 
                             // -------------------------------------------------------------
                             // Embedded notebook corresponding to the Qt Designer QTabWidget.
@@ -1721,6 +1902,7 @@ impl EditWindowOverlay {
                                 ui,
                                 metrics,
                                 &mut active_tab,
+                                bulk_edit_mode,
                             );
 
                             editor_theme::panel_frame(
@@ -1744,6 +1926,7 @@ impl EditWindowOverlay {
                                                 &mut policy_sort_column,
                                                 &mut policy_sort_ascending,
                                                 &mut selected_policy_row,
+                                                &mut bulk_selected_policy_rows,
                                                 &mut pending_policy_navigation,
                                                 &mut pending_confirmation,
                                                 &mut policy_row_command_requested,
@@ -1777,7 +1960,7 @@ impl EditWindowOverlay {
                                                     draw_texture_panel(
                                                         ui,
                                                         metrics,
-                                                        texture_required,
+                                                        bulk_texture_required,
                                                         &mut texture,
                                                         &mut palette,
                                                         &mut primitive_count,
@@ -1788,20 +1971,27 @@ impl EditWindowOverlay {
                                                         metrics.row_gap
                                                     );
 
-                                                    if palette
-                                                        != self.palette
-                                                    {
-                                                        palette_hex_input =
-                                                            palette.name();
-                                                    }
 
-                                                    draw_color_picker_placeholder(
-                                                        ui,
-                                                        metrics,
-                                                        &mut palette,
-                                                        &mut palette_hex_input,
-                                                        &mut color_picker_preview,
-                                                        &mut hover_help_message,
+                                                    ui.add_enabled_ui(
+                                                        bulk_texture_required,
+                                                        |ui| {
+                                                            if palette
+                                                                != self.palette
+                                                            {
+                                                                palette_hex_input =
+                                                                    palette.name();
+                                                            }
+
+
+                                                            draw_color_picker_placeholder(
+                                                                ui,
+                                                                metrics,
+                                                                &mut palette,
+                                                                &mut palette_hex_input,
+                                                                &mut color_picker_preview,
+                                                                &mut hover_help_message,
+                                                            );
+                                                        },
                                                     );
                                                 },
                                             );
@@ -1824,18 +2014,23 @@ impl EditWindowOverlay {
                                         }
 
                                         EditorTab::Config => {
-                                            draw_config_tab(
-                                                ui,
-                                                metrics,
-                                                &mut control_configuration,
-                                                control_configuration_baseline.as_ref(),
-                                                recent_shader_paths,
-                                                &mut clear_recent_files_requested,
-                                                &mut control_configuration_save_requested,
-                                                &mut control_single_browse_requested,
-                                                &mut control_single_recent_requested,
-                                                &mut status_message,
-                                                &mut hover_help_message,
+                                            ui.add_enabled_ui(
+                                                !bulk_edit_mode,
+                                                |ui| {
+                                                    draw_config_tab(
+                                                        ui,
+                                                        metrics,
+                                                        &mut control_configuration,
+                                                        control_configuration_baseline.as_ref(),
+                                                        recent_shader_paths,
+                                                        &mut clear_recent_files_requested,
+                                                        &mut control_configuration_save_requested,
+                                                        &mut control_single_browse_requested,
+                                                        &mut control_single_recent_requested,
+                                                        &mut status_message,
+                                                        &mut hover_help_message,
+                                                    );
+                                                },
                                             );
                                         }
                                     }
@@ -1890,11 +2085,18 @@ impl EditWindowOverlay {
                             // Policy/Config state is shown in a compact text box on
                             // the right side of this same row.
                             // --------------------------------------------------------
+                            let bulk_edit_mode =
+                                bulk_selected_policy_rows.len() > 1;
+
+
                             draw_compact_action_row(
                                 ui,
                                 metrics,
                                 can_save,
                                 can_cancel,
+                                bulk_edit_mode,
+                                &mut bulk_selected_policy_rows,
+                                &mut self.pending_bulk_save_confirmation,
                                 &mut save_requested,
                                 &mut cancel_requested,
                                 &mut displayed_fps,
@@ -1914,7 +2116,7 @@ impl EditWindowOverlay {
                                 &mut status_message,
                                 &mut hover_help_message,
                                 shader_information,
-                                configuration_changed,
+                                policy_dirty,
                                 control_configuration_dirty,
                             );
 
@@ -1923,11 +2125,15 @@ impl EditWindowOverlay {
                             );
 
                             let displayed_status: &str =
-                                match hover_help_message {
-                                    Some(message) =>
-                                        message,
-                                    None =>
-                                        status_message.as_str(),
+                                if bulk_edit_mode {
+                                    "Bulk Edit Mode active-- click Cancel to return to Single Edit mode."
+                                } else {
+                                    match hover_help_message {
+                                        Some(message) =>
+                                            message,
+                                        None =>
+                                            status_message.as_str(),
+                                    }
                                 };
 
                             draw_compact_status_row(
@@ -1942,6 +2148,24 @@ impl EditWindowOverlay {
                         context,
                         &mut pending_confirmation,
                         &mut policy_row_command_requested,
+                    );
+
+
+                    draw_bulk_save_confirmation_modal(
+                        context,
+                        &mut self.pending_bulk_save_confirmation,
+                        &bulk_selected_policy_rows,
+                        policy_rows,
+                        &mut bulk_save_requested,
+                    );
+
+
+                    draw_bulk_create_confirmation_modal(
+                        context,
+                        &mut self.pending_bulk_create_candidates,
+                        &mut self.pending_bulk_create_external_target,
+                        self.pending_bulk_create_rejected_count,
+                        &mut bulk_create_requested,
                     );
 
 
@@ -1960,7 +2184,8 @@ impl EditWindowOverlay {
                         )
                         .differs_from(
                             baseline_configuration
-                        );
+                        )
+                        || self.policy_creation_pending;
 
 
                     let control_configuration_dirty =
@@ -2028,6 +2253,13 @@ impl EditWindowOverlay {
 
         self.selected_policy_row =
             selected_policy_row;
+
+        let bulk_selected_policy_rows_for_output =
+            bulk_selected_policy_rows.clone();
+
+
+        self.bulk_selected_policy_rows =
+            bulk_selected_policy_rows;
 
         self.pending_confirmation =
             pending_confirmation;
@@ -2135,11 +2367,20 @@ impl EditWindowOverlay {
 
             save_requested,
 
+            bulk_save_requested,
+
+            bulk_selected_policy_rows:
+                bulk_selected_policy_rows_for_output,
+
             cancel_requested,
 
             delete_requested,
 
             browse_shader_requested,
+
+            bulk_create_browse_requested,
+
+            bulk_create_requested,
 
             recent_shader_requested,
 
@@ -2164,7 +2405,8 @@ impl EditWindowOverlay {
                 )
                 .differs_from(
                     baseline_configuration
-                ),
+                )
+                || self.policy_creation_pending,
 
             control_configuration_dirty:
                 control_configuration.as_ref()
@@ -2221,6 +2463,7 @@ impl EditWindowOverlay {
             crate::parse_texture_specification::TextureSpecification,
             crate::palettes::PaletteColor,
         )>,
+        policy_exists: bool,
         status_message: impl Into<String>,
     ) {
         self.displayed_fps =
@@ -2296,6 +2539,10 @@ impl EditWindowOverlay {
         self.status_message =
             status_message.into();
 
+        self.policy_creation_pending =
+            self.policy_target.is_some()
+                && !policy_exists;
+
         self.initial_configuration =
             Some(
                 EditorConfiguration::new(
@@ -2317,9 +2564,132 @@ impl EditWindowOverlay {
     }
 
 
+    pub fn begin_bulk_policy_creation(
+        &mut self,
+        candidates: Vec<BulkCreateCandidate>,
+        rejected_count: usize,
+    ) {
+        self.pending_bulk_create_candidates =
+            Some(
+                candidates
+            );
+
+        self.pending_bulk_create_rejected_count =
+            rejected_count;
+
+        self.pending_bulk_create_external_target =
+            None;
+    }
+
+
+    pub fn complete_bulk_policy_creation(
+        &mut self,
+    ) {
+        self.pending_bulk_create_candidates =
+            None;
+
+        self.pending_bulk_create_rejected_count =
+            0;
+
+        self.pending_bulk_create_external_target =
+            None;
+    }
+
+
+    pub fn complete_bulk_save(
+        &mut self,
+        active_policy_was_selected: bool,
+    ) {
+        self.bulk_selected_policy_rows.clear();
+        self.pending_bulk_save_confirmation =
+            false;
+
+
+        if active_policy_was_selected {
+            self.accept_current_configuration();
+            return;
+        }
+
+
+        let Some(
+            baseline
+        ) =
+            self.initial_configuration
+        else {
+            return;
+        };
+
+
+        self.displayed_fps =
+            Some(
+                baseline.fps
+            );
+
+        self.displayed_animation_speed =
+            Some(
+                baseline.animation_speed
+            );
+
+        self.displayed_render_scale =
+            Some(
+                baseline.render_scale
+            );
+
+        self.policy_target =
+            baseline.policy_target;
+
+        self.texture =
+            baseline.texture;
+
+        self.palette =
+            baseline.palette;
+
+        self.palette_hex_input =
+            baseline.palette
+                .palette()
+                .to_hex();
+
+        let palette_color =
+            baseline.palette
+                .palette();
+
+        self.color_picker_preview =
+            egui::Color32::from_rgb(
+                palette_color.red(),
+                palette_color.green(),
+                palette_color.blue(),
+            );
+
+        self.primitive_count =
+            baseline.primitive_count;
+
+        self.anti_aliasing =
+            baseline.anti_aliasing;
+
+        self.dithering =
+            baseline.dithering;
+
+        self.color_precision =
+            baseline.color_precision;
+
+        self.fps_drag_state =
+            None;
+
+        self.animation_speed_drag_state =
+            None;
+
+        self.render_scale_drag_state =
+            None;
+    }
+
+
     pub fn accept_current_configuration(
         &mut self,
     ) {
+        self.policy_creation_pending =
+            false;
+
+
         if let (
             Some(fps),
             Some(animation_speed),
@@ -2419,6 +2789,7 @@ fn draw_editor_tab_bar(
     ui: &mut egui::Ui,
     metrics: EditorMetrics,
     active_tab: &mut EditorTab,
+    bulk_edit_mode: bool,
 ) {
     ui.horizontal(
         |ui| {
@@ -2450,13 +2821,21 @@ fn draw_editor_tab_bar(
                 let selected =
                     *active_tab == tab;
 
+                let tab_enabled =
+                    !bulk_edit_mode
+                        || tab != EditorTab::Config;
+
+
                 let response =
-                    ui.selectable_label(
-                        selected,
-                        egui::RichText::new(
-                            label
-                        )
-                        .strong(),
+                    ui.add_enabled(
+                        tab_enabled,
+                        egui::SelectableLabel::new(
+                            selected,
+                            egui::RichText::new(
+                                label
+                            )
+                            .strong(),
+                        ),
                     );
 
                 if response.clicked() {
@@ -2486,6 +2865,7 @@ fn draw_compact_header(
     screensaver_target_session_restricted: bool,
     wallpaper_target_session_restricted: bool,
     browse_shader_requested: &mut bool,
+    bulk_create_browse_requested: &mut bool,
     recent_shader_requested: &mut Option<usize>,
     clear_recent_files_requested: &mut bool,
     policy_target_change_requested: &mut Option<PolicyTarget>,
@@ -2627,6 +3007,24 @@ fn draw_compact_header(
                             ui.close();
                         }
     
+                        if ui.button(
+                            "Create Policies from Multiple Shaders..."
+                        )
+                        .clicked()
+                        {
+                            if configuration_changed {
+                                *status_message =
+                                    "Save or cancel the current changes before creating policies."
+                                        .to_string();
+                            } else {
+                                *bulk_create_browse_requested =
+                                    true;
+                            }
+
+                            ui.close();
+                        }
+
+
                         if ui.add_enabled(
                             !recent_shader_paths.is_empty(),
                             egui::Button::new(
@@ -2664,111 +3062,137 @@ fn draw_compact_header(
                                 "Select...",
                         };
 
-                    egui::ComboBox::from_id_source(
-                        "editor_compact_policy_target"
-                    )
-                    .selected_text(
-                        selected_text
-                    )
-                    .width(
-                        130.0 * metrics.scale
-                    )
-                    .show_ui(
-                        ui,
-                        |ui| {
-                            let screensaver_response =
-                                ui.add_enabled(
-                                    screensaver_target_available,
-                                    egui::SelectableLabel::new(
-                                        policy_target
-                                            == Some(
-                                                PolicyTarget::Screensaver
-                                            ),
-                                        "Screensaver",
-                                    ),
-                                );
+                    let policy_target_locked =
+                        screensaver_target_available
+                            ^ wallpaper_target_available;
 
-                            update_hover_help(
-                                &screensaver_response,
-                                hover_help_message,
-                                if screensaver_target_available {
-                                    "Load or create the policy used for screensaver rendering."
-                                } else if screensaver_target_session_restricted {
-                                    "This editing session was opened for the active wallpaper. Only the Wallpaper policy can be edited."
-                                } else {
-                                    "This shader is unavailable for Screensaver use because it does not exist in the screensavers folder."
-                                },
-                            );
 
-                            if screensaver_response.clicked()
-                                && policy_target
-                                    != Some(
-                                        PolicyTarget::Screensaver
-                                    )
-                            {
-                                if configuration_changed
-                                    && policy_target.is_some()
-                                {
-                                    *status_message =
-                                        "Save or cancel the current changes before switching policy targets."
-                                            .to_string();
-                                } else {
-                                    *policy_target_change_requested =
-                                        Some(
-                                            PolicyTarget::Screensaver
-                                        );
-                                }
+                    let target_response =
+                        ui.add_enabled_ui(
+                            !policy_target_locked,
+                            |ui| {
+                                                egui::ComboBox::from_id_source(
+                                                    "editor_compact_policy_target"
+                                                )
+                                                .selected_text(
+                                                    selected_text
+                                                )
+                                                .width(
+                                                    130.0 * metrics.scale
+                                                )
+                                                .show_ui(
+                                                    ui,
+                                                    |ui| {
+                                                        let screensaver_response =
+                                                            ui.add_enabled(
+                                                                screensaver_target_available,
+                                                                egui::SelectableLabel::new(
+                                                                    policy_target
+                                                                        == Some(
+                                                                            PolicyTarget::Screensaver
+                                                                        ),
+                                                                    "Screensaver",
+                                                                ),
+                                                            );
 
-                                ui.close();
-                            }
+                                                        update_hover_help(
+                                                            &screensaver_response,
+                                                            hover_help_message,
+                                                            if screensaver_target_available {
+                                                                "Load or create the policy used for screensaver rendering."
+                                                            } else if screensaver_target_session_restricted {
+                                                                "This editing session was opened for the active wallpaper. Only the Wallpaper policy can be edited."
+                                                            } else {
+                                                                "This shader is unavailable for Screensaver use because it does not exist in the screensavers folder."
+                                                            },
+                                                        );
 
-                            let wallpaper_response =
-                                ui.add_enabled(
-                                    wallpaper_target_available,
-                                    egui::SelectableLabel::new(
-                                        policy_target
-                                            == Some(
-                                                PolicyTarget::Wallpaper
-                                            ),
-                                        "Wallpaper",
-                                    ),
-                                );
+                                                        if screensaver_response.clicked()
+                                                            && policy_target
+                                                                != Some(
+                                                                    PolicyTarget::Screensaver
+                                                                )
+                                                        {
+                                                            if configuration_changed
+                                                                && policy_target.is_some()
+                                                            {
+                                                                *status_message =
+                                                                    "Save or cancel the current changes before switching policy targets."
+                                                                        .to_string();
+                                                            } else {
+                                                                *policy_target_change_requested =
+                                                                    Some(
+                                                                        PolicyTarget::Screensaver
+                                                                    );
+                                                            }
 
-                            update_hover_help(
-                                &wallpaper_response,
-                                hover_help_message,
-                                if wallpaper_target_available {
-                                    "Load or create the policy used for wallpaper rendering."
-                                } else if wallpaper_target_session_restricted {
-                                    "This editing session was opened for the active screensaver. Only the Screensaver policy can be edited."
-                                } else {
-                                    "This shader is unavailable for Wallpaper use because it does not exist in the wallpapers folder."
-                                },
-                            );
+                                                            ui.close();
+                                                        }
 
-                            if wallpaper_response.clicked()
-                                && policy_target
-                                    != Some(
-                                        PolicyTarget::Wallpaper
-                                    )
-                            {
-                                if configuration_changed
-                                    && policy_target.is_some()
-                                {
-                                    *status_message =
-                                        "Save or cancel the current changes before switching policy targets."
-                                            .to_string();
-                                } else {
-                                    *policy_target_change_requested =
-                                        Some(
-                                            PolicyTarget::Wallpaper
-                                        );
-                                }
+                                                        let wallpaper_response =
+                                                            ui.add_enabled(
+                                                                wallpaper_target_available,
+                                                                egui::SelectableLabel::new(
+                                                                    policy_target
+                                                                        == Some(
+                                                                            PolicyTarget::Wallpaper
+                                                                        ),
+                                                                    "Wallpaper",
+                                                                ),
+                                                            );
 
-                                ui.close();
-                            }
-                        },
-                    );
+                                                        update_hover_help(
+                                                            &wallpaper_response,
+                                                            hover_help_message,
+                                                            if wallpaper_target_available {
+                                                                "Load or create the policy used for wallpaper rendering."
+                                                            } else if wallpaper_target_session_restricted {
+                                                                "This editing session was opened for the active screensaver. Only the Screensaver policy can be edited."
+                                                            } else {
+                                                                "This shader is unavailable for Wallpaper use because it does not exist in the wallpapers folder."
+                                                            },
+                                                        );
+
+                                                        if wallpaper_response.clicked()
+                                                            && policy_target
+                                                                != Some(
+                                                                    PolicyTarget::Wallpaper
+                                                                )
+                                                        {
+                                                            if configuration_changed
+                                                                && policy_target.is_some()
+                                                            {
+                                                                *status_message =
+                                                                    "Save or cancel the current changes before switching policy targets."
+                                                                        .to_string();
+                                                            } else {
+                                                                *policy_target_change_requested =
+                                                                    Some(
+                                                                        PolicyTarget::Wallpaper
+                                                                    );
+                                                            }
+
+                                                            ui.close();
+                                                        }
+                                                    },
+                                                );
+
+                            },
+                        );
+
+
+                    if policy_target_locked {
+                        update_hover_help(
+                            &target_response.response,
+                            hover_help_message,
+                            if screensaver_target_available {
+                                "Policy Target is locked to Screensaver because this shader is physically located in the managed screensavers folder."
+                            } else {
+                                "Policy Target is locked to Wallpaper because this shader is physically located in the managed wallpapers folder."
+                            },
+                        );
+                    }
+
 
                     ui.label(
                         egui::RichText::new(
@@ -2863,6 +3287,9 @@ fn draw_compact_action_row(
     metrics: EditorMetrics,
     can_save: bool,
     can_cancel: bool,
+    bulk_edit_mode: bool,
+    bulk_selected_policy_rows: &mut Vec<PolicyRowReference>,
+    pending_bulk_save_confirmation: &mut bool,
     save_requested: &mut bool,
     cancel_requested: &mut bool,
     displayed_fps: &mut u32,
@@ -2895,7 +3322,11 @@ fn draw_compact_action_row(
         |ui| {
             let save_response =
                 ui.add_enabled(
-                    can_save,
+                    if bulk_edit_mode {
+                        true
+                    } else {
+                        can_save
+                    },
                     egui::Button::new(
                         "Save Policy"
                     )
@@ -2918,17 +3349,26 @@ fn draw_compact_action_row(
             );
 
             if save_response.clicked() {
-                *save_requested =
-                    true;
+                if bulk_edit_mode {
+                    *pending_bulk_save_confirmation =
+                        true;
+                } else {
+                    *save_requested =
+                        true;
 
-                *status_message =
-                    "Saving policy..."
-                        .to_string();
+                    *status_message =
+                        "Saving policy..."
+                            .to_string();
+                }
             }
 
             let cancel_response =
                 ui.add_enabled(
-                    can_cancel,
+                    if bulk_edit_mode {
+                        true
+                    } else {
+                        can_cancel
+                    },
                     egui::Button::new(
                         "Cancel"
                     )
@@ -2976,9 +3416,20 @@ fn draw_compact_action_row(
                     None;
                 *render_scale_drag_state =
                     None;
-                *status_message =
-                    "Changes canceled"
-                        .to_string();
+                if bulk_edit_mode {
+                    *pending_bulk_save_confirmation =
+                        false;
+
+                    bulk_selected_policy_rows.clear();
+
+                    *status_message =
+                        "Bulk Edit Mode canceled"
+                            .to_string();
+                } else {
+                    *status_message =
+                        "Changes canceled"
+                            .to_string();
+                }
             }
 
 
@@ -3160,6 +3611,7 @@ fn draw_policies_tab(
     sort_column: &mut PolicySortColumn,
     sort_ascending: &mut bool,
     selected_row: &mut Option<PolicyRowReference>,
+    bulk_selected_rows: &mut Vec<PolicyRowReference>,
     pending_navigation: &mut Option<PolicyNavigation>,
     pending_confirmation: &mut Option<PendingConfirmation>,
     command_requested:
@@ -3185,6 +3637,24 @@ fn draw_policies_tab(
             label.to_string()
         }
     }
+
+    fn row_is_bulk_selected(
+        selected_rows: &[PolicyRowReference],
+        row: &PolicyRowReference,
+    ) -> bool {
+        selected_rows.iter()
+            .any(
+                |selected| {
+                    selected.policy_key
+                        .eq_ignore_ascii_case(
+                            &row.policy_key
+                        )
+                        && selected.policy_target
+                            == row.policy_target
+                }
+            )
+    }
+
 
     fn apply_sort_request(
         requested_column: PolicySortColumn,
@@ -3290,9 +3760,10 @@ fn draw_policies_tab(
         Option<PolicyRowReference> =
         None;
 
-    if let Some(navigation) =
-        pending_navigation.take()
-    {
+    if bulk_selected_rows.len() <= 1 {
+        if let Some(navigation) =
+            pending_navigation.take()
+        {
         if !rows.is_empty() {
             const PAGE_STEP: usize =
                 10;
@@ -3388,17 +3859,25 @@ fn draw_policies_tab(
                 Some(
                     row_reference
                 );
+            }
         }
+    } else {
+        pending_navigation.take();
     }
 
     let spacing =
         10.0 * metrics.scale;
 
+    let checkbox_width =
+        28.0 * metrics.scale;
+
+
     let usable_width =
         (
             ui.available_width()
                 - 18.0 * metrics.scale
-                - spacing * 3.0
+                - checkbox_width
+                - spacing * 4.0
         )
         .max(
             320.0 * metrics.scale
@@ -3449,7 +3928,7 @@ fn draw_policies_tab(
                 egui::Grid::new(
                     "editor_policy_table_grid"
                 )
-                .num_columns(4)
+                .num_columns(5)
                 .spacing(
                     egui::vec2(
                         spacing,
@@ -3461,6 +3940,88 @@ fn draw_policies_tab(
                 .show(
                     ui,
                     |ui| {
+                        let all_rows_checked =
+                            !rows.is_empty()
+                                && rows.iter()
+                                    .all(
+                                        |row| {
+                                            row_is_bulk_selected(
+                                                bulk_selected_rows,
+                                                &PolicyRowReference {
+                                                    policy_key:
+                                                        row.policy_key.clone(),
+                                                    filename:
+                                                        row.filename.clone(),
+                                                    full_path:
+                                                        row.full_path.clone(),
+                                                    policy_target:
+                                                        row.policy_target,
+                                                },
+                                            )
+                                        }
+                                    );
+
+
+                        let mut header_checked =
+                            all_rows_checked;
+
+
+                        let header_checkbox =
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(
+                                    checkbox_width,
+                                    row_height,
+                                ),
+                                egui::Layout::left_to_right(
+                                    egui::Align::Center
+                                ),
+                                |ui| {
+                                    ui.checkbox(
+                                        &mut header_checked,
+                                        ""
+                                    )
+                                },
+                            )
+                            .inner
+                            .on_hover_text(
+                                if all_rows_checked {
+                                    "Clear all policy selections"
+                                } else {
+                                    "Select all policies"
+                                }
+                            );
+
+
+                        if header_checkbox.changed() {
+                            if header_checked {
+                                bulk_selected_rows.clear();
+
+                                bulk_selected_rows.extend(
+                                    rows.iter()
+                                        .map(
+                                            |row| {
+                                                PolicyRowReference {
+                                                    policy_key:
+                                                        row.policy_key.clone(),
+
+                                                    filename:
+                                                        row.filename.clone(),
+
+                                                    full_path:
+                                                        row.full_path.clone(),
+
+                                                    policy_target:
+                                                        row.policy_target,
+                                                }
+                                            }
+                                        )
+                                );
+                            } else {
+                                bulk_selected_rows.clear();
+                            }
+                        }
+
+
                         let filename_header =
                             left_aligned_cell(
                                 ui,
@@ -3535,7 +4096,9 @@ fn draw_policies_tab(
 
                         ui.end_row();
 
-                        if filename_header.clicked() {
+                        if bulk_selected_rows.len() <= 1
+                            && filename_header.clicked()
+                        {
                             apply_sort_request(
                                 PolicySortColumn::Filename,
                                 sort_column,
@@ -3543,7 +4106,9 @@ fn draw_policies_tab(
                             );
                         }
 
-                        if status_header.clicked() {
+                        if bulk_selected_rows.len() <= 1
+                            && status_header.clicked()
+                        {
                             apply_sort_request(
                                 PolicySortColumn::Status,
                                 sort_column,
@@ -3551,7 +4116,9 @@ fn draw_policies_tab(
                             );
                         }
 
-                        if texture_header.clicked() {
+                        if bulk_selected_rows.len() <= 1
+                            && texture_header.clicked()
+                        {
                             apply_sort_request(
                                 PolicySortColumn::Texture,
                                 sort_column,
@@ -3559,7 +4126,9 @@ fn draw_policies_tab(
                             );
                         }
 
-                        if policy_header.clicked() {
+                        if bulk_selected_rows.len() <= 1
+                            && policy_header.clicked()
+                        {
                             apply_sort_request(
                                 PolicySortColumn::PolicyType,
                                 sort_column,
@@ -3568,6 +4137,17 @@ fn draw_policies_tab(
                         }
 
                         if rows.is_empty() {
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(
+                                    checkbox_width,
+                                    row_height,
+                                ),
+                                egui::Layout::left_to_right(
+                                    egui::Align::Center
+                                ),
+                                |_ui| {},
+                            );
+
                             left_aligned_cell(
                                 ui,
                                 filename_width,
@@ -3626,6 +4206,62 @@ fn draw_policies_tab(
                                     policy_target:
                                         row.policy_target,
                                 };
+
+                            let mut bulk_checked =
+                                row_is_bulk_selected(
+                                    bulk_selected_rows,
+                                    &row_reference,
+                                );
+
+
+                            let checkbox_response =
+                                ui.allocate_ui_with_layout(
+                                    egui::vec2(
+                                        checkbox_width,
+                                        row_height,
+                                    ),
+                                    egui::Layout::left_to_right(
+                                        egui::Align::Center
+                                    ),
+                                    |ui| {
+                                        ui.checkbox(
+                                            &mut bulk_checked,
+                                            ""
+                                        )
+                                    },
+                                )
+                                .inner
+                                .on_hover_text(
+                                    "Include this policy in Bulk Edit mode"
+                                );
+
+
+                            if checkbox_response.changed() {
+                                if bulk_checked {
+                                    if !row_is_bulk_selected(
+                                        bulk_selected_rows,
+                                        &row_reference,
+                                    ) {
+                                        bulk_selected_rows.push(
+                                            row_reference.clone()
+                                        );
+                                    }
+                                } else {
+                                    bulk_selected_rows.retain(
+                                        |selected| {
+                                            !(
+                                                selected.policy_key
+                                                    .eq_ignore_ascii_case(
+                                                        &row_reference.policy_key
+                                                    )
+                                                && selected.policy_target
+                                                    == row_reference.policy_target
+                                            )
+                                        }
+                                    );
+                                }
+                            }
+
 
                             let row_selected =
                                 selected_row
@@ -3741,14 +4377,18 @@ fn draw_policies_tab(
                                     || texture_response.double_clicked()
                                     || policy_response.double_clicked();
 
-                            if row_clicked {
+                            if bulk_selected_rows.len() <= 1
+                                && row_clicked
+                            {
                                 *selected_row =
                                     Some(
                                         row_reference.clone()
                                     );
                             }
 
-                            if row_double_clicked {
+                            if bulk_selected_rows.len() <= 1
+                                && row_double_clicked
+                            {
                                 *selected_row =
                                     Some(
                                         row_reference.clone()
@@ -3763,9 +4403,15 @@ fn draw_policies_tab(
                                     );
                             }
 
-                            // Any cell may open the same row context menu.
+                            // Any cell may open the same row context menu in
+                            // Single Edit mode.  Bulk Edit keeps only the
+                            // selection checkboxes interactive.
                             let mut show_context_menu =
                                 |response: &egui::Response| {
+                                    if bulk_selected_rows.len() > 1 {
+                                        return;
+                                    }
+
                                     response.context_menu(
                                         |ui| {
                                             if ui.button(
@@ -3965,6 +4611,392 @@ fn draw_policies_tab(
                 );
             },
         );
+}
+
+
+fn draw_bulk_create_confirmation_modal(
+    context: &egui::Context,
+    pending_candidates: &mut Option<Vec<BulkCreateCandidate>>,
+    external_target: &mut Option<PolicyTarget>,
+    rejected_count: usize,
+    bulk_create_requested: &mut Option<BulkCreateRequest>,
+) {
+    let Some(candidates) =
+        pending_candidates.as_ref()
+    else {
+        return;
+    };
+
+
+    let total_count =
+        candidates.len();
+
+    let screensaver_count =
+        candidates
+            .iter()
+            .filter(
+                |candidate| {
+                    candidate.forced_target
+                        == Some(
+                            PolicyTarget::Screensaver
+                        )
+                }
+            )
+            .count();
+
+    let wallpaper_count =
+        candidates
+            .iter()
+            .filter(
+                |candidate| {
+                    candidate.forced_target
+                        == Some(
+                            PolicyTarget::Wallpaper
+                        )
+                }
+            )
+            .count();
+
+    let external_count =
+        candidates
+            .iter()
+            .filter(
+                |candidate| {
+                    candidate.forced_target
+                        .is_none()
+                }
+            )
+            .count();
+
+    let texture_count =
+        candidates
+            .iter()
+            .filter(
+                |candidate| {
+                    candidate.texture_required
+                }
+            )
+            .count();
+
+
+    let mut keep_open =
+        true;
+
+    let mut create_clicked =
+        false;
+
+    let mut cancel_clicked =
+        false;
+
+
+    egui::Window::new(
+        "Create Multiple Policies"
+    )
+    .id(
+        egui::Id::new(
+            "editor_bulk_create_confirmation"
+        )
+    )
+    .collapsible(false)
+    .resizable(false)
+    .movable(false)
+    .anchor(
+        egui::Align2::CENTER_CENTER,
+        egui::Vec2::ZERO,
+    )
+    .open(
+        &mut keep_open
+    )
+    .show(
+        context,
+        |ui| {
+            ui.label(
+                format!(
+                    "{} usable shader{} selected.",
+                    total_count,
+                    if total_count == 1 { "" } else { "s" },
+                )
+            );
+
+            ui.label(
+                format!(
+                    "{} texture-enabled shader{} detected.",
+                    texture_count,
+                    if texture_count == 1 { "" } else { "s" },
+                )
+            );
+
+            ui.add_space(
+                6.0
+            );
+
+            ui.label(
+                format!(
+                    "Managed targets: {} Screensaver, {} Wallpaper.",
+                    screensaver_count,
+                    wallpaper_count,
+                )
+            );
+
+            ui.label(
+                format!(
+                    "External shaders requiring a target: {}.",
+                    external_count,
+                )
+            );
+
+
+            if rejected_count > 0 {
+                ui.label(
+                    format!(
+                        "{} selected shader{} could not be analyzed and will not be included.",
+                        rejected_count,
+                        if rejected_count == 1 { "" } else { "s" },
+                    )
+                );
+            }
+
+
+            if external_count > 0 {
+                ui.add_space(
+                    10.0
+                );
+
+                ui.label(
+                    "Policy target for all external shaders:"
+                );
+
+                ui.horizontal(
+                    |ui| {
+                        ui.selectable_value(
+                            external_target,
+                            Some(
+                                PolicyTarget::Screensaver
+                            ),
+                            "Screensaver",
+                        );
+
+                        ui.selectable_value(
+                            external_target,
+                            Some(
+                                PolicyTarget::Wallpaper
+                            ),
+                            "Wallpaper",
+                        );
+                    },
+                );
+            }
+
+
+            ui.add_space(
+                12.0
+            );
+
+
+            let target_complete =
+                external_count == 0
+                    || external_target.is_some();
+
+
+            ui.horizontal(
+                |ui| {
+                    if ui.add_enabled(
+                        target_complete
+                            && total_count > 0,
+                        egui::Button::new(
+                            "Create Policies"
+                        ),
+                    )
+                    .clicked()
+                    {
+                        create_clicked =
+                            true;
+                    }
+
+
+                    if ui.button(
+                        "Cancel"
+                    )
+                    .clicked()
+                    {
+                        cancel_clicked =
+                            true;
+                    }
+                },
+            );
+        },
+    );
+
+
+    if create_clicked {
+        *bulk_create_requested =
+            Some(
+                BulkCreateRequest {
+                    candidates:
+                        candidates.clone(),
+
+                    external_target:
+                        *external_target,
+
+                    rejected_count,
+                }
+            );
+
+        *pending_candidates =
+            None;
+
+        *external_target =
+            None;
+
+        return;
+    }
+
+
+    if cancel_clicked
+        || !keep_open
+    {
+        *pending_candidates =
+            None;
+
+        *external_target =
+            None;
+    }
+}
+
+
+fn draw_bulk_save_confirmation_modal(
+    context: &egui::Context,
+    pending_bulk_save_confirmation: &mut bool,
+    selected_rows: &[PolicyRowReference],
+    policy_rows: &[PolicyDisplayRow],
+    bulk_save_requested: &mut bool,
+) {
+    if !*pending_bulk_save_confirmation {
+        return;
+    }
+
+
+    let selected_count =
+        selected_rows.len();
+
+
+    let texture_enabled_count =
+        selected_rows
+            .iter()
+            .filter(
+                |selected| {
+                    policy_rows
+                        .iter()
+                        .find(
+                            |row| {
+                                row.policy_target
+                                    == selected.policy_target
+                                    && row.policy_key
+                                        .eq_ignore_ascii_case(
+                                            &selected.policy_key
+                                        )
+                            }
+                        )
+                        .map(
+                            |row| {
+                                row.texture
+                            }
+                        )
+                        .unwrap_or(false)
+                }
+            )
+            .count();
+
+
+    let mut keep_open =
+        true;
+
+
+    egui::Window::new(
+        "Confirm Bulk Policy Changes"
+    )
+    .id(
+        egui::Id::new(
+            "editor_bulk_save_confirmation"
+        )
+    )
+    .collapsible(false)
+    .resizable(false)
+    .movable(false)
+    .anchor(
+        egui::Align2::CENTER_CENTER,
+        egui::Vec2::ZERO,
+    )
+    .open(
+        &mut keep_open
+    )
+    .show(
+        context,
+        |ui| {
+            ui.label(
+                format!(
+                    "Changes will be applied to {} policies. Click OK to continue or Cancel to abort.",
+                    selected_count,
+                )
+            );
+
+
+            ui.add_space(
+                6.0
+            );
+
+
+            ui.label(
+                format!(
+                    "Texture and Palette settings will apply to {} texture-enabled shader{}.",
+                    texture_enabled_count,
+                    if texture_enabled_count == 1 {
+                        ""
+                    } else {
+                        "s"
+                    },
+                )
+            );
+
+
+            ui.add_space(
+                12.0
+            );
+
+
+            ui.horizontal(
+                |ui| {
+                    if ui.button(
+                        "OK"
+                    )
+                    .clicked()
+                    {
+                        *bulk_save_requested =
+                            true;
+
+                        *pending_bulk_save_confirmation =
+                            false;
+                    }
+
+
+                    if ui.button(
+                        "Cancel"
+                    )
+                    .clicked()
+                    {
+                        *pending_bulk_save_confirmation =
+                            false;
+                    }
+                },
+            );
+        },
+    );
+
+
+    if !keep_open {
+        *pending_bulk_save_confirmation =
+            false;
+    }
 }
 
 

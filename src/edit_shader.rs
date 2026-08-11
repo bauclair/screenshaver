@@ -538,6 +538,159 @@ fn run_empty_session() -> Result<(), String> {
         }
 
 
+        if editor_output.bulk_create_browse_requested {
+            let starting_directory =
+                crate::locate_paths::screensaver_shader_dir();
+
+
+            let selected_paths =
+                rfd::FileDialog::new()
+                    .add_filter(
+                        "GL shader files",
+                        &[
+                            "glsl",
+                            "fs",
+                        ],
+                    )
+                    .set_directory(
+                        &starting_directory
+                    )
+                    .pick_files();
+
+
+            if let Err(error) =
+                restore_editor_fullscreen(
+                    &mut window
+                )
+            {
+                log_warning(
+                    &format!(
+                        "[EDIT_SHADER] Immediate fullscreen restoration failed after bulk file selection: {}",
+                        error,
+                    )
+                );
+            }
+
+
+            let Some(selected_paths) =
+                selected_paths
+            else {
+                edit_window.set_status_message(
+                    "Bulk policy creation canceled."
+                );
+
+                continue;
+            };
+
+
+            let (
+                candidates,
+                rejected_count,
+            ) =
+                analyze_bulk_policy_candidates(
+                    selected_paths
+                );
+
+
+            if candidates.is_empty() {
+                edit_window.set_status_message(
+                    "No usable shaders were selected for policy creation."
+                );
+
+                continue;
+            }
+
+
+            edit_window.begin_bulk_policy_creation(
+                candidates,
+                rejected_count,
+            );
+
+            continue;
+        }
+
+
+        if let Some(request) =
+            editor_output.bulk_create_requested
+                .as_ref()
+        {
+            match create_bulk_policies(
+                request,
+                &editor_output,
+            ) {
+                Ok(result) => {
+                    match crate::load_config::load_config(
+                        &crate::locate_paths::config_path()
+                    ) {
+                        Ok(reloaded_config) => {
+                            config =
+                                reloaded_config.config;
+
+                            policy_display_rows =
+                                build_policy_display_rows(
+                                    &config
+                                );
+
+                            edit_window.complete_bulk_policy_creation();
+
+                            edit_window.set_status_message(
+                                format!(
+                                    "Bulk policy creation complete: {} created, {} already existed.",
+                                    result.created,
+                                    result.skipped_existing,
+                                )
+                            );
+
+                            log_information(
+                                &format!(
+                                    "[EDIT_SHADER] Bulk policy creation completed: {} created, {} existing policies skipped",
+                                    result.created,
+                                    result.skipped_existing,
+                                )
+                            );
+                        }
+
+                        Err(error) => {
+                            edit_window.set_status_message(
+                                "Policies were created, but configuration reload failed."
+                            );
+
+                            log_warning(
+                                &format!(
+                                    "[EDIT_SHADER] Bulk policies created, but configuration reload failed: {}",
+                                    error,
+                                )
+                            );
+                        }
+                    }
+                }
+
+                Err(error) => {
+                    edit_window.begin_bulk_policy_creation(
+                        request.candidates.clone(),
+                        request.rejected_count,
+                    );
+
+                    edit_window.set_status_message(
+                        format!(
+                            "Bulk policy creation failed: {}",
+                            error,
+                        )
+                    );
+
+                    log_warning(
+                        &format!(
+                            "[EDIT_SHADER] Bulk policy creation failed: {}",
+                            error,
+                        )
+                    );
+                }
+            }
+
+            continue;
+        }
+
+
         let recent_selected_path =
             editor_output.recent_shader_requested
                 .and_then(
@@ -1331,71 +1484,71 @@ fn run_paths(
         config.subtitle_placement;
 
 
-    let shader_name_hint =
-        shader_paths
-            .first()
-            .and_then(
-                |path| {
-                    path.file_name()
-                }
-            )
-            .and_then(
-                |name| {
-                    name.to_str()
-                }
-            )
-            .unwrap_or("")
-            .to_string();
-
-
-    let mut screensaver_target_available =
-        target_restriction
-            == EditorTargetRestriction::Unrestricted
-        || target_shader_path(
-            crate::editor_layout::PolicyTarget::Screensaver,
-            &shader_name_hint,
-        )
-        .is_file();
-
-
-    let mut wallpaper_target_available =
-        target_restriction
-            == EditorTargetRestriction::Unrestricted
-        || target_shader_path(
-            crate::editor_layout::PolicyTarget::Wallpaper,
-            &shader_name_hint,
-        )
-        .is_file();
-
-
-    match target_restriction {
-        EditorTargetRestriction::WallpaperOnly => {
-            // A tray-launched Wallpaper-only edit session is opened from the
-            // wallpaper runtime's already-resolved active shader path.  That
-            // path may legitimately be external to /wallpapers, so the
-            // requested Wallpaper target is authoritative for this session.
-            screensaver_target_available = false;
-            wallpaper_target_available = true;
-        }
-
-        EditorTargetRestriction::ScreensaverOnly => {
-            // Likewise, a Screensaver-only session may be editing a
-            // policy-backed external shader rather than a file physically
-            // stored in /screensavers.
-            screensaver_target_available = true;
-            wallpaper_target_available = false;
-        }
-
-        EditorTargetRestriction::Unrestricted => {}
-    }
-
-
     let initial_shader_path =
         shader_paths
             .first()
             .expect(
                 "shader_paths was checked for emptiness"
             );
+
+
+    let initial_managed_target =
+        managed_policy_target_for_path(
+            initial_shader_path
+        );
+
+
+    let (
+        mut screensaver_target_available,
+        mut wallpaper_target_available,
+    ) =
+        match target_restriction {
+            EditorTargetRestriction::WallpaperOnly => {
+                (
+                    false,
+                    true,
+                )
+            }
+
+            EditorTargetRestriction::ScreensaverOnly => {
+                (
+                    true,
+                    false,
+                )
+            }
+
+            EditorTargetRestriction::Unrestricted => {
+                match initial_managed_target {
+                    Some(
+                        crate::editor_layout::PolicyTarget::Screensaver
+                    ) => {
+                        (
+                            true,
+                            false,
+                        )
+                    }
+
+                    Some(
+                        crate::editor_layout::PolicyTarget::Wallpaper
+                    ) => {
+                        (
+                            false,
+                            true,
+                        )
+                    }
+
+                    None => {
+                        // Shaders outside Screenshaver's managed folders remain
+                        // intentionally unrestricted and may be assigned to
+                        // either runtime target.
+                        (
+                            true,
+                            true,
+                        )
+                    }
+                }
+            }
+        };
 
 
     let mut screensaver_policy_exists =
@@ -1429,15 +1582,7 @@ fn run_paths(
 
 
     let initial_editor_target =
-        if let Some(
-            requested_initial_target
-        ) =
-            requested_initial_target
-        {
-            Some(
-                requested_initial_target
-            )
-        } else if target_restriction
+        if target_restriction
             == EditorTargetRestriction::WallpaperOnly
         {
             Some(
@@ -1448,6 +1593,22 @@ fn run_paths(
         {
             Some(
                 crate::editor_layout::PolicyTarget::Screensaver
+            )
+        } else if let Some(
+            managed_target
+        ) =
+            initial_managed_target
+        {
+            Some(
+                managed_target
+            )
+        } else if let Some(
+            requested_initial_target
+        ) =
+            requested_initial_target
+        {
+            Some(
+                requested_initial_target
             )
         } else if wallpaper_policy_exists {
             Some(
@@ -1477,20 +1638,54 @@ fn run_paths(
         );
 
 
+    let initial_policy_exists =
+        match initial_editor_target {
+            Some(
+                crate::editor_layout::PolicyTarget::Screensaver
+            ) => {
+                screensaver_policy_exists
+            }
+
+            Some(
+                crate::editor_layout::PolicyTarget::Wallpaper
+            ) => {
+                wallpaper_policy_exists
+            }
+
+            None => {
+                false
+            }
+        };
+
+
     let startup_status =
         match initial_editor_target {
 
             Some(
                 crate::editor_layout::PolicyTarget::Wallpaper
-            ) => {
+            ) if initial_policy_exists => {
                 "Loaded existing Wallpaper policy for this shader."
+                    .to_string()
+            }
+
+            Some(
+                crate::editor_layout::PolicyTarget::Wallpaper
+            ) => {
+                "Wallpaper target enforced by shader location. New Wallpaper policy is ready to save."
+                    .to_string()
+            }
+
+            Some(
+                crate::editor_layout::PolicyTarget::Screensaver
+            ) if initial_policy_exists => {
+                "Loaded existing Screensaver policy for this shader."
                     .to_string()
             }
 
             Some(
                 crate::editor_layout::PolicyTarget::Screensaver
             ) => {
-                "Loaded existing Screensaver policy for this shader."
+                "Screensaver target enforced by shader location. New Screensaver policy is ready to save."
                     .to_string()
             }
 
@@ -1740,6 +1935,7 @@ fn run_paths(
         ),
         active.texture_manager
             .active_specification_selection(),
+        initial_policy_exists,
         startup_status,
     );
 
@@ -2477,6 +2673,169 @@ fn run_paths(
             }
 
 
+            if editor_output.bulk_create_browse_requested {
+                let starting_directory =
+                    active.path
+                        .parent()
+                        .unwrap_or_else(
+                            || Path::new(".")
+                        );
+
+
+                let selected_paths =
+                    rfd::FileDialog::new()
+                        .add_filter(
+                            "GL shader files",
+                            &[
+                                "glsl",
+                                "fs",
+                            ],
+                        )
+                        .set_directory(
+                            starting_directory
+                        )
+                        .pick_files();
+
+
+                if let Err(error) =
+                    restore_editor_fullscreen(
+                        &mut window
+                    )
+                {
+                    log_warning(
+                        &format!(
+                            "[EDIT_SHADER] Immediate fullscreen restoration failed after bulk file selection: {}",
+                            error,
+                        )
+                    );
+                }
+
+
+                fullscreen_restore_requested_at =
+                    Some(
+                        Instant::now()
+                    );
+
+
+                let Some(selected_paths) =
+                    selected_paths
+                else {
+                    edit_window.set_status_message(
+                        "Bulk policy creation canceled."
+                    );
+
+                    continue;
+                };
+
+
+                let (
+                    candidates,
+                    rejected_count,
+                ) =
+                    analyze_bulk_policy_candidates(
+                        selected_paths
+                    );
+
+
+                if candidates.is_empty() {
+                    edit_window.set_status_message(
+                        "No usable shaders were selected for policy creation."
+                    );
+
+                    continue;
+                }
+
+
+                edit_window.begin_bulk_policy_creation(
+                    candidates,
+                    rejected_count,
+                );
+
+                continue;
+            }
+
+
+            if let Some(request) =
+                editor_output.bulk_create_requested
+                    .as_ref()
+            {
+                match create_bulk_policies(
+                    request,
+                    &editor_output,
+                ) {
+                    Ok(result) => {
+                        match crate::load_config::load_config(
+                            &crate::locate_paths::config_path()
+                        ) {
+                            Ok(reloaded_config) => {
+                                config =
+                                    reloaded_config.config;
+
+                                policy_display_rows =
+                                    build_policy_display_rows(
+                                        &config
+                                    );
+
+                                edit_window.complete_bulk_policy_creation();
+
+                                edit_window.set_status_message(
+                                    format!(
+                                        "Bulk policy creation complete: {} created, {} already existed.",
+                                        result.created,
+                                        result.skipped_existing,
+                                    )
+                                );
+
+                                log_information(
+                                    &format!(
+                                        "[EDIT_SHADER] Bulk policy creation completed: {} created, {} existing policies skipped",
+                                        result.created,
+                                        result.skipped_existing,
+                                    )
+                                );
+                            }
+
+                            Err(error) => {
+                                edit_window.set_status_message(
+                                    "Policies were created, but configuration reload failed."
+                                );
+
+                                log_warning(
+                                    &format!(
+                                        "[EDIT_SHADER] Bulk policies created, but configuration reload failed: {}",
+                                        error,
+                                    )
+                                );
+                            }
+                        }
+                    }
+
+                    Err(error) => {
+                        edit_window.begin_bulk_policy_creation(
+                            request.candidates.clone(),
+                            request.rejected_count,
+                        );
+
+                        edit_window.set_status_message(
+                            format!(
+                                "Bulk policy creation failed: {}",
+                                error,
+                            )
+                        );
+
+                        log_warning(
+                            &format!(
+                                "[EDIT_SHADER] Bulk policy creation failed: {}",
+                                error,
+                            )
+                        );
+                    }
+                }
+
+                continue;
+            }
+
+
             if editor_output.clear_recent_files_requested {
                 recent_shader_paths.clear();
 
@@ -2653,42 +3012,60 @@ fn run_paths(
                         .unwrap_or("")
                         .to_string();
 
-                let mut new_screensaver_target_available =
-                    target_restriction
-                        == EditorTargetRestriction::Unrestricted
-                    || target_shader_path(
-                        crate::editor_layout::PolicyTarget::Screensaver,
-                        &selected_shader_name,
-                    )
-                    .is_file();
+                let new_managed_target =
+                    managed_policy_target_for_path(
+                        &selected_path
+                    );
 
-                let mut new_wallpaper_target_available =
-                    target_restriction
-                        == EditorTargetRestriction::Unrestricted
-                    || target_shader_path(
-                        crate::editor_layout::PolicyTarget::Wallpaper,
-                        &selected_shader_name,
-                    )
-                    .is_file();
 
-                match target_restriction {
-                    EditorTargetRestriction::WallpaperOnly => {
-                        // The tray-launched Wallpaper-only session remains
-                        // authoritative even after the user loads a different
-                        // shader, including one from an external location.
-                        new_screensaver_target_available = false;
-                        new_wallpaper_target_available = true;
-                    }
+                let (
+                    new_screensaver_target_available,
+                    new_wallpaper_target_available,
+                ) =
+                    match target_restriction {
+                        EditorTargetRestriction::WallpaperOnly => {
+                            (
+                                false,
+                                true,
+                            )
+                        }
 
-                    EditorTargetRestriction::ScreensaverOnly => {
-                        // Preserve the equivalent rule for Screensaver-only
-                        // sessions after changing the loaded shader.
-                        new_screensaver_target_available = true;
-                        new_wallpaper_target_available = false;
-                    }
+                        EditorTargetRestriction::ScreensaverOnly => {
+                            (
+                                true,
+                                false,
+                            )
+                        }
 
-                    EditorTargetRestriction::Unrestricted => {}
-                }
+                        EditorTargetRestriction::Unrestricted => {
+                            match new_managed_target {
+                                Some(
+                                    crate::editor_layout::PolicyTarget::Screensaver
+                                ) => {
+                                    (
+                                        true,
+                                        false,
+                                    )
+                                }
+
+                                Some(
+                                    crate::editor_layout::PolicyTarget::Wallpaper
+                                ) => {
+                                    (
+                                        false,
+                                        true,
+                                    )
+                                }
+
+                                None => {
+                                    (
+                                        true,
+                                        true,
+                                    )
+                                }
+                            }
+                        }
+                    };
 
                 let new_screensaver_policy_exists =
                     new_screensaver_target_available
@@ -2732,14 +3109,7 @@ fn run_paths(
 
 
                 let new_editor_target =
-                    if let Some(
-                        row_forced_target
-                    ) = row_forced_target
-                    {
-                        Some(
-                            row_forced_target
-                        )
-                    } else if target_restriction
+                    if target_restriction
                         == EditorTargetRestriction::WallpaperOnly
                     {
                         Some(
@@ -2750,6 +3120,21 @@ fn run_paths(
                     {
                         Some(
                             crate::editor_layout::PolicyTarget::Screensaver
+                        )
+                    } else if let Some(
+                        managed_target
+                    ) =
+                        new_managed_target
+                    {
+                        Some(
+                            managed_target
+                        )
+                    } else if let Some(
+                        row_forced_target
+                    ) = row_forced_target
+                    {
+                        Some(
+                            row_forced_target
                         )
                     } else if new_wallpaper_policy_exists {
                         Some(
@@ -2778,20 +3163,68 @@ fn run_paths(
                     );
 
 
+                let new_policy_exists =
+                    match new_editor_target {
+                        Some(
+                            crate::editor_layout::PolicyTarget::Screensaver
+                        ) => {
+                            new_screensaver_policy_exists
+                        }
+
+                        Some(
+                            crate::editor_layout::PolicyTarget::Wallpaper
+                        ) => {
+                            new_wallpaper_policy_exists
+                        }
+
+                        None => {
+                            false
+                        }
+                    };
+
+
                 let load_status =
                     match new_editor_target {
 
                         Some(
                             crate::editor_layout::PolicyTarget::Wallpaper
-                        ) => {
+                        ) if new_policy_exists => {
                             "Loaded shader with its existing Wallpaper policy."
+                                .to_string()
+                        }
+
+                        Some(
+                            crate::editor_layout::PolicyTarget::Wallpaper
+                        ) if new_managed_target.is_some() => {
+                            "Wallpaper target enforced by shader location. New Wallpaper policy is ready to save."
+                                .to_string()
+                        }
+
+                        Some(
+                            crate::editor_layout::PolicyTarget::Wallpaper
+                        ) => {
+                            "No Wallpaper policy exists. Loaded Wallpaper defaults."
+                                .to_string()
+                        }
+
+                        Some(
+                            crate::editor_layout::PolicyTarget::Screensaver
+                        ) if new_policy_exists => {
+                            "Loaded shader with its existing Screensaver policy."
+                                .to_string()
+                        }
+
+                        Some(
+                            crate::editor_layout::PolicyTarget::Screensaver
+                        ) if new_managed_target.is_some() => {
+                            "Screensaver target enforced by shader location. New Screensaver policy is ready to save."
                                 .to_string()
                         }
 
                         Some(
                             crate::editor_layout::PolicyTarget::Screensaver
                         ) => {
-                            "Loaded shader with its existing Screensaver policy."
+                            "No Screensaver policy exists. Loaded Screensaver defaults."
                                 .to_string()
                         }
 
@@ -2928,6 +3361,7 @@ fn run_paths(
                             ),
                             active.texture_manager
                                 .active_specification_selection(),
+                            new_policy_exists,
                             load_status,
                         );
 
@@ -3034,6 +3468,23 @@ fn run_paths(
                             ),
                             active.texture_manager
                                 .active_specification_selection(),
+                            match editor_output.policy_target {
+                                Some(
+                                    crate::editor_layout::PolicyTarget::Screensaver
+                                ) => {
+                                    screensaver_policy_exists
+                                }
+
+                                Some(
+                                    crate::editor_layout::PolicyTarget::Wallpaper
+                                ) => {
+                                    wallpaper_policy_exists
+                                }
+
+                                None => {
+                                    false
+                                }
+                            },
                             format!(
                                 "Refreshed shader from disk: {}",
                                 active.shader_name,
@@ -3266,6 +3717,7 @@ fn run_paths(
                     ),
                     active.texture_manager
                         .active_specification_selection(),
+                    target_policy_exists,
                     status_message,
                 );
 
@@ -3550,6 +4002,343 @@ fn run_paths(
             }
 
 
+            if editor_output.bulk_save_requested {
+                let selected_rows =
+                    &editor_output.bulk_selected_policy_rows;
+
+
+                let mut replacements =
+                    Vec::with_capacity(
+                        selected_rows.len()
+                    );
+
+                let mut active_policy_was_selected =
+                    false;
+
+                let mut preparation_error:
+                    Option<String> =
+                    None;
+
+
+                for row in selected_rows {
+                    let shader_path =
+                        PathBuf::from(
+                            &row.full_path
+                        );
+
+
+                    let texture_required =
+                        match shader_requires_texture_for_bulk_edit(
+                            &shader_path
+                        ) {
+                            Ok(required) => {
+                                required
+                            }
+
+                            Err(error) => {
+                                preparation_error =
+                                    Some(
+                                        error
+                                    );
+
+                                break;
+                            }
+                        };
+
+
+                    let existing_policy =
+                        policy_for_bulk_row(
+                            &config,
+                            row,
+                        );
+
+
+                    let Some(existing_policy) =
+                        existing_policy
+                    else {
+                        preparation_error =
+                            Some(
+                                format!(
+                                    "Unable to locate selected {} policy '{}' while preparing Bulk Edit.",
+                                    match row.policy_target {
+                                        crate::editor_layout::PolicyTarget::Screensaver =>
+                                            "Screensaver",
+
+                                        crate::editor_layout::PolicyTarget::Wallpaper =>
+                                            "Wallpaper",
+                                    },
+                                    row.policy_key,
+                                )
+                            );
+
+                        break;
+                    };
+
+
+                    let texture =
+                        if texture_required {
+                            Some(
+                                format!(
+                                    "{}:{}",
+                                    selected_texture.name(),
+                                    selected_primitive_count,
+                                )
+                            )
+                        } else {
+                            existing_policy
+                                .shader_texture
+                                .as_ref()
+                                .map(
+                                    |texture| {
+                                        texture.to_string()
+                                    }
+                                )
+                        };
+
+
+                    let palette =
+                        if texture_required {
+                            Some(
+                                selected_palette
+                                    .palette()
+                                    .to_hex()
+                            )
+                        } else {
+                            existing_policy
+                                .shader_palette
+                                .as_ref()
+                                .map(
+                                    |palette| {
+                                        palette.to_hex()
+                                    }
+                                )
+                        };
+
+
+                    let target =
+                        match row.policy_target {
+                            crate::editor_layout::PolicyTarget::Screensaver => {
+                                crate::manage_policies::PolicyTarget::Screensaver
+                            }
+
+                            crate::editor_layout::PolicyTarget::Wallpaper => {
+                                crate::manage_policies::PolicyTarget::Wallpaper
+                            }
+                        };
+
+
+                    replacements.push(
+                        crate::manage_policies::BulkPolicyReplacement {
+                            target,
+
+                            policy_key:
+                                row.policy_key.clone(),
+
+                            properties:
+                                crate::manage_policies::PolicyDefinition {
+                                    texture,
+
+                                    palette,
+
+                                    fps:
+                                        Some(
+                                            configured_fps
+                                        ),
+
+                                    speed:
+                                        Some(
+                                            animation_speed
+                                        ),
+
+                                    render_scale:
+                                        Some(
+                                            render_scale
+                                        ),
+
+                                    anti_aliasing:
+                                        Some(
+                                            live_postprocess_profile
+                                                .anti_aliasing
+                                                .name()
+                                                .to_ascii_lowercase()
+                                        ),
+
+                                    dithering:
+                                        Some(
+                                            live_postprocess_profile
+                                                .dithering
+                                                .name()
+                                                .to_ascii_lowercase()
+                                        ),
+
+                                    color_precision:
+                                        Some(
+                                            live_postprocess_profile
+                                                .color_precision
+                                                .name()
+                                                .to_string()
+                                        ),
+                                },
+                        }
+                    );
+
+
+                    if Some(
+                        row.policy_target
+                    ) ==
+                        selected_policy_target
+                        && paths_refer_to_same_shader(
+                            &active.path,
+                            &shader_path,
+                        )
+                    {
+                        active_policy_was_selected =
+                            true;
+                    }
+                }
+
+
+                if let Some(error) =
+                    preparation_error
+                {
+                    edit_window.set_status_message(
+                        format!(
+                            "Bulk policy save aborted: {}",
+                            error,
+                        )
+                    );
+
+                    log_warning(
+                        &format!(
+                            "[EDIT_SHADER] Bulk policy save aborted before configuration write: {}",
+                            error,
+                        )
+                    );
+
+                    continue;
+                }
+
+
+                let config_path =
+                    crate::locate_paths::config_path();
+
+
+                match crate::manage_policies::replace_policies_by_key(
+                    &config_path,
+                    &replacements,
+                ) {
+                    Ok(()) => {
+                        match crate::load_config::load_config(
+                            &config_path
+                        ) {
+                            Ok(reloaded_config) => {
+                                config =
+                                    reloaded_config.config;
+
+                                policy_display_rows =
+                                    build_policy_display_rows(
+                                        &config
+                                    );
+
+
+                                let screensaver_policy_path =
+                                    target_shader_path(
+                                        crate::editor_layout::PolicyTarget::Screensaver,
+                                        &active.shader_name,
+                                    );
+
+                                screensaver_policy_exists =
+                                    screensaver_target_available
+                                        && config.screensaver_policies
+                                        .iter()
+                                        .any(
+                                            |policy| {
+                                                policy_applies_to_path(
+                                                    policy,
+                                                    crate::editor_layout::PolicyTarget::Screensaver,
+                                                    &screensaver_policy_path,
+                                                )
+                                            }
+                                        );
+
+
+                                let wallpaper_policy_path =
+                                    target_shader_path(
+                                        crate::editor_layout::PolicyTarget::Wallpaper,
+                                        &active.shader_name,
+                                    );
+
+                                wallpaper_policy_exists =
+                                    wallpaper_target_available
+                                        && config.wallpaper_policies
+                                        .iter()
+                                        .any(
+                                            |policy| {
+                                                policy_applies_to_path(
+                                                    policy,
+                                                    crate::editor_layout::PolicyTarget::Wallpaper,
+                                                    &wallpaper_policy_path,
+                                                )
+                                            }
+                                        );
+
+
+                                edit_window.complete_bulk_save(
+                                    active_policy_was_selected
+                                );
+
+                                edit_window.set_status_message(
+                                    format!(
+                                        "Bulk Edit complete: {} policies updated.",
+                                        replacements.len(),
+                                    )
+                                );
+
+                                log_information(
+                                    &format!(
+                                        "[EDIT_SHADER] Bulk Edit updated {} policies in one configuration write",
+                                        replacements.len(),
+                                    )
+                                );
+                            }
+
+                            Err(error) => {
+                                edit_window.set_status_message(
+                                    "Bulk policies were saved, but configuration reload failed."
+                                );
+
+                                log_warning(
+                                    &format!(
+                                        "[EDIT_SHADER] Bulk policies were saved, but configuration reload failed: {}",
+                                        error,
+                                    )
+                                );
+                            }
+                        }
+                    }
+
+                    Err(error) => {
+                        edit_window.set_status_message(
+                            format!(
+                                "Unable to save bulk policy changes: {}",
+                                error,
+                            )
+                        );
+
+                        log_warning(
+                            &format!(
+                                "[EDIT_SHADER] Bulk policy save failed: {}",
+                                error,
+                            )
+                        );
+                    }
+                }
+
+
+                continue;
+            }
+
+
             if editor_output.save_requested {
                 let Some(policy_target) =
                     selected_policy_target
@@ -3678,10 +4467,27 @@ fn run_paths(
                 // with the first target's file, causing that runtime to miss the
                 // policy and fall back to its global texture/palette defaults.
                 let policy_source_path =
-                    target_shader_path(
-                        policy_target,
-                        &active.shader_name,
-                    );
+                    match managed_policy_target_for_path(
+                        &active.path
+                    ) {
+                        Some(
+                            managed_target
+                        ) => {
+                            target_shader_path(
+                                managed_target,
+                                &active.shader_name,
+                            )
+                        }
+
+                        None => {
+                            // External shaders must retain their actual source
+                            // path in the policy.  The selected policy target
+                            // determines which policy table is used, but it
+                            // must not relocate the shader logically into one
+                            // of Screenshaver's managed shader directories.
+                            active.path.clone()
+                        }
+                    };
 
                 let save_result =
                     if crate::manage_policies::policy_exists_for_source(
@@ -3858,6 +4664,93 @@ fn run_paths(
                                             build_policy_display_rows(
                                                 &config
                                             );
+
+
+                                        // The shader has physically moved into
+                                        // a managed runtime folder.  Adopt the
+                                        // destination as the authoritative
+                                        // active path and policy target, and
+                                        // re-baseline the editor so this
+                                        // administrative move does not appear
+                                        // as an unsaved user edit.
+                                        active.path =
+                                            destination_path.clone();
+
+                                        information_path =
+                                            destination_path.clone();
+
+
+                                        match destination_target {
+                                            crate::editor_layout::PolicyTarget::Screensaver => {
+                                                screensaver_target_available =
+                                                    true;
+
+                                                wallpaper_target_available =
+                                                    false;
+
+                                                screensaver_policy_exists =
+                                                    true;
+
+                                                wallpaper_policy_exists =
+                                                    false;
+                                            }
+
+                                            crate::editor_layout::PolicyTarget::Wallpaper => {
+                                                screensaver_target_available =
+                                                    false;
+
+                                                wallpaper_target_available =
+                                                    true;
+
+                                                screensaver_policy_exists =
+                                                    false;
+
+                                                wallpaper_policy_exists =
+                                                    true;
+                                            }
+                                        }
+
+
+                                        edit_window.initialize_configuration(
+                                            configured_fps,
+                                            animation_speed,
+                                            render_scale,
+                                            Some(
+                                                destination_target
+                                            ),
+                                            anti_aliasing_selection_from_method(
+                                                live_postprocess_profile
+                                                    .anti_aliasing
+                                            ),
+                                            dithering_selection_from_level(
+                                                live_postprocess_profile
+                                                    .dithering
+                                            ),
+                                            color_precision_selection_from_policy(
+                                                live_postprocess_profile
+                                                    .color_precision
+                                            ),
+                                            active.texture_manager
+                                                .active_specification_selection(),
+                                            true,
+                                            format!(
+                                                "Shader moved to {}. Policy target updated to {}.",
+                                                destination_path
+                                                    .parent()
+                                                    .map(
+                                                        |path| path.display().to_string()
+                                                    )
+                                                    .unwrap_or_default(),
+                                                match destination_target {
+                                                    crate::editor_layout::PolicyTarget::Screensaver =>
+                                                        "Screensaver",
+
+                                                    crate::editor_layout::PolicyTarget::Wallpaper =>
+                                                        "Wallpaper",
+                                                },
+                                            ),
+                                        );
+
 
                                         edit_window.set_status_message(
                                             format!(
@@ -4681,6 +5574,354 @@ fn policy_move_destination(
 }
 
 
+fn analyze_bulk_policy_candidates(
+    shader_paths: Vec<PathBuf>,
+) -> (
+    Vec<crate::editor_layout::BulkCreateCandidate>,
+    usize,
+) {
+
+    let mut candidates =
+        Vec::with_capacity(
+            shader_paths.len()
+        );
+
+    let mut rejected_count =
+        0usize;
+
+
+    for shader_path in shader_paths {
+
+        if !shader_path.is_file() {
+            rejected_count +=
+                1;
+
+            log_warning(
+                &format!(
+                    "[EDIT_SHADER] Bulk policy creation skipped unavailable shader: {}",
+                    shader_path.display(),
+                )
+            );
+
+            continue;
+        }
+
+
+        match crate::load_shader::load_shader_for_preview(
+            &shader_path
+        ) {
+            crate::load_shader::ShaderLoadResult::Ready {
+                channel_usage,
+                ..
+            } => {
+                candidates.push(
+                    crate::editor_layout::BulkCreateCandidate {
+                        forced_target:
+                            managed_policy_target_for_path(
+                                &shader_path
+                            ),
+
+                        texture_required:
+                            channel_usage
+                                .uses_any_channel(),
+
+                        path:
+                            shader_path,
+                    }
+                );
+            }
+
+            crate::load_shader::ShaderLoadResult::Rejected {
+                shader_name,
+                reasons,
+            } => {
+                rejected_count +=
+                    1;
+
+                log_warning(
+                    &format!(
+                        "[EDIT_SHADER] Bulk policy creation skipped rejected shader '{}': {}",
+                        shader_name,
+                        reasons.join("; "),
+                    )
+                );
+            }
+
+            crate::load_shader::ShaderLoadResult::Unavailable {
+                shader_name,
+                error,
+            } => {
+                rejected_count +=
+                    1;
+
+                log_warning(
+                    &format!(
+                        "[EDIT_SHADER] Bulk policy creation skipped unavailable shader '{}': {}",
+                        shader_name,
+                        error,
+                    )
+                );
+            }
+        }
+    }
+
+
+    (
+        candidates,
+        rejected_count,
+    )
+}
+
+
+fn bulk_policy_definition_from_editor_output(
+    editor_output: &crate::editor_layout::EditorOutput,
+    texture_required: bool,
+) -> crate::manage_policies::PolicyDefinition {
+
+    let (
+        texture,
+        palette,
+    ) =
+        if texture_required {
+            (
+                Some(
+                    format!(
+                        "{}:{}",
+                        editor_output.texture
+                            .name(),
+                        editor_output.primitive_count,
+                    )
+                ),
+                Some(
+                    editor_output.palette
+                        .palette()
+                        .to_hex()
+                ),
+            )
+        } else {
+            (
+                None,
+                None,
+            )
+        };
+
+
+    let anti_aliasing =
+        match editor_output.anti_aliasing {
+            crate::editor_layout::AntiAliasingSelection::Off =>
+                "off",
+
+            crate::editor_layout::AntiAliasingSelection::Fxaa =>
+                "fxaa",
+        };
+
+
+    let dithering =
+        match editor_output.dithering {
+            crate::editor_layout::DitheringSelection::Off =>
+                "off",
+
+            crate::editor_layout::DitheringSelection::Subtle =>
+                "subtle",
+        };
+
+
+    let color_precision =
+        match editor_output.color_precision {
+            crate::editor_layout::ColorPrecisionSelection::Automatic =>
+                "auto",
+
+            crate::editor_layout::ColorPrecisionSelection::High =>
+                "high",
+
+            crate::editor_layout::ColorPrecisionSelection::Standard =>
+                "standard",
+        };
+
+
+    crate::manage_policies::PolicyDefinition {
+        texture,
+
+        palette,
+
+        fps:
+            Some(
+                editor_output.fps
+            ),
+
+        speed:
+            Some(
+                editor_output.animation_speed
+            ),
+
+        render_scale:
+            Some(
+                editor_output.render_scale
+            ),
+
+        anti_aliasing:
+            Some(
+                anti_aliasing.to_string()
+            ),
+
+        dithering:
+            Some(
+                dithering.to_string()
+            ),
+
+        color_precision:
+            Some(
+                color_precision.to_string()
+            ),
+    }
+}
+
+
+fn create_bulk_policies(
+    request: &crate::editor_layout::BulkCreateRequest,
+    editor_output: &crate::editor_layout::EditorOutput,
+) -> Result<crate::manage_policies::BulkPolicyCreationResult, String> {
+
+    let mut creations =
+        Vec::with_capacity(
+            request.candidates.len()
+        );
+
+
+    for candidate in
+        &request.candidates
+    {
+        let editor_target =
+            candidate.forced_target
+                .or(
+                    request.external_target
+                )
+                .ok_or_else(
+                    || {
+                        format!(
+                            "No policy target was selected for external shader {}",
+                            candidate.path.display(),
+                        )
+                    }
+                )?;
+
+
+        let target =
+            match editor_target {
+                crate::editor_layout::PolicyTarget::Screensaver => {
+                    crate::manage_policies::PolicyTarget::Screensaver
+                }
+
+                crate::editor_layout::PolicyTarget::Wallpaper => {
+                    crate::manage_policies::PolicyTarget::Wallpaper
+                }
+            };
+
+
+        let shader =
+            candidate.path
+                .file_name()
+                .and_then(
+                    |name| {
+                        name.to_str()
+                    }
+                )
+                .ok_or_else(
+                    || {
+                        format!(
+                            "Shader filename is not valid UTF-8: {}",
+                            candidate.path.display(),
+                        )
+                    }
+                )?
+                .to_string();
+
+
+        creations.push(
+            crate::manage_policies::BulkPolicyCreation {
+                target,
+
+                shader,
+
+                source_path:
+                    candidate.path.clone(),
+
+                properties:
+                    bulk_policy_definition_from_editor_output(
+                        editor_output,
+                        candidate.texture_required,
+                    ),
+            }
+        );
+    }
+
+
+    crate::manage_policies::add_policies_for_sources(
+        &crate::locate_paths::config_path(),
+        &creations,
+    )
+}
+
+
+fn managed_policy_target_for_path(
+    shader_path: &Path,
+) -> Option<crate::editor_layout::PolicyTarget> {
+
+    if path_is_within_directory(
+        shader_path,
+        &crate::locate_paths::screensaver_shader_dir(),
+    ) {
+        return Some(
+            crate::editor_layout::PolicyTarget::Screensaver
+        );
+    }
+
+
+    if path_is_within_directory(
+        shader_path,
+        &crate::locate_paths::wallpaper_shader_dir(),
+    ) {
+        return Some(
+            crate::editor_layout::PolicyTarget::Wallpaper
+        );
+    }
+
+
+    None
+}
+
+
+fn path_is_within_directory(
+    candidate_path: &Path,
+    managed_directory: &Path,
+) -> bool {
+
+    // Prefer filesystem-resolved paths so symlinks and equivalent relative
+    // spellings cannot defeat managed-folder policy enforcement.
+    if let (
+        Ok(candidate_path),
+        Ok(managed_directory),
+    ) = (
+        candidate_path.canonicalize(),
+        managed_directory.canonicalize(),
+    ) {
+        return candidate_path
+            .starts_with(
+                &managed_directory
+            );
+    }
+
+
+    // Fall back to lexical membership when canonicalization is unavailable.
+    // This still handles direct files and any future subdirectories beneath a
+    // managed shader directory.
+    candidate_path
+        .starts_with(
+            managed_directory
+        )
+}
+
+
 fn target_shader_path(
     target: crate::editor_layout::PolicyTarget,
     shader_name: &str,
@@ -4821,6 +6062,108 @@ fn describe_shader_type(
 }
 
 
+fn policy_for_bulk_row<'a>(
+    config: &'a crate::load_config::Config,
+    row: &crate::editor_layout::PolicyRowReference,
+) -> Option<&'a crate::load_config::ShaderPolicy> {
+
+    let policies =
+        match row.policy_target {
+            crate::editor_layout::PolicyTarget::Screensaver => {
+                &config.screensaver_policies
+            }
+
+            crate::editor_layout::PolicyTarget::Wallpaper => {
+                &config.wallpaper_policies
+            }
+        };
+
+
+    policies
+        .iter()
+        .find(
+            |policy| {
+                policy.policy_key
+                    .eq_ignore_ascii_case(
+                        &row.policy_key
+                    )
+            }
+        )
+}
+
+
+fn shader_requires_texture_for_bulk_edit(
+    shader_path: &Path,
+) -> Result<bool, String> {
+
+    match crate::load_shader::load_shader_for_preview(
+        shader_path
+    ) {
+        crate::load_shader::ShaderLoadResult::Ready {
+            channel_usage,
+            ..
+        } => {
+            Ok(
+                channel_usage
+                    .uses_any_channel()
+            )
+        }
+
+        crate::load_shader::ShaderLoadResult::Rejected {
+            shader_name,
+            reasons,
+        } => {
+            Err(
+                format!(
+                    "Unable to analyze '{}' for texture use: {}",
+                    shader_name,
+                    reasons.join("; "),
+                )
+            )
+        }
+
+        crate::load_shader::ShaderLoadResult::Unavailable {
+            shader_name,
+            error,
+        } => {
+            Err(
+                format!(
+                    "Unable to analyze '{}' for texture use: {}",
+                    shader_name,
+                    error,
+                )
+            )
+        }
+    }
+}
+
+
+fn shader_requires_texture_for_policy_row(
+    shader_path: &Path,
+) -> bool {
+
+    match shader_requires_texture_for_bulk_edit(
+        shader_path
+    ) {
+        Ok(required) => {
+            required
+        }
+
+        Err(error) => {
+            log_warning(
+                &format!(
+                    "[EDIT_SHADER] Policy-list texture requirement unavailable for {}: {}",
+                    shader_path.display(),
+                    error,
+                )
+            );
+
+            false
+        }
+    }
+}
+
+
 fn build_policy_display_rows(
     config: &crate::load_config::Config,
 ) -> Vec<crate::editor_layout::PolicyDisplayRow> {
@@ -4860,7 +6203,9 @@ fn build_policy_display_rows(
                             resolved_path.is_file(),
 
                         texture:
-                            policy.shader_texture.is_some(),
+                            shader_requires_texture_for_policy_row(
+                                &resolved_path
+                            ),
 
                         policy_target:
                             crate::editor_layout::PolicyTarget::Screensaver,
@@ -4898,7 +6243,9 @@ fn build_policy_display_rows(
                             resolved_path.is_file(),
 
                         texture:
-                            policy.shader_texture.is_some(),
+                            shader_requires_texture_for_policy_row(
+                                &resolved_path
+                            ),
 
                         policy_target:
                             crate::editor_layout::PolicyTarget::Wallpaper,

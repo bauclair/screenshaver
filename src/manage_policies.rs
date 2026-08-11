@@ -169,6 +169,59 @@ pub struct PolicyDefinition {
 }
 
 
+#[derive(
+    Debug,
+    Clone,
+)]
+pub struct BulkPolicyCreation {
+
+    pub target:
+        PolicyTarget,
+
+    pub shader:
+        String,
+
+    pub source_path:
+        PathBuf,
+
+    pub properties:
+        PolicyDefinition,
+}
+
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+)]
+pub struct BulkPolicyCreationResult {
+
+    pub created:
+        usize,
+
+    pub skipped_existing:
+        usize,
+}
+
+
+#[derive(
+    Debug,
+    Clone,
+)]
+pub struct BulkPolicyReplacement {
+
+    pub target:
+        PolicyTarget,
+
+    pub policy_key:
+        String,
+
+    pub properties:
+        PolicyDefinition,
+}
+
+
 impl PolicyDefinition {
 
     pub fn is_empty(
@@ -586,6 +639,239 @@ pub fn replace_policy_for_source(
         )?;
     }
 
+    save_document(
+        config_path,
+        &document,
+    )
+}
+
+
+pub fn add_policies_for_sources(
+    config_path: &Path,
+    creations: &[BulkPolicyCreation],
+) -> Result<BulkPolicyCreationResult, String> {
+
+    if creations.is_empty() {
+        return Ok(
+            BulkPolicyCreationResult::default()
+        );
+    }
+
+
+    let mut document =
+        load_document(
+            config_path
+        )?;
+
+
+    let mut result =
+        BulkPolicyCreationResult::default();
+
+
+    for creation in creations {
+
+        let shader =
+            normalized_shader_name(
+                &creation.shader
+            )?;
+
+
+        validate_properties(
+            creation.target,
+            &creation.properties,
+        )?;
+
+
+        let source_path =
+            canonical_or_absolute(
+                &creation.source_path
+            )?;
+
+
+        if matching_policy_key_for_source(
+            &document,
+            creation.target,
+            &shader,
+            &source_path,
+        )?
+        .is_some()
+        {
+            result.skipped_existing +=
+                1;
+
+            continue;
+        }
+
+
+        let storage_key =
+            {
+                let table =
+                    policy_table_mut(
+                        &mut document,
+                        creation.target,
+                    )?;
+
+
+                unique_policy_storage_key(
+                    table,
+                    &shader,
+                    &source_path,
+                )
+            };
+
+
+        {
+            let table =
+                policy_table_mut(
+                    &mut document,
+                    creation.target,
+                )?;
+
+
+            table[
+                &storage_key
+            ] =
+                value(
+                    format_policy(
+                        &creation.properties
+                    )
+                );
+        }
+
+
+        let managed_path =
+            managed_shader_path(
+                creation.target,
+                &shader,
+            );
+
+
+        if paths_refer_to_same_source(
+            &source_path,
+            &managed_path,
+        ) {
+            remove_source_path_metadata(
+                &mut document,
+                creation.target,
+                &storage_key,
+            )?;
+        } else {
+            let source_text =
+                source_path
+                    .to_str()
+                    .ok_or_else(
+                        || {
+                            format!(
+                                "Shader path is not valid UTF-8: {}",
+                                source_path.display(),
+                            )
+                        }
+                    )?;
+
+
+            set_source_path_metadata(
+                &mut document,
+                creation.target,
+                &storage_key,
+                Some(source_text),
+            )?;
+        }
+
+
+        result.created +=
+            1;
+    }
+
+
+    if result.created > 0 {
+        save_document(
+            config_path,
+            &document,
+        )?;
+    }
+
+
+    Ok(
+        result
+    )
+}
+
+
+pub fn replace_policies_by_key(
+    config_path: &Path,
+    replacements: &[BulkPolicyReplacement],
+) -> Result<(), String> {
+
+    if replacements.is_empty() {
+        return Ok(());
+    }
+
+
+    let mut document =
+        load_document(
+            config_path
+        )?;
+
+
+    // Apply every requested update to the in-memory TOML document first.
+    // save_document() is called only after every policy has been located and
+    // validated, so a pre-write failure cannot leave a partially updated set.
+    for replacement in replacements {
+
+        validate_properties(
+            replacement.target,
+            &replacement.properties,
+        )?;
+
+
+        let table =
+            policy_table_mut(
+                &mut document,
+                replacement.target,
+            )?;
+
+
+        let existing_key =
+            table
+                .iter()
+                .find_map(
+                    |(key, _)| {
+                        if key.eq_ignore_ascii_case(
+                            &replacement.policy_key
+                        ) {
+                            Some(
+                                key.to_string()
+                            )
+                        } else {
+                            None
+                        }
+                    }
+                )
+                .ok_or_else(
+                    || {
+                        format!(
+                            "Policy key '{}' does not exist in [{}]",
+                            replacement.policy_key,
+                            replacement.target.table_name(),
+                        )
+                    }
+                )?;
+
+
+        table[
+            &existing_key
+        ] =
+            value(
+                format_policy(
+                    &replacement.properties
+                )
+            );
+    }
+
+
+    // Intentionally leave source-path metadata untouched. Bulk Edit is
+    // permitted to change policy properties only; it may not change policy
+    // target assignments or shader source locations.
     save_document(
         config_path,
         &document,
