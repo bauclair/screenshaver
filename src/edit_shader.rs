@@ -421,7 +421,7 @@ fn run_empty_session() -> Result<(), String> {
             if edit_session_should_close(
                 &event
             ) {
-                break 'edit_session;
+                edit_window.request_close();
             }
         }
 
@@ -478,6 +478,15 @@ fn run_empty_session() -> Result<(), String> {
                 Some(&config),
             );
 
+        if editor_output.exit_discard_requested {
+            break 'edit_session;
+        }
+
+
+        let mut exit_save_failed =
+            false;
+
+
         if editor_output.control_configuration_save_requested {
             if let Some(control_configuration) =
                 editor_output.control_configuration.as_ref()
@@ -501,6 +510,11 @@ fn run_empty_session() -> Result<(), String> {
                     }
 
                     Err(error) => {
+                        if editor_output.exit_after_save_requested {
+                            exit_save_failed =
+                                true;
+                        }
+
                         edit_window.set_status_message(
                             "Configuration save failed."
                         );
@@ -514,6 +528,13 @@ fn run_empty_session() -> Result<(), String> {
                     }
                 }
             }
+        }
+
+
+        if editor_output.exit_after_save_requested
+            && !exit_save_failed
+        {
+            break 'edit_session;
         }
 
 
@@ -1783,7 +1804,7 @@ fn run_paths(
                             event
                         ) =>
                     {
-                        break 'preview Ok(());
+                        edit_window.request_close();
                     }
 
                     _ => {
@@ -2278,6 +2299,15 @@ fn run_paths(
                     Some(&config),
                 );
 
+            if editor_output.exit_discard_requested {
+                break 'preview Ok(());
+            }
+
+
+            let mut exit_save_failed =
+                false;
+
+
             if editor_output.control_configuration_save_requested {
                 if let Some(control_configuration) =
                     editor_output.control_configuration.as_ref()
@@ -2306,6 +2336,11 @@ fn run_paths(
                         }
 
                         Err(error) => {
+                            if editor_output.exit_after_save_requested {
+                                exit_save_failed =
+                                    true;
+                            }
+
                             edit_window.set_status_message(
                                 "Configuration save failed."
                             );
@@ -3756,6 +3791,11 @@ fn run_paths(
                     }
 
                     Err(error) => {
+                        if editor_output.exit_after_save_requested {
+                            exit_save_failed =
+                                true;
+                        }
+
                         edit_window.set_status_message(
                             format!(
                                 "Unable to save policy: {}",
@@ -3772,6 +3812,13 @@ fn run_paths(
                         );
                     }
                 }
+            }
+
+
+            if editor_output.exit_after_save_requested
+                && !exit_save_failed
+            {
+                break 'preview Ok(());
             }
 
 

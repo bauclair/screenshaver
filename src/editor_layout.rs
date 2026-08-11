@@ -459,8 +459,11 @@ pub struct EditorOutput {
     pub policy_row_command_requested:
         Option<(PolicyRowReference, PolicyRowCommand)>,
     pub control_configuration: Option<ControlConfiguration>,
+    pub policy_dirty: bool,
     pub control_configuration_dirty: bool,
     pub control_configuration_save_requested: bool,
+    pub exit_after_save_requested: bool,
+    pub exit_discard_requested: bool,
     pub control_single_browse_requested: Option<PolicyTarget>,
     pub control_single_recent_requested: Option<(PolicyTarget, usize)>,
     pub window_open: bool,
@@ -575,6 +578,12 @@ pub struct EditWindowOverlay {
         Instant,
 
     window_open:
+        bool,
+
+    close_requested:
+        bool,
+
+    pending_exit_confirmation:
         bool,
 
     pixels_per_point:
@@ -719,6 +728,12 @@ impl EditWindowOverlay {
 
                 window_open:
                     true,
+
+                close_requested:
+                    false,
+
+                pending_exit_confirmation:
+                    false,
 
                 pixels_per_point:
                     1.0,
@@ -1540,6 +1555,12 @@ impl EditWindowOverlay {
         let mut control_configuration_save_requested =
             false;
 
+        let mut exit_after_save_requested =
+            false;
+
+        let mut exit_discard_requested =
+            false;
+
         let mut control_single_browse_requested =
             None;
 
@@ -1608,6 +1629,7 @@ impl EditWindowOverlay {
                             ui.set_enabled(
                                 pending_confirmation
                                     .is_none()
+                                    && !self.pending_exit_confirmation
                             );
 
                             let mut hover_help_message:
@@ -1921,6 +1943,73 @@ impl EditWindowOverlay {
                         &mut pending_confirmation,
                         &mut policy_row_command_requested,
                     );
+
+
+                    let policy_dirty =
+                        EditorConfiguration::new(
+                            displayed_fps,
+                            displayed_animation_speed,
+                            displayed_render_scale,
+                            policy_target,
+                            texture,
+                            palette,
+                            primitive_count,
+                            anti_aliasing,
+                            dithering,
+                            color_precision,
+                        )
+                        .differs_from(
+                            baseline_configuration
+                        );
+
+
+                    let control_configuration_dirty =
+                        control_configuration.as_ref()
+                            .zip(control_configuration_baseline.as_ref())
+                            .map(
+                                |(
+                                    current,
+                                    baseline,
+                                )| {
+                                    current != baseline
+                                }
+                            )
+                            .unwrap_or(false);
+
+
+                    if self.close_requested
+                        || !window_open
+                    {
+                        self.close_requested =
+                            false;
+
+
+                        if policy_dirty
+                            || control_configuration_dirty
+                        {
+                            window_open =
+                                true;
+
+                            self.pending_exit_confirmation =
+                                true;
+                        } else {
+                            window_open =
+                                false;
+                        }
+                    }
+
+
+                    draw_exit_confirmation_modal(
+                        context,
+                        &mut self.pending_exit_confirmation,
+                        policy_dirty,
+                        control_configuration_dirty,
+                        policy_target.is_some(),
+                        &mut save_requested,
+                        &mut control_configuration_save_requested,
+                        &mut exit_after_save_requested,
+                        &mut exit_discard_requested,
+                    );
                 }
             );
 
@@ -2060,6 +2149,23 @@ impl EditWindowOverlay {
 
             policy_row_command_requested,
 
+            policy_dirty:
+                EditorConfiguration::new(
+                    displayed_fps,
+                    displayed_animation_speed,
+                    displayed_render_scale,
+                    policy_target,
+                    texture,
+                    palette,
+                    primitive_count,
+                    anti_aliasing,
+                    dithering,
+                    color_precision,
+                )
+                .differs_from(
+                    baseline_configuration
+                ),
+
             control_configuration_dirty:
                 control_configuration.as_ref()
                     .zip(control_configuration_baseline.as_ref())
@@ -2070,6 +2176,10 @@ impl EditWindowOverlay {
 
             control_configuration_save_requested,
 
+            exit_after_save_requested,
+
+            exit_discard_requested,
+
             control_single_browse_requested,
 
             control_single_recent_requested,
@@ -2077,6 +2187,15 @@ impl EditWindowOverlay {
             window_open:
                 self.window_open,
         }
+    }
+
+
+    pub fn request_close(
+        &mut self,
+    ) {
+
+        self.close_requested =
+            true;
     }
 
 
@@ -3846,6 +3965,147 @@ fn draw_policies_tab(
                 );
             },
         );
+}
+
+
+fn draw_exit_confirmation_modal(
+    context: &egui::Context,
+    pending_exit_confirmation: &mut bool,
+    policy_dirty: bool,
+    control_configuration_dirty: bool,
+    policy_target_selected: bool,
+    save_requested: &mut bool,
+    control_configuration_save_requested: &mut bool,
+    exit_after_save_requested: &mut bool,
+    exit_discard_requested: &mut bool,
+) {
+    if !*pending_exit_confirmation {
+        return;
+    }
+
+
+    let mut keep_open =
+        true;
+
+
+    egui::Window::new(
+        "Unsaved Changes"
+    )
+    .id(
+        egui::Id::new(
+            "editor_exit_confirmation"
+        )
+    )
+    .collapsible(false)
+    .resizable(false)
+    .movable(false)
+    .anchor(
+        egui::Align2::CENTER_CENTER,
+        egui::Vec2::ZERO,
+    )
+    .open(
+        &mut keep_open
+    )
+    .show(
+        context,
+        |ui| {
+            ui.label(
+                "The Screenshaver Control Center has unsaved changes."
+            );
+
+            ui.add_space(
+                6.0
+            );
+
+            ui.label(
+                "Would you like to save those changes before exiting?"
+            );
+
+            ui.add_space(
+                12.0
+            );
+
+
+            let save_exit_enabled =
+                !policy_dirty
+                    || policy_target_selected;
+
+
+            ui.horizontal(
+                |ui| {
+                    let save_response =
+                        ui.add_enabled(
+                            save_exit_enabled,
+                            egui::Button::new(
+                                "Save and Exit"
+                            ),
+                        );
+
+
+                    if save_response.clicked() {
+                        if policy_dirty {
+                            *save_requested =
+                                true;
+                        }
+
+                        if control_configuration_dirty {
+                            *control_configuration_save_requested =
+                                true;
+                        }
+
+                        *exit_after_save_requested =
+                            true;
+
+                        *pending_exit_confirmation =
+                            false;
+                    }
+
+
+                    if ui.button(
+                        "Exit Without Saving"
+                    )
+                    .clicked()
+                    {
+                        *exit_discard_requested =
+                            true;
+
+                        *pending_exit_confirmation =
+                            false;
+                    }
+
+
+                    if ui.button(
+                        "Cancel"
+                    )
+                    .clicked()
+                    {
+                        *pending_exit_confirmation =
+                            false;
+                    }
+                },
+            );
+
+
+            if !save_exit_enabled {
+                ui.add_space(
+                    6.0
+                );
+
+                ui.label(
+                    egui::RichText::new(
+                        "Select a policy target before saving the modified policy."
+                    )
+                    .weak(),
+                );
+            }
+        },
+    );
+
+
+    if !keep_open {
+        *pending_exit_confirmation =
+            false;
+    }
 }
 
 
