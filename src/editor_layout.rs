@@ -36,6 +36,12 @@ const EDIT_TABBED_CONTENT_HEIGHT: f32 =
     338.0;
 
 
+const CONTROL_CENTER_BRANDING_IMAGE: &[u8] =
+    include_bytes!(
+        "../assets/screenshaver-splash.png"
+    );
+
+
 #[derive(Clone, Copy)]
 struct SliderDragState {
     anchor_value: f32,
@@ -590,6 +596,12 @@ pub struct EditWindowOverlay {
     painter:
         egui_glow::Painter,
 
+    branding_texture:
+        egui::TextureHandle,
+
+    branding_aspect_ratio:
+        f32,
+
     pending_events:
         Vec<egui::Event>,
 
@@ -750,12 +762,74 @@ impl EditWindowOverlay {
             )?;
 
 
+        let context =
+            egui::Context::default();
+
+
+        let branding_image =
+            image::load_from_memory(
+                CONTROL_CENTER_BRANDING_IMAGE
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to decode embedded Control Center branding image: {}",
+                        error,
+                    )
+                }
+            )?
+            .to_rgba8();
+
+
+        let branding_width =
+            branding_image.width();
+
+        let branding_height =
+            branding_image.height();
+
+
+        if branding_width == 0
+            || branding_height == 0
+        {
+            return Err(
+                "Embedded Control Center branding image has invalid dimensions."
+                    .to_string()
+            );
+        }
+
+
+        let branding_aspect_ratio =
+            branding_width as f32
+                / branding_height as f32;
+
+
+        let branding_color_image =
+            egui::ColorImage::from_rgba_unmultiplied(
+                [
+                    branding_width as usize,
+                    branding_height as usize,
+                ],
+                branding_image.as_raw(),
+            );
+
+
+        let branding_texture =
+            context.load_texture(
+                "screenshaver_control_center_branding",
+                branding_color_image,
+                egui::TextureOptions::LINEAR,
+            );
+
+
         Ok(
             Self {
-                context:
-                    egui::Context::default(),
+                context,
 
                 painter,
+
+                branding_texture,
+
+                branding_aspect_ratio,
 
                 pending_events:
                     Vec::new(),
@@ -1869,6 +1943,8 @@ impl EditWindowOverlay {
                                         ui,
                                         metrics,
                                         shader_information,
+                                        &self.branding_texture,
+                                        self.branding_aspect_ratio,
                                         configuration_changed,
                                         recent_shader_paths,
                                         policy_target,
@@ -2857,6 +2933,8 @@ fn draw_compact_header(
     ui: &mut egui::Ui,
     metrics: EditorMetrics,
     shader_information: Option<&ShaderInformation>,
+    branding_texture: &egui::TextureHandle,
+    branding_aspect_ratio: f32,
     configuration_changed: bool,
     recent_shader_paths: &[PathBuf],
     policy_target: Option<PolicyTarget>,
@@ -3233,46 +3311,83 @@ fn draw_compact_header(
             )
         };
 
-    egui::Grid::new(
-        "editor_compact_shader_information"
-    )
-    .num_columns(2)
-    .min_col_width(
-        82.0 * metrics.scale
-    )
-    .spacing(
-        egui::vec2(
-            8.0 * metrics.scale,
-            1.0 * metrics.scale,
-        )
-    )
-    .show(
-        ui,
+    ui.horizontal_top(
         |ui| {
-            ui.label("Filename:");
-            ui.label(filename);
-            ui.end_row();
-
-            ui.label("Folder:");
-            let folder_response =
-                ui.label(
-                    truncate_middle(
-                        folder,
-                        66,
+            ui.vertical(
+                |ui| {
+                    egui::Grid::new(
+                        "editor_compact_shader_information"
                     )
-                );
-            folder_response.on_hover_text(
-                folder
+                    .num_columns(2)
+                    .min_col_width(
+                        82.0 * metrics.scale
+                    )
+                    .spacing(
+                        egui::vec2(
+                            8.0 * metrics.scale,
+                            1.0 * metrics.scale,
+                        )
+                    )
+                    .show(
+                        ui,
+                        |ui| {
+                            ui.label("Filename:");
+                            ui.label(filename);
+                            ui.end_row();
+
+                            ui.label("Folder:");
+                            let folder_response =
+                                ui.label(
+                                    truncate_middle(
+                                        folder,
+                                        66,
+                                    )
+                                );
+                            folder_response.on_hover_text(
+                                folder
+                            );
+                            ui.end_row();
+
+                            ui.label("Type:");
+                            ui.label(shader_type);
+                            ui.end_row();
+
+                            ui.label("Policies:");
+                            ui.label(policies);
+                            ui.end_row();
+                        },
+                    );
+                },
             );
-            ui.end_row();
 
-            ui.label("Type:");
-            ui.label(shader_type);
-            ui.end_row();
 
-            ui.label("Policies:");
-            ui.label(policies);
-            ui.end_row();
+            ui.with_layout(
+                egui::Layout::right_to_left(
+                    egui::Align::TOP
+                ),
+                |ui| {
+                    let branding_width =
+                        130.0 * metrics.scale;
+
+                    let branding_height =
+                        branding_width
+                            / branding_aspect_ratio
+                                .max(0.001);
+
+
+                    ui.add(
+                        egui::Image::new(
+                            branding_texture
+                        )
+                        .fit_to_exact_size(
+                            egui::vec2(
+                                branding_width,
+                                branding_height,
+                            )
+                        ),
+                    );
+                },
+            );
         },
     );
 }
