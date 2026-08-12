@@ -347,6 +347,41 @@ fn paths_refer_to_same_file(
 }
 
 
+fn managed_policy_name_matches(
+    policy_shader: &str,
+    shader_name: &str,
+    source_path: Option<&Path>,
+) -> bool {
+
+    if policy_shader.eq_ignore_ascii_case(
+        shader_name
+    ) {
+        return true;
+    }
+
+
+    source_path
+        .and_then(
+            |path| {
+                path.file_name()
+            }
+        )
+        .and_then(
+            |name| {
+                name.to_str()
+            }
+        )
+        .is_some_and(
+            |filename| {
+                policy_shader
+                    .eq_ignore_ascii_case(
+                        filename
+                    )
+            }
+        )
+}
+
+
 fn matching_shader_policy<'a>(
     policies: &'a [ShaderPolicy],
     shader_name: &str,
@@ -386,10 +421,11 @@ fn matching_shader_policy<'a>(
         .find(
             |policy| {
                 policy.source_path.is_none()
-                    && policy.shader
-                        .eq_ignore_ascii_case(
-                            shader_name
-                        )
+                    && managed_policy_name_matches(
+                        &policy.shader,
+                        shader_name,
+                        source_path,
+                    )
             }
         )
 }
@@ -434,10 +470,11 @@ fn matching_fps_policy<'a>(
         .find(
             |policy| {
                 policy.source_path.is_none()
-                    && policy.shader
-                        .eq_ignore_ascii_case(
-                            shader_name
-                        )
+                    && managed_policy_name_matches(
+                        &policy.shader,
+                        shader_name,
+                        source_path,
+                    )
             }
         )
 }
