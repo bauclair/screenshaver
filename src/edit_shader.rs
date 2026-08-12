@@ -54,6 +54,27 @@ struct ControlCenterState {
     #[serde(default)]
     policy_list:
         PersistentPolicyListState,
+
+    #[serde(default)]
+    window:
+        PersistentWindowState,
+}
+
+
+#[derive(
+    serde::Serialize,
+    serde::Deserialize,
+    Default,
+)]
+struct PersistentWindowState {
+
+    #[serde(default)]
+    x:
+        Option<i32>,
+
+    #[serde(default)]
+    y:
+        Option<i32>,
 }
 
 
@@ -7502,6 +7523,8 @@ fn restore_policy_list_state(
             &state.policy_list,
             policy_rows,
         ),
+        state.window.x,
+        state.window.y,
     );
 }
 
@@ -7553,6 +7576,12 @@ fn save_policy_list_state_if_changed(
                     }
                 }
             );
+
+    state.window.x =
+        snapshot.window_x;
+
+    state.window.y =
+        snapshot.window_y;
 
 
     match save_control_center_state(

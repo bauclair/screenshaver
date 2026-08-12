@@ -6,7 +6,10 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{
+    Duration,
+    Instant,
+};
 
 use crate::editor_theme::{self, EditorMetrics};
 
@@ -445,6 +448,8 @@ pub struct PolicyListStateSnapshot {
     pub sort_column: String,
     pub sort_ascending: bool,
     pub selected_policy_row: Option<PolicyRowReference>,
+    pub window_x: Option<i32>,
+    pub window_y: Option<i32>,
 }
 
 
@@ -621,6 +626,15 @@ pub struct EditWindowOverlay {
 
     window_open:
         bool,
+
+    window_position:
+        Option<egui::Pos2>,
+
+    persisted_window_position:
+        Option<(i32, i32)>,
+
+    window_position_changed_at:
+        Option<Instant>,
 
     close_requested:
         bool,
@@ -853,6 +867,15 @@ impl EditWindowOverlay {
 
                 window_open:
                     true,
+
+                window_position:
+                    None,
+
+                persisted_window_position:
+                    None,
+
+                window_position_changed_at:
+                    None,
 
                 close_requested:
                     false,
@@ -1510,13 +1533,43 @@ impl EditWindowOverlay {
         let maximum_size =
             initial_size;
 
-        let initial_position =
+        let centered_position =
             egui::pos2(
                 ((screen_size_points.x - initial_size.x) * 0.5)
                     .max(0.0),
                 ((screen_size_points.y - initial_size.y) * 0.5)
                     .max(0.0),
             );
+
+        let maximum_window_x =
+            (screen_size_points.x - initial_size.x)
+                .max(0.0);
+
+        let maximum_window_y =
+            (screen_size_points.y - initial_size.y)
+                .max(0.0);
+
+        let initial_position =
+            self.window_position
+                .unwrap_or(
+                    centered_position
+                );
+
+        let initial_position =
+            egui::pos2(
+                initial_position.x.clamp(
+                    0.0,
+                    maximum_window_x,
+                ),
+                initial_position.y.clamp(
+                    0.0,
+                    maximum_window_y,
+                ),
+            );
+
+        let mut observed_window_position:
+            Option<egui::Pos2> =
+            None;
 
         let mut window_open =
             self.window_open;
@@ -1854,9 +1907,10 @@ impl EditWindowOverlay {
                             initial_size,
                         );
 
-                    egui::Window::new(
-                        editor_title
-                    )
+                    let main_window_response =
+                        egui::Window::new(
+                            editor_title
+                        )
                     .open(
                         &mut window_open
                     )
@@ -1868,6 +1922,9 @@ impl EditWindowOverlay {
                     )
                     .default_rect(
                         initial_rect
+                    )
+                    .current_pos(
+                        initial_position
                     )
                     .min_size(
                         minimum_size
@@ -2238,6 +2295,18 @@ impl EditWindowOverlay {
                         }
                     );
 
+                    if let Some(main_window_response) =
+                        main_window_response
+                    {
+                        observed_window_position =
+                            Some(
+                                main_window_response
+                                    .response
+                                    .rect
+                                    .min
+                            );
+                    }
+
                     draw_policy_confirmation_modal(
                         context,
                         &mut pending_confirmation,
@@ -2331,6 +2400,76 @@ impl EditWindowOverlay {
                     );
                 }
             );
+
+
+        if let Some(position) =
+            observed_window_position
+        {
+            let normalized_position =
+                egui::pos2(
+                    position.x.round(),
+                    position.y.round(),
+                );
+
+            let position_changed =
+                self.window_position
+                    .map(
+                        |previous| {
+                            (previous.x
+                                - normalized_position.x)
+                                .abs()
+                                >= 0.5
+                                || (previous.y
+                                    - normalized_position.y)
+                                    .abs()
+                                    >= 0.5
+                        }
+                    )
+                    .unwrap_or(true);
+
+            if position_changed {
+                self.window_position =
+                    Some(
+                        normalized_position
+                    );
+
+                self.window_position_changed_at =
+                    Some(
+                        Instant::now()
+                    );
+            }
+        }
+
+
+        if let (
+            Some(position),
+            Some(changed_at),
+        ) = (
+            self.window_position,
+            self.window_position_changed_at,
+        ) {
+            if Instant::now()
+                .saturating_duration_since(
+                    changed_at
+                )
+                >= Duration::from_millis(
+                    250
+                )
+            {
+                self.persisted_window_position =
+                    Some(
+                        (
+                            position.x.round()
+                                as i32,
+                            position.y.round()
+                                as i32,
+                        )
+                    );
+
+                self.window_position_changed_at =
+                    None;
+            }
+        }
 
 
         self.window_open =
@@ -2534,6 +2673,8 @@ impl EditWindowOverlay {
         sort_column: &str,
         sort_ascending: bool,
         selected_policy_row: Option<PolicyRowReference>,
+        window_x: Option<i32>,
+        window_y: Option<i32>,
     ) {
         self.policy_sort_column =
             match sort_column {
@@ -2562,6 +2703,28 @@ impl EditWindowOverlay {
 
         self.restore_selected_policy_scroll =
             self.selected_policy_row.is_some();
+
+        self.persisted_window_position =
+            window_x.zip(
+                window_y
+            );
+
+        self.window_position =
+            self.persisted_window_position
+                .map(
+                    |(
+                        x,
+                        y,
+                    )| {
+                        egui::pos2(
+                            x as f32,
+                            y as f32,
+                        )
+                    }
+                );
+
+        self.window_position_changed_at =
+            None;
     }
 
 
@@ -2590,6 +2753,28 @@ impl EditWindowOverlay {
 
             selected_policy_row:
                 self.selected_policy_row.clone(),
+
+            window_x:
+                self.persisted_window_position
+                    .map(
+                        |(
+                            x,
+                            _,
+                        )| {
+                            x
+                        }
+                    ),
+
+            window_y:
+                self.persisted_window_position
+                    .map(
+                        |(
+                            _,
+                            y,
+                        )| {
+                            y
+                        }
+                    ),
         }
     }
 
@@ -2598,8 +2783,33 @@ impl EditWindowOverlay {
         &mut self,
     ) {
 
+        self.commit_window_position();
+
         self.close_requested =
             true;
+    }
+
+
+    fn commit_window_position(
+        &mut self,
+    ) {
+
+        if let Some(position) =
+            self.window_position
+        {
+            self.persisted_window_position =
+                Some(
+                    (
+                        position.x.round()
+                            as i32,
+                        position.y.round()
+                            as i32,
+                    )
+                );
+
+            self.window_position_changed_at =
+                None;
+        }
     }
 
 
