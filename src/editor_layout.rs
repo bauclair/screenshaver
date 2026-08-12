@@ -797,9 +797,6 @@ impl EditWindowOverlay {
                 |style| {
                     style.debug.show_unaligned =
                         false;
-
-                    style.debug.warn_if_rect_changes_id =
-                        false;
                 }
             );
         }
