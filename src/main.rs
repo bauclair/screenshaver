@@ -1550,11 +1550,29 @@ crate::parse_arguments::Command::ListTextures => {
                             )
                         };
 
+                    let effective_shader_interval =
+                        if shader_manager.shader_count() <= 1
+                            && next_shader_interval != 0
+                        {
+                            println!(
+                                "Screensaver rotation disabled: only one eligible shader is available."
+                            );
+
+                            crate::logger::information(
+                                &logfile,
+                                "[RENDER] Screensaver rotation disabled: only one eligible shader is available",
+                            );
+
+                            0
+                        } else {
+                            next_shader_interval
+                        };
+
                     let mut renderer =
                         match crate::render_frame::FrameRenderer::new(
                             &sdl,
                             shader_manager,
-                            next_shader_interval,
+                            effective_shader_interval,
                             cfg.screensaver_speed_policy.clone(),
                             cfg.global_rendered_fps,
                             cfg.screensaver_fps_policy_entries.clone(),
