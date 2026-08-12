@@ -40,6 +40,88 @@ const RECENT_SHADER_LIMIT: usize =
     8;
 
 
+#[derive(
+    serde::Serialize,
+    serde::Deserialize,
+    Default,
+)]
+struct ControlCenterState {
+
+    #[serde(default)]
+    recent_shaders:
+        Vec<String>,
+
+    #[serde(default)]
+    policy_list:
+        PersistentPolicyListState,
+}
+
+
+#[derive(
+    serde::Serialize,
+    serde::Deserialize,
+)]
+struct PersistentPolicyListState {
+
+    #[serde(default = "default_policy_sort_column")]
+    sort_column:
+        String,
+
+    #[serde(default = "default_true")]
+    sort_ascending:
+        bool,
+
+    #[serde(default)]
+    last_edited_policy:
+        Option<PersistentPolicyIdentity>,
+}
+
+
+impl Default
+    for PersistentPolicyListState
+{
+    fn default() -> Self {
+        Self {
+            sort_column:
+                default_policy_sort_column(),
+
+            sort_ascending:
+                true,
+
+            last_edited_policy:
+                None,
+        }
+    }
+}
+
+
+#[derive(
+    serde::Serialize,
+    serde::Deserialize,
+    Clone,
+)]
+struct PersistentPolicyIdentity {
+    policy_key:
+        String,
+
+    policy_target:
+        String,
+
+    source_path:
+        String,
+}
+
+
+fn default_policy_sort_column() -> String {
+    "filename".to_string()
+}
+
+
+fn default_true() -> bool {
+    true
+}
+
+
 struct FrameTimeWindow {
     samples: VecDeque<(Instant, Duration)>,
     total: Duration,
@@ -387,6 +469,17 @@ fn run_empty_session() -> Result<(), String> {
         )?;
 
 
+    restore_policy_list_state(
+        &mut edit_window,
+        &policy_display_rows,
+    );
+
+
+    let mut last_saved_policy_list_state =
+        edit_window
+            .policy_list_state_snapshot();
+
+
     let mut event_pump =
         sdl.event_pump()
             .map_err(
@@ -478,6 +571,12 @@ fn run_empty_session() -> Result<(), String> {
                 Some(&config),
             );
 
+        save_policy_list_state_if_changed(
+            &edit_window,
+            &mut last_saved_policy_list_state,
+        );
+
+
         if editor_output.exit_discard_requested {
             break 'edit_session;
         }
@@ -535,6 +634,315 @@ fn run_empty_session() -> Result<(), String> {
             && !exit_save_failed
         {
             break 'edit_session;
+        }
+
+
+        if editor_output.bulk_save_requested {
+            let selected_rows =
+                &editor_output.bulk_selected_policy_rows;
+
+
+            let mut replacements =
+                Vec::with_capacity(
+                    selected_rows.len()
+                );
+
+            let mut preparation_error:
+                Option<String> =
+                None;
+
+
+            for row in selected_rows {
+                let shader_path =
+                    PathBuf::from(
+                        &row.full_path
+                    );
+
+
+                let texture_required =
+                    match shader_requires_texture_for_bulk_edit(
+                        &shader_path
+                    ) {
+                        Ok(required) => {
+                            required
+                        }
+
+                        Err(error) => {
+                            preparation_error =
+                                Some(
+                                    error
+                                );
+
+                            break;
+                        }
+                    };
+
+
+                let Some(existing_policy) =
+                    policy_for_bulk_row(
+                        &config,
+                        row,
+                    )
+                else {
+                    preparation_error =
+                        Some(
+                            format!(
+                                "Unable to locate selected {} policy '{}' while preparing Bulk Edit.",
+                                match row.policy_target {
+                                    crate::editor_layout::PolicyTarget::Screensaver =>
+                                        "Screensaver",
+
+                                    crate::editor_layout::PolicyTarget::Wallpaper =>
+                                        "Wallpaper",
+                                },
+                                row.policy_key,
+                            )
+                        );
+
+                    break;
+                };
+
+
+                let texture =
+                    if texture_required {
+                        Some(
+                            format!(
+                                "{}:{}",
+                                editor_output.texture.name(),
+                                editor_output.primitive_count,
+                            )
+                        )
+                    } else {
+                        existing_policy
+                            .shader_texture
+                            .as_ref()
+                            .map(
+                                |texture| {
+                                    texture.to_string()
+                                }
+                            )
+                    };
+
+
+                let palette =
+                    if texture_required {
+                        Some(
+                            editor_output.palette
+                                .palette()
+                                .to_hex()
+                        )
+                    } else {
+                        existing_policy
+                            .shader_palette
+                            .as_ref()
+                            .map(
+                                |palette| {
+                                    palette.to_hex()
+                                }
+                            )
+                    };
+
+
+                let anti_aliasing =
+                    match editor_output.anti_aliasing {
+                        crate::editor_layout::AntiAliasingSelection::Off => {
+                            "off"
+                        }
+
+                        crate::editor_layout::AntiAliasingSelection::Fxaa => {
+                            "fxaa"
+                        }
+                    };
+
+
+                let dithering =
+                    match editor_output.dithering {
+                        crate::editor_layout::DitheringSelection::Off => {
+                            "off"
+                        }
+
+                        crate::editor_layout::DitheringSelection::Subtle => {
+                            "subtle"
+                        }
+                    };
+
+
+                let color_precision =
+                    match editor_output.color_precision {
+                        crate::editor_layout::ColorPrecisionSelection::Automatic => {
+                            "auto"
+                        }
+
+                        crate::editor_layout::ColorPrecisionSelection::High => {
+                            "high"
+                        }
+
+                        crate::editor_layout::ColorPrecisionSelection::Standard => {
+                            "standard"
+                        }
+                    };
+
+
+                let target =
+                    match row.policy_target {
+                        crate::editor_layout::PolicyTarget::Screensaver => {
+                            crate::manage_policies::PolicyTarget::Screensaver
+                        }
+
+                        crate::editor_layout::PolicyTarget::Wallpaper => {
+                            crate::manage_policies::PolicyTarget::Wallpaper
+                        }
+                    };
+
+
+                replacements.push(
+                    crate::manage_policies::BulkPolicyReplacement {
+                        target,
+
+                        policy_key:
+                            row.policy_key.clone(),
+
+                        properties:
+                            crate::manage_policies::PolicyDefinition {
+                                texture,
+
+                                palette,
+
+                                fps:
+                                    Some(
+                                        editor_output.fps
+                                    ),
+
+                                speed:
+                                    Some(
+                                        editor_output.animation_speed
+                                    ),
+
+                                render_scale:
+                                    Some(
+                                        editor_output.render_scale
+                                    ),
+
+                                anti_aliasing:
+                                    Some(
+                                        anti_aliasing.to_string()
+                                    ),
+
+                                dithering:
+                                    Some(
+                                        dithering.to_string()
+                                    ),
+
+                                color_precision:
+                                    Some(
+                                        color_precision.to_string()
+                                    ),
+                            },
+                    }
+                );
+            }
+
+
+            if let Some(error) =
+                preparation_error
+            {
+                edit_window.set_status_message(
+                    format!(
+                        "Bulk policy save aborted: {}",
+                        error,
+                    )
+                );
+
+                log_warning(
+                    &format!(
+                        "[EDIT_SHADER] Empty-session Bulk Edit aborted before configuration write: {}",
+                        error,
+                    )
+                );
+
+                continue;
+            }
+
+
+            let config_path =
+                crate::locate_paths::config_path();
+
+
+            match crate::manage_policies::replace_policies_by_key(
+                &config_path,
+                &replacements,
+            ) {
+                Ok(()) => {
+                    match crate::load_config::load_config(
+                        &config_path
+                    ) {
+                        Ok(reloaded_config) => {
+                            config =
+                                reloaded_config.config;
+
+                            policy_display_rows =
+                                build_policy_display_rows(
+                                    &config
+                                );
+
+
+                            // No shader is loaded in this Control Center
+                            // session.  Clearing the selection and restoring
+                            // the editor baseline is therefore sufficient to
+                            // return cleanly to Single Edit mode.
+                            edit_window.complete_bulk_save(
+                                false
+                            );
+
+                            edit_window.set_status_message(
+                                format!(
+                                    "Bulk Edit complete: {} policies updated.",
+                                    replacements.len(),
+                                )
+                            );
+
+                            log_information(
+                                &format!(
+                                    "[EDIT_SHADER] Empty-session Bulk Edit updated {} policies in one configuration write",
+                                    replacements.len(),
+                                )
+                            );
+                        }
+
+                        Err(error) => {
+                            edit_window.set_status_message(
+                                "Bulk policies were saved, but configuration reload failed."
+                            );
+
+                            log_warning(
+                                &format!(
+                                    "[EDIT_SHADER] Empty-session Bulk Edit saved policies, but configuration reload failed: {}",
+                                    error,
+                                )
+                            );
+                        }
+                    }
+                }
+
+                Err(error) => {
+                    edit_window.set_status_message(
+                        format!(
+                            "Unable to save bulk policy changes: {}",
+                            error,
+                        )
+                    );
+
+                    log_warning(
+                        &format!(
+                            "[EDIT_SHADER] Empty-session Bulk Edit save failed: {}",
+                            error,
+                        )
+                    );
+                }
+            }
+
+
+            continue;
         }
 
 
@@ -1843,6 +2251,17 @@ fn run_paths(
         )?;
 
 
+    restore_policy_list_state(
+        &mut edit_window,
+        &policy_display_rows,
+    );
+
+
+    let mut last_saved_policy_list_state =
+        edit_window
+            .policy_list_state_snapshot();
+
+
     let (
         width,
         height,
@@ -2495,7 +2914,13 @@ fn run_paths(
                     Some(&config),
                 );
 
-            if editor_output.exit_discard_requested {
+            save_policy_list_state_if_changed(
+            &edit_window,
+            &mut last_saved_policy_list_state,
+        );
+
+
+        if editor_output.exit_discard_requested {
                 break 'preview Ok(());
             }
 
@@ -6756,40 +7181,153 @@ fn destroy_active_shader(
 }
 
 
-fn load_recent_shader_paths() -> Vec<PathBuf> {
-    let history_path =
-        crate::locate_paths::recent_shader_history_path();
+fn load_control_center_state() -> ControlCenterState {
 
-    let Ok(text) =
+    let state_path =
+        crate::locate_paths::state_path();
+
+
+    if let Ok(text) =
         std::fs::read_to_string(
-            &history_path
+            &state_path
         )
-    else {
-        return Vec::new();
-    };
-
-
-    let Ok(stored_paths) =
-        serde_json::from_str::<Vec<String>>(
+    {
+        match serde_json::from_str::<ControlCenterState>(
             &text
-        )
-    else {
-        log_warning(
-            &format!(
-                "[EDIT_SHADER] Ignoring invalid recent shader history at {}",
-                history_path.display(),
-            )
-        );
+        ) {
+            Ok(state) => {
+                return state;
+            }
 
-        return Vec::new();
-    };
+            Err(error) => {
+                log_warning(
+                    &format!(
+                        "[EDIT_SHADER] Ignoring invalid Control Center state at {}: {}",
+                        state_path.display(),
+                        error,
+                    )
+                );
+
+                return ControlCenterState::default();
+            }
+        }
+    }
+
+
+    let legacy_path =
+        crate::locate_paths::legacy_recent_shader_history_path();
+
+
+    let mut state =
+        ControlCenterState::default();
+
+
+    if let Ok(text) =
+        std::fs::read_to_string(
+            &legacy_path
+        )
+    {
+        if let Ok(stored_paths) =
+            serde_json::from_str::<Vec<String>>(
+                &text
+            )
+        {
+            state.recent_shaders =
+                stored_paths;
+
+
+            if save_control_center_state(
+                &state
+            )
+            .is_ok()
+            {
+                let _ =
+                    std::fs::remove_file(
+                        &legacy_path
+                    );
+
+                log_information(
+                    "[EDIT_SHADER] Migrated recent-shaders.json to state.json"
+                );
+            }
+        }
+    }
+
+
+    state
+}
+
+
+fn save_control_center_state(
+    state: &ControlCenterState,
+) -> Result<(), String> {
+
+    let state_path =
+        crate::locate_paths::state_path();
+
+
+    if let Some(parent) =
+        state_path.parent()
+    {
+        std::fs::create_dir_all(
+            parent
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to create Control Center state folder {}: {}",
+                    parent.display(),
+                    error,
+                )
+            }
+        )?;
+    }
+
+
+    let serialized =
+        serde_json::to_string_pretty(
+            state
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to serialize Control Center state: {}",
+                    error,
+                )
+            }
+        )?;
+
+
+    std::fs::write(
+        &state_path,
+        serialized,
+    )
+    .map_err(
+        |error| {
+            format!(
+                "Unable to write Control Center state {}: {}",
+                state_path.display(),
+                error,
+            )
+        }
+    )
+}
+
+
+fn load_recent_shader_paths() -> Vec<PathBuf> {
+
+    let mut state =
+        load_control_center_state();
 
 
     let mut recent_paths =
         Vec::new();
 
 
-    for stored_path in stored_paths {
+    for stored_path in
+        state.recent_shaders
+            .drain(..)
+    {
         let path =
             PathBuf::from(
                 stored_path
@@ -6834,30 +7372,11 @@ fn save_recent_shader_paths(
     recent_paths: &[PathBuf],
 ) -> Result<(), String> {
 
-    let history_path =
-        crate::locate_paths::recent_shader_history_path();
+    let mut state =
+        load_control_center_state();
 
 
-    if let Some(parent) =
-        history_path.parent()
-    {
-        std::fs::create_dir_all(
-            parent
-        )
-        .map_err(
-            |error| {
-                format!(
-                    "Unable to create recent-history folder {}: {}",
-                    parent.display(),
-                    error,
-                )
-            }
-        )?;
-    }
-
-
-    let stored_paths:
-        Vec<String> =
+    state.recent_shaders =
         recent_paths
             .iter()
             .take(
@@ -6872,33 +7391,169 @@ fn save_recent_shader_paths(
             .collect();
 
 
-    let serialized =
-        serde_json::to_string_pretty(
-            &stored_paths
+    save_control_center_state(
+        &state
+    )
+}
+
+
+fn policy_target_state_name(
+    target: crate::editor_layout::PolicyTarget,
+) -> &'static str {
+
+    match target {
+        crate::editor_layout::PolicyTarget::Screensaver =>
+            "screensaver",
+
+        crate::editor_layout::PolicyTarget::Wallpaper =>
+            "wallpaper",
+    }
+}
+
+
+fn restored_policy_row(
+    state: &PersistentPolicyListState,
+    policy_rows: &[crate::editor_layout::PolicyDisplayRow],
+) -> Option<crate::editor_layout::PolicyRowReference> {
+
+    let identity =
+        state.last_edited_policy
+            .as_ref()?;
+
+
+    let target =
+        match identity
+            .policy_target
+            .as_str()
+        {
+            "screensaver" =>
+                crate::editor_layout::PolicyTarget::Screensaver,
+
+            "wallpaper" =>
+                crate::editor_layout::PolicyTarget::Wallpaper,
+
+            _ =>
+                return None,
+        };
+
+
+    policy_rows
+        .iter()
+        .find(
+            |row| {
+                row.policy_target
+                    == target
+                    && row.policy_key
+                        .eq_ignore_ascii_case(
+                            &identity.policy_key
+                        )
+            }
         )
-        .map_err(
-            |error| {
-                format!(
-                    "Unable to serialize recent shader history: {}",
+        .map(
+            |row| {
+                crate::editor_layout::PolicyRowReference {
+                    policy_key:
+                        row.policy_key.clone(),
+
+                    filename:
+                        row.filename.clone(),
+
+                    full_path:
+                        row.full_path.clone(),
+
+                    policy_target:
+                        row.policy_target,
+                }
+            }
+        )
+}
+
+
+fn restore_policy_list_state(
+    edit_window: &mut EditWindowOverlay,
+    policy_rows: &[crate::editor_layout::PolicyDisplayRow],
+) {
+    let state =
+        load_control_center_state();
+
+
+    edit_window.restore_policy_list_state(
+        &state.policy_list.sort_column,
+        state.policy_list.sort_ascending,
+        restored_policy_row(
+            &state.policy_list,
+            policy_rows,
+        ),
+    );
+}
+
+
+fn save_policy_list_state_if_changed(
+    edit_window: &EditWindowOverlay,
+    last_saved:
+        &mut crate::editor_layout::PolicyListStateSnapshot,
+) {
+    let snapshot =
+        edit_window
+            .policy_list_state_snapshot();
+
+
+    if &snapshot
+        == last_saved
+    {
+        return;
+    }
+
+
+    let mut state =
+        load_control_center_state();
+
+
+    state.policy_list.sort_column =
+        snapshot.sort_column.clone();
+
+    state.policy_list.sort_ascending =
+        snapshot.sort_ascending;
+
+    state.policy_list.last_edited_policy =
+        snapshot.selected_policy_row
+            .as_ref()
+            .map(
+                |row| {
+                    PersistentPolicyIdentity {
+                        policy_key:
+                            row.policy_key.clone(),
+
+                        policy_target:
+                            policy_target_state_name(
+                                row.policy_target
+                            )
+                            .to_string(),
+
+                        source_path:
+                            row.full_path.clone(),
+                    }
+                }
+            );
+
+
+    match save_control_center_state(
+        &state
+    ) {
+        Ok(()) => {
+            *last_saved =
+                snapshot;
+        }
+
+        Err(error) => {
+            log_warning(
+                &format!(
+                    "[EDIT_SHADER] Unable to save Policy List state: {}",
                     error,
                 )
-            }
-        )?;
-
-
-    std::fs::write(
-        &history_path,
-        serialized,
-    )
-    .map_err(
-        |error| {
-            format!(
-                "Unable to write recent shader history {}: {}",
-                history_path.display(),
-                error,
-            )
+            );
         }
-    )
+    }
 }
 
 

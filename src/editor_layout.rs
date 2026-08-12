@@ -440,6 +440,14 @@ pub struct PolicyRowReference {
 }
 
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PolicyListStateSnapshot {
+    pub sort_column: String,
+    pub sort_ascending: bool,
+    pub selected_policy_row: Option<PolicyRowReference>,
+}
+
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PolicyRowCommand {
     Edit,
@@ -692,6 +700,9 @@ pub struct EditWindowOverlay {
     selected_policy_row:
         Option<PolicyRowReference>,
 
+    restore_selected_policy_scroll:
+        bool,
+
     bulk_selected_policy_rows:
         Vec<PolicyRowReference>,
 
@@ -935,6 +946,9 @@ impl EditWindowOverlay {
 
                 selected_policy_row:
                     None,
+
+                restore_selected_policy_scroll:
+                    false,
 
                 bulk_selected_policy_rows:
                     Vec::new(),
@@ -1750,6 +1764,9 @@ impl EditWindowOverlay {
         let mut selected_policy_row =
             self.selected_policy_row.clone();
 
+        let mut restore_selected_policy_scroll =
+            self.restore_selected_policy_scroll;
+
         let mut bulk_selected_policy_rows =
             self.bulk_selected_policy_rows.clone();
 
@@ -2002,6 +2019,7 @@ impl EditWindowOverlay {
                                                 &mut policy_sort_column,
                                                 &mut policy_sort_ascending,
                                                 &mut selected_policy_row,
+                                                &mut restore_selected_policy_scroll,
                                                 &mut bulk_selected_policy_rows,
                                                 &mut pending_policy_navigation,
                                                 &mut pending_confirmation,
@@ -2330,6 +2348,9 @@ impl EditWindowOverlay {
         self.selected_policy_row =
             selected_policy_row;
 
+        self.restore_selected_policy_scroll =
+            restore_selected_policy_scroll;
+
         let bulk_selected_policy_rows_for_output =
             bulk_selected_policy_rows.clone();
 
@@ -2504,6 +2525,71 @@ impl EditWindowOverlay {
 
             window_open:
                 self.window_open,
+        }
+    }
+
+
+    pub fn restore_policy_list_state(
+        &mut self,
+        sort_column: &str,
+        sort_ascending: bool,
+        selected_policy_row: Option<PolicyRowReference>,
+    ) {
+        self.policy_sort_column =
+            match sort_column {
+                "status" => {
+                    PolicySortColumn::Status
+                }
+
+                "texture" => {
+                    PolicySortColumn::Texture
+                }
+
+                "policy_type" => {
+                    PolicySortColumn::PolicyType
+                }
+
+                _ => {
+                    PolicySortColumn::Filename
+                }
+            };
+
+        self.policy_sort_ascending =
+            sort_ascending;
+
+        self.selected_policy_row =
+            selected_policy_row;
+
+        self.restore_selected_policy_scroll =
+            self.selected_policy_row.is_some();
+    }
+
+
+    pub fn policy_list_state_snapshot(
+        &self,
+    ) -> PolicyListStateSnapshot {
+        PolicyListStateSnapshot {
+            sort_column:
+                match self.policy_sort_column {
+                    PolicySortColumn::Filename =>
+                        "filename",
+
+                    PolicySortColumn::Status =>
+                        "status",
+
+                    PolicySortColumn::Texture =>
+                        "texture",
+
+                    PolicySortColumn::PolicyType =>
+                        "policy_type",
+                }
+                .to_string(),
+
+            sort_ascending:
+                self.policy_sort_ascending,
+
+            selected_policy_row:
+                self.selected_policy_row.clone(),
         }
     }
 
@@ -3726,6 +3812,7 @@ fn draw_policies_tab(
     sort_column: &mut PolicySortColumn,
     sort_ascending: &mut bool,
     selected_row: &mut Option<PolicyRowReference>,
+    restore_selected_policy_scroll: &mut bool,
     bulk_selected_rows: &mut Vec<PolicyRowReference>,
     pending_navigation: &mut Option<PolicyNavigation>,
     pending_confirmation: &mut Option<PendingConfirmation>,
@@ -4404,6 +4491,20 @@ fn draw_policies_tab(
                                 .on_hover_text(
                                     &row.full_path
                                 );
+
+                            if *restore_selected_policy_scroll
+                                && row_selected
+                            {
+                                filename_response.scroll_to_me(
+                                    Some(
+                                        egui::Align::Center
+                                    )
+                                );
+
+                                *restore_selected_policy_scroll =
+                                    false;
+                            }
+
 
                             if keyboard_selected_row
                                 .as_ref()

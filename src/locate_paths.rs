@@ -65,7 +65,14 @@ pub fn runtime_log_path() -> PathBuf {
 }
 
 
-pub fn recent_shader_history_path() -> PathBuf {
+pub fn state_path() -> PathBuf {
+
+    screenshaver_dir()
+        .join("state.json")
+}
+
+
+pub fn legacy_recent_shader_history_path() -> PathBuf {
 
     screenshaver_dir()
         .join("recent-shaders.json")
