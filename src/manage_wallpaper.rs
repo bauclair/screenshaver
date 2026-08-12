@@ -310,6 +310,22 @@ pub fn run(
         load_shader_entries()?;
 
 
+    let shader_interval =
+        if shader_entries.len() <= 1
+            && shader_interval.is_some()
+        {
+            println!();
+
+            println!(
+                "Wallpaper rotation disabled: only one eligible shader is available."
+            );
+
+            None
+        } else {
+            shader_interval
+        };
+
+
     let shader_manager =
         crate::manage_shader::ShaderManager::from_shader_entries(
             shader_mode,
