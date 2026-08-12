@@ -791,6 +791,20 @@ impl EditWindowOverlay {
             egui::Context::default();
 
 
+        #[cfg(debug_assertions)]
+        {
+            context.style_mut(
+                |style| {
+                    style.debug.show_unaligned =
+                        false;
+
+                    style.debug.warn_if_rect_changes_id =
+                        false;
+                }
+            );
+        }
+
+
         let branding_image =
             image::load_from_memory(
                 CONTROL_CENTER_BRANDING_IMAGE
