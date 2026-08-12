@@ -2088,7 +2088,13 @@ fn render_mirror_frames(
         Instant::now();
 
 
+    let mut notification_state =
+        crate::notify_wallpaper::WallpaperNotificationState::new();
+
+
     notify_active_wallpaper(
+        &mut notification_state,
+        true,
         runtime.notifications,
         active_shader,
         &texture_manager,
@@ -2389,6 +2395,8 @@ fn render_mirror_frames(
                                 crate::fps_monitor::FpsWarningState::Normal;
 
                             notify_active_wallpaper(
+                                &mut notification_state,
+                                false,
                                 runtime.notifications,
                                 &current_shader,
                                 &texture_manager,
@@ -2732,6 +2740,8 @@ fn render_mirror_frames(
 
 
                                 notify_active_wallpaper(
+                                    &mut notification_state,
+                                    true,
                                     runtime.notifications,
                                     &current_shader,
                                     &texture_manager,
@@ -3096,6 +3106,8 @@ fn render_mirror_frames(
                     != crate::fps_monitor::FpsWarningState::Normal
                 {
                     notify_active_wallpaper(
+                        &mut notification_state,
+                        false,
                         runtime.notifications,
                         &current_shader,
                         &texture_manager,
@@ -3178,6 +3190,9 @@ fn frame_duration_for_fps(
 
 
 fn notify_active_wallpaper(
+    notification_state:
+        &mut crate::notify_wallpaper::WallpaperNotificationState,
+    shader_changed: bool,
     enabled: bool,
     shader: &ActiveWallpaperShader,
     texture_manager: &crate::manage_textures::TextureManager,
@@ -3219,10 +3234,19 @@ fn notify_active_wallpaper(
         };
 
 
-    crate::notify_wallpaper::show(
-        enabled,
-        &metadata,
-    );
+    if shader_changed {
+        notification_state
+            .show_shader_changed(
+                enabled,
+                &metadata,
+            );
+    } else {
+        notification_state
+            .show_update(
+                enabled,
+                &metadata,
+            );
+    }
 }
 
 

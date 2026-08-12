@@ -1,4 +1,9 @@
 use std::collections::HashMap;
+use std::sync::mpsc::{
+    self,
+    Receiver,
+};
+use std::thread;
 
 use crate::fps_monitor::FpsWarningState;
 
@@ -121,6 +126,246 @@ impl WallpaperMetadata {
                 | FpsWarningState::CriticalHidden
         )
     }
+}
+
+
+pub struct WallpaperNotificationState {
+    active_critical_id:
+        Option<u32>,
+
+    closed_notifications:
+        Receiver<u32>,
+}
+
+
+impl WallpaperNotificationState {
+
+    pub fn new() -> Self {
+
+        Self {
+            active_critical_id:
+                None,
+
+            closed_notifications:
+                spawn_notification_closed_listener(),
+        }
+    }
+
+
+    fn refresh_closed_notification_state(
+        &mut self,
+    ) {
+
+        while let Ok(notification_id) =
+            self.closed_notifications
+                .try_recv()
+        {
+            if self.active_critical_id
+                == Some(notification_id)
+            {
+                self.active_critical_id =
+                    None;
+            }
+        }
+    }
+
+
+    pub fn show_shader_changed(
+        &mut self,
+        enabled: bool,
+        metadata: &WallpaperMetadata,
+    ) {
+
+        self.refresh_closed_notification_state();
+
+
+        self.close_active_critical();
+
+
+        let _ =
+            show(
+                enabled,
+                metadata,
+            );
+    }
+
+
+    pub fn show_update(
+        &mut self,
+        enabled: bool,
+        metadata: &WallpaperMetadata,
+    ) {
+
+        self.refresh_closed_notification_state();
+
+
+        if self.active_critical_id
+            .is_some()
+            && metadata.is_performance_alert()
+        {
+            return;
+        }
+
+
+        let notification_id =
+            show(
+                enabled,
+                metadata,
+            );
+
+
+        if metadata.is_critical() {
+            self.active_critical_id =
+                notification_id;
+        }
+    }
+
+
+    pub fn close_active_critical(
+        &mut self,
+    ) {
+
+        self.refresh_closed_notification_state();
+
+
+        if let Some(notification_id) =
+            self.active_critical_id
+                .take()
+        {
+            close(
+                notification_id
+            );
+        }
+    }
+}
+
+
+impl Default
+    for WallpaperNotificationState
+{
+    fn default() -> Self {
+
+        Self::new()
+    }
+}
+
+
+impl Drop
+    for WallpaperNotificationState
+{
+    fn drop(
+        &mut self,
+    ) {
+
+        self.close_active_critical();
+    }
+}
+
+
+fn spawn_notification_closed_listener(
+) -> Receiver<u32> {
+
+    let (
+        sender,
+        receiver,
+    ) =
+        mpsc::channel();
+
+
+    thread::spawn(
+        move || {
+
+            let connection =
+                match zbus::blocking::Connection::session() {
+                    Ok(connection) => {
+                        connection
+                    }
+
+                    Err(error) => {
+                        eprintln!(
+                            "[WALLPAPER] Notification close listener unavailable: {}",
+                            error,
+                        );
+
+                        return;
+                    }
+                };
+
+
+            let proxy =
+                match zbus::blocking::Proxy::new(
+                    &connection,
+                    "org.freedesktop.Notifications",
+                    "/org/freedesktop/Notifications",
+                    "org.freedesktop.Notifications",
+                ) {
+                    Ok(proxy) => {
+                        proxy
+                    }
+
+                    Err(error) => {
+                        eprintln!(
+                            "[WALLPAPER] Could not create notification signal proxy: {}",
+                            error,
+                        );
+
+                        return;
+                    }
+                };
+
+
+            let mut signals =
+                match proxy.receive_signal(
+                    "NotificationClosed"
+                ) {
+                    Ok(signals) => {
+                        signals
+                    }
+
+                    Err(error) => {
+                        eprintln!(
+                            "[WALLPAPER] Could not listen for NotificationClosed: {}",
+                            error,
+                        );
+
+                        return;
+                    }
+                };
+
+
+            for message in
+                &mut signals
+            {
+                let body =
+                    message.body();
+
+
+                let Ok((
+                    notification_id,
+                    _reason,
+                )) =
+                    body.deserialize::<(
+                        u32,
+                        u32,
+                    )>()
+                else {
+                    continue;
+                };
+
+
+                if sender.send(
+                    notification_id
+                )
+                .is_err()
+                {
+                    break;
+                }
+            }
+        }
+    );
+
+
+    receiver
 }
 
 

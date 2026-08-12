@@ -382,33 +382,24 @@ fn render_shared_engine_frame(
 }
 
 
-fn notify_wallpaper_metadata(
-    enabled: bool,
+fn wallpaper_metadata(
     metadata: &FrameRenderMetadata,
-) {
-    let wallpaper_metadata =
-        crate::notify_wallpaper::WallpaperMetadata {
-            wallpaper:
-                metadata.shader_name.clone(),
-            animation_speed:
-                metadata.animation_speed,
-            texture:
-                metadata.texture.clone(),
-            palette:
-                metadata.palette.clone(),
-            fps:
-                metadata.configured_fps.max(1),
-            warning_state:
-                metadata.warning_state,
-        };
+) -> crate::notify_wallpaper::WallpaperMetadata {
 
-    // Notification lifetime is controlled by notify_wallpaper and the desktop
-    // notification daemon. Normal and Warning notifications expire after five
-    // seconds; Critical notifications remain until dismissed by the user.
-    let _ = crate::notify_wallpaper::show(
-        enabled,
-        &wallpaper_metadata,
-    );
+    crate::notify_wallpaper::WallpaperMetadata {
+        wallpaper:
+            metadata.shader_name.clone(),
+        animation_speed:
+            metadata.animation_speed,
+        texture:
+            metadata.texture.clone(),
+        palette:
+            metadata.palette.clone(),
+        fps:
+            metadata.configured_fps.max(1),
+        warning_state:
+            metadata.warning_state,
+    }
 }
 
 
@@ -416,6 +407,8 @@ fn notify_wallpaper_events(
     enabled: bool,
     frame_events: FrameRenderEvents,
     tray_status: &crate::tray_icon::TrayStatusControl,
+    notification_state:
+        &mut crate::notify_wallpaper::WallpaperNotificationState,
 ) {
     for event in frame_events.events {
         match event {
@@ -427,20 +420,32 @@ fn notify_wallpaper_events(
                     );
                 }
 
-                notify_wallpaper_metadata(
-                    enabled,
-                    &metadata,
-                );
+                let wallpaper_metadata =
+                    wallpaper_metadata(
+                        &metadata
+                    );
+
+                notification_state
+                    .show_shader_changed(
+                        enabled,
+                        &wallpaper_metadata,
+                    );
             }
 
             FrameRenderEvent::PerformanceChanged(metadata) => {
                 if metadata.warning_state
                     != crate::fps_monitor::FpsWarningState::Normal
                 {
-                    notify_wallpaper_metadata(
-                        enabled,
-                        &metadata,
-                    );
+                    let wallpaper_metadata =
+                        wallpaper_metadata(
+                            &metadata
+                        );
+
+                    notification_state
+                        .show_update(
+                            enabled,
+                            &wallpaper_metadata,
+                        );
                 }
             }
         }
@@ -471,6 +476,8 @@ fn run_window_loop(
     control: &WallpaperRuntimeControl,
     notifications_enabled: bool,
     tray_status: &crate::tray_icon::TrayStatusControl,
+    notification_state:
+        &mut crate::notify_wallpaper::WallpaperNotificationState,
 ) {
     diagnostic("Entering continuous X11 wallpaper render loop...");
 
@@ -529,6 +536,7 @@ fn run_window_loop(
             notifications_enabled,
             status,
             tray_status,
+            notification_state,
         );
 
         if paused {
@@ -669,10 +677,22 @@ impl WallpaperBackend for X11WallpaperBackend {
                 );
             }
 
-            notify_wallpaper_metadata(
-                runtime.notifications,
-                &initial_metadata,
-            );
+            let mut notification_state =
+                crate::notify_wallpaper::WallpaperNotificationState::new();
+
+
+            let initial_wallpaper_metadata =
+                wallpaper_metadata(
+                    &initial_metadata
+                );
+
+
+            notification_state
+                .show_shader_changed(
+                    runtime.notifications,
+                    &initial_wallpaper_metadata,
+                );
+
 
             run_window_loop(
                 display,
@@ -682,6 +702,7 @@ impl WallpaperBackend for X11WallpaperBackend {
                 &control,
                 runtime.notifications,
                 &runtime.tray_status,
+                &mut notification_state,
             );
 
             // `engine` is dropped here while the GLX context is still current.
