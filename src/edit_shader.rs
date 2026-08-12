@@ -953,6 +953,9 @@ fn run_empty_session() -> Result<(), String> {
 
             let selected_paths =
                 rfd::FileDialog::new()
+                    .set_parent(
+                        &window
+                    )
                     .add_filter(
                         "GL shader files",
                         &[
@@ -1120,6 +1123,9 @@ fn run_empty_session() -> Result<(), String> {
 
                     let selected_path =
                         rfd::FileDialog::new()
+                    .set_parent(
+                        &window
+                    )
                             .add_filter(
                                 "GL shader files",
                                 &[
@@ -1654,6 +1660,9 @@ fn run_empty_session() -> Result<(), String> {
 
             let selected_path =
                 rfd::FileDialog::new()
+                    .set_parent(
+                        &window
+                    )
                     .add_filter(
                         "GL shader files",
                         &[
@@ -3029,6 +3038,9 @@ fn run_paths(
 
                 let selected_path =
                     rfd::FileDialog::new()
+                    .set_parent(
+                        &window
+                    )
                         .add_filter(
                             "GL shader files",
                             &[
@@ -3109,6 +3121,9 @@ fn run_paths(
 
                 let selected_paths =
                     rfd::FileDialog::new()
+                    .set_parent(
+                        &window
+                    )
                         .add_filter(
                             "GL shader files",
                             &[
@@ -3349,6 +3364,9 @@ fn run_paths(
 
                         let selected_path =
                             rfd::FileDialog::new()
+                    .set_parent(
+                        &window
+                    )
                                 .add_filter(
                                     "GL shader files",
                                     &[

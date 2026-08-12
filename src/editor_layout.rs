@@ -4913,6 +4913,9 @@ fn draw_bulk_create_confirmation_modal(
             "editor_bulk_create_confirmation"
         )
     )
+    .order(
+        egui::Order::Foreground
+    )
     .collapsible(false)
     .resizable(false)
     .movable(false)
@@ -5136,6 +5139,9 @@ fn draw_bulk_save_confirmation_modal(
             "editor_bulk_save_confirmation"
         )
     )
+    .order(
+        egui::Order::Foreground
+    )
     .collapsible(false)
     .resizable(false)
     .movable(false)
@@ -5243,6 +5249,9 @@ fn draw_exit_confirmation_modal(
         egui::Id::new(
             "editor_exit_confirmation"
         )
+    )
+    .order(
+        egui::Order::Foreground
     )
     .collapsible(false)
     .resizable(false)
@@ -5402,6 +5411,9 @@ fn draw_policy_confirmation_modal(
         egui::Id::new(
             "editor_destructive_confirmation"
         )
+    )
+    .order(
+        egui::Order::Foreground
     )
     .collapsible(false)
     .resizable(false)
