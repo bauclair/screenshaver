@@ -5,13 +5,14 @@ use wayland_client::protocol::{
     wl_registry,
     wl_surface,
 };
+use std::collections::HashMap;
 use std::ffi::{
     c_char,
     c_void,
     CString,
 };
 use std::os::fd::AsRawFd;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::ptr;
 use std::sync::{
     atomic::{
@@ -690,6 +691,7 @@ pub fn probe_capabilities(
 #[derive(Debug, Clone)]
 struct ActiveWallpaperShader {
     manager_name: String,
+    source_path: PathBuf,
     source: String,
     shader_name: String,
     channel_usage:
@@ -713,18 +715,27 @@ fn select_safe_wallpaper_shader(
         0..maximum_attempts
     {
         let Some(
-            requested_shader_name
+            requested_shader
         ) =
-            shader_manager.next()
+            shader_manager.next_entry()
         else {
             break;
         };
 
 
+        let requested_shader_name =
+            requested_shader.name.clone();
+
+
         let shader_path =
-            wallpaper_directory.join(
-                &requested_shader_name
-            );
+            requested_shader.source_path
+                .unwrap_or_else(
+                    || {
+                        wallpaper_directory.join(
+                            &requested_shader_name
+                        )
+                    }
+                );
 
 
         println!(
@@ -751,6 +762,7 @@ fn select_safe_wallpaper_shader(
                 return Ok(
                     ActiveWallpaperShader {
                         manager_name: requested_shader_name,
+                        source_path: shader_path,
                         source,
                         shader_name,
                         channel_usage,
@@ -890,10 +902,10 @@ pub fn run_egl_background_surface(
     );
 
 
-    runtime.tray_status
-        .set_active(
-            active_shader.shader_name.clone()
-        );
+    runtime.tray_status.set_active(
+        active_shader.shader_name.clone(),
+        active_shader.source_path.clone(),
+    );
 
 
     let (
@@ -2015,8 +2027,11 @@ fn render_mirror_frames(
 
 
     if let Err(error) =
-        texture_manager.prepare_for_shader(
+        texture_manager.prepare_for_shader_with_path(
             &active_shader.shader_name,
+            Some(
+                active_shader.source_path.as_path()
+            ),
             active_shader.channel_usage,
         )
     {
@@ -2046,6 +2061,9 @@ fn render_mirror_frames(
         runtime.animation_speed_policy
             .animation_speed_for_shader(
                 &active_shader.shader_name,
+                Some(
+                    active_shader.source_path.as_path()
+                ),
                 None,
             );
 
@@ -2053,6 +2071,9 @@ fn render_mirror_frames(
     let mut rendered_fps =
         runtime.fps_policy.rendered_fps_for_shader(
             &active_shader.shader_name,
+            Some(
+                active_shader.source_path.as_path()
+            ),
             None,
         );
 
@@ -2067,7 +2088,13 @@ fn render_mirror_frames(
         Instant::now();
 
 
+    let mut notification_state =
+        crate::notify_wallpaper::WallpaperNotificationState::new();
+
+
     notify_active_wallpaper(
+        &mut notification_state,
+        true,
         runtime.notifications,
         active_shader,
         &texture_manager,
@@ -2101,6 +2128,66 @@ fn render_mirror_frames(
         program,
         &active_shader.shader_inputs,
     );
+
+
+    let mut postprocess_pipelines =
+        HashMap::with_capacity(
+            native_targets.len()
+        );
+
+
+    for target in native_targets.iter() {
+        let width =
+            u32::try_from(
+                target.width
+            )
+            .map_err(
+                |_| {
+                    format!(
+                        "Wallpaper target {} has an invalid post-processing width: {}",
+                        target.info.registry_name,
+                        target.width,
+                    )
+                }
+            )?;
+
+
+        let height =
+            u32::try_from(
+                target.height
+            )
+            .map_err(
+                |_| {
+                    format!(
+                        "Wallpaper target {} has an invalid post-processing height: {}",
+                        target.info.registry_name,
+                        target.height,
+                    )
+                }
+            )?;
+
+
+        let postprocess_profile =
+            runtime.postprocess_policy.profile_for_shader(
+                &active_shader.shader_name,
+                Some(
+                    active_shader.source_path.as_path()
+                ),
+            );
+
+        let pipeline =
+            crate::postprocess_shader::PostprocessPipeline::new(
+                width,
+                height,
+                postprocess_profile,
+            )?;
+
+
+        postprocess_pipelines.insert(
+            target.info.registry_name,
+            pipeline,
+        );
+    }
 
 
     let mut i_time =
@@ -2178,6 +2265,7 @@ fn render_mirror_frames(
                 state,
                 egl_targets,
                 native_targets,
+                &mut postprocess_pipelines,
             )?;
 
 
@@ -2214,6 +2302,123 @@ fn render_mirror_frames(
                 break Ok(());
             }
 
+
+            if let Some(reload) =
+                control.take_policy_reload()
+            {
+                let mut replacement_texture_manager =
+                    crate::manage_textures::TextureManager::new(
+                        reload.texture_policy.clone()
+                    );
+
+                match replacement_texture_manager.prepare_for_shader_with_path(
+                    &current_shader.shader_name,
+                    Some(
+                        current_shader.source_path.as_path()
+                    ),
+                    current_shader.channel_usage,
+                ) {
+                    Ok(()) => {
+                        let replacement_profile =
+                            reload.postprocess_policy
+                                .profile_for_shader(
+                                    &current_shader.shader_name,
+                                    Some(
+                                        current_shader.source_path.as_path()
+                                    ),
+                                );
+
+                        let mut profile_error =
+                            None;
+
+                        for pipeline in
+                            postprocess_pipelines.values_mut()
+                        {
+                            if let Err(error) =
+                                pipeline.set_profile(
+                                    replacement_profile
+                                )
+                            {
+                                profile_error =
+                                    Some(error);
+                                break;
+                            }
+                        }
+
+                        if let Some(error) =
+                            profile_error
+                        {
+                            replacement_texture_manager.delete_all();
+                            println!(
+                                "Unable to reload Wayland active wallpaper policy; keeping the previous settings: {}",
+                                error,
+                            );
+                        } else {
+                            replacement_texture_manager.configure_program(
+                                program
+                            );
+
+                            texture_manager.delete_all();
+                            texture_manager =
+                                replacement_texture_manager;
+
+                            animation_speed =
+                                reload.animation_speed_policy
+                                    .animation_speed_for_shader(
+                                        &current_shader.shader_name,
+                                        Some(
+                                            current_shader.source_path.as_path()
+                                        ),
+                                        None,
+                                    );
+
+                            rendered_fps =
+                                reload.fps_policy
+                                    .rendered_fps_for_shader(
+                                        &current_shader.shader_name,
+                                        Some(
+                                            current_shader.source_path.as_path()
+                                        ),
+                                        None,
+                                    );
+
+                            frame_duration =
+                                frame_duration_for_fps(
+                                    rendered_fps
+                                );
+
+                            next_frame_deadline =
+                                Instant::now();
+
+                            frame_times.clear();
+                            fps_warning_state =
+                                crate::fps_monitor::FpsWarningState::Normal;
+
+                            notify_active_wallpaper(
+                                &mut notification_state,
+                                false,
+                                runtime.notifications,
+                                &current_shader,
+                                &texture_manager,
+                                rendered_fps,
+                                animation_speed,
+                                fps_warning_state,
+                            );
+
+                            println!(
+                                "Wayland active wallpaper policy reloaded."
+                            );
+                        }
+                    }
+
+                    Err(error) => {
+                        println!(
+                            "Unable to reload Wayland active wallpaper texture policy; keeping the previous settings: {}",
+                            error,
+                        );
+                    }
+                }
+            }
 
             if control.pause_requested() {
                 if !paused {
@@ -2331,8 +2536,11 @@ fn render_mirror_frames(
                                 if let Err(
                                     error
                                 ) =
-                                    next_texture_manager.prepare_for_shader(
+                                    next_texture_manager.prepare_for_shader_with_path(
                                         &next_shader.shader_name,
+                                        Some(
+                                            next_shader.source_path.as_path()
+                                        ),
                                         next_shader.channel_usage,
                                     )
                                 {
@@ -2468,6 +2676,9 @@ fn render_mirror_frames(
                                     runtime.animation_speed_policy
                                         .animation_speed_for_shader(
                                             &next_shader.shader_name,
+                                            Some(
+                                                next_shader.source_path.as_path()
+                                            ),
                                             None,
                                         );
 
@@ -2475,6 +2686,9 @@ fn render_mirror_frames(
                                 rendered_fps =
                                     runtime.fps_policy.rendered_fps_for_shader(
                                         &next_shader.shader_name,
+                                        Some(
+                                            next_shader.source_path.as_path()
+                                        ),
                                         None,
                                     );
 
@@ -2493,10 +2707,29 @@ fn render_mirror_frames(
                                     next_shader.clone();
 
 
-                                runtime.tray_status
-                                    .set_active(
-                                        current_shader.shader_name.clone()
-                                    );
+                                let postprocess_profile =
+                                    runtime.postprocess_policy
+                                        .profile_for_shader(
+                                            &current_shader.shader_name,
+                                            Some(
+                                                current_shader.source_path.as_path()
+                                            ),
+                                        );
+
+
+                                for pipeline in
+                                    postprocess_pipelines.values_mut()
+                                {
+                                    pipeline.set_profile(
+                                        postprocess_profile
+                                    )?;
+                                }
+
+
+                                runtime.tray_status.set_active(
+                                    current_shader.shader_name.clone(),
+                                    current_shader.source_path.clone(),
+                                );
 
 
                                 frame_times.clear();
@@ -2507,6 +2740,8 @@ fn render_mirror_frames(
 
 
                                 notify_active_wallpaper(
+                                    &mut notification_state,
+                                    true,
                                     runtime.notifications,
                                     &current_shader,
                                     &texture_manager,
@@ -2639,14 +2874,68 @@ fn render_mirror_frames(
                 }
 
 
-                unsafe {
-                    gl::Viewport(
-                        0,
-                        0,
-                        native_target.width,
-                        native_target.height,
-                    );
+                let postprocess =
+                    postprocess_pipelines
+                        .get_mut(
+                            &native_target.info.registry_name
+                        )
+                        .ok_or_else(
+                            || {
+                                format!(
+                                    "No post-processing pipeline exists for wallpaper target {}",
+                                    native_target.info.registry_name,
+                                )
+                            }
+                        )?;
 
+
+                let target_width =
+                    u32::try_from(
+                        native_target.width
+                    )
+                    .map_err(
+                        |_| {
+                            format!(
+                                "Wallpaper target {} has an invalid width: {}",
+                                native_target.info.registry_name,
+                                native_target.width,
+                            )
+                        }
+                    )?;
+
+
+                let target_height =
+                    u32::try_from(
+                        native_target.height
+                    )
+                    .map_err(
+                        |_| {
+                            format!(
+                                "Wallpaper target {} has an invalid height: {}",
+                                native_target.info.registry_name,
+                                native_target.height,
+                            )
+                        }
+                    )?;
+
+
+                postprocess.resize(
+                    target_width,
+                    target_height,
+                )?;
+
+
+                postprocess.bind_scene_target();
+
+
+                let (
+                    scene_width,
+                    scene_height,
+                ) =
+                    postprocess.scene_dimensions();
+
+
+                unsafe {
                     gl::Disable(
                         gl::BLEND
                     );
@@ -2694,8 +2983,8 @@ fn render_mirror_frames(
 
                     set_uniform_3f(
                         i_resolution,
-                        native_target.width as f32,
-                        native_target.height as f32,
+                        scene_width as f32,
+                        scene_height as f32,
                         1.0,
                     );
 
@@ -2729,6 +3018,9 @@ fn render_mirror_frames(
                         gl::TRUE,
                     );
                 }
+
+
+                postprocess.present_scene();
 
 
                 if unsafe {
@@ -2814,6 +3106,8 @@ fn render_mirror_frames(
                     != crate::fps_monitor::FpsWarningState::Normal
                 {
                     notify_active_wallpaper(
+                        &mut notification_state,
+                        false,
                         runtime.notifications,
                         &current_shader,
                         &texture_manager,
@@ -2851,6 +3145,11 @@ fn render_mirror_frames(
                     now;
             }
         };
+
+
+    drop(
+        postprocess_pipelines
+    );
 
 
     texture_manager.delete_all();
@@ -2891,6 +3190,9 @@ fn frame_duration_for_fps(
 
 
 fn notify_active_wallpaper(
+    notification_state:
+        &mut crate::notify_wallpaper::WallpaperNotificationState,
+    shader_changed: bool,
     enabled: bool,
     shader: &ActiveWallpaperShader,
     texture_manager: &crate::manage_textures::TextureManager,
@@ -2932,10 +3234,19 @@ fn notify_active_wallpaper(
         };
 
 
-    crate::notify_wallpaper::show(
-        enabled,
-        &metadata,
-    );
+    if shader_changed {
+        notification_state
+            .show_shader_changed(
+                enabled,
+                &metadata,
+            );
+    } else {
+        notification_state
+            .show_update(
+                enabled,
+                &metadata,
+            );
+    }
 }
 
 
@@ -2945,6 +3256,11 @@ fn remove_disconnected_targets(
     state: &mut WaylandState,
     egl_targets: &mut Vec<EglWallpaperTarget>,
     native_targets: &mut Vec<NativeWallpaperTarget>,
+    postprocess_pipelines:
+        &mut HashMap<
+            u32,
+            crate::postprocess_shader::PostprocessPipeline,
+        >,
 ) -> Result<(), String> {
 
     let removed_names =
@@ -2990,6 +3306,35 @@ fn remove_disconnected_targets(
                 )
             );
         };
+
+
+        let removed_surface =
+            egl_targets[
+                egl_index
+            ]
+            .surface;
+
+
+        if unsafe {
+            eglMakeCurrent(
+                display,
+                removed_surface,
+                removed_surface,
+                context,
+            )
+        } == EGL_FALSE
+        {
+            return Err(
+                egl_failure(
+                    "eglMakeCurrent before removing wallpaper post-processing resources"
+                )
+            );
+        }
+
+
+        postprocess_pipelines.remove(
+            &registry_name
+        );
 
 
         if unsafe {

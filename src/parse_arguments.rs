@@ -3,9 +3,9 @@ use crate::parse_texture_specification::{
     TextureSpecification,
 };
 
-use crate::manage_overrides::{
-    OverrideProperties,
-    OverrideTarget,
+use crate::manage_policies::{
+    PolicyDefinition,
+    PolicyTarget,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -39,25 +39,31 @@ pub enum Command {
         animation_speed: Option<f32>,
     },
 
-    ListTextures,
+    Control {
+        shader_name: Option<String>,
+    },
 
-    ListPalettes,
+    EditShader {
+        shader_name: Option<String>,
+    },
+
+    ListTextures,
 
     DeleteCache,
 
-    AddOverride {
-        target: OverrideTarget,
+    AddPolicy {
+        target: PolicyTarget,
         shader: String,
-        properties: OverrideProperties,
+        properties: PolicyDefinition,
     },
 
-    DeleteOverride {
-        target: OverrideTarget,
+    DeletePolicy {
+        target: PolicyTarget,
         shader: String,
     },
 
-    ListOverrides {
-        target: Option<OverrideTarget>,
+    ListPolicies {
+        target: Option<PolicyTarget>,
     },
 }
 
@@ -89,25 +95,8 @@ const VALID_PREVIEW_TEXTURE_FAMILIES: [&str; 9] = [
 ];
 
 
-const VALID_TEXTURE_PALETTES: [&str; 7] = [
-    "random",
-    "slate",
-    "sandstone",
-    "lichen",
-    "mist",
-    "bronze",
-    "brick",
-];
-
-
-const VALID_PREVIEW_TEXTURE_PALETTES: [&str; 6] = [
-    "slate",
-    "sandstone",
-    "lichen",
-    "mist",
-    "bronze",
-    "brick",
-];
+const RANDOM_PALETTE_VALUE: &str =
+    "random";
 
 
 const RESERVED_OPTIONS: [&str; 5] = [
@@ -209,6 +198,22 @@ pub fn parse() -> Result<Command, String> {
         }
 
 
+        "--control" => {
+
+            parse_control(
+                &args[1..]
+            )
+        }
+
+
+        "--edit-shader" => {
+
+            parse_edit_shader(
+                &args[1..]
+            )
+        }
+
+
         "--list-textures" => {
 
             require_no_extra_arguments(
@@ -223,39 +228,25 @@ pub fn parse() -> Result<Command, String> {
         }
 
 
-        "--list-palettes" => {
+        "--add-policy" => {
 
-            require_no_extra_arguments(
-                &args,
-                "--list-palettes",
-            )?;
-
-
-            Ok(
-                Command::ListPalettes
-            )
-        }
-
-
-        "--add-override" => {
-
-            parse_add_override(
+            parse_add_policy(
                 &args[1..]
             )
         }
 
 
-        "--delete-override" => {
+        "--delete-policy" => {
 
-            parse_delete_override(
+            parse_delete_policy(
                 &args[1..]
             )
         }
 
 
-        "--list-overrides" => {
+        "--list-policies" => {
 
-            parse_list_overrides(
+            parse_list_policies(
                 &args[1..]
             )
         }
@@ -322,36 +313,36 @@ pub fn parse() -> Result<Command, String> {
 }
 
 
-fn parse_add_override(
+fn parse_add_policy(
     args: &[String],
 ) -> Result<Command, String> {
 
     if args.len() < 3 {
         return Err(
-            "--add-override requires TARGET, SHADER, and at least one property"
+            "--add-policy requires TARGET, SHADER, and at least one property"
                 .to_string()
         );
     }
 
     let target =
-        OverrideTarget::parse(
+        PolicyTarget::parse(
             &args[0]
         )?;
 
     let shader =
-        parse_override_shader(
+        parse_policy_shader(
             &args[1],
-            "--add-override",
+            "--add-policy",
         )?;
 
     let properties =
-        parse_override_properties(
+        parse_policy_definition(
             &args[2..],
             target,
         )?;
 
     Ok(
-        Command::AddOverride {
+        Command::AddPolicy {
             target,
             shader,
             properties,
@@ -360,30 +351,30 @@ fn parse_add_override(
 }
 
 
-fn parse_delete_override(
+fn parse_delete_policy(
     args: &[String],
 ) -> Result<Command, String> {
 
     if args.len() != 2 {
         return Err(
-            "--delete-override requires exactly TARGET and SHADER"
+            "--delete-policy requires exactly TARGET and SHADER"
                 .to_string()
         );
     }
 
     let target =
-        OverrideTarget::parse(
+        PolicyTarget::parse(
             &args[0]
         )?;
 
     let shader =
-        parse_override_shader(
+        parse_policy_shader(
             &args[1],
-            "--delete-override",
+            "--delete-policy",
         )?;
 
     Ok(
-        Command::DeleteOverride {
+        Command::DeletePolicy {
             target,
             shader,
         }
@@ -391,13 +382,13 @@ fn parse_delete_override(
 }
 
 
-fn parse_list_overrides(
+fn parse_list_policies(
     args: &[String],
 ) -> Result<Command, String> {
 
     if args.len() > 1 {
         return Err(
-            "--list-overrides accepts at most one TARGET"
+            "--list-policies accepts at most one TARGET"
                 .to_string()
         );
     }
@@ -405,19 +396,19 @@ fn parse_list_overrides(
     let target =
         args.first()
             .map(
-                |value| OverrideTarget::parse(value)
+                |value| PolicyTarget::parse(value)
             )
             .transpose()?;
 
     Ok(
-        Command::ListOverrides {
+        Command::ListPolicies {
             target,
         }
     )
 }
 
 
-fn parse_override_shader(
+fn parse_policy_shader(
     value: &str,
     option: &str,
 ) -> Result<String, String> {
@@ -442,17 +433,17 @@ fn parse_override_shader(
 }
 
 
-fn parse_override_properties(
+fn parse_policy_definition(
     args: &[String],
-    target: OverrideTarget,
-) -> Result<OverrideProperties, String> {
+    target: PolicyTarget,
+) -> Result<PolicyDefinition, String> {
 
     let mut properties =
-        OverrideProperties::default();
+        PolicyDefinition::default();
 
     for token in args {
         let (name, value) =
-            split_override_property(
+            split_policy_property(
                 token
             )?;
 
@@ -463,7 +454,7 @@ fn parse_override_properties(
             "texture" => {
                 if properties.texture.is_some() {
                     return Err(
-                        "Override property 'texture' may only be specified once"
+                        "Policy property 'texture' may only be specified once"
                             .to_string()
                     );
                 }
@@ -486,7 +477,7 @@ fn parse_override_properties(
             "palette" => {
                 if properties.palette.is_some() {
                     return Err(
-                        "Override property 'palette' may only be specified once"
+                        "Policy property 'palette' may only be specified once"
                             .to_string()
                     );
                 }
@@ -504,7 +495,7 @@ fn parse_override_properties(
             "fps" => {
                 if properties.fps.is_some() {
                     return Err(
-                        "Override property 'fps' may only be specified once"
+                        "Policy property 'fps' may only be specified once"
                             .to_string()
                     );
                 }
@@ -514,7 +505,7 @@ fn parse_override_properties(
                         .map_err(
                             |_| {
                                 format!(
-                                    "Invalid override FPS '{}'; specify an integer from {} through {}",
+                                    "Invalid policy FPS '{}'; specify an integer from {} through {}",
                                     value,
                                     crate::define_constants::MIN_RENDER_FPS,
                                     crate::define_constants::MAX_RENDER_FPS,
@@ -528,7 +519,7 @@ fn parse_override_properties(
                 {
                     return Err(
                         format!(
-                            "Override FPS {} is outside the supported range {}-{}",
+                            "Policy FPS {} is outside the supported range {}-{}",
                             fps,
                             crate::define_constants::MIN_RENDER_FPS,
                             crate::define_constants::MAX_RENDER_FPS,
@@ -543,7 +534,7 @@ fn parse_override_properties(
             "speed" => {
                 if properties.speed.is_some() {
                     return Err(
-                        "Override property 'speed' may only be specified once"
+                        "Policy property 'speed' may only be specified once"
                             .to_string()
                     );
                 }
@@ -553,7 +544,7 @@ fn parse_override_properties(
                         .map_err(
                             |_| {
                                 format!(
-                                    "Invalid override speed '{}'; specify a numeric multiplier",
+                                    "Invalid policy speed '{}'; specify a numeric multiplier",
                                     value,
                                 )
                             }
@@ -561,12 +552,12 @@ fn parse_override_properties(
 
                 let (minimum, maximum) =
                     match target {
-                        OverrideTarget::Screensaver => (
+                        PolicyTarget::Screensaver => (
                             crate::define_constants::SCREENSAVER_SPEED_MIN,
                             crate::define_constants::SCREENSAVER_SPEED_MAX,
                         ),
 
-                        OverrideTarget::Wallpaper => (
+                        PolicyTarget::Wallpaper => (
                             crate::define_constants::WALLPAPER_SPEED_MIN,
                             crate::define_constants::WALLPAPER_SPEED_MAX,
                         ),
@@ -578,7 +569,7 @@ fn parse_override_properties(
                 {
                     return Err(
                         format!(
-                            "Override speed {} for {} is outside the supported range {}-{}",
+                            "Policy speed {} for {} is outside the supported range {}-{}",
                             value,
                             target.name(),
                             minimum,
@@ -591,10 +582,88 @@ fn parse_override_properties(
                     Some(speed);
             }
 
+            "anti_aliasing" => {
+                if properties.anti_aliasing.is_some() {
+                    return Err(
+                        "Policy property 'anti_aliasing' may only be specified once"
+                            .to_string()
+                    );
+                }
+
+                let normalized =
+                    value.to_ascii_lowercase();
+
+                if !["off", "fxaa"].contains(
+                    &normalized.as_str()
+                ) {
+                    return Err(
+                        format!(
+                            "Invalid anti_aliasing value '{}'; supported values: off, fxaa",
+                            value,
+                        )
+                    );
+                }
+
+                properties.anti_aliasing =
+                    Some(normalized);
+            }
+
+            "dithering" => {
+                if properties.dithering.is_some() {
+                    return Err(
+                        "Policy property 'dithering' may only be specified once"
+                            .to_string()
+                    );
+                }
+
+                let normalized =
+                    value.to_ascii_lowercase();
+
+                if !["off", "subtle"].contains(
+                    &normalized.as_str()
+                ) {
+                    return Err(
+                        format!(
+                            "Invalid dithering value '{}'; supported values: off, subtle",
+                            value,
+                        )
+                    );
+                }
+
+                properties.dithering =
+                    Some(normalized);
+            }
+
+            "color_precision" => {
+                if properties.color_precision.is_some() {
+                    return Err(
+                        "Policy property 'color_precision' may only be specified once"
+                            .to_string()
+                    );
+                }
+
+                let normalized =
+                    value.to_ascii_lowercase();
+
+                if !["auto", "standard", "high"].contains(
+                    &normalized.as_str()
+                ) {
+                    return Err(
+                        format!(
+                            "Invalid color_precision value '{}'; supported values: auto, standard, high",
+                            value,
+                        )
+                    );
+                }
+
+                properties.color_precision =
+                    Some(normalized);
+            }
+
             other => {
                 return Err(
                     format!(
-                        "Unknown override property '{}'; supported properties: texture, palette, fps, speed",
+                        "Unknown policy property '{}'; supported properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision",
                         other,
                     )
                 );
@@ -604,7 +673,7 @@ fn parse_override_properties(
 
     if properties.is_empty() {
         return Err(
-            "An override must define at least one property"
+            "A policy must define at least one property"
                 .to_string()
         );
     }
@@ -613,7 +682,7 @@ fn parse_override_properties(
 }
 
 
-fn split_override_property(
+fn split_policy_property(
     token: &str,
 ) -> Result<(&str, &str), String> {
 
@@ -625,7 +694,7 @@ fn split_override_property(
             .ok_or_else(
                 || {
                     format!(
-                        "Invalid override property '{}'; use NAME:VALUE or NAME=VALUE",
+                        "Invalid policy property '{}'; use NAME:VALUE or NAME=VALUE",
                         token,
                     )
                 }
@@ -642,13 +711,109 @@ fn split_override_property(
     {
         return Err(
             format!(
-                "Invalid override property '{}'; both name and value are required",
+                "Invalid policy property '{}'; both name and value are required",
                 token,
             )
         );
     }
 
     Ok((name, value))
+}
+
+
+fn parse_control(
+    args: &[String],
+) -> Result<Command, String> {
+
+    if args.len() > 1 {
+        return Err(
+            "--control accepts at most one shader filename or path"
+                .to_string()
+        );
+    }
+
+
+    let shader_name =
+        match args.first() {
+            Some(value) => {
+                let value =
+                    value.trim();
+
+
+                if value.is_empty()
+                    || value.starts_with('-')
+                {
+                    return Err(
+                        "--control accepts an optional shader filename or path"
+                            .to_string()
+                    );
+                }
+
+
+                Some(
+                    value.to_string()
+                )
+            }
+
+            None => {
+                None
+            }
+        };
+
+
+    Ok(
+        Command::Control {
+            shader_name,
+        }
+    )
+}
+
+
+fn parse_edit_shader(
+    args: &[String],
+) -> Result<Command, String> {
+
+    if args.len() > 1 {
+        return Err(
+            "--edit-shader accepts at most one shader filename or path"
+                .to_string()
+        );
+    }
+
+
+    let shader_name =
+        match args.first() {
+            Some(value) => {
+                let value =
+                    value.trim();
+
+
+                if value.is_empty()
+                    || value.starts_with('-')
+                {
+                    return Err(
+                        "--edit-shader accepts an optional shader filename or path"
+                            .to_string()
+                    );
+                }
+
+
+                Some(
+                    value.to_string()
+                )
+            }
+
+            None => {
+                None
+            }
+        };
+
+
+    Ok(
+        Command::EditShader {
+            shader_name,
+        }
+    )
 }
 
 
@@ -1216,11 +1381,9 @@ fn validate_preview_texture_palette(
     value: &str,
 ) -> Result<(), String> {
 
-    validate_named_value(
+    validate_hex_palette(
         value,
-        "texture palette",
-        VALID_PREVIEW_TEXTURE_PALETTES
-            .as_slice(),
+        false,
     )
 }
 
@@ -1242,11 +1405,51 @@ fn validate_texture_palette(
     value: &str,
 ) -> Result<(), String> {
 
-    validate_named_value(
+    validate_hex_palette(
         value,
-        "texture palette",
-        VALID_TEXTURE_PALETTES
-            .as_slice(),
+        true,
+    )
+}
+
+
+fn validate_hex_palette(
+    value: &str,
+    allow_random: bool,
+) -> Result<(), String> {
+
+    let normalized =
+        value.trim();
+
+
+    if allow_random
+        && normalized.eq_ignore_ascii_case(
+            RANDOM_PALETTE_VALUE
+        )
+    {
+        return Ok(());
+    }
+
+
+    crate::palettes::PaletteColor::parse_hex(
+        normalized
+    )
+    .map(
+        |_| ()
+    )
+    .map_err(
+        |_| {
+            if allow_random {
+                format!(
+                    "Invalid texture palette '{}'; specify #rrggbb or random",
+                    value,
+                )
+            } else {
+                format!(
+                    "Invalid texture palette '{}'; specify #rrggbb",
+                    value,
+                )
+            }
+        }
     )
 }
 
@@ -1337,34 +1540,39 @@ pub fn print_help() {
              -V, --version\n\
                  Display the Screenshaver version.\n\
          \n\
-             --preview-texture --family FAMILY[:COUNT] [--palette PALETTE]\n\
+             --preview-texture --family FAMILY[:COUNT] [--palette #RRGGBB]\n\
                  Preview one procedurally generated texture.\n\
                  COUNT may range from 1 through 1024.\n\
                  This command does not consult screenshaver.toml.\n\
          \n\
              --preview-shader PATH [--interval SECONDS] [--fps FPS] [--speed MULTIPLIER]\n\
-                              [--texture FAMILY[:COUNT]] [--palette PALETTE]\n\
+                              [--texture FAMILY[:COUNT]] [--palette #RRGGBB|random]\n\
                  Preview one shader or all shaders directly inside a folder.\n\
                  Folder previews use a 30-second interval unless overridden.\n\
                  --speed accepts an animation multiplier from 0.01 through 10.0.\n\
                  The default animation speed is 1.0.\n\
-                 Command-line texture values override TOML selection values.\n\
+                 Command-line texture values take precedence over TOML selection values.\n\
                  --texture and --palette are accepted as shorter aliases.\n\
+         \n\
+             --control [PATH]\n\
+                 Open the Screenshaver Control Center.\n\
+                 If PATH is supplied, preload that shader for policy editing.\n\
+         \n\
+             --edit-shader [PATH]\n\
+                 Temporary compatibility command for the Control Center.\n\
+                 This option will be removed after --control migration is complete.\n\
          \n\
              --list-textures\n\
                  Display available procedural texture families.\n\
          \n\
-             --list-palettes\n\
-                 Display available procedural texture palettes.\n\
-         \n\
-             --add-override TARGET SHADER PROPERTY [PROPERTY ...]\n\
-                 Add a complete screensaver or wallpaper shader override.\n\
-                 Properties: texture, palette, fps, speed.\n\
+             --add-policy TARGET SHADER PROPERTY [PROPERTY ...]\n\
+                 Add a complete screensaver or wallpaper shader policy.\n\
+                 Properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision.\n\
                  PROPERTY may use NAME:VALUE or NAME=VALUE syntax.\n\
-         \n             --delete-override TARGET SHADER\n\
-                 Delete an existing screensaver or wallpaper shader override.\n\
-         \n             --list-overrides [TARGET]\n\
-                 List both override tables, or only the selected target.\n\
+         \n             --delete-policy TARGET SHADER\n\
+                 Delete an existing screensaver or wallpaper shader policy.\n\
+         \n             --list-policies [TARGET]\n\
+                 List both policy tables, or only the selected target.\n\
          \n             --delete-cache\n\
                  Delete all Screenshaver cached/preprocessed shaders.\n\
          \n\
@@ -1379,30 +1587,29 @@ pub fn print_help() {
              noise\n\
              radial\n\
          \n\
-         Texture palettes:\n\
-             brick\n\
-             bronze\n\
-             lichen\n\
-             mist\n\
-             sandstone\n\
-             slate\n\
+         Texture palette colors:\n\
+             Use #RRGGBB for an explicit hexadecimal RGB color.\n\
+             Use random where supported to select a random RGB color.\n\
          \n\
          Examples:\n\
              screenshaver --start\n\
              screenshaver --stop\n\
              screenshaver --preview-texture --family noise:1024\n\
-             screenshaver --preview-texture --family marble --palette sandstone\n\
+             screenshaver --preview-texture --family marble --palette #a1825b\n\
              screenshaver --preview-shader \"Heartfelt.glsl\"\n\
              screenshaver --preview-shader \"Heartfelt.glsl\" --texture clouds\n\
-             screenshaver --preview-shader \"Heartfelt.glsl\" --palette mist\n\
-             screenshaver --add-override screensaver CandyWarp.fs texture:bricks palette:mist fps:24 speed:0.5\n\
-             screenshaver --delete-override wallpaper CandyWarp.fs\n\
-             screenshaver --list-overrides screensaver\n\
+             screenshaver --preview-shader \"Heartfelt.glsl\" --palette #808e9c\n\
+             screenshaver --control\n\
+             screenshaver --control \"Heartfelt.glsl\"\n\
+             screenshaver --edit-shader \"Heartfelt.glsl\"\n\
+             screenshaver --add-policy screensaver CandyWarp.fs texture:bricks palette:#808e9c fps:24 speed:0.5 anti_aliasing:fxaa dithering:subtle color_precision:high\n\
+             screenshaver --delete-policy wallpaper CandyWarp.fs\n\
+             screenshaver --list-policies screensaver\n\
          \n\
          Configuration:\n\
              ~/.config/screenshaver/\n\
              ~/.config/screenshaver/screenshaver.toml\n\
-             ~/.config/screenshaver/shaders/\n\
+             ~/.config/screenshaver/screensavers/\n\
              ~/.config/screenshaver/cache/\n\
              ~/.config/screenshaver/rejected/\n\
              ~/.config/screenshaver/screenshaver.log\n\

@@ -13,13 +13,15 @@ mod parse_texture_specification;
 mod define_constants;
 mod locate_paths;
 mod delete_cache;
+mod manage_cache;
 
 mod query_session;
 mod session_backend;
 
+mod manage_configuration;
 mod manage_shader;
 mod manage_textures;
-mod manage_overrides;
+mod manage_policies;
 mod classify_shader;
 mod isf_types;
 mod parse_isf;
@@ -43,6 +45,9 @@ mod generate_radial;
 mod generate_textures;
 mod preview_texture;
 mod preview_shader;
+mod edit_shader;
+mod editor_layout;
+mod editor_theme;
 mod preview_shader_directory;
 mod palettes;
 mod display_texture;
@@ -67,6 +72,12 @@ mod x11_wallpaper;
 mod glx_context;
 mod fps_monitor;
 
+mod postprocess_shader;
+mod render_passthrough;
+mod render_fxaa;
+mod render_dithering;
+mod select_render_precision;
+
 use std::sync::Arc;
 use std::sync::atomic::{
     AtomicBool,
@@ -77,14 +88,14 @@ use std::io::{self, Write};
 
 
 
-fn confirm_override_replacement(
+fn confirm_policy_replacement(
     shader: &str,
-    target: crate::manage_overrides::OverrideTarget,
+    target: crate::manage_policies::PolicyTarget,
 ) -> Result<bool, String> {
 
     loop {
         print!(
-            "Shader '{}' already has an override in [{}] -- delete it? [Y/n] ",
+            "Shader '{}' already has an policy in [{}] -- delete it? [Y/n] ",
             shader,
             target.table_name(),
         );
@@ -170,6 +181,8 @@ let runtime_logfile =
         | crate::parse_arguments::Command::Start
         | crate::parse_arguments::Command::PreviewTexture { .. }
         | crate::parse_arguments::Command::PreviewShader { .. }
+        | crate::parse_arguments::Command::Control { .. }
+        | crate::parse_arguments::Command::EditShader { .. }
         | crate::parse_arguments::Command::DeleteCache => {
 
             let logfile =
@@ -235,7 +248,7 @@ match command {
     }
 
 
-    crate::parse_arguments::Command::AddOverride {
+    crate::parse_arguments::Command::AddPolicy {
         target,
         shader,
         properties,
@@ -245,7 +258,7 @@ match command {
             crate::locate_paths::config_path();
 
         let exists =
-            match crate::manage_overrides::override_exists(
+            match crate::manage_policies::policy_exists(
                 &cfg_path,
                 target,
                 &shader,
@@ -264,7 +277,7 @@ match command {
 
         if exists {
             let replace =
-                match confirm_override_replacement(
+                match confirm_policy_replacement(
                     &shader,
                     target,
                 ) {
@@ -282,13 +295,13 @@ match command {
 
             if !replace {
                 println!(
-                    "Override addition cancelled."
+                    "Policy addition cancelled."
                 );
 
                 return;
             }
 
-            match crate::manage_overrides::replace_override(
+            match crate::manage_policies::replace_policy(
                 &cfg_path,
                 target,
                 &shader,
@@ -296,7 +309,7 @@ match command {
             ) {
                 Ok(()) => {
                     println!(
-                        "Replaced {} override for {}.",
+                        "Replaced {} policy for {}.",
                         target.name(),
                         shader,
                     );
@@ -310,7 +323,7 @@ match command {
                 }
             }
         } else {
-            match crate::manage_overrides::add_override(
+            match crate::manage_policies::add_policy(
                 &cfg_path,
                 target,
                 &shader,
@@ -318,7 +331,7 @@ match command {
             ) {
                 Ok(()) => {
                     println!(
-                        "Added {} override for {}.",
+                        "Added {} policy for {}.",
                         target.name(),
                         shader,
                     );
@@ -337,7 +350,7 @@ match command {
     }
 
 
-    crate::parse_arguments::Command::DeleteOverride {
+    crate::parse_arguments::Command::DeletePolicy {
         target,
         shader,
     } => {
@@ -345,14 +358,14 @@ match command {
         let cfg_path =
             crate::locate_paths::config_path();
 
-        match crate::manage_overrides::delete_override(
+        match crate::manage_policies::delete_policy(
             &cfg_path,
             target,
             &shader,
         ) {
             Ok(()) => {
                 println!(
-                    "Deleted {} override for {}.",
+                    "Deleted {} policy for {}.",
                     target.name(),
                     shader,
                 );
@@ -370,7 +383,7 @@ match command {
     }
 
 
-    crate::parse_arguments::Command::ListOverrides {
+    crate::parse_arguments::Command::ListPolicies {
         target,
     } => {
 
@@ -378,7 +391,7 @@ match command {
             crate::locate_paths::config_path();
 
         if let Err(error) =
-            crate::manage_overrides::list_overrides(
+            crate::manage_policies::list_policies(
                 &cfg_path,
                 target,
             )
@@ -480,6 +493,80 @@ crate::parse_arguments::Command::PreviewShader {
 }
 
 
+crate::parse_arguments::Command::Control {
+    shader_name,
+} => {
+
+    match crate::edit_shader::run(
+        shader_name
+    ) {
+
+        Ok(()) => {}
+
+        Err(error) => {
+
+            eprintln!(
+                "[CONTROL CENTER] {}",
+                error
+            );
+
+
+            if let Some(logfile) =
+                runtime_logfile.as_ref()
+            {
+                crate::logger::error(
+                    logfile,
+                    &format!(
+                        "[CONTROL_CENTER] {}",
+                        error,
+                    ),
+                );
+            }
+        }
+    }
+
+
+    return;
+}
+
+
+crate::parse_arguments::Command::EditShader {
+    shader_name,
+} => {
+
+    match crate::edit_shader::run(
+        shader_name
+    ) {
+
+        Ok(()) => {}
+
+        Err(error) => {
+
+            eprintln!(
+                "[SHADER EDITOR] {}",
+                error
+            );
+
+
+            if let Some(logfile) =
+                runtime_logfile.as_ref()
+            {
+                crate::logger::error(
+                    logfile,
+                    &format!(
+                        "[EDIT_SHADER] {}",
+                        error,
+                    ),
+                );
+            }
+        }
+    }
+
+
+    return;
+}
+
+
 crate::parse_arguments::Command::DeleteCache => {
 
     match crate::delete_cache::run() {
@@ -554,39 +641,6 @@ crate::parse_arguments::Command::ListTextures => {
     return;
 }
 
-
-crate::parse_arguments::Command::ListPalettes => {
-
-    println!(
-        "Available texture palettes:"
-    );
-
-    println!(
-        "    slate"
-    );
-
-    println!(
-        "    sandstone"
-    );
-
-    println!(
-        "    lichen"
-    );
-
-    println!(
-        "    mist"
-    );
-
-    println!(
-        "    bronze"
-    );
-
-    println!(
-        "    brick"
-    );
-
-    return;
-}
 
 }
 
@@ -676,7 +730,7 @@ crate::parse_arguments::Command::ListPalettes => {
         };
 
 
-    let cfg =
+    let mut cfg =
         result.config;
 
 
@@ -771,6 +825,20 @@ crate::parse_arguments::Command::ListPalettes => {
                 return;
             }
         };
+
+
+    if let Err(error) =
+        crate::manage_cache::delete_stale_cache_entries()
+    {
+        crate::logger::warning(
+            &logfile,
+            &format!(
+                "[CACHE] Garbage collection was skipped: {}",
+                error,
+            ),
+        );
+    }
+
 
     let (
         tray_command_sender,
@@ -1152,6 +1220,8 @@ crate::parse_arguments::Command::ListPalettes => {
                 cfg.wallpaper_fps_policy,
             animation_speed_policy:
                 cfg.wallpaper_speed_policy,
+            postprocess_policy:
+                cfg.wallpaper_postprocess_policy,
             tray_status:
                 tray_status.clone(),
         };
@@ -1219,6 +1289,119 @@ crate::parse_arguments::Command::ListPalettes => {
                 );
 
                 break;
+            }
+
+
+            Ok(crate::tray_icon::TrayCommand::Edit) => {
+
+                println!(
+                    "[TRAY] Control Center requested."
+                );
+
+                crate::logger::information(
+                    &logfile,
+                    "[TRAY] Control Center requested",
+                );
+
+                let active_wallpaper =
+                    tray_status.active_wallpaper();
+
+                if active_wallpaper.is_some() {
+                    wallpaper_control.request_pause_after_first_frame(
+                        running.as_ref()
+                    );
+                }
+
+                let edit_result =
+                    match active_wallpaper {
+                        Some(active_wallpaper) => {
+                            crate::edit_shader::run_wallpaper_only(
+                                active_wallpaper.path
+                            )
+                        }
+
+                        None => {
+                            crate::edit_shader::run(
+                                None
+                            )
+                        }
+                    };
+
+                if edit_result.is_ok() {
+                    let config_path =
+                        crate::locate_paths::config_path();
+
+                    match crate::load_config::load_config(
+                        &config_path
+                    ) {
+                        Ok(config_result) => {
+                            for diagnostic in
+                                &config_result.diagnostics
+                            {
+                                crate::logger::warning(
+                                    &logfile,
+                                    &format!(
+                                        "[TRAY] Configuration reload diagnostic: {}",
+                                        diagnostic,
+                                    ),
+                                );
+                            }
+
+                            cfg = config_result.config;
+
+                            wallpaper_control.request_policy_reload(
+                                crate::manage_wallpaper_runtime::WallpaperPolicyReload::from_config(
+                                    &cfg
+                                )
+                            );
+
+                            crate::logger::information(
+                                &logfile,
+                                "[TRAY] Reloaded configuration after Control Center closed",
+                            );
+                        }
+
+                        Err(error) => {
+                            crate::logger::error(
+                                &logfile,
+                                &format!(
+                                    "[TRAY] Unable to reload configuration after editing: {}",
+                                    error,
+                                ),
+                            );
+                        }
+                    }
+                }
+
+                if tray_status.active_wallpaper().is_some() {
+                    wallpaper_control.resume_and_wait_for_frame(
+                        running.as_ref()
+                    );
+                }
+
+                match edit_result {
+                    Ok(()) => {
+                        crate::logger::information(
+                            &logfile,
+                            "[TRAY] Control Center closed",
+                        );
+                    }
+
+                    Err(error) => {
+                        eprintln!(
+                            "[TRAY] Unable to open Control Center: {}",
+                            error
+                        );
+
+                        crate::logger::error(
+                            &logfile,
+                            &format!(
+                                "[TRAY] Unable to open Control Center: {}",
+                                error,
+                            ),
+                        );
+                    }
+                }
             }
 
 
@@ -1314,144 +1497,270 @@ crate::parse_arguments::Command::ListPalettes => {
                     "[SESSION] Session idle: engaging renderer",
                 );
 
-
                 println!(
                     "[MAIN] Session idle: engaging renderer"
                 );
 
-
-                let shader_mode =
+                let configured_shader_mode =
                     match cfg.mode
                         .split(':')
                         .next()
                         .unwrap_or("single")
                     {
-
                         "single" => {
-
                             crate::manage_shader::ShaderMode::Single(
                                 parsed_mode.argument.clone()
                             )
                         }
-
-
                         "random" => {
-
                             crate::manage_shader::ShaderMode::Random
                         }
-
-
                         "ordered" => {
-
                             crate::manage_shader::ShaderMode::Ordered
                         }
-
-
                         _ => {
-
                             crate::manage_shader::ShaderMode::Single(
                                 parsed_mode.argument.clone()
                             )
                         }
                     };
 
+                let mut next_shader_mode =
+                    configured_shader_mode.clone();
 
-                let shader_manager =
-                    crate::manage_shader::ShaderManager::new(
-                        shader_mode
-                    );
+                let mut next_shader_interval =
+                    parsed_interval.seconds;
 
+                let mut next_initial_shader:
+                    Option<String> =
+                    None;
 
-                let mut renderer =
-                    match crate::render_frame::FrameRenderer::new(
-                        &sdl,
-                        shader_manager,
-                        parsed_interval.seconds,
-                        cfg.screensaver_speed_policy.clone(),
-                        cfg.global_rendered_fps,
-                        cfg.screensaver_fps_overrides.clone(),
-                        cfg.texture_policy.clone(),
-                        cfg.subtitles,
-                        cfg.subtitle_placement,
-                    ) {
+                'screensaver_session: loop {
+                    let shader_manager =
+                        if let Some(initial_shader) =
+                            next_initial_shader.take()
+                        {
+                            crate::manage_shader::ShaderManager::new_with_initial_shader(
+                                next_shader_mode.clone(),
+                                initial_shader,
+                            )
+                        } else {
+                            crate::manage_shader::ShaderManager::new(
+                                next_shader_mode.clone()
+                            )
+                        };
 
-                        Ok(renderer) => renderer,
-
-                        Err(error) => {
-
-                            eprintln!(
-                                "[MAIN] Renderer initialization failed: {}",
-                                error
+                    let effective_shader_interval =
+                        if shader_manager.shader_count() <= 1
+                            && next_shader_interval != 0
+                        {
+                            println!(
+                                "Screensaver rotation disabled: only one eligible shader is available."
                             );
 
-
-                            crate::logger::error(
+                            crate::logger::information(
                                 &logfile,
-                                &format!(
-                                    "[RENDER] Renderer initialization failed: {}",
-                                    error,
-                                ),
+                                "[RENDER] Screensaver rotation disabled: only one eligible shader is available",
                             );
 
+                            0
+                        } else {
+                            next_shader_interval
+                        };
 
-                            break;
-                        }
-                    };
+                    let mut renderer =
+                        match crate::render_frame::FrameRenderer::new(
+                            &sdl,
+                            shader_manager,
+                            effective_shader_interval,
+                            cfg.screensaver_speed_policy.clone(),
+                            cfg.global_rendered_fps,
+                            cfg.screensaver_fps_policy_entries.clone(),
+                            cfg.texture_policy.clone(),
+                            cfg.screensaver_postprocess_policy.clone(),
+                            cfg.subtitles,
+                            cfg.subtitle_placement,
+                        ) {
+                            Ok(renderer) => renderer,
 
+                            Err(error) => {
+                                eprintln!(
+                                    "[MAIN] Renderer initialization failed: {}",
+                                    error
+                                );
 
-                crate::logger::information(
-                    &logfile,
-                    "[RENDER] Renderer started",
-                );
+                                crate::logger::error(
+                                    &logfile,
+                                    &format!(
+                                        "[RENDER] Renderer initialization failed: {}",
+                                        error,
+                                    ),
+                                );
 
+                                wallpaper_control.resume_and_wait_for_frame(
+                                    running.as_ref()
+                                );
 
-                renderer.run(
-                    running.as_ref(),
-                    &wallpaper_control,
-                );
-
-
-                if running.load(Ordering::SeqCst) {
+                                break 'screensaver_session;
+                            }
+                        };
 
                     crate::logger::information(
                         &logfile,
-                        "[SESSION] User input: disengaging renderer",
+                        "[RENDER] Renderer started",
                     );
 
+                    let renderer_outcome =
+                        renderer.run(
+                            running.as_ref(),
+                            &wallpaper_control,
+                        );
 
-                    println!(
-                        "[MAIN] User input: disengaging renderer"
-                    );
+                    drop(renderer);
+
+                    match renderer_outcome {
+                        crate::render_frame::ScreensaverRunOutcome::Exit => {
+                            if running.load(Ordering::SeqCst) {
+                                crate::logger::information(
+                                    &logfile,
+                                    "[SESSION] User input: disengaging renderer",
+                                );
+
+                                println!(
+                                    "[MAIN] User input: disengaging renderer"
+                                );
+                            }
+
+                            break 'screensaver_session;
+                        }
+
+                        crate::render_frame::ScreensaverRunOutcome::EditCurrentShader(
+                            shader_path
+                        ) => {
+                            crate::logger::information(
+                                &logfile,
+                                &format!(
+                                    "[SESSION] Editing active screensaver shader: {}",
+                                    shader_path.display(),
+                                ),
+                            );
+
+                            let edit_result =
+                                crate::edit_shader::run_screensaver_only(
+                                    shader_path.clone()
+                                );
+
+                            if let Err(error) = &edit_result {
+                                eprintln!(
+                                    "[SCREENSAVER EDIT] {}",
+                                    error
+                                );
+
+                                crate::logger::error(
+                                    &logfile,
+                                    &format!(
+                                        "[SCREENSAVER EDIT] {}",
+                                        error,
+                                    ),
+                                );
+                            }
+
+                            let config_path =
+                                crate::locate_paths::config_path();
+
+                            match crate::load_config::load_config(
+                                &config_path
+                            ) {
+                                Ok(config_result) => {
+                                    for diagnostic in
+                                        &config_result.diagnostics
+                                    {
+                                        crate::logger::warning(
+                                            &logfile,
+                                            &format!(
+                                                "[SCREENSAVER EDIT] Configuration reload diagnostic: {}",
+                                                diagnostic,
+                                            ),
+                                        );
+                                    }
+
+                                    cfg = config_result.config;
+                                }
+
+                                Err(error) => {
+                                    crate::logger::error(
+                                        &logfile,
+                                        &format!(
+                                            "[SCREENSAVER EDIT] Unable to reload configuration: {}",
+                                            error,
+                                        ),
+                                    );
+                                }
+                            }
+
+                            let Some(shader_name) =
+                                shader_path
+                                    .file_name()
+                                    .and_then(
+                                        |name| name.to_str()
+                                    )
+                                    .map(
+                                        str::to_string
+                                    )
+                            else {
+                                crate::logger::error(
+                                    &logfile,
+                                    "[SCREENSAVER EDIT] Active shader path has no valid filename",
+                                );
+
+                                wallpaper_control.resume_and_wait_for_frame(
+                                    running.as_ref()
+                                );
+
+                                break 'screensaver_session;
+                            };
+
+                            next_shader_mode =
+                                configured_shader_mode.clone();
+
+                            next_shader_interval =
+                                parsed_interval.seconds;
+
+                            next_initial_shader =
+                                Some(shader_name);
+
+                            if edit_result.is_ok() {
+                                crate::logger::information(
+                                    &logfile,
+                                    "[SCREENSAVER EDIT] Resuming edited screensaver shader",
+                                );
+                            } else {
+                                crate::logger::warning(
+                                    &logfile,
+                                    "[SCREENSAVER EDIT] Editor failed; resuming the previous shader with the best available configuration",
+                                );
+                            }
+                        }
+                    }
                 }
 
-
-                drop(renderer);
-
-
                 if running.load(Ordering::SeqCst) {
-
                     if cfg.debug_log {
-
                         crate::logger::debug(
                             &logfile,
                             "[MAIN] Returning to session loop",
                         );
                     }
 
-
                     println!(
                         "[MAIN] Returning to session loop..."
                     );
 
-
                     continue;
-
                 } else {
-
                     break;
                 }
             }
-
 
             crate::query_session::SessionState::Active => {}
         }

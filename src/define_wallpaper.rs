@@ -85,13 +85,16 @@ pub struct WallpaperRuntime {
         bool,
 
     pub texture_policy:
-        crate::load_config::TextureSelectionPolicy,
+        crate::load_config::TexturePolicy,
 
     pub fps_policy:
-        crate::load_config::FpsSelectionPolicy,
+        crate::load_config::FpsPolicy,
 
     pub animation_speed_policy:
         crate::load_config::AnimationSpeedPolicy,
+
+    pub postprocess_policy:
+        crate::load_config::PostprocessPolicy,
 
     pub tray_status:
         crate::tray_icon::TrayStatusControl,

@@ -1,10 +1,10 @@
 [package]
 name = "screenshaver"
-version = "0.4.5"
+version = "0.5.0"
 edition = "2024"
 
 [dependencies]
-sdl2 = { version = "0.38", features = ["ttf"] }
+sdl2 = { version = "0.38", features = ["ttf", "raw-window-handle"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
@@ -26,3 +26,8 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 regex = "1"
 ksni = { version = "0.3", features = ["blocking"] }
 signal-hook = "0.3"
+egui = "0.33"
+egui_glow = "0.33"
+glow = "0.16"
+rfd = "0.17.2"
+sha2 = "0.10"

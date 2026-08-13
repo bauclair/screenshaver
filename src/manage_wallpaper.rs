@@ -1,6 +1,127 @@
 use crate::define_wallpaper::WallpaperRuntime;
 
 
+pub fn load_shader_entries(
+) -> Result<
+    Vec<crate::manage_shader::ShaderEntry>,
+    String,
+> {
+
+    let wallpaper_directory =
+        crate::locate_wallpaper::wallpaper_directory()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to locate the wallpaper directory: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    let shader_files =
+        crate::locate_wallpaper::locate_shader_files(
+            &wallpaper_directory
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to enumerate wallpaper shaders in {}: {}",
+                    wallpaper_directory.display(),
+                    error,
+                )
+            }
+        )?;
+
+
+    let mut shader_entries =
+        shader_files
+            .iter()
+            .filter_map(
+                |shader_file| {
+                    shader_file
+                        .file_name()
+                        .and_then(
+                            |name| {
+                                name.to_str()
+                            }
+                        )
+                        .map(
+                            |name| {
+                                crate::manage_shader::ShaderEntry::with_source_path(
+                                    name.to_string(),
+                                    shader_file.clone(),
+                                )
+                            }
+                        )
+                }
+            )
+            .collect::<Vec<_>>();
+
+
+    let config_path =
+        crate::locate_paths::config_path();
+
+
+    match crate::manage_policies::external_policy_paths(
+        &config_path,
+        crate::manage_policies::PolicyTarget::Wallpaper,
+    ) {
+        Ok(external_paths) => {
+
+            for (
+                name,
+                source_path,
+            ) in external_paths
+            {
+                if !source_path.is_file() {
+                    eprintln!(
+                        "[WALLPAPER] External wallpaper shader '{}' is unavailable: {}",
+                        name,
+                        source_path.display(),
+                    );
+
+                    continue;
+                }
+
+
+
+                shader_entries.push(
+                    crate::manage_shader::ShaderEntry::with_source_path(
+                        name,
+                        source_path,
+                    )
+                );
+            }
+        }
+
+
+        Err(error) => {
+            return Err(
+                format!(
+                    "Unable to load external wallpaper shader paths: {}",
+                    error,
+                )
+            );
+        }
+    }
+
+
+    shader_entries.sort_by(
+        |left, right| {
+            left.name.cmp(
+                &right.name
+            )
+        }
+    );
+
+
+    Ok(
+        shader_entries
+    )
+}
+
+
 pub fn run(
     configured_mode: &str,
     runtime: &WallpaperRuntime,
@@ -185,32 +306,30 @@ pub fn run(
     }
 
 
-    let shader_names =
-        shader_files
-            .iter()
-            .filter_map(
-                |shader_file| {
-                    shader_file
-                        .file_name()
-                        .and_then(
-                            |name| {
-                                name.to_str()
-                            }
-                        )
-                        .map(
-                            |name| {
-                                name.to_string()
-                            }
-                        )
-                }
-            )
-            .collect::<Vec<_>>();
+    let shader_entries =
+        load_shader_entries()?;
+
+
+    let shader_interval =
+        if shader_entries.len() <= 1
+            && shader_interval.is_some()
+        {
+            println!();
+
+            println!(
+                "Wallpaper rotation disabled: only one eligible shader is available."
+            );
+
+            None
+        } else {
+            shader_interval
+        };
 
 
     let shader_manager =
-        crate::manage_shader::ShaderManager::from_shader_list(
+        crate::manage_shader::ShaderManager::from_shader_entries(
             shader_mode,
-            shader_names,
+            shader_entries,
         );
 
 

@@ -3,7 +3,7 @@ use std::time::{
     UNIX_EPOCH,
 };
 
-use crate::palettes::Palette;
+use crate::palettes::PaletteColor;
 use crate::parse_texture_specification::TextureSpecification;
 
 
@@ -65,7 +65,7 @@ pub fn run(
 
             Some(name) => {
 
-                match Palette::from_name(
+                match PaletteColor::parse_hex(
                     &name
                 ) {
 
@@ -79,7 +79,7 @@ pub fn run(
                         crate::logger::error(
                             &logfile,
                             &format!(
-                                "[TEXTURE_PREVIEW] Palette selection failed: {}",
+                                "[TEXTURE_PREVIEW] PaletteColor selection failed: {}",
                                 error,
                             ),
                         );
@@ -110,7 +110,7 @@ pub fn run(
     crate::logger::debug(
         &logfile,
         &format!(
-            "[TEXTURE_PREVIEW] Palette selection source: {}",
+            "[TEXTURE_PREVIEW] PaletteColor selection source: {}",
             palette_source,
         ),
     );
@@ -200,7 +200,7 @@ pub fn run(
 
 
     println!(
-        "Palette: {}",
+        "PaletteColor: {}",
         texture.palette
     );
 
@@ -284,29 +284,11 @@ pub fn run(
 
 fn random_palette(
     seed: u64,
-) -> Palette {
+) -> PaletteColor {
 
-    let palettes = [
-        Palette::Slate,
-        Palette::Sandstone,
-        Palette::Lichen,
-        Palette::Mist,
-        Palette::Bronze,
-        Palette::Brick,
-    ];
-
-
-    let index =
-        (
-            seed
-                % palettes.len()
-                    as u64
-        ) as usize;
-
-
-    palettes[
-        index
-    ]
+    PaletteColor::random_from_seed(
+        seed
+    )
 }
 
 

@@ -5,7 +5,7 @@
 
 use std::fmt;
 use std::str::FromStr;
-use crate::palettes::Palette;
+use crate::palettes::PaletteColor;
 use crate::parse_texture_specification::TextureSpecification;
 
 
@@ -278,7 +278,7 @@ pub struct GeneratedTexture {
         TextureSpecification,
 
     pub palette:
-        Palette,
+        PaletteColor,
 
     pub seed:
         u64,
@@ -292,7 +292,7 @@ impl GeneratedTexture {
         height: u32,
         pixels: Vec<u8>,
         family: TextureFamily,
-        palette: Palette,
+        palette: PaletteColor,
         seed: u64,
     ) -> Result<Self, String> {
 
@@ -411,7 +411,7 @@ impl GeneratedTexture {
 
 pub fn generate_from_specification(
     specification: &TextureSpecification,
-    palette: Palette,
+    palette: PaletteColor,
     seed: u64,
 ) -> Result<GeneratedTexture, String> {
 
@@ -618,7 +618,11 @@ mod tests {
         let texture =
             generate_from_specification(
                 &specification,
-                Palette::Mist,
+                PaletteColor::new(
+            128,
+            142,
+            156,
+        ),
                 1,
             )
             .expect(

@@ -16,7 +16,7 @@ use crate::generate_textures::{
     TEXTURE_SIZE,
 };
 
-use crate::palettes::Palette;
+use crate::palettes::PaletteColor;
 
 
 // ============================================================
@@ -152,7 +152,7 @@ impl BrickLayout {
 // ============================================================
 
 pub fn generate(
-    palette: Palette,
+    palette: PaletteColor,
     seed: u64,
     requested_primitive_count: usize,
 ) -> Result<GeneratedTexture, String> {
@@ -246,7 +246,7 @@ fn brick_wall_color(
     x: f32,
     y: f32,
     layout: &BrickLayout,
-    palette: Palette,
+    palette: PaletteColor,
     seed: u64,
 ) -> [u8; 4] {
 
@@ -964,7 +964,11 @@ mod tests {
                 0.37,
                 0.63,
                 &layout,
-                Palette::Brick,
+                PaletteColor::new(
+            154,
+            66,
+            42,
+        ),
                 999,
             );
 
@@ -974,7 +978,11 @@ mod tests {
                 0.37,
                 0.63,
                 &layout,
-                Palette::Brick,
+                PaletteColor::new(
+            154,
+            66,
+            42,
+        ),
                 999,
             );
 
@@ -1022,7 +1030,11 @@ mod tests {
                         sample_x,
                         sample_y,
                         &layout,
-                        Palette::Brick,
+                        PaletteColor::new(
+            154,
+            66,
+            42,
+        ),
                         1,
                     );
 
@@ -1032,7 +1044,11 @@ mod tests {
                         sample_x,
                         sample_y,
                         &layout,
-                        Palette::Brick,
+                        PaletteColor::new(
+            154,
+            66,
+            42,
+        ),
                         2,
                     );
 
@@ -1111,7 +1127,11 @@ mod tests {
 
         let texture =
             generate(
-                Palette::Brick,
+                PaletteColor::new(
+            154,
+            66,
+            42,
+        ),
                 12345,
                 144,
             )

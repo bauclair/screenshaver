@@ -11,7 +11,7 @@ use crate::generate_textures::{
     TEXTURE_SIZE,
 };
 
-use crate::palettes::Palette;
+use crate::palettes::PaletteColor;
 
 
 // ============================================================
@@ -104,7 +104,7 @@ const BRIGHTNESS: f32 =
 // ============================================================
 
 pub fn generate(
-    palette: Palette,
+    palette: PaletteColor,
     seed: u64,
     requested_primitive_count: usize,
 ) -> Result<GeneratedTexture, String> {
@@ -981,7 +981,11 @@ mod tests {
 
         let texture =
             generate(
-                Palette::Sandstone,
+                PaletteColor::new(
+            161,
+            130,
+            91,
+        ),
                 12345,
                 144,
             )

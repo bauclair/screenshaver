@@ -88,7 +88,7 @@ fn show_help() {
          Configuration:\n\
              ~/.config/screenshaver/\n\
              ~/.config/screenshaver/screenshaver.toml\n\
-             ~/.config/screenshaver/shaders/\n\
+             ~/.config/screenshaver/screensavers/\n\
              ~/.config/screenshaver/cache/\n\
              ~/.config/screenshaver/screenshaver.log\n\
          \n\
@@ -122,3 +122,4 @@ fn show_unknown_option(
         option,
     );
 }
+

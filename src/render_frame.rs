@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use sdl2::event::Event;
+use sdl2::keyboard::{Keycode, Mod};
 use sdl2::video::{GLContext, GLProfile, Window};
 
 use crate::fps_monitor::{
@@ -15,10 +16,18 @@ use crate::fps_monitor::{
 const INPUT_STARTUP_GRACE: Duration = Duration::from_millis(750);
 const MOUSE_MOTION_EXIT_THRESHOLD: i32 = 4;
 
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ScreensaverRunOutcome {
+    Exit,
+    EditCurrentShader(PathBuf),
+}
+
 #[derive(Debug)]
 struct ActiveShader {
     program: u32,
     shader_name: String,
+    source_path: Option<PathBuf>,
     channel_usage: crate::preprocess_shader::ShaderChannelUsage,
     shader_inputs: Vec<crate::isf_types::ShaderInput>,
     built_in_default: bool,
@@ -49,10 +58,10 @@ enum FrameOutputPolicy {
 enum RenderFpsPolicy {
     Screensaver {
         global_rendered_fps: u32,
-        fps_overrides: Vec<crate::load_config::FpsOverride>,
+        fps_policy_entries: Vec<crate::load_config::FpsPolicyEntry>,
     },
     Wallpaper(
-        crate::load_config::FpsSelectionPolicy,
+        crate::load_config::FpsPolicy,
     ),
 }
 
@@ -60,21 +69,24 @@ impl RenderFpsPolicy {
     fn rendered_fps_for_shader(
         &self,
         shader_name: &str,
+        source_path: Option<&Path>,
     ) -> u32 {
         match self {
             Self::Screensaver {
                 global_rendered_fps,
-                fps_overrides,
+                fps_policy_entries,
             } => {
                 resolve_shader_fps(
                     (*global_rendered_fps).max(1),
-                    fps_overrides,
+                    fps_policy_entries,
                     shader_name,
+                    source_path,
                 )
             }
             Self::Wallpaper(policy) => {
                 policy.rendered_fps_for_shader(
                     shader_name,
+                    source_path,
                     None,
                 )
             }
@@ -85,6 +97,7 @@ impl RenderFpsPolicy {
 #[derive(Clone, Debug)]
 pub(crate) struct FrameRenderMetadata {
     pub shader_name: String,
+    pub shader_path: Option<PathBuf>,
     pub animation_speed: f32,
     pub texture: Option<String>,
     pub palette: Option<String>,
@@ -108,6 +121,7 @@ pub(crate) struct FrameRenderEvents {
 
 
 pub(crate) struct FrameRenderEngine {
+    postprocess: crate::postprocess_shader::PostprocessPipeline,
     active_shader: ActiveShader,
     vao: u32,
     start_time: Instant,
@@ -127,6 +141,8 @@ pub(crate) struct FrameRenderEngine {
         Option<crate::display_overlay::OpenGlOverlay>,
     overlay_output_size: (u32, u32),
     fps_policy: RenderFpsPolicy,
+    postprocess_policy:
+        crate::load_config::PostprocessPolicy,
     output_policy: FrameOutputPolicy,
     configured_fps: u32,
     fps_warning_state: FpsWarningState,
@@ -147,12 +163,14 @@ impl FrameRenderEngine {
         animation_speed_policy:
             crate::load_config::AnimationSpeedPolicy,
         global_rendered_fps: u32,
-        fps_overrides:
+        fps_policy_entries:
             Vec<
-                crate::load_config::FpsOverride
+                crate::load_config::FpsPolicyEntry
             >,
         texture_policy:
-            crate::load_config::TextureSelectionPolicy,
+            crate::load_config::TexturePolicy,
+        postprocess_policy:
+            crate::load_config::PostprocessPolicy,
         subtitles: bool,
         subtitle_placement:
             crate::parse_subtitle_placement::SubtitlePlacement,
@@ -166,10 +184,11 @@ impl FrameRenderEngine {
             None,
             RenderFpsPolicy::Screensaver {
                 global_rendered_fps,
-                fps_overrides,
+                fps_policy_entries,
             },
             FrameOutputPolicy::PreserveAlpha,
             texture_policy,
+            postprocess_policy,
             subtitles,
             true,
             subtitle_placement,
@@ -186,9 +205,11 @@ impl FrameRenderEngine {
         animation_speed_policy:
             crate::load_config::AnimationSpeedPolicy,
         fps_policy:
-            crate::load_config::FpsSelectionPolicy,
+            crate::load_config::FpsPolicy,
         texture_policy:
-            crate::load_config::TextureSelectionPolicy,
+            crate::load_config::TexturePolicy,
+        postprocess_policy:
+            crate::load_config::PostprocessPolicy,
         subtitles: bool,
         subtitle_placement:
             crate::parse_subtitle_placement::SubtitlePlacement,
@@ -205,6 +226,7 @@ impl FrameRenderEngine {
             ),
             FrameOutputPolicy::ForceOpaque,
             texture_policy,
+            postprocess_policy,
             subtitles,
             false,
             subtitle_placement,
@@ -223,7 +245,9 @@ impl FrameRenderEngine {
         fps_policy: RenderFpsPolicy,
         output_policy: FrameOutputPolicy,
         texture_policy:
-            crate::load_config::TextureSelectionPolicy,
+            crate::load_config::TexturePolicy,
+        postprocess_policy:
+            crate::load_config::PostprocessPolicy,
         subtitles: bool,
         render_fps_warning_overlay: bool,
         subtitle_placement:
@@ -244,6 +268,7 @@ impl FrameRenderEngine {
         let animation_speed =
             animation_speed_policy.animation_speed_for_shader(
                 &active_shader.shader_name,
+                active_shader.source_path.as_deref(),
                 None,
             );
 
@@ -263,8 +288,9 @@ impl FrameRenderEngine {
                 texture_policy
             );
 
-        texture_manager.prepare_for_shader(
+        texture_manager.prepare_for_shader_with_path(
             &active_shader.shader_name,
+            active_shader.source_path.as_deref(),
             active_shader.channel_usage,
         )?;
 
@@ -274,7 +300,8 @@ impl FrameRenderEngine {
 
         let configured_fps =
             fps_policy.rendered_fps_for_shader(
-                &active_shader.shader_name
+                &active_shader.shader_name,
+                active_shader.source_path.as_deref(),
             );
 
         let subtitle_overlay =
@@ -299,6 +326,19 @@ impl FrameRenderEngine {
                 None
             };
 
+        let postprocess_profile =
+            postprocess_policy.profile_for_shader(
+                &active_shader.shader_name,
+                active_shader.source_path.as_deref(),
+            );
+
+        let postprocess =
+            crate::postprocess_shader::PostprocessPipeline::new(
+                output_width,
+                output_height,
+                postprocess_profile,
+            )?;
+
         let mut vao =
             0_u32;
 
@@ -315,6 +355,7 @@ impl FrameRenderEngine {
 
         Ok(
             Self {
+                postprocess,
                 active_shader,
                 vao,
                 start_time:
@@ -337,6 +378,7 @@ impl FrameRenderEngine {
                         output_height,
                     ),
                 fps_policy,
+                postprocess_policy,
                 output_policy,
                 configured_fps,
                 fps_warning_state:
@@ -356,6 +398,112 @@ impl FrameRenderEngine {
                     Instant::now(),
             }
         )
+    }
+
+
+    pub(crate) fn reconfigure_active_wallpaper(
+        &mut self,
+        reload: crate::manage_wallpaper_runtime::WallpaperPolicyReload,
+        width: u32,
+        height: u32,
+    ) -> Result<(), String> {
+        let shader_name =
+            self.active_shader.shader_name.clone();
+
+        let mut replacement_texture_manager =
+            crate::manage_textures::TextureManager::new(
+                reload.texture_policy.clone()
+            );
+
+        replacement_texture_manager.prepare_for_shader_with_path(
+            &shader_name,
+            self.active_shader.source_path.as_deref(),
+            self.active_shader.channel_usage,
+        )?;
+
+        let replacement_animation_speed =
+            reload.animation_speed_policy
+                .animation_speed_for_shader(
+                    &shader_name,
+                    self.active_shader.source_path.as_deref(),
+                    None,
+                );
+
+        let replacement_configured_fps =
+            reload.fps_policy
+                .rendered_fps_for_shader(
+                    &shader_name,
+                    self.active_shader.source_path.as_deref(),
+                    None,
+                );
+
+        let replacement_postprocess_profile =
+            reload.postprocess_policy
+                .profile_for_shader(
+                    &shader_name,
+                    self.active_shader.source_path.as_deref(),
+                );
+
+        self.postprocess.resize(
+            width,
+            height,
+        )?;
+
+        self.postprocess.set_profile(
+            replacement_postprocess_profile
+        )?;
+
+        replacement_texture_manager.configure_program(
+            self.active_shader.program
+        );
+
+        self.texture_manager.delete_all();
+        self.texture_manager =
+            replacement_texture_manager;
+
+        self.animation_speed_policy =
+            reload.animation_speed_policy;
+        self.animation_speed =
+            replacement_animation_speed;
+
+        self.fps_policy =
+            RenderFpsPolicy::Wallpaper(
+                reload.fps_policy
+            );
+        self.configured_fps =
+            replacement_configured_fps.max(1);
+        self.target_frame_time =
+            Duration::from_secs_f64(
+                1.0 / self.configured_fps as f64
+            );
+        self.last_frame =
+            Instant::now();
+
+        self.postprocess_policy =
+            reload.postprocess_policy;
+
+        self.subtitle_overlay =
+            None;
+        self.overlay_output_size =
+            (width, height);
+        self.fps_warning_state =
+            FpsWarningState::Normal;
+        self.fps_blink_visible =
+            true;
+        self.last_fps_blink =
+            Instant::now();
+        self.frame_times.clear();
+
+        log_information(
+            &format!(
+                "[RENDER] Reconfigured active wallpaper '{}' (speed {:.3}x, {} FPS)",
+                shader_name,
+                self.animation_speed,
+                self.configured_fps,
+            )
+        );
+
+        Ok(())
     }
 
 
@@ -390,14 +538,33 @@ impl FrameRenderEngine {
         let shader_render_start =
             Instant::now();
 
-        unsafe {
-            gl::Viewport(
-                0,
-                0,
-                width as i32,
-                height as i32,
+        if let Err(error) =
+            self.postprocess.resize(
+                width,
+                height,
+            )
+        {
+            log_warning(
+                &format!(
+                    "[POSTPROCESS] Unable to resize scene target to {}x{}: {}",
+                    width,
+                    height,
+                    error,
+                )
             );
+        }
 
+        self.postprocess
+            .bind_scene_target();
+
+        let (
+            scene_width,
+            scene_height,
+        ) =
+            self.postprocess
+                .scene_dimensions();
+
+        unsafe {
             if self.output_policy
                 == FrameOutputPolicy::ForceOpaque
             {
@@ -487,8 +654,8 @@ impl FrameRenderEngine {
             {
                 gl::Uniform3f(
                     resolution_location,
-                    width as f32,
-                    height as f32,
+                    scene_width as f32,
+                    scene_height as f32,
                     1.0,
                 );
             }
@@ -509,7 +676,12 @@ impl FrameRenderEngine {
                     gl::TRUE,
                 );
             }
+        }
 
+        self.postprocess
+            .present_scene();
+
+        unsafe {
             gl::Finish();
         }
 
@@ -684,6 +856,8 @@ impl FrameRenderEngine {
         FrameRenderMetadata {
             shader_name:
                 self.active_shader.shader_name.clone(),
+            shader_path:
+                self.active_shader.source_path.clone(),
             animation_speed:
                 self.animation_speed,
             texture:
@@ -726,8 +900,9 @@ impl FrameRenderEngine {
         ) {
             Ok(new_shader) => {
                 if let Err(error) =
-                    self.texture_manager.prepare_for_shader(
+                    self.texture_manager.prepare_for_shader_with_path(
                         &new_shader.shader_name,
+                        new_shader.source_path.as_deref(),
                         new_shader.channel_usage,
                     )
                 {
@@ -761,6 +936,7 @@ impl FrameRenderEngine {
                     self.animation_speed_policy
                         .animation_speed_for_shader(
                             &new_shader.shader_name,
+                            new_shader.source_path.as_deref(),
                             None,
                         );
 
@@ -768,7 +944,15 @@ impl FrameRenderEngine {
                 let new_configured_fps =
                     self.fps_policy
                         .rendered_fps_for_shader(
-                            &new_shader.shader_name
+                            &new_shader.shader_name,
+                            new_shader.source_path.as_deref(),
+                        );
+
+                let new_postprocess_profile =
+                    self.postprocess_policy
+                        .profile_for_shader(
+                            &new_shader.shader_name,
+                            new_shader.source_path.as_deref(),
                         );
 
                 let new_overlay =
@@ -811,6 +995,34 @@ impl FrameRenderEngine {
 
                 let old_program =
                     self.active_shader.program;
+
+                if let Err(error) =
+                    self.postprocess.set_profile(
+                        new_postprocess_profile
+                    )
+                {
+                    unsafe {
+                        if new_shader.program
+                            != 0
+                        {
+                            gl::DeleteProgram(
+                                new_shader.program
+                            );
+                        }
+                    }
+
+                    log_warning(
+                        &format!(
+                            "[POSTPROCESS] Unable to apply replacement shader profile: {}",
+                            error,
+                        )
+                    );
+
+                    self.last_shader_switch =
+                        Instant::now();
+
+                    return false;
+                }
 
                 self.active_shader =
                     new_shader;
@@ -899,12 +1111,14 @@ impl FrameRenderer {
         animation_speed_policy:
             crate::load_config::AnimationSpeedPolicy,
         global_rendered_fps: u32,
-        fps_overrides:
+        fps_policy_entries:
             Vec<
-                crate::load_config::FpsOverride
+                crate::load_config::FpsPolicyEntry
             >,
         texture_policy:
-            crate::load_config::TextureSelectionPolicy,
+            crate::load_config::TexturePolicy,
+        postprocess_policy:
+            crate::load_config::PostprocessPolicy,
         subtitles: bool,
         subtitle_placement:
             crate::parse_subtitle_placement::SubtitlePlacement,
@@ -997,8 +1211,9 @@ impl FrameRenderer {
                 shader_interval,
                 animation_speed_policy,
                 global_rendered_fps,
-                fps_overrides,
+                fps_policy_entries,
                 texture_policy,
+                postprocess_policy,
                 subtitles,
                 subtitle_placement,
                 window_width,
@@ -1023,7 +1238,7 @@ impl FrameRenderer {
         &mut self,
         running: &AtomicBool,
         wallpaper_control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
-    ) {
+    ) -> ScreensaverRunOutcome {
         log_information(
             "[RENDER] Entering renderer-owned event loop"
         );
@@ -1031,42 +1246,44 @@ impl FrameRenderer {
         let mut first_frame_presented =
             false;
 
-
-        while running.load(Ordering::SeqCst) {
-            if self.pump_events() {
-                log_information(
-                    "[RENDER] User input requested renderer exit"
-                );
-
-
-                break;
+        let outcome = loop {
+            if !running.load(Ordering::SeqCst) {
+                break ScreensaverRunOutcome::Exit;
             }
 
+            match self.pump_events() {
+                Some(outcome) => {
+                    break outcome;
+                }
+                None => {}
+            }
 
             self.render_frame();
-
 
             if !first_frame_presented {
                 first_frame_presented =
                     true;
 
-
                 wallpaper_control.request_pause_after_first_frame(
                     running
                 );
             }
-        }
+        };
 
-        // Always release a paused wallpaper renderer, regardless of whether
-        // the screensaver ended because of SDL input, a quit event, or the
-        // shared runtime flag changing state.
-        wallpaper_control.resume_and_wait_for_frame(
-            running
-        );
+        // Keep wallpaper rendering paused while the active screensaver is
+        // handed to the policy editor. A replacement screensaver renderer
+        // will retain that pause until the user finally disengages it.
+        if outcome == ScreensaverRunOutcome::Exit {
+            wallpaper_control.resume_and_wait_for_frame(
+                running
+            );
+        }
 
         log_information(
             "[RENDER] Leaving renderer-owned event loop"
         );
+
+        outcome
     }
 
 
@@ -1091,7 +1308,7 @@ impl FrameRenderer {
 
     fn pump_events(
         &mut self,
-    ) -> bool {
+    ) -> Option<ScreensaverRunOutcome> {
         let mouse_motion_enabled =
             self.renderer_started.elapsed()
                 >= INPUT_STARTUP_GRACE;
@@ -1107,7 +1324,7 @@ impl FrameRenderer {
                         "[RENDER] SDL quit event received"
                     );
 
-                    return true;
+                    return Some(ScreensaverRunOutcome::Exit);
                 }
 
                 Event::Window {
@@ -1122,13 +1339,40 @@ impl FrameRenderer {
                 }
 
                 Event::KeyDown {
+                    keycode: Some(Keycode::E),
+                    keymod,
+                    repeat: false,
+                    ..
+                } if edit_shortcut_modifiers_allowed(keymod) => {
+                    if let Some(shader_path) =
+                        self.engine.current_metadata().shader_path
+                    {
+                        log_information(
+                            "[RENDER] E pressed: editing active screensaver shader"
+                        );
+
+                        return Some(
+                            ScreensaverRunOutcome::EditCurrentShader(
+                                shader_path
+                            )
+                        );
+                    }
+
+                    log_warning(
+                        "[RENDER] E pressed, but the active shader has no editable source path; exiting normally"
+                    );
+
+                    return Some(ScreensaverRunOutcome::Exit);
+                }
+
+                Event::KeyDown {
                     ..
                 } => {
                     log_information(
                         "[RENDER] SDL keydown event: exiting"
                     );
 
-                    return true;
+                    return Some(ScreensaverRunOutcome::Exit);
                 }
 
                 Event::MouseButtonDown {
@@ -1138,7 +1382,7 @@ impl FrameRenderer {
                         "[RENDER] SDL mouse button event: exiting"
                     );
 
-                    return true;
+                    return Some(ScreensaverRunOutcome::Exit);
                 }
 
                 Event::MouseWheel {
@@ -1148,7 +1392,7 @@ impl FrameRenderer {
                         "[RENDER] SDL mouse wheel event: exiting"
                     );
 
-                    return true;
+                    return Some(ScreensaverRunOutcome::Exit);
                 }
 
                 Event::MouseMotion {
@@ -1175,7 +1419,7 @@ impl FrameRenderer {
                             )
                         );
 
-                        return true;
+                        return Some(ScreensaverRunOutcome::Exit);
                     }
                 }
 
@@ -1183,10 +1427,21 @@ impl FrameRenderer {
             }
         }
 
-        false
+        None
     }
 
 
+}
+
+
+fn edit_shortcut_modifiers_allowed(
+    keymod: Mod,
+) -> bool {
+    let allowed_lock_modifiers =
+        Mod::NUMMOD | Mod::CAPSMOD;
+
+    (keymod & !allowed_lock_modifiers)
+        == Mod::NOMOD
 }
 
 
@@ -1226,29 +1481,82 @@ impl Drop for FrameRenderEngine {
 }
 
 
+fn paths_refer_to_same_file(
+    left: &Path,
+    right: &Path,
+) -> bool {
+
+    match (
+        std::fs::canonicalize(left),
+        std::fs::canonicalize(right),
+    ) {
+        (
+            Ok(left),
+            Ok(right),
+        ) => {
+            left == right
+        }
+
+        _ => {
+            left == right
+        }
+    }
+}
+
+
 fn resolve_shader_fps(
     global_rendered_fps: u32,
-    fps_overrides:
+    fps_policy_entries:
         &[
-            crate::load_config::FpsOverride
+            crate::load_config::FpsPolicyEntry
         ],
     shader_name: &str,
+    source_path: Option<&Path>,
 ) -> u32 {
 
-    fps_overrides
+    if let Some(source_path) =
+        source_path
+    {
+        if let Some(entry) =
+            fps_policy_entries
+                .iter()
+                .find(
+                    |entry| {
+                        entry.source_path
+                            .as_deref()
+                            .is_some_and(
+                                |policy_path| {
+                                    paths_refer_to_same_file(
+                                        policy_path,
+                                        source_path,
+                                    )
+                                }
+                            )
+                    }
+                )
+        {
+            return entry.rendered_fps.max(
+                1
+            );
+        }
+    }
+
+
+    fps_policy_entries
         .iter()
         .find(
-            |fps_override| {
-                fps_override
-                    .shader
-                    .eq_ignore_ascii_case(
-                        shader_name
-                    )
+            |fps_policy_entry| {
+                fps_policy_entry.source_path.is_none()
+                    && fps_policy_entry
+                        .shader
+                        .eq_ignore_ascii_case(
+                            shader_name
+                        )
             }
         )
         .map(
-            |fps_override| {
-                fps_override.rendered_fps
+            |fps_policy_entry| {
+                fps_policy_entry.rendered_fps
             }
         )
         .unwrap_or(
@@ -1405,11 +1713,28 @@ fn select_safe_shader_program(
     for _ in
         0..maximum_attempts
     {
-        let Some(requested_shader_name) =
-            shader_manager.next()
+        let Some(requested_shader) =
+            shader_manager.next_entry()
         else {
             break;
         };
+
+        let requested_shader_name =
+            requested_shader.name.clone();
+
+        let resolved_source_path =
+            requested_shader.source_path.clone()
+                .or_else(
+                    || {
+                        shader_directory.map(
+                            |directory| {
+                                directory.join(
+                                    &requested_shader_name
+                                )
+                            }
+                        )
+                    }
+                );
 
         log_debug(
             &format!(
@@ -1418,11 +1743,30 @@ fn select_safe_shader_program(
         );
 
         let loaded_shader =
-            if let Some(directory) = shader_directory {
-                crate::load_shader::load_shader_for_preview(
-                    &directory.join(
-                        &requested_shader_name
+            if shader_directory.is_none()
+                && resolved_source_path
+                    .as_ref()
+                    .is_some_and(
+                        |path| {
+                            *path
+                                == crate::locate_paths::screensaver_shader_dir()
+                                    .join(
+                                        &requested_shader_name
+                                    )
+                        }
                     )
+            {
+                // Preserve managed-screensaver quarantine semantics.
+                crate::load_shader::load_shader(
+                    &requested_shader_name
+                )
+            } else if let Some(source_path) =
+                resolved_source_path.as_ref()
+            {
+                // Wallpaper and external shaders are loaded explicitly and
+                // are never quarantined from their source location.
+                crate::load_shader::load_shader_for_preview(
+                    source_path
                 )
             } else {
                 crate::load_shader::load_shader(
@@ -1449,6 +1793,22 @@ fn select_safe_shader_program(
                             ActiveShader {
                                 program,
                                 shader_name,
+                                source_path:
+                                    if built_in_default {
+                                        None
+                                    } else {
+                                        resolved_source_path.clone()
+                                            .or_else(
+                                                || {
+                                                    Some(
+                                                        crate::locate_paths::screensaver_shader_dir()
+                                                            .join(
+                                                                &requested_shader_name
+                                                            )
+                                                    )
+                                                }
+                                            )
+                                    },
                                 channel_usage,
                                 shader_inputs,
                                 built_in_default,
@@ -1542,6 +1902,7 @@ fn select_safe_shader_program(
                 ActiveShader {
                     program,
                     shader_name,
+                    source_path: None,
                     channel_usage,
                     shader_inputs,
                     built_in_default,

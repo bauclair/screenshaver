@@ -11,7 +11,7 @@
 //! - shared edges are rendered with a uniform black outline;
 //! - no lighting, beveling, or random variation is applied.
 
-use crate::palettes::Palette;
+use crate::palettes::PaletteColor;
 use crate::generate_textures:: {
     GeneratedTexture,
     TextureFamily,
@@ -35,7 +35,7 @@ pub const MAX_HEXAGON_COUNT: usize =
 const OUTLINE_WIDTH: f32 =
     2.0;
 
-/// Palette position used for the uniform hexagon fill.
+/// PaletteColor position used for the uniform hexagon fill.
 const HEXAGON_FILL_VALUE: f32 =
     0.72;
 
@@ -95,7 +95,7 @@ struct HexagonLayout {
 // ============================================================
 
 pub fn generate(
-    palette: Palette,
+    palette: PaletteColor,
     seed: u64,
     requested_primitive_count: usize,
 ) -> Result<GeneratedTexture, String> {
@@ -978,7 +978,11 @@ fn generated_texture_has_standard_dimensions() {
 
     let texture =
         generate(
-            Palette::Mist,
+            PaletteColor::new(
+            128,
+            142,
+            156,
+        ),
             1,
             144,
         )

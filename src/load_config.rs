@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 
 //
@@ -115,6 +115,23 @@ struct WallpaperSection {
 
 
 
+#[derive(Debug, Deserialize, Default)]
+struct PostprocessSection {
+
+    #[serde(default)]
+    anti_aliasing: Option<String>,
+
+    #[serde(default)]
+    dithering: Option<String>,
+
+    #[serde(default)]
+    color_precision: Option<String>,
+
+    #[serde(default)]
+    render_scale: Option<f32>,
+}
+
+
 #[derive(Debug, Deserialize)]
 struct PerformanceSection {
 
@@ -162,12 +179,33 @@ struct RawToml {
     wallpaper: WallpaperSection,
 
     #[serde(default)]
-    screensaver_overrides:
+    screensaver_policies:
         BTreeMap<String, String>,
 
     #[serde(default)]
-    wallpaper_overrides:
+    wallpaper_policies:
         BTreeMap<String, String>,
+
+    #[serde(default)]
+    screensaver_external_paths:
+        BTreeMap<String, String>,
+
+    #[serde(default)]
+    wallpaper_external_paths:
+        BTreeMap<String, String>,
+
+    // Transitional compatibility for the first external-path checkpoint.
+    // New writes use *_external_paths exclusively.
+    #[serde(default)]
+    screensaver_shader_paths:
+        BTreeMap<String, String>,
+
+    #[serde(default)]
+    wallpaper_shader_paths:
+        BTreeMap<String, String>,
+
+    #[serde(default)]
+    postprocess: PostprocessSection,
 
     #[serde(default)]
     performance: PerformanceSection,
@@ -188,10 +226,19 @@ struct RawToml {
     Debug,
     Clone,
 )]
-pub struct ShaderOverride {
+pub struct ShaderPolicy {
+
+    pub policy_key:
+        String,
 
     pub shader:
         String,
+
+    // None means the shader uses the normal managed directory for
+    // its policy target. Some(path) identifies an explicitly
+    // configured shader stored outside the managed directory.
+    pub source_path:
+        Option<PathBuf>,
 
     pub shader_texture:
         Option<
@@ -200,13 +247,31 @@ pub struct ShaderOverride {
 
     pub shader_palette:
         Option<
-            crate::palettes::Palette
+            crate::palettes::PaletteColor
         >,
 
     pub rendered_fps:
         Option<u32>,
 
     pub animation_speed:
+        Option<f32>,
+
+    pub anti_aliasing:
+        Option<
+            crate::render_fxaa::AntiAliasingMethod
+        >,
+
+    pub dithering:
+        Option<
+            crate::render_dithering::DitheringLevel
+        >,
+
+    pub color_precision:
+        Option<
+            crate::select_render_precision::ColorPrecisionPolicy
+        >,
+
+    pub render_scale:
         Option<f32>,
 }
 
@@ -219,9 +284,9 @@ pub struct AnimationSpeedPolicy {
 
     pub global_speed: f32,
 
-    pub shader_overrides:
+    pub shader_policies:
         Vec<
-            ShaderOverride
+            ShaderPolicy
         >,
 }
 
@@ -231,6 +296,7 @@ impl AnimationSpeedPolicy {
     pub fn animation_speed_for_shader(
         &self,
         shader_name: &str,
+        source_path: Option<&Path>,
         command_line_speed: Option<f32>,
     ) -> f32 {
 
@@ -241,26 +307,176 @@ impl AnimationSpeedPolicy {
         }
 
 
-        self.shader_overrides
-            .iter()
-            .find(
-                |shader_override| {
-                    shader_override
-                        .shader
-                        .eq_ignore_ascii_case(
-                            shader_name
-                        )
-                }
-            )
-            .and_then(
-                |shader_override| {
-                    shader_override.animation_speed
-                }
-            )
-            .unwrap_or(
-                self.global_speed
-            )
+        matching_shader_policy(
+            &self.shader_policies,
+            shader_name,
+            source_path,
+        )
+        .and_then(
+            |shader_policy| {
+                shader_policy.animation_speed
+            }
+        )
+        .unwrap_or(
+            self.global_speed
+        )
     }
+}
+
+
+fn paths_refer_to_same_file(
+    left: &Path,
+    right: &Path,
+) -> bool {
+
+    match (
+        std::fs::canonicalize(left),
+        std::fs::canonicalize(right),
+    ) {
+        (
+            Ok(left),
+            Ok(right),
+        ) => {
+            left == right
+        }
+
+        _ => {
+            left == right
+        }
+    }
+}
+
+
+fn managed_policy_name_matches(
+    policy_shader: &str,
+    shader_name: &str,
+    source_path: Option<&Path>,
+) -> bool {
+
+    if policy_shader.eq_ignore_ascii_case(
+        shader_name
+    ) {
+        return true;
+    }
+
+
+    source_path
+        .and_then(
+            |path| {
+                path.file_name()
+            }
+        )
+        .and_then(
+            |name| {
+                name.to_str()
+            }
+        )
+        .is_some_and(
+            |filename| {
+                policy_shader
+                    .eq_ignore_ascii_case(
+                        filename
+                    )
+            }
+        )
+}
+
+
+fn matching_shader_policy<'a>(
+    policies: &'a [ShaderPolicy],
+    shader_name: &str,
+    source_path: Option<&Path>,
+) -> Option<&'a ShaderPolicy> {
+
+    if let Some(source_path) =
+        source_path
+    {
+        if let Some(policy) =
+            policies
+                .iter()
+                .find(
+                    |policy| {
+                        policy.source_path
+                            .as_deref()
+                            .is_some_and(
+                                |policy_path| {
+                                    paths_refer_to_same_file(
+                                        policy_path,
+                                        source_path,
+                                    )
+                                }
+                            )
+                    }
+                )
+        {
+            return Some(
+                policy
+            );
+        }
+    }
+
+
+    policies
+        .iter()
+        .find(
+            |policy| {
+                policy.source_path.is_none()
+                    && managed_policy_name_matches(
+                        &policy.shader,
+                        shader_name,
+                        source_path,
+                    )
+            }
+        )
+}
+
+
+fn matching_fps_policy<'a>(
+    policies: &'a [FpsPolicyEntry],
+    shader_name: &str,
+    source_path: Option<&Path>,
+) -> Option<&'a FpsPolicyEntry> {
+
+    if let Some(source_path) =
+        source_path
+    {
+        if let Some(policy) =
+            policies
+                .iter()
+                .find(
+                    |policy| {
+                        policy.source_path
+                            .as_deref()
+                            .is_some_and(
+                                |policy_path| {
+                                    paths_refer_to_same_file(
+                                        policy_path,
+                                        source_path,
+                                    )
+                                }
+                            )
+                    }
+                )
+        {
+            return Some(
+                policy
+            );
+        }
+    }
+
+
+    policies
+        .iter()
+        .find(
+            |policy| {
+                policy.source_path.is_none()
+                    && managed_policy_name_matches(
+                        &policy.shader,
+                        shader_name,
+                        source_path,
+                    )
+            }
+        )
 }
 
 
@@ -268,10 +484,13 @@ impl AnimationSpeedPolicy {
     Debug,
     Clone,
 )]
-pub struct TextureOverride {
+pub struct TexturePolicyEntry {
 
     pub shader:
         String,
+
+    pub source_path:
+        Option<PathBuf>,
 
     pub shader_texture:
         Option<
@@ -280,7 +499,7 @@ pub struct TextureOverride {
 
     pub shader_palette:
         Option<
-            crate::palettes::Palette
+            crate::palettes::PaletteColor
         >,
 }
 
@@ -289,10 +508,13 @@ pub struct TextureOverride {
     Debug,
     Clone,
 )]
-pub struct FpsOverride {
+pub struct FpsPolicyEntry {
 
     pub shader:
         String,
+
+    pub source_path:
+        Option<PathBuf>,
 
     pub rendered_fps:
         u32,
@@ -303,22 +525,23 @@ pub struct FpsOverride {
     Debug,
     Clone,
 )]
-pub struct FpsSelectionPolicy {
+pub struct FpsPolicy {
 
     pub global_rendered_fps: u32,
 
-    pub fps_overrides:
+    pub fps_policy_entries:
         Vec<
-            FpsOverride
+            FpsPolicyEntry
         >,
 }
 
 
-impl FpsSelectionPolicy {
+impl FpsPolicy {
 
     pub fn rendered_fps_for_shader(
         &self,
         shader_name: &str,
+        source_path: Option<&Path>,
         command_line_fps: Option<u32>,
     ) -> u32 {
 
@@ -331,28 +554,22 @@ impl FpsSelectionPolicy {
         }
 
 
-        self.fps_overrides
-            .iter()
-            .find(
-                |fps_override| {
-                    fps_override
-                        .shader
-                        .eq_ignore_ascii_case(
-                            shader_name
-                        )
-                }
-            )
-            .map(
-                |fps_override| {
-                    fps_override.rendered_fps
-                }
-            )
-            .unwrap_or(
-                self.global_rendered_fps
-            )
-            .max(
-                1
-            )
+        matching_fps_policy(
+            &self.fps_policy_entries,
+            shader_name,
+            source_path,
+        )
+        .map(
+            |fps_policy_entry| {
+                fps_policy_entry.rendered_fps
+            }
+        )
+        .unwrap_or(
+            self.global_rendered_fps
+        )
+        .max(
+            1
+        )
     }
 }
 
@@ -361,7 +578,7 @@ impl FpsSelectionPolicy {
     Debug,
     Clone,
 )]
-pub struct TextureSelectionPolicy {
+pub struct TexturePolicy {
 
     pub global_texture:
         Option<
@@ -370,14 +587,157 @@ pub struct TextureSelectionPolicy {
 
     pub global_palette:
         Option<
-            crate::palettes::Palette
+            crate::palettes::PaletteColor
         >,
 
-    pub texture_overrides:
+    pub texture_policy_entries:
         Vec<
-            TextureOverride
+            TexturePolicyEntry
         >,
 }
+
+
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+)]
+pub(crate) struct PostprocessProfile {
+
+    pub anti_aliasing:
+        crate::render_fxaa::AntiAliasingMethod,
+
+    pub dithering:
+        crate::render_dithering::DitheringLevel,
+
+    pub color_precision:
+        crate::select_render_precision::ColorPrecisionPolicy,
+
+    pub render_scale:
+        f32,
+}
+
+
+impl Default for PostprocessProfile {
+
+    fn default() -> Self {
+
+        Self {
+
+            anti_aliasing:
+                crate::render_fxaa::AntiAliasingMethod::Fxaa,
+
+            dithering:
+                crate::render_dithering::DitheringLevel::Subtle,
+
+            color_precision:
+                crate::select_render_precision::ColorPrecisionPolicy::Auto,
+
+            render_scale:
+                crate::define_constants::RENDER_SCALE_DEFAULT,
+        }
+    }
+}
+
+
+#[derive(
+    Debug,
+    Clone,
+)]
+pub(crate) struct PostprocessPolicy {
+
+    pub global_profile:
+        PostprocessProfile,
+
+    pub shader_policies:
+        Vec<
+            ShaderPolicy
+        >,
+}
+
+
+impl Default for PostprocessPolicy {
+
+    fn default() -> Self {
+
+        Self {
+
+            global_profile:
+                PostprocessProfile::default(),
+
+            shader_policies:
+                Vec::new(),
+        }
+    }
+}
+
+
+impl PostprocessPolicy {
+
+    pub(crate) fn profile_for_shader(
+        &self,
+        shader_name: &str,
+        source_path: Option<&Path>,
+    ) -> PostprocessProfile {
+
+        let shader_policy =
+            matching_shader_policy(
+                &self.shader_policies,
+                shader_name,
+                source_path,
+            );
+
+
+        PostprocessProfile {
+
+            anti_aliasing:
+                shader_policy
+                    .and_then(
+                        |shader_policy| {
+                            shader_policy.anti_aliasing
+                        }
+                    )
+                    .unwrap_or(
+                        self.global_profile.anti_aliasing
+                    ),
+
+            dithering:
+                shader_policy
+                    .and_then(
+                        |shader_policy| {
+                            shader_policy.dithering
+                        }
+                    )
+                    .unwrap_or(
+                        self.global_profile.dithering
+                    ),
+
+            color_precision:
+                shader_policy
+                    .and_then(
+                        |shader_policy| {
+                            shader_policy.color_precision
+                        }
+                    )
+                    .unwrap_or(
+                        self.global_profile.color_precision
+                    ),
+
+            render_scale:
+                shader_policy
+                    .and_then(
+                        |shader_policy| {
+                            shader_policy.render_scale
+                        }
+                    )
+                    .unwrap_or(
+                        self.global_profile.render_scale
+                    ),
+        }
+    }
+}
+
 
 
 #[derive(Debug)]
@@ -399,7 +759,7 @@ pub struct Config {
     pub idle_timeout: String,
 
     pub texture_policy:
-        TextureSelectionPolicy,
+        TexturePolicy,
 
     pub wallpaper:
         crate::define_wallpaper::WallpaperSettings,
@@ -407,20 +767,20 @@ pub struct Config {
     pub wallpaper_mode: String,
 
     pub wallpaper_texture_policy:
-        TextureSelectionPolicy,
+        TexturePolicy,
 
     pub screensaver_global_speed: f32,
 
     pub wallpaper_global_speed: f32,
 
-    pub screensaver_overrides:
+    pub screensaver_policies:
         Vec<
-            ShaderOverride
+            ShaderPolicy
         >,
 
-    pub wallpaper_overrides:
+    pub wallpaper_policies:
         Vec<
-            ShaderOverride
+            ShaderPolicy
         >,
 
     pub screensaver_speed_policy:
@@ -431,13 +791,19 @@ pub struct Config {
 
     pub global_rendered_fps: u32,
 
-    pub screensaver_fps_overrides:
+    pub screensaver_fps_policy_entries:
         Vec<
-            FpsOverride
+            FpsPolicyEntry
         >,
 
     pub wallpaper_fps_policy:
-        FpsSelectionPolicy,
+        FpsPolicy,
+
+    pub(crate) screensaver_postprocess_policy:
+        PostprocessPolicy,
+
+    pub(crate) wallpaper_postprocess_policy:
+        PostprocessPolicy,
 
     pub screen_lock: bool,
 
@@ -506,6 +872,78 @@ pub fn load_config(
 
 
     //---------------------------------------------------------
+    // Parse global post-processing policy
+    //---------------------------------------------------------
+
+    let built_in_postprocess_profile =
+        PostprocessProfile::default();
+
+
+    let (
+        global_anti_aliasing,
+        anti_aliasing_warning,
+    ) =
+        parse_global_anti_aliasing(
+            raw.postprocess
+                .anti_aliasing
+                .as_deref(),
+            built_in_postprocess_profile
+                .anti_aliasing,
+        );
+
+
+    let (
+        global_dithering,
+        dithering_warning,
+    ) =
+        parse_global_dithering(
+            raw.postprocess
+                .dithering
+                .as_deref(),
+            built_in_postprocess_profile
+                .dithering,
+        );
+
+
+    let (
+        global_color_precision,
+        color_precision_warning,
+    ) =
+        parse_global_color_precision(
+            raw.postprocess
+                .color_precision
+                .as_deref(),
+            built_in_postprocess_profile
+                .color_precision,
+        );
+
+
+    let (
+        global_render_scale,
+        render_scale_warning,
+    ) =
+        parse_global_render_scale(
+            raw.postprocess
+                .render_scale,
+            built_in_postprocess_profile
+                .render_scale,
+        );
+
+
+    let global_postprocess_profile =
+        PostprocessProfile {
+            anti_aliasing:
+                global_anti_aliasing,
+            dithering:
+                global_dithering,
+            color_precision:
+                global_color_precision,
+            render_scale:
+                global_render_scale,
+        };
+
+
+    //---------------------------------------------------------
     // Parse subtitle placement
     //---------------------------------------------------------
 
@@ -553,51 +991,67 @@ pub fn load_config(
         )?;
 
 
-    let screensaver_overrides =
-        parse_override_table(
-            raw.screensaver_overrides,
-            OverrideTarget::Screensaver,
-        )?;
-
-
-    let wallpaper_overrides =
-        parse_override_table(
-            raw.wallpaper_overrides,
-            OverrideTarget::Wallpaper,
-        )?;
-
-
-    let screensaver_texture_overrides =
-        texture_overrides_from(
-            &screensaver_overrides
+    let screensaver_external_paths =
+        merge_external_path_tables(
+            raw.screensaver_shader_paths,
+            raw.screensaver_external_paths,
         );
 
 
-    let wallpaper_texture_overrides =
-        texture_overrides_from(
-            &wallpaper_overrides
+    let wallpaper_external_paths =
+        merge_external_path_tables(
+            raw.wallpaper_shader_paths,
+            raw.wallpaper_external_paths,
+        );
+
+
+    let screensaver_policies =
+        parse_policy_table(
+            raw.screensaver_policies,
+            screensaver_external_paths,
+            PolicyTarget::Screensaver,
+        )?;
+
+
+    let wallpaper_policies =
+        parse_policy_table(
+            raw.wallpaper_policies,
+            wallpaper_external_paths,
+            PolicyTarget::Wallpaper,
+        )?;
+
+
+    let screensaver_texture_policy_entries =
+        texture_policy_entries_from(
+            &screensaver_policies
+        );
+
+
+    let wallpaper_texture_policy_entries =
+        texture_policy_entries_from(
+            &wallpaper_policies
         );
 
 
     let texture_policy =
-        TextureSelectionPolicy {
+        TexturePolicy {
             global_texture:
                 screensaver_global_texture,
             global_palette:
                 screensaver_global_palette,
-            texture_overrides:
-                screensaver_texture_overrides,
+            texture_policy_entries:
+                screensaver_texture_policy_entries,
         };
 
 
     let wallpaper_texture_policy =
-        TextureSelectionPolicy {
+        TexturePolicy {
             global_texture:
                 wallpaper_global_texture,
             global_palette:
                 wallpaper_global_palette,
-            texture_overrides:
-                wallpaper_texture_overrides,
+            texture_policy_entries:
+                wallpaper_texture_policy_entries,
         };
 
 
@@ -652,23 +1106,23 @@ pub fn load_config(
         );
 
 
-    let screensaver_fps_overrides =
-        fps_overrides_from(
-            &screensaver_overrides
+    let screensaver_fps_policy_entries =
+        fps_policy_entries_from(
+            &screensaver_policies
         );
 
 
-    let wallpaper_fps_overrides =
-        fps_overrides_from(
-            &wallpaper_overrides
+    let wallpaper_fps_policy_entries =
+        fps_policy_entries_from(
+            &wallpaper_policies
         );
 
 
     let wallpaper_fps_policy =
-        FpsSelectionPolicy {
+        FpsPolicy {
             global_rendered_fps,
-            fps_overrides:
-                wallpaper_fps_overrides,
+            fps_policy_entries:
+                wallpaper_fps_policy_entries,
         };
 
 
@@ -676,8 +1130,8 @@ pub fn load_config(
         AnimationSpeedPolicy {
             global_speed:
                 screensaver_global_speed,
-            shader_overrides:
-                screensaver_overrides.clone(),
+            shader_policies:
+                screensaver_policies.clone(),
         };
 
 
@@ -685,8 +1139,26 @@ pub fn load_config(
         AnimationSpeedPolicy {
             global_speed:
                 wallpaper_global_speed,
-            shader_overrides:
-                wallpaper_overrides.clone(),
+            shader_policies:
+                wallpaper_policies.clone(),
+        };
+
+
+    let screensaver_postprocess_policy =
+        PostprocessPolicy {
+            global_profile:
+                global_postprocess_profile,
+            shader_policies:
+                screensaver_policies.clone(),
+        };
+
+
+    let wallpaper_postprocess_policy =
+        PostprocessPolicy {
+            global_profile:
+                global_postprocess_profile,
+            shader_policies:
+                wallpaper_policies.clone(),
         };
 
 
@@ -740,9 +1212,9 @@ pub fn load_config(
 
             wallpaper_global_speed,
 
-            screensaver_overrides,
+            screensaver_policies,
 
-            wallpaper_overrides,
+            wallpaper_policies,
 
             screensaver_speed_policy,
 
@@ -750,9 +1222,13 @@ pub fn load_config(
 
             global_rendered_fps,
 
-            screensaver_fps_overrides,
+            screensaver_fps_policy_entries,
 
             wallpaper_fps_policy,
+
+            screensaver_postprocess_policy,
+
+            wallpaper_postprocess_policy,
 
             screen_lock:
                 raw.locking.screen_lock,
@@ -833,11 +1309,13 @@ pub fn load_config(
                     .global_palette
                     .map(
                         |palette| {
-                            palette.name()
+                            palette.to_hex()
                         }
                     )
-                    .unwrap_or(
-                        "random"
+                    .unwrap_or_else(
+                        || {
+                            "random".to_string()
+                        }
                     ),
             ),
 
@@ -873,11 +1351,13 @@ pub fn load_config(
                     .global_palette
                     .map(
                         |palette| {
-                            palette.name()
+                            palette.to_hex()
                         }
                     )
-                    .unwrap_or(
-                        "random"
+                    .unwrap_or_else(
+                        || {
+                            "random".to_string()
+                        }
                     ),
             ),
 
@@ -902,18 +1382,53 @@ pub fn load_config(
             ),
 
             format!(
-                "[CONFIG] screensaver override count = {}",
-                config.screensaver_overrides.len(),
+                "[CONFIG] screensaver policy count = {}",
+                config.screensaver_policies.len(),
             ),
 
             format!(
-                "[CONFIG] wallpaper override count = {}",
-                config.wallpaper_overrides.len(),
+                "[CONFIG] wallpaper policy count = {}",
+                config.wallpaper_policies.len(),
             ),
 
             format!(
                 "[CONFIG] global_rendered_fps = {}",
                 config.global_rendered_fps,
+            ),
+
+            format!(
+                "[CONFIG] postprocess.anti_aliasing = {}",
+                config
+                    .screensaver_postprocess_policy
+                    .global_profile
+                    .anti_aliasing
+                    .name(),
+            ),
+
+            format!(
+                "[CONFIG] postprocess.dithering = {}",
+                config
+                    .screensaver_postprocess_policy
+                    .global_profile
+                    .dithering
+                    .name(),
+            ),
+
+            format!(
+                "[CONFIG] postprocess.color_precision = {}",
+                config
+                    .screensaver_postprocess_policy
+                    .global_profile
+                    .color_precision
+                    .name(),
+            ),
+
+            format!(
+                "[CONFIG] postprocess.render_scale = {:.3}",
+                config
+                    .screensaver_postprocess_policy
+                    .global_profile
+                    .render_scale,
             ),
 
             format!(
@@ -970,6 +1485,42 @@ pub fn load_config(
 
 
     if let Some(warning) =
+        anti_aliasing_warning
+    {
+        diagnostics.push(
+            warning
+        );
+    }
+
+
+    if let Some(warning) =
+        dithering_warning
+    {
+        diagnostics.push(
+            warning
+        );
+    }
+
+
+    if let Some(warning) =
+        color_precision_warning
+    {
+        diagnostics.push(
+            warning
+        );
+    }
+
+
+    if let Some(warning) =
+        render_scale_warning
+    {
+        diagnostics.push(
+            warning
+        );
+    }
+
+
+    if let Some(warning) =
         log_level_warning
     {
         diagnostics.push(
@@ -980,19 +1531,19 @@ pub fn load_config(
 
     diagnostics.push(
         format!(
-            "[CONFIG] screensaver_overrides count = {}",
-            config.screensaver_overrides.len(),
+            "[CONFIG] screensaver_policies count = {}",
+            config.screensaver_policies.len(),
         )
     );
 
 
-    for shader_override in
-        &config.screensaver_overrides
+    for shader_policy in
+        &config.screensaver_policies
     {
         diagnostics.push(
-            format_shader_override_diagnostic(
-                "screensaver_overrides",
-                shader_override,
+            format_shader_policy_diagnostic(
+                "screensaver_policies",
+                shader_policy,
             )
         );
     }
@@ -1000,19 +1551,19 @@ pub fn load_config(
 
     diagnostics.push(
         format!(
-            "[CONFIG] wallpaper_overrides count = {}",
-            config.wallpaper_overrides.len(),
+            "[CONFIG] wallpaper_policies count = {}",
+            config.wallpaper_policies.len(),
         )
     );
 
 
-    for shader_override in
-        &config.wallpaper_overrides
+    for shader_policy in
+        &config.wallpaper_policies
     {
         diagnostics.push(
-            format_shader_override_diagnostic(
-                "wallpaper_overrides",
-                shader_override,
+            format_shader_policy_diagnostic(
+                "wallpaper_policies",
+                shader_policy,
             )
         );
     }
@@ -1030,25 +1581,36 @@ pub fn load_config(
 
 //
 // ------------------------------------------------------------
-// Per-mode shader override parsing
+// Per-mode shader policy parsing
 // ------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy)]
-enum OverrideTarget {
+enum PolicyTarget {
     Screensaver,
     Wallpaper,
 }
 
 
-impl OverrideTarget {
+impl PolicyTarget {
 
     fn table_name(
         self,
     ) -> &'static str {
 
         match self {
-            Self::Screensaver => "screensaver_overrides",
-            Self::Wallpaper => "wallpaper_overrides",
+            Self::Screensaver => "screensaver_policies",
+            Self::Wallpaper => "wallpaper_policies",
+        }
+    }
+
+
+    fn path_table_name(
+        self,
+    ) -> &'static str {
+
+        match self {
+            Self::Screensaver => "screensaver_external_paths",
+            Self::Wallpaper => "wallpaper_external_paths",
         }
     }
 
@@ -1071,37 +1633,115 @@ impl OverrideTarget {
 }
 
 
-fn parse_override_table(
-    raw_overrides: BTreeMap<String, String>,
-    target: OverrideTarget,
-) -> Result<Vec<ShaderOverride>, String> {
 
-    let mut overrides =
+fn merge_external_path_tables(
+    legacy_paths: BTreeMap<String, String>,
+    external_paths: BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
+
+    let mut merged =
+        legacy_paths;
+
+
+    for (
+        shader,
+        path,
+    ) in external_paths
+    {
+        let existing_key =
+            merged
+                .keys()
+                .find(
+                    |key| {
+                        key.eq_ignore_ascii_case(
+                            &shader
+                        )
+                    }
+                )
+                .cloned();
+
+
+        if let Some(existing_key) =
+            existing_key
+        {
+            merged.remove(
+                &existing_key
+            );
+        }
+
+
+        merged.insert(
+            shader,
+            path,
+        );
+    }
+
+
+    merged
+}
+
+fn parse_policy_table(
+    raw_policies: BTreeMap<String, String>,
+    mut raw_shader_paths: BTreeMap<String, String>,
+    target: PolicyTarget,
+) -> Result<Vec<ShaderPolicy>, String> {
+
+    let mut policies =
         Vec::with_capacity(
-            raw_overrides.len()
+            raw_policies.len()
         );
 
 
-    for (shader, specification) in
-        raw_overrides
+    for (policy_key, specification) in
+        raw_policies
     {
-        let shader =
-            shader.trim().to_string();
+        let policy_key =
+            policy_key.trim().to_string();
 
 
-        if shader.is_empty() {
+        if policy_key.is_empty() {
             return Err(
                 format!(
-                    "[{}] contains an empty shader name",
+                    "[{}] contains an empty shader policy key",
                     target.table_name(),
                 )
             );
         }
 
 
-        overrides.push(
-            parse_override_specification(
+        let source_path =
+            take_policy_source_path(
+                &mut raw_shader_paths,
+                &policy_key,
+                target,
+            )?;
+
+
+        let shader =
+            source_path
+                .as_ref()
+                .and_then(
+                    |path| {
+                        path.file_name()
+                            .and_then(|name| name.to_str())
+                    }
+                )
+                .map(str::to_string)
+                .unwrap_or_else(
+                    || {
+                        crate::manage_policies::policy_display_name_from_key(
+                            &policy_key
+                        )
+                        .to_string()
+                    }
+                );
+
+
+        policies.push(
+            parse_policy_specification(
+                policy_key,
                 shader,
+                source_path,
                 &specification,
                 target,
             )?
@@ -1109,20 +1749,109 @@ fn parse_override_table(
     }
 
 
-    Ok(overrides)
+    // Path entries without matching policies are intentionally inert.
+    // This keeps configuration loading tolerant of stale hand-edited
+    // metadata while preserving the rule that an external shader cannot
+    // enter normal operation without an actual policy.
+    Ok(policies)
 }
 
 
-fn parse_override_specification(
+fn take_policy_source_path(
+    raw_shader_paths: &mut BTreeMap<String, String>,
+    shader: &str,
+    target: PolicyTarget,
+) -> Result<Option<PathBuf>, String> {
+
+    let matching_key =
+        raw_shader_paths
+            .keys()
+            .find(
+                |key| {
+                    key.eq_ignore_ascii_case(
+                        shader
+                    )
+                }
+            )
+            .cloned();
+
+
+    let Some(matching_key) =
+        matching_key
+    else {
+        return Ok(
+            None
+        );
+    };
+
+
+    let raw_path =
+        raw_shader_paths
+            .remove(
+                &matching_key
+            )
+            .unwrap_or_default();
+
+
+    let raw_path =
+        raw_path.trim();
+
+
+    if raw_path.is_empty() {
+        return Err(
+            format!(
+                "[{}] path for '{}' may not be empty",
+                target.path_table_name(),
+                shader,
+            )
+        );
+    }
+
+
+    let path =
+        PathBuf::from(
+            raw_path
+        );
+
+
+    if !path.is_absolute() {
+        return Err(
+            format!(
+                "[{}] path for '{}' must be absolute: {}",
+                target.path_table_name(),
+                shader,
+                raw_path,
+            )
+        );
+    }
+
+
+    // Do not require the file to exist while loading configuration.
+    // A missing external file must leave its policy visible so the
+    // Control Center can report and eventually repair the reference.
+    Ok(
+        Some(
+            path
+        )
+    )
+}
+
+fn parse_policy_specification(
+    policy_key: String,
     shader: String,
+    source_path: Option<PathBuf>,
     specification: &str,
-    target: OverrideTarget,
-) -> Result<ShaderOverride, String> {
+    target: PolicyTarget,
+) -> Result<ShaderPolicy, String> {
 
     let mut shader_texture = None;
     let mut shader_palette = None;
     let mut rendered_fps = None;
     let mut animation_speed = None;
+    let mut anti_aliasing = None;
+    let mut dithering = None;
+    let mut color_precision = None;
+    let mut render_scale = None;
 
 
     for token in
@@ -1133,7 +1862,7 @@ fn parse_override_specification(
                 .ok_or_else(
                     || {
                         format!(
-                            "Invalid override token '{}' for '{}' in [{}]; expected name:value",
+                            "Invalid policy token '{}' for '{}' in [{}]; expected name:value",
                             token,
                             shader,
                             target.table_name(),
@@ -1145,7 +1874,7 @@ fn parse_override_specification(
         if value.trim().is_empty() {
             return Err(
                 format!(
-                    "Override property '{}' for '{}' in [{}] requires a value",
+                    "Policy property '{}' for '{}' in [{}] requires a value",
                     name,
                     shader,
                     target.table_name(),
@@ -1157,7 +1886,7 @@ fn parse_override_specification(
         match name.trim().to_ascii_lowercase().as_str() {
             "texture" => {
                 if shader_texture.is_some() {
-                    return Err(duplicate_override_property(
+                    return Err(duplicate_policy_property(
                         &shader,
                         target,
                         "texture",
@@ -1176,7 +1905,7 @@ fn parse_override_specification(
 
             "palette" => {
                 if shader_palette.is_some() {
-                    return Err(duplicate_override_property(
+                    return Err(duplicate_policy_property(
                         &shader,
                         target,
                         "palette",
@@ -1195,7 +1924,7 @@ fn parse_override_specification(
 
             "fps" => {
                 if rendered_fps.is_some() {
-                    return Err(duplicate_override_property(
+                    return Err(duplicate_policy_property(
                         &shader,
                         target,
                         "fps",
@@ -1223,7 +1952,7 @@ fn parse_override_specification(
                 {
                     return Err(
                         format!(
-                            "FPS override {} for '{}' in [{}] is outside the supported range {}-{}",
+                            "FPS policy {} for '{}' in [{}] is outside the supported range {}-{}",
                             fps,
                             shader,
                             target.table_name(),
@@ -1238,7 +1967,7 @@ fn parse_override_specification(
 
             "speed" => {
                 if animation_speed.is_some() {
-                    return Err(duplicate_override_property(
+                    return Err(duplicate_policy_property(
                         &shader,
                         target,
                         "speed",
@@ -1266,7 +1995,7 @@ fn parse_override_specification(
                 {
                     return Err(
                         format!(
-                            "Speed override {} for '{}' in [{}] is outside the supported range {}-{}",
+                            "Speed policy {} for '{}' in [{}] is outside the supported range {}-{}",
                             value,
                             shader,
                             target.table_name(),
@@ -1279,10 +2008,86 @@ fn parse_override_specification(
                 animation_speed = Some(speed);
             }
 
+            "anti_aliasing" => {
+                if anti_aliasing.is_some() {
+                    return Err(duplicate_policy_property(
+                        &shader,
+                        target,
+                        "anti_aliasing",
+                    ));
+                }
+
+                anti_aliasing =
+                    Some(
+                        parse_policy_anti_aliasing(
+                            &shader,
+                            value,
+                            target.table_name(),
+                        )?
+                    );
+            }
+
+            "dithering" => {
+                if dithering.is_some() {
+                    return Err(duplicate_policy_property(
+                        &shader,
+                        target,
+                        "dithering",
+                    ));
+                }
+
+                dithering =
+                    Some(
+                        parse_policy_dithering(
+                            &shader,
+                            value,
+                            target.table_name(),
+                        )?
+                    );
+            }
+
+            "color_precision" => {
+                if color_precision.is_some() {
+                    return Err(duplicate_policy_property(
+                        &shader,
+                        target,
+                        "color_precision",
+                    ));
+                }
+
+                color_precision =
+                    Some(
+                        parse_policy_color_precision(
+                            &shader,
+                            value,
+                            target.table_name(),
+                        )?
+                    );
+            }
+
+            "render_scale" => {
+                if render_scale.is_some() {
+                    return Err(duplicate_policy_property(
+                        &shader,
+                        target,
+                        "render_scale",
+                    ));
+                }
+
+                render_scale =
+                    Some(
+                        parse_policy_render_scale(
+                            &shader,
+                            value,
+                            target.table_name(),
+                        )?
+                    );
+            }
+
             other => {
                 return Err(
                     format!(
-                        "Unknown override property '{}' for '{}' in [{}]; supported properties: texture, palette, fps, speed",
+                        "Unknown policy property '{}' for '{}' in [{}]; supported properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision, render_scale",
                         other,
                         shader,
                         target.table_name(),
@@ -1297,10 +2102,14 @@ fn parse_override_specification(
         && shader_palette.is_none()
         && rendered_fps.is_none()
         && animation_speed.is_none()
+        && anti_aliasing.is_none()
+        && dithering.is_none()
+        && color_precision.is_none()
+        && render_scale.is_none()
     {
         return Err(
             format!(
-                "Override for '{}' in [{}] does not define any properties",
+                "Policy for '{}' in [{}] does not define any properties",
                 shader,
                 target.table_name(),
             )
@@ -1309,25 +2118,31 @@ fn parse_override_specification(
 
 
     Ok(
-        ShaderOverride {
+        ShaderPolicy {
+            policy_key,
             shader,
+            source_path,
             shader_texture,
             shader_palette,
             rendered_fps,
             animation_speed,
+            anti_aliasing,
+            dithering,
+            color_precision,
+            render_scale,
         }
     )
 }
 
 
-fn duplicate_override_property(
+fn duplicate_policy_property(
     shader: &str,
-    target: OverrideTarget,
+    target: PolicyTarget,
     property: &str,
 ) -> String {
 
     format!(
-        "Override property '{}' is specified more than once for '{}' in [{}]",
+        "Policy property '{}' is specified more than once for '{}' in [{}]",
         property,
         shader,
         target.table_name(),
@@ -1335,27 +2150,29 @@ fn duplicate_override_property(
 }
 
 
-fn texture_overrides_from(
-    shader_overrides: &[ShaderOverride],
-) -> Vec<TextureOverride> {
+fn texture_policy_entries_from(
+    shader_policies: &[ShaderPolicy],
+) -> Vec<TexturePolicyEntry> {
 
-    shader_overrides
+    shader_policies
         .iter()
         .filter(
-            |shader_override| {
-                shader_override.shader_texture.is_some()
-                    || shader_override.shader_palette.is_some()
+            |shader_policy| {
+                shader_policy.shader_texture.is_some()
+                    || shader_policy.shader_palette.is_some()
             }
         )
         .map(
-            |shader_override| {
-                TextureOverride {
+            |shader_policy| {
+                TexturePolicyEntry {
                     shader:
-                        shader_override.shader.clone(),
+                        shader_policy.shader.clone(),
+                    source_path:
+                        shader_policy.source_path.clone(),
                     shader_texture:
-                        shader_override.shader_texture.clone(),
+                        shader_policy.shader_texture.clone(),
                     shader_palette:
-                        shader_override.shader_palette,
+                        shader_policy.shader_palette,
                 }
             }
         )
@@ -1363,20 +2180,22 @@ fn texture_overrides_from(
 }
 
 
-fn fps_overrides_from(
-    shader_overrides: &[ShaderOverride],
-) -> Vec<FpsOverride> {
+fn fps_policy_entries_from(
+    shader_policies: &[ShaderPolicy],
+) -> Vec<FpsPolicyEntry> {
 
-    shader_overrides
+    shader_policies
         .iter()
         .filter_map(
-            |shader_override| {
-                shader_override.rendered_fps
+            |shader_policy| {
+                shader_policy.rendered_fps
                     .map(
                         |rendered_fps| {
-                            FpsOverride {
+                            FpsPolicyEntry {
                                 shader:
-                                    shader_override.shader.clone(),
+                                    shader_policy.shader.clone(),
+                                source_path:
+                                    shader_policy.source_path.clone(),
                                 rendered_fps,
                             }
                         }
@@ -1387,36 +2206,458 @@ fn fps_overrides_from(
 }
 
 
-fn format_shader_override_diagnostic(
+fn format_shader_policy_diagnostic(
     table_name: &str,
-    shader_override: &ShaderOverride,
+    shader_policy: &ShaderPolicy,
 ) -> String {
 
-    let texture = shader_override.shader_texture
+    let source_path =
+        shader_policy
+            .source_path
+            .as_ref()
+            .map(
+                |path| {
+                    path.display()
+                        .to_string()
+                }
+            )
+            .unwrap_or_else(
+                || {
+                    "<managed>".to_string()
+                }
+            );
+
+    let texture = shader_policy.shader_texture
         .as_ref()
         .map(format_texture_specification)
         .unwrap_or_else(|| "<global>".to_string());
 
-    let palette = shader_override.shader_palette
+    let palette = shader_policy.shader_palette
         .map(|palette| palette.to_string())
         .unwrap_or_else(|| "<global>".to_string());
 
-    let fps = shader_override.rendered_fps
+    let fps = shader_policy.rendered_fps
         .map(|fps| fps.to_string())
         .unwrap_or_else(|| "<global>".to_string());
 
-    let speed = shader_override.animation_speed
+    let speed = shader_policy.animation_speed
         .map(|speed| speed.to_string())
         .unwrap_or_else(|| "<global>".to_string());
 
+    let anti_aliasing = shader_policy.anti_aliasing
+        .map(|method| method.name())
+        .unwrap_or("<global>");
+
+    let dithering = shader_policy.dithering
+        .map(|level| level.name())
+        .unwrap_or("<global>");
+
+    let color_precision = shader_policy.color_precision
+        .map(|precision| precision.name())
+        .unwrap_or("<global>");
+
+    let render_scale = shader_policy.render_scale
+        .map(
+            |render_scale| {
+                format!(
+                    "{:.3}",
+                    render_scale,
+                )
+            }
+        )
+        .unwrap_or_else(
+            || {
+                "<global>".to_string()
+            }
+        );
+
     format!(
-        "[CONFIG] {} shader={} texture={} palette={} fps={} speed={}",
+        "[CONFIG] {} shader={} source={} texture={} palette={} fps={} speed={} anti_aliasing={} dithering={} color_precision={} render_scale={}",
         table_name,
-        shader_override.shader,
+        shader_policy.shader,
+        source_path,
         texture,
         palette,
         fps,
         speed,
+        anti_aliasing,
+        dithering,
+        color_precision,
+        render_scale,
+    )
+}
+
+
+// ------------------------------------------------------------
+// Per-shader post-processing policy parsing
+// ------------------------------------------------------------
+//
+
+fn parse_policy_anti_aliasing(
+    shader: &str,
+    value: &str,
+    table_name: &str,
+) -> Result<
+    crate::render_fxaa::AntiAliasingMethod,
+    String,
+> {
+
+    match value
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "off" => {
+            Ok(
+                crate::render_fxaa::AntiAliasingMethod::Off
+            )
+        }
+
+        "fxaa" => {
+            Ok(
+                crate::render_fxaa::AntiAliasingMethod::Fxaa
+            )
+        }
+
+        _ => {
+            Err(
+                format!(
+                    "Invalid anti_aliasing value '{}' for '{}' in [{}]; supported values: off, fxaa",
+                    value,
+                    shader,
+                    table_name,
+                )
+            )
+        }
+    }
+}
+
+
+fn parse_policy_dithering(
+    shader: &str,
+    value: &str,
+    table_name: &str,
+) -> Result<
+    crate::render_dithering::DitheringLevel,
+    String,
+> {
+
+    match value
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "off" => {
+            Ok(
+                crate::render_dithering::DitheringLevel::Off
+            )
+        }
+
+        "subtle" => {
+            Ok(
+                crate::render_dithering::DitheringLevel::Subtle
+            )
+        }
+
+        _ => {
+            Err(
+                format!(
+                    "Invalid dithering value '{}' for '{}' in [{}]; supported values: off, subtle",
+                    value,
+                    shader,
+                    table_name,
+                )
+            )
+        }
+    }
+}
+
+
+fn parse_policy_color_precision(
+    shader: &str,
+    value: &str,
+    table_name: &str,
+) -> Result<
+    crate::select_render_precision::ColorPrecisionPolicy,
+    String,
+> {
+
+    match value
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "auto" => {
+            Ok(
+                crate::select_render_precision::ColorPrecisionPolicy::Auto
+            )
+        }
+
+        "standard" => {
+            Ok(
+                crate::select_render_precision::ColorPrecisionPolicy::Standard
+            )
+        }
+
+        "high" => {
+            Ok(
+                crate::select_render_precision::ColorPrecisionPolicy::High
+            )
+        }
+
+        _ => {
+            Err(
+                format!(
+                    "Invalid color_precision value '{}' for '{}' in [{}]; supported values: auto, standard, high",
+                    value,
+                    shader,
+                    table_name,
+                )
+            )
+        }
+    }
+}
+
+
+fn parse_policy_render_scale(
+    shader: &str,
+    value: &str,
+    table_name: &str,
+) -> Result<f32, String> {
+
+    let render_scale =
+        value.parse::<f32>()
+            .map_err(
+                |_| {
+                    format!(
+                        "Invalid render_scale '{}' for '{}' in [{}]; expected a number from {:.2} through {:.2}",
+                        value,
+                        shader,
+                        table_name,
+                        crate::define_constants::RENDER_SCALE_MIN,
+                        crate::define_constants::RENDER_SCALE_MAX,
+                    )
+                }
+            )?;
+
+
+    if !render_scale.is_finite()
+        || !(crate::define_constants::RENDER_SCALE_MIN
+            ..=crate::define_constants::RENDER_SCALE_MAX)
+            .contains(
+                &render_scale
+            )
+    {
+        return Err(
+            format!(
+                "render_scale {} for '{}' in [{}] is outside the supported range {:.2}-{:.2}",
+                value,
+                shader,
+                table_name,
+                crate::define_constants::RENDER_SCALE_MIN,
+                crate::define_constants::RENDER_SCALE_MAX,
+            )
+        );
+    }
+
+
+    Ok(
+        render_scale
+    )
+}
+
+
+// ------------------------------------------------------------
+// Global post-processing policy parsing
+// ------------------------------------------------------------
+//
+
+fn parse_global_anti_aliasing(
+    value: Option<&str>,
+    fallback: crate::render_fxaa::AntiAliasingMethod,
+) -> (
+    crate::render_fxaa::AntiAliasingMethod,
+    Option<String>,
+) {
+
+    let Some(value) = value
+    else {
+        return (
+            fallback,
+            None,
+        );
+    };
+
+
+    match value
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "off" => (
+            crate::render_fxaa::AntiAliasingMethod::Off,
+            None,
+        ),
+
+        "fxaa" => (
+            crate::render_fxaa::AntiAliasingMethod::Fxaa,
+            None,
+        ),
+
+        _ => (
+            fallback,
+            Some(
+                format!(
+                    "[CONFIG] WARNING: postprocess.anti_aliasing = '{}' is unsupported; using '{}'",
+                    value,
+                    fallback.name(),
+                )
+            ),
+        ),
+    }
+}
+
+
+fn parse_global_dithering(
+    value: Option<&str>,
+    fallback: crate::render_dithering::DitheringLevel,
+) -> (
+    crate::render_dithering::DitheringLevel,
+    Option<String>,
+) {
+
+    let Some(value) = value
+    else {
+        return (
+            fallback,
+            None,
+        );
+    };
+
+
+    match value
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "off" => (
+            crate::render_dithering::DitheringLevel::Off,
+            None,
+        ),
+
+        "subtle" => (
+            crate::render_dithering::DitheringLevel::Subtle,
+            None,
+        ),
+
+        _ => (
+            fallback,
+            Some(
+                format!(
+                    "[CONFIG] WARNING: postprocess.dithering = '{}' is unsupported; using '{}'",
+                    value,
+                    fallback.name(),
+                )
+            ),
+        ),
+    }
+}
+
+
+fn parse_global_color_precision(
+    value: Option<&str>,
+    fallback:
+        crate::select_render_precision::ColorPrecisionPolicy,
+) -> (
+    crate::select_render_precision::ColorPrecisionPolicy,
+    Option<String>,
+) {
+
+    let Some(value) = value
+    else {
+        return (
+            fallback,
+            None,
+        );
+    };
+
+
+    match value
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "auto" => (
+            crate::select_render_precision::ColorPrecisionPolicy::Auto,
+            None,
+        ),
+
+        "standard" => (
+            crate::select_render_precision::ColorPrecisionPolicy::Standard,
+            None,
+        ),
+
+        "high" => (
+            crate::select_render_precision::ColorPrecisionPolicy::High,
+            None,
+        ),
+
+        _ => (
+            fallback,
+            Some(
+                format!(
+                    "[CONFIG] WARNING: postprocess.color_precision = '{}' is unsupported; using '{}'",
+                    value,
+                    fallback.name(),
+                )
+            ),
+        ),
+    }
+}
+
+
+fn parse_global_render_scale(
+    value: Option<f32>,
+    fallback: f32,
+) -> (
+    f32,
+    Option<String>,
+) {
+
+    let Some(value) = value
+    else {
+        return (
+            fallback,
+            None,
+        );
+    };
+
+
+    if value.is_finite()
+        && (crate::define_constants::RENDER_SCALE_MIN
+            ..=crate::define_constants::RENDER_SCALE_MAX)
+            .contains(
+                &value
+            )
+    {
+        return (
+            value,
+            None,
+        );
+    }
+
+
+    (
+        fallback,
+        Some(
+            format!(
+                "[CONFIG] WARNING: postprocess.render_scale = '{}' is outside the supported range {:.2}-{:.2}; using '{:.3}'",
+                value,
+                crate::define_constants::RENDER_SCALE_MIN,
+                crate::define_constants::RENDER_SCALE_MAX,
+                fallback,
+            )
+        ),
     )
 }
 
@@ -1556,7 +2797,7 @@ fn validate_rendered_fps(
 
 //
 // ------------------------------------------------------------
-// Per-shader FPS override parsing
+// Per-shader FPS policy parsing
 // ------------------------------------------------------------
 //
 
@@ -1650,7 +2891,7 @@ fn parse_global_palette(
     value: Option<&str>,
 ) -> Result<
     Option<
-        crate::palettes::Palette
+        crate::palettes::PaletteColor
     >,
     String,
 > {
@@ -1680,7 +2921,7 @@ fn parse_global_palette(
     }
 
 
-    crate::palettes::Palette::from_name(
+    crate::palettes::PaletteColor::parse_hex(
         &normalized
     )
     .map(
@@ -1725,7 +2966,7 @@ fn parse_shader_texture(
     {
         return Err(
             format!(
-                "[{}] override for '{}' requires a specific texture; 'random' is not permitted",
+                "[{}] policy for '{}' requires a specific texture; 'random' is not permitted",
                 table_name,
                 shader,
             )
@@ -1761,7 +3002,7 @@ fn parse_shader_palette(
     value: &str,
     table_name: &str,
 ) -> Result<
-    crate::palettes::Palette,
+    crate::palettes::PaletteColor,
     String,
 > {
 
@@ -1777,7 +3018,7 @@ fn parse_shader_palette(
     {
         return Err(
             format!(
-                "[{}] override for '{}' requires a specific palette; 'random' is not permitted",
+                "[{}] policy for '{}' requires a specific palette; 'random' is not permitted",
                 table_name,
                 shader,
             )
@@ -1785,7 +3026,7 @@ fn parse_shader_palette(
     }
 
 
-    crate::palettes::Palette::from_name(
+    crate::palettes::PaletteColor::parse_hex(
         &normalized
     )
     .map_err(

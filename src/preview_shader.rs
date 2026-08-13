@@ -256,12 +256,15 @@ pub fn run_paths(
         config.global_rendered_fps;
 
 
-    let fps_overrides =
-        config.screensaver_fps_overrides;
+    let fps_policy_entries =
+        config.screensaver_fps_policy_entries;
 
 
     let texture_policy =
         config.texture_policy;
+
+    let postprocess_policy =
+        config.screensaver_postprocess_policy;
 
 
     let preview_selection =
@@ -415,7 +418,7 @@ pub fn run_paths(
             subtitles,
             subtitle_placement,
             global_rendered_fps,
-            &fps_overrides,
+            &fps_policy_entries,
             command_line_fps,
             animation_speed,
             width,
@@ -423,10 +426,27 @@ pub fn run_paths(
         )?;
 
 
+    let initial_postprocess_profile =
+        postprocess_policy.profile_for_shader(
+            &active.shader_name,
+            Some(
+                active.path.as_path()
+            ),
+        );
+
+
+    let mut postprocess =
+        crate::postprocess_shader::PostprocessPipeline::new(
+            width,
+            height,
+            initial_postprocess_profile,
+        )?;
+
+
     let mut configured_fps =
         resolve_preview_fps(
             global_rendered_fps,
-            &fps_overrides,
+            &fps_policy_entries,
             command_line_fps,
             &active.shader_name,
         );
@@ -559,7 +579,7 @@ pub fn run_paths(
                         subtitles,
                         subtitle_placement,
                         global_rendered_fps,
-                        &fps_overrides,
+                        &fps_policy_entries,
                         command_line_fps,
                         animation_speed,
                         window.size().0,
@@ -582,10 +602,20 @@ pub fn run_paths(
                                 replacement;
 
 
+                            postprocess.set_profile(
+                                postprocess_policy.profile_for_shader(
+                                    &active.shader_name,
+                                    Some(
+                                        active.path.as_path()
+                                    ),
+                                )
+                            )?;
+
+
                             configured_fps =
                                 resolve_preview_fps(
                                     global_rendered_fps,
-                                    &fps_overrides,
+                                    &fps_policy_entries,
                                     command_line_fps,
                                     &active.shader_name,
                                 );
@@ -661,15 +691,23 @@ pub fn run_paths(
                 Instant::now();
 
 
+            postprocess.resize(
+                width,
+                height,
+            )?;
+
+
+            postprocess.bind_scene_target();
+
+
+            let (
+                scene_width,
+                scene_height,
+            ) =
+                postprocess.scene_dimensions();
+
+
             unsafe {
-                gl::Viewport(
-                    0,
-                    0,
-                    width as i32,
-                    height as i32,
-                );
-
-
                 gl::ClearColor(
                     0.0,
                     0.0,
@@ -727,8 +765,8 @@ pub fn run_paths(
                 set_uniform_3f(
                     active.program,
                     b"iResolution\0",
-                    width as f32,
-                    height as f32,
+                    scene_width as f32,
+                    scene_height as f32,
                     1.0,
                 );
 
@@ -748,8 +786,13 @@ pub fn run_paths(
                     0,
                     3,
                 );
+            }
 
 
+            postprocess.present_scene();
+
+
+            unsafe {
                 gl::Finish();
             }
 
@@ -926,6 +969,11 @@ pub fn run_paths(
 
 
     drop(
+        postprocess
+    );
+
+
+    drop(
         gl_context
     );
 
@@ -941,9 +989,9 @@ pub fn run_paths(
 
 fn resolve_preview_fps(
     global_rendered_fps: u32,
-    fps_overrides:
+    fps_policy_entries:
         &[
-            crate::load_config::FpsOverride
+            crate::load_config::FpsPolicyEntry
         ],
     command_line_fps: Option<u32>,
     shader_name: &str,
@@ -958,11 +1006,11 @@ fn resolve_preview_fps(
     }
 
 
-    fps_overrides
+    fps_policy_entries
         .iter()
         .find(
-            |fps_override| {
-                fps_override
+            |fps_policy_entry| {
+                fps_policy_entry
                     .shader
                     .eq_ignore_ascii_case(
                         shader_name
@@ -970,8 +1018,8 @@ fn resolve_preview_fps(
             }
         )
         .map(
-            |fps_override| {
-                fps_override.rendered_fps
+            |fps_policy_entry| {
+                fps_policy_entry.rendered_fps
             }
         )
         .unwrap_or(
@@ -987,16 +1035,16 @@ fn load_first_usable_shader(
     paths: &[PathBuf],
     start_index: usize,
     texture_policy:
-        &crate::load_config::TextureSelectionPolicy,
+        &crate::load_config::TexturePolicy,
     preview_selection:
         crate::manage_textures::PreviewTextureSelection,
     subtitles: bool,
     subtitle_placement:
         crate::parse_subtitle_placement::SubtitlePlacement,
     global_rendered_fps: u32,
-    fps_overrides:
+    fps_policy_entries:
         &[
-            crate::load_config::FpsOverride
+            crate::load_config::FpsPolicyEntry
         ],
     command_line_fps: Option<u32>,
     animation_speed: f32,
@@ -1040,7 +1088,7 @@ fn load_first_usable_shader(
         let configured_fps =
             resolve_preview_fps(
                 global_rendered_fps,
-                fps_overrides,
+                fps_policy_entries,
                 command_line_fps,
                 shader_name,
             );
@@ -1091,7 +1139,7 @@ fn load_first_usable_shader(
 fn load_active_shader(
     path: &Path,
     texture_policy:
-        &crate::load_config::TextureSelectionPolicy,
+        &crate::load_config::TexturePolicy,
     preview_selection:
         crate::manage_textures::PreviewTextureSelection,
     subtitles: bool,
@@ -1419,7 +1467,7 @@ let texture =
             ) => {
                 Some(
                     crate::manage_textures::PreviewSelectionValue::Specific(
-                        crate::palettes::Palette::from_name(
+                        crate::palettes::PaletteColor::parse_hex(
                             name
                         )?
                     )

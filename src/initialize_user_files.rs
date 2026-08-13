@@ -27,7 +27,7 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 #     bottom:right
   subtitle_placement = "bottom:center"
 # Screensaver shaders are loaded from:
-#     ~/.config/screenshaver/shaders/
+#     ~/.config/screenshaver/screensavers/
 
 # Displays a single predefined shader.
 # mode = "single:default.glsl"
@@ -36,7 +36,7 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
   mode = "random:60"
 
 # Displays shaders in alphanumerical order by filename every <nn> seconds.
-# mode = "ordered:10"
+# mode = "ordered:60"
 
 # Idle time before the screensaver activates.
 # Accepted suffixes are (s)ec, (m)in, and (h)rs.
@@ -54,7 +54,7 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 # WALLPAPER MODE
 ################################
 [wallpaper]
-  enabled = false          # Enable wallpaper rendering mode
+  enabled = true          # Enable wallpaper rendering mode
 # Wallpaper shaders are loaded from:
 #     ~/.config/screenshaver/wallpapers/
 
@@ -66,10 +66,10 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 
 # Displays wallpaper shaders in alphanumerical order by filename
 # every <nn> seconds.
-  mode = "ordered:10"
+  mode = "ordered:60"
 
 # Default animation speed for wallpaper shaders.
-  global_speed = 0.025
+  global_speed = 0.02
 
 # Default texture and palette policy for wallpaper shaders.
 # These values may differ from the screensaver defaults.
@@ -78,7 +78,7 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 
 # Initial multi-monitor support renders the same shader independently on
 # every monitor. Each monitor uses its own native resolution while sharing
-# the shader, timeline, rotation schedule, textures, palettes, and overrides.
+# the shader, timeline, rotation schedule, textures, palettes, and policies.
 #
 # Supported values:
 #     mirror
@@ -104,34 +104,52 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 #     radial             Radial textures.
 #     random             Randomly select a texture family.
 #
-# Color palettes available for compatible texture-based shaders:
+# Palette colors for compatible texture-based shaders:
 #
-#     brick
-#     bronze
-#     lichen
-#     mist
-#     sandstone
-#     random
-#     slate
+#     #rrggbb            Explicit hexadecimal RGB color.
+#     random             Randomly select a hexadecimal RGB color.
 
 ################################
-# PER-SHADER OVERRIDES
+# PER-SHADER POLICIES
 ################################
-# Override properties may be written in any order.
+# Policy properties may be written in any order.
 # Supported properties are:
 #     texture:<family>
-#     palette:<palette>
+#     palette:<#rrggbb|random>
 #     fps:<frames-per-second>
 #     speed:<animation-multiplier>
+#     anti_aliasing:<off|fxaa>
+#     dithering:<off|subtle>
+#     color_precision:<auto|standard|high>
 #
-# Properties not included in an override continue to use the active mode's
+# Property names and post-processing values are case-insensitive and are
+# normalized internally to lowercase.
+#
+# Properties not included in a policy continue to use the active mode's
 # global setting or normal random fallback.
 
-[screensaver_overrides]
-# "CandyWarp.fs" = "texture:bricks palette:mist fps:24 speed:0.5"
+[screensaver_policies]
+# "CandyWarp.fs" = "texture:bricks palette:#808e9c fps:24 speed:0.5 anti_aliasing:fxaa dithering:subtle color_precision:high"
 
-[wallpaper_overrides]
-# "CandyWarp.fs" = "fps:16 speed:0.125"
+[wallpaper_policies]
+# "CandyWarp.fs" = "fps:16 speed:0.125 anti_aliasing:off dithering:off color_precision:standard"
+
+################################
+# POST-PROCESSING
+################################
+[postprocess]
+# Built-in defaults are used when a setting is omitted.
+# Supported anti-aliasing values: off, fxaa
+  anti_aliasing = "fxaa"
+# Supported dithering values: off, subtle
+  dithering = "subtle"
+# Supported color-precision values:
+#     auto      Prefer RGBA16F and fall back to RGBA8 when unavailable.
+#     standard  Require RGBA8 render targets.
+#     high      Require RGBA16F render targets.
+  color_precision = "auto"
+# Supported render scaling values are from 0.25 to 2.0.
+  render_scale = 1.0
 
 ################################
 # PERFORMANCE
@@ -245,17 +263,17 @@ pub fn initialize() -> io::Result<PathBuf> {
 
     let cache_dir = config_dir.join("cache");
     let rejected_dir = config_dir.join("rejected");
-    let shaders_dir = config_dir.join("shaders");
+    let screensavers_dir = config_dir.join("screensavers");
     let wallpapers_dir = config_dir.join("wallpapers");
 
     let config_file = config_dir.join("screenshaver.toml");
-    let default_shader_file = shaders_dir.join("default.glsl");
+    let default_shader_file = screensavers_dir.join("default.glsl");
 
     // create_dir_all() creates missing parents and succeeds when the
     // directories already exist.
     fs::create_dir_all(&cache_dir)?;
     fs::create_dir_all(&rejected_dir)?;
-    fs::create_dir_all(&shaders_dir)?;
+    fs::create_dir_all(&screensavers_dir)?;
     fs::create_dir_all(&wallpapers_dir)?;
 
     create_file_if_missing(&config_file, DEFAULT_CONFIG)?;
