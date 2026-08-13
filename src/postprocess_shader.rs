@@ -2,6 +2,7 @@ use crate::render_dithering::{
     DitheringLevel,
     DitheringRenderer,
 };
+use crate::render_bloom::BloomRenderer;
 use crate::render_fxaa::FxaaRenderer;
 use crate::render_passthrough::PassthroughRenderer;
 
@@ -113,8 +114,12 @@ pub(crate) struct PostprocessPipeline {
     passthrough: PassthroughRenderer,
     fxaa: FxaaRenderer,
     dithering: DitheringRenderer,
+    bloom: BloomRenderer,
     method: PostprocessMethod,
     dithering_level: DitheringLevel,
+    bloom_mode: crate::render_bloom::BloomMode,
+    bloom_intensity: f32,
+    bloom_threshold: f32,
 }
 
 impl PostprocessPipeline {
@@ -155,6 +160,9 @@ impl PostprocessPipeline {
         let dithering =
             DitheringRenderer::new()?;
 
+        let bloom =
+            BloomRenderer::new()?;
+
         let requested_precision =
             profile.color_precision;
 
@@ -184,12 +192,23 @@ impl PostprocessPipeline {
                 passthrough,
                 fxaa,
                 dithering,
+                bloom,
                 method:
                     method_for_profile(
                         profile
                     ),
                 dithering_level:
                     profile.dithering,
+                bloom_mode:
+                    profile.bloom,
+                bloom_intensity:
+                    crate::render_bloom::validate_bloom_intensity(
+                        profile.bloom_intensity
+                    )?,
+                bloom_threshold:
+                    crate::render_bloom::validate_bloom_threshold(
+                        profile.bloom_threshold
+                    )?,
             };
 
         pipeline.log_precision_selection();
@@ -220,6 +239,26 @@ impl PostprocessPipeline {
         &self,
     ) {
         prepare_fullscreen_pass();
+
+        // Checkpoint 3 diagnostic path: when Highlight Bloom is enabled,
+        // present only the extracted bright-pass image.  Blur and final bloom
+        // composition are intentionally deferred to later checkpoints.
+        if matches!(
+            self.bloom_mode,
+            crate::render_bloom::BloomMode::Highlight
+        ) {
+            bind_default_framebuffer(
+                self.output_width,
+                self.output_height,
+            );
+
+            self.bloom.render_highlights(
+                self.scene_target.texture,
+                self.bloom_threshold,
+            );
+
+            return;
+        }
 
         if self.dithering_level.is_enabled() {
             self.scratch_target.bind(
@@ -284,6 +323,16 @@ impl PostprocessPipeline {
         validate_render_scale(
             profile.render_scale
         )?;
+
+        let bloom_intensity =
+            crate::render_bloom::validate_bloom_intensity(
+                profile.bloom_intensity
+            )?;
+
+        let bloom_threshold =
+            crate::render_bloom::validate_bloom_threshold(
+                profile.bloom_threshold
+            )?;
 
 
         let precision_changed =
@@ -363,6 +412,15 @@ impl PostprocessPipeline {
         self.dithering_level =
             profile.dithering;
 
+        self.bloom_mode =
+            profile.bloom;
+
+        self.bloom_intensity =
+            bloom_intensity;
+
+        self.bloom_threshold =
+            bloom_threshold;
+
 
         Ok(())
     }
@@ -380,6 +438,28 @@ impl PostprocessPipeline {
         &self,
     ) -> DitheringLevel {
         self.dithering_level
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn bloom_mode(
+        &self,
+    ) -> crate::render_bloom::BloomMode {
+        self.bloom_mode
+    }
+
+
+    #[allow(dead_code)]
+    pub(crate) fn bloom_intensity(
+        &self,
+    ) -> f32 {
+        self.bloom_intensity
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn bloom_threshold(
+        &self,
+    ) -> f32 {
+        self.bloom_threshold
     }
 
     /// Recreates both size-dependent render targets while retaining the

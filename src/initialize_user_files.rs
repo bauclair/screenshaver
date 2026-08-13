@@ -36,7 +36,7 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
   mode = "random:60"
 
 # Displays shaders in alphanumerical order by filename every <nn> seconds.
-# mode = "ordered:60"
+# mode = "ordered:10"
 
 # Idle time before the screensaver activates.
 # Accepted suffixes are (s)ec, (m)in, and (h)rs.
@@ -66,10 +66,10 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 
 # Displays wallpaper shaders in alphanumerical order by filename
 # every <nn> seconds.
-  mode = "ordered:60"
+  mode = "ordered:10"
 
 # Default animation speed for wallpaper shaders.
-  global_speed = 0.02
+  global_speed = 0.025
 
 # Default texture and palette policy for wallpaper shaders.
 # These values may differ from the screensaver defaults.
@@ -104,10 +104,15 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 #     radial             Radial textures.
 #     random             Randomly select a texture family.
 #
-# Palette colors for compatible texture-based shaders:
+# Color palettes available for compatible texture-based shaders:
 #
-#     #rrggbb            Explicit hexadecimal RGB color.
-#     random             Randomly select a hexadecimal RGB color.
+#     brick
+#     bronze
+#     lichen
+#     mist
+#     sandstone
+#     random
+#     slate
 
 ################################
 # PER-SHADER POLICIES
@@ -115,12 +120,15 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 # Policy properties may be written in any order.
 # Supported properties are:
 #     texture:<family>
-#     palette:<#rrggbb|random>
+#     palette:<palette>
 #     fps:<frames-per-second>
 #     speed:<animation-multiplier>
 #     anti_aliasing:<off|fxaa>
 #     dithering:<off|subtle>
 #     color_precision:<auto|standard|high>
+#     bloom:<off|highlight>
+#     bloom_intensity:<0.0-2.0>
+#     bloom_threshold:<0.0-2.0>
 #
 # Property names and post-processing values are case-insensitive and are
 # normalized internally to lowercase.
@@ -129,7 +137,7 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 # global setting or normal random fallback.
 
 [screensaver_policies]
-# "CandyWarp.fs" = "texture:bricks palette:#808e9c fps:24 speed:0.5 anti_aliasing:fxaa dithering:subtle color_precision:high"
+# "CandyWarp.fs" = "texture:bricks palette:mist fps:24 speed:0.5 anti_aliasing:fxaa dithering:subtle color_precision:high"
 
 [wallpaper_policies]
 # "CandyWarp.fs" = "fps:16 speed:0.125 anti_aliasing:off dithering:off color_precision:standard"
@@ -150,6 +158,12 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
   color_precision = "auto"
 # Supported render scaling values are from 0.25 to 2.0.
   render_scale = 1.0
+# Bloom mode: off or highlight.
+  bloom = "off"
+# Bloom strength, from 0.0 to 2.0.
+  bloom_intensity = 1.0
+# Minimum luminance that contributes to Highlight Bloom, from 0.0 to 2.0.
+  bloom_threshold = 0.8
 
 ################################
 # PERFORMANCE

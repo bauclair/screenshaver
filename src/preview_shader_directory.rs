@@ -20,6 +20,9 @@ pub fn run(
     interval_seconds: Option<u64>,
     fps: Option<u32>,
     animation_speed: Option<f32>,
+    bloom: Option<crate::render_bloom::BloomMode>,
+    bloom_intensity: Option<f32>,
+    bloom_threshold: Option<f32>,
 ) -> Result<(), String> {
 
     let directory =
@@ -53,6 +56,9 @@ pub fn run(
         Some(interval_seconds),
         fps,
         animation_speed,
+        bloom,
+        bloom_intensity,
+        bloom_threshold,
     )
 }
 

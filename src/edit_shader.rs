@@ -579,6 +579,7 @@ fn run_empty_session() -> Result<(), String> {
                 crate::editor_layout::ColorPrecisionSelection::Automatic,
                 crate::editor_layout::BloomSelection::Off,
                 crate::render_bloom::BLOOM_INTENSITY_DEFAULT,
+                crate::render_bloom::BLOOM_THRESHOLD_DEFAULT,
                 None,
                 false,
                 false,
@@ -873,6 +874,11 @@ fn run_empty_session() -> Result<(), String> {
                                 bloom_intensity:
                                     Some(
                                         editor_output.bloom_intensity
+                                    ),
+
+                                bloom_threshold:
+                                    Some(
+                                        editor_output.bloom_threshold
                                     ),
                             },
                     }
@@ -2402,6 +2408,7 @@ fn run_paths(
             live_postprocess_profile.bloom
         ),
         live_postprocess_profile.bloom_intensity,
+        live_postprocess_profile.bloom_threshold,
         active.texture_manager
             .active_specification_selection(),
         initial_policy_exists,
@@ -2950,6 +2957,8 @@ fn run_paths(
                     ),
                     live_postprocess_profile
                         .bloom_intensity,
+                    live_postprocess_profile
+                        .bloom_threshold,
                     active_texture_selection,
                     true,
                     active.channel_usage
@@ -3853,6 +3862,7 @@ fn run_paths(
                                 live_postprocess_profile.bloom
                             ),
                             live_postprocess_profile.bloom_intensity,
+                            live_postprocess_profile.bloom_threshold,
                             active.texture_manager
                                 .active_specification_selection(),
                             new_policy_exists,
@@ -3964,6 +3974,7 @@ fn run_paths(
                                 live_postprocess_profile.bloom
                             ),
                             live_postprocess_profile.bloom_intensity,
+                            live_postprocess_profile.bloom_threshold,
                             active.texture_manager
                                 .active_specification_selection(),
                             match editor_output.policy_target {
@@ -4217,6 +4228,7 @@ fn run_paths(
                         live_postprocess_profile.bloom
                     ),
                     live_postprocess_profile.bloom_intensity,
+                    live_postprocess_profile.bloom_threshold,
                     active.texture_manager
                         .active_specification_selection(),
                     target_policy_exists,
@@ -4362,6 +4374,9 @@ fn run_paths(
             let selected_bloom_intensity =
                 editor_output.bloom_intensity;
 
+            let selected_bloom_threshold =
+                editor_output.bloom_threshold;
+
 
             if (
                 selected_render_scale
@@ -4379,6 +4394,10 @@ fn run_paths(
                     != live_postprocess_profile.bloom
                 || (selected_bloom_intensity
                     - live_postprocess_profile.bloom_intensity)
+                    .abs()
+                    > f32::EPSILON
+                || (selected_bloom_threshold
+                    - live_postprocess_profile.bloom_threshold)
                     .abs()
                     > f32::EPSILON
             {
@@ -4399,6 +4418,9 @@ fn run_paths(
 
                 live_postprocess_profile.bloom_intensity =
                     selected_bloom_intensity;
+
+                live_postprocess_profile.bloom_threshold =
+                    selected_bloom_threshold;
 
                 postprocess.set_profile(
                     live_postprocess_profile
@@ -4714,6 +4736,12 @@ fn run_paths(
                                             live_postprocess_profile
                                                 .bloom_intensity
                                         ),
+
+                                    bloom_threshold:
+                                        Some(
+                                            live_postprocess_profile
+                                                .bloom_threshold
+                                        ),
                                 },
                         }
                     );
@@ -4992,6 +5020,12 @@ fn run_paths(
                             Some(
                                 live_postprocess_profile
                                     .bloom_intensity
+                            ),
+
+                        bloom_threshold:
+                            Some(
+                                live_postprocess_profile
+                                    .bloom_threshold
                             ),
                     };
 
@@ -5286,6 +5320,8 @@ fn run_paths(
                                             ),
                                             live_postprocess_profile
                                                 .bloom_intensity,
+                                            live_postprocess_profile
+                                                .bloom_threshold,
                                             active.texture_manager
                                                 .active_specification_selection(),
                                             true,
@@ -6342,6 +6378,11 @@ fn bulk_policy_definition_from_editor_output(
         bloom_intensity:
             Some(
                 editor_output.bloom_intensity
+            ),
+
+        bloom_threshold:
+            Some(
+                editor_output.bloom_threshold
             ),
     }
 }

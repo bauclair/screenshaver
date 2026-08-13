@@ -37,6 +37,9 @@ pub enum Command {
         interval_seconds: Option<u64>,
         fps: Option<u32>,
         animation_speed: Option<f32>,
+        bloom: Option<crate::render_bloom::BloomMode>,
+        bloom_intensity: Option<f32>,
+        bloom_threshold: Option<f32>,
     },
 
     Control {
@@ -708,10 +711,39 @@ fn parse_policy_definition(
                     Some(intensity);
             }
 
+            "bloom_threshold" => {
+                if properties.bloom_threshold.is_some() {
+                    return Err(
+                        "Policy property 'bloom_threshold' may only be specified once"
+                            .to_string()
+                    );
+                }
+
+                let threshold =
+                    value.parse::<f32>()
+                        .map_err(
+                            |_| {
+                                format!(
+                                    "Invalid bloom_threshold '{}'; specify a number from {:.2} through {:.2}",
+                                    value,
+                                    crate::render_bloom::BLOOM_THRESHOLD_MIN,
+                                    crate::render_bloom::BLOOM_THRESHOLD_MAX,
+                                )
+                            }
+                        )?;
+
+                crate::render_bloom::validate_bloom_threshold(
+                    threshold
+                )?;
+
+                properties.bloom_threshold =
+                    Some(threshold);
+            }
+
             other => {
                 return Err(
                     format!(
-                        "Unknown policy property '{}'; supported properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision, bloom, bloom_intensity",
+                        "Unknown policy property '{}'; supported properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision, bloom, bloom_intensity, bloom_threshold",
                         other,
                     )
                 );
@@ -1060,6 +1092,19 @@ fn parse_preview_shader(
             None;
 
 
+    let mut bloom:
+        Option<crate::render_bloom::BloomMode> =
+            None;
+
+    let mut bloom_intensity:
+        Option<f32> =
+            None;
+
+    let mut bloom_threshold:
+        Option<f32> =
+            None;
+
+
     let mut index =
         1;
 
@@ -1270,6 +1315,113 @@ fn parse_preview_shader(
             }
 
 
+            "--bloom" => {
+
+                if bloom.is_some() {
+                    return Err(
+                        "--bloom may only be specified once"
+                            .to_string()
+                    );
+                }
+
+                let value =
+                    argument_value(
+                        args,
+                        index,
+                        "--bloom",
+                    )?;
+
+                bloom =
+                    Some(
+                        crate::render_bloom::BloomMode::parse(
+                            value
+                        )?
+                    );
+
+                index += 2;
+            }
+
+
+            "--bloom-intensity" => {
+
+                if bloom_intensity.is_some() {
+                    return Err(
+                        "--bloom-intensity may only be specified once"
+                            .to_string()
+                    );
+                }
+
+                let value =
+                    argument_value(
+                        args,
+                        index,
+                        "--bloom-intensity",
+                    )?;
+
+                let parsed =
+                    value.parse::<f32>()
+                        .map_err(
+                            |_| {
+                                format!(
+                                    "Invalid --bloom-intensity value '{}'; specify a number from {:.2} through {:.2}",
+                                    value,
+                                    crate::render_bloom::BLOOM_INTENSITY_MIN,
+                                    crate::render_bloom::BLOOM_INTENSITY_MAX,
+                                )
+                            }
+                        )?;
+
+                bloom_intensity =
+                    Some(
+                        crate::render_bloom::validate_bloom_intensity(
+                            parsed
+                        )?
+                    );
+
+                index += 2;
+            }
+
+
+            "--bloom-threshold" => {
+
+                if bloom_threshold.is_some() {
+                    return Err(
+                        "--bloom-threshold may only be specified once"
+                            .to_string()
+                    );
+                }
+
+                let value =
+                    argument_value(
+                        args,
+                        index,
+                        "--bloom-threshold",
+                    )?;
+
+                let parsed =
+                    value.parse::<f32>()
+                        .map_err(
+                            |_| {
+                                format!(
+                                    "Invalid --bloom-threshold value '{}'; specify a number from {:.2} through {:.2}",
+                                    value,
+                                    crate::render_bloom::BLOOM_THRESHOLD_MIN,
+                                    crate::render_bloom::BLOOM_THRESHOLD_MAX,
+                                )
+                            }
+                        )?;
+
+                bloom_threshold =
+                    Some(
+                        crate::render_bloom::validate_bloom_threshold(
+                            parsed
+                        )?
+                    );
+
+                index += 2;
+            }
+
+
             "--interval" => {
 
                 if interval_seconds.is_some() {
@@ -1370,6 +1522,12 @@ fn parse_preview_shader(
             fps,
 
             animation_speed,
+
+            bloom,
+
+            bloom_intensity,
+
+            bloom_threshold,
         }
     )
 }

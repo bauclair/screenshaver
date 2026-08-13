@@ -492,6 +492,7 @@ pub struct EditorOutput {
     pub color_precision: ColorPrecisionSelection,
     pub bloom: BloomSelection,
     pub bloom_intensity: f32,
+    pub bloom_threshold: f32,
     pub policy_target_change_requested: Option<PolicyTarget>,
     pub save_requested: bool,
     pub bulk_save_requested: bool,
@@ -534,6 +535,7 @@ struct EditorConfiguration {
     color_precision: ColorPrecisionSelection,
     bloom: BloomSelection,
     bloom_intensity: f32,
+    bloom_threshold: f32,
 }
 
 
@@ -551,6 +553,7 @@ impl EditorConfiguration {
         color_precision: ColorPrecisionSelection,
         bloom: BloomSelection,
         bloom_intensity: f32,
+        bloom_threshold: f32,
     ) -> Self {
 
         Self {
@@ -574,6 +577,10 @@ impl EditorConfiguration {
             bloom_intensity:
                 normalize_editor_float(
                     bloom_intensity
+                ),
+            bloom_threshold:
+                normalize_editor_float(
+                    bloom_threshold
                 ),
         }
     }
@@ -616,6 +623,10 @@ impl EditorConfiguration {
                 != other.bloom
             || (self.bloom_intensity
                 - other.bloom_intensity)
+                .abs()
+                > 0.0001
+            || (self.bloom_threshold
+                - other.bloom_threshold)
                 .abs()
                 > 0.0001
     }
@@ -732,6 +743,9 @@ pub struct EditWindowOverlay {
     bloom_intensity:
         f32,
 
+    bloom_threshold:
+        f32,
+
     active_tab:
         EditorTab,
 
@@ -775,6 +789,9 @@ pub struct EditWindowOverlay {
         Option<SliderDragState>,
 
     bloom_intensity_drag_state:
+        Option<SliderDragState>,
+
+    bloom_threshold_drag_state:
         Option<SliderDragState>,
 }
 
@@ -1007,6 +1024,8 @@ impl EditWindowOverlay {
 
                 bloom_intensity:
                     crate::render_bloom::BLOOM_INTENSITY_DEFAULT,
+                bloom_threshold:
+                    crate::render_bloom::BLOOM_THRESHOLD_DEFAULT,
 
                 active_tab:
                     EditorTab::Policies,
@@ -1051,6 +1070,8 @@ impl EditWindowOverlay {
                     None,
 
                 bloom_intensity_drag_state:
+                    None,
+                bloom_threshold_drag_state:
                     None,
             }
         )
@@ -1415,6 +1436,7 @@ impl EditWindowOverlay {
         resolved_color_precision: ColorPrecisionSelection,
         resolved_bloom: BloomSelection,
         resolved_bloom_intensity: f32,
+        resolved_bloom_threshold: f32,
         active_texture_selection: Option<(
             crate::parse_texture_specification::TextureSpecification,
             crate::palettes::PaletteColor,
@@ -1666,6 +1688,9 @@ impl EditWindowOverlay {
         let mut bloom_intensity_drag_state =
             self.bloom_intensity_drag_state;
 
+        let mut bloom_threshold_drag_state =
+            self.bloom_threshold_drag_state;
+
         let mut policy_target =
             self.policy_target;
 
@@ -1701,6 +1726,9 @@ impl EditWindowOverlay {
 
         let mut bloom_intensity =
             self.bloom_intensity;
+
+        let mut bloom_threshold =
+            self.bloom_threshold;
 
 
         // A shader physically located in one of Screenshaver's managed
@@ -1785,6 +1813,9 @@ impl EditWindowOverlay {
             bloom_intensity =
                 resolved_bloom_intensity;
 
+            bloom_threshold =
+                resolved_bloom_threshold;
+
             if let Some((
                 specification,
                 active_palette,
@@ -1866,6 +1897,7 @@ impl EditWindowOverlay {
                             color_precision,
                             bloom,
                             bloom_intensity,
+                            bloom_threshold,
                         )
                     }
                 );
@@ -2039,6 +2071,7 @@ impl EditWindowOverlay {
                                     color_precision,
                                     bloom,
                                     bloom_intensity,
+                                    bloom_threshold,
                                 );
 
                             let configuration_changed =
@@ -2236,6 +2269,8 @@ impl EditWindowOverlay {
                                                         &mut bloom,
                                                         &mut bloom_intensity,
                                                         &mut bloom_intensity_drag_state,
+                                                        &mut bloom_threshold,
+                                                        &mut bloom_threshold_drag_state,
                                                         &mut hover_help_message,
                                                     );
                                                 },
@@ -2340,10 +2375,12 @@ impl EditWindowOverlay {
                                 &mut color_precision,
                                 &mut bloom,
                                 &mut bloom_intensity,
+                                &mut bloom_threshold,
                                 baseline_configuration,
                                 &mut fps_drag_state,
                                 &mut animation_speed_drag_state,
                                 &mut render_scale_drag_state,
+                                &mut bloom_threshold_drag_state,
                                 &mut status_message,
                                 &mut hover_help_message,
                                 shader_information,
@@ -2426,6 +2463,7 @@ impl EditWindowOverlay {
                             color_precision,
                             bloom,
                             bloom_intensity,
+                            bloom_threshold,
                         )
                         .differs_from(
                             baseline_configuration
@@ -2612,6 +2650,9 @@ impl EditWindowOverlay {
         self.bloom_intensity_drag_state =
             bloom_intensity_drag_state;
 
+        self.bloom_threshold_drag_state =
+            bloom_threshold_drag_state;
+
         self.policy_target =
             policy_target;
 
@@ -2647,6 +2688,9 @@ impl EditWindowOverlay {
 
         self.bloom_intensity =
             bloom_intensity;
+
+        self.bloom_threshold =
+            bloom_threshold;
 
         let clipped_primitives =
             self.context.tessellate(
@@ -2694,6 +2738,8 @@ impl EditWindowOverlay {
 
             bloom_intensity,
 
+            bloom_threshold,
+
             policy_target_change_requested,
 
             save_requested,
@@ -2735,6 +2781,7 @@ impl EditWindowOverlay {
                     color_precision,
                     bloom,
                     bloom_intensity,
+                    bloom_threshold,
                 )
                 .differs_from(
                     baseline_configuration
@@ -2930,6 +2977,7 @@ impl EditWindowOverlay {
         color_precision: ColorPrecisionSelection,
         bloom: BloomSelection,
         bloom_intensity: f32,
+        bloom_threshold: f32,
         active_texture_selection: Option<(
             crate::parse_texture_specification::TextureSpecification,
             crate::palettes::PaletteColor,
@@ -2980,6 +3028,12 @@ impl EditWindowOverlay {
                 crate::render_bloom::BLOOM_INTENSITY_MAX,
             );
 
+        self.bloom_threshold =
+            bloom_threshold.clamp(
+                crate::render_bloom::BLOOM_THRESHOLD_MIN,
+                crate::render_bloom::BLOOM_THRESHOLD_MAX,
+            );
+
         if let Some((
             specification,
             palette,
@@ -3019,6 +3073,9 @@ impl EditWindowOverlay {
         self.bloom_intensity_drag_state =
             None;
 
+        self.bloom_threshold_drag_state =
+            None;
+
         self.status_message =
             status_message.into();
 
@@ -3044,6 +3101,7 @@ impl EditWindowOverlay {
                     self.color_precision,
                     self.bloom,
                     self.bloom_intensity,
+                    self.bloom_threshold,
                 )
             );
     }
@@ -3163,6 +3221,9 @@ impl EditWindowOverlay {
         self.bloom_intensity =
             baseline.bloom_intensity;
 
+        self.bloom_threshold =
+            baseline.bloom_threshold;
+
         self.fps_drag_state =
             None;
 
@@ -3173,6 +3234,9 @@ impl EditWindowOverlay {
             None;
 
         self.bloom_intensity_drag_state =
+            None;
+
+        self.bloom_threshold_drag_state =
             None;
     }
 
@@ -3208,6 +3272,7 @@ impl EditWindowOverlay {
                         self.color_precision,
                         self.bloom,
                         self.bloom_intensity,
+                        self.bloom_threshold,
                     )
                 );
         }
@@ -3839,10 +3904,12 @@ fn draw_compact_action_row(
     color_precision: &mut ColorPrecisionSelection,
     bloom: &mut BloomSelection,
     bloom_intensity: &mut f32,
+    bloom_threshold: &mut f32,
     baseline_configuration: EditorConfiguration,
     fps_drag_state: &mut Option<SliderDragState>,
     animation_speed_drag_state: &mut Option<SliderDragState>,
     render_scale_drag_state: &mut Option<SliderDragState>,
+    bloom_threshold_drag_state: &mut Option<SliderDragState>,
     status_message: &mut String,
     hover_help_message: &mut Option<&'static str>,
     shader_information: Option<&ShaderInformation>,
@@ -3951,11 +4018,16 @@ fn draw_compact_action_row(
                     baseline_configuration.bloom;
                 *bloom_intensity =
                     baseline_configuration.bloom_intensity;
+
+                *bloom_threshold =
+                    baseline_configuration.bloom_threshold;
                 *fps_drag_state =
                     None;
                 *animation_speed_drag_state =
                     None;
                 *render_scale_drag_state =
+                    None;
+                *bloom_threshold_drag_state =
                     None;
                 if bulk_edit_mode {
                     *pending_bulk_save_confirmation =
@@ -8038,6 +8110,8 @@ fn draw_post_processing_tab(
     bloom: &mut BloomSelection,
     bloom_intensity: &mut f32,
     bloom_intensity_drag_state: &mut Option<SliderDragState>,
+    bloom_threshold: &mut f32,
+    bloom_threshold_drag_state: &mut Option<SliderDragState>,
     hover_help_message: &mut Option<&'static str>,
 ) {
     draw_post_processing_panel(
@@ -8170,6 +8244,74 @@ fn draw_post_processing_tab(
                 &intensity_response,
                 hover_help_message,
                 "Set the strength of the bloom effect. Hold Shift while dragging for fine adjustment. Lower values are suitable for subtle wallpaper bloom; higher values produce a stronger effect.",
+            );
+            ui.end_row();
+
+            ui.label("Bloom Threshold");
+
+            let threshold_response =
+                ui.add_enabled_ui(
+                    *bloom != BloomSelection::Off,
+                    |ui| {
+                        ui.horizontal(
+                            |ui| {
+                                ui.set_width(
+                                    metrics.dropdown_width
+                                );
+
+                                let slider_width =
+                                    (metrics.dropdown_width
+                                        - 52.0 * metrics.scale)
+                                        .max(
+                                            80.0 * metrics.scale
+                                        );
+
+                                let response =
+                                    ui.allocate_ui_with_layout(
+                                        egui::vec2(
+                                            slider_width,
+                                            ui.spacing().interact_size.y,
+                                        ),
+                                        egui::Layout::left_to_right(
+                                            egui::Align::Center
+                                        ),
+                                        |ui| {
+                                            ui.set_width(
+                                                slider_width
+                                            );
+
+                                            draw_fine_slider(
+                                                ui,
+                                                bloom_threshold,
+                                                crate::render_bloom::BLOOM_THRESHOLD_MIN,
+                                                crate::render_bloom::BLOOM_THRESHOLD_MAX,
+                                                shift_held,
+                                                metrics.scale,
+                                                bloom_threshold_drag_state,
+                                            )
+                                        },
+                                    )
+                                    .inner;
+
+                                ui.label(
+                                    format!(
+                                        "{:.2}",
+                                        *bloom_threshold,
+                                    )
+                                );
+
+                                response
+                            },
+                        )
+                        .inner
+                    },
+                )
+                .inner;
+
+            update_hover_help(
+                &threshold_response,
+                hover_help_message,
+                "Set the minimum luminance that contributes to Highlight Bloom. Lower values include more of the image; higher values restrict bloom to brighter regions. Hold Shift while dragging for fine adjustment.",
             );
             ui.end_row();
         },

@@ -164,6 +164,9 @@ pub fn run(
     interval_seconds: Option<u64>,
     command_line_fps: Option<u32>,
     animation_speed: Option<f32>,
+    command_line_bloom: Option<crate::render_bloom::BloomMode>,
+    command_line_bloom_intensity: Option<f32>,
+    command_line_bloom_threshold: Option<f32>,
 ) -> Result<(), String> {
 
     match crate::preview_shader_directory::resolve_preview_target(
@@ -190,6 +193,9 @@ pub fn run(
                 None,
                 command_line_fps,
                 animation_speed,
+                command_line_bloom,
+                command_line_bloom_intensity,
+                command_line_bloom_threshold,
             )
         }
 
@@ -205,9 +211,52 @@ pub fn run(
                 interval_seconds,
                 command_line_fps,
                 animation_speed,
+                command_line_bloom,
+                command_line_bloom_intensity,
+                command_line_bloom_threshold,
             )
         }
     }
+}
+
+
+fn preview_postprocess_profile(
+    policy: &crate::load_config::PostprocessPolicy,
+    shader_name: &str,
+    source_path: &Path,
+    command_line_bloom: Option<crate::render_bloom::BloomMode>,
+    command_line_bloom_intensity: Option<f32>,
+    command_line_bloom_threshold: Option<f32>,
+) -> crate::load_config::PostprocessProfile {
+
+    let mut profile =
+        policy.profile_for_shader(
+            shader_name,
+            Some(source_path),
+        );
+
+    if let Some(mode) =
+        command_line_bloom
+    {
+        profile.bloom =
+            mode;
+    }
+
+    if let Some(intensity) =
+        command_line_bloom_intensity
+    {
+        profile.bloom_intensity =
+            intensity;
+    }
+
+    if let Some(threshold) =
+        command_line_bloom_threshold
+    {
+        profile.bloom_threshold =
+            threshold;
+    }
+
+    profile
 }
 
 
@@ -218,6 +267,9 @@ pub fn run_paths(
     interval_seconds: Option<u64>,
     command_line_fps: Option<u32>,
     animation_speed: Option<f32>,
+    command_line_bloom: Option<crate::render_bloom::BloomMode>,
+    command_line_bloom_intensity: Option<f32>,
+    command_line_bloom_threshold: Option<f32>,
 ) -> Result<(), String> {
 
     if shader_paths.is_empty() {
@@ -427,11 +479,13 @@ pub fn run_paths(
 
 
     let initial_postprocess_profile =
-        postprocess_policy.profile_for_shader(
+        preview_postprocess_profile(
+            &postprocess_policy,
             &active.shader_name,
-            Some(
-                active.path.as_path()
-            ),
+            active.path.as_path(),
+            command_line_bloom,
+            command_line_bloom_intensity,
+            command_line_bloom_threshold,
         );
 
 
@@ -603,11 +657,13 @@ pub fn run_paths(
 
 
                             postprocess.set_profile(
-                                postprocess_policy.profile_for_shader(
+                                preview_postprocess_profile(
+                                    &postprocess_policy,
                                     &active.shader_name,
-                                    Some(
-                                        active.path.as_path()
-                                    ),
+                                    active.path.as_path(),
+                                    command_line_bloom,
+                                    command_line_bloom_intensity,
+                                    command_line_bloom_threshold,
                                 )
                             )?;
 

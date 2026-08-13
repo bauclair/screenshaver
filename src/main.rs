@@ -76,8 +76,8 @@ mod postprocess_shader;
 mod render_passthrough;
 mod render_fxaa;
 mod render_dithering;
-mod select_render_precision;
 mod render_bloom;
+mod select_render_precision;
 
 use std::sync::Arc;
 use std::sync::atomic::{
@@ -454,6 +454,9 @@ crate::parse_arguments::Command::PreviewShader {
     interval_seconds,
     fps,
     animation_speed,
+    bloom,
+    bloom_intensity,
+    bloom_threshold,
 } => {
 
     match crate::preview_shader::run(
@@ -463,6 +466,9 @@ crate::parse_arguments::Command::PreviewShader {
         interval_seconds,
         fps,
         animation_speed,
+        bloom,
+        bloom_intensity,
+        bloom_threshold,
     ) {
 
         Ok(()) => {}
@@ -1551,29 +1557,11 @@ crate::parse_arguments::Command::ListTextures => {
                             )
                         };
 
-                    let effective_shader_interval =
-                        if shader_manager.shader_count() <= 1
-                            && next_shader_interval != 0
-                        {
-                            println!(
-                                "Screensaver rotation disabled: only one eligible shader is available."
-                            );
-
-                            crate::logger::information(
-                                &logfile,
-                                "[RENDER] Screensaver rotation disabled: only one eligible shader is available",
-                            );
-
-                            0
-                        } else {
-                            next_shader_interval
-                        };
-
                     let mut renderer =
                         match crate::render_frame::FrameRenderer::new(
                             &sdl,
                             shader_manager,
-                            effective_shader_interval,
+                            next_shader_interval,
                             cfg.screensaver_speed_policy.clone(),
                             cfg.global_rendered_fps,
                             cfg.screensaver_fps_policy_entries.clone(),

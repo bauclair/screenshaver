@@ -172,6 +172,9 @@ pub struct PolicyDefinition {
 
     pub bloom_intensity:
         Option<f32>,
+
+    pub bloom_threshold:
+        Option<f32>,
 }
 
 
@@ -244,6 +247,7 @@ impl PolicyDefinition {
             && self.color_precision.is_none()
             && self.bloom.is_none()
             && self.bloom_intensity.is_none()
+            && self.bloom_threshold.is_none()
     }
 }
 
@@ -2434,6 +2438,25 @@ fn validate_properties(
     }
 
 
+    if let Some(threshold) =
+        properties.bloom_threshold
+    {
+        crate::render_bloom::validate_bloom_threshold(
+            threshold
+        )
+        .map_err(
+            |_| {
+                format!(
+                    "Bloom-threshold policy {} is outside the supported range {:.2}-{:.2}",
+                    threshold,
+                    crate::render_bloom::BLOOM_THRESHOLD_MIN,
+                    crate::render_bloom::BLOOM_THRESHOLD_MAX,
+                )
+            }
+        )?;
+    }
+
+
     Ok(())
 }
 
@@ -2635,6 +2658,20 @@ fn format_policy(
                 "bloom_intensity:{}",
                 format_speed(
                     intensity
+                ),
+            )
+        );
+    }
+
+
+    if let Some(threshold) =
+        properties.bloom_threshold
+    {
+        tokens.push(
+            format!(
+                "bloom_threshold:{}",
+                format_speed(
+                    threshold
                 ),
             )
         );
@@ -3017,6 +3054,9 @@ struct PolicyRow {
 
     bloom_intensity:
         String,
+
+    bloom_threshold:
+        String,
 }
 
 
@@ -3054,6 +3094,9 @@ struct PolicyTableLayout {
         usize,
 
     bloom_intensity_width:
+        usize,
+
+    bloom_threshold_width:
         usize,
 }
 
@@ -3120,7 +3163,7 @@ fn print_policy_table(
         &rows
     {
         println!(
-            "{:<shader_width$}  {:<texture_width$}  {:<palette_width$}  {:>fps_width$}  {:>speed_width$}  {:>render_scale_width$}  {:<anti_aliasing_width$}  {:<dithering_width$}  {:<color_precision_width$}  {:<bloom_width$}  {:>bloom_intensity_width$}",
+            "{:<shader_width$}  {:<texture_width$}  {:<palette_width$}  {:>fps_width$}  {:>speed_width$}  {:>render_scale_width$}  {:<anti_aliasing_width$}  {:<dithering_width$}  {:<color_precision_width$}  {:<bloom_width$}  {:>bloom_intensity_width$}  {:>bloom_threshold_width$}",
             row.shader,
             row.texture,
             row.palette,
@@ -3132,6 +3175,7 @@ fn print_policy_table(
             row.color_precision,
             row.bloom,
             row.bloom_intensity,
+            row.bloom_threshold,
             shader_width = layout.shader_width,
             texture_width = layout.texture_width,
             palette_width = layout.palette_width,
@@ -3143,6 +3187,7 @@ fn print_policy_table(
             color_precision_width = layout.color_precision_width,
             bloom_width = layout.bloom_width,
             bloom_intensity_width = layout.bloom_intensity_width,
+            bloom_threshold_width = layout.bloom_threshold_width,
         );
     }
 
@@ -3325,6 +3370,53 @@ fn collect_policy_rows(
                     };
 
 
+                let bloom_threshold =
+                    match policy_property_value(
+                        specification,
+                        "bloom_threshold",
+                    ) {
+                        Some(value) => {
+                            let parsed =
+                                value.parse::<f32>()
+                                    .map_err(
+                                        |_| {
+                                            format!(
+                                                "Invalid bloom_threshold '{}' for policy '{}' in [{}]",
+                                                value,
+                                                shader,
+                                                target.table_name(),
+                                            )
+                                        }
+                                    )?;
+
+                            crate::render_bloom::validate_bloom_threshold(
+                                parsed
+                            )
+                            .map_err(
+                                |_| {
+                                    format!(
+                                        "bloom_threshold '{}' for policy '{}' in [{}] is outside the supported range {:.2}-{:.2}",
+                                        value,
+                                        shader,
+                                        target.table_name(),
+                                        crate::render_bloom::BLOOM_THRESHOLD_MIN,
+                                        crate::render_bloom::BLOOM_THRESHOLD_MAX,
+                                    )
+                                }
+                            )?;
+
+                            format!(
+                                "{:.3}",
+                                parsed,
+                            )
+                        }
+
+                        None => {
+                            "-".to_string()
+                        }
+                    };
+
+
                 Ok(
                     PolicyRow {
                         shader:
@@ -3391,6 +3483,8 @@ fn collect_policy_rows(
                             .to_string(),
 
                         bloom_intensity,
+
+                        bloom_threshold,
                     }
                 )
             }
@@ -3546,6 +3640,20 @@ fn calculate_policy_table_layout(
                 .max(
                     "Bloom intensity".len()
                 ),
+
+        bloom_threshold_width:
+            rows.iter()
+                .map(
+                    |row| {
+                        row.bloom_threshold.len()
+                    }
+                )
+                .max()
+                .unwrap_or(0)
+                .max(
+                    "Bloom threshold".len()
+                ),
+
     }
 }
 
@@ -3555,7 +3663,7 @@ fn print_policy_table_header(
 ) {
 
     println!(
-        "{:<shader_width$}  {:<texture_width$}  {:<palette_width$}  {:>fps_width$}  {:>speed_width$}  {:>render_scale_width$}  {:<anti_aliasing_width$}  {:<dithering_width$}  {:<color_precision_width$}  {:<bloom_width$}  {:>bloom_intensity_width$}",
+        "{:<shader_width$}  {:<texture_width$}  {:<palette_width$}  {:>fps_width$}  {:>speed_width$}  {:>render_scale_width$}  {:<anti_aliasing_width$}  {:<dithering_width$}  {:<color_precision_width$}  {:<bloom_width$}  {:>bloom_intensity_width$}  {:>bloom_threshold_width$}",
         "Shader",
         "Texture",
         "Palette",
@@ -3567,6 +3675,7 @@ fn print_policy_table_header(
         "Color precision",
         "Bloom",
         "Bloom intensity",
+        "Bloom threshold",
         shader_width = layout.shader_width,
         texture_width = layout.texture_width,
         palette_width = layout.palette_width,
@@ -3578,11 +3687,12 @@ fn print_policy_table_header(
         color_precision_width = layout.color_precision_width,
         bloom_width = layout.bloom_width,
         bloom_intensity_width = layout.bloom_intensity_width,
+        bloom_threshold_width = layout.bloom_threshold_width,
     );
 
 
     println!(
-        "{}  {}  {}  {}  {}  {}  {}  {}  {}  {}  {}",
+        "{}  {}  {}  {}  {}  {}  {}  {}  {}  {}  {}  {}",
         "-".repeat(
             layout.shader_width
         ),
@@ -3615,6 +3725,9 @@ fn print_policy_table_header(
         ),
         "-".repeat(
             layout.bloom_intensity_width
+        ),
+        "-".repeat(
+            layout.bloom_threshold_width
         ),
     );
 }

@@ -135,6 +135,9 @@ struct PostprocessSection {
 
     #[serde(default)]
     bloom_intensity: Option<f32>,
+
+    #[serde(default)]
+    bloom_threshold: Option<f32>,
 }
 
 
@@ -286,6 +289,9 @@ pub struct ShaderPolicy {
         >,
 
     pub bloom_intensity:
+        Option<f32>,
+
+    pub bloom_threshold:
         Option<f32>,
 }
 
@@ -636,6 +642,9 @@ pub(crate) struct PostprocessProfile {
 
     pub bloom_intensity:
         f32,
+
+    pub bloom_threshold:
+        f32,
 }
 
 
@@ -662,6 +671,9 @@ impl Default for PostprocessProfile {
 
             bloom_intensity:
                 crate::render_bloom::BLOOM_INTENSITY_DEFAULT,
+
+            bloom_threshold:
+                crate::render_bloom::BLOOM_THRESHOLD_DEFAULT,
         }
     }
 }
@@ -781,6 +793,17 @@ impl PostprocessPolicy {
                     )
                     .unwrap_or(
                         self.global_profile.bloom_intensity
+                    ),
+
+            bloom_threshold:
+                shader_policy
+                    .and_then(
+                        |shader_policy| {
+                            shader_policy.bloom_threshold
+                        }
+                    )
+                    .unwrap_or(
+                        self.global_profile.bloom_threshold
                     ),
         }
     }
@@ -1002,6 +1025,17 @@ pub fn load_config(
                 .bloom_intensity,
         );
 
+    let (
+        global_bloom_threshold,
+        bloom_threshold_warning,
+    ) =
+        parse_global_bloom_threshold(
+            raw.postprocess
+                .bloom_threshold,
+            built_in_postprocess_profile
+                .bloom_threshold,
+        );
+
 
     let global_postprocess_profile =
         PostprocessProfile {
@@ -1017,6 +1051,8 @@ pub fn load_config(
                 global_bloom,
             bloom_intensity:
                 global_bloom_intensity,
+            bloom_threshold:
+                global_bloom_threshold,
         };
 
 
@@ -1526,6 +1562,14 @@ pub fn load_config(
             ),
 
             format!(
+                "[CONFIG] postprocess.bloom_threshold = {:.3}",
+                config
+                    .screensaver_postprocess_policy
+                    .global_profile
+                    .bloom_threshold,
+            ),
+
+            format!(
                 "[CONFIG] screen_lock = {}",
                 config.screen_lock,
             ),
@@ -1625,6 +1669,15 @@ pub fn load_config(
 
     if let Some(warning) =
         bloom_intensity_warning
+    {
+        diagnostics.push(
+            warning
+        );
+    }
+
+
+    if let Some(warning) =
+        bloom_threshold_warning
     {
         diagnostics.push(
             warning
@@ -1966,6 +2019,7 @@ fn parse_policy_specification(
     let mut render_scale = None;
     let mut bloom = None;
     let mut bloom_intensity = None;
+    let mut bloom_threshold = None;
 
 
     for token in
@@ -2236,10 +2290,29 @@ fn parse_policy_specification(
                     );
             }
 
+            "bloom_threshold" => {
+                if bloom_threshold.is_some() {
+                    return Err(duplicate_policy_property(
+                        &shader,
+                        target,
+                        "bloom_threshold",
+                    ));
+                }
+
+                bloom_threshold =
+                    Some(
+                        parse_policy_bloom_threshold(
+                            &shader,
+                            value,
+                            target.table_name(),
+                        )?
+                    );
+            }
+
             other => {
                 return Err(
                     format!(
-                        "Unknown policy property '{}' for '{}' in [{}]; supported properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision, render_scale, bloom, bloom_intensity",
+                        "Unknown policy property '{}' for '{}' in [{}]; supported properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision, render_scale, bloom, bloom_intensity, bloom_threshold",
                         other,
                         shader,
                         target.table_name(),
@@ -2260,6 +2333,7 @@ fn parse_policy_specification(
         && render_scale.is_none()
         && bloom.is_none()
         && bloom_intensity.is_none()
+        && bloom_threshold.is_none()
     {
         return Err(
             format!(
@@ -2286,6 +2360,7 @@ fn parse_policy_specification(
             render_scale,
             bloom,
             bloom_intensity,
+            bloom_threshold,
         }
     )
 }
@@ -2454,8 +2529,23 @@ fn format_shader_policy_diagnostic(
             }
         );
 
+    let bloom_threshold = shader_policy.bloom_threshold
+        .map(
+            |threshold| {
+                format!(
+                    "{:.3}",
+                    threshold,
+                )
+            }
+        )
+        .unwrap_or_else(
+            || {
+                "<global>".to_string()
+            }
+        );
+
     format!(
-        "[CONFIG] {} shader={} source={} texture={} palette={} fps={} speed={} anti_aliasing={} dithering={} color_precision={} render_scale={} bloom={} bloom_intensity={}",
+        "[CONFIG] {} shader={} source={} texture={} palette={} fps={} speed={} anti_aliasing={} dithering={} color_precision={} render_scale={} bloom={} bloom_intensity={} bloom_threshold={}",
         table_name,
         shader_policy.shader,
         source_path,
@@ -2469,6 +2559,7 @@ fn format_shader_policy_diagnostic(
         render_scale,
         bloom,
         bloom_intensity,
+        bloom_threshold,
     )
 }
 
@@ -2867,6 +2958,45 @@ fn parse_global_color_precision(
 }
 
 
+fn parse_policy_bloom_threshold(
+    shader: &str,
+    value: &str,
+    table_name: &str,
+) -> Result<f32, String> {
+
+    let parsed =
+        value.parse::<f32>()
+            .map_err(
+                |_| {
+                    format!(
+                        "Invalid bloom_threshold '{}' for '{}' in [{}]; expected a number from {:.2} through {:.2}",
+                        value,
+                        shader,
+                        table_name,
+                        crate::render_bloom::BLOOM_THRESHOLD_MIN,
+                        crate::render_bloom::BLOOM_THRESHOLD_MAX,
+                    )
+                }
+            )?;
+
+    crate::render_bloom::validate_bloom_threshold(
+        parsed
+    )
+    .map_err(
+        |_| {
+            format!(
+                "bloom_threshold {} for '{}' in [{}] is outside the supported range {:.2}-{:.2}",
+                parsed,
+                shader,
+                table_name,
+                crate::render_bloom::BLOOM_THRESHOLD_MIN,
+                crate::render_bloom::BLOOM_THRESHOLD_MAX,
+            )
+        }
+    )
+}
+
+
 fn parse_global_bloom(
     value: Option<&str>,
     fallback: crate::render_bloom::BloomMode,
@@ -2943,6 +3073,47 @@ fn parse_global_bloom_intensity(
                 value,
                 crate::render_bloom::BLOOM_INTENSITY_MIN,
                 crate::render_bloom::BLOOM_INTENSITY_MAX,
+                fallback,
+            )
+        ),
+    )
+}
+
+
+fn parse_global_bloom_threshold(
+    value: Option<f32>,
+    fallback: f32,
+) -> (
+    f32,
+    Option<String>,
+) {
+    let Some(value) = value
+    else {
+        return (
+            fallback,
+            None,
+        );
+    };
+
+    if crate::render_bloom::validate_bloom_threshold(
+        value
+    )
+    .is_ok()
+    {
+        return (
+            value,
+            None,
+        );
+    }
+
+    (
+        fallback,
+        Some(
+            format!(
+                "[CONFIG] WARNING: postprocess.bloom_threshold = '{}' is outside the supported range {:.2}-{:.2}; using '{:.3}'",
+                value,
+                crate::render_bloom::BLOOM_THRESHOLD_MIN,
+                crate::render_bloom::BLOOM_THRESHOLD_MAX,
                 fallback,
             )
         ),
