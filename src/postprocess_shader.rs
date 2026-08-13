@@ -98,16 +98,21 @@ impl Drop for RenderTarget {
 /// post-processing plan.
 ///
 /// The caller renders the scene after `bind_scene_target()`. `present_scene()`
-/// then runs the selected anti-aliasing presentation method, followed by
-/// optional dithering, before returning framebuffer zero to the caller for
-/// crisp overlay rendering.
+/// then runs the selected presentation plan. Highlight Bloom currently uses
+/// a diagnostic half-resolution extraction-and-blur path; normal rendering
+/// continues through anti-aliasing and optional dithering before returning
+/// framebuffer zero to the caller for crisp overlay rendering.
 pub(crate) struct PostprocessPipeline {
     scene_target: RenderTarget,
     scratch_target: RenderTarget,
+    bloom_target_a: RenderTarget,
+    bloom_target_b: RenderTarget,
     output_width: u32,
     output_height: u32,
     scene_width: u32,
     scene_height: u32,
+    bloom_width: u32,
+    bloom_height: u32,
     render_scale: f32,
     precision_selection:
         crate::select_render_precision::RenderPrecisionSelection,
@@ -151,6 +156,16 @@ impl PostprocessPipeline {
                 render_scale,
             )?;
 
+
+        let (
+            bloom_width,
+            bloom_height,
+        ) =
+            bloom_dimensions(
+                output_width,
+                output_height,
+            )?;
+
         let passthrough =
             PassthroughRenderer::new()?;
 
@@ -179,14 +194,33 @@ impl PostprocessPipeline {
                 requested_precision,
             )?;
 
+
+        let bloom_target_a =
+            RenderTarget::new(
+                bloom_width,
+                bloom_height,
+                precision_selection.selected,
+            )?;
+
+        let bloom_target_b =
+            RenderTarget::new(
+                bloom_width,
+                bloom_height,
+                precision_selection.selected,
+            )?;
+
         let pipeline =
             Self {
                 scene_target,
                 scratch_target,
+                bloom_target_a,
+                bloom_target_b,
                 output_width,
                 output_height,
                 scene_width,
                 scene_height,
+                bloom_width,
+                bloom_height,
                 render_scale,
                 precision_selection,
                 passthrough,
@@ -240,21 +274,56 @@ impl PostprocessPipeline {
     ) {
         prepare_fullscreen_pass();
 
-        // Checkpoint 3 diagnostic path: when Highlight Bloom is enabled,
-        // present only the extracted bright-pass image.  Blur and final bloom
-        // composition are intentionally deferred to later checkpoints.
+        // Checkpoint 4 diagnostic path: extract highlights into a
+        // half-resolution working texture, blur horizontally, blur vertically,
+        // then present only the final blurred Bloom texture.
         if matches!(
             self.bloom_mode,
             crate::render_bloom::BloomMode::Highlight
         ) {
+            self.bloom_target_a.bind(
+                self.bloom_width,
+                self.bloom_height,
+            );
+
+            unsafe {
+                gl::ClearColor(
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                );
+
+                gl::Clear(
+                    gl::COLOR_BUFFER_BIT
+                );
+            }
+
+            self.bloom.render_highlights(
+                self.scene_target.texture,
+                self.bloom_threshold,
+            );
+
+            self.bloom_target_b.bind(
+                self.bloom_width,
+                self.bloom_height,
+            );
+
+            self.bloom.render_blur(
+                self.bloom_target_a.texture,
+                1.0 / self.bloom_width as f32,
+                0.0,
+            );
+
             bind_default_framebuffer(
                 self.output_width,
                 self.output_height,
             );
 
-            self.bloom.render_highlights(
-                self.scene_target.texture,
-                self.bloom_threshold,
+            self.bloom.render_blur(
+                self.bloom_target_b.texture,
+                0.0,
+                1.0 / self.bloom_height as f32,
             );
 
             return;
@@ -392,6 +461,20 @@ impl PostprocessPipeline {
             self.precision_selection =
                 precision_selection;
 
+            self.bloom_target_a =
+                RenderTarget::new(
+                    self.bloom_width,
+                    self.bloom_height,
+                    self.precision_selection.selected,
+                )?;
+
+            self.bloom_target_b =
+                RenderTarget::new(
+                    self.bloom_width,
+                    self.bloom_height,
+                    self.precision_selection.selected,
+                )?;
+
 
             if precision_changed {
                 self.log_precision_selection();
@@ -490,6 +573,16 @@ impl PostprocessPipeline {
                 self.render_scale,
             )?;
 
+
+        let (
+            bloom_width,
+            bloom_height,
+        ) =
+            bloom_dimensions(
+                width,
+                height,
+            )?;
+
         // Allocate both replacements before releasing either working target.
         // If allocation fails, the existing pipeline remains usable.
         let replacement_scene =
@@ -506,11 +599,32 @@ impl PostprocessPipeline {
                 self.precision_selection.selected,
             )?;
 
+
+        let replacement_bloom_a =
+            RenderTarget::new(
+                bloom_width,
+                bloom_height,
+                self.precision_selection.selected,
+            )?;
+
+        let replacement_bloom_b =
+            RenderTarget::new(
+                bloom_width,
+                bloom_height,
+                self.precision_selection.selected,
+            )?;
+
         self.scene_target =
             replacement_scene;
 
         self.scratch_target =
             replacement_scratch;
+
+        self.bloom_target_a =
+            replacement_bloom_a;
+
+        self.bloom_target_b =
+            replacement_bloom_b;
 
         self.output_width =
             width;
@@ -523,6 +637,12 @@ impl PostprocessPipeline {
 
         self.scene_height =
             scene_height;
+
+        self.bloom_width =
+            bloom_width;
+
+        self.bloom_height =
+            bloom_height;
 
         self.log_render_scale();
 
@@ -1094,6 +1214,25 @@ fn scaled_dimensions(
         (
             scene_width as u32,
             scene_height as u32,
+        )
+    )
+}
+
+
+fn bloom_dimensions(
+    output_width: u32,
+    output_height: u32,
+) -> Result<(u32, u32), String> {
+
+    validate_dimensions(
+        output_width,
+        output_height,
+    )?;
+
+    Ok(
+        (
+            (output_width / 2).max(1),
+            (output_height / 2).max(1),
         )
     )
 }

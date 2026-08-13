@@ -1,9 +1,9 @@
 //! Bloom post-processing definitions and renderer support.
 //!
-//! Checkpoint 3 adds the first OpenGL stage: highlight extraction.  When
-//! Highlight Bloom is selected, the post-processing pipeline temporarily
-//! presents this extracted bright-pass image directly for visual tuning.
-//! Blur and final bloom composition remain deferred to later checkpoints.
+//! Checkpoint 4 adds reduced-resolution separable blur after highlight
+//! extraction. Highlight Bloom still uses a diagnostic presentation path:
+//! the final blurred bloom texture is shown directly so blur quality and
+//! performance can be evaluated before final scene composition is added.
 
 pub(crate) const BLOOM_INTENSITY_MIN: f32 =
     0.0;
@@ -230,11 +230,55 @@ void main()
 "#;
 
 
+const BLOOM_BLUR_FRAGMENT_SHADER: &str = r#"
+#version 330 core
+
+uniform sampler2D uSource;
+uniform vec2 uTexelStep;
+
+in vec2 vUv;
+
+out vec4 fragColor;
+
+void main()
+{
+    const float w0 = 0.2270270270;
+    const float w1 = 0.1945945946;
+    const float w2 = 0.1216216216;
+    const float w3 = 0.0540540541;
+    const float w4 = 0.0162162162;
+
+    vec3 color =
+        texture(uSource, vUv).rgb * w0;
+
+    color += texture(uSource, vUv + uTexelStep * 1.0).rgb * w1;
+    color += texture(uSource, vUv - uTexelStep * 1.0).rgb * w1;
+
+    color += texture(uSource, vUv + uTexelStep * 2.0).rgb * w2;
+    color += texture(uSource, vUv - uTexelStep * 2.0).rgb * w2;
+
+    color += texture(uSource, vUv + uTexelStep * 3.0).rgb * w3;
+    color += texture(uSource, vUv - uTexelStep * 3.0).rgb * w3;
+
+    color += texture(uSource, vUv + uTexelStep * 4.0).rgb * w4;
+    color += texture(uSource, vUv - uTexelStep * 4.0).rgb * w4;
+
+    fragColor = vec4(
+        color,
+        1.0
+    );
+}
+"#;
+
+
 pub(crate) struct BloomRenderer {
     highlight_program: u32,
+    blur_program: u32,
     vao: u32,
     scene_location: i32,
     threshold_location: i32,
+    blur_source_location: i32,
+    blur_texel_step_location: i32,
 }
 
 
@@ -256,6 +300,27 @@ impl BloomRenderer {
                 }
             )?;
 
+
+        let blur_program =
+            crate::compile_shader::build_program(
+                BLOOM_VERTEX_SHADER,
+                BLOOM_BLUR_FRAGMENT_SHADER,
+            )
+            .map_err(
+                |error| {
+                    unsafe {
+                        gl::DeleteProgram(
+                            highlight_program
+                        );
+                    }
+
+                    format!(
+                        "Unable to build Bloom blur program: {}",
+                        error,
+                    )
+                }
+            )?;
+
         let mut vao =
             0_u32;
 
@@ -270,6 +335,10 @@ impl BloomRenderer {
             unsafe {
                 gl::DeleteProgram(
                     highlight_program
+                );
+
+                gl::DeleteProgram(
+                    blur_program
                 );
             }
 
@@ -299,8 +368,31 @@ impl BloomRenderer {
                 )
             };
 
+
+        let blur_source_location =
+            unsafe {
+                gl::GetUniformLocation(
+                    blur_program,
+                    b"uSource\0"
+                        .as_ptr()
+                        .cast(),
+                )
+            };
+
+        let blur_texel_step_location =
+            unsafe {
+                gl::GetUniformLocation(
+                    blur_program,
+                    b"uTexelStep\0"
+                        .as_ptr()
+                        .cast(),
+                )
+            };
+
         if scene_location == -1
             || threshold_location == -1
+            || blur_source_location == -1
+            || blur_texel_step_location == -1
         {
             unsafe {
                 gl::DeleteVertexArrays(
@@ -311,10 +403,14 @@ impl BloomRenderer {
                 gl::DeleteProgram(
                     highlight_program
                 );
+
+                gl::DeleteProgram(
+                    blur_program
+                );
             }
 
             return Err(
-                "Bloom highlight-extraction program is missing a required uniform"
+                "Bloom post-processing program is missing a required uniform"
                     .to_string()
             );
         }
@@ -322,9 +418,12 @@ impl BloomRenderer {
         Ok(
             Self {
                 highlight_program,
+                blur_program,
                 vao,
                 scene_location,
                 threshold_location,
+                blur_source_location,
+                blur_texel_step_location,
             }
         )
     }
@@ -379,6 +478,56 @@ impl BloomRenderer {
             );
         }
     }
+
+
+    pub(crate) fn render_blur(
+        &self,
+        source_texture: u32,
+        texel_step_x: f32,
+        texel_step_y: f32,
+    ) {
+
+        unsafe {
+            gl::UseProgram(
+                self.blur_program
+            );
+
+            gl::ActiveTexture(
+                gl::TEXTURE0
+            );
+
+            gl::BindTexture(
+                gl::TEXTURE_2D,
+                source_texture,
+            );
+
+            gl::Uniform1i(
+                self.blur_source_location,
+                0,
+            );
+
+            gl::Uniform2f(
+                self.blur_texel_step_location,
+                texel_step_x,
+                texel_step_y,
+            );
+
+            gl::BindVertexArray(
+                self.vao
+            );
+
+            gl::DrawArrays(
+                gl::TRIANGLES,
+                0,
+                3,
+            );
+
+            gl::BindTexture(
+                gl::TEXTURE_2D,
+                0,
+            );
+        }
+    }
 }
 
 
@@ -401,12 +550,21 @@ impl Drop for BloomRenderer {
                     self.highlight_program
                 );
             }
+
+            if self.blur_program != 0 {
+                gl::DeleteProgram(
+                    self.blur_program
+                );
+            }
         }
 
         self.vao =
             0;
 
         self.highlight_program =
+            0;
+
+        self.blur_program =
             0;
     }
 }
