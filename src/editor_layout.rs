@@ -187,6 +187,13 @@ pub enum AntiAliasingSelection {
 
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BloomSelection {
+    Off,
+    Highlight,
+}
+
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DitheringSelection {
     Off,
     Subtle,
@@ -483,6 +490,8 @@ pub struct EditorOutput {
     pub anti_aliasing: AntiAliasingSelection,
     pub dithering: DitheringSelection,
     pub color_precision: ColorPrecisionSelection,
+    pub bloom: BloomSelection,
+    pub bloom_intensity: f32,
     pub policy_target_change_requested: Option<PolicyTarget>,
     pub save_requested: bool,
     pub bulk_save_requested: bool,
@@ -523,6 +532,8 @@ struct EditorConfiguration {
     anti_aliasing: AntiAliasingSelection,
     dithering: DitheringSelection,
     color_precision: ColorPrecisionSelection,
+    bloom: BloomSelection,
+    bloom_intensity: f32,
 }
 
 
@@ -538,6 +549,8 @@ impl EditorConfiguration {
         anti_aliasing: AntiAliasingSelection,
         dithering: DitheringSelection,
         color_precision: ColorPrecisionSelection,
+        bloom: BloomSelection,
+        bloom_intensity: f32,
     ) -> Self {
 
         Self {
@@ -557,6 +570,11 @@ impl EditorConfiguration {
             anti_aliasing,
             dithering,
             color_precision,
+            bloom,
+            bloom_intensity:
+                normalize_editor_float(
+                    bloom_intensity
+                ),
         }
     }
 
@@ -594,6 +612,12 @@ impl EditorConfiguration {
                 != other.dithering
             || self.color_precision
                 != other.color_precision
+            || self.bloom
+                != other.bloom
+            || (self.bloom_intensity
+                - other.bloom_intensity)
+                .abs()
+                > 0.0001
     }
 }
 
@@ -702,6 +726,12 @@ pub struct EditWindowOverlay {
     color_precision:
         ColorPrecisionSelection,
 
+    bloom:
+        BloomSelection,
+
+    bloom_intensity:
+        f32,
+
     active_tab:
         EditorTab,
 
@@ -742,6 +772,9 @@ pub struct EditWindowOverlay {
         Option<SliderDragState>,
 
     render_scale_drag_state:
+        Option<SliderDragState>,
+
+    bloom_intensity_drag_state:
         Option<SliderDragState>,
 }
 
@@ -969,6 +1002,12 @@ impl EditWindowOverlay {
                 color_precision:
                     ColorPrecisionSelection::Automatic,
 
+                bloom:
+                    BloomSelection::Off,
+
+                bloom_intensity:
+                    crate::render_bloom::BLOOM_INTENSITY_DEFAULT,
+
                 active_tab:
                     EditorTab::Policies,
 
@@ -1009,6 +1048,9 @@ impl EditWindowOverlay {
                     None,
 
                 render_scale_drag_state:
+                    None,
+
+                bloom_intensity_drag_state:
                     None,
             }
         )
@@ -1371,6 +1413,8 @@ impl EditWindowOverlay {
         resolved_anti_aliasing: AntiAliasingSelection,
         resolved_dithering: DitheringSelection,
         resolved_color_precision: ColorPrecisionSelection,
+        resolved_bloom: BloomSelection,
+        resolved_bloom_intensity: f32,
         active_texture_selection: Option<(
             crate::parse_texture_specification::TextureSpecification,
             crate::palettes::PaletteColor,
@@ -1619,6 +1663,9 @@ impl EditWindowOverlay {
         let mut animation_speed_drag_state =
             self.animation_speed_drag_state;
 
+        let mut bloom_intensity_drag_state =
+            self.bloom_intensity_drag_state;
+
         let mut policy_target =
             self.policy_target;
 
@@ -1648,6 +1695,12 @@ impl EditWindowOverlay {
 
         let mut color_precision =
             self.color_precision;
+
+        let mut bloom =
+            self.bloom;
+
+        let mut bloom_intensity =
+            self.bloom_intensity;
 
 
         // A shader physically located in one of Screenshaver's managed
@@ -1725,6 +1778,12 @@ impl EditWindowOverlay {
 
             color_precision =
                 resolved_color_precision;
+
+            bloom =
+                resolved_bloom;
+
+            bloom_intensity =
+                resolved_bloom_intensity;
 
             if let Some((
                 specification,
@@ -1805,6 +1864,8 @@ impl EditWindowOverlay {
                             anti_aliasing,
                             dithering,
                             color_precision,
+                            bloom,
+                            bloom_intensity,
                         )
                     }
                 );
@@ -1976,6 +2037,8 @@ impl EditWindowOverlay {
                                     anti_aliasing,
                                     dithering,
                                     color_precision,
+                                    bloom,
+                                    bloom_intensity,
                                 );
 
                             let configuration_changed =
@@ -2166,9 +2229,13 @@ impl EditWindowOverlay {
                                                     draw_post_processing_tab(
                                                         ui,
                                                         metrics,
+                                                        shift_held,
                                                         &mut anti_aliasing,
                                                         &mut dithering,
                                                         &mut color_precision,
+                                                        &mut bloom,
+                                                        &mut bloom_intensity,
+                                                        &mut bloom_intensity_drag_state,
                                                         &mut hover_help_message,
                                                     );
                                                 },
@@ -2271,6 +2338,8 @@ impl EditWindowOverlay {
                                 &mut anti_aliasing,
                                 &mut dithering,
                                 &mut color_precision,
+                                &mut bloom,
+                                &mut bloom_intensity,
                                 baseline_configuration,
                                 &mut fps_drag_state,
                                 &mut animation_speed_drag_state,
@@ -2328,7 +2397,7 @@ impl EditWindowOverlay {
                     draw_bulk_save_confirmation_modal(
                         context,
                         &mut self.pending_bulk_save_confirmation,
-                        &bulk_selected_policy_rows,
+                        &mut bulk_selected_policy_rows,
                         policy_rows,
                         &mut bulk_save_requested,
                     );
@@ -2355,6 +2424,8 @@ impl EditWindowOverlay {
                             anti_aliasing,
                             dithering,
                             color_precision,
+                            bloom,
+                            bloom_intensity,
                         )
                         .differs_from(
                             baseline_configuration
@@ -2538,6 +2609,9 @@ impl EditWindowOverlay {
         self.render_scale_drag_state =
             render_scale_drag_state;
 
+        self.bloom_intensity_drag_state =
+            bloom_intensity_drag_state;
+
         self.policy_target =
             policy_target;
 
@@ -2567,6 +2641,12 @@ impl EditWindowOverlay {
 
         self.color_precision =
             color_precision;
+
+        self.bloom =
+            bloom;
+
+        self.bloom_intensity =
+            bloom_intensity;
 
         let clipped_primitives =
             self.context.tessellate(
@@ -2610,6 +2690,10 @@ impl EditWindowOverlay {
 
             color_precision,
 
+            bloom,
+
+            bloom_intensity,
+
             policy_target_change_requested,
 
             save_requested,
@@ -2649,6 +2733,8 @@ impl EditWindowOverlay {
                     anti_aliasing,
                     dithering,
                     color_precision,
+                    bloom,
+                    bloom_intensity,
                 )
                 .differs_from(
                     baseline_configuration
@@ -2842,6 +2928,8 @@ impl EditWindowOverlay {
         anti_aliasing: AntiAliasingSelection,
         dithering: DitheringSelection,
         color_precision: ColorPrecisionSelection,
+        bloom: BloomSelection,
+        bloom_intensity: f32,
         active_texture_selection: Option<(
             crate::parse_texture_specification::TextureSpecification,
             crate::palettes::PaletteColor,
@@ -2883,6 +2971,15 @@ impl EditWindowOverlay {
         self.color_precision =
             color_precision;
 
+        self.bloom =
+            bloom;
+
+        self.bloom_intensity =
+            bloom_intensity.clamp(
+                crate::render_bloom::BLOOM_INTENSITY_MIN,
+                crate::render_bloom::BLOOM_INTENSITY_MAX,
+            );
+
         if let Some((
             specification,
             palette,
@@ -2919,6 +3016,9 @@ impl EditWindowOverlay {
         self.render_scale_drag_state =
             None;
 
+        self.bloom_intensity_drag_state =
+            None;
+
         self.status_message =
             status_message.into();
 
@@ -2942,6 +3042,8 @@ impl EditWindowOverlay {
                     self.anti_aliasing,
                     self.dithering,
                     self.color_precision,
+                    self.bloom,
+                    self.bloom_intensity,
                 )
             );
     }
@@ -3055,6 +3157,12 @@ impl EditWindowOverlay {
         self.color_precision =
             baseline.color_precision;
 
+        self.bloom =
+            baseline.bloom;
+
+        self.bloom_intensity =
+            baseline.bloom_intensity;
+
         self.fps_drag_state =
             None;
 
@@ -3062,6 +3170,9 @@ impl EditWindowOverlay {
             None;
 
         self.render_scale_drag_state =
+            None;
+
+        self.bloom_intensity_drag_state =
             None;
     }
 
@@ -3095,6 +3206,8 @@ impl EditWindowOverlay {
                         self.anti_aliasing,
                         self.dithering,
                         self.color_precision,
+                        self.bloom,
+                        self.bloom_intensity,
                     )
                 );
         }
@@ -3724,6 +3837,8 @@ fn draw_compact_action_row(
     anti_aliasing: &mut AntiAliasingSelection,
     dithering: &mut DitheringSelection,
     color_precision: &mut ColorPrecisionSelection,
+    bloom: &mut BloomSelection,
+    bloom_intensity: &mut f32,
     baseline_configuration: EditorConfiguration,
     fps_drag_state: &mut Option<SliderDragState>,
     animation_speed_drag_state: &mut Option<SliderDragState>,
@@ -3832,6 +3947,10 @@ fn draw_compact_action_row(
                     baseline_configuration.dithering;
                 *color_precision =
                     baseline_configuration.color_precision;
+                *bloom =
+                    baseline_configuration.bloom;
+                *bloom_intensity =
+                    baseline_configuration.bloom_intensity;
                 *fps_drag_state =
                     None;
                 *animation_speed_drag_state =
@@ -5307,7 +5426,7 @@ fn draw_bulk_create_confirmation_modal(
 fn draw_bulk_save_confirmation_modal(
     context: &egui::Context,
     pending_bulk_save_confirmation: &mut bool,
-    selected_rows: &[PolicyRowReference],
+    selected_rows: &mut Vec<PolicyRowReference>,
     policy_rows: &[PolicyDisplayRow],
     bulk_save_requested: &mut bool,
 ) {
@@ -5320,9 +5439,70 @@ fn draw_bulk_save_confirmation_modal(
         selected_rows.len();
 
 
+    let row_is_accessible =
+        |selected: &PolicyRowReference| {
+            policy_rows
+                .iter()
+                .find(
+                    |row| {
+                        row.policy_target
+                            == selected.policy_target
+                            && row.policy_key
+                                .eq_ignore_ascii_case(
+                                    &selected.policy_key
+                                )
+                    }
+                )
+                .map(
+                    |row| {
+                        row.accessible
+                    }
+                )
+                .unwrap_or(false)
+        };
+
+
+    let eligible_count =
+        selected_rows
+            .iter()
+            .filter(
+                |selected| {
+                    row_is_accessible(
+                        selected
+                    )
+                }
+            )
+            .count();
+
+
+    let excluded_rows =
+        selected_rows
+            .iter()
+            .filter(
+                |selected| {
+                    !row_is_accessible(
+                        selected
+                    )
+                }
+            )
+            .cloned()
+            .collect::<Vec<_>>();
+
+
+    let excluded_count =
+        excluded_rows.len();
+
+
     let texture_enabled_count =
         selected_rows
             .iter()
+            .filter(
+                |selected| {
+                    row_is_accessible(
+                        selected
+                    )
+                }
+            )
             .filter(
                 |selected| {
                     policy_rows
@@ -5376,12 +5556,52 @@ fn draw_bulk_save_confirmation_modal(
     .show(
         context,
         |ui| {
-            ui.label(
-                format!(
-                    "Changes will be applied to {} policies. Click OK to continue or Cancel to abort.",
-                    selected_count,
-                )
-            );
+            if excluded_count == 0 {
+                ui.label(
+                    format!(
+                        "Changes will be applied to {} policies. Click OK to continue or Cancel to abort.",
+                        selected_count,
+                    )
+                );
+            } else {
+                ui.label(
+                    format!(
+                        "{} policies were selected. {} will be updated and {} will be skipped because the shader file is unavailable.",
+                        selected_count,
+                        eligible_count,
+                        excluded_count,
+                    )
+                );
+
+
+                ui.add_space(
+                    6.0
+                );
+
+
+                ui.label(
+                    if excluded_count == 1 {
+                        "Excluded policy:"
+                    } else {
+                        "Excluded policies:"
+                    }
+                );
+
+
+                for selected in
+                    &excluded_rows
+                {
+                    ui.label(
+                        format!(
+                            "  {} ({})",
+                            selected.filename,
+                            policy_target_name(
+                                selected.policy_target
+                            ),
+                        )
+                    );
+                }
+            }
 
 
             ui.add_space(
@@ -5389,17 +5609,23 @@ fn draw_bulk_save_confirmation_modal(
             );
 
 
-            ui.label(
-                format!(
-                    "Texture and Palette settings will apply to {} texture-enabled shader{}.",
-                    texture_enabled_count,
-                    if texture_enabled_count == 1 {
-                        ""
-                    } else {
-                        "s"
-                    },
-                )
-            );
+            if eligible_count > 0 {
+                ui.label(
+                    format!(
+                        "Texture and Palette settings will apply to {} texture-enabled shader{}.",
+                        texture_enabled_count,
+                        if texture_enabled_count == 1 {
+                            ""
+                        } else {
+                            "s"
+                        },
+                    )
+                );
+            } else {
+                ui.label(
+                    "No selected policies are eligible for Bulk Edit because their shader files are unavailable."
+                );
+            }
 
 
             ui.add_space(
@@ -5409,11 +5635,22 @@ fn draw_bulk_save_confirmation_modal(
 
             ui.horizontal(
                 |ui| {
-                    if ui.button(
-                        "OK"
+                    if ui.add_enabled(
+                        eligible_count > 0,
+                        egui::Button::new(
+                            "OK"
+                        ),
                     )
                     .clicked()
                     {
+                        selected_rows.retain(
+                            |selected| {
+                                row_is_accessible(
+                                    selected
+                                )
+                            }
+                        );
+
                         *bulk_save_requested =
                             true;
 
@@ -7794,9 +8031,13 @@ fn draw_color_picker_placeholder(
 fn draw_post_processing_tab(
     ui: &mut egui::Ui,
     metrics: EditorMetrics,
+    shift_held: bool,
     anti_aliasing: &mut AntiAliasingSelection,
     dithering: &mut DitheringSelection,
     color_precision: &mut ColorPrecisionSelection,
+    bloom: &mut BloomSelection,
+    bloom_intensity: &mut f32,
+    bloom_intensity_drag_state: &mut Option<SliderDragState>,
     hover_help_message: &mut Option<&'static str>,
 ) {
     draw_post_processing_panel(
@@ -7812,24 +8053,125 @@ fn draw_post_processing_tab(
         8.0 * metrics.scale
     );
 
-    ui.horizontal(
+    egui::Grid::new(
+        "editor_bloom_grid"
+    )
+    .num_columns(2)
+    .spacing(
+        egui::vec2(
+            8.0 * metrics.scale,
+            metrics.row_gap,
+        )
+    )
+    .show(
+        ui,
         |ui| {
-            ui.label(
-                "Bloom:"
-            );
+            ui.label("Bloom");
 
-            ui.add_enabled(
-                false,
-                egui::Button::new(
-                    "Highlight (planned)"
+            let selected_text =
+                match *bloom {
+                    BloomSelection::Off => "Off",
+                    BloomSelection::Highlight => "Highlight",
+                };
+
+            let response =
+                egui::ComboBox::from_id_source(
+                    "editor_bloom"
                 )
-                .min_size(
-                    egui::vec2(
-                        150.0 * metrics.scale,
-                        0.0,
-                    )
-                ),
+                .selected_text(selected_text)
+                .width(metrics.dropdown_width)
+                .show_ui(
+                    ui,
+                    |ui| {
+                        ui.selectable_value(
+                            bloom,
+                            BloomSelection::Off,
+                            "Off",
+                        );
+
+                        ui.selectable_value(
+                            bloom,
+                            BloomSelection::Highlight,
+                            "Highlight",
+                        );
+                    },
+                )
+                .response;
+
+            update_hover_help(
+                &response,
+                hover_help_message,
+                "Select the bloom processing mode. Highlight bloom affects only bright image regions.",
             );
+            ui.end_row();
+
+            ui.label("Bloom Intensity");
+
+            let intensity_response =
+                ui.add_enabled_ui(
+                    *bloom != BloomSelection::Off,
+                    |ui| {
+                        ui.horizontal(
+                            |ui| {
+                                ui.set_width(
+                                    metrics.dropdown_width
+                                );
+
+                                let slider_width =
+                                    (metrics.dropdown_width
+                                        - 52.0 * metrics.scale)
+                                        .max(
+                                            80.0 * metrics.scale
+                                        );
+
+                                let response =
+                                    ui.allocate_ui_with_layout(
+                                        egui::vec2(
+                                            slider_width,
+                                            ui.spacing().interact_size.y,
+                                        ),
+                                        egui::Layout::left_to_right(
+                                            egui::Align::Center
+                                        ),
+                                        |ui| {
+                                            ui.set_width(
+                                                slider_width
+                                            );
+
+                                            draw_fine_slider(
+                                                ui,
+                                                bloom_intensity,
+                                                crate::render_bloom::BLOOM_INTENSITY_MIN,
+                                                crate::render_bloom::BLOOM_INTENSITY_MAX,
+                                                shift_held,
+                                                metrics.scale,
+                                                bloom_intensity_drag_state,
+                                            )
+                                        },
+                                    )
+                                    .inner;
+
+                                ui.label(
+                                    format!(
+                                        "{:.2}",
+                                        *bloom_intensity,
+                                    )
+                                );
+
+                                response
+                            },
+                        )
+                        .inner
+                    },
+                )
+                .inner;
+
+            update_hover_help(
+                &intensity_response,
+                hover_help_message,
+                "Set the strength of the bloom effect. Hold Shift while dragging for fine adjustment. Lower values are suitable for subtle wallpaper bloom; higher values produce a stronger effect.",
+            );
+            ui.end_row();
         },
     );
 }

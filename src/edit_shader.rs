@@ -577,6 +577,8 @@ fn run_empty_session() -> Result<(), String> {
                 crate::editor_layout::AntiAliasingSelection::Fxaa,
                 crate::editor_layout::DitheringSelection::Subtle,
                 crate::editor_layout::ColorPrecisionSelection::Automatic,
+                crate::editor_layout::BloomSelection::Off,
+                crate::render_bloom::BLOOM_INTENSITY_DEFAULT,
                 None,
                 false,
                 false,
@@ -860,10 +862,18 @@ fn run_empty_session() -> Result<(), String> {
                                     ),
 
                                 bloom:
-                                    None,
+                                    Some(
+                                        bloom_mode_from_selection(
+                                            editor_output.bloom
+                                        )
+                                        .name()
+                                        .to_string()
+                                    ),
 
                                 bloom_intensity:
-                                    None,
+                                    Some(
+                                        editor_output.bloom_intensity
+                                    ),
                             },
                     }
                 );
@@ -2388,6 +2398,10 @@ fn run_paths(
         color_precision_selection_from_policy(
             live_postprocess_profile.color_precision
         ),
+        bloom_selection_from_mode(
+            live_postprocess_profile.bloom
+        ),
+        live_postprocess_profile.bloom_intensity,
         active.texture_manager
             .active_specification_selection(),
         initial_policy_exists,
@@ -2930,6 +2944,12 @@ fn run_paths(
                         live_postprocess_profile
                             .color_precision
                     ),
+                    bloom_selection_from_mode(
+                        live_postprocess_profile
+                            .bloom
+                    ),
+                    live_postprocess_profile
+                        .bloom_intensity,
                     active_texture_selection,
                     true,
                     active.channel_usage
@@ -3829,6 +3849,10 @@ fn run_paths(
                             color_precision_selection_from_policy(
                                 live_postprocess_profile.color_precision
                             ),
+                            bloom_selection_from_mode(
+                                live_postprocess_profile.bloom
+                            ),
+                            live_postprocess_profile.bloom_intensity,
                             active.texture_manager
                                 .active_specification_selection(),
                             new_policy_exists,
@@ -3936,6 +3960,10 @@ fn run_paths(
                             color_precision_selection_from_policy(
                                 live_postprocess_profile.color_precision
                             ),
+                            bloom_selection_from_mode(
+                                live_postprocess_profile.bloom
+                            ),
+                            live_postprocess_profile.bloom_intensity,
                             active.texture_manager
                                 .active_specification_selection(),
                             match editor_output.policy_target {
@@ -4185,6 +4213,10 @@ fn run_paths(
                     color_precision_selection_from_policy(
                         live_postprocess_profile.color_precision
                     ),
+                    bloom_selection_from_mode(
+                        live_postprocess_profile.bloom
+                    ),
+                    live_postprocess_profile.bloom_intensity,
                     active.texture_manager
                         .active_specification_selection(),
                     target_policy_exists,
@@ -4322,6 +4354,14 @@ fn run_paths(
                     selected_color_precision
                 );
 
+            let selected_bloom_mode =
+                bloom_mode_from_selection(
+                    editor_output.bloom
+                );
+
+            let selected_bloom_intensity =
+                editor_output.bloom_intensity;
+
 
             if (
                 selected_render_scale
@@ -4335,6 +4375,12 @@ fn run_paths(
                     != live_postprocess_profile.dithering
                 || selected_color_precision_policy
                     != live_postprocess_profile.color_precision
+                || selected_bloom_mode
+                    != live_postprocess_profile.bloom
+                || (selected_bloom_intensity
+                    - live_postprocess_profile.bloom_intensity)
+                    .abs()
+                    > f32::EPSILON
             {
                 live_postprocess_profile.render_scale =
                     selected_render_scale;
@@ -4347,6 +4393,12 @@ fn run_paths(
 
                 live_postprocess_profile.color_precision =
                     selected_color_precision_policy;
+
+                live_postprocess_profile.bloom =
+                    selected_bloom_mode;
+
+                live_postprocess_profile.bloom_intensity =
+                    selected_bloom_intensity;
 
                 postprocess.set_profile(
                     live_postprocess_profile
@@ -4650,10 +4702,18 @@ fn run_paths(
                                         ),
 
                                     bloom:
-                                        None,
+                                        Some(
+                                            live_postprocess_profile
+                                                .bloom
+                                                .name()
+                                                .to_string()
+                                        ),
 
                                     bloom_intensity:
-                                        None,
+                                        Some(
+                                            live_postprocess_profile
+                                                .bloom_intensity
+                                        ),
                                 },
                         }
                     );
@@ -4921,10 +4981,18 @@ fn run_paths(
                             ),
 
                         bloom:
-                            None,
+                            Some(
+                                live_postprocess_profile
+                                    .bloom
+                                    .name()
+                                    .to_string()
+                            ),
 
                         bloom_intensity:
-                            None,
+                            Some(
+                                live_postprocess_profile
+                                    .bloom_intensity
+                            ),
                     };
 
                 let manage_target =
@@ -5212,6 +5280,12 @@ fn run_paths(
                                                 live_postprocess_profile
                                                     .color_precision
                                             ),
+                                            bloom_selection_from_mode(
+                                                live_postprocess_profile
+                                                    .bloom
+                                            ),
+                                            live_postprocess_profile
+                                                .bloom_intensity,
                                             active.texture_manager
                                                 .active_specification_selection(),
                                             true,
@@ -6257,10 +6331,18 @@ fn bulk_policy_definition_from_editor_output(
             ),
 
         bloom:
-            None,
+            Some(
+                bloom_mode_from_selection(
+                    editor_output.bloom
+                )
+                .name()
+                .to_string()
+            ),
 
         bloom_intensity:
-            None,
+            Some(
+                editor_output.bloom_intensity
+            ),
     }
 }
 
@@ -8016,6 +8098,36 @@ fn anti_aliasing_method_from_selection(
 
         crate::editor_layout::AntiAliasingSelection::Fxaa => {
             crate::render_fxaa::AntiAliasingMethod::Fxaa
+        }
+    }
+}
+
+
+fn bloom_selection_from_mode(
+    mode: crate::render_bloom::BloomMode,
+) -> crate::editor_layout::BloomSelection {
+    match mode {
+        crate::render_bloom::BloomMode::Off => {
+            crate::editor_layout::BloomSelection::Off
+        }
+
+        crate::render_bloom::BloomMode::Highlight => {
+            crate::editor_layout::BloomSelection::Highlight
+        }
+    }
+}
+
+
+fn bloom_mode_from_selection(
+    selection: crate::editor_layout::BloomSelection,
+) -> crate::render_bloom::BloomMode {
+    match selection {
+        crate::editor_layout::BloomSelection::Off => {
+            crate::render_bloom::BloomMode::Off
+        }
+
+        crate::editor_layout::BloomSelection::Highlight => {
+            crate::render_bloom::BloomMode::Highlight
         }
     }
 }
