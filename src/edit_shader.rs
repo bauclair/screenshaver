@@ -16,7 +16,10 @@ use std::time::{
 };
 
 use sdl2::event::Event;
-use sdl2::keyboard::Keycode;
+use sdl2::keyboard::{
+    Keycode,
+    Scancode,
+};
 use sdl2::video::{
     FullscreenType,
     GLProfile,
@@ -2747,7 +2750,23 @@ fn run_paths(
             }
 
 
-            postprocess.present_scene();
+            let bloom_diagnostic =
+                event_pump
+                    .keyboard_state()
+                    .is_scancode_pressed(
+                        Scancode::LCtrl
+                    )
+                || event_pump
+                    .keyboard_state()
+                    .is_scancode_pressed(
+                        Scancode::RCtrl
+                    );
+
+
+            postprocess
+                .present_scene_with_bloom_diagnostic(
+                    bloom_diagnostic
+                );
 
 
             unsafe {

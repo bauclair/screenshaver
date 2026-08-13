@@ -98,13 +98,14 @@ impl Drop for RenderTarget {
 /// post-processing plan.
 ///
 /// The caller renders the scene after `bind_scene_target()`. `present_scene()`
-/// then runs the selected presentation plan. Highlight Bloom currently uses
-/// a diagnostic half-resolution extraction-and-blur path; normal rendering
-/// continues through anti-aliasing and optional dithering before returning
-/// framebuffer zero to the caller for crisp overlay rendering.
+/// then runs the selected presentation plan. Highlight Bloom extracts and
+/// blurs bright regions at half resolution, additively composites them over
+/// the normally presented scene, then applies optional dithering before
+/// returning framebuffer zero to the caller for crisp overlay rendering.
 pub(crate) struct PostprocessPipeline {
     scene_target: RenderTarget,
     scratch_target: RenderTarget,
+    composite_target: RenderTarget,
     bloom_target_a: RenderTarget,
     bloom_target_b: RenderTarget,
     output_width: u32,
@@ -209,10 +210,19 @@ impl PostprocessPipeline {
                 precision_selection.selected,
             )?;
 
+
+        let composite_target =
+            RenderTarget::new(
+                output_width,
+                output_height,
+                precision_selection.selected,
+            )?;
+
         let pipeline =
             Self {
                 scene_target,
                 scratch_target,
+                composite_target,
                 bloom_target_a,
                 bloom_target_b,
                 output_width,
@@ -272,15 +282,57 @@ impl PostprocessPipeline {
     pub(crate) fn present_scene(
         &self,
     ) {
+        self.present_scene_with_bloom_diagnostic(
+            false
+        );
+    }
+
+    /// Executes the current post-processing plan with an optional raw Bloom
+    /// highlight diagnostic presentation.
+    ///
+    /// The diagnostic flag is intended for the Control Center only. Existing
+    /// runtime callers continue to use `present_scene()`, so screensaver,
+    /// wallpaper, and --preview-shader behavior remains unchanged.
+    pub(crate) fn present_scene_with_bloom_diagnostic(
+        &self,
+        bloom_diagnostic: bool,
+    ) {
         prepare_fullscreen_pass();
 
-        // Checkpoint 4 diagnostic path: extract highlights into a
-        // half-resolution working texture, blur horizontally, blur vertically,
-        // then present only the final blurred Bloom texture.
         if matches!(
             self.bloom_mode,
             crate::render_bloom::BloomMode::Highlight
         ) {
+            // First produce the normal presentation result at output
+            // resolution. This preserves the existing passthrough/FXAA
+            // behavior before Bloom is added.
+            self.scratch_target.bind(
+                self.output_width,
+                self.output_height,
+            );
+
+            self.render_primary_pass(
+                self.scene_target.texture
+            );
+
+            // Control Center diagnostic: present the raw threshold extraction
+            // directly at full output resolution. Blur, composition, and
+            // dithering are intentionally bypassed for this frame.
+            if bloom_diagnostic {
+                bind_default_framebuffer(
+                    self.output_width,
+                    self.output_height,
+                );
+
+                self.bloom.render_highlights(
+                    self.scratch_target.texture,
+                    self.bloom_threshold,
+                );
+
+                return;
+            }
+
+            // Extract bright regions from the normally presented scene.
             self.bloom_target_a.bind(
                 self.bloom_width,
                 self.bloom_height,
@@ -300,10 +352,11 @@ impl PostprocessPipeline {
             }
 
             self.bloom.render_highlights(
-                self.scene_target.texture,
+                self.scratch_target.texture,
                 self.bloom_threshold,
             );
 
+            // Horizontal blur: A -> B.
             self.bloom_target_b.bind(
                 self.bloom_width,
                 self.bloom_height,
@@ -315,9 +368,10 @@ impl PostprocessPipeline {
                 0.0,
             );
 
-            bind_default_framebuffer(
-                self.output_width,
-                self.output_height,
+            // Vertical blur: B -> A.
+            self.bloom_target_a.bind(
+                self.bloom_width,
+                self.bloom_height,
             );
 
             self.bloom.render_blur(
@@ -325,6 +379,42 @@ impl PostprocessPipeline {
                 0.0,
                 1.0 / self.bloom_height as f32,
             );
+
+            if self.dithering_level.is_enabled() {
+                // Composite into a full-resolution target so dithering can
+                // remain the final image-processing stage.
+                self.composite_target.bind(
+                    self.output_width,
+                    self.output_height,
+                );
+
+                self.bloom.render_composite(
+                    self.scratch_target.texture,
+                    self.bloom_target_a.texture,
+                    self.bloom_intensity,
+                );
+
+                bind_default_framebuffer(
+                    self.output_width,
+                    self.output_height,
+                );
+
+                self.dithering.render(
+                    self.composite_target.texture,
+                    self.dithering_level,
+                );
+            } else {
+                bind_default_framebuffer(
+                    self.output_width,
+                    self.output_height,
+                );
+
+                self.bloom.render_composite(
+                    self.scratch_target.texture,
+                    self.bloom_target_a.texture,
+                    self.bloom_intensity,
+                );
+            }
 
             return;
         }
@@ -449,6 +539,13 @@ impl PostprocessPipeline {
             self.scratch_target =
                 scratch_target;
 
+            self.composite_target =
+                RenderTarget::new(
+                    self.output_width,
+                    self.output_height,
+                    precision_selection.selected,
+                )?;
+
             self.scene_width =
                 scene_width;
 
@@ -545,8 +642,8 @@ impl PostprocessPipeline {
         self.bloom_threshold
     }
 
-    /// Recreates both size-dependent render targets while retaining the
-    /// compiled post-processing programs and full-screen geometry.
+    /// Recreates size-dependent render targets while retaining the compiled
+    /// post-processing programs and full-screen geometry.
     pub(crate) fn resize(
         &mut self,
         width: u32,
@@ -600,6 +697,14 @@ impl PostprocessPipeline {
             )?;
 
 
+        let replacement_composite =
+            RenderTarget::new(
+                width,
+                height,
+                self.precision_selection.selected,
+            )?;
+
+
         let replacement_bloom_a =
             RenderTarget::new(
                 bloom_width,
@@ -619,6 +724,9 @@ impl PostprocessPipeline {
 
         self.scratch_target =
             replacement_scratch;
+
+        self.composite_target =
+            replacement_composite;
 
         self.bloom_target_a =
             replacement_bloom_a;

@@ -1,9 +1,8 @@
 //! Bloom post-processing definitions and renderer support.
 //!
-//! Checkpoint 4 adds reduced-resolution separable blur after highlight
-//! extraction. Highlight Bloom still uses a diagnostic presentation path:
-//! the final blurred bloom texture is shown directly so blur quality and
-//! performance can be evaluated before final scene composition is added.
+//! Checkpoint 5 adds final additive Bloom composition. Highlight extraction
+//! and reduced-resolution separable blur are combined with the normally
+//! presented scene, scaled by the resolved Bloom intensity.
 
 pub(crate) const BLOOM_INTENSITY_MIN: f32 =
     0.0;
@@ -271,14 +270,52 @@ void main()
 "#;
 
 
+const BLOOM_COMPOSITE_FRAGMENT_SHADER: &str = r#"
+#version 330 core
+
+uniform sampler2D uScene;
+uniform sampler2D uBloom;
+uniform float uIntensity;
+
+in vec2 vUv;
+
+out vec4 fragColor;
+
+void main()
+{
+    vec3 sceneColor =
+        texture(
+            uScene,
+            vUv
+        ).rgb;
+
+    vec3 bloomColor =
+        texture(
+            uBloom,
+            vUv
+        ).rgb;
+
+    fragColor = vec4(
+        sceneColor
+            + bloomColor * uIntensity,
+        1.0
+    );
+}
+"#;
+
+
 pub(crate) struct BloomRenderer {
     highlight_program: u32,
     blur_program: u32,
+    composite_program: u32,
     vao: u32,
     scene_location: i32,
     threshold_location: i32,
     blur_source_location: i32,
     blur_texel_step_location: i32,
+    composite_scene_location: i32,
+    composite_bloom_location: i32,
+    composite_intensity_location: i32,
 }
 
 
@@ -321,6 +358,31 @@ impl BloomRenderer {
                 }
             )?;
 
+
+        let composite_program =
+            crate::compile_shader::build_program(
+                BLOOM_VERTEX_SHADER,
+                BLOOM_COMPOSITE_FRAGMENT_SHADER,
+            )
+            .map_err(
+                |error| {
+                    unsafe {
+                        gl::DeleteProgram(
+                            highlight_program
+                        );
+
+                        gl::DeleteProgram(
+                            blur_program
+                        );
+                    }
+
+                    format!(
+                        "Unable to build Bloom composition program: {}",
+                        error,
+                    )
+                }
+            )?;
+
         let mut vao =
             0_u32;
 
@@ -339,6 +401,10 @@ impl BloomRenderer {
 
                 gl::DeleteProgram(
                     blur_program
+                );
+
+                gl::DeleteProgram(
+                    composite_program
                 );
             }
 
@@ -389,10 +455,44 @@ impl BloomRenderer {
                 )
             };
 
+
+        let composite_scene_location =
+            unsafe {
+                gl::GetUniformLocation(
+                    composite_program,
+                    b"uScene\0"
+                        .as_ptr()
+                        .cast(),
+                )
+            };
+
+        let composite_bloom_location =
+            unsafe {
+                gl::GetUniformLocation(
+                    composite_program,
+                    b"uBloom\0"
+                        .as_ptr()
+                        .cast(),
+                )
+            };
+
+        let composite_intensity_location =
+            unsafe {
+                gl::GetUniformLocation(
+                    composite_program,
+                    b"uIntensity\0"
+                        .as_ptr()
+                        .cast(),
+                )
+            };
+
         if scene_location == -1
             || threshold_location == -1
             || blur_source_location == -1
             || blur_texel_step_location == -1
+            || composite_scene_location == -1
+            || composite_bloom_location == -1
+            || composite_intensity_location == -1
         {
             unsafe {
                 gl::DeleteVertexArrays(
@@ -407,6 +507,10 @@ impl BloomRenderer {
                 gl::DeleteProgram(
                     blur_program
                 );
+
+                gl::DeleteProgram(
+                    composite_program
+                );
             }
 
             return Err(
@@ -419,19 +523,23 @@ impl BloomRenderer {
             Self {
                 highlight_program,
                 blur_program,
+                composite_program,
                 vao,
                 scene_location,
                 threshold_location,
                 blur_source_location,
                 blur_texel_step_location,
+                composite_scene_location,
+                composite_bloom_location,
+                composite_intensity_location,
             }
         )
     }
 
 
     /// Draw only pixels whose luminance exceeds the current highlight
-    /// threshold.  Checkpoint 3 presents this output directly as a diagnostic;
-    /// later checkpoints will feed it into reduced-resolution blur targets.
+    /// threshold. The result becomes the source for the reduced-resolution
+    /// Bloom blur chain.
     pub(crate) fn render_highlights(
         &self,
         scene_texture: u32,
@@ -528,6 +636,83 @@ impl BloomRenderer {
             );
         }
     }
+
+
+    /// Add the blurred Bloom contribution to the normally presented scene.
+    pub(crate) fn render_composite(
+        &self,
+        scene_texture: u32,
+        bloom_texture: u32,
+        intensity: f32,
+    ) {
+
+        unsafe {
+            gl::UseProgram(
+                self.composite_program
+            );
+
+            gl::ActiveTexture(
+                gl::TEXTURE0
+            );
+
+            gl::BindTexture(
+                gl::TEXTURE_2D,
+                scene_texture,
+            );
+
+            gl::Uniform1i(
+                self.composite_scene_location,
+                0,
+            );
+
+            gl::ActiveTexture(
+                gl::TEXTURE1
+            );
+
+            gl::BindTexture(
+                gl::TEXTURE_2D,
+                bloom_texture,
+            );
+
+            gl::Uniform1i(
+                self.composite_bloom_location,
+                1,
+            );
+
+            gl::Uniform1f(
+                self.composite_intensity_location,
+                intensity,
+            );
+
+            gl::BindVertexArray(
+                self.vao
+            );
+
+            gl::DrawArrays(
+                gl::TRIANGLES,
+                0,
+                3,
+            );
+
+            gl::ActiveTexture(
+                gl::TEXTURE1
+            );
+
+            gl::BindTexture(
+                gl::TEXTURE_2D,
+                0,
+            );
+
+            gl::ActiveTexture(
+                gl::TEXTURE0
+            );
+
+            gl::BindTexture(
+                gl::TEXTURE_2D,
+                0,
+            );
+        }
+    }
 }
 
 
@@ -556,6 +741,12 @@ impl Drop for BloomRenderer {
                     self.blur_program
                 );
             }
+
+            if self.composite_program != 0 {
+                gl::DeleteProgram(
+                    self.composite_program
+                );
+            }
         }
 
         self.vao =
@@ -565,6 +756,9 @@ impl Drop for BloomRenderer {
             0;
 
         self.blur_program =
+            0;
+
+        self.composite_program =
             0;
     }
 }
