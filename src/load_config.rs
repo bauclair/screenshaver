@@ -129,6 +129,12 @@ struct PostprocessSection {
 
     #[serde(default)]
     render_scale: Option<f32>,
+
+    #[serde(default)]
+    bloom: Option<String>,
+
+    #[serde(default)]
+    bloom_intensity: Option<f32>,
 }
 
 
@@ -272,6 +278,14 @@ pub struct ShaderPolicy {
         >,
 
     pub render_scale:
+        Option<f32>,
+
+    pub bloom:
+        Option<
+            crate::render_bloom::BloomMode
+        >,
+
+    pub bloom_intensity:
         Option<f32>,
 }
 
@@ -616,6 +630,12 @@ pub(crate) struct PostprocessProfile {
 
     pub render_scale:
         f32,
+
+    pub bloom:
+        crate::render_bloom::BloomMode,
+
+    pub bloom_intensity:
+        f32,
 }
 
 
@@ -636,6 +656,12 @@ impl Default for PostprocessProfile {
 
             render_scale:
                 crate::define_constants::RENDER_SCALE_DEFAULT,
+
+            bloom:
+                crate::render_bloom::BloomMode::Off,
+
+            bloom_intensity:
+                crate::render_bloom::BLOOM_INTENSITY_DEFAULT,
         }
     }
 }
@@ -733,6 +759,28 @@ impl PostprocessPolicy {
                     )
                     .unwrap_or(
                         self.global_profile.render_scale
+                    ),
+
+            bloom:
+                shader_policy
+                    .and_then(
+                        |shader_policy| {
+                            shader_policy.bloom
+                        }
+                    )
+                    .unwrap_or(
+                        self.global_profile.bloom
+                    ),
+
+            bloom_intensity:
+                shader_policy
+                    .and_then(
+                        |shader_policy| {
+                            shader_policy.bloom_intensity
+                        }
+                    )
+                    .unwrap_or(
+                        self.global_profile.bloom_intensity
                     ),
         }
     }
@@ -930,6 +978,31 @@ pub fn load_config(
         );
 
 
+    let (
+        global_bloom,
+        bloom_warning,
+    ) =
+        parse_global_bloom(
+            raw.postprocess
+                .bloom
+                .as_deref(),
+            built_in_postprocess_profile
+                .bloom,
+        );
+
+
+    let (
+        global_bloom_intensity,
+        bloom_intensity_warning,
+    ) =
+        parse_global_bloom_intensity(
+            raw.postprocess
+                .bloom_intensity,
+            built_in_postprocess_profile
+                .bloom_intensity,
+        );
+
+
     let global_postprocess_profile =
         PostprocessProfile {
             anti_aliasing:
@@ -940,6 +1013,10 @@ pub fn load_config(
                 global_color_precision,
             render_scale:
                 global_render_scale,
+            bloom:
+                global_bloom,
+            bloom_intensity:
+                global_bloom_intensity,
         };
 
 
@@ -1432,6 +1509,23 @@ pub fn load_config(
             ),
 
             format!(
+                "[CONFIG] postprocess.bloom = {}",
+                config
+                    .screensaver_postprocess_policy
+                    .global_profile
+                    .bloom
+                    .name(),
+            ),
+
+            format!(
+                "[CONFIG] postprocess.bloom_intensity = {:.3}",
+                config
+                    .screensaver_postprocess_policy
+                    .global_profile
+                    .bloom_intensity,
+            ),
+
+            format!(
                 "[CONFIG] screen_lock = {}",
                 config.screen_lock,
             ),
@@ -1513,6 +1607,24 @@ pub fn load_config(
 
     if let Some(warning) =
         render_scale_warning
+    {
+        diagnostics.push(
+            warning
+        );
+    }
+
+
+    if let Some(warning) =
+        bloom_warning
+    {
+        diagnostics.push(
+            warning
+        );
+    }
+
+
+    if let Some(warning) =
+        bloom_intensity_warning
     {
         diagnostics.push(
             warning
@@ -1852,6 +1964,8 @@ fn parse_policy_specification(
     let mut dithering = None;
     let mut color_precision = None;
     let mut render_scale = None;
+    let mut bloom = None;
+    let mut bloom_intensity = None;
 
 
     for token in
@@ -2084,10 +2198,48 @@ fn parse_policy_specification(
                     );
             }
 
+            "bloom" => {
+                if bloom.is_some() {
+                    return Err(duplicate_policy_property(
+                        &shader,
+                        target,
+                        "bloom",
+                    ));
+                }
+
+                bloom =
+                    Some(
+                        parse_policy_bloom(
+                            &shader,
+                            value,
+                            target.table_name(),
+                        )?
+                    );
+            }
+
+            "bloom_intensity" => {
+                if bloom_intensity.is_some() {
+                    return Err(duplicate_policy_property(
+                        &shader,
+                        target,
+                        "bloom_intensity",
+                    ));
+                }
+
+                bloom_intensity =
+                    Some(
+                        parse_policy_bloom_intensity(
+                            &shader,
+                            value,
+                            target.table_name(),
+                        )?
+                    );
+            }
+
             other => {
                 return Err(
                     format!(
-                        "Unknown policy property '{}' for '{}' in [{}]; supported properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision, render_scale",
+                        "Unknown policy property '{}' for '{}' in [{}]; supported properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision, render_scale, bloom, bloom_intensity",
                         other,
                         shader,
                         target.table_name(),
@@ -2106,6 +2258,8 @@ fn parse_policy_specification(
         && dithering.is_none()
         && color_precision.is_none()
         && render_scale.is_none()
+        && bloom.is_none()
+        && bloom_intensity.is_none()
     {
         return Err(
             format!(
@@ -2130,6 +2284,8 @@ fn parse_policy_specification(
             dithering,
             color_precision,
             render_scale,
+            bloom,
+            bloom_intensity,
         }
     )
 }
@@ -2271,8 +2427,35 @@ fn format_shader_policy_diagnostic(
             }
         );
 
+    let bloom = shader_policy.bloom
+        .map(
+            |mode| {
+                mode.name().to_string()
+            }
+        )
+        .unwrap_or_else(
+            || {
+                "<global>".to_string()
+            }
+        );
+
+    let bloom_intensity = shader_policy.bloom_intensity
+        .map(
+            |intensity| {
+                format!(
+                    "{:.3}",
+                    intensity,
+                )
+            }
+        )
+        .unwrap_or_else(
+            || {
+                "<global>".to_string()
+            }
+        );
+
     format!(
-        "[CONFIG] {} shader={} source={} texture={} palette={} fps={} speed={} anti_aliasing={} dithering={} color_precision={} render_scale={}",
+        "[CONFIG] {} shader={} source={} texture={} palette={} fps={} speed={} anti_aliasing={} dithering={} color_precision={} render_scale={} bloom={} bloom_intensity={}",
         table_name,
         shader_policy.shader,
         source_path,
@@ -2284,6 +2467,8 @@ fn format_shader_policy_diagnostic(
         dithering,
         color_precision,
         render_scale,
+        bloom,
+        bloom_intensity,
     )
 }
 
@@ -2416,6 +2601,72 @@ fn parse_policy_color_precision(
             )
         }
     }
+}
+
+
+fn parse_policy_bloom(
+    shader: &str,
+    value: &str,
+    table_name: &str,
+) -> Result<
+    crate::render_bloom::BloomMode,
+    String,
+> {
+
+    crate::render_bloom::BloomMode::parse(
+        value
+    )
+    .map_err(
+        |error| {
+            format!(
+                "Invalid bloom value '{}' for '{}' in [{}]: {}",
+                value,
+                shader,
+                table_name,
+                error,
+            )
+        }
+    )
+}
+
+
+fn parse_policy_bloom_intensity(
+    shader: &str,
+    value: &str,
+    table_name: &str,
+) -> Result<f32, String> {
+
+    let intensity =
+        value.parse::<f32>()
+            .map_err(
+                |_| {
+                    format!(
+                        "Invalid bloom_intensity '{}' for '{}' in [{}]; expected a number from {:.2} through {:.2}",
+                        value,
+                        shader,
+                        table_name,
+                        crate::render_bloom::BLOOM_INTENSITY_MIN,
+                        crate::render_bloom::BLOOM_INTENSITY_MAX,
+                    )
+                }
+            )?;
+
+
+    crate::render_bloom::validate_bloom_intensity(
+        intensity
+    )
+    .map_err(
+        |_| {
+            format!(
+                "bloom_intensity {} for '{}' in [{}] is outside the supported range {:.2}-{:.2}",
+                value,
+                shader,
+                table_name,
+                crate::render_bloom::BLOOM_INTENSITY_MIN,
+                crate::render_bloom::BLOOM_INTENSITY_MAX,
+            )
+        }
+    )
 }
 
 
@@ -2613,6 +2864,89 @@ fn parse_global_color_precision(
             ),
         ),
     }
+}
+
+
+fn parse_global_bloom(
+    value: Option<&str>,
+    fallback: crate::render_bloom::BloomMode,
+) -> (
+    crate::render_bloom::BloomMode,
+    Option<String>,
+) {
+
+    let Some(value) = value
+    else {
+        return (
+            fallback,
+            None,
+        );
+    };
+
+
+    match crate::render_bloom::BloomMode::parse(
+        value
+    ) {
+        Ok(mode) => (
+            mode,
+            None,
+        ),
+
+        Err(_) => (
+            fallback,
+            Some(
+                format!(
+                    "[CONFIG] WARNING: postprocess.bloom = '{}' is unsupported; using '{}'",
+                    value,
+                    fallback.name(),
+                )
+            ),
+        ),
+    }
+}
+
+
+fn parse_global_bloom_intensity(
+    value: Option<f32>,
+    fallback: f32,
+) -> (
+    f32,
+    Option<String>,
+) {
+
+    let Some(value) = value
+    else {
+        return (
+            fallback,
+            None,
+        );
+    };
+
+
+    if crate::render_bloom::validate_bloom_intensity(
+        value
+    )
+    .is_ok()
+    {
+        return (
+            value,
+            None,
+        );
+    }
+
+
+    (
+        fallback,
+        Some(
+            format!(
+                "[CONFIG] WARNING: postprocess.bloom_intensity = '{}' is outside the supported range {:.2}-{:.2}; using '{:.3}'",
+                value,
+                crate::render_bloom::BLOOM_INTENSITY_MIN,
+                crate::render_bloom::BLOOM_INTENSITY_MAX,
+                fallback,
+            )
+        ),
+    )
 }
 
 

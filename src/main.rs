@@ -77,6 +77,7 @@ mod render_passthrough;
 mod render_fxaa;
 mod render_dithering;
 mod select_render_precision;
+mod render_bloom;
 
 use std::sync::Arc;
 use std::sync::atomic::{

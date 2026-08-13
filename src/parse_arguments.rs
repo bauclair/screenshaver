@@ -660,10 +660,58 @@ fn parse_policy_definition(
                     Some(normalized);
             }
 
+            "bloom" => {
+                if properties.bloom.is_some() {
+                    return Err(
+                        "Policy property 'bloom' may only be specified once"
+                            .to_string()
+                    );
+                }
+
+                let normalized =
+                    value.to_ascii_lowercase();
+
+                crate::render_bloom::BloomMode::parse(
+                    &normalized
+                )?;
+
+                properties.bloom =
+                    Some(normalized);
+            }
+
+            "bloom_intensity" => {
+                if properties.bloom_intensity.is_some() {
+                    return Err(
+                        "Policy property 'bloom_intensity' may only be specified once"
+                            .to_string()
+                    );
+                }
+
+                let intensity =
+                    value.parse::<f32>()
+                        .map_err(
+                            |_| {
+                                format!(
+                                    "Invalid bloom_intensity '{}'; specify a number from {:.2} through {:.2}",
+                                    value,
+                                    crate::render_bloom::BLOOM_INTENSITY_MIN,
+                                    crate::render_bloom::BLOOM_INTENSITY_MAX,
+                                )
+                            }
+                        )?;
+
+                crate::render_bloom::validate_bloom_intensity(
+                    intensity
+                )?;
+
+                properties.bloom_intensity =
+                    Some(intensity);
+            }
+
             other => {
                 return Err(
                     format!(
-                        "Unknown policy property '{}'; supported properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision",
+                        "Unknown policy property '{}'; supported properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision, bloom, bloom_intensity",
                         other,
                     )
                 );
@@ -1567,7 +1615,8 @@ pub fn print_help() {
          \n\
              --add-policy TARGET SHADER PROPERTY [PROPERTY ...]\n\
                  Add a complete screensaver or wallpaper shader policy.\n\
-                 Properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision.\n\
+                 Properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision, bloom, bloom_intensity.\n\
+                 bloom accepts off or highlight; bloom_intensity accepts 0.0 through 2.0.\n\
                  PROPERTY may use NAME:VALUE or NAME=VALUE syntax.\n\
          \n             --delete-policy TARGET SHADER\n\
                  Delete an existing screensaver or wallpaper shader policy.\n\

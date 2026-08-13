@@ -858,6 +858,12 @@ fn run_empty_session() -> Result<(), String> {
                                     Some(
                                         color_precision.to_string()
                                     ),
+
+                                bloom:
+                                    None,
+
+                                bloom_intensity:
+                                    None,
                             },
                     }
                 );
@@ -4642,6 +4648,12 @@ fn run_paths(
                                                 .name()
                                                 .to_string()
                                         ),
+
+                                    bloom:
+                                        None,
+
+                                    bloom_intensity:
+                                        None,
                                 },
                         }
                     );
@@ -4907,6 +4919,12 @@ fn run_paths(
                                     .name()
                                     .to_string()
                             ),
+
+                        bloom:
+                            None,
+
+                        bloom_intensity:
+                            None,
                     };
 
                 let manage_target =
@@ -6237,6 +6255,12 @@ fn bulk_policy_definition_from_editor_output(
             Some(
                 color_precision.to_string()
             ),
+
+        bloom:
+            None,
+
+        bloom_intensity:
+            None,
     }
 }
 

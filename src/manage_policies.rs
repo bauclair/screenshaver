@@ -166,6 +166,12 @@ pub struct PolicyDefinition {
 
     pub color_precision:
         Option<String>,
+
+    pub bloom:
+        Option<String>,
+
+    pub bloom_intensity:
+        Option<f32>,
 }
 
 
@@ -236,6 +242,8 @@ impl PolicyDefinition {
             && self.anti_aliasing.is_none()
             && self.dithering.is_none()
             && self.color_precision.is_none()
+            && self.bloom.is_none()
+            && self.bloom_intensity.is_none()
     }
 }
 
@@ -2395,6 +2403,37 @@ fn validate_properties(
         )?;
     }
 
+
+    if let Some(value) =
+        properties.bloom.as_deref()
+    {
+        validate_named_policy_value(
+            "bloom",
+            value,
+            &["off", "highlight"],
+        )?;
+    }
+
+
+    if let Some(intensity) =
+        properties.bloom_intensity
+    {
+        crate::render_bloom::validate_bloom_intensity(
+            intensity
+        )
+        .map_err(
+            |_| {
+                format!(
+                    "Bloom-intensity policy {} is outside the supported range {:.2}-{:.2}",
+                    intensity,
+                    crate::render_bloom::BLOOM_INTENSITY_MIN,
+                    crate::render_bloom::BLOOM_INTENSITY_MAX,
+                )
+            }
+        )?;
+    }
+
+
     Ok(())
 }
 
@@ -2474,7 +2513,7 @@ fn format_policy(
 
     let mut tokens =
         Vec::with_capacity(
-            8
+            10
         );
 
 
@@ -2573,6 +2612,30 @@ fn format_policy(
             format!(
                 "color_precision:{}",
                 value.trim().to_ascii_lowercase(),
+            )
+        );
+    }
+
+    if let Some(value) =
+        properties.bloom.as_deref()
+    {
+        tokens.push(
+            format!(
+                "bloom:{}",
+                value.trim().to_ascii_lowercase(),
+            )
+        );
+    }
+
+    if let Some(intensity) =
+        properties.bloom_intensity
+    {
+        tokens.push(
+            format!(
+                "bloom_intensity:{}",
+                format_speed(
+                    intensity
+                ),
             )
         );
     }
@@ -2948,6 +3011,12 @@ struct PolicyRow {
 
     color_precision:
         String,
+
+    bloom:
+        String,
+
+    bloom_intensity:
+        String,
 }
 
 
@@ -2979,6 +3048,12 @@ struct PolicyTableLayout {
         usize,
 
     color_precision_width:
+        usize,
+
+    bloom_width:
+        usize,
+
+    bloom_intensity_width:
         usize,
 }
 
@@ -3045,7 +3120,7 @@ fn print_policy_table(
         &rows
     {
         println!(
-            "{:<shader_width$}  {:<texture_width$}  {:<palette_width$}  {:>fps_width$}  {:>speed_width$}  {:>render_scale_width$}  {:<anti_aliasing_width$}  {:<dithering_width$}  {:<color_precision_width$}",
+            "{:<shader_width$}  {:<texture_width$}  {:<palette_width$}  {:>fps_width$}  {:>speed_width$}  {:>render_scale_width$}  {:<anti_aliasing_width$}  {:<dithering_width$}  {:<color_precision_width$}  {:<bloom_width$}  {:>bloom_intensity_width$}",
             row.shader,
             row.texture,
             row.palette,
@@ -3055,6 +3130,8 @@ fn print_policy_table(
             row.anti_aliasing,
             row.dithering,
             row.color_precision,
+            row.bloom,
+            row.bloom_intensity,
             shader_width = layout.shader_width,
             texture_width = layout.texture_width,
             palette_width = layout.palette_width,
@@ -3064,6 +3141,8 @@ fn print_policy_table(
             anti_aliasing_width = layout.anti_aliasing_width,
             dithering_width = layout.dithering_width,
             color_precision_width = layout.color_precision_width,
+            bloom_width = layout.bloom_width,
+            bloom_intensity_width = layout.bloom_intensity_width,
         );
     }
 
@@ -3199,6 +3278,53 @@ fn collect_policy_rows(
                     };
 
 
+                let bloom_intensity =
+                    match policy_property_value(
+                        specification,
+                        "bloom_intensity",
+                    ) {
+                        Some(value) => {
+                            let parsed =
+                                value.parse::<f32>()
+                                    .map_err(
+                                        |_| {
+                                            format!(
+                                                "Invalid bloom_intensity '{}' for policy '{}' in [{}]",
+                                                value,
+                                                shader,
+                                                target.table_name(),
+                                            )
+                                        }
+                                    )?;
+
+                            crate::render_bloom::validate_bloom_intensity(
+                                parsed
+                            )
+                            .map_err(
+                                |_| {
+                                    format!(
+                                        "bloom_intensity '{}' for policy '{}' in [{}] is outside the supported range {:.2}-{:.2}",
+                                        value,
+                                        shader,
+                                        target.table_name(),
+                                        crate::render_bloom::BLOOM_INTENSITY_MIN,
+                                        crate::render_bloom::BLOOM_INTENSITY_MAX,
+                                    )
+                                }
+                            )?;
+
+                            format!(
+                                "{:.3}",
+                                parsed,
+                            )
+                        }
+
+                        None => {
+                            "-".to_string()
+                        }
+                    };
+
+
                 Ok(
                     PolicyRow {
                         shader:
@@ -3255,6 +3381,16 @@ fn collect_policy_rows(
                             )
                             .unwrap_or("-")
                             .to_string(),
+
+                        bloom:
+                            policy_property_value(
+                                specification,
+                                "bloom",
+                            )
+                            .unwrap_or("-")
+                            .to_string(),
+
+                        bloom_intensity,
                     }
                 )
             }
@@ -3384,6 +3520,32 @@ fn calculate_policy_table_layout(
                 .max(
                     "Color precision".len()
                 ),
+
+        bloom_width:
+            rows.iter()
+                .map(
+                    |row| {
+                        row.bloom.len()
+                    }
+                )
+                .max()
+                .unwrap_or(0)
+                .max(
+                    "Bloom".len()
+                ),
+
+        bloom_intensity_width:
+            rows.iter()
+                .map(
+                    |row| {
+                        row.bloom_intensity.len()
+                    }
+                )
+                .max()
+                .unwrap_or(0)
+                .max(
+                    "Bloom intensity".len()
+                ),
     }
 }
 
@@ -3393,7 +3555,7 @@ fn print_policy_table_header(
 ) {
 
     println!(
-        "{:<shader_width$}  {:<texture_width$}  {:<palette_width$}  {:>fps_width$}  {:>speed_width$}  {:>render_scale_width$}  {:<anti_aliasing_width$}  {:<dithering_width$}  {:<color_precision_width$}",
+        "{:<shader_width$}  {:<texture_width$}  {:<palette_width$}  {:>fps_width$}  {:>speed_width$}  {:>render_scale_width$}  {:<anti_aliasing_width$}  {:<dithering_width$}  {:<color_precision_width$}  {:<bloom_width$}  {:>bloom_intensity_width$}",
         "Shader",
         "Texture",
         "Palette",
@@ -3403,6 +3565,8 @@ fn print_policy_table_header(
         "Anti-aliasing",
         "Dithering",
         "Color precision",
+        "Bloom",
+        "Bloom intensity",
         shader_width = layout.shader_width,
         texture_width = layout.texture_width,
         palette_width = layout.palette_width,
@@ -3412,11 +3576,13 @@ fn print_policy_table_header(
         anti_aliasing_width = layout.anti_aliasing_width,
         dithering_width = layout.dithering_width,
         color_precision_width = layout.color_precision_width,
+        bloom_width = layout.bloom_width,
+        bloom_intensity_width = layout.bloom_intensity_width,
     );
 
 
     println!(
-        "{}  {}  {}  {}  {}  {}  {}  {}  {}",
+        "{}  {}  {}  {}  {}  {}  {}  {}  {}  {}  {}",
         "-".repeat(
             layout.shader_width
         ),
@@ -3443,6 +3609,12 @@ fn print_policy_table_header(
         ),
         "-".repeat(
             layout.color_precision_width
+        ),
+        "-".repeat(
+            layout.bloom_width
+        ),
+        "-".repeat(
+            layout.bloom_intensity_width
         ),
     );
 }
