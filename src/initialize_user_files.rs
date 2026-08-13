@@ -36,7 +36,7 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
   mode = "random:60"
 
 # Displays shaders in alphanumerical order by filename every <nn> seconds.
-# mode = "ordered:10"
+# mode = "ordered:60"
 
 # Idle time before the screensaver activates.
 # Accepted suffixes are (s)ec, (m)in, and (h)rs.
@@ -54,7 +54,7 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 # WALLPAPER MODE
 ################################
 [wallpaper]
-  enabled = false          # Enable wallpaper rendering mode
+  enabled = true          # Enable wallpaper rendering mode
 # Wallpaper shaders are loaded from:
 #     ~/.config/screenshaver/wallpapers/
 
@@ -66,10 +66,10 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 
 # Displays wallpaper shaders in alphanumerical order by filename
 # every <nn> seconds.
-  mode = "ordered:10"
+  mode = "ordered:60"
 
 # Default animation speed for wallpaper shaders.
-  global_speed = 0.025
+  global_speed = 0.02
 
 # Default texture and palette policy for wallpaper shaders.
 # These values may differ from the screensaver defaults.
