@@ -2414,7 +2414,7 @@ fn validate_properties(
         validate_named_policy_value(
             "bloom",
             value,
-            &["off", "highlight"],
+            &["off", "highlight", "audio"],
         )?;
     }
 

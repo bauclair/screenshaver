@@ -243,7 +243,8 @@ const BLOOM_AUDIO_FRAGMENT_SHADER: &str = r#"
 
 uniform sampler2D uScene;
 uniform float uThreshold;
-uniform float uSyntheticPhase;
+uniform vec3 uAudioBands;
+uniform int uDiagnostic;
 
 in vec2 vUv;
 
@@ -305,36 +306,22 @@ void main()
     float saturation = hsv.y;
     float value = hsv.z;
 
-    // Synthetic Audio Bloom checkpoint 2:
-    // three slowly phase-shifted envelopes verify that each color family can
-    // brighten and fade independently before live audio capture/FFT is added.
-    const float tau = 6.28318530718;
-
+    // Live Audio Bloom modulation. The analyzer publishes already-normalized
+    // and attack/release-smoothed energy for the three frequency bands.
+    // Control Center Ctrl diagnostic deliberately ignores live energy so the
+    // complete eligible color extraction remains visible while tuning.
     float bassEnergy;
     float midEnergy;
     float highEnergy;
 
-    if (uSyntheticPhase < 0.0) {
-        // Control Center Ctrl diagnostic: show all eligible color families at
-        // full extraction strength, independent of synthetic modulation.
+    if (uDiagnostic != 0) {
         bassEnergy = 1.0;
         midEnergy = 1.0;
         highEnergy = 1.0;
     } else {
-        bassEnergy =
-            0.15
-            + 0.85
-                * (0.5 + 0.5 * sin(tau * uSyntheticPhase));
-
-        midEnergy =
-            0.15
-            + 0.85
-                * (0.5 + 0.5 * sin(tau * (uSyntheticPhase - 0.3333333)));
-
-        highEnergy =
-            0.15
-            + 0.85
-                * (0.5 + 0.5 * sin(tau * (uSyntheticPhase - 0.6666667)));
+        bassEnergy = clamp(uAudioBands.x, 0.0, 1.0);
+        midEnergy = clamp(uAudioBands.y, 0.0, 1.0);
+        highEnergy = clamp(uAudioBands.z, 0.0, 1.0);
     }
 
     // Bass: red through orange.
@@ -377,12 +364,32 @@ void main()
                 value
             );
 
+    float energy =
+        clamp(
+            bandMatch,
+            0.0,
+            1.0
+        );
+
+    // Audio energy controls both extraction strength and participation.
+    // At low energy, the effective threshold is pushed toward the top of the
+    // supported color-strength range, so only the strongest matching colors
+    // can contribute. As energy rises, the effective threshold moves smoothly
+    // toward the user's configured Bloom Threshold, progressively admitting
+    // more eligible pixels.
+    float effectiveThreshold =
+        mix(
+            2.0,
+            uThreshold,
+            energy
+        );
+
     float response =
-        bandMatch
+        energy
             * smoothstep(
-                uThreshold,
+                effectiveThreshold,
                 min(
-                    uThreshold + 0.20,
+                    effectiveThreshold + 0.35,
                     2.0001
                 ),
                 colorStrength
@@ -481,7 +488,8 @@ pub(crate) struct BloomRenderer {
     threshold_location: i32,
     audio_scene_location: i32,
     audio_threshold_location: i32,
-    audio_synthetic_phase_location: i32,
+    audio_bands_location: i32,
+    audio_diagnostic_location: i32,
     blur_source_location: i32,
     blur_texel_step_location: i32,
     composite_scene_location: i32,
@@ -659,11 +667,21 @@ impl BloomRenderer {
                 )
             };
 
-        let audio_synthetic_phase_location =
+        let audio_bands_location =
             unsafe {
                 gl::GetUniformLocation(
                     audio_program,
-                    b"uSyntheticPhase\0"
+                    b"uAudioBands\0"
+                        .as_ptr()
+                        .cast(),
+                )
+            };
+
+        let audio_diagnostic_location =
+            unsafe {
+                gl::GetUniformLocation(
+                    audio_program,
+                    b"uDiagnostic\0"
                         .as_ptr()
                         .cast(),
                 )
@@ -725,7 +743,8 @@ impl BloomRenderer {
             || threshold_location == -1
             || audio_scene_location == -1
             || audio_threshold_location == -1
-            || audio_synthetic_phase_location == -1
+            || audio_bands_location == -1
+            || audio_diagnostic_location == -1
             || blur_source_location == -1
             || blur_texel_step_location == -1
             || composite_scene_location == -1
@@ -772,7 +791,8 @@ impl BloomRenderer {
                 threshold_location,
                 audio_scene_location,
                 audio_threshold_location,
-                audio_synthetic_phase_location,
+                audio_bands_location,
+                audio_diagnostic_location,
                 blur_source_location,
                 blur_texel_step_location,
                 composite_scene_location,
@@ -834,14 +854,14 @@ impl BloomRenderer {
     }
 
 
-    /// Draw pixels belonging to the three synthetic Audio Bloom hue bands.
-    /// Checkpoint 1 holds bass, midrange, and high-frequency energy at 1.0 so
-    /// extraction can be evaluated independently of live audio analysis.
+    /// Draw pixels belonging to the three Audio Bloom hue bands, modulated by
+    /// the latest normalized and smoothed live audio energy.
     pub(crate) fn render_audio_colors(
         &self,
         scene_texture: u32,
         threshold: f32,
-        synthetic_phase: f32,
+        bands: crate::analyze_audio::AudioBands,
+        diagnostic: bool,
     ) {
 
         unsafe {
@@ -868,9 +888,20 @@ impl BloomRenderer {
                 threshold,
             );
 
-            gl::Uniform1f(
-                self.audio_synthetic_phase_location,
-                synthetic_phase,
+            gl::Uniform3f(
+                self.audio_bands_location,
+                bands.bass,
+                bands.midrange,
+                bands.treble,
+            );
+
+            gl::Uniform1i(
+                self.audio_diagnostic_location,
+                if diagnostic {
+                    1
+                } else {
+                    0
+                },
             );
 
             gl::BindVertexArray(

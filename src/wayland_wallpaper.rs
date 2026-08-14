@@ -2848,6 +2848,22 @@ fn render_mirror_frames(
                 Instant::now();
 
 
+            let current_audio_bands =
+                runtime.audio_bands
+                    .as_ref()
+                    .and_then(
+                        |shared| {
+                            shared
+                                .read()
+                                .ok()
+                                .map(
+                                    |bands| *bands
+                                )
+                        }
+                    )
+                    .unwrap_or_default();
+
+
             for (
                 egl_target,
                 native_target,
@@ -2887,6 +2903,11 @@ fn render_mirror_frames(
                                 )
                             }
                         )?;
+
+
+                postprocess.set_audio_bands(
+                    current_audio_bands
+                );
 
 
                 let target_width =

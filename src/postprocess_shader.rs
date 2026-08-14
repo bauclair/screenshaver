@@ -126,7 +126,7 @@ pub(crate) struct PostprocessPipeline {
     bloom_mode: crate::render_bloom::BloomMode,
     bloom_intensity: f32,
     bloom_threshold: f32,
-    audio_synthetic_phase: f32,
+    audio_bands: crate::analyze_audio::AudioBands,
 }
 
 impl PostprocessPipeline {
@@ -254,8 +254,8 @@ impl PostprocessPipeline {
                     crate::render_bloom::validate_bloom_threshold(
                         profile.bloom_threshold
                     )?,
-                audio_synthetic_phase:
-                    0.0,
+                audio_bands:
+                    crate::analyze_audio::AudioBands::default(),
             };
 
         pipeline.log_precision_selection();
@@ -277,14 +277,12 @@ impl PostprocessPipeline {
         );
     }
 
-    pub(crate) fn set_audio_synthetic_phase(
+    pub(crate) fn set_audio_bands(
         &mut self,
-        phase: f32,
+        bands: crate::analyze_audio::AudioBands,
     ) {
-        self.audio_synthetic_phase =
-            phase.rem_euclid(
-                1.0
-            );
+        self.audio_bands =
+            bands;
     }
 
 
@@ -480,11 +478,8 @@ impl PostprocessPipeline {
                 self.bloom.render_audio_colors(
                     source_texture,
                     self.bloom_threshold,
-                    if diagnostic {
-                        -1.0
-                    } else {
-                        self.audio_synthetic_phase
-                    },
+                    self.audio_bands,
+                    diagnostic,
                 );
             }
         }

@@ -1,6 +1,29 @@
 pub mod pulseaudio;
 
 use std::fmt;
+use std::sync::{
+    Arc,
+    RwLock,
+};
+
+
+pub type SharedAudioBands =
+    Arc<
+        RwLock<
+            crate::analyze_audio::AudioBands
+        >
+    >;
+
+
+pub fn new_shared_audio_bands(
+) -> SharedAudioBands {
+
+    Arc::new(
+        RwLock::new(
+            crate::analyze_audio::AudioBands::default()
+        )
+    )
+}
 
 
 pub trait AudioBackend {
@@ -8,6 +31,11 @@ pub trait AudioBackend {
     fn backend_name(
         &self,
     ) -> &'static str;
+
+
+    fn shared_bands(
+        &self,
+    ) -> SharedAudioBands;
 }
 
 

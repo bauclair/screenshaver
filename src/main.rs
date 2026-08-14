@@ -18,6 +18,7 @@ mod manage_cache;
 mod query_session;
 mod session_backend;
 mod audio_backend;
+mod analyze_audio;
 
 mod manage_configuration;
 mod manage_shader;
@@ -505,8 +506,22 @@ crate::parse_arguments::Command::Control {
     shader_name,
 } => {
 
+    let control_audio_backend =
+        crate::audio_backend::create_backend()
+            .ok();
+
+    let control_audio_bands =
+        control_audio_backend
+            .as_ref()
+            .map(
+                |backend| {
+                    backend.shared_bands()
+                }
+            );
+
     match crate::edit_shader::run(
-        shader_name
+        shader_name,
+        control_audio_bands,
     ) {
 
         Ok(()) => {}
@@ -542,8 +557,22 @@ crate::parse_arguments::Command::EditShader {
     shader_name,
 } => {
 
+    let edit_audio_backend =
+        crate::audio_backend::create_backend()
+            .ok();
+
+    let edit_audio_bands =
+        edit_audio_backend
+            .as_ref()
+            .map(
+                |backend| {
+                    backend.shared_bands()
+                }
+            );
+
     match crate::edit_shader::run(
-        shader_name
+        shader_name,
+        edit_audio_bands,
     ) {
 
         Ok(()) => {}
@@ -769,7 +798,7 @@ crate::parse_arguments::Command::ListTextures => {
 
     // Audio is an optional runtime capability.  Failure to locate a usable
     // backend must never prevent Screenshaver from continuing normally.
-    let _audio_backend =
+    let audio_backend =
         match crate::audio_backend::create_backend() {
 
             Ok(backend) => {
@@ -1284,6 +1313,14 @@ crate::parse_arguments::Command::ListTextures => {
                 cfg.wallpaper_speed_policy,
             postprocess_policy:
                 cfg.wallpaper_postprocess_policy,
+            audio_bands:
+                audio_backend
+                    .as_ref()
+                    .map(
+                        |backend| {
+                            backend.shared_bands()
+                        }
+                    ),
             tray_status:
                 tray_status.clone(),
         };
@@ -1378,13 +1415,27 @@ crate::parse_arguments::Command::ListTextures => {
                     match active_wallpaper {
                         Some(active_wallpaper) => {
                             crate::edit_shader::run_wallpaper_only(
-                                active_wallpaper.path
+                                active_wallpaper.path,
+                                audio_backend
+                                    .as_ref()
+                                    .map(
+                                        |backend| {
+                                            backend.shared_bands()
+                                        }
+                                    ),
                             )
                         }
 
                         None => {
                             crate::edit_shader::run(
-                                None
+                                None,
+                                audio_backend
+                                    .as_ref()
+                                    .map(
+                                        |backend| {
+                                            backend.shared_bands()
+                                        }
+                                    ),
                             )
                         }
                     };
@@ -1622,6 +1673,13 @@ crate::parse_arguments::Command::ListTextures => {
                             cfg.screensaver_fps_policy_entries.clone(),
                             cfg.texture_policy.clone(),
                             cfg.screensaver_postprocess_policy.clone(),
+                            audio_backend
+                                .as_ref()
+                                .map(
+                                    |backend| {
+                                        backend.shared_bands()
+                                    }
+                                ),
                             cfg.subtitles,
                             cfg.subtitle_placement,
                         ) {
@@ -1691,7 +1749,14 @@ crate::parse_arguments::Command::ListTextures => {
 
                             let edit_result =
                                 crate::edit_shader::run_screensaver_only(
-                                    shader_path.clone()
+                                    shader_path.clone(),
+                                    audio_backend
+                                        .as_ref()
+                                        .map(
+                                            |backend| {
+                                                backend.shared_bands()
+                                            }
+                                        ),
                                 );
 
                             if let Err(error) = &edit_result {

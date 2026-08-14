@@ -15,6 +15,7 @@ use std::time::{
 
 use libpulse_binding as pulse;
 
+use pulse::def::BufferAttr;
 use pulse::callbacks::ListResult;
 use pulse::context::{
     Context,
@@ -61,11 +62,18 @@ const CAPTURE_REPORT_INTERVAL:
     Duration =
     Duration::from_secs(5);
 
+const CAPTURE_FRAGMENT_BYTES:
+    u32 =
+    4_096;
+
 
 pub struct PulseAudioBackend {
 
     stop_requested:
         Arc<AtomicBool>,
+
+    shared_bands:
+        crate::audio_backend::SharedAudioBands,
 
     worker:
         Option<JoinHandle<()>>,
@@ -85,9 +93,18 @@ impl PulseAudioBackend {
             );
 
 
+        let shared_bands =
+            crate::audio_backend::new_shared_audio_bands();
+
+
         let worker_stop =
             Arc::clone(
                 &stop_requested
+            );
+
+        let worker_bands =
+            Arc::clone(
+                &shared_bands
             );
 
 
@@ -113,6 +130,7 @@ impl PulseAudioBackend {
 
                         run_capture_worker(
                             worker_stop,
+                            worker_bands,
                             startup_sender,
                         );
                     }
@@ -144,6 +162,7 @@ impl PulseAudioBackend {
                 Ok(
                     Self {
                         stop_requested,
+                        shared_bands,
                         worker:
                             Some(
                                 worker
@@ -209,6 +228,16 @@ impl crate::audio_backend::AudioBackend
 
         "PulseAudio"
     }
+
+
+    fn shared_bands(
+        &self,
+    ) -> crate::audio_backend::SharedAudioBands {
+
+        Arc::clone(
+            &self.shared_bands
+        )
+    }
 }
 
 
@@ -237,6 +266,8 @@ impl Drop for PulseAudioBackend {
 
 fn run_capture_worker(
     stop_requested: Arc<AtomicBool>,
+    shared_bands:
+        crate::audio_backend::SharedAudioBands,
     startup_sender:
         std::sync::mpsc::SyncSender<
             Result<(), String>
@@ -246,6 +277,7 @@ fn run_capture_worker(
     let result =
         run_capture_worker_inner(
             &stop_requested,
+            &shared_bands,
             &startup_sender,
         );
 
@@ -274,6 +306,8 @@ fn run_capture_worker(
 
 fn run_capture_worker_inner(
     stop_requested: &Arc<AtomicBool>,
+    shared_bands:
+        &crate::audio_backend::SharedAudioBands,
     startup_sender:
         &std::sync::mpsc::SyncSender<
             Result<(), String>
@@ -391,12 +425,40 @@ fn run_capture_worker_inner(
         )?;
 
 
+    let capture_buffer =
+        BufferAttr {
+            maxlength:
+                u32::MAX,
+            tlength:
+                u32::MAX,
+            prebuf:
+                u32::MAX,
+            minreq:
+                u32::MAX,
+            fragsize:
+                CAPTURE_FRAGMENT_BYTES,
+        };
+
+
+    log_capture_information(
+        &format!(
+            "[AUDIO] Requested capture fragment: {} bytes (~{:.1} ms)",
+            CAPTURE_FRAGMENT_BYTES,
+            capture_fragment_milliseconds(
+                CAPTURE_FRAGMENT_BYTES
+            ),
+        )
+    );
+
+
     stream
         .connect_record(
             Some(
                 &monitor_source
             ),
-            None,
+            Some(
+                &capture_buffer
+            ),
             StreamFlagSet::ADJUST_LATENCY,
         )
         .map_err(
@@ -414,6 +476,28 @@ fn run_capture_worker_inner(
         &mut mainloop,
         &stream,
     )?;
+
+
+    if let Some(
+        actual_buffer
+    ) =
+        stream.get_buffer_attr()
+    {
+        log_capture_information(
+            &format!(
+                "[AUDIO] Actual capture fragment: {} bytes (~{:.1} ms)",
+                actual_buffer.fragsize,
+                capture_fragment_milliseconds(
+                    actual_buffer.fragsize
+                ),
+            )
+        );
+    }
+    else {
+        log_capture_information(
+            "[AUDIO] Actual capture fragment unavailable"
+        );
+    }
 
 
     log_capture_information(
@@ -437,6 +521,12 @@ fn run_capture_worker_inner(
                 )
             }
         )?;
+
+
+    let mut analyzer =
+        crate::analyze_audio::AudioAnalyzer::new(
+            CAPTURE_RATE
+        );
 
 
     let mut captured_bytes:
@@ -529,6 +619,25 @@ fn run_capture_worker_inner(
                                 1;
 
 
+                            if let Some(
+                                bands
+                            ) =
+                                analyzer
+                                    .push_s16_stereo_bytes(
+                                        data
+                                    )
+                            {
+                                if let Ok(
+                                    mut shared
+                                ) =
+                                    shared_bands.write()
+                                {
+                                    *shared =
+                                        bands;
+                                }
+                            }
+
+
                             stream
                                 .discard()
                                 .map_err(
@@ -615,6 +724,16 @@ fn run_capture_worker_inner(
         thread::sleep(
             Duration::from_millis(2)
         );
+    }
+
+
+    if let Ok(
+        mut shared
+    ) =
+        shared_bands.write()
+    {
+        *shared =
+            crate::analyze_audio::AudioBands::default();
     }
 
 
@@ -985,6 +1104,22 @@ fn iterate_mainloop(
             )
         }
     }
+}
+
+
+fn capture_fragment_milliseconds(
+    bytes: u32,
+) -> f64 {
+
+    let bytes_per_second =
+        CAPTURE_RATE as f64
+            * CAPTURE_CHANNELS as f64
+            * std::mem::size_of::<i16>() as f64;
+
+
+    bytes as f64
+        / bytes_per_second
+        * 1_000.0
 }
 
 

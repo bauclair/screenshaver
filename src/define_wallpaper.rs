@@ -96,6 +96,9 @@ pub struct WallpaperRuntime {
     pub postprocess_policy:
         crate::load_config::PostprocessPolicy,
 
+    pub audio_bands:
+        Option<crate::audio_backend::SharedAudioBands>,
+
     pub tray_status:
         crate::tray_icon::TrayStatusControl,
 }

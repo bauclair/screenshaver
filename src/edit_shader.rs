@@ -283,12 +283,16 @@ enum EditorTargetRestriction {
 
 pub fn run(
     shader_argument: Option<String>,
+    audio_bands:
+        Option<crate::audio_backend::SharedAudioBands>,
 ) -> Result<(), String> {
 
     let Some(shader_argument) =
         shader_argument
     else {
-        return run_empty_session();
+        return run_empty_session(
+            audio_bands
+        );
     };
 
 
@@ -311,6 +315,7 @@ pub fn run(
                 None,
                 EditorTargetRestriction::Unrestricted,
                 None,
+                audio_bands,
             )
         }
 
@@ -331,6 +336,8 @@ pub fn run(
 
 pub fn run_wallpaper_only(
     shader_path: PathBuf,
+    audio_bands:
+        Option<crate::audio_backend::SharedAudioBands>,
 ) -> Result<(), String> {
     // The system-tray Edit command opens the full Control Center, merely
     // seeding it with the currently active wallpaper and selecting the
@@ -348,12 +355,15 @@ pub fn run_wallpaper_only(
         Some(
             crate::editor_layout::PolicyTarget::Wallpaper
         ),
+        audio_bands,
     )
 }
 
 
 pub fn run_screensaver_only(
     shader_path: PathBuf,
+    audio_bands:
+        Option<crate::audio_backend::SharedAudioBands>,
 ) -> Result<(), String> {
     run_paths(
         vec![shader_path],
@@ -366,10 +376,14 @@ pub fn run_screensaver_only(
         Some(
             crate::editor_layout::PolicyTarget::Screensaver
         ),
+        audio_bands,
     )
 }
 
-fn run_empty_session() -> Result<(), String> {
+fn run_empty_session(
+    audio_bands:
+        Option<crate::audio_backend::SharedAudioBands>,
+) -> Result<(), String> {
 
     let wallpaper_pause_guard =
         crate::control_wallpaper::WallpaperPauseGuard::acquire();
@@ -1839,6 +1853,7 @@ fn run_empty_session() -> Result<(), String> {
             None,
             EditorTargetRestriction::Unrestricted,
             policy_target,
+            audio_bands,
         );
     }
 
@@ -1905,6 +1920,8 @@ fn run_paths(
         Option<
             crate::editor_layout::PolicyTarget
         >,
+    audio_bands:
+        Option<crate::audio_backend::SharedAudioBands>,
 ) -> Result<(), String> {
 
     if shader_paths.is_empty() {
@@ -2648,19 +2665,26 @@ fn run_paths(
                     * animation_speed;
 
 
-            // Synthetic Audio Bloom test cycle. This intentionally uses
-            // wall-clock session time rather than shader animation speed.
-            let audio_synthetic_phase =
-                (
-                    active.start_time
-                        .elapsed()
-                        .as_secs_f32()
-                    / 9.0
-                )
-                .fract();
+            // Audio Bloom consumes the latest backend-independent analyzer
+            // output. If audio is unavailable (or the shared state cannot be
+            // read), all three bands remain zero and Bloom contributes nothing.
+            let current_audio_bands =
+                audio_bands
+                    .as_ref()
+                    .and_then(
+                        |shared| {
+                            shared
+                                .read()
+                                .ok()
+                                .map(
+                                    |bands| *bands
+                                )
+                        }
+                    )
+                    .unwrap_or_default();
 
-            postprocess.set_audio_synthetic_phase(
-                audio_synthetic_phase
+            postprocess.set_audio_bands(
+                current_audio_bands
             );
 
 

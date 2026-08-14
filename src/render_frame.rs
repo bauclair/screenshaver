@@ -143,6 +143,8 @@ pub(crate) struct FrameRenderEngine {
     fps_policy: RenderFpsPolicy,
     postprocess_policy:
         crate::load_config::PostprocessPolicy,
+    audio_bands:
+        Option<crate::audio_backend::SharedAudioBands>,
     output_policy: FrameOutputPolicy,
     configured_fps: u32,
     fps_warning_state: FpsWarningState,
@@ -171,6 +173,8 @@ impl FrameRenderEngine {
             crate::load_config::TexturePolicy,
         postprocess_policy:
             crate::load_config::PostprocessPolicy,
+        audio_bands:
+            Option<crate::audio_backend::SharedAudioBands>,
         subtitles: bool,
         subtitle_placement:
             crate::parse_subtitle_placement::SubtitlePlacement,
@@ -189,6 +193,7 @@ impl FrameRenderEngine {
             FrameOutputPolicy::PreserveAlpha,
             texture_policy,
             postprocess_policy,
+            audio_bands,
             subtitles,
             true,
             subtitle_placement,
@@ -210,6 +215,8 @@ impl FrameRenderEngine {
             crate::load_config::TexturePolicy,
         postprocess_policy:
             crate::load_config::PostprocessPolicy,
+        audio_bands:
+            Option<crate::audio_backend::SharedAudioBands>,
         subtitles: bool,
         subtitle_placement:
             crate::parse_subtitle_placement::SubtitlePlacement,
@@ -227,6 +234,7 @@ impl FrameRenderEngine {
             FrameOutputPolicy::ForceOpaque,
             texture_policy,
             postprocess_policy,
+            audio_bands,
             subtitles,
             false,
             subtitle_placement,
@@ -248,6 +256,8 @@ impl FrameRenderEngine {
             crate::load_config::TexturePolicy,
         postprocess_policy:
             crate::load_config::PostprocessPolicy,
+        audio_bands:
+            Option<crate::audio_backend::SharedAudioBands>,
         subtitles: bool,
         render_fps_warning_overlay: bool,
         subtitle_placement:
@@ -379,6 +389,7 @@ impl FrameRenderEngine {
                     ),
                 fps_policy,
                 postprocess_policy,
+                audio_bands,
                 output_policy,
                 configured_fps,
                 fps_warning_state:
@@ -697,6 +708,25 @@ impl FrameRenderEngine {
         width: u32,
         height: u32,
     ) -> FrameRenderEvents {
+        let current_audio_bands =
+            self.audio_bands
+                .as_ref()
+                .and_then(
+                    |shared| {
+                        shared
+                            .read()
+                            .ok()
+                            .map(
+                                |bands| *bands
+                            )
+                    }
+                )
+                .unwrap_or_default();
+
+        self.postprocess.set_audio_bands(
+            current_audio_bands
+        );
+
         let shader_changed =
             self.maybe_switch_shader(
                 width,
@@ -1119,6 +1149,8 @@ impl FrameRenderer {
             crate::load_config::TexturePolicy,
         postprocess_policy:
             crate::load_config::PostprocessPolicy,
+        audio_bands:
+            Option<crate::audio_backend::SharedAudioBands>,
         subtitles: bool,
         subtitle_placement:
             crate::parse_subtitle_placement::SubtitlePlacement,
@@ -1214,6 +1246,7 @@ impl FrameRenderer {
                 fps_policy_entries,
                 texture_policy,
                 postprocess_policy,
+                audio_bands,
                 subtitles,
                 subtitle_placement,
                 window_width,
