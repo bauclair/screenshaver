@@ -767,6 +767,60 @@ crate::parse_arguments::Command::ListTextures => {
     );
 
 
+    // Audio is an optional runtime capability.  Failure to locate a usable
+    // backend must never prevent Screenshaver from continuing normally.
+    let _audio_backend =
+        match crate::audio_backend::create_backend() {
+
+            Ok(backend) => {
+
+                println!(
+                    "[MAIN] Audio backend = {}",
+                    backend.backend_name()
+                );
+
+
+                crate::logger::information(
+                    &logfile,
+                    &format!(
+                        "[AUDIO] Backend ready: {}",
+                        backend.backend_name(),
+                    ),
+                );
+
+
+                Some(backend)
+            }
+
+
+            Err(error) => {
+
+                println!(
+                    "[AUDIO] No compatible audio backend available: {}",
+                    error
+                );
+
+
+                crate::logger::warning(
+                    &logfile,
+                    &format!(
+                        "[AUDIO] No compatible audio backend available: {}",
+                        error,
+                    ),
+                );
+
+
+                crate::logger::information(
+                    &logfile,
+                    "[AUDIO] Audio Bloom unavailable for this session",
+                );
+
+
+                None
+            }
+        };
+
+
     if cfg.debug_log {
 
         crate::logger::debug(
