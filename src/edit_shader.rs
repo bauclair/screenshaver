@@ -2648,6 +2648,22 @@ fn run_paths(
                     * animation_speed;
 
 
+            // Synthetic Audio Bloom test cycle. This intentionally uses
+            // wall-clock session time rather than shader animation speed.
+            let audio_synthetic_phase =
+                (
+                    active.start_time
+                        .elapsed()
+                        .as_secs_f32()
+                    / 9.0
+                )
+                .fract();
+
+            postprocess.set_audio_synthetic_phase(
+                audio_synthetic_phase
+            );
+
+
             let shader_render_start =
                 Instant::now();
 

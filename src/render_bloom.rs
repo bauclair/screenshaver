@@ -243,6 +243,7 @@ const BLOOM_AUDIO_FRAGMENT_SHADER: &str = r#"
 
 uniform sampler2D uScene;
 uniform float uThreshold;
+uniform float uSyntheticPhase;
 
 in vec2 vUv;
 
@@ -304,12 +305,37 @@ void main()
     float saturation = hsv.y;
     float value = hsv.z;
 
-    // Synthetic Audio Bloom checkpoint:
-    // all three audio bands are held at full and equal strength.  This lets
-    // color classification be tuned before Linux audio capture/FFT is added.
-    const float bassEnergy = 1.0;
-    const float midEnergy = 1.0;
-    const float highEnergy = 1.0;
+    // Synthetic Audio Bloom checkpoint 2:
+    // three slowly phase-shifted envelopes verify that each color family can
+    // brighten and fade independently before live audio capture/FFT is added.
+    const float tau = 6.28318530718;
+
+    float bassEnergy;
+    float midEnergy;
+    float highEnergy;
+
+    if (uSyntheticPhase < 0.0) {
+        // Control Center Ctrl diagnostic: show all eligible color families at
+        // full extraction strength, independent of synthetic modulation.
+        bassEnergy = 1.0;
+        midEnergy = 1.0;
+        highEnergy = 1.0;
+    } else {
+        bassEnergy =
+            0.15
+            + 0.85
+                * (0.5 + 0.5 * sin(tau * uSyntheticPhase));
+
+        midEnergy =
+            0.15
+            + 0.85
+                * (0.5 + 0.5 * sin(tau * (uSyntheticPhase - 0.3333333)));
+
+        highEnergy =
+            0.15
+            + 0.85
+                * (0.5 + 0.5 * sin(tau * (uSyntheticPhase - 0.6666667)));
+    }
 
     // Bass: red through orange.
     float bassMatch =
@@ -455,6 +481,7 @@ pub(crate) struct BloomRenderer {
     threshold_location: i32,
     audio_scene_location: i32,
     audio_threshold_location: i32,
+    audio_synthetic_phase_location: i32,
     blur_source_location: i32,
     blur_texel_step_location: i32,
     composite_scene_location: i32,
@@ -632,6 +659,16 @@ impl BloomRenderer {
                 )
             };
 
+        let audio_synthetic_phase_location =
+            unsafe {
+                gl::GetUniformLocation(
+                    audio_program,
+                    b"uSyntheticPhase\0"
+                        .as_ptr()
+                        .cast(),
+                )
+            };
+
 
         let blur_source_location =
             unsafe {
@@ -688,6 +725,7 @@ impl BloomRenderer {
             || threshold_location == -1
             || audio_scene_location == -1
             || audio_threshold_location == -1
+            || audio_synthetic_phase_location == -1
             || blur_source_location == -1
             || blur_texel_step_location == -1
             || composite_scene_location == -1
@@ -734,6 +772,7 @@ impl BloomRenderer {
                 threshold_location,
                 audio_scene_location,
                 audio_threshold_location,
+                audio_synthetic_phase_location,
                 blur_source_location,
                 blur_texel_step_location,
                 composite_scene_location,
@@ -802,6 +841,7 @@ impl BloomRenderer {
         &self,
         scene_texture: u32,
         threshold: f32,
+        synthetic_phase: f32,
     ) {
 
         unsafe {
@@ -826,6 +866,11 @@ impl BloomRenderer {
             gl::Uniform1f(
                 self.audio_threshold_location,
                 threshold,
+            );
+
+            gl::Uniform1f(
+                self.audio_synthetic_phase_location,
+                synthetic_phase,
             );
 
             gl::BindVertexArray(
