@@ -17,6 +17,7 @@ mod manage_cache;
 
 mod query_session;
 mod session_backend;
+mod audio_backend;
 
 mod manage_configuration;
 mod manage_shader;

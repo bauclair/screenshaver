@@ -6,6 +6,7 @@
 , libGL
 , libglvnd
 , wayland
+, libpulseaudio
 , xorg
 }:
 
@@ -30,6 +31,7 @@ rustPlatform.buildRustPackage rec {
     libglvnd
     wayland
     wayland.dev
+    libpulseaudio
     xorg.libX11
     xorg.libXScrnSaver
   ];
