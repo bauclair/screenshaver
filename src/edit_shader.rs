@@ -8174,6 +8174,10 @@ fn bloom_selection_from_mode(
         crate::render_bloom::BloomMode::Highlight => {
             crate::editor_layout::BloomSelection::Highlight
         }
+
+        crate::render_bloom::BloomMode::Audio => {
+            crate::editor_layout::BloomSelection::Audio
+        }
     }
 }
 
@@ -8188,6 +8192,10 @@ fn bloom_mode_from_selection(
 
         crate::editor_layout::BloomSelection::Highlight => {
             crate::render_bloom::BloomMode::Highlight
+        }
+
+        crate::editor_layout::BloomSelection::Audio => {
+            crate::render_bloom::BloomMode::Audio
         }
     }
 }

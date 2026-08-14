@@ -37,6 +37,8 @@ pub(crate) enum BloomMode {
     Off,
 
     Highlight,
+
+    Audio,
 }
 
 
@@ -63,10 +65,16 @@ impl BloomMode {
                 )
             }
 
+            "audio" => {
+                Ok(
+                    Self::Audio
+                )
+            }
+
             other => {
                 Err(
                     format!(
-                        "Unsupported bloom mode '{}'; supported values: off, highlight",
+                        "Unsupported bloom mode '{}'; supported values: off, highlight, audio",
                         other,
                     )
                 )
@@ -82,6 +90,7 @@ impl BloomMode {
         match self {
             Self::Off => "off",
             Self::Highlight => "highlight",
+            Self::Audio => "audio",
         }
     }
 
@@ -229,6 +238,138 @@ void main()
 "#;
 
 
+const BLOOM_AUDIO_FRAGMENT_SHADER: &str = r#"
+#version 330 core
+
+uniform sampler2D uScene;
+uniform float uThreshold;
+
+in vec2 vUv;
+
+out vec4 fragColor;
+
+vec3 rgbToHsv(vec3 c)
+{
+    float maxChannel = max(c.r, max(c.g, c.b));
+    float minChannel = min(c.r, min(c.g, c.b));
+    float chroma = maxChannel - minChannel;
+
+    float hue = 0.0;
+
+    if (chroma > 0.00001) {
+        if (maxChannel == c.r) {
+            hue = mod((c.g - c.b) / chroma, 6.0);
+        } else if (maxChannel == c.g) {
+            hue = ((c.b - c.r) / chroma) + 2.0;
+        } else {
+            hue = ((c.r - c.g) / chroma) + 4.0;
+        }
+
+        hue *= 60.0;
+
+        if (hue < 0.0) {
+            hue += 360.0;
+        }
+    }
+
+    float saturation =
+        maxChannel > 0.00001
+            ? chroma / maxChannel
+            : 0.0;
+
+    return vec3(
+        hue,
+        saturation,
+        maxChannel
+    );
+}
+
+void main()
+{
+    vec3 sceneColor =
+        texture(
+            uScene,
+            vUv
+        ).rgb;
+
+    vec3 hsv =
+        rgbToHsv(
+            max(
+                sceneColor,
+                vec3(0.0)
+            )
+        );
+
+    float hue = hsv.x;
+    float saturation = hsv.y;
+    float value = hsv.z;
+
+    // Synthetic Audio Bloom checkpoint:
+    // all three audio bands are held at full and equal strength.  This lets
+    // color classification be tuned before Linux audio capture/FFT is added.
+    const float bassEnergy = 1.0;
+    const float midEnergy = 1.0;
+    const float highEnergy = 1.0;
+
+    // Bass: red through orange.
+    float bassMatch =
+        (hue >= 0.0 && hue < 45.0)
+            ? bassEnergy
+            : 0.0;
+
+    // Midrange: yellow through green.
+    float midMatch =
+        (hue >= 45.0 && hue < 150.0)
+            ? midEnergy
+            : 0.0;
+
+    // High frequencies: indigo through purple.
+    float highMatch =
+        (hue >= 240.0 && hue < 300.0)
+            ? highEnergy
+            : 0.0;
+
+    float bandMatch =
+        max(
+            bassMatch,
+            max(
+                midMatch,
+                highMatch
+            )
+        );
+
+    // In Audio mode Bloom Threshold measures color participation rather than
+    // luminance. Saturation is mapped to the existing 0.0-2.0 threshold
+    // range. A small value factor prevents nearly-black pixels from blooming
+    // merely because their mathematical hue falls inside a target band.
+    float colorStrength =
+        saturation
+            * 2.0
+            * smoothstep(
+                0.02,
+                0.15,
+                value
+            );
+
+    float response =
+        bandMatch
+            * smoothstep(
+                uThreshold,
+                min(
+                    uThreshold + 0.20,
+                    2.0001
+                ),
+                colorStrength
+            );
+
+    fragColor = vec4(
+        sceneColor * response,
+        1.0
+    );
+}
+"#;
+
+
 const BLOOM_BLUR_FRAGMENT_SHADER: &str = r#"
 #version 330 core
 
@@ -306,11 +447,14 @@ void main()
 
 pub(crate) struct BloomRenderer {
     highlight_program: u32,
+    audio_program: u32,
     blur_program: u32,
     composite_program: u32,
     vao: u32,
     scene_location: i32,
     threshold_location: i32,
+    audio_scene_location: i32,
+    audio_threshold_location: i32,
     blur_source_location: i32,
     blur_texel_step_location: i32,
     composite_scene_location: i32,
@@ -338,6 +482,27 @@ impl BloomRenderer {
             )?;
 
 
+        let audio_program =
+            crate::compile_shader::build_program(
+                BLOOM_VERTEX_SHADER,
+                BLOOM_AUDIO_FRAGMENT_SHADER,
+            )
+            .map_err(
+                |error| {
+                    unsafe {
+                        gl::DeleteProgram(
+                            highlight_program
+                        );
+                    }
+
+                    format!(
+                        "Unable to build Bloom audio color-extraction program: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
         let blur_program =
             crate::compile_shader::build_program(
                 BLOOM_VERTEX_SHADER,
@@ -348,6 +513,10 @@ impl BloomRenderer {
                     unsafe {
                         gl::DeleteProgram(
                             highlight_program
+                        );
+
+                        gl::DeleteProgram(
+                            audio_program
                         );
                     }
 
@@ -369,6 +538,10 @@ impl BloomRenderer {
                     unsafe {
                         gl::DeleteProgram(
                             highlight_program
+                        );
+
+                        gl::DeleteProgram(
+                            audio_program
                         );
 
                         gl::DeleteProgram(
@@ -400,6 +573,10 @@ impl BloomRenderer {
                 );
 
                 gl::DeleteProgram(
+                    audio_program
+                );
+
+                gl::DeleteProgram(
                     blur_program
                 );
 
@@ -428,6 +605,27 @@ impl BloomRenderer {
             unsafe {
                 gl::GetUniformLocation(
                     highlight_program,
+                    b"uThreshold\0"
+                        .as_ptr()
+                        .cast(),
+                )
+            };
+
+
+        let audio_scene_location =
+            unsafe {
+                gl::GetUniformLocation(
+                    audio_program,
+                    b"uScene\0"
+                        .as_ptr()
+                        .cast(),
+                )
+            };
+
+        let audio_threshold_location =
+            unsafe {
+                gl::GetUniformLocation(
+                    audio_program,
                     b"uThreshold\0"
                         .as_ptr()
                         .cast(),
@@ -488,6 +686,8 @@ impl BloomRenderer {
 
         if scene_location == -1
             || threshold_location == -1
+            || audio_scene_location == -1
+            || audio_threshold_location == -1
             || blur_source_location == -1
             || blur_texel_step_location == -1
             || composite_scene_location == -1
@@ -502,6 +702,10 @@ impl BloomRenderer {
 
                 gl::DeleteProgram(
                     highlight_program
+                );
+
+                gl::DeleteProgram(
+                    audio_program
                 );
 
                 gl::DeleteProgram(
@@ -522,11 +726,14 @@ impl BloomRenderer {
         Ok(
             Self {
                 highlight_program,
+                audio_program,
                 blur_program,
                 composite_program,
                 vao,
                 scene_location,
                 threshold_location,
+                audio_scene_location,
+                audio_threshold_location,
                 blur_source_location,
                 blur_texel_step_location,
                 composite_scene_location,
@@ -567,6 +774,57 @@ impl BloomRenderer {
 
             gl::Uniform1f(
                 self.threshold_location,
+                threshold,
+            );
+
+            gl::BindVertexArray(
+                self.vao
+            );
+
+            gl::DrawArrays(
+                gl::TRIANGLES,
+                0,
+                3,
+            );
+
+            gl::BindTexture(
+                gl::TEXTURE_2D,
+                0,
+            );
+        }
+    }
+
+
+    /// Draw pixels belonging to the three synthetic Audio Bloom hue bands.
+    /// Checkpoint 1 holds bass, midrange, and high-frequency energy at 1.0 so
+    /// extraction can be evaluated independently of live audio analysis.
+    pub(crate) fn render_audio_colors(
+        &self,
+        scene_texture: u32,
+        threshold: f32,
+    ) {
+
+        unsafe {
+            gl::UseProgram(
+                self.audio_program
+            );
+
+            gl::ActiveTexture(
+                gl::TEXTURE0
+            );
+
+            gl::BindTexture(
+                gl::TEXTURE_2D,
+                scene_texture,
+            );
+
+            gl::Uniform1i(
+                self.audio_scene_location,
+                0,
+            );
+
+            gl::Uniform1f(
+                self.audio_threshold_location,
                 threshold,
             );
 
@@ -736,6 +994,12 @@ impl Drop for BloomRenderer {
                 );
             }
 
+            if self.audio_program != 0 {
+                gl::DeleteProgram(
+                    self.audio_program
+                );
+            }
+
             if self.blur_program != 0 {
                 gl::DeleteProgram(
                     self.blur_program
@@ -753,6 +1017,9 @@ impl Drop for BloomRenderer {
             0;
 
         self.highlight_program =
+            0;
+
+        self.audio_program =
             0;
 
         self.blur_program =

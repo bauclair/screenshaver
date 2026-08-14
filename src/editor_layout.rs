@@ -190,6 +190,7 @@ pub enum AntiAliasingSelection {
 pub enum BloomSelection {
     Off,
     Highlight,
+    Audio,
 }
 
 
@@ -8146,6 +8147,7 @@ fn draw_post_processing_tab(
                 match *bloom {
                     BloomSelection::Off => "Off",
                     BloomSelection::Highlight => "Highlight",
+                    BloomSelection::Audio => "Audio",
                 };
 
             let response =
@@ -8168,6 +8170,12 @@ fn draw_post_processing_tab(
                             BloomSelection::Highlight,
                             "Highlight",
                         );
+
+                        ui.selectable_value(
+                            bloom,
+                            BloomSelection::Audio,
+                            "Audio",
+                        );
                     },
                 )
                 .response;
@@ -8175,7 +8183,7 @@ fn draw_post_processing_tab(
             update_hover_help(
                 &response,
                 hover_help_message,
-                "Select the bloom processing mode. Highlight bloom affects only bright image regions.",
+                "Select the bloom processing mode. Highlight bloom affects bright image regions; Audio bloom targets bass, midrange, and high-frequency color bands.",
             );
             ui.end_row();
 

@@ -288,7 +288,7 @@ impl PostprocessPipeline {
     }
 
     /// Executes the current post-processing plan with an optional raw Bloom
-    /// highlight diagnostic presentation.
+    /// Bloom-extraction diagnostic presentation.
     ///
     /// The diagnostic flag is intended for the Control Center only. Existing
     /// runtime callers continue to use `present_scene()`, so screensaver,
@@ -299,10 +299,7 @@ impl PostprocessPipeline {
     ) {
         prepare_fullscreen_pass();
 
-        if matches!(
-            self.bloom_mode,
-            crate::render_bloom::BloomMode::Highlight
-        ) {
+        if self.bloom_mode.is_enabled() {
             // First produce the normal presentation result at output
             // resolution. This preserves the existing passthrough/FXAA
             // behavior before Bloom is added.
@@ -324,9 +321,8 @@ impl PostprocessPipeline {
                     self.output_height,
                 );
 
-                self.bloom.render_highlights(
-                    self.scratch_target.texture,
-                    self.bloom_threshold,
+                self.render_bloom_extraction(
+                    self.scratch_target.texture
                 );
 
                 return;
@@ -351,9 +347,8 @@ impl PostprocessPipeline {
                 );
             }
 
-            self.bloom.render_highlights(
-                self.scratch_target.texture,
-                self.bloom_threshold,
+            self.render_bloom_extraction(
+                self.scratch_target.texture
             );
 
             // Horizontal blur: A -> B.
@@ -449,6 +444,30 @@ impl PostprocessPipeline {
             );
         }
     }
+
+    fn render_bloom_extraction(
+        &self,
+        source_texture: u32,
+    ) {
+        match self.bloom_mode {
+            crate::render_bloom::BloomMode::Off => {}
+
+            crate::render_bloom::BloomMode::Highlight => {
+                self.bloom.render_highlights(
+                    source_texture,
+                    self.bloom_threshold,
+                );
+            }
+
+            crate::render_bloom::BloomMode::Audio => {
+                self.bloom.render_audio_colors(
+                    source_texture,
+                    self.bloom_threshold,
+                );
+            }
+        }
+    }
+
 
     fn render_primary_pass(
         &self,

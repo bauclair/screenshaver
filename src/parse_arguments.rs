@@ -1774,7 +1774,7 @@ pub fn print_help() {
              --add-policy TARGET SHADER PROPERTY [PROPERTY ...]\n\
                  Add a complete screensaver or wallpaper shader policy.\n\
                  Properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision, bloom, bloom_intensity.\n\
-                 bloom accepts off or highlight; bloom_intensity accepts 0.0 through 2.0.\n\
+                 bloom accepts off, highlight, or audio; bloom_intensity accepts 0.0 through 2.0.\n\
                  PROPERTY may use NAME:VALUE or NAME=VALUE syntax.\n\
          \n             --delete-policy TARGET SHADER\n\
                  Delete an existing screensaver or wallpaper shader policy.\n\
