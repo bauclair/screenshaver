@@ -143,6 +143,12 @@ struct PostprocessSection {
     invert_colors: Option<bool>,
 
     #[serde(default)]
+    flip_horizontal: Option<bool>,
+
+    #[serde(default)]
+    flip_vertical: Option<bool>,
+
+    #[serde(default)]
     hue_rotation: Option<f32>,
 }
 
@@ -301,6 +307,12 @@ pub struct ShaderPolicy {
         Option<f32>,
 
     pub invert_colors:
+        Option<bool>,
+
+    pub flip_horizontal:
+        Option<bool>,
+
+    pub flip_vertical:
         Option<bool>,
 
     pub hue_rotation:
@@ -661,6 +673,12 @@ pub(crate) struct PostprocessProfile {
     pub invert_colors:
         bool,
 
+    pub flip_horizontal:
+        bool,
+
+    pub flip_vertical:
+        bool,
+
     pub hue_rotation:
         f32,
 }
@@ -694,6 +712,12 @@ impl Default for PostprocessProfile {
                 crate::render_bloom::BLOOM_THRESHOLD_DEFAULT,
 
             invert_colors:
+                false,
+
+            flip_horizontal:
+                false,
+
+            flip_vertical:
                 false,
 
             hue_rotation:
@@ -834,6 +858,16 @@ impl PostprocessPolicy {
                 shader_policy
                     .and_then(|p| p.invert_colors)
                     .unwrap_or(self.global_profile.invert_colors),
+
+            flip_horizontal:
+                shader_policy
+                    .and_then(|p| p.flip_horizontal)
+                    .unwrap_or(self.global_profile.flip_horizontal),
+
+            flip_vertical:
+                shader_policy
+                    .and_then(|p| p.flip_vertical)
+                    .unwrap_or(self.global_profile.flip_vertical),
 
             hue_rotation:
                 shader_policy
@@ -1074,6 +1108,12 @@ pub fn load_config(
     let global_invert_colors =
         raw.postprocess.invert_colors.unwrap_or(false);
 
+    let global_flip_horizontal =
+        raw.postprocess.flip_horizontal.unwrap_or(false);
+
+    let global_flip_vertical =
+        raw.postprocess.flip_vertical.unwrap_or(false);
+
     let (
         global_hue_rotation,
         hue_rotation_warning,
@@ -1102,6 +1142,10 @@ pub fn load_config(
                 global_bloom_threshold,
             invert_colors:
                 global_invert_colors,
+            flip_horizontal:
+                global_flip_horizontal,
+            flip_vertical:
+                global_flip_vertical,
             hue_rotation:
                 global_hue_rotation,
         };
@@ -2081,6 +2125,8 @@ fn parse_policy_specification(
     let mut bloom_intensity = None;
     let mut bloom_threshold = None;
     let mut invert_colors = None;
+    let mut flip_horizontal = None;
+    let mut flip_vertical = None;
     let mut hue_rotation = None;
 
 
@@ -2383,6 +2429,32 @@ fn parse_policy_specification(
                     )),
                 });
             }
+            "flip_horizontal" => {
+                if flip_horizontal.is_some() {
+                    return Err(duplicate_policy_property(&shader, target, "flip_horizontal"));
+                }
+                flip_horizontal = Some(match value.trim().to_ascii_lowercase().as_str() {
+                    "true" => true,
+                    "false" => false,
+                    other => return Err(format!(
+                        "Invalid flip_horizontal '{}' for '{}' in [{}]; expected true or false",
+                        other, shader, target.table_name()
+                    )),
+                });
+            }
+            "flip_vertical" => {
+                if flip_vertical.is_some() {
+                    return Err(duplicate_policy_property(&shader, target, "flip_vertical"));
+                }
+                flip_vertical = Some(match value.trim().to_ascii_lowercase().as_str() {
+                    "true" => true,
+                    "false" => false,
+                    other => return Err(format!(
+                        "Invalid flip_vertical '{}' for '{}' in [{}]; expected true or false",
+                        other, shader, target.table_name()
+                    )),
+                });
+            }
             "hue_rotation" => {
                 if hue_rotation.is_some() {
                     return Err(
@@ -2407,7 +2479,7 @@ fn parse_policy_specification(
             other => {
                 return Err(
                     format!(
-                        "Unknown policy property '{}' for '{}' in [{}]; supported properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision, render_scale, bloom, bloom_intensity, bloom_threshold, invert_colors, hue_rotation",
+                        "Unknown policy property '{}' for '{}' in [{}]; supported properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision, render_scale, bloom, bloom_intensity, bloom_threshold, invert_colors, flip_horizontal, flip_vertical, hue_rotation",
                         other,
                         shader,
                         target.table_name(),
@@ -2430,6 +2502,8 @@ fn parse_policy_specification(
         && bloom_intensity.is_none()
         && bloom_threshold.is_none()
         && invert_colors.is_none()
+        && flip_horizontal.is_none()
+        && flip_vertical.is_none()
         && hue_rotation.is_none()
     {
         return Err(
@@ -2459,6 +2533,8 @@ fn parse_policy_specification(
             bloom_intensity,
             bloom_threshold,
             invert_colors,
+            flip_horizontal,
+            flip_vertical,
             hue_rotation,
         }
     )

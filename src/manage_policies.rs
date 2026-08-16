@@ -179,6 +179,12 @@ pub struct PolicyDefinition {
     pub invert_colors:
         Option<bool>,
 
+    pub flip_horizontal:
+        Option<bool>,
+
+    pub flip_vertical:
+        Option<bool>,
+
     pub hue_rotation:
         Option<f32>,
 }
@@ -255,6 +261,8 @@ impl PolicyDefinition {
             && self.bloom_intensity.is_none()
             && self.bloom_threshold.is_none()
             && self.invert_colors.is_none()
+            && self.flip_horizontal.is_none()
+            && self.flip_vertical.is_none()
             && self.hue_rotation.is_none()
     }
 }
@@ -2694,6 +2702,14 @@ fn format_policy(
     }
     if let Some(invert_colors) = properties.invert_colors {
         tokens.push(format!("invert_colors:{}", invert_colors));
+    }
+
+    if let Some(flip_horizontal) = properties.flip_horizontal {
+        tokens.push(format!("flip_horizontal:{}", flip_horizontal));
+    }
+
+    if let Some(flip_vertical) = properties.flip_vertical {
+        tokens.push(format!("flip_vertical:{}", flip_vertical));
     }
 
     if let Some(hue_rotation) =

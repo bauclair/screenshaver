@@ -598,6 +598,8 @@ fn run_empty_session(
                 crate::render_bloom::BLOOM_INTENSITY_DEFAULT,
                 crate::render_bloom::BLOOM_THRESHOLD_DEFAULT,
                 false,
+                false,
+                false,
                 crate::postprocess_shader::HUE_ROTATION_DEFAULT,
                 None,
                 false,
@@ -902,6 +904,12 @@ fn run_empty_session(
 
                                 invert_colors:
                                     Some(editor_output.invert_colors),
+
+                                flip_horizontal:
+                                    Some(editor_output.flip_horizontal),
+
+                                flip_vertical:
+                                    Some(editor_output.flip_vertical),
 
                                 hue_rotation:
                                     Some(editor_output.hue_rotation),
@@ -2438,6 +2446,8 @@ fn run_paths(
         live_postprocess_profile.bloom_intensity,
         live_postprocess_profile.bloom_threshold,
         live_postprocess_profile.invert_colors,
+        live_postprocess_profile.flip_horizontal,
+        live_postprocess_profile.flip_vertical,
         live_postprocess_profile.hue_rotation,
         active.texture_manager
             .active_specification_selection(),
@@ -3030,6 +3040,10 @@ fn run_paths(
                         .bloom_threshold,
                     live_postprocess_profile
                         .invert_colors,
+                    live_postprocess_profile
+                        .flip_horizontal,
+                    live_postprocess_profile
+                        .flip_vertical,
                     live_postprocess_profile
                         .hue_rotation,
                     active_texture_selection,
@@ -3937,6 +3951,8 @@ fn run_paths(
                             live_postprocess_profile.bloom_intensity,
                             live_postprocess_profile.bloom_threshold,
                             live_postprocess_profile.invert_colors,
+                            live_postprocess_profile.flip_horizontal,
+                            live_postprocess_profile.flip_vertical,
                             live_postprocess_profile.hue_rotation,
                             active.texture_manager
                                 .active_specification_selection(),
@@ -4051,6 +4067,8 @@ fn run_paths(
                             live_postprocess_profile.bloom_intensity,
                             live_postprocess_profile.bloom_threshold,
                             live_postprocess_profile.invert_colors,
+                            live_postprocess_profile.flip_horizontal,
+                            live_postprocess_profile.flip_vertical,
                             live_postprocess_profile.hue_rotation,
                             active.texture_manager
                                 .active_specification_selection(),
@@ -4307,6 +4325,8 @@ fn run_paths(
                     live_postprocess_profile.bloom_intensity,
                     live_postprocess_profile.bloom_threshold,
                     live_postprocess_profile.invert_colors,
+                    live_postprocess_profile.flip_horizontal,
+                    live_postprocess_profile.flip_vertical,
                     live_postprocess_profile.hue_rotation,
                     active.texture_manager
                         .active_specification_selection(),
@@ -4459,6 +4479,12 @@ fn run_paths(
             let selected_invert_colors =
                 editor_output.invert_colors;
 
+            let selected_flip_horizontal =
+                editor_output.flip_horizontal;
+
+            let selected_flip_vertical =
+                editor_output.flip_vertical;
+
             let selected_hue_rotation =
                 editor_output.hue_rotation;
 
@@ -4487,6 +4513,10 @@ fn run_paths(
                     > f32::EPSILON
                 || selected_invert_colors
                     != live_postprocess_profile.invert_colors
+                || selected_flip_horizontal
+                    != live_postprocess_profile.flip_horizontal
+                || selected_flip_vertical
+                    != live_postprocess_profile.flip_vertical
                 || (selected_hue_rotation
                     - live_postprocess_profile.hue_rotation)
                     .abs()
@@ -4514,6 +4544,12 @@ fn run_paths(
                     selected_bloom_threshold;
                 live_postprocess_profile.invert_colors =
                     selected_invert_colors;
+
+                live_postprocess_profile.flip_horizontal =
+                    selected_flip_horizontal;
+
+                live_postprocess_profile.flip_vertical =
+                    selected_flip_vertical;
 
                 live_postprocess_profile.hue_rotation =
                     selected_hue_rotation;
@@ -4842,6 +4878,12 @@ fn run_paths(
                                     invert_colors:
                                         Some(live_postprocess_profile.invert_colors),
 
+                                    flip_horizontal:
+                                        Some(live_postprocess_profile.flip_horizontal),
+
+                                    flip_vertical:
+                                        Some(live_postprocess_profile.flip_vertical),
+
                                     hue_rotation:
                                         Some(live_postprocess_profile.hue_rotation),
                                 },
@@ -5132,6 +5174,12 @@ fn run_paths(
 
                         invert_colors:
                             Some(live_postprocess_profile.invert_colors),
+
+                        flip_horizontal:
+                            Some(live_postprocess_profile.flip_horizontal),
+
+                        flip_vertical:
+                            Some(live_postprocess_profile.flip_vertical),
 
                         hue_rotation:
                             Some(live_postprocess_profile.hue_rotation),
@@ -5432,6 +5480,10 @@ fn run_paths(
                                                 .bloom_threshold,
                                             live_postprocess_profile
                                                 .invert_colors,
+                                            live_postprocess_profile
+                                                .flip_horizontal,
+                                            live_postprocess_profile
+                                                .flip_vertical,
                                             live_postprocess_profile
                                                 .hue_rotation,
                                             active.texture_manager
@@ -6499,6 +6551,12 @@ fn bulk_policy_definition_from_editor_output(
 
         invert_colors:
             Some(editor_output.invert_colors),
+
+        flip_horizontal:
+            Some(editor_output.flip_horizontal),
+
+        flip_vertical:
+            Some(editor_output.flip_vertical),
 
         hue_rotation:
             Some(editor_output.hue_rotation),

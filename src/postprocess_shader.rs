@@ -152,6 +152,8 @@ pub(crate) struct PostprocessPipeline {
     bloom_intensity: f32,
     bloom_threshold: f32,
     invert_colors: bool,
+    flip_horizontal: bool,
+    flip_vertical: bool,
     hue_rotation: f32,
     audio_bands: crate::analyze_audio::AudioBands,
 }
@@ -283,6 +285,10 @@ impl PostprocessPipeline {
                     )?,
                 invert_colors:
                     profile.invert_colors,
+                flip_horizontal:
+                    profile.flip_horizontal,
+                flip_vertical:
+                    profile.flip_vertical,
                 hue_rotation:
                     validate_hue_rotation(profile.hue_rotation)?,
                 audio_bands:
@@ -526,6 +532,8 @@ impl PostprocessPipeline {
                 self.passthrough.render(
                     input_texture,
                     self.invert_colors,
+                    self.flip_horizontal,
+                    self.flip_vertical,
                     self.hue_rotation,
                 );
             }
@@ -536,6 +544,8 @@ impl PostprocessPipeline {
                     self.scene_width,
                     self.scene_height,
                     self.invert_colors,
+                    self.flip_horizontal,
+                    self.flip_vertical,
                     self.hue_rotation,
                 );
             }
@@ -677,6 +687,12 @@ impl PostprocessPipeline {
             bloom_threshold;
         self.invert_colors =
             profile.invert_colors;
+
+        self.flip_horizontal =
+            profile.flip_horizontal;
+
+        self.flip_vertical =
+            profile.flip_vertical;
 
         self.hue_rotation =
             hue_rotation;

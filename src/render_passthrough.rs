@@ -25,6 +25,8 @@ const PASSTHROUGH_FRAGMENT_SHADER: &str = r#"
 
 uniform sampler2D uScene;
 uniform bool uInvertColors;
+uniform bool uFlipHorizontal;
+uniform bool uFlipVertical;
 uniform float uHueRotation;
 
 in vec2 vUv;
@@ -57,7 +59,17 @@ vec3 rotateHue(vec3 color, float degrees)
 
 void main()
 {
-    vec4 scene = texture(uScene, vUv);
+    vec2 uv = vUv;
+
+    if (uFlipHorizontal) {
+        uv.x = 1.0 - uv.x;
+    }
+
+    if (uFlipVertical) {
+        uv.y = 1.0 - uv.y;
+    }
+
+    vec4 scene = texture(uScene, uv);
 
     if (uInvertColors) {
         scene.rgb = vec3(1.0) - scene.rgb;
@@ -76,6 +88,8 @@ pub(crate) struct PassthroughRenderer {
     vao: u32,
     scene_location: i32,
     invert_colors_location: i32,
+    flip_horizontal_location: i32,
+    flip_vertical_location: i32,
     hue_rotation_location: i32,
 }
 
@@ -117,6 +131,14 @@ impl PassthroughRenderer {
             gl::GetUniformLocation(program, b"uInvertColors\0".as_ptr().cast())
         };
 
+        let flip_horizontal_location = unsafe {
+            gl::GetUniformLocation(program, b"uFlipHorizontal\0".as_ptr().cast())
+        };
+
+        let flip_vertical_location = unsafe {
+            gl::GetUniformLocation(program, b"uFlipVertical\0".as_ptr().cast())
+        };
+
         let hue_rotation_location = unsafe {
             gl::GetUniformLocation(
                 program,
@@ -126,6 +148,8 @@ impl PassthroughRenderer {
 
         if scene_location == -1
             || invert_colors_location == -1
+            || flip_horizontal_location == -1
+            || flip_vertical_location == -1
             || hue_rotation_location == -1
         {
             unsafe {
@@ -144,6 +168,8 @@ impl PassthroughRenderer {
             vao,
             scene_location,
             invert_colors_location,
+            flip_horizontal_location,
+            flip_vertical_location,
             hue_rotation_location,
         })
     }
@@ -152,6 +178,8 @@ impl PassthroughRenderer {
         &self,
         scene_texture: u32,
         invert_colors: bool,
+        flip_horizontal: bool,
+        flip_vertical: bool,
         hue_rotation: f32,
     ) {
         unsafe {
@@ -162,6 +190,14 @@ impl PassthroughRenderer {
             gl::Uniform1i(
                 self.invert_colors_location,
                 if invert_colors { 1 } else { 0 },
+            );
+            gl::Uniform1i(
+                self.flip_horizontal_location,
+                if flip_horizontal { 1 } else { 0 },
+            );
+            gl::Uniform1i(
+                self.flip_vertical_location,
+                if flip_vertical { 1 } else { 0 },
             );
             gl::Uniform1f(
                 self.hue_rotation_location,

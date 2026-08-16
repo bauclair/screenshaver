@@ -498,6 +498,8 @@ pub struct EditorOutput {
     pub bloom_intensity: f32,
     pub bloom_threshold: f32,
     pub invert_colors: bool,
+    pub flip_horizontal: bool,
+    pub flip_vertical: bool,
     pub hue_rotation: f32,
     pub policy_target_change_requested: Option<PolicyTarget>,
     pub save_requested: bool,
@@ -543,6 +545,8 @@ struct EditorConfiguration {
     bloom_intensity: f32,
     bloom_threshold: f32,
     invert_colors: bool,
+    flip_horizontal: bool,
+    flip_vertical: bool,
     hue_rotation: f32,
 }
 
@@ -563,6 +567,8 @@ impl EditorConfiguration {
         bloom_intensity: f32,
         bloom_threshold: f32,
         invert_colors: bool,
+        flip_horizontal: bool,
+        flip_vertical: bool,
         hue_rotation: f32,
     ) -> Self {
 
@@ -593,6 +599,8 @@ impl EditorConfiguration {
                     bloom_threshold
                 ),
             invert_colors,
+            flip_horizontal,
+            flip_vertical,
             hue_rotation:
                 normalize_editor_float(hue_rotation),
         }
@@ -643,6 +651,8 @@ impl EditorConfiguration {
                 .abs()
                 > 0.0001
             || self.invert_colors != other.invert_colors
+            || self.flip_horizontal != other.flip_horizontal
+            || self.flip_vertical != other.flip_vertical
             || (self.hue_rotation - other.hue_rotation).abs() > 0.0001
     }
 }
@@ -762,6 +772,12 @@ pub struct EditWindowOverlay {
         f32,
 
     invert_colors:
+        bool,
+
+    flip_horizontal:
+        bool,
+
+    flip_vertical:
         bool,
 
     hue_rotation:
@@ -1051,6 +1067,12 @@ impl EditWindowOverlay {
                 bloom_threshold:
                     crate::render_bloom::BLOOM_THRESHOLD_DEFAULT,
                 invert_colors:
+                    false,
+
+                flip_horizontal:
+                    false,
+
+                flip_vertical:
                     false,
 
                 hue_rotation:
@@ -1470,6 +1492,8 @@ impl EditWindowOverlay {
         resolved_bloom_intensity: f32,
         resolved_bloom_threshold: f32,
         resolved_invert_colors: bool,
+        resolved_flip_horizontal: bool,
+        resolved_flip_vertical: bool,
         resolved_hue_rotation: f32,
         active_texture_selection: Option<(
             crate::parse_texture_specification::TextureSpecification,
@@ -1767,6 +1791,12 @@ impl EditWindowOverlay {
         let mut invert_colors =
             self.invert_colors;
 
+        let mut flip_horizontal =
+            self.flip_horizontal;
+
+        let mut flip_vertical =
+            self.flip_vertical;
+
         let mut hue_rotation =
             self.hue_rotation;
 
@@ -1862,6 +1892,12 @@ impl EditWindowOverlay {
             invert_colors =
                 resolved_invert_colors;
 
+            flip_horizontal =
+                resolved_flip_horizontal;
+
+            flip_vertical =
+                resolved_flip_vertical;
+
             hue_rotation =
                 resolved_hue_rotation;
 
@@ -1948,6 +1984,8 @@ impl EditWindowOverlay {
                             bloom_intensity,
                             bloom_threshold,
                             invert_colors,
+                            flip_horizontal,
+                            flip_vertical,
                             hue_rotation,
                         )
                     }
@@ -2124,6 +2162,8 @@ impl EditWindowOverlay {
                                     bloom_intensity,
                                     bloom_threshold,
                                     invert_colors,
+                                    flip_horizontal,
+                                    flip_vertical,
                                     hue_rotation,
                                 );
 
@@ -2325,6 +2365,8 @@ impl EditWindowOverlay {
                                                         &mut bloom_threshold,
                                                         &mut bloom_threshold_drag_state,
                                                         &mut invert_colors,
+                                                        &mut flip_horizontal,
+                                                        &mut flip_vertical,
                                                         &mut hue_rotation,
                                                         &mut hue_rotation_drag_state,
                                                         &mut hover_help_message,
@@ -2433,6 +2475,8 @@ impl EditWindowOverlay {
                                 &mut bloom_intensity,
                                 &mut bloom_threshold,
                                 &mut invert_colors,
+                                &mut flip_horizontal,
+                                &mut flip_vertical,
                                 &mut hue_rotation,
                                 baseline_configuration,
                                 &mut fps_drag_state,
@@ -2523,6 +2567,8 @@ impl EditWindowOverlay {
                             bloom_intensity,
                             bloom_threshold,
                             invert_colors,
+                            flip_horizontal,
+                            flip_vertical,
                             hue_rotation,
                         )
                         .differs_from(
@@ -2754,6 +2800,12 @@ impl EditWindowOverlay {
         self.invert_colors =
             invert_colors;
 
+        self.flip_horizontal =
+            flip_horizontal;
+
+        self.flip_vertical =
+            flip_vertical;
+
         self.hue_rotation =
             hue_rotation;
 
@@ -2810,6 +2862,10 @@ impl EditWindowOverlay {
 
             invert_colors,
 
+            flip_horizontal,
+
+            flip_vertical,
+
             hue_rotation,
 
             policy_target_change_requested,
@@ -2855,6 +2911,8 @@ impl EditWindowOverlay {
                     bloom_intensity,
                     bloom_threshold,
                     invert_colors,
+                    flip_horizontal,
+                    flip_vertical,
                     hue_rotation,
                 )
                 .differs_from(
@@ -3053,6 +3111,8 @@ impl EditWindowOverlay {
         bloom_intensity: f32,
         bloom_threshold: f32,
         invert_colors: bool,
+        flip_horizontal: bool,
+        flip_vertical: bool,
         hue_rotation: f32,
         active_texture_selection: Option<(
             crate::parse_texture_specification::TextureSpecification,
@@ -3105,6 +3165,10 @@ impl EditWindowOverlay {
             );
 
         self.invert_colors = invert_colors;
+
+        self.flip_horizontal = flip_horizontal;
+
+        self.flip_vertical = flip_vertical;
 
         self.hue_rotation =
             crate::postprocess_shader::validate_hue_rotation(hue_rotation)
@@ -3185,6 +3249,8 @@ impl EditWindowOverlay {
                     self.bloom_intensity,
                     self.bloom_threshold,
                     self.invert_colors,
+                    self.flip_horizontal,
+                    self.flip_vertical,
                     self.hue_rotation,
                 )
             );
@@ -3310,6 +3376,12 @@ impl EditWindowOverlay {
         self.invert_colors =
             baseline.invert_colors;
 
+        self.flip_horizontal =
+            baseline.flip_horizontal;
+
+        self.flip_vertical =
+            baseline.flip_vertical;
+
         self.hue_rotation =
             baseline.hue_rotation;
 
@@ -3363,6 +3435,8 @@ impl EditWindowOverlay {
                         self.bloom_intensity,
                         self.bloom_threshold,
                         self.invert_colors,
+                        self.flip_horizontal,
+                        self.flip_vertical,
                         self.hue_rotation,
                     )
                 );
@@ -3997,6 +4071,8 @@ fn draw_compact_action_row(
     bloom_intensity: &mut f32,
     bloom_threshold: &mut f32,
     invert_colors: &mut bool,
+    flip_horizontal: &mut bool,
+    flip_vertical: &mut bool,
     hue_rotation: &mut f32,
     baseline_configuration: EditorConfiguration,
     fps_drag_state: &mut Option<SliderDragState>,
@@ -4116,6 +4192,12 @@ fn draw_compact_action_row(
                     baseline_configuration.bloom_threshold;
                 *invert_colors =
                     baseline_configuration.invert_colors;
+
+                *flip_horizontal =
+                    baseline_configuration.flip_horizontal;
+
+                *flip_vertical =
+                    baseline_configuration.flip_vertical;
 
                 *hue_rotation =
                     baseline_configuration.hue_rotation;
@@ -8212,6 +8294,8 @@ fn draw_post_processing_tab(
     bloom_threshold: &mut f32,
     bloom_threshold_drag_state: &mut Option<SliderDragState>,
     invert_colors: &mut bool,
+    flip_horizontal: &mut bool,
+    flip_vertical: &mut bool,
     hue_rotation: &mut f32,
     hue_rotation_drag_state: &mut Option<SliderDragState>,
     hover_help_message: &mut Option<&'static str>,
@@ -8429,6 +8513,24 @@ fn draw_post_processing_tab(
                 &invert_response,
                 hover_help_message,
                 "Invert the rendered shader colors before Bloom and the remaining post-processing stages.",
+            );
+            ui.end_row();
+
+            ui.label("Flip Horizontal");
+            let flip_horizontal_response = ui.checkbox(flip_horizontal, "Enabled");
+            update_hover_help(
+                &flip_horizontal_response,
+                hover_help_message,
+                "Mirror the rendered shader from left to right without changing its aspect ratio.",
+            );
+            ui.end_row();
+
+            ui.label("Flip Vertical");
+            let flip_vertical_response = ui.checkbox(flip_vertical, "Enabled");
+            update_hover_help(
+                &flip_vertical_response,
+                hover_help_message,
+                "Mirror the rendered shader from top to bottom without changing its aspect ratio.",
             );
             ui.end_row();
 
