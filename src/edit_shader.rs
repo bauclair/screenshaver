@@ -597,6 +597,7 @@ fn run_empty_session(
                 crate::editor_layout::BloomSelection::Off,
                 crate::render_bloom::BLOOM_INTENSITY_DEFAULT,
                 crate::render_bloom::BLOOM_THRESHOLD_DEFAULT,
+                false,
                 None,
                 false,
                 false,
@@ -897,6 +898,9 @@ fn run_empty_session(
                                     Some(
                                         editor_output.bloom_threshold
                                     ),
+
+                                invert_colors:
+                                    Some(editor_output.invert_colors),
                             },
                     }
                 );
@@ -2429,6 +2433,7 @@ fn run_paths(
         ),
         live_postprocess_profile.bloom_intensity,
         live_postprocess_profile.bloom_threshold,
+        live_postprocess_profile.invert_colors,
         active.texture_manager
             .active_specification_selection(),
         initial_policy_exists,
@@ -3018,6 +3023,8 @@ fn run_paths(
                         .bloom_intensity,
                     live_postprocess_profile
                         .bloom_threshold,
+                    live_postprocess_profile
+                        .invert_colors,
                     active_texture_selection,
                     true,
                     active.channel_usage
@@ -3922,6 +3929,7 @@ fn run_paths(
                             ),
                             live_postprocess_profile.bloom_intensity,
                             live_postprocess_profile.bloom_threshold,
+                            live_postprocess_profile.invert_colors,
                             active.texture_manager
                                 .active_specification_selection(),
                             new_policy_exists,
@@ -4034,6 +4042,7 @@ fn run_paths(
                             ),
                             live_postprocess_profile.bloom_intensity,
                             live_postprocess_profile.bloom_threshold,
+                            live_postprocess_profile.invert_colors,
                             active.texture_manager
                                 .active_specification_selection(),
                             match editor_output.policy_target {
@@ -4288,6 +4297,7 @@ fn run_paths(
                     ),
                     live_postprocess_profile.bloom_intensity,
                     live_postprocess_profile.bloom_threshold,
+                    live_postprocess_profile.invert_colors,
                     active.texture_manager
                         .active_specification_selection(),
                     target_policy_exists,
@@ -4436,6 +4446,9 @@ fn run_paths(
             let selected_bloom_threshold =
                 editor_output.bloom_threshold;
 
+            let selected_invert_colors =
+                editor_output.invert_colors;
+
 
             if (
                 selected_render_scale
@@ -4459,6 +4472,8 @@ fn run_paths(
                     - live_postprocess_profile.bloom_threshold)
                     .abs()
                     > f32::EPSILON
+                || selected_invert_colors
+                    != live_postprocess_profile.invert_colors
             {
                 live_postprocess_profile.render_scale =
                     selected_render_scale;
@@ -4480,6 +4495,8 @@ fn run_paths(
 
                 live_postprocess_profile.bloom_threshold =
                     selected_bloom_threshold;
+                live_postprocess_profile.invert_colors =
+                    selected_invert_colors;
 
                 postprocess.set_profile(
                     live_postprocess_profile
@@ -4801,6 +4818,9 @@ fn run_paths(
                                             live_postprocess_profile
                                                 .bloom_threshold
                                         ),
+
+                                    invert_colors:
+                                        Some(live_postprocess_profile.invert_colors),
                                 },
                         }
                     );
@@ -5086,6 +5106,9 @@ fn run_paths(
                                 live_postprocess_profile
                                     .bloom_threshold
                             ),
+
+                        invert_colors:
+                            Some(live_postprocess_profile.invert_colors),
                     };
 
                 let manage_target =
@@ -5381,6 +5404,8 @@ fn run_paths(
                                                 .bloom_intensity,
                                             live_postprocess_profile
                                                 .bloom_threshold,
+                                            live_postprocess_profile
+                                                .invert_colors,
                                             active.texture_manager
                                                 .active_specification_selection(),
                                             true,
@@ -6443,6 +6468,9 @@ fn bulk_policy_definition_from_editor_output(
             Some(
                 editor_output.bloom_threshold
             ),
+
+        invert_colors:
+            Some(editor_output.invert_colors),
     }
 }
 

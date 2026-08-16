@@ -175,6 +175,9 @@ pub struct PolicyDefinition {
 
     pub bloom_threshold:
         Option<f32>,
+
+    pub invert_colors:
+        Option<bool>,
 }
 
 
@@ -248,6 +251,7 @@ impl PolicyDefinition {
             && self.bloom.is_none()
             && self.bloom_intensity.is_none()
             && self.bloom_threshold.is_none()
+            && self.invert_colors.is_none()
     }
 }
 
@@ -2676,6 +2680,10 @@ fn format_policy(
             )
         );
     }
+    if let Some(invert_colors) = properties.invert_colors {
+        tokens.push(format!("invert_colors:{}", invert_colors));
+    }
+
 
     tokens.join(
         " "

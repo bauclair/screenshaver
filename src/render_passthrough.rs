@@ -24,6 +24,7 @@ const PASSTHROUGH_FRAGMENT_SHADER: &str = r#"
 #version 330 core
 
 uniform sampler2D uScene;
+uniform bool uInvertColors;
 
 in vec2 vUv;
 
@@ -31,7 +32,9 @@ out vec4 fragColor;
 
 void main()
 {
-    fragColor = texture(uScene, vUv);
+    vec4 scene = texture(uScene, vUv);
+    if (uInvertColors) scene.rgb = vec3(1.0) - scene.rgb;
+    fragColor = scene;
 }
 "#;
 
@@ -39,6 +42,7 @@ pub(crate) struct PassthroughRenderer {
     program: u32,
     vao: u32,
     scene_location: i32,
+    invert_colors_location: i32,
 }
 
 impl PassthroughRenderer {
@@ -75,7 +79,11 @@ impl PassthroughRenderer {
             gl::GetUniformLocation(program, b"uScene\0".as_ptr().cast())
         };
 
-        if scene_location == -1 {
+        let invert_colors_location = unsafe {
+            gl::GetUniformLocation(program, b"uInvertColors\0".as_ptr().cast())
+        };
+
+        if scene_location == -1 || invert_colors_location == -1 {
             unsafe {
                 gl::DeleteVertexArrays(1, &vao);
                 gl::DeleteProgram(program);
@@ -91,15 +99,17 @@ impl PassthroughRenderer {
             program,
             vao,
             scene_location,
+            invert_colors_location,
         })
     }
 
-    pub(crate) fn render(&self, scene_texture: u32) {
+    pub(crate) fn render(&self, scene_texture: u32, invert_colors: bool) {
         unsafe {
             gl::UseProgram(self.program);
             gl::ActiveTexture(gl::TEXTURE0);
             gl::BindTexture(gl::TEXTURE_2D, scene_texture);
             gl::Uniform1i(self.scene_location, 0);
+            gl::Uniform1i(self.invert_colors_location, if invert_colors { 1 } else { 0 });
             gl::BindVertexArray(self.vao);
             gl::DrawArrays(gl::TRIANGLES, 0, 3);
             gl::BindTexture(gl::TEXTURE_2D, 0);

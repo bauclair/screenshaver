@@ -55,6 +55,7 @@ const FXAA_FRAGMENT_SHADER: &str = r#"
 
 uniform sampler2D uScene;
 uniform vec2 uInverseResolution;
+uniform bool uInvertColors;
 
 in vec2 vUv;
 
@@ -113,7 +114,17 @@ void main()
     );
 
     if (lumaRange < edgeThreshold) {
-        fragColor = centerSample;
+        vec3 finalColor = centerSample.rgb;
+
+        if (uInvertColors) {
+            finalColor = vec3(1.0) - finalColor;
+        }
+
+        fragColor = vec4(
+            finalColor,
+            centerSample.a
+        );
+
         return;
     }
 
@@ -308,10 +319,9 @@ void main()
 
     vec4 filteredSample = texture(uScene, finalUv);
 
-    fragColor = vec4(
-        filteredSample.rgb,
-        centerSample.a
-    );
+    vec3 finalColor = filteredSample.rgb;
+    if (uInvertColors) finalColor = vec3(1.0) - finalColor;
+    fragColor = vec4(finalColor, centerSample.a);
 }
 "#;
 
@@ -320,6 +330,7 @@ pub(crate) struct FxaaRenderer {
     vao: u32,
     scene_location: i32,
     inverse_resolution_location: i32,
+    invert_colors_location: i32,
 }
 
 impl FxaaRenderer {
@@ -367,7 +378,11 @@ impl FxaaRenderer {
             )
         };
 
-        if scene_location == -1 || inverse_resolution_location == -1 {
+        let invert_colors_location = unsafe {
+            gl::GetUniformLocation(program, b"uInvertColors\0".as_ptr().cast())
+        };
+
+        if scene_location == -1 || inverse_resolution_location == -1 || invert_colors_location == -1 {
             unsafe {
                 gl::DeleteVertexArrays(1, &vao);
                 gl::DeleteProgram(program);
@@ -384,6 +399,7 @@ impl FxaaRenderer {
             vao,
             scene_location,
             inverse_resolution_location,
+            invert_colors_location,
         })
     }
 
@@ -392,6 +408,7 @@ impl FxaaRenderer {
         scene_texture: u32,
         width: u32,
         height: u32,
+        invert_colors: bool,
     ) {
         if width == 0 || height == 0 {
             return;
@@ -410,6 +427,7 @@ impl FxaaRenderer {
                 inverse_width,
                 inverse_height,
             );
+            gl::Uniform1i(self.invert_colors_location, if invert_colors { 1 } else { 0 });
             gl::BindVertexArray(self.vao);
             gl::DrawArrays(gl::TRIANGLES, 0, 3);
             gl::BindTexture(gl::TEXTURE_2D, 0);

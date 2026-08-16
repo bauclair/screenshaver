@@ -138,6 +138,9 @@ struct PostprocessSection {
 
     #[serde(default)]
     bloom_threshold: Option<f32>,
+
+    #[serde(default)]
+    invert_colors: Option<bool>,
 }
 
 
@@ -293,6 +296,9 @@ pub struct ShaderPolicy {
 
     pub bloom_threshold:
         Option<f32>,
+
+    pub invert_colors:
+        Option<bool>,
 }
 
 
@@ -645,6 +651,9 @@ pub(crate) struct PostprocessProfile {
 
     pub bloom_threshold:
         f32,
+
+    pub invert_colors:
+        bool,
 }
 
 
@@ -674,6 +683,9 @@ impl Default for PostprocessProfile {
 
             bloom_threshold:
                 crate::render_bloom::BLOOM_THRESHOLD_DEFAULT,
+
+            invert_colors:
+                false,
         }
     }
 }
@@ -805,6 +817,11 @@ impl PostprocessPolicy {
                     .unwrap_or(
                         self.global_profile.bloom_threshold
                     ),
+
+            invert_colors:
+                shader_policy
+                    .and_then(|p| p.invert_colors)
+                    .unwrap_or(self.global_profile.invert_colors),
         }
     }
 }
@@ -1037,6 +1054,8 @@ pub fn load_config(
         );
 
 
+    let global_invert_colors = raw.postprocess.invert_colors.unwrap_or(false);
+
     let global_postprocess_profile =
         PostprocessProfile {
             anti_aliasing:
@@ -1053,6 +1072,8 @@ pub fn load_config(
                 global_bloom_intensity,
             bloom_threshold:
                 global_bloom_threshold,
+            invert_colors:
+                global_invert_colors,
         };
 
 
@@ -2020,6 +2041,7 @@ fn parse_policy_specification(
     let mut bloom = None;
     let mut bloom_intensity = None;
     let mut bloom_threshold = None;
+    let mut invert_colors = None;
 
 
     for token in
@@ -2308,11 +2330,24 @@ fn parse_policy_specification(
                         )?
                     );
             }
+            "invert_colors" => {
+                if invert_colors.is_some() {
+                    return Err(duplicate_policy_property(&shader, target, "invert_colors"));
+                }
+                invert_colors = Some(match value.trim().to_ascii_lowercase().as_str() {
+                    "true" => true,
+                    "false" => false,
+                    other => return Err(format!(
+                        "Invalid invert_colors '{}' for '{}' in [{}]; expected true or false",
+                        other, shader, target.table_name()
+                    )),
+                });
+            }
 
             other => {
                 return Err(
                     format!(
-                        "Unknown policy property '{}' for '{}' in [{}]; supported properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision, render_scale, bloom, bloom_intensity, bloom_threshold",
+                        "Unknown policy property '{}' for '{}' in [{}]; supported properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision, render_scale, bloom, bloom_intensity, bloom_threshold, invert_colors",
                         other,
                         shader,
                         target.table_name(),
@@ -2334,6 +2369,7 @@ fn parse_policy_specification(
         && bloom.is_none()
         && bloom_intensity.is_none()
         && bloom_threshold.is_none()
+        && invert_colors.is_none()
     {
         return Err(
             format!(
@@ -2361,6 +2397,7 @@ fn parse_policy_specification(
             bloom,
             bloom_intensity,
             bloom_threshold,
+            invert_colors,
         }
     )
 }

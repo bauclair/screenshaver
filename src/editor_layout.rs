@@ -494,6 +494,7 @@ pub struct EditorOutput {
     pub bloom: BloomSelection,
     pub bloom_intensity: f32,
     pub bloom_threshold: f32,
+    pub invert_colors: bool,
     pub policy_target_change_requested: Option<PolicyTarget>,
     pub save_requested: bool,
     pub bulk_save_requested: bool,
@@ -537,6 +538,7 @@ struct EditorConfiguration {
     bloom: BloomSelection,
     bloom_intensity: f32,
     bloom_threshold: f32,
+    invert_colors: bool,
 }
 
 
@@ -555,6 +557,7 @@ impl EditorConfiguration {
         bloom: BloomSelection,
         bloom_intensity: f32,
         bloom_threshold: f32,
+        invert_colors: bool,
     ) -> Self {
 
         Self {
@@ -583,6 +586,7 @@ impl EditorConfiguration {
                 normalize_editor_float(
                     bloom_threshold
                 ),
+            invert_colors,
         }
     }
 
@@ -630,6 +634,7 @@ impl EditorConfiguration {
                 - other.bloom_threshold)
                 .abs()
                 > 0.0001
+            || self.invert_colors != other.invert_colors
     }
 }
 
@@ -746,6 +751,9 @@ pub struct EditWindowOverlay {
 
     bloom_threshold:
         f32,
+
+    invert_colors:
+        bool,
 
     active_tab:
         EditorTab,
@@ -1027,6 +1035,8 @@ impl EditWindowOverlay {
                     crate::render_bloom::BLOOM_INTENSITY_DEFAULT,
                 bloom_threshold:
                     crate::render_bloom::BLOOM_THRESHOLD_DEFAULT,
+                invert_colors:
+                    false,
 
                 active_tab:
                     EditorTab::Policies,
@@ -1438,6 +1448,7 @@ impl EditWindowOverlay {
         resolved_bloom: BloomSelection,
         resolved_bloom_intensity: f32,
         resolved_bloom_threshold: f32,
+        resolved_invert_colors: bool,
         active_texture_selection: Option<(
             crate::parse_texture_specification::TextureSpecification,
             crate::palettes::PaletteColor,
@@ -1731,6 +1742,9 @@ impl EditWindowOverlay {
         let mut bloom_threshold =
             self.bloom_threshold;
 
+        let mut invert_colors =
+            self.invert_colors;
+
 
         // A shader physically located in one of Screenshaver's managed
         // runtime folders has exactly one available policy target.  Enforce
@@ -1817,6 +1831,9 @@ impl EditWindowOverlay {
             bloom_threshold =
                 resolved_bloom_threshold;
 
+            invert_colors =
+                resolved_invert_colors;
+
             if let Some((
                 specification,
                 active_palette,
@@ -1899,6 +1916,7 @@ impl EditWindowOverlay {
                             bloom,
                             bloom_intensity,
                             bloom_threshold,
+                            invert_colors,
                         )
                     }
                 );
@@ -2073,6 +2091,7 @@ impl EditWindowOverlay {
                                     bloom,
                                     bloom_intensity,
                                     bloom_threshold,
+                                    invert_colors,
                                 );
 
                             let configuration_changed =
@@ -2272,6 +2291,7 @@ impl EditWindowOverlay {
                                                         &mut bloom_intensity_drag_state,
                                                         &mut bloom_threshold,
                                                         &mut bloom_threshold_drag_state,
+                                                        &mut invert_colors,
                                                         &mut hover_help_message,
                                                     );
                                                 },
@@ -2377,6 +2397,7 @@ impl EditWindowOverlay {
                                 &mut bloom,
                                 &mut bloom_intensity,
                                 &mut bloom_threshold,
+                                &mut invert_colors,
                                 baseline_configuration,
                                 &mut fps_drag_state,
                                 &mut animation_speed_drag_state,
@@ -2465,6 +2486,7 @@ impl EditWindowOverlay {
                             bloom,
                             bloom_intensity,
                             bloom_threshold,
+                            invert_colors,
                         )
                         .differs_from(
                             baseline_configuration
@@ -2692,6 +2714,8 @@ impl EditWindowOverlay {
 
         self.bloom_threshold =
             bloom_threshold;
+        self.invert_colors =
+            invert_colors;
 
         let clipped_primitives =
             self.context.tessellate(
@@ -2741,6 +2765,8 @@ impl EditWindowOverlay {
 
             bloom_threshold,
 
+            invert_colors,
+
             policy_target_change_requested,
 
             save_requested,
@@ -2783,6 +2809,7 @@ impl EditWindowOverlay {
                     bloom,
                     bloom_intensity,
                     bloom_threshold,
+                    invert_colors,
                 )
                 .differs_from(
                     baseline_configuration
@@ -2979,6 +3006,7 @@ impl EditWindowOverlay {
         bloom: BloomSelection,
         bloom_intensity: f32,
         bloom_threshold: f32,
+        invert_colors: bool,
         active_texture_selection: Option<(
             crate::parse_texture_specification::TextureSpecification,
             crate::palettes::PaletteColor,
@@ -3028,6 +3056,8 @@ impl EditWindowOverlay {
                 crate::render_bloom::BLOOM_INTENSITY_MIN,
                 crate::render_bloom::BLOOM_INTENSITY_MAX,
             );
+
+        self.invert_colors = invert_colors;
 
         self.bloom_threshold =
             bloom_threshold.clamp(
@@ -3103,6 +3133,7 @@ impl EditWindowOverlay {
                     self.bloom,
                     self.bloom_intensity,
                     self.bloom_threshold,
+                    self.invert_colors,
                 )
             );
     }
@@ -3224,6 +3255,8 @@ impl EditWindowOverlay {
 
         self.bloom_threshold =
             baseline.bloom_threshold;
+        self.invert_colors =
+            baseline.invert_colors;
 
         self.fps_drag_state =
             None;
@@ -3274,6 +3307,7 @@ impl EditWindowOverlay {
                         self.bloom,
                         self.bloom_intensity,
                         self.bloom_threshold,
+                        self.invert_colors,
                     )
                 );
         }
@@ -3906,6 +3940,7 @@ fn draw_compact_action_row(
     bloom: &mut BloomSelection,
     bloom_intensity: &mut f32,
     bloom_threshold: &mut f32,
+    invert_colors: &mut bool,
     baseline_configuration: EditorConfiguration,
     fps_drag_state: &mut Option<SliderDragState>,
     animation_speed_drag_state: &mut Option<SliderDragState>,
@@ -4022,6 +4057,8 @@ fn draw_compact_action_row(
 
                 *bloom_threshold =
                     baseline_configuration.bloom_threshold;
+                *invert_colors =
+                    baseline_configuration.invert_colors;
                 *fps_drag_state =
                     None;
                 *animation_speed_drag_state =
@@ -8113,6 +8150,7 @@ fn draw_post_processing_tab(
     bloom_intensity_drag_state: &mut Option<SliderDragState>,
     bloom_threshold: &mut f32,
     bloom_threshold_drag_state: &mut Option<SliderDragState>,
+    invert_colors: &mut bool,
     hover_help_message: &mut Option<&'static str>,
 ) {
     draw_post_processing_panel(
@@ -8322,6 +8360,15 @@ fn draw_post_processing_tab(
                 "Set the minimum luminance that contributes to Highlight Bloom. Lower values include more of the image; higher values restrict bloom to brighter regions. Hold Shift while dragging for fine adjustment.",
             );
             ui.end_row();
+            ui.label("Invert Colors");
+            let invert_response = ui.checkbox(invert_colors, "Enabled");
+            update_hover_help(
+                &invert_response,
+                hover_help_message,
+                "Invert the rendered shader colors before Bloom and the remaining post-processing stages.",
+            );
+            ui.end_row();
+
         },
     );
 }

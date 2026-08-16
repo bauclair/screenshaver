@@ -126,6 +126,7 @@ pub(crate) struct PostprocessPipeline {
     bloom_mode: crate::render_bloom::BloomMode,
     bloom_intensity: f32,
     bloom_threshold: f32,
+    invert_colors: bool,
     audio_bands: crate::analyze_audio::AudioBands,
 }
 
@@ -254,6 +255,8 @@ impl PostprocessPipeline {
                     crate::render_bloom::validate_bloom_threshold(
                         profile.bloom_threshold
                     )?,
+                invert_colors:
+                    profile.invert_colors,
                 audio_bands:
                     crate::analyze_audio::AudioBands::default(),
             };
@@ -493,7 +496,8 @@ impl PostprocessPipeline {
         match self.method {
             PostprocessMethod::Passthrough => {
                 self.passthrough.render(
-                    input_texture
+                    input_texture,
+                    self.invert_colors,
                 );
             }
 
@@ -502,6 +506,7 @@ impl PostprocessPipeline {
                     input_texture,
                     self.scene_width,
                     self.scene_height,
+                    self.invert_colors,
                 );
             }
         }
@@ -636,6 +641,8 @@ impl PostprocessPipeline {
 
         self.bloom_threshold =
             bloom_threshold;
+        self.invert_colors =
+            profile.invert_colors;
 
 
         Ok(())
