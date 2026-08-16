@@ -1,3 +1,28 @@
+pub(crate) const HUE_ROTATION_MIN: f32 = -180.0;
+pub(crate) const HUE_ROTATION_MAX: f32 = 180.0;
+pub(crate) const HUE_ROTATION_DEFAULT: f32 = 0.0;
+
+
+pub(crate) fn validate_hue_rotation(
+    value: f32,
+) -> Result<f32, String> {
+    if !value.is_finite()
+        || !(HUE_ROTATION_MIN..=HUE_ROTATION_MAX).contains(&value)
+    {
+        return Err(
+            format!(
+                "Hue rotation {:.3} is outside the supported range {:.1} through {:.1} degrees",
+                value,
+                HUE_ROTATION_MIN,
+                HUE_ROTATION_MAX,
+            )
+        );
+    }
+
+    Ok(value)
+}
+
+
 use crate::render_dithering::{
     DitheringLevel,
     DitheringRenderer,
@@ -127,6 +152,7 @@ pub(crate) struct PostprocessPipeline {
     bloom_intensity: f32,
     bloom_threshold: f32,
     invert_colors: bool,
+    hue_rotation: f32,
     audio_bands: crate::analyze_audio::AudioBands,
 }
 
@@ -257,6 +283,8 @@ impl PostprocessPipeline {
                     )?,
                 invert_colors:
                     profile.invert_colors,
+                hue_rotation:
+                    validate_hue_rotation(profile.hue_rotation)?,
                 audio_bands:
                     crate::analyze_audio::AudioBands::default(),
             };
@@ -498,6 +526,7 @@ impl PostprocessPipeline {
                 self.passthrough.render(
                     input_texture,
                     self.invert_colors,
+                    self.hue_rotation,
                 );
             }
 
@@ -507,6 +536,7 @@ impl PostprocessPipeline {
                     self.scene_width,
                     self.scene_height,
                     self.invert_colors,
+                    self.hue_rotation,
                 );
             }
         }
@@ -533,6 +563,10 @@ impl PostprocessPipeline {
             crate::render_bloom::validate_bloom_threshold(
                 profile.bloom_threshold
             )?;
+
+
+        let hue_rotation =
+            validate_hue_rotation(profile.hue_rotation)?;
 
 
         let precision_changed =
@@ -643,6 +677,9 @@ impl PostprocessPipeline {
             bloom_threshold;
         self.invert_colors =
             profile.invert_colors;
+
+        self.hue_rotation =
+            hue_rotation;
 
 
         Ok(())

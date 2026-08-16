@@ -56,6 +56,7 @@ const FXAA_FRAGMENT_SHADER: &str = r#"
 uniform sampler2D uScene;
 uniform vec2 uInverseResolution;
 uniform bool uInvertColors;
+uniform float uHueRotation;
 
 in vec2 vUv;
 
@@ -68,6 +69,43 @@ const float SUBPIXEL_QUALITY = 0.75;
 float luminance(vec3 color)
 {
     return dot(color, vec3(0.299, 0.587, 0.114));
+}
+
+vec3 rotateHue(vec3 color, float degrees)
+{
+    float angle = radians(degrees);
+    float cosine = cos(angle);
+    float sine = sin(angle);
+
+    float y = dot(color, vec3(0.299, 0.587, 0.114));
+    float i = dot(color, vec3(0.596, -0.274, -0.322));
+    float q = dot(color, vec3(0.211, -0.523, 0.312));
+
+    float rotatedI = i * cosine - q * sine;
+    float rotatedQ = i * sine + q * cosine;
+
+    return clamp(
+        vec3(
+            y + 0.956 * rotatedI + 0.621 * rotatedQ,
+            y - 0.272 * rotatedI - 0.647 * rotatedQ,
+            y - 1.106 * rotatedI + 1.703 * rotatedQ
+        ),
+        0.0,
+        1.0
+    );
+}
+
+vec3 applyColorEffects(vec3 color)
+{
+    if (uInvertColors) {
+        color = vec3(1.0) - color;
+    }
+
+    if (abs(uHueRotation) > 0.0001) {
+        color = rotateHue(color, uHueRotation);
+    }
+
+    return color;
 }
 
 void main()
@@ -114,14 +152,8 @@ void main()
     );
 
     if (lumaRange < edgeThreshold) {
-        vec3 finalColor = centerSample.rgb;
-
-        if (uInvertColors) {
-            finalColor = vec3(1.0) - finalColor;
-        }
-
         fragColor = vec4(
-            finalColor,
+            applyColorEffects(centerSample.rgb),
             centerSample.a
         );
 
@@ -319,9 +351,10 @@ void main()
 
     vec4 filteredSample = texture(uScene, finalUv);
 
-    vec3 finalColor = filteredSample.rgb;
-    if (uInvertColors) finalColor = vec3(1.0) - finalColor;
-    fragColor = vec4(finalColor, centerSample.a);
+    fragColor = vec4(
+        applyColorEffects(filteredSample.rgb),
+        centerSample.a
+    );
 }
 "#;
 
@@ -331,6 +364,7 @@ pub(crate) struct FxaaRenderer {
     scene_location: i32,
     inverse_resolution_location: i32,
     invert_colors_location: i32,
+    hue_rotation_location: i32,
 }
 
 impl FxaaRenderer {
@@ -382,7 +416,18 @@ impl FxaaRenderer {
             gl::GetUniformLocation(program, b"uInvertColors\0".as_ptr().cast())
         };
 
-        if scene_location == -1 || inverse_resolution_location == -1 || invert_colors_location == -1 {
+        let hue_rotation_location = unsafe {
+            gl::GetUniformLocation(
+                program,
+                b"uHueRotation\0".as_ptr().cast(),
+            )
+        };
+
+        if scene_location == -1
+            || inverse_resolution_location == -1
+            || invert_colors_location == -1
+            || hue_rotation_location == -1
+        {
             unsafe {
                 gl::DeleteVertexArrays(1, &vao);
                 gl::DeleteProgram(program);
@@ -400,6 +445,7 @@ impl FxaaRenderer {
             scene_location,
             inverse_resolution_location,
             invert_colors_location,
+            hue_rotation_location,
         })
     }
 
@@ -409,6 +455,7 @@ impl FxaaRenderer {
         width: u32,
         height: u32,
         invert_colors: bool,
+        hue_rotation: f32,
     ) {
         if width == 0 || height == 0 {
             return;
@@ -427,7 +474,14 @@ impl FxaaRenderer {
                 inverse_width,
                 inverse_height,
             );
-            gl::Uniform1i(self.invert_colors_location, if invert_colors { 1 } else { 0 });
+            gl::Uniform1i(
+                self.invert_colors_location,
+                if invert_colors { 1 } else { 0 },
+            );
+            gl::Uniform1f(
+                self.hue_rotation_location,
+                hue_rotation,
+            );
             gl::BindVertexArray(self.vao);
             gl::DrawArrays(gl::TRIANGLES, 0, 3);
             gl::BindTexture(gl::TEXTURE_2D, 0);

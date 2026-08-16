@@ -495,6 +495,7 @@ pub struct EditorOutput {
     pub bloom_intensity: f32,
     pub bloom_threshold: f32,
     pub invert_colors: bool,
+    pub hue_rotation: f32,
     pub policy_target_change_requested: Option<PolicyTarget>,
     pub save_requested: bool,
     pub bulk_save_requested: bool,
@@ -539,6 +540,7 @@ struct EditorConfiguration {
     bloom_intensity: f32,
     bloom_threshold: f32,
     invert_colors: bool,
+    hue_rotation: f32,
 }
 
 
@@ -558,6 +560,7 @@ impl EditorConfiguration {
         bloom_intensity: f32,
         bloom_threshold: f32,
         invert_colors: bool,
+        hue_rotation: f32,
     ) -> Self {
 
         Self {
@@ -587,6 +590,8 @@ impl EditorConfiguration {
                     bloom_threshold
                 ),
             invert_colors,
+            hue_rotation:
+                normalize_editor_float(hue_rotation),
         }
     }
 
@@ -635,6 +640,7 @@ impl EditorConfiguration {
                 .abs()
                 > 0.0001
             || self.invert_colors != other.invert_colors
+            || (self.hue_rotation - other.hue_rotation).abs() > 0.0001
     }
 }
 
@@ -755,6 +761,9 @@ pub struct EditWindowOverlay {
     invert_colors:
         bool,
 
+    hue_rotation:
+        f32,
+
     active_tab:
         EditorTab,
 
@@ -801,6 +810,9 @@ pub struct EditWindowOverlay {
         Option<SliderDragState>,
 
     bloom_threshold_drag_state:
+        Option<SliderDragState>,
+
+    hue_rotation_drag_state:
         Option<SliderDragState>,
 }
 
@@ -1038,6 +1050,9 @@ impl EditWindowOverlay {
                 invert_colors:
                     false,
 
+                hue_rotation:
+                    crate::postprocess_shader::HUE_ROTATION_DEFAULT,
+
                 active_tab:
                     EditorTab::Policies,
 
@@ -1083,6 +1098,9 @@ impl EditWindowOverlay {
                 bloom_intensity_drag_state:
                     None,
                 bloom_threshold_drag_state:
+                    None,
+
+                hue_rotation_drag_state:
                     None,
             }
         )
@@ -1449,6 +1467,7 @@ impl EditWindowOverlay {
         resolved_bloom_intensity: f32,
         resolved_bloom_threshold: f32,
         resolved_invert_colors: bool,
+        resolved_hue_rotation: f32,
         active_texture_selection: Option<(
             crate::parse_texture_specification::TextureSpecification,
             crate::palettes::PaletteColor,
@@ -1745,6 +1764,12 @@ impl EditWindowOverlay {
         let mut invert_colors =
             self.invert_colors;
 
+        let mut hue_rotation =
+            self.hue_rotation;
+
+        let mut hue_rotation_drag_state =
+            self.hue_rotation_drag_state;
+
 
         // A shader physically located in one of Screenshaver's managed
         // runtime folders has exactly one available policy target.  Enforce
@@ -1834,6 +1859,9 @@ impl EditWindowOverlay {
             invert_colors =
                 resolved_invert_colors;
 
+            hue_rotation =
+                resolved_hue_rotation;
+
             if let Some((
                 specification,
                 active_palette,
@@ -1917,6 +1945,7 @@ impl EditWindowOverlay {
                             bloom_intensity,
                             bloom_threshold,
                             invert_colors,
+                            hue_rotation,
                         )
                     }
                 );
@@ -2092,6 +2121,7 @@ impl EditWindowOverlay {
                                     bloom_intensity,
                                     bloom_threshold,
                                     invert_colors,
+                                    hue_rotation,
                                 );
 
                             let configuration_changed =
@@ -2292,6 +2322,8 @@ impl EditWindowOverlay {
                                                         &mut bloom_threshold,
                                                         &mut bloom_threshold_drag_state,
                                                         &mut invert_colors,
+                                                        &mut hue_rotation,
+                                                        &mut hue_rotation_drag_state,
                                                         &mut hover_help_message,
                                                     );
                                                 },
@@ -2398,6 +2430,7 @@ impl EditWindowOverlay {
                                 &mut bloom_intensity,
                                 &mut bloom_threshold,
                                 &mut invert_colors,
+                                &mut hue_rotation,
                                 baseline_configuration,
                                 &mut fps_drag_state,
                                 &mut animation_speed_drag_state,
@@ -2487,6 +2520,7 @@ impl EditWindowOverlay {
                             bloom_intensity,
                             bloom_threshold,
                             invert_colors,
+                            hue_rotation,
                         )
                         .differs_from(
                             baseline_configuration
@@ -2717,6 +2751,12 @@ impl EditWindowOverlay {
         self.invert_colors =
             invert_colors;
 
+        self.hue_rotation =
+            hue_rotation;
+
+        self.hue_rotation_drag_state =
+            hue_rotation_drag_state;
+
         let clipped_primitives =
             self.context.tessellate(
                 full_output.shapes,
@@ -2767,6 +2807,8 @@ impl EditWindowOverlay {
 
             invert_colors,
 
+            hue_rotation,
+
             policy_target_change_requested,
 
             save_requested,
@@ -2810,6 +2852,7 @@ impl EditWindowOverlay {
                     bloom_intensity,
                     bloom_threshold,
                     invert_colors,
+                    hue_rotation,
                 )
                 .differs_from(
                     baseline_configuration
@@ -3007,6 +3050,7 @@ impl EditWindowOverlay {
         bloom_intensity: f32,
         bloom_threshold: f32,
         invert_colors: bool,
+        hue_rotation: f32,
         active_texture_selection: Option<(
             crate::parse_texture_specification::TextureSpecification,
             crate::palettes::PaletteColor,
@@ -3058,6 +3102,10 @@ impl EditWindowOverlay {
             );
 
         self.invert_colors = invert_colors;
+
+        self.hue_rotation =
+            crate::postprocess_shader::validate_hue_rotation(hue_rotation)
+                .unwrap_or(crate::postprocess_shader::HUE_ROTATION_DEFAULT);
 
         self.bloom_threshold =
             bloom_threshold.clamp(
@@ -3134,6 +3182,7 @@ impl EditWindowOverlay {
                     self.bloom_intensity,
                     self.bloom_threshold,
                     self.invert_colors,
+                    self.hue_rotation,
                 )
             );
     }
@@ -3258,6 +3307,9 @@ impl EditWindowOverlay {
         self.invert_colors =
             baseline.invert_colors;
 
+        self.hue_rotation =
+            baseline.hue_rotation;
+
         self.fps_drag_state =
             None;
 
@@ -3308,6 +3360,7 @@ impl EditWindowOverlay {
                         self.bloom_intensity,
                         self.bloom_threshold,
                         self.invert_colors,
+                        self.hue_rotation,
                     )
                 );
         }
@@ -3941,6 +3994,7 @@ fn draw_compact_action_row(
     bloom_intensity: &mut f32,
     bloom_threshold: &mut f32,
     invert_colors: &mut bool,
+    hue_rotation: &mut f32,
     baseline_configuration: EditorConfiguration,
     fps_drag_state: &mut Option<SliderDragState>,
     animation_speed_drag_state: &mut Option<SliderDragState>,
@@ -4059,6 +4113,9 @@ fn draw_compact_action_row(
                     baseline_configuration.bloom_threshold;
                 *invert_colors =
                     baseline_configuration.invert_colors;
+
+                *hue_rotation =
+                    baseline_configuration.hue_rotation;
                 *fps_drag_state =
                     None;
                 *animation_speed_drag_state =
@@ -8151,6 +8208,8 @@ fn draw_post_processing_tab(
     bloom_threshold: &mut f32,
     bloom_threshold_drag_state: &mut Option<SliderDragState>,
     invert_colors: &mut bool,
+    hue_rotation: &mut f32,
+    hue_rotation_drag_state: &mut Option<SliderDragState>,
     hover_help_message: &mut Option<&'static str>,
 ) {
     draw_post_processing_panel(
@@ -8366,6 +8425,61 @@ fn draw_post_processing_tab(
                 &invert_response,
                 hover_help_message,
                 "Invert the rendered shader colors before Bloom and the remaining post-processing stages.",
+            );
+            ui.end_row();
+
+            ui.label("Hue Rotation");
+
+            let hue_response =
+                ui.horizontal(
+                    |ui| {
+                        ui.set_width(metrics.dropdown_width);
+
+                        let slider_width =
+                            (metrics.dropdown_width - 58.0 * metrics.scale)
+                                .max(80.0 * metrics.scale);
+
+                        let response =
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(
+                                    slider_width,
+                                    ui.spacing().interact_size.y,
+                                ),
+                                egui::Layout::left_to_right(
+                                    egui::Align::Center
+                                ),
+                                |ui| {
+                                    ui.set_width(slider_width);
+
+                                    draw_fine_slider(
+                                        ui,
+                                        hue_rotation,
+                                        crate::postprocess_shader::HUE_ROTATION_MIN,
+                                        crate::postprocess_shader::HUE_ROTATION_MAX,
+                                        shift_held,
+                                        metrics.scale,
+                                        hue_rotation_drag_state,
+                                    )
+                                },
+                            )
+                            .inner;
+
+                        ui.label(
+                            format!(
+                                "{:.1}°",
+                                *hue_rotation,
+                            )
+                        );
+
+                        response
+                    },
+                )
+                .inner;
+
+            update_hover_help(
+                &hue_response,
+                hover_help_message,
+                "Rotate shader hue from -180° through +180°. Hold Shift while dragging for 10x finer adjustment.",
             );
             ui.end_row();
 

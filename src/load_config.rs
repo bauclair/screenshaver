@@ -141,6 +141,9 @@ struct PostprocessSection {
 
     #[serde(default)]
     invert_colors: Option<bool>,
+
+    #[serde(default)]
+    hue_rotation: Option<f32>,
 }
 
 
@@ -299,6 +302,9 @@ pub struct ShaderPolicy {
 
     pub invert_colors:
         Option<bool>,
+
+    pub hue_rotation:
+        Option<f32>,
 }
 
 
@@ -654,6 +660,9 @@ pub(crate) struct PostprocessProfile {
 
     pub invert_colors:
         bool,
+
+    pub hue_rotation:
+        f32,
 }
 
 
@@ -686,6 +695,9 @@ impl Default for PostprocessProfile {
 
             invert_colors:
                 false,
+
+            hue_rotation:
+                crate::postprocess_shader::HUE_ROTATION_DEFAULT,
         }
     }
 }
@@ -822,6 +834,11 @@ impl PostprocessPolicy {
                 shader_policy
                     .and_then(|p| p.invert_colors)
                     .unwrap_or(self.global_profile.invert_colors),
+
+            hue_rotation:
+                shader_policy
+                    .and_then(|p| p.hue_rotation)
+                    .unwrap_or(self.global_profile.hue_rotation),
         }
     }
 }
@@ -1054,7 +1071,18 @@ pub fn load_config(
         );
 
 
-    let global_invert_colors = raw.postprocess.invert_colors.unwrap_or(false);
+    let global_invert_colors =
+        raw.postprocess.invert_colors.unwrap_or(false);
+
+    let (
+        global_hue_rotation,
+        hue_rotation_warning,
+    ) =
+        parse_global_hue_rotation(
+            raw.postprocess.hue_rotation,
+            built_in_postprocess_profile.hue_rotation,
+        );
+
 
     let global_postprocess_profile =
         PostprocessProfile {
@@ -1074,6 +1102,8 @@ pub fn load_config(
                 global_bloom_threshold,
             invert_colors:
                 global_invert_colors,
+            hue_rotation:
+                global_hue_rotation,
         };
 
 
@@ -1707,6 +1737,15 @@ pub fn load_config(
 
 
     if let Some(warning) =
+        hue_rotation_warning
+    {
+        diagnostics.push(
+            warning
+        );
+    }
+
+
+    if let Some(warning) =
         log_level_warning
     {
         diagnostics.push(
@@ -2042,6 +2081,7 @@ fn parse_policy_specification(
     let mut bloom_intensity = None;
     let mut bloom_threshold = None;
     let mut invert_colors = None;
+    let mut hue_rotation = None;
 
 
     for token in
@@ -2343,11 +2383,31 @@ fn parse_policy_specification(
                     )),
                 });
             }
+            "hue_rotation" => {
+                if hue_rotation.is_some() {
+                    return Err(
+                        duplicate_policy_property(
+                            &shader,
+                            target,
+                            "hue_rotation",
+                        )
+                    );
+                }
+
+                hue_rotation =
+                    Some(
+                        parse_policy_hue_rotation(
+                            &shader,
+                            value,
+                            target.table_name(),
+                        )?
+                    );
+            }
 
             other => {
                 return Err(
                     format!(
-                        "Unknown policy property '{}' for '{}' in [{}]; supported properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision, render_scale, bloom, bloom_intensity, bloom_threshold, invert_colors",
+                        "Unknown policy property '{}' for '{}' in [{}]; supported properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision, render_scale, bloom, bloom_intensity, bloom_threshold, invert_colors, hue_rotation",
                         other,
                         shader,
                         target.table_name(),
@@ -2370,6 +2430,7 @@ fn parse_policy_specification(
         && bloom_intensity.is_none()
         && bloom_threshold.is_none()
         && invert_colors.is_none()
+        && hue_rotation.is_none()
     {
         return Err(
             format!(
@@ -2398,6 +2459,7 @@ fn parse_policy_specification(
             bloom_intensity,
             bloom_threshold,
             invert_colors,
+            hue_rotation,
         }
     )
 }
@@ -2995,6 +3057,30 @@ fn parse_global_color_precision(
 }
 
 
+fn parse_policy_hue_rotation(
+    shader: &str,
+    value: &str,
+    table_name: &str,
+) -> Result<f32, String> {
+    let parsed =
+        value.parse::<f32>()
+            .map_err(
+                |_| {
+                    format!(
+                        "Invalid hue_rotation '{}' for '{}' in [{}]; expected a number from {:.1} through {:.1}",
+                        value,
+                        shader,
+                        table_name,
+                        crate::postprocess_shader::HUE_ROTATION_MIN,
+                        crate::postprocess_shader::HUE_ROTATION_MAX,
+                    )
+                }
+            )?;
+
+    crate::postprocess_shader::validate_hue_rotation(parsed)
+}
+
+
 fn parse_policy_bloom_threshold(
     shader: &str,
     value: &str,
@@ -3110,6 +3196,37 @@ fn parse_global_bloom_intensity(
                 value,
                 crate::render_bloom::BLOOM_INTENSITY_MIN,
                 crate::render_bloom::BLOOM_INTENSITY_MAX,
+                fallback,
+            )
+        ),
+    )
+}
+
+
+fn parse_global_hue_rotation(
+    value: Option<f32>,
+    fallback: f32,
+) -> (
+    f32,
+    Option<String>,
+) {
+    let Some(value) = value
+    else {
+        return (fallback, None);
+    };
+
+    if crate::postprocess_shader::validate_hue_rotation(value).is_ok() {
+        return (value, None);
+    }
+
+    (
+        fallback,
+        Some(
+            format!(
+                "[CONFIG] WARNING: postprocess.hue_rotation = '{}' is outside the supported range {:.1}-{:.1}; using '{:.1}'",
+                value,
+                crate::postprocess_shader::HUE_ROTATION_MIN,
+                crate::postprocess_shader::HUE_ROTATION_MAX,
                 fallback,
             )
         ),

@@ -178,6 +178,9 @@ pub struct PolicyDefinition {
 
     pub invert_colors:
         Option<bool>,
+
+    pub hue_rotation:
+        Option<f32>,
 }
 
 
@@ -252,6 +255,7 @@ impl PolicyDefinition {
             && self.bloom_intensity.is_none()
             && self.bloom_threshold.is_none()
             && self.invert_colors.is_none()
+            && self.hue_rotation.is_none()
     }
 }
 
@@ -2460,6 +2464,14 @@ fn validate_properties(
         )?;
     }
 
+    if let Some(hue_rotation) =
+        properties.hue_rotation
+    {
+        crate::postprocess_shader::validate_hue_rotation(
+            hue_rotation
+        )?;
+    }
+
 
     Ok(())
 }
@@ -2682,6 +2694,17 @@ fn format_policy(
     }
     if let Some(invert_colors) = properties.invert_colors {
         tokens.push(format!("invert_colors:{}", invert_colors));
+    }
+
+    if let Some(hue_rotation) =
+        properties.hue_rotation
+    {
+        tokens.push(
+            format!(
+                "hue_rotation:{}",
+                format_speed(hue_rotation),
+            )
+        );
     }
 
 
