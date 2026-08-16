@@ -99,6 +99,7 @@ pub enum TextureSelection {
     Bricks,
     Hexagons,
     Facets,
+    Skulls,
 }
 
 
@@ -116,6 +117,7 @@ impl TextureSelection {
             crate::generate_textures::TextureFamily::Bricks => Self::Bricks,
             crate::generate_textures::TextureFamily::Hexagons => Self::Hexagons,
             crate::generate_textures::TextureFamily::Facets => Self::Facets,
+            crate::generate_textures::TextureFamily::Skulls => Self::Skulls,
         }
     }
 
@@ -133,6 +135,7 @@ impl TextureSelection {
             Self::Bricks => crate::generate_textures::TextureFamily::Bricks,
             Self::Hexagons => crate::generate_textures::TextureFamily::Hexagons,
             Self::Facets => crate::generate_textures::TextureFamily::Facets,
+            Self::Skulls => crate::generate_textures::TextureFamily::Skulls,
         }
     }
 
@@ -7104,6 +7107,7 @@ fn draw_texture_panel(
                                     TextureSelection::Mesh,
                                     TextureSelection::Noise,
                                     TextureSelection::Radial,
+                                    TextureSelection::Skulls,
                                 ] {
                                     ui.selectable_value(
                                         texture,

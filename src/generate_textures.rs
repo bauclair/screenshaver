@@ -54,12 +54,14 @@ pub enum TextureFamily {
     Hexagons,
 
     Facets,
+
+    Skulls,
 }
 
 
 impl TextureFamily {
 
-    pub const ALL: [TextureFamily; 9] = [
+    pub const ALL: [TextureFamily; 10] = [
 
 
         TextureFamily::Marble,
@@ -81,6 +83,8 @@ impl TextureFamily {
         TextureFamily::Hexagons,
 
         TextureFamily::Facets,
+
+        TextureFamily::Skulls,
     ];
 
 
@@ -124,6 +128,10 @@ impl TextureFamily {
 
             TextureFamily::Facets => {
                 "facets"
+            }
+
+            TextureFamily::Skulls => {
+                "skulls"
             }
 
         }
@@ -221,6 +229,12 @@ impl FromStr for TextureFamily {
             "facets" => {
                 Ok(
                     TextureFamily::Facets
+                )
+            }
+
+            "skulls" => {
+                Ok(
+                    TextureFamily::Skulls
                 )
             }
 
@@ -488,7 +502,15 @@ pub fn generate_from_specification(
                 seed,
                 specification.requested_primitive_count,
             )
-        }       
+        }
+
+        TextureFamily::Skulls => {
+            crate::generate_skulls::generate(
+                palette,
+                seed,
+                specification.requested_primitive_count,
+            )
+        }
 
     }?;
 
@@ -587,6 +609,14 @@ mod tests {
                 .parse::<TextureFamily>(),
             Ok(
                 TextureFamily::Facets
+            )
+        );
+
+        assert_eq!(
+            "SkUlLs"
+                .parse::<TextureFamily>(),
+            Ok(
+                TextureFamily::Skulls
             )
         );
     }
