@@ -44,6 +44,7 @@ mod generate_marble;
 mod generate_mesh;
 mod generate_noise;
 mod generate_radial;
+mod generate_scales;
 mod generate_skulls;
 mod generate_textures;
 mod preview_texture;
