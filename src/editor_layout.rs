@@ -39,6 +39,15 @@ const EDIT_TABBED_CONTENT_HEIGHT: f32 =
     338.0;
 
 
+// First Textures-tab thumbnail sizing experiment.  The Control Center itself
+// remains fixed-size; this is only an upper bound on the preview image.
+const TEXTURE_THUMBNAIL_MAX_SIZE: f32 =
+    240.0;
+
+const TEXTURE_THUMBNAIL_SEED: u64 =
+    0x5343_5245_454E_5348;
+
+
 const CONTROL_CENTER_BRANDING_IMAGE: &[u8] =
     include_bytes!(
         "../assets/screenshaver-splash.png"
@@ -520,6 +529,8 @@ pub struct EditorOutput {
         Option<BulkCreateRequest>,
     pub recent_shader_requested: Option<usize>,
     pub clear_recent_files_requested: bool,
+    pub delete_cache_inspect_requested: bool,
+    pub delete_cache_confirmed_requested: bool,
     pub refresh_shader_requested: bool,
     pub policy_row_command_requested:
         Option<(PolicyRowReference, PolicyRowCommand)>,
@@ -681,6 +692,12 @@ pub struct EditWindowOverlay {
     branding_aspect_ratio:
         f32,
 
+    texture_thumbnail:
+        Option<egui::TextureHandle>,
+
+    texture_thumbnail_key:
+        Option<(TextureSelection, PaletteSelection, u32)>,
+
     pending_events:
         Vec<egui::Event>,
 
@@ -812,6 +829,9 @@ pub struct EditWindowOverlay {
 
     pending_confirmation:
         Option<PendingConfirmation>,
+
+    pending_cache_delete_count:
+        Option<usize>,
 
     control_configuration:
         Option<ControlConfiguration>,
@@ -963,6 +983,12 @@ impl EditWindowOverlay {
 
                 branding_aspect_ratio,
 
+                texture_thumbnail:
+                    None,
+
+                texture_thumbnail_key:
+                    None,
+
                 pending_events:
                     Vec::new(),
 
@@ -1108,6 +1134,9 @@ impl EditWindowOverlay {
                 pending_confirmation:
                     None,
 
+                pending_cache_delete_count:
+                    None,
+
                 control_configuration:
                     None,
 
@@ -1135,6 +1164,20 @@ impl EditWindowOverlay {
                     None,
             }
         )
+    }
+
+
+    pub fn begin_cache_delete_confirmation(
+        &mut self,
+        file_count: usize,
+    ) {
+
+        if file_count > 0 {
+            self.pending_cache_delete_count =
+                Some(
+                    file_count
+                );
+        }
     }
 
 
@@ -1967,6 +2010,12 @@ impl EditWindowOverlay {
         let mut clear_recent_files_requested =
             false;
 
+        let mut delete_cache_inspect_requested =
+            false;
+
+        let mut delete_cache_confirmed_requested =
+            false;
+
         let mut refresh_shader_requested =
             false;
 
@@ -2061,6 +2110,12 @@ impl EditWindowOverlay {
         let control_configuration_baseline =
             self.control_configuration_baseline.clone();
 
+        let mut texture_thumbnail =
+            self.texture_thumbnail.clone();
+
+        let mut texture_thumbnail_key =
+            self.texture_thumbnail_key;
+
 
         let editor_title =
             "Screenshaver Control Center (ESC or Q to exit)";
@@ -2146,6 +2201,7 @@ impl EditWindowOverlay {
                                     && !self.pending_exit_confirmation
                                     && !self.pending_bulk_save_confirmation
                                     && self.pending_bulk_create_candidates.is_none()
+                                    && self.pending_cache_delete_count.is_none()
                             );
 
                             let mut hover_help_message:
@@ -2340,12 +2396,24 @@ impl EditWindowOverlay {
                                                             }
 
 
+                                                            ensure_texture_thumbnail(
+                                                                context,
+                                                                texture,
+                                                                palette,
+                                                                primitive_count,
+                                                                &mut texture_thumbnail,
+                                                                &mut texture_thumbnail_key,
+                                                                &mut status_message,
+                                                            );
+
+
                                                             draw_color_picker_placeholder(
                                                                 ui,
                                                                 metrics,
                                                                 &mut palette,
                                                                 &mut palette_hex_input,
                                                                 &mut color_picker_preview,
+                                                                texture_thumbnail.as_ref(),
                                                                 &mut hover_help_message,
                                                             );
                                                         },
@@ -2392,6 +2460,7 @@ impl EditWindowOverlay {
                                                         control_configuration_baseline.as_ref(),
                                                         recent_shader_paths,
                                                         &mut clear_recent_files_requested,
+                                                        &mut delete_cache_inspect_requested,
                                                         &mut control_configuration_save_requested,
                                                         &mut control_single_browse_requested,
                                                         &mut control_single_recent_requested,
@@ -2554,6 +2623,13 @@ impl EditWindowOverlay {
                         &mut self.pending_bulk_create_external_target,
                         self.pending_bulk_create_rejected_count,
                         &mut bulk_create_requested,
+                    );
+
+
+                    draw_cache_delete_confirmation_modal(
+                        context,
+                        &mut self.pending_cache_delete_count,
+                        &mut delete_cache_confirmed_requested,
                     );
 
 
@@ -2774,6 +2850,12 @@ impl EditWindowOverlay {
         self.texture =
             texture;
 
+        self.texture_thumbnail =
+            texture_thumbnail;
+
+        self.texture_thumbnail_key =
+            texture_thumbnail_key;
+
         self.palette =
             palette;
 
@@ -2896,6 +2978,10 @@ impl EditWindowOverlay {
             recent_shader_requested,
 
             clear_recent_files_requested,
+
+            delete_cache_inspect_requested,
+
+            delete_cache_confirmed_requested,
 
             refresh_shader_requested,
 
@@ -7333,6 +7419,153 @@ fn draw_texture_panel(
     );
 }
 
+fn ensure_texture_thumbnail(
+    context: &egui::Context,
+    texture: TextureSelection,
+    palette: PaletteSelection,
+    primitive_count: u32,
+    thumbnail: &mut Option<egui::TextureHandle>,
+    thumbnail_key: &mut Option<(TextureSelection, PaletteSelection, u32)>,
+    status_message: &mut String,
+) {
+
+    let key =
+        (
+            texture,
+            palette,
+            primitive_count,
+        );
+
+
+    if *thumbnail_key
+        == Some(key)
+        && thumbnail.is_some()
+    {
+        return;
+    }
+
+
+    let specification =
+        crate::parse_texture_specification::TextureSpecification {
+            family:
+                texture.family(),
+
+            requested_primitive_count:
+                primitive_count as usize,
+
+            count_was_explicit:
+                true,
+        };
+
+
+    match crate::preview_texture_thumbnail::generate(
+        &specification,
+        palette.palette(),
+        TEXTURE_THUMBNAIL_SEED,
+        TEXTURE_THUMBNAIL_MAX_SIZE as u32,
+    ) {
+        Ok(generated) => {
+            *thumbnail =
+                Some(
+                    context.load_texture(
+                        "screenshaver_texture_thumbnail",
+                        generated.color_image,
+                        egui::TextureOptions::LINEAR,
+                    )
+                );
+
+            *thumbnail_key =
+                Some(
+                    key
+                );
+        }
+
+        Err(error) => {
+            *thumbnail =
+                None;
+
+            *thumbnail_key =
+                None;
+
+            *status_message =
+                format!(
+                    "Unable to generate texture thumbnail: {}",
+                    error,
+                );
+        }
+    }
+}
+
+
+fn draw_texture_thumbnail(
+    ui: &mut egui::Ui,
+    metrics: EditorMetrics,
+    texture_thumbnail: Option<&egui::TextureHandle>,
+) {
+
+    let available_width =
+        ui.available_width();
+
+
+    // Do not use ui.available_height() here.  This thumbnail lives inside a
+    // nested horizontal/vertical layout whose child height is content-driven.
+    // At this point egui can legitimately report essentially zero remaining
+    // height even though the parent Textures tab still has visible room.  The
+    // previous experiment therefore collapsed the requested thumbnail to a
+    // nearly invisible 1x1 image.
+    //
+    // The Control Center and tab dimensions are already fixed.  For this
+    // sizing experiment, constrain only by the width of this column and by the
+    // explicit thumbnail maximum.  The surrounding fixed tab remains the hard
+    // vertical boundary.
+    let preview_size =
+        (
+            TEXTURE_THUMBNAIL_MAX_SIZE
+                * metrics.scale
+        )
+        .min(
+            available_width
+        )
+        .max(
+            1.0
+        );
+
+
+    let desired_size =
+        egui::vec2(
+            preview_size,
+            preview_size,
+        );
+
+
+    if let Some(texture_thumbnail) =
+        texture_thumbnail
+    {
+        ui.add(
+            egui::Image::new(
+                texture_thumbnail
+            )
+            .fit_to_exact_size(
+                desired_size
+            ),
+        );
+
+    } else {
+        ui.allocate_ui_with_layout(
+            desired_size,
+            egui::Layout::centered_and_justified(
+                egui::Direction::TopDown
+            ),
+            |ui| {
+                ui.label(
+                    "Texture preview unavailable"
+                );
+            },
+        );
+    }
+}
+
+
 fn curated_palette_color_button(
     ui: &mut egui::Ui,
     metrics: EditorMetrics,
@@ -8018,6 +8251,7 @@ fn draw_color_picker_placeholder(
     palette: &mut PaletteSelection,
     palette_hex_input: &mut String,
     color_picker_preview: &mut egui::Color32,
+    texture_thumbnail: Option<&egui::TextureHandle>,
     hover_help_message: &mut Option<&'static str>,
 ) {
     let label_width =
@@ -8034,22 +8268,26 @@ fn draw_color_picker_placeholder(
 
     ui.horizontal(
         |ui| {
-            ui.allocate_ui_with_layout(
-                egui::vec2(
-                    label_width,
-                    ui.spacing()
-                        .interact_size
-                        .y,
-                ),
-                egui::Layout::left_to_right(
-                    egui::Align::Center
-                ),
+            ui.vertical(
                 |ui| {
-                    ui.label(
-                        "Palette Color:"
-                    );
-                },
-            );
+                    ui.horizontal(
+                        |ui| {
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(
+                                    label_width,
+                                    ui.spacing()
+                                        .interact_size
+                                        .y,
+                                ),
+                                egui::Layout::left_to_right(
+                                    egui::Align::Center
+                                ),
+                                |ui| {
+                                    ui.label(
+                                        "Palette Color:"
+                                    );
+                                },
+                            );
 
 
             let selected_curated_color =
@@ -8180,6 +8418,22 @@ fn draw_color_picker_placeholder(
                 &curated_response,
                 hover_help_message,
                 "Choose a curated palette color. The selected color is written to the hexadecimal field.",
+            );
+                        },
+                    );
+
+
+                    ui.add_space(
+                        8.0 * metrics.scale
+                    );
+
+
+                    draw_texture_thumbnail(
+                        ui,
+                        metrics,
+                        texture_thumbnail,
+                    );
+                },
             );
 
             ui.vertical(
@@ -8775,6 +9029,93 @@ fn draw_post_processing_panel(
 
 
 
+fn draw_cache_delete_confirmation_modal(
+    context: &egui::Context,
+    pending_file_count: &mut Option<usize>,
+    confirmed_requested: &mut bool,
+) {
+
+    let Some(file_count) =
+        *pending_file_count
+    else {
+        return;
+    };
+
+
+    egui::Window::new(
+        "Delete Cache"
+    )
+    .collapsible(
+        false
+    )
+    .resizable(
+        false
+    )
+    .anchor(
+        egui::Align2::CENTER_CENTER,
+        egui::Vec2::ZERO,
+    )
+    .show(
+        context,
+        |ui| {
+            ui.label(
+                format!(
+                    "{} cache {} will be deleted.",
+                    file_count,
+                    if file_count == 1 {
+                        "file"
+                    } else {
+                        "files"
+                    },
+                )
+            );
+
+
+            ui.add_space(
+                8.0
+            );
+
+
+            ui.label(
+                "Do you want to continue?"
+            );
+
+
+            ui.add_space(
+                10.0
+            );
+
+
+            ui.horizontal(
+                |ui| {
+                    if ui.button(
+                        "Cancel"
+                    )
+                    .clicked()
+                    {
+                        *pending_file_count =
+                            None;
+                    }
+
+
+                    if ui.button(
+                        "Continue"
+                    )
+                    .clicked()
+                    {
+                        *confirmed_requested =
+                            true;
+
+                        *pending_file_count =
+                            None;
+                    }
+                },
+            );
+        },
+    );
+}
+
+
 // ============================================================
 // CONFIG TAB
 // ============================================================
@@ -8788,6 +9129,7 @@ fn draw_config_tab(
     baseline: Option<&ControlConfiguration>,
     recent_shader_paths: &[PathBuf],
     clear_recent_files_requested: &mut bool,
+    delete_cache_inspect_requested: &mut bool,
     save_requested: &mut bool,
     single_browse_requested: &mut Option<PolicyTarget>,
     single_recent_requested: &mut Option<(PolicyTarget, usize)>,
@@ -8979,6 +9321,34 @@ fn draw_config_tab(
                         "Configuration changes discarded."
                             .to_string();
                 }
+            }
+
+
+            ui.add_space(
+                28.0 * metrics.scale
+            );
+
+
+            let delete_cache_response =
+                ui.button(
+                    "Delete Cache"
+                );
+
+
+            update_hover_help(
+                &delete_cache_response,
+                hover_help_message,
+                "Delete cached preprocessed shader files.",
+            );
+
+
+            if delete_cache_response.clicked() {
+                *delete_cache_inspect_requested =
+                    true;
+
+                *status_message =
+                    "Checking shader cache..."
+                        .to_string();
             }
         },
     );

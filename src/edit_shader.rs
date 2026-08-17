@@ -325,7 +325,7 @@ pub fn run(
 
             Err(
                 format!(
-                    "--edit-shader requires a shader file, not a directory: {}",
+                    "--control requires a shader file, not a directory: {}",
                     path.display(),
                 )
             )
@@ -458,7 +458,7 @@ fn run_empty_session(
             .map_err(
                 |error| {
                     format!(
-                        "Unable to create edit-shader window: {}",
+                        "Unable to create Control Center window: {}",
                         error,
                     )
                 }
@@ -471,7 +471,7 @@ fn run_empty_session(
             .map_err(
                 |error| {
                     format!(
-                        "Unable to create edit-shader OpenGL context: {}",
+                        "Unable to create Control Center OpenGL context: {}",
                         error,
                     )
                 }
@@ -523,7 +523,7 @@ fn run_empty_session(
             .map_err(
                 |error| {
                     format!(
-                        "Unable to create edit-shader SDL event pump: {}",
+                        "Unable to create Control Center SDL event pump: {}",
                         error,
                     )
                 }
@@ -615,6 +615,86 @@ fn run_empty_session(
                 &policy_display_rows,
                 Some(&config),
             );
+
+        if editor_output.delete_cache_inspect_requested {
+            match crate::delete_cache::count_cache_files() {
+                Ok(0) => {
+                    edit_window.set_status_message(
+                        "The shader cache is already empty."
+                    );
+                }
+
+                Ok(file_count) => {
+                    edit_window.begin_cache_delete_confirmation(
+                        file_count
+                    );
+                }
+
+                Err(error) => {
+                    edit_window.set_status_message(
+                        format!(
+                            "Unable to inspect shader cache: {}",
+                            error,
+                        )
+                    );
+
+                    log_warning(
+                        &format!(
+                            "[CACHE] Unable to inspect cache from Control Center: {}",
+                            error,
+                        )
+                    );
+                }
+            }
+        }
+
+
+        if editor_output.delete_cache_confirmed_requested {
+            match crate::delete_cache::delete_cache_files() {
+                Ok(result) => {
+                    edit_window.set_status_message(
+                        format!(
+                            "{} cache {} deleted.",
+                            result.deleted_count,
+                            if result.deleted_count == 1 {
+                                "file"
+                            } else {
+                                "files"
+                            },
+                        )
+                    );
+
+                    log_information(
+                        &format!(
+                            "[CACHE] Control Center deleted {} cache {}",
+                            result.deleted_count,
+                            if result.deleted_count == 1 {
+                                "file"
+                            } else {
+                                "files"
+                            },
+                        )
+                    );
+                }
+
+                Err(error) => {
+                    edit_window.set_status_message(
+                        format!(
+                            "Unable to delete shader cache: {}",
+                            error,
+                        )
+                    );
+
+                    log_warning(
+                        &format!(
+                            "[CACHE] Unable to delete cache from Control Center: {}",
+                            error,
+                        )
+                    );
+                }
+            }
+        }
+
 
         save_policy_list_state_if_changed(
             &edit_window,
@@ -2289,7 +2369,7 @@ fn run_paths(
             .map_err(
                 |error| {
                     format!(
-                        "Unable to create edit-shader window: {}",
+                        "Unable to create Control Center window: {}",
                         error,
                     )
                 }
@@ -3079,6 +3159,86 @@ fn run_paths(
                     &policy_display_rows,
                     Some(&config),
                 );
+
+            if editor_output.delete_cache_inspect_requested {
+                match crate::delete_cache::count_cache_files() {
+                    Ok(0) => {
+                        edit_window.set_status_message(
+                            "The shader cache is already empty."
+                        );
+                    }
+
+                    Ok(file_count) => {
+                        edit_window.begin_cache_delete_confirmation(
+                            file_count
+                        );
+                    }
+
+                    Err(error) => {
+                        edit_window.set_status_message(
+                            format!(
+                                "Unable to inspect shader cache: {}",
+                                error,
+                            )
+                        );
+
+                        log_warning(
+                            &format!(
+                                "[CACHE] Unable to inspect cache from Control Center: {}",
+                                error,
+                            )
+                        );
+                    }
+                }
+            }
+
+
+            if editor_output.delete_cache_confirmed_requested {
+                match crate::delete_cache::delete_cache_files() {
+                    Ok(result) => {
+                        edit_window.set_status_message(
+                            format!(
+                                "{} cache {} deleted.",
+                                result.deleted_count,
+                                if result.deleted_count == 1 {
+                                    "file"
+                                } else {
+                                    "files"
+                                },
+                            )
+                        );
+
+                        log_information(
+                            &format!(
+                                "[CACHE] Control Center deleted {} cache {}",
+                                result.deleted_count,
+                                if result.deleted_count == 1 {
+                                    "file"
+                                } else {
+                                    "files"
+                                },
+                            )
+                        );
+                    }
+
+                    Err(error) => {
+                        edit_window.set_status_message(
+                            format!(
+                                "Unable to delete shader cache: {}",
+                                error,
+                            )
+                        );
+
+                        log_warning(
+                            &format!(
+                                "[CACHE] Unable to delete cache from Control Center: {}",
+                                error,
+                            )
+                        );
+                    }
+                }
+            }
+
 
             save_policy_list_state_if_changed(
             &edit_window,

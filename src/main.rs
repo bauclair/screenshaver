@@ -49,14 +49,12 @@ mod generate_radial;
 mod generate_scales;
 mod generate_skulls;
 mod generate_textures;
-mod preview_texture;
-mod preview_shader;
+mod preview_texture_thumbnail;
 mod edit_shader;
 mod editor_layout;
 mod editor_theme;
 mod preview_shader_directory;
 mod palettes;
-mod display_texture;
 mod display_message;
 mod construct_text_overlay;
 mod display_overlay;
@@ -91,60 +89,7 @@ use std::sync::atomic::{
     Ordering,
 };
 use std::time::Duration;
-use std::io::{self, Write};
 
-
-
-fn confirm_policy_replacement(
-    shader: &str,
-    target: crate::manage_policies::PolicyTarget,
-) -> Result<bool, String> {
-
-    loop {
-        print!(
-            "Shader '{}' already has an policy in [{}] -- delete it? [Y/n] ",
-            shader,
-            target.table_name(),
-        );
-
-        io::stdout()
-            .flush()
-            .map_err(
-                |error| error.to_string()
-            )?;
-
-        let mut response =
-            String::new();
-
-        io::stdin()
-            .read_line(
-                &mut response
-            )
-            .map_err(
-                |error| error.to_string()
-            )?;
-
-        match response
-            .trim()
-            .to_ascii_lowercase()
-            .as_str()
-        {
-            "" | "y" | "yes" => {
-                return Ok(true);
-            }
-
-            "n" | "no" => {
-                return Ok(false);
-            }
-
-            _ => {
-                println!(
-                    "Please answer Y or n."
-                );
-            }
-        }
-    }
-}
 
 
 fn main() {
@@ -186,11 +131,7 @@ let runtime_logfile =
 
         crate::parse_arguments::Command::Run
         | crate::parse_arguments::Command::Start
-        | crate::parse_arguments::Command::PreviewTexture { .. }
-        | crate::parse_arguments::Command::PreviewShader { .. }
-        | crate::parse_arguments::Command::Control { .. }
-        | crate::parse_arguments::Command::EditShader { .. }
-        | crate::parse_arguments::Command::DeleteCache => {
+        | crate::parse_arguments::Command::Control { .. } => {
 
             let logfile =
                 crate::locate_paths::runtime_log_path();
@@ -255,164 +196,6 @@ match command {
     }
 
 
-    crate::parse_arguments::Command::AddPolicy {
-        target,
-        shader,
-        properties,
-    } => {
-
-        let cfg_path =
-            crate::locate_paths::config_path();
-
-        let exists =
-            match crate::manage_policies::policy_exists(
-                &cfg_path,
-                target,
-                &shader,
-            ) {
-                Ok(exists) => exists,
-
-                Err(error) => {
-                    eprintln!(
-                        "{}",
-                        error
-                    );
-
-                    return;
-                }
-            };
-
-        if exists {
-            let replace =
-                match confirm_policy_replacement(
-                    &shader,
-                    target,
-                ) {
-                    Ok(replace) => replace,
-
-                    Err(error) => {
-                        eprintln!(
-                            "Unable to read confirmation: {}",
-                            error
-                        );
-
-                        return;
-                    }
-                };
-
-            if !replace {
-                println!(
-                    "Policy addition cancelled."
-                );
-
-                return;
-            }
-
-            match crate::manage_policies::replace_policy(
-                &cfg_path,
-                target,
-                &shader,
-                properties,
-            ) {
-                Ok(()) => {
-                    println!(
-                        "Replaced {} policy for {}.",
-                        target.name(),
-                        shader,
-                    );
-                }
-
-                Err(error) => {
-                    eprintln!(
-                        "{}",
-                        error
-                    );
-                }
-            }
-        } else {
-            match crate::manage_policies::add_policy(
-                &cfg_path,
-                target,
-                &shader,
-                properties,
-            ) {
-                Ok(()) => {
-                    println!(
-                        "Added {} policy for {}.",
-                        target.name(),
-                        shader,
-                    );
-                }
-
-                Err(error) => {
-                    eprintln!(
-                        "{}",
-                        error
-                    );
-                }
-            }
-        }
-
-        return;
-    }
-
-
-    crate::parse_arguments::Command::DeletePolicy {
-        target,
-        shader,
-    } => {
-
-        let cfg_path =
-            crate::locate_paths::config_path();
-
-        match crate::manage_policies::delete_policy(
-            &cfg_path,
-            target,
-            &shader,
-        ) {
-            Ok(()) => {
-                println!(
-                    "Deleted {} policy for {}.",
-                    target.name(),
-                    shader,
-                );
-            }
-
-            Err(error) => {
-                eprintln!(
-                    "{}",
-                    error
-                );
-            }
-        }
-
-        return;
-    }
-
-
-    crate::parse_arguments::Command::ListPolicies {
-        target,
-    } => {
-
-        let cfg_path =
-            crate::locate_paths::config_path();
-
-        if let Err(error) =
-            crate::manage_policies::list_policies(
-                &cfg_path,
-                target,
-            )
-        {
-            eprintln!(
-                "{}",
-                error
-            );
-        }
-
-        return;
-    }
-
-
     crate::parse_arguments::Command::Help => {
 
         crate::parse_arguments::print_help();
@@ -439,72 +222,6 @@ match command {
 
         return;
     }
-
-    crate::parse_arguments::Command::PreviewTexture {
-        texture,
-        palette,
-    } => {
-
-        crate::preview_texture::run(
-            texture,
-            palette,
-        );
-
-        return;
-    }
-
-crate::parse_arguments::Command::PreviewShader {
-    shader_name,
-    shader_texture,
-    shader_palette,
-    interval_seconds,
-    fps,
-    animation_speed,
-    bloom,
-    bloom_intensity,
-    bloom_threshold,
-} => {
-
-    match crate::preview_shader::run(
-        shader_name,
-        shader_texture,
-        shader_palette,
-        interval_seconds,
-        fps,
-        animation_speed,
-        bloom,
-        bloom_intensity,
-        bloom_threshold,
-    ) {
-
-        Ok(()) => {}
-
-        Err(error) => {
-
-            eprintln!(
-                "[SHADER PREVIEW] {}",
-                error
-            );
-
-
-            if let Some(logfile) =
-                runtime_logfile.as_ref()
-            {
-                crate::logger::error(
-                    logfile,
-                    &format!(
-                        "[PREVIEW_SHADER] {}",
-                        error,
-                    ),
-                );
-            }
-        }
-    }
-
-
-    return;
-}
-
 
 crate::parse_arguments::Command::Control {
     shader_name,
@@ -557,130 +274,7 @@ crate::parse_arguments::Command::Control {
 }
 
 
-crate::parse_arguments::Command::EditShader {
-    shader_name,
-} => {
 
-    let edit_audio_backend =
-        crate::audio_backend::create_backend()
-            .ok();
-
-    let edit_audio_bands =
-        edit_audio_backend
-            .as_ref()
-            .map(
-                |backend| {
-                    backend.shared_bands()
-                }
-            );
-
-    match crate::edit_shader::run(
-        shader_name,
-        edit_audio_bands,
-    ) {
-
-        Ok(()) => {}
-
-        Err(error) => {
-
-            eprintln!(
-                "[SHADER EDITOR] {}",
-                error
-            );
-
-
-            if let Some(logfile) =
-                runtime_logfile.as_ref()
-            {
-                crate::logger::error(
-                    logfile,
-                    &format!(
-                        "[EDIT_SHADER] {}",
-                        error,
-                    ),
-                );
-            }
-        }
-    }
-
-
-    return;
-}
-
-
-crate::parse_arguments::Command::DeleteCache => {
-
-    match crate::delete_cache::run() {
-
-        Ok(()) => {}
-
-        Err(error) => {
-
-            eprintln!(
-                "[CACHE] {}",
-                error
-            );
-
-
-            if let Some(logfile) =
-                runtime_logfile.as_ref()
-            {
-                crate::logger::error(
-                    logfile,
-                    &format!(
-                        "[CACHE] {}",
-                        error,
-                    ),
-                );
-            }
-        }
-    }
-
-
-    return;
-}
-
-
-crate::parse_arguments::Command::ListTextures => {
-
-    println!(
-        "Available texture families:"
-    );
-
-    println!(
-        "    marble"
-    );
-
-    println!(
-        "    clouds"
-    );
-
-    println!(
-        "    cells"
-    );
-
-    println!(
-        "    mesh"
-    );
-
-    println!(
-        "    radial"
-    );
-
-    println!(
-        "    noise"
-    ); 
-
-    println!(
-        "    bricks"
-    );
-
-    println!(
-        "    hexagons"
-    ); 
-
-    return;
-}
 
 
 }

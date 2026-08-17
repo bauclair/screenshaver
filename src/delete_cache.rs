@@ -1,6 +1,7 @@
-//! Delete Screenshaver's cached preprocessed shader files.
+//! Manage Screenshaver's cached preprocessed shader files.
 //!
-//! This maintenance command removes regular files directly inside
+//! Cache deletion is initiated by the Control Center. Only regular files
+//! directly inside
 //! ~/.config/screenshaver/cache. Subdirectories and their contents
 //! are deliberately left untouched.
 
@@ -11,7 +12,43 @@ use std::path::{
 };
 
 
-pub fn run() -> Result<(), String> {
+#[derive(Debug, Clone)]
+pub struct DeleteCacheResult {
+    pub deleted_count: usize,
+}
+
+
+pub fn count_cache_files() -> Result<usize, String> {
+
+    let cache_dir =
+        crate::locate_paths::shader_cache_dir();
+
+
+    if !cache_dir.exists() {
+        return Ok(0);
+    }
+
+
+    if !cache_dir.is_dir() {
+        return Err(
+            format!(
+                "Cache path is not a directory: {}",
+                cache_dir.display(),
+            )
+        );
+    }
+
+
+    Ok(
+        collect_cache_files(
+            &cache_dir
+        )?
+        .len()
+    )
+}
+
+
+pub fn delete_cache_files() -> Result<DeleteCacheResult, String> {
 
     let cache_dir =
         crate::locate_paths::shader_cache_dir();
@@ -25,21 +62,7 @@ pub fn run() -> Result<(), String> {
         crate::locate_paths::runtime_log_path();
 
 
-    if logging_enabled {
-        crate::logger::information(
-            &logfile,
-            "[CACHE] Delete requested from command line",
-        );
-    }
-
-
     if !cache_dir.exists() {
-
-        println!(
-            "Cache directory does not exist: {}",
-            cache_dir.display(),
-        );
-
 
         if logging_enabled {
             crate::logger::debug(
@@ -52,7 +75,12 @@ pub fn run() -> Result<(), String> {
         }
 
 
-        return Ok(());
+        return Ok(
+            DeleteCacheResult {
+                deleted_count:
+                    0,
+            }
+        );
     }
 
 
@@ -75,11 +103,6 @@ pub fn run() -> Result<(), String> {
 
     if cache_files.is_empty() {
 
-        println!(
-            "Cache is already empty."
-        );
-
-
         if logging_enabled {
             crate::logger::debug(
                 &logfile,
@@ -88,14 +111,17 @@ pub fn run() -> Result<(), String> {
         }
 
 
-        return Ok(());
+        return Ok(
+            DeleteCacheResult {
+                deleted_count:
+                    0,
+            }
+        );
     }
 
 
-    let mut deleted_files =
-        Vec::with_capacity(
-            cache_files.len()
-        );
+    let mut deleted_count =
+        0_usize;
 
 
     for path in
@@ -115,25 +141,29 @@ pub fn run() -> Result<(), String> {
         )?;
 
 
-        let display_name =
-            path.file_name()
-                .and_then(
-                    |name| {
-                        name.to_str()
-                    }
-                )
-                .map(
-                    str::to_string
-                )
-                .unwrap_or_else(
-                    || {
-                        path.display()
-                            .to_string()
-                    }
-                );
+        deleted_count +=
+            1;
 
 
         if logging_enabled {
+            let display_name =
+                path.file_name()
+                    .and_then(
+                        |name| {
+                            name.to_str()
+                        }
+                    )
+                    .map(
+                        str::to_string
+                    )
+                    .unwrap_or_else(
+                        || {
+                            path.display()
+                                .to_string()
+                        }
+                    );
+
+
             crate::logger::debug(
                 &logfile,
                 &format!(
@@ -142,45 +172,7 @@ pub fn run() -> Result<(), String> {
                 ),
             );
         }
-
-
-        deleted_files.push(
-            display_name
-        );
     }
-
-
-    println!(
-        "Deleted:"
-    );
-
-
-    for filename in
-        &deleted_files
-    {
-        println!(
-            "    {}",
-            filename
-        );
-    }
-
-
-    println!();
-
-
-    let count =
-        deleted_files.len();
-
-
-    println!(
-        "Deleted {} cached shader {}.",
-        count,
-        if count == 1 {
-            "file"
-        } else {
-            "files"
-        },
-    );
 
 
     if logging_enabled {
@@ -188,8 +180,8 @@ pub fn run() -> Result<(), String> {
             &logfile,
             &format!(
                 "[CACHE] Deleted {} cache {}",
-                count,
-                if count == 1 {
+                deleted_count,
+                if deleted_count == 1 {
                     "file"
                 } else {
                     "files"
@@ -199,7 +191,11 @@ pub fn run() -> Result<(), String> {
     }
 
 
-    Ok(())
+    Ok(
+        DeleteCacheResult {
+            deleted_count,
+        }
+    )
 }
 
 
