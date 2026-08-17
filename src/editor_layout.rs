@@ -101,6 +101,7 @@ pub enum TextureSelection {
     Facets,
     Skulls,
     Scales,
+    Eyes,
 }
 
 
@@ -120,6 +121,7 @@ impl TextureSelection {
             crate::generate_textures::TextureFamily::Facets => Self::Facets,
             crate::generate_textures::TextureFamily::Skulls => Self::Skulls,
             crate::generate_textures::TextureFamily::Scales => Self::Scales,
+            crate::generate_textures::TextureFamily::Eyes => Self::Eyes,
         }
     }
 
@@ -139,6 +141,7 @@ impl TextureSelection {
             Self::Facets => crate::generate_textures::TextureFamily::Facets,
             Self::Skulls => crate::generate_textures::TextureFamily::Skulls,
             Self::Scales => crate::generate_textures::TextureFamily::Scales,
+            Self::Eyes => crate::generate_textures::TextureFamily::Eyes,
         }
     }
 
@@ -7186,6 +7189,7 @@ fn draw_texture_panel(
                                     TextureSelection::Bricks,
                                     TextureSelection::Cellular,
                                     TextureSelection::Clouds,
+                                    TextureSelection::Eyes,
                                     TextureSelection::Facets,
                                     TextureSelection::Hexagons,
                                     TextureSelection::Marble,

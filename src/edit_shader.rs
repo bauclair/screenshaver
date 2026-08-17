@@ -2745,8 +2745,22 @@ fn run_paths(
                 gl::UseProgram(
                     active.program
                 );
+            }
 
 
+            if let Err(error) =
+                active.texture_manager
+                    .update_animations()
+            {
+                log_warning(
+                    &format!(
+                        "[TEXTURE] Unable to update animated preview texture: {error}"
+                    )
+                );
+            }
+
+
+            unsafe {
                 active.texture_manager
                     .bind_channels();
 

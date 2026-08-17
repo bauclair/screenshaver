@@ -575,6 +575,18 @@ impl FrameRenderEngine {
             self.postprocess
                 .scene_dimensions();
 
+        if let Err(error) =
+            self.texture_manager
+                .update_animations()
+        {
+            log_warning(
+                &format!(
+                    "[TEXTURE] Unable to update animated texture: {error}"
+                )
+            );
+        }
+
+
         unsafe {
             if self.output_policy
                 == FrameOutputPolicy::ForceOpaque
