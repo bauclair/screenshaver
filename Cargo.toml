@@ -1,6 +1,6 @@
 [package]
 name = "screenshaver"
-version = "0.5.1"
+version = "0.5.2"
 edition = "2024"
 
 [dependencies]
@@ -33,3 +33,4 @@ rfd = "0.17.2"
 sha2 = "0.10"
 libpulse-binding = "2.30.1"
 rustfft = "6.4"
+rusqlite = { version = "0.40.1", features = ["bundled"] }

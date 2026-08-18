@@ -85,3 +85,9 @@ pub fn config_path() -> PathBuf {
         .join("screenshaver.toml")
 }
 
+pub fn database_path() -> PathBuf {
+
+    screenshaver_dir()
+        .join("screenshaver.db")
+}
+

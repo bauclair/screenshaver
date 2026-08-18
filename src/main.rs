@@ -83,6 +83,11 @@ mod render_dithering;
 mod render_bloom;
 mod select_render_precision;
 
+mod initialize_database;
+mod open_database;
+mod validate_database;
+mod hash_shader;
+
 use std::sync::Arc;
 use std::sync::atomic::{
     AtomicBool,
@@ -109,6 +114,7 @@ println!(
     "Screenshaver configuration directory: {}",
     config_dir.display()
 );
+
 
 let command =
     match crate::parse_arguments::parse() {
