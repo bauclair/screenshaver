@@ -84,8 +84,10 @@ mod render_bloom;
 mod select_render_precision;
 
 mod initialize_database;
+mod evaluate_database;
 mod open_database;
 mod validate_database;
+mod migrate_database;
 mod hash_shader;
 
 use std::sync::Arc;
@@ -99,193 +101,87 @@ use std::time::Duration;
 
 fn main() {
 
-let config_dir = match initialize_user_files::initialize() {
-    Ok(path) => path,
+    let command =
+        match crate::parse_arguments::parse() {
 
-    Err(error) => {
-        eprintln!(
-            "Screenshaver could not initialize its user files: {error}"
-        );
-        std::process::exit(1);
-    }
-};
-
-println!(
-    "Screenshaver configuration directory: {}",
-    config_dir.display()
-);
-
-
-let command =
-    match crate::parse_arguments::parse() {
-
-        Ok(command) => command,
-
-        Err(error) => {
-
-            crate::parse_arguments::print_error(
-                &error
-            );
-
-            return;
-        }
-    };
-
-
-let runtime_logfile =
-    match &command {
-
-        crate::parse_arguments::Command::Run
-        | crate::parse_arguments::Command::Start
-        | crate::parse_arguments::Command::Control { .. } => {
-
-            let logfile =
-                crate::locate_paths::runtime_log_path();
-
-
-            crate::logger::reset_log(
-                &logfile
-            );
-
-
-            Some(logfile)
-        }
-
-        _ => {
-            None
-        }
-    };
-
-
-match command {
-
-    crate::parse_arguments::Command::Run
-    | crate::parse_arguments::Command::Start => {}
-
-
-    crate::parse_arguments::Command::Stop => {
-
-        match crate::singleton::stop() {
-
-            Ok(
-                crate::singleton::StopOutcome::StopRequested {
-                    pid,
-                }
-            ) => {
-
-                println!(
-                    "Screenshaver stop requested for process {}.",
-                    pid
-                );
-            }
-
-            Ok(
-                crate::singleton::StopOutcome::NotRunning
-            ) => {
-
-                println!(
-                    "Screenshaver is not running."
-                );
-            }
+            Ok(command) => command,
 
             Err(error) => {
 
-                eprintln!(
-                    "[MAIN] STOP ERROR: {}",
-                    error
+                crate::parse_arguments::print_error(
+                    &error
                 );
+
+                return;
             }
-        }
+        };
 
 
-        return;
-    }
+    // Commands that do not require Screenshaver's user environment or
+    // database are handled before any configuration/database initialization.
+    match &command {
 
+        crate::parse_arguments::Command::Stop => {
 
-    crate::parse_arguments::Command::Help => {
+            match crate::singleton::stop() {
 
-        crate::parse_arguments::print_help();
+                Ok(
+                    crate::singleton::StopOutcome::StopRequested {
+                        pid,
+                    }
+                ) => {
 
-        return;
-    }
-
-
-    crate::parse_arguments::Command::Version => {
-
-        crate::parse_arguments::print_version();
-
-        return;
-    }
-
-
-    crate::parse_arguments::Command::Reserved {
-        option,
-    } => {
-
-        crate::parse_arguments::print_reserved_option(
-            &option
-        );
-
-        return;
-    }
-
-crate::parse_arguments::Command::Control {
-    shader_name,
-} => {
-
-    let control_audio_backend =
-        crate::audio_backend::create_backend()
-            .ok();
-
-    let control_audio_bands =
-        control_audio_backend
-            .as_ref()
-            .map(
-                |backend| {
-                    backend.shared_bands()
+                    println!(
+                        "Screenshaver stop requested for process {}.",
+                        pid
+                    );
                 }
-            );
 
-    match crate::edit_shader::run(
-        shader_name,
-        control_audio_bands,
-    ) {
+                Ok(
+                    crate::singleton::StopOutcome::NotRunning
+                ) => {
 
-        Ok(()) => {}
+                    println!(
+                        "Screenshaver is not running."
+                    );
+                }
 
-        Err(error) => {
+                Err(error) => {
 
-            eprintln!(
-                "[CONTROL CENTER] {}",
-                error
-            );
-
-
-            if let Some(logfile) =
-                runtime_logfile.as_ref()
-            {
-                crate::logger::error(
-                    logfile,
-                    &format!(
-                        "[CONTROL_CENTER] {}",
-                        error,
-                    ),
-                );
+                    eprintln!(
+                        "[MAIN] STOP ERROR: {}",
+                        error
+                    );
+                }
             }
+
+            return;
         }
+
+
+        crate::parse_arguments::Command::Help => {
+
+            crate::parse_arguments::print_help();
+
+            return;
+        }
+
+
+        crate::parse_arguments::Command::Version => {
+
+            crate::parse_arguments::print_version();
+
+            return;
+        }
+
+
+        crate::parse_arguments::Command::Run
+        | crate::parse_arguments::Command::Start
+        | crate::parse_arguments::Command::Control { .. } => {}
     }
 
 
-    return;
-}
-
-
-
-
-
-}
-
-     let identity =
+    let identity =
         crate::startup_checks::current_user_identity();
 
     if identity.is_root() {
@@ -329,6 +225,40 @@ crate::parse_arguments::Command::Control {
         return;
     }
 
+
+    let config_dir =
+        match initialize_user_files::initialize() {
+
+            Ok(path) => path,
+
+            Err(error) => {
+
+                eprintln!(
+                    "Screenshaver could not initialize its user files: {error}"
+                );
+
+                std::process::exit(
+                    1
+                );
+            }
+        };
+
+
+    println!(
+        "Screenshaver configuration directory: {}",
+        config_dir.display()
+    );
+
+
+    let logfile =
+        crate::locate_paths::runtime_log_path();
+
+
+    crate::logger::reset_log(
+        &logfile
+    );
+
+
     println!(
         "[MAIN] Loading configuration..."
     );
@@ -353,17 +283,13 @@ crate::parse_arguments::Command::Control {
                 );
 
 
-                if let Some(logfile) =
-                    runtime_logfile.as_ref()
-                {
-                    crate::logger::error(
-                        logfile,
-                        &format!(
-                            "[CONFIG] Unable to load configuration: {}",
-                            error,
-                        ),
-                    );
-                }
+                crate::logger::error(
+                    &logfile,
+                    &format!(
+                        "[CONFIG] Unable to load configuration: {}",
+                        error,
+                    ),
+                );
 
 
                 return;
@@ -373,15 +299,6 @@ crate::parse_arguments::Command::Control {
 
     let mut cfg =
         result.config;
-
-
-    let logfile =
-        runtime_logfile
-            .as_ref()
-            .expect(
-                "Runtime command did not initialize the log path"
-            )
-            .clone();
 
 
     crate::logger::set_enabled(
@@ -398,6 +315,129 @@ crate::parse_arguments::Command::Control {
         &logfile,
         "[MAIN] Screenshaver runtime started",
     );
+
+
+    if cfg.debug_log {
+
+        crate::logger::debug(
+            &logfile,
+            "[MAIN] === CONFIG DUMP ===",
+        );
+
+
+        for line in &result.diagnostics {
+
+            crate::logger::debug(
+                &logfile,
+                line,
+            );
+        }
+
+
+        crate::logger::debug(
+            &logfile,
+            "[MAIN] === CONFIG END ===",
+        );
+    }
+
+
+    let database_connection =
+        match crate::evaluate_database::evaluate() {
+
+            Ok(connection) => {
+                connection
+            }
+
+            Err(error) => {
+
+                eprintln!(
+                    "[MAIN] DATABASE ERROR: {}",
+                    error
+                );
+
+
+                crate::logger::error(
+                    &logfile,
+                    &format!(
+                        "[DATABASE] Unable to prepare Screenshaver database: {}",
+                        error,
+                    ),
+                );
+
+
+                return;
+            }
+        };
+
+
+    match command {
+
+        crate::parse_arguments::Command::Control {
+            shader_name,
+        } => {
+
+            let control_audio_backend =
+                crate::audio_backend::create_backend()
+                    .ok();
+
+
+            let control_audio_bands =
+                control_audio_backend
+                    .as_ref()
+                    .map(
+                        |backend| {
+                            backend.shared_bands()
+                        }
+                    );
+
+
+            match crate::edit_shader::run(
+                shader_name,
+                control_audio_bands,
+            ) {
+
+                Ok(()) => {}
+
+                Err(error) => {
+
+                    eprintln!(
+                        "[CONTROL CENTER] {}",
+                        error
+                    );
+
+
+                    crate::logger::error(
+                        &logfile,
+                        &format!(
+                            "[CONTROL_CENTER] {}",
+                            error,
+                        ),
+                    );
+                }
+            }
+
+
+            drop(
+                database_connection
+            );
+
+            return;
+        }
+
+
+        crate::parse_arguments::Command::Run
+        | crate::parse_arguments::Command::Start => {}
+
+
+        crate::parse_arguments::Command::Stop
+        | crate::parse_arguments::Command::Help
+        | crate::parse_arguments::Command::Version => {
+
+            unreachable!(
+                "Database-independent command reached runtime startup"
+            );
+        }
+    }
 
 
     // Audio is an optional runtime capability.  Failure to locate a usable
@@ -454,30 +494,6 @@ crate::parse_arguments::Command::Control {
         };
 
 
-    if cfg.debug_log {
-
-        crate::logger::debug(
-            &logfile,
-            "[MAIN] === CONFIG DUMP ===",
-        );
-
-
-        for line in &result.diagnostics {
-
-            crate::logger::debug(
-                &logfile,
-                line,
-            );
-        }
-
-
-        crate::logger::debug(
-            &logfile,
-            "[MAIN] === CONFIG END ===",
-        );
-    }
-
-
     let _singleton =
         match crate::singleton::acquire() {
 
@@ -504,17 +520,13 @@ crate::parse_arguments::Command::Control {
                 );
 
 
-                if let Some(logfile) =
-                    runtime_logfile.as_ref()
-                {
-                    crate::logger::error(
-                        logfile,
-                        &format!(
-                            "[MAIN] Singleton acquisition failed: {}",
-                            error,
-                        ),
-                    );
-                }
+                crate::logger::error(
+                    &logfile,
+                    &format!(
+                        "[MAIN] Singleton acquisition failed: {}",
+                        error,
+                    ),
+                );
 
 
                 return;
@@ -567,14 +579,10 @@ crate::parse_arguments::Command::Control {
                 );
 
 
-                if let Some(logfile) =
-                    runtime_logfile.as_ref()
-                {
-                    crate::logger::information(
-                        logfile,
-                        "[TRAY] System tray icon registered successfully",
-                    );
-                }
+                crate::logger::information(
+                    &logfile,
+                    "[TRAY] System tray icon registered successfully",
+                );
 
 
                 Some(handle)
@@ -588,17 +596,13 @@ crate::parse_arguments::Command::Control {
                 );
 
 
-                if let Some(logfile) =
-                    runtime_logfile.as_ref()
-                {
-                    crate::logger::warning(
-                        logfile,
-                        &format!(
-                            "[TRAY] System tray icon unavailable: {:?}",
-                            error,
-                        ),
-                    );
-                }
+                crate::logger::warning(
+                    &logfile,
+                    &format!(
+                        "[TRAY] System tray icon unavailable: {:?}",
+                        error,
+                    ),
+                );
 
 
                 None
@@ -1496,6 +1500,11 @@ crate::parse_arguments::Command::Control {
     crate::logger::information(
         &logfile,
         "[MAIN] Pipeline complete",
+    );
+
+
+    drop(
+        database_connection
     );
 
 

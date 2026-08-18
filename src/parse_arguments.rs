@@ -10,23 +10,12 @@ pub enum Command {
 
     Version,
 
-    Reserved {
-        option: String,
-    },
-
     Control {
         shader_name: Option<String>,
     },
 }
 
 
-const RESERVED_OPTIONS: [&str; 5] = [
-    "--verify-cache",
-    "--rebuild-cache",
-    "--clean-cache",
-    "--benchmark",
-    "--evaluate",
-];
 
 
 pub fn parse() -> Result<Command, String> {
@@ -109,27 +98,6 @@ pub fn parse() -> Result<Command, String> {
 
             parse_control(
                 &args[1..]
-            )
-        }
-
-
-        option
-            if RESERVED_OPTIONS.contains(
-                &option
-            ) =>
-        {
-
-            require_no_extra_arguments(
-                &args,
-                option,
-            )?;
-
-
-            Ok(
-                Command::Reserved {
-                    option:
-                        option.to_string(),
-                }
             )
         }
 
@@ -292,23 +260,6 @@ pub fn print_help() {
         env!(
             "CARGO_PKG_VERSION"
         )
-    );
-}
-
-
-pub fn print_reserved_option(
-    option: &str,
-) {
-
-    println!(
-        "Screenshaver {}\n\n\
-         The '{}' option has been reserved for a future version of Screenshaver.\n\n\
-         This feature has not yet been implemented.\n\n\
-         Run 'screenshaver --help' to view available and reserved options.",
-        env!(
-            "CARGO_PKG_VERSION"
-        ),
-        option,
     );
 }
 

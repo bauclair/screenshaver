@@ -42,38 +42,37 @@ pub fn validate_integrity(
     }
 
 
-    let foreign_key_violation_count: i64 =
+    validate_foreign_keys(
         connection
-            .query_row(
-                "SELECT COUNT(*)
-                 FROM pragma_foreign_key_check",
-                [],
-                |row| {
-                    row.get(
-                        0
-                    )
-                },
-            )
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to run SQLite foreign-key check: {}",
-                        error,
-                    )
-                }
-            )?;
+    )?;
 
 
-    if foreign_key_violation_count
-        != 0
-    {
-        return Err(
-            format!(
-                "SQLite foreign-key check failed: {} violation(s)",
-                foreign_key_violation_count,
-            )
-        );
-    }
+    Ok(())
+}
+
+
+pub fn validate_startup(
+    connection: &Connection,
+) -> Result<(), String> {
+
+    validate_startup_metadata(
+        connection
+    )?;
+
+
+    validate_required_tables(
+        connection
+    )?;
+
+
+    validate_foreign_key_enforcement(
+        connection
+    )?;
+
+
+    validate_foreign_keys(
+        connection
+    )?;
 
 
     Ok(())
@@ -119,6 +118,247 @@ pub fn validate_initialization(
     validate_integrity(
         connection
     )?;
+
+
+    Ok(())
+}
+
+
+fn validate_startup_metadata(
+    connection: &Connection,
+) -> Result<(), String> {
+
+    let metadata_count: i64 =
+        connection
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM schema_metadata",
+                [],
+                |row| {
+                    row.get(
+                        0
+                    )
+                },
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to inspect schema_metadata during startup validation: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    if metadata_count
+        != 1
+    {
+        return Err(
+            format!(
+                "Startup database validation failed: expected exactly one schema_metadata row, found {}",
+                metadata_count,
+            )
+        );
+    }
+
+
+    let (
+        metadata_id,
+        schema_version,
+    ): (
+        i64,
+        i64,
+    ) =
+        connection
+            .query_row(
+                "SELECT
+                     metadata_id,
+                     schema_version
+                 FROM schema_metadata",
+                [],
+                |row| {
+                    Ok(
+                        (
+                            row.get(
+                                0
+                            )?,
+                            row.get(
+                                1
+                            )?,
+                        )
+                    )
+                },
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to read schema metadata during startup validation: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    if metadata_id
+        != 1
+    {
+        return Err(
+            format!(
+                "Startup database validation failed: expected metadata_id 1, found {}",
+                metadata_id,
+            )
+        );
+    }
+
+
+    if schema_version
+        < 1
+    {
+        return Err(
+            format!(
+                "Startup database validation failed: schema version {} is invalid",
+                schema_version,
+            )
+        );
+    }
+
+
+    Ok(())
+}
+
+
+fn validate_required_tables(
+    connection: &Connection,
+) -> Result<(), String> {
+
+    const REQUIRED_TABLES: [&str; 4] = [
+        "schema_metadata",
+        "shaders",
+        "shader_policies",
+        "curated_palette",
+    ];
+
+
+    for table_name in
+        REQUIRED_TABLES
+    {
+        let table_count: i64 =
+            connection
+                .query_row(
+                    "SELECT COUNT(*)
+                     FROM sqlite_master
+                     WHERE type = 'table'
+                       AND name = ?1",
+                    [table_name],
+                    |row| {
+                        row.get(
+                            0
+                        )
+                    },
+                )
+                .map_err(
+                    |error| {
+                        format!(
+                            "Unable to verify required database table '{}': {}",
+                            table_name,
+                            error,
+                        )
+                    }
+                )?;
+
+
+        if table_count
+            != 1
+        {
+            return Err(
+                format!(
+                    "Startup database validation failed: required table '{}' is missing",
+                    table_name,
+                )
+            );
+        }
+    }
+
+
+    Ok(())
+}
+
+
+fn validate_foreign_key_enforcement(
+    connection: &Connection,
+) -> Result<(), String> {
+
+    let foreign_keys_enabled: i64 =
+        connection
+            .query_row(
+                "PRAGMA foreign_keys",
+                [],
+                |row| {
+                    row.get(
+                        0
+                    )
+                },
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to inspect SQLite foreign-key enforcement: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    if foreign_keys_enabled
+        != 1
+    {
+        return Err(
+            "Startup database validation failed: SQLite foreign-key enforcement is not enabled"
+                .to_string()
+        );
+    }
+
+
+    Ok(())
+}
+
+
+fn validate_foreign_keys(
+    connection: &Connection,
+) -> Result<(), String> {
+
+    let foreign_key_violation_count: i64 =
+        connection
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM pragma_foreign_key_check",
+                [],
+                |row| {
+                    row.get(
+                        0
+                    )
+                },
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to run SQLite foreign-key check: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    if foreign_key_violation_count
+        != 0
+    {
+        return Err(
+            format!(
+                "SQLite foreign-key check failed: {} violation(s)",
+                foreign_key_violation_count,
+            )
+        );
+    }
 
 
     Ok(())
