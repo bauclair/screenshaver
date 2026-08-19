@@ -266,8 +266,6 @@ fn create_file_if_missing(path: &Path, contents: &str) -> io::Result<bool> {
 pub fn initialize() -> io::Result<PathBuf> {
     let config_dir = config_directory()?;
 
-    let cache_dir = config_dir.join("cache");
-    let rejected_dir = config_dir.join("rejected");
     let shaders_dir = config_dir.join("shaders");
 
     let config_file = config_dir.join("screenshaver.toml");
@@ -275,8 +273,6 @@ pub fn initialize() -> io::Result<PathBuf> {
 
     // create_dir_all() creates missing parents and succeeds when the
     // directories already exist.
-    fs::create_dir_all(&cache_dir)?;
-    fs::create_dir_all(&rejected_dir)?;
     fs::create_dir_all(&shaders_dir)?;
 
     create_file_if_missing(&config_file, DEFAULT_CONFIG)?;

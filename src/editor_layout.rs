@@ -529,8 +529,6 @@ pub struct EditorOutput {
         Option<BulkCreateRequest>,
     pub recent_shader_requested: Option<usize>,
     pub clear_recent_files_requested: bool,
-    pub delete_cache_inspect_requested: bool,
-    pub delete_cache_confirmed_requested: bool,
     pub refresh_shader_requested: bool,
     pub policy_row_command_requested:
         Option<(PolicyRowReference, PolicyRowCommand)>,
@@ -829,9 +827,6 @@ pub struct EditWindowOverlay {
 
     pending_confirmation:
         Option<PendingConfirmation>,
-
-    pending_cache_delete_count:
-        Option<usize>,
 
     control_configuration:
         Option<ControlConfiguration>,
@@ -1134,9 +1129,6 @@ impl EditWindowOverlay {
                 pending_confirmation:
                     None,
 
-                pending_cache_delete_count:
-                    None,
-
                 control_configuration:
                     None,
 
@@ -1164,20 +1156,6 @@ impl EditWindowOverlay {
                     None,
             }
         )
-    }
-
-
-    pub fn begin_cache_delete_confirmation(
-        &mut self,
-        file_count: usize,
-    ) {
-
-        if file_count > 0 {
-            self.pending_cache_delete_count =
-                Some(
-                    file_count
-                );
-        }
     }
 
 
@@ -2010,12 +1988,6 @@ impl EditWindowOverlay {
         let mut clear_recent_files_requested =
             false;
 
-        let mut delete_cache_inspect_requested =
-            false;
-
-        let mut delete_cache_confirmed_requested =
-            false;
-
         let mut refresh_shader_requested =
             false;
 
@@ -2201,7 +2173,6 @@ impl EditWindowOverlay {
                                     && !self.pending_exit_confirmation
                                     && !self.pending_bulk_save_confirmation
                                     && self.pending_bulk_create_candidates.is_none()
-                                    && self.pending_cache_delete_count.is_none()
                             );
 
                             let mut hover_help_message:
@@ -2460,7 +2431,6 @@ impl EditWindowOverlay {
                                                         control_configuration_baseline.as_ref(),
                                                         recent_shader_paths,
                                                         &mut clear_recent_files_requested,
-                                                        &mut delete_cache_inspect_requested,
                                                         &mut control_configuration_save_requested,
                                                         &mut control_single_browse_requested,
                                                         &mut control_single_recent_requested,
@@ -2623,13 +2593,6 @@ impl EditWindowOverlay {
                         &mut self.pending_bulk_create_external_target,
                         self.pending_bulk_create_rejected_count,
                         &mut bulk_create_requested,
-                    );
-
-
-                    draw_cache_delete_confirmation_modal(
-                        context,
-                        &mut self.pending_cache_delete_count,
-                        &mut delete_cache_confirmed_requested,
                     );
 
 
@@ -2978,10 +2941,6 @@ impl EditWindowOverlay {
             recent_shader_requested,
 
             clear_recent_files_requested,
-
-            delete_cache_inspect_requested,
-
-            delete_cache_confirmed_requested,
 
             refresh_shader_requested,
 
@@ -8949,93 +8908,6 @@ fn draw_post_processing_panel(
 
 
 
-fn draw_cache_delete_confirmation_modal(
-    context: &egui::Context,
-    pending_file_count: &mut Option<usize>,
-    confirmed_requested: &mut bool,
-) {
-
-    let Some(file_count) =
-        *pending_file_count
-    else {
-        return;
-    };
-
-
-    egui::Window::new(
-        "Delete Cache"
-    )
-    .collapsible(
-        false
-    )
-    .resizable(
-        false
-    )
-    .anchor(
-        egui::Align2::CENTER_CENTER,
-        egui::Vec2::ZERO,
-    )
-    .show(
-        context,
-        |ui| {
-            ui.label(
-                format!(
-                    "{} cache {} will be deleted.",
-                    file_count,
-                    if file_count == 1 {
-                        "file"
-                    } else {
-                        "files"
-                    },
-                )
-            );
-
-
-            ui.add_space(
-                8.0
-            );
-
-
-            ui.label(
-                "Do you want to continue?"
-            );
-
-
-            ui.add_space(
-                10.0
-            );
-
-
-            ui.horizontal(
-                |ui| {
-                    if ui.button(
-                        "Cancel"
-                    )
-                    .clicked()
-                    {
-                        *pending_file_count =
-                            None;
-                    }
-
-
-                    if ui.button(
-                        "Continue"
-                    )
-                    .clicked()
-                    {
-                        *confirmed_requested =
-                            true;
-
-                        *pending_file_count =
-                            None;
-                    }
-                },
-            );
-        },
-    );
-}
-
-
 // ============================================================
 // CONFIG TAB
 // ============================================================
@@ -9049,7 +8921,6 @@ fn draw_config_tab(
     baseline: Option<&ControlConfiguration>,
     recent_shader_paths: &[PathBuf],
     clear_recent_files_requested: &mut bool,
-    delete_cache_inspect_requested: &mut bool,
     save_requested: &mut bool,
     single_browse_requested: &mut Option<PolicyTarget>,
     single_recent_requested: &mut Option<(PolicyTarget, usize)>,
@@ -9243,33 +9114,6 @@ fn draw_config_tab(
                 }
             }
 
-
-            ui.add_space(
-                28.0 * metrics.scale
-            );
-
-
-            let delete_cache_response =
-                ui.button(
-                    "Delete Cache"
-                );
-
-
-            update_hover_help(
-                &delete_cache_response,
-                hover_help_message,
-                "Delete cached preprocessed shader files.",
-            );
-
-
-            if delete_cache_response.clicked() {
-                *delete_cache_inspect_requested =
-                    true;
-
-                *status_message =
-                    "Checking shader cache..."
-                        .to_string();
-            }
         },
     );
 }

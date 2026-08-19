@@ -1,4 +1,3 @@
-use std::fs;
 use std::io;
 use std::path::{
     Path,
@@ -18,30 +17,97 @@ pub fn locate_shader_files(
     directory: &Path,
 ) -> io::Result<Vec<PathBuf>> {
 
+    let source_path =
+        directory
+            .to_string_lossy()
+            .to_string();
+
+
+    let connection =
+        crate::open_database::open()
+            .map_err(
+                |error| {
+                    io::Error::new(
+                        io::ErrorKind::Other,
+                        format!(
+                            "Unable to open database for wallpaper shader discovery: {}",
+                            error
+                        ),
+                    )
+                }
+            )?;
+
+
+    let mut statement =
+        connection
+            .prepare(
+                "SELECT filename
+                 FROM shaders
+                 WHERE source_path = ?1
+                   AND file_status = 'present'
+                 ORDER BY filename COLLATE NOCASE,
+                          filename"
+            )
+            .map_err(
+                |error| {
+                    io::Error::new(
+                        io::ErrorKind::Other,
+                        format!(
+                            "Unable to prepare wallpaper shader discovery query: {}",
+                            error
+                        ),
+                    )
+                }
+            )?;
+
+
+    let rows =
+        statement
+            .query_map(
+                rusqlite::params![
+                    source_path
+                ],
+                |row| {
+                    row.get::<_, String>(0)
+                },
+            )
+            .map_err(
+                |error| {
+                    io::Error::new(
+                        io::ErrorKind::Other,
+                        format!(
+                            "Unable to query wallpaper shader discovery rows: {}",
+                            error
+                        ),
+                    )
+                }
+            )?;
+
+
     let mut shader_files =
         Vec::new();
 
 
-    for entry in
-        fs::read_dir(
-            directory
-        )?
-    {
-        let entry =
-            entry?;
+    for row in rows {
 
-
-        let file_type =
-            entry.file_type()?;
-
-
-        if !file_type.is_file() {
-            continue;
-        }
+        let filename =
+            row.map_err(
+                |error| {
+                    io::Error::new(
+                        io::ErrorKind::Other,
+                        format!(
+                            "Unable to decode wallpaper shader discovery row: {}",
+                            error
+                        ),
+                    )
+                }
+            )?;
 
 
         let path =
-            entry.path();
+            directory.join(
+                filename
+            );
 
 
         if is_supported_shader_file(
@@ -52,40 +118,6 @@ pub fn locate_shader_files(
             );
         }
     }
-
-
-    shader_files.sort_by(
-        |left, right| {
-
-            let left_name =
-                left
-                    .file_name()
-                    .and_then(
-                        |name| {
-                            name.to_str()
-                        }
-                    )
-                    .unwrap_or_default()
-                    .to_ascii_lowercase();
-
-
-            let right_name =
-                right
-                    .file_name()
-                    .and_then(
-                        |name| {
-                            name.to_str()
-                        }
-                    )
-                    .unwrap_or_default()
-                    .to_ascii_lowercase();
-
-
-            left_name.cmp(
-                &right_name
-            )
-        }
-    );
 
 
     Ok(
@@ -120,4 +152,3 @@ fn is_supported_shader_file(
             | "shaver"
     )
 }
-

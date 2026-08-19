@@ -1199,33 +1199,17 @@ pub fn load_config(
         )?;
 
 
-    let screensaver_external_paths =
-        merge_external_path_tables(
-            raw.screensaver_shader_paths,
-            raw.screensaver_external_paths,
-        );
-
-
-    let wallpaper_external_paths =
-        merge_external_path_tables(
-            raw.wallpaper_shader_paths,
-            raw.wallpaper_external_paths,
-        );
-
-
+    // Per-shader policy authority now lives in screenshaver.db.
+    // The legacy TOML policy/path tables are intentionally ignored.
     let screensaver_policies =
-        parse_policy_table(
-            raw.screensaver_policies,
-            screensaver_external_paths,
-            PolicyTarget::Screensaver,
+        load_database_policy_table(
+            PolicyTarget::Screensaver
         )?;
 
 
     let wallpaper_policies =
-        parse_policy_table(
-            raw.wallpaper_policies,
-            wallpaper_external_paths,
-            PolicyTarget::Wallpaper,
+        load_database_policy_table(
+            PolicyTarget::Wallpaper
         )?;
 
 
@@ -1948,6 +1932,431 @@ fn merge_external_path_tables(
 
     merged
 }
+
+fn load_database_policy_table(
+    target: PolicyTarget,
+) -> Result<Vec<ShaderPolicy>, String> {
+
+    #[derive(Debug)]
+    struct DatabasePolicyRow {
+        policy_name: String,
+        filename: String,
+        source_path: String,
+        texture_mode: Option<String>,
+        texture_family: Option<String>,
+        texture_primitives: Option<i64>,
+        palette_mode: Option<String>,
+        palette_color: Option<String>,
+        rendered_fps: Option<i64>,
+        animation_speed: Option<f64>,
+        anti_aliasing: Option<String>,
+        dithering: Option<String>,
+        color_precision: Option<String>,
+        render_scale: Option<f64>,
+        bloom_mode: String,
+        bloom_intensity: f64,
+        bloom_threshold: f64,
+        invert_colors: i64,
+        flip_horizontal: i64,
+        flip_vertical: i64,
+        hue_rotation: f64,
+    }
+
+
+    let target_name =
+        match target {
+            PolicyTarget::Screensaver => "screensaver",
+            PolicyTarget::Wallpaper => "wallpaper",
+        };
+
+
+    let connection =
+        crate::open_database::open()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to open Screenshaver database while loading {} policies: {}",
+                        target_name,
+                        error,
+                    )
+                }
+            )?;
+
+
+    let mut statement =
+        connection
+            .prepare(
+                "SELECT
+                     p.policy_name,
+                     s.filename,
+                     s.source_path,
+                     p.texture_mode,
+                     p.texture_family,
+                     p.texture_primitives,
+                     p.palette_mode,
+                     p.palette_color,
+                     p.rendered_fps,
+                     p.animation_speed,
+                     p.anti_aliasing,
+                     p.dithering,
+                     p.color_precision,
+                     p.render_scale,
+                     p.bloom_mode,
+                     p.bloom_intensity,
+                     p.bloom_threshold,
+                     p.invert_colors,
+                     p.flip_horizontal,
+                     p.flip_vertical,
+                     p.hue_rotation
+                 FROM shader_policies AS p
+                 JOIN shaders AS s
+                   ON s.shader_id = p.shader_id
+                 WHERE p.policy_target = ?1
+                 ORDER BY p.policy_name_key,
+                          p.policy_id"
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to prepare {} policy query: {}",
+                        target_name,
+                        error,
+                    )
+                }
+            )?;
+
+
+    let rows =
+        statement
+            .query_map(
+                rusqlite::params![
+                    target_name
+                ],
+                |row| {
+                    Ok(
+                        DatabasePolicyRow {
+                            policy_name: row.get(0)?,
+                            filename: row.get(1)?,
+                            source_path: row.get(2)?,
+                            texture_mode: row.get(3)?,
+                            texture_family: row.get(4)?,
+                            texture_primitives: row.get(5)?,
+                            palette_mode: row.get(6)?,
+                            palette_color: row.get(7)?,
+                            rendered_fps: row.get(8)?,
+                            animation_speed: row.get(9)?,
+                            anti_aliasing: row.get(10)?,
+                            dithering: row.get(11)?,
+                            color_precision: row.get(12)?,
+                            render_scale: row.get(13)?,
+                            bloom_mode: row.get(14)?,
+                            bloom_intensity: row.get(15)?,
+                            bloom_threshold: row.get(16)?,
+                            invert_colors: row.get(17)?,
+                            flip_horizontal: row.get(18)?,
+                            flip_vertical: row.get(19)?,
+                            hue_rotation: row.get(20)?,
+                        }
+                    )
+                },
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to query {} policies from database: {}",
+                        target_name,
+                        error,
+                    )
+                }
+            )?;
+
+
+    let managed_directory =
+        crate::locate_paths::shader_dir();
+
+
+    let mut policies =
+        Vec::new();
+
+
+    for row in rows {
+
+        let row =
+            row.map_err(
+                |error| {
+                    format!(
+                        "Unable to decode {} policy row from database: {}",
+                        target_name,
+                        error,
+                    )
+                }
+            )?;
+
+
+        let mut tokens =
+            Vec::<String>::new();
+
+
+        match row.texture_mode
+            .as_deref()
+        {
+            None => {}
+
+            Some("random") => {
+                tokens.push(
+                    "texture:random".to_string()
+                );
+            }
+
+            Some("specific") => {
+                let family =
+                    row.texture_family
+                        .as_deref()
+                        .ok_or_else(
+                            || {
+                                format!(
+                                    "Database policy '{}' specifies texture_mode=specific without texture_family",
+                                    row.policy_name,
+                                )
+                            }
+                        )?;
+
+                let primitives =
+                    row.texture_primitives
+                        .ok_or_else(
+                            || {
+                                format!(
+                                    "Database policy '{}' specifies texture_mode=specific without texture_primitives",
+                                    row.policy_name,
+                                )
+                            }
+                        )?;
+
+                tokens.push(
+                    format!(
+                        "texture:{}:{}",
+                        family,
+                        primitives,
+                    )
+                );
+            }
+
+            Some(other) => {
+                return Err(
+                    format!(
+                        "Database policy '{}' has unsupported texture_mode '{}'",
+                        row.policy_name,
+                        other,
+                    )
+                );
+            }
+        }
+
+
+        match row.palette_mode
+            .as_deref()
+        {
+            None => {}
+
+            Some("random") => {
+                tokens.push(
+                    "palette:random".to_string()
+                );
+            }
+
+            Some("specific") => {
+                let color =
+                    row.palette_color
+                        .as_deref()
+                        .ok_or_else(
+                            || {
+                                format!(
+                                    "Database policy '{}' specifies palette_mode=specific without palette_color",
+                                    row.policy_name,
+                                )
+                            }
+                        )?;
+
+                tokens.push(
+                    format!(
+                        "palette:{}",
+                        color,
+                    )
+                );
+            }
+
+            Some(other) => {
+                return Err(
+                    format!(
+                        "Database policy '{}' has unsupported palette_mode '{}'",
+                        row.policy_name,
+                        other,
+                    )
+                );
+            }
+        }
+
+
+        if let Some(value) =
+            row.rendered_fps
+        {
+            tokens.push(
+                format!(
+                    "fps:{}",
+                    value,
+                )
+            );
+        }
+
+
+        if let Some(value) =
+            row.animation_speed
+        {
+            tokens.push(
+                format!(
+                    "speed:{}",
+                    value,
+                )
+            );
+        }
+
+
+        if let Some(value) =
+            row.anti_aliasing.as_deref()
+        {
+            tokens.push(
+                format!(
+                    "anti_aliasing:{}",
+                    value,
+                )
+            );
+        }
+
+
+        if let Some(value) =
+            row.dithering.as_deref()
+        {
+            tokens.push(
+                format!(
+                    "dithering:{}",
+                    value,
+                )
+            );
+        }
+
+
+        if let Some(value) =
+            row.color_precision.as_deref()
+        {
+            tokens.push(
+                format!(
+                    "color_precision:{}",
+                    value,
+                )
+            );
+        }
+
+
+        if let Some(value) =
+            row.render_scale
+        {
+            tokens.push(
+                format!(
+                    "render_scale:{}",
+                    value,
+                )
+            );
+        }
+
+
+        tokens.push(
+            format!(
+                "bloom:{}",
+                row.bloom_mode,
+            )
+        );
+
+        tokens.push(
+            format!(
+                "bloom_intensity:{}",
+                row.bloom_intensity,
+            )
+        );
+
+        tokens.push(
+            format!(
+                "bloom_threshold:{}",
+                row.bloom_threshold,
+            )
+        );
+
+        tokens.push(
+            format!(
+                "invert_colors:{}",
+                row.invert_colors != 0,
+            )
+        );
+
+        tokens.push(
+            format!(
+                "flip_horizontal:{}",
+                row.flip_horizontal != 0,
+            )
+        );
+
+        tokens.push(
+            format!(
+                "flip_vertical:{}",
+                row.flip_vertical != 0,
+            )
+        );
+
+        tokens.push(
+            format!(
+                "hue_rotation:{}",
+                row.hue_rotation,
+            )
+        );
+
+
+        let registered_directory =
+            PathBuf::from(
+                &row.source_path
+            );
+
+
+        let source_path =
+            if registered_directory
+                == managed_directory
+            {
+                None
+            } else {
+                Some(
+                    registered_directory
+                        .join(
+                            &row.filename
+                        )
+                )
+            };
+
+
+        policies.push(
+            parse_policy_specification(
+                row.policy_name,
+                row.filename,
+                source_path,
+                &tokens.join(" "),
+                target,
+            )?
+        );
+    }
+
+
+    Ok(
+        policies
+    )
+}
+
 
 fn parse_policy_table(
     raw_policies: BTreeMap<String, String>,

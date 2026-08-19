@@ -12,8 +12,6 @@ mod parse_texture_specification;
 
 mod define_constants;
 mod locate_paths;
-mod delete_cache;
-mod manage_cache;
 
 mod query_session;
 mod session_backend;
@@ -36,7 +34,6 @@ mod compile_shader;
 mod reconcile_shaders;
 mod render_frame;
 mod splash_screen;
-mod reject_shader;
 mod generate_bricks;
 mod generate_cellular;
 mod generate_clouds;
@@ -266,6 +263,37 @@ fn main() {
     );
 
 
+    // Policy rows are now authoritative in SQLite, so the database must be
+    // available before load_config() hydrates per-shader policy state.
+    let mut database_connection =
+        match crate::evaluate_database::evaluate() {
+
+            Ok(connection) => {
+                connection
+            }
+
+            Err(error) => {
+
+                eprintln!(
+                    "[MAIN] DATABASE ERROR: {}",
+                    error
+                );
+
+
+                crate::logger::error(
+                    &logfile,
+                    &format!(
+                        "[DATABASE] Unable to prepare Screenshaver database: {}",
+                        error,
+                    ),
+                );
+
+
+                return;
+            }
+        };
+
+
     let cfg_path =
         crate::locate_paths::config_path();
 
@@ -341,167 +369,6 @@ fn main() {
             "[MAIN] === CONFIG END ===",
         );
     }
-
-
-    let mut database_connection =
-        match crate::evaluate_database::evaluate() {
-
-            Ok(connection) => {
-                connection
-            }
-
-            Err(error) => {
-
-                eprintln!(
-                    "[MAIN] DATABASE ERROR: {}",
-                    error
-                );
-
-
-                crate::logger::error(
-                    &logfile,
-                    &format!(
-                        "[DATABASE] Unable to prepare Screenshaver database: {}",
-                        error,
-                    ),
-                );
-
-
-                return;
-            }
-        };
-
-
-        
-    // TEMPORARY DATABASE RECONCILIATION TEST
-    match crate::reconcile_shaders::reconcile(
-        &mut database_connection
-    ) {
-
-        Ok(outcome) => {
-
-            println!(
-                "[DATABASE TEST] Shader reconciliation complete:"
-            );
-
-            println!(
-                "  inserted:          {}",
-                outcome.inserted
-            );
-
-            println!(
-                "  updated:           {}",
-                outcome.updated
-            );
-
-            println!(
-                "  unchanged:         {}",
-                outcome.unchanged
-            );
-
-            println!(
-                "  marked missing:    {}",
-                outcome.marked_missing
-            );
-
-            println!(
-                "  marked unreadable: {}",
-                outcome.marked_unreadable
-            );
-
-            println!(
-                "  rejected:          {}",
-                outcome.rejected
-            );
-        }
-
-
-        Err(error) => {
-
-            eprintln!(
-                "[DATABASE TEST] Shader reconciliation failed: {}",
-                error
-            );
-
-
-            return;
-        }
-    }
-
-
-
-match database_connection.query_row(
-    "SELECT
-         shader_id,
-         file_status,
-         source_hash
-     FROM shaders
-     WHERE source_path = ?1
-       AND filename = ?2",
-    rusqlite::params![
-        crate::locate_paths::shader_dir()
-            .to_string_lossy()
-            .to_string(),
-        "Tillamook Bay.glsl",
-    ],
-    |row| {
-        Ok(
-            (
-                row.get::<_, i64>(
-                    0
-                )?,
-                row.get::<_, String>(
-                    1
-                )?,
-                row.get::<_, Option<String>>(
-                    2
-                )?,
-            )
-        )
-    },
-) {
-    Ok(
-        (
-            shader_id,
-            file_status,
-            source_hash,
-        )
-    ) => {
-
-        println!(
-            "[DATABASE TEST] Tillamook Bay.glsl:"
-        );
-
-        println!(
-            "  shader_id:   {}",
-            shader_id
-        );
-
-        println!(
-            "  file_status: {}",
-            file_status
-        );
-
-        println!(
-            "  source_hash: {}",
-            source_hash
-                .as_deref()
-                .unwrap_or(
-                    "<none>"
-                )
-        );
-    }
-
-
-    Err(error) => {
-
-        eprintln!(
-            "[DATABASE TEST] Unable to inspect Tillamook Bay.glsl: {}",
-            error
-        );
-    }
-}
-
 
 
     match command {
@@ -666,19 +533,6 @@ match database_connection.query_row(
                 return;
             }
         };
-
-
-    if let Err(error) =
-        crate::manage_cache::delete_stale_cache_entries()
-    {
-        crate::logger::warning(
-            &logfile,
-            &format!(
-                "[CACHE] Garbage collection was skipped: {}",
-                error,
-            ),
-        );
-    }
 
 
     let (

@@ -251,8 +251,6 @@ pub fn print_help() {
              ~/.config/screenshaver/\n\
              ~/.config/screenshaver/screenshaver.toml\n\
              ~/.config/screenshaver/shaders/\n\
-             ~/.config/screenshaver/cache/\n\
-             ~/.config/screenshaver/rejected/\n\
              ~/.config/screenshaver/screenshaver.log\n\
          \n\
          Project status:\n\

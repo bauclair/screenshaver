@@ -27,20 +27,6 @@ pub fn shader_dir() -> PathBuf {
 }
 
 
-pub fn shader_cache_dir() -> PathBuf {
-
-    screenshaver_dir()
-        .join("cache")
-}
-
-
-pub fn rejected_shader_dir() -> PathBuf {
-
-    screenshaver_dir()
-        .join("rejected")
-}
-
-
 pub fn runtime_log_path() -> PathBuf {
 
     screenshaver_dir()

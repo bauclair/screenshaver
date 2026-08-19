@@ -1,4 +1,3 @@
-use std::fs;
 use std::path::PathBuf;
 
 
@@ -221,113 +220,138 @@ impl ShaderManager {
     }
 
 
-    /// Scan the managed screensaver shader directory and preserve each
-    /// shader's resolved physical path.
+    /// Load managed shader discovery from SQLite and preserve each shader's
+    /// registered physical source path.  Physical directory enumeration belongs
+    /// to reconciliation, not normal runtime selection.
     pub fn load_shader_entries() -> Vec<ShaderEntry> {
 
-        let directory =
-            crate::locate_paths::shader_dir();
-
-
-        let entries =
-            match fs::read_dir(
-                &directory
-            ) {
-
-                Ok(entries) => entries,
-
-
-                Err(error) => {
-
-                    log_error(
-                        &format!(
-                            "[SHADER] Cannot read shader directory '{}': {}",
-                            directory.display(),
-                            error,
-                        )
-                    );
-
-
-                    return Vec::new();
-                }
-            };
+        let managed_source_path =
+            crate::locate_paths::shader_dir()
+                .to_string_lossy()
+                .to_string();
 
 
         let mut shaders =
             Vec::new();
 
 
-        for entry in
-            entries.flatten()
-        {
-            let path =
-                entry.path();
+        match crate::open_database::open() {
+
+            Ok(connection) => {
+
+                match connection.prepare(
+                    "SELECT
+                         filename,
+                         source_path
+                     FROM shaders
+                     WHERE source_path = ?1
+                       AND file_status = 'present'
+                     ORDER BY filename COLLATE NOCASE,
+                              filename"
+                ) {
+
+                    Ok(mut statement) => {
+
+                        match statement.query_map(
+                            rusqlite::params![
+                                managed_source_path
+                            ],
+                            |row| {
+                                Ok(
+                                    (
+                                        row.get::<_, String>(0)?,
+                                        row.get::<_, String>(1)?,
+                                    )
+                                )
+                            },
+                        ) {
+
+                            Ok(rows) => {
+
+                                for row in rows {
+
+                                    match row {
+
+                                        Ok((
+                                            filename,
+                                            source_path,
+                                        )) => {
+
+                                            log_debug(
+                                                &format!(
+                                                    "[SHADER] Discovered managed shader from database: {}",
+                                                    filename
+                                                )
+                                            );
 
 
-            if !path.is_file() {
-
-                continue;
-            }
-
-
-            let file_name =
-                match path.file_name()
-                    .and_then(
-                        |name| name.to_str()
-                    )
-                {
-
-                    Some(name) => name,
-
-                    None => continue,
-                };
+                                            let physical_path =
+                                                PathBuf::from(
+                                                    &source_path
+                                                )
+                                                .join(
+                                                    &filename
+                                                );
 
 
-            let extension =
-                path.extension()
-                    .and_then(
-                        |value| {
-                            value.to_str()
+                                            shaders.push(
+                                                ShaderEntry::with_source_path(
+                                                    filename,
+                                                    physical_path,
+                                                )
+                                            );
+                                        }
+
+
+                                        Err(error) => {
+
+                                            log_warning(
+                                                &format!(
+                                                    "[SHADER] Unable to decode managed shader discovery row: {}",
+                                                    error,
+                                                )
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+
+
+                            Err(error) => {
+
+                                log_error(
+                                    &format!(
+                                        "[SHADER] Unable to query managed shader discovery rows: {}",
+                                        error,
+                                    )
+                                );
+                            }
                         }
+                    }
+
+
+                    Err(error) => {
+
+                        log_error(
+                            &format!(
+                                "[SHADER] Unable to prepare managed shader discovery query: {}",
+                                error,
+                            )
+                        );
+                    }
+                }
+            }
+
+
+            Err(error) => {
+
+                log_error(
+                    &format!(
+                        "[SHADER] Unable to open database for managed shader discovery: {}",
+                        error,
                     )
-                    .unwrap_or_default();
-
-
-            if !extension.eq_ignore_ascii_case(
-                "glsl"
-            )
-                && !extension.eq_ignore_ascii_case(
-                    "fs"
-                )
-                && !extension.eq_ignore_ascii_case(
-                    "shaver"
-                )
-            {
-                continue;
+                );
             }
-
-
-            if file_name.contains(
-                "._gen"
-            ) {
-                continue;
-            }
-
-
-            log_debug(
-                &format!(
-                    "[SHADER] Discovered shader: {}",
-                    file_name
-                )
-            );
-
-
-            shaders.push(
-                ShaderEntry::with_source_path(
-                    file_name.to_string(),
-                    path,
-                )
-            );
         }
 
 
@@ -375,6 +399,7 @@ impl ShaderManager {
             }
         }
 
+
         shaders.sort_by(
             |left, right| {
                 left.name
@@ -391,6 +416,14 @@ impl ShaderManager {
                     )
             }
         );
+
+
+        if shaders.is_empty() {
+
+            log_warning(
+                "[SHADER] No selectable shaders found"
+            );
+        }
 
 
         shaders
