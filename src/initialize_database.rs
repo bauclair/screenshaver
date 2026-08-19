@@ -364,6 +364,24 @@ fn register_default_shader(
         );
 
 
+    let channel_usage =
+        crate::preprocess_shader::analyze_native_channel_usage(
+            &source
+        );
+
+
+    let channel_usage_mask: i64 =
+        (if channel_usage.channels[0] { 1 } else { 0 })
+        | (if channel_usage.channels[1] { 1 << 1 } else { 0 })
+        | (if channel_usage.channels[2] { 1 << 2 } else { 0 })
+        | (if channel_usage.channels[3] { 1 << 3 } else { 0 })
+        | (if channel_usage.requires_mipmaps { 1 << 4 } else { 0 });
+
+
+    let shader_inputs_json =
+        "[]";
+
+
     let (
         validation_status,
         validation_reason,
@@ -447,7 +465,9 @@ fn register_default_shader(
                  validation_reason,
                  validation_message,
                  preprocessed_source,
-                 preprocessor_version
+                 preprocessor_version,
+                 channel_usage_mask,
+                 shader_inputs_json
              )
              VALUES (
                  ?1,
@@ -459,7 +479,9 @@ fn register_default_shader(
                  ?6,
                  ?7,
                  ?8,
-                 ?9
+                 ?9,
+                 ?10,
+                 ?11
              )",
             params![
                 filename,
@@ -471,6 +493,8 @@ fn register_default_shader(
                 validation_message,
                 source_bytes,
                 RUNTIME_SOURCE_PREPARATION_VERSION,
+                channel_usage_mask,
+                shader_inputs_json,
             ],
         )
         .map_err(

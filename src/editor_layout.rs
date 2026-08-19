@@ -5358,89 +5358,9 @@ fn draw_policies_tab(
 
                                             ui.separator();
 
-                                            ui.menu_button(
-                                                "Move to",
-                                                |ui| {
-                                                    let current_path =
-                                                        PathBuf::from(
-                                                            &row.full_path
-                                                        );
-
-                                                    let screensaver_destination =
-                                                        crate::locate_paths::screensaver_shader_dir()
-                                                            .join(
-                                                                &row.filename
-                                                            );
-
-                                                    let wallpaper_destination =
-                                                        crate::locate_paths::wallpaper_shader_dir()
-                                                            .join(
-                                                                &row.filename
-                                                            );
-
-                                                    let can_move =
-                                                        row.accessible;
-
-                                                    if ui.add_enabled(
-                                                        can_move
-                                                            && current_path
-                                                                != screensaver_destination,
-                                                        egui::Button::new(
-                                                            "/screensavers"
-                                                        ),
-                                                    )
-                                                    .clicked()
-                                                    {
-                                                        *selected_row =
-                                                            Some(
-                                                                row_reference.clone()
-                                                            );
-
-                                                        *pending_confirmation =
-                                                            Some(
-                                                                PendingConfirmation {
-                                                                    row:
-                                                                        row_reference.clone(),
-
-                                                                    command:
-                                                                        PolicyRowCommand::MoveToScreensavers,
-                                                                }
-                                                            );
-
-                                                        ui.close();
-                                                    }
-
-                                                    if ui.add_enabled(
-                                                        can_move
-                                                            && current_path
-                                                                != wallpaper_destination,
-                                                        egui::Button::new(
-                                                            "/wallpapers"
-                                                        ),
-                                                    )
-                                                    .clicked()
-                                                    {
-                                                        *selected_row =
-                                                            Some(
-                                                                row_reference.clone()
-                                                            );
-
-                                                        *pending_confirmation =
-                                                            Some(
-                                                                PendingConfirmation {
-                                                                    row:
-                                                                        row_reference.clone(),
-
-                                                                    command:
-                                                                        PolicyRowCommand::MoveToWallpapers,
-                                                                }
-                                                            );
-
-                                                        ui.close();
-                                                    }
-                                                },
-                                            );
-
+                                            // Managed shaders now live in one canonical
+                                            // /shaders directory. Policy target changes
+                                            // are policy operations, not filesystem moves.
                                             ui.separator();
 
                                             if ui.button(

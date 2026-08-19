@@ -1794,21 +1794,21 @@ fn select_safe_shader_program(
                     .is_some_and(
                         |path| {
                             *path
-                                == crate::locate_paths::screensaver_shader_dir()
+                                == crate::locate_paths::shader_dir()
                                     .join(
                                         &requested_shader_name
                                     )
                         }
                     )
             {
-                // Preserve managed-screensaver quarantine semantics.
+                // Preserve managed-shader quarantine semantics.
                 crate::load_shader::load_shader(
                     &requested_shader_name
                 )
             } else if let Some(source_path) =
                 resolved_source_path.as_ref()
             {
-                // Wallpaper and external shaders are loaded explicitly and
+                // Explicit-source and external shaders are loaded directly and
                 // are never quarantined from their source location.
                 crate::load_shader::load_shader_for_preview(
                     source_path
@@ -1846,7 +1846,7 @@ fn select_safe_shader_program(
                                             .or_else(
                                                 || {
                                                     Some(
-                                                        crate::locate_paths::screensaver_shader_dir()
+                                                        crate::locate_paths::shader_dir()
                                                             .join(
                                                                 &requested_shader_name
                                                             )

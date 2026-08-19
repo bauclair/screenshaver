@@ -27,7 +27,7 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 #     bottom:right
   subtitle_placement = "bottom:center"
 # Screensaver shaders are loaded from:
-#     ~/.config/screenshaver/screensavers/
+#     ~/.config/screenshaver/shaders/
 
 # Displays a single predefined shader.
 # mode = "single:default.glsl"
@@ -54,9 +54,9 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 # WALLPAPER MODE
 ################################
 [wallpaper]
-  enabled = true          # Enable wallpaper rendering mode
+  enabled = false          # Enable wallpaper rendering mode
 # Wallpaper shaders are loaded from:
-#     ~/.config/screenshaver/wallpapers/
+#     ~/.config/screenshaver/shaders/
 
 # Displays a single predefined wallpaper shader.
 # mode = "single:default.glsl"
@@ -126,9 +126,6 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 #     anti_aliasing:<off|fxaa>
 #     dithering:<off|subtle>
 #     color_precision:<auto|standard|high>
-#     bloom:<off|highlight>
-#     bloom_intensity:<0.0-2.0>
-#     bloom_threshold:<0.0-2.0>
 #
 # Property names and post-processing values are case-insensitive and are
 # normalized internally to lowercase.
@@ -158,12 +155,6 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
   color_precision = "auto"
 # Supported render scaling values are from 0.25 to 2.0.
   render_scale = 1.0
-# Bloom mode: off or highlight.
-  bloom = "off"
-# Bloom strength, from 0.0 to 2.0.
-  bloom_intensity = 1.0
-# Minimum luminance that contributes to Highlight Bloom, from 0.0 to 2.0.
-  bloom_threshold = 0.8
 
 ################################
 # PERFORMANCE
@@ -277,18 +268,16 @@ pub fn initialize() -> io::Result<PathBuf> {
 
     let cache_dir = config_dir.join("cache");
     let rejected_dir = config_dir.join("rejected");
-    let screensavers_dir = config_dir.join("screensavers");
-    let wallpapers_dir = config_dir.join("wallpapers");
+    let shaders_dir = config_dir.join("shaders");
 
     let config_file = config_dir.join("screenshaver.toml");
-    let default_shader_file = screensavers_dir.join("default.glsl");
+    let default_shader_file = shaders_dir.join("default.glsl");
 
     // create_dir_all() creates missing parents and succeeds when the
     // directories already exist.
     fs::create_dir_all(&cache_dir)?;
     fs::create_dir_all(&rejected_dir)?;
-    fs::create_dir_all(&screensavers_dir)?;
-    fs::create_dir_all(&wallpapers_dir)?;
+    fs::create_dir_all(&shaders_dir)?;
 
     create_file_if_missing(&config_file, DEFAULT_CONFIG)?;
     create_file_if_missing(&default_shader_file, DEFAULT_SHADER)?;

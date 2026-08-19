@@ -250,7 +250,7 @@ pub fn print_help() {
          Configuration:\n\
              ~/.config/screenshaver/\n\
              ~/.config/screenshaver/screenshaver.toml\n\
-             ~/.config/screenshaver/screensavers/\n\
+             ~/.config/screenshaver/shaders/\n\
              ~/.config/screenshaver/cache/\n\
              ~/.config/screenshaver/rejected/\n\
              ~/.config/screenshaver/screenshaver.log\n\

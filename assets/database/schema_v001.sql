@@ -9,13 +9,13 @@
 --   * Policy configuration is decomposed into typed semantic fields.
 --   * NULL means "inherit the applicable global value" only where documented.
 --   * Physical shader files remain authoritative source assets.
---   * Derived data (hashes, preprocessed source, future thumbnails) is regenerable.
+--   * Derived runtime data is regenerable from those physical source assets.
 --
 -- IMPORTANT:
 -- This file creates the database structure only.
 -- Runtime-derived records such as default.glsl registration, source hashes,
--- preprocessed BLOBs, and the final schema_metadata row are inserted by Rust
--- initialization code after the required runtime values are known.
+-- runtime shader packages, and the final schema_metadata row are inserted by
+-- Rust initialization code after the required runtime values are known.
 --
 -- Likewise, curated_palette rows should be seeded from the developer-maintained
 -- palette catalog, not invented here.
@@ -65,15 +65,14 @@ CREATE TABLE shaders (
                            CHECK (length(filename) > 0),
 
     -- Directory containing the source file.
-    -- Retained for compatibility/diagnostics even after consolidation into
-    -- the canonical ~/.config/screenshaver/shaders directory.
+    -- Retained as first-class physical identity and for diagnostics even though
+    -- managed shaders currently reside in ~/.config/screenshaver/shaders.
     source_path            TEXT NOT NULL
                            COLLATE BINARY
                            CHECK (length(source_path) > 0),
 
     -- Extensible semantic type, validated by Screenshaver rather than by an
-    -- SQL enum-like CHECK so future types (for example "shaver") do not force
-    -- a fundamental schema redesign.
+    -- SQL enum-like CHECK so future types do not force a schema redesign.
     shader_type            TEXT NOT NULL
                            CHECK (length(shader_type) > 0),
 
@@ -106,8 +105,7 @@ CREATE TABLE shaders (
                                )
                            ),
 
-    -- Concise user-facing reason. Detailed diagnostics belong in
-    -- screenshaver.log.
+    -- Stable machine-readable rejection/validation category.
     validation_reason      TEXT
                            CHECK (
                                validation_reason IS NULL
@@ -117,26 +115,63 @@ CREATE TABLE shaders (
                                )
                            ),
 
+    -- Concise user-facing reason. Detailed diagnostics belong in
+    -- screenshaver.log.
     validation_message     TEXT,
 
-    -- Current derived preprocessed representation.
+    -- Runtime GLSL consumed by the OpenGL compiler. Native GLSL is copied here
+    -- unchanged; ShaderToy and ISF source is stored here after preprocessing.
     preprocessed_source    BLOB,
 
-    -- Version of the preprocessing contract that produced the BLOB.
+    -- Version of the runtime-source preparation contract that produced the
+    -- runtime package.
     preprocessor_version   INTEGER
                            CHECK (
                                preprocessor_version IS NULL
                                OR preprocessor_version >= 1
                            ),
 
+    -- Runtime channel-usage bit mask.
+    -- Bit 0 = iChannel0, bit 1 = iChannel1, bit 2 = iChannel2, bit 3 = iChannel3.
+    -- Bit 4 = channel sampling requires mipmaps.
+    -- This preserves the complete ShaderChannelUsage runtime state in one
+    -- compact integer. Valid values therefore range from 0 through 31.
+    channel_usage_mask     INTEGER
+                           CHECK (
+                               channel_usage_mask IS NULL
+                               OR channel_usage_mask BETWEEN 0 AND 31
+                           ),
+
+    -- Serialized runtime ShaderInput list.
+    -- Rust owns the serialization contract. Non-ISF shaders store an empty
+    -- serialized list rather than NULL when a complete runtime package exists.
+    -- NULL means that no complete runtime package is currently stored.
+    shader_inputs_json     TEXT
+                           CHECK (
+                               shader_inputs_json IS NULL
+                               OR length(trim(shader_inputs_json)) > 0
+                           ),
+
     -- The physical pathname must not be registered twice.
     UNIQUE (source_path, filename),
 
-    -- A preprocessed representation and its version marker travel together.
+    -- Runtime GLSL, preparation version, channel metadata, and input metadata
+    -- form one atomic derived runtime package. Either all four are absent or
+    -- all four are present.
     CHECK (
-        (preprocessed_source IS NULL AND preprocessor_version IS NULL)
+        (
+            preprocessed_source IS NULL
+            AND preprocessor_version IS NULL
+            AND channel_usage_mask IS NULL
+            AND shader_inputs_json IS NULL
+        )
         OR
-        (preprocessed_source IS NOT NULL AND preprocessor_version IS NOT NULL)
+        (
+            preprocessed_source IS NOT NULL
+            AND preprocessor_version IS NOT NULL
+            AND channel_usage_mask IS NOT NULL
+            AND shader_inputs_json IS NOT NULL
+        )
     )
 );
 
@@ -358,7 +393,7 @@ COMMIT;
 --
 --   2. Ensure ~/.config/screenshaver/shaders/default.glsl exists.
 --
---   3. Hash, preprocess, and validate default.glsl.
+--   3. Hash, analyze, and validate default.glsl.
 --
 --   4. Insert one shaders row for default.glsl using its actual runtime:
 --        filename
@@ -367,9 +402,15 @@ COMMIT;
 --        source_hash
 --        file_status
 --        validation_status
+--        validation_reason
 --        validation_message
 --        preprocessed_source
 --        preprocessor_version
+--        channel_usage_mask
+--        shader_inputs_json
+--
+--      The final four fields form the complete derived runtime package.
+--      Native GLSL is stored unchanged in preprocessed_source.
 --
 --   5. Create TWO policies referencing the same default.glsl shader_id:
 --        Default Screensaver -> policy_target = 'screensaver'

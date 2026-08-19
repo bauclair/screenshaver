@@ -9,10 +9,7 @@ use std::path::{
 pub fn wallpaper_directory() -> io::Result<PathBuf> {
 
     Ok(
-        crate::initialize_user_files::config_directory()?
-            .join(
-                "wallpapers"
-            )
+        crate::locate_paths::shader_dir()
     )
 }
 

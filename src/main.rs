@@ -31,7 +31,9 @@ mod preprocess_isf;
 mod apply_shader_inputs;
 mod preprocess_shader;
 mod load_shader;
+mod load_shader_source;
 mod compile_shader;
+mod reconcile_shaders;
 mod render_frame;
 mod splash_screen;
 mod reject_shader;
@@ -341,7 +343,7 @@ fn main() {
     }
 
 
-    let database_connection =
+    let mut database_connection =
         match crate::evaluate_database::evaluate() {
 
             Ok(connection) => {
@@ -368,6 +370,138 @@ fn main() {
                 return;
             }
         };
+
+
+        
+    // TEMPORARY DATABASE RECONCILIATION TEST
+    match crate::reconcile_shaders::reconcile(
+        &mut database_connection
+    ) {
+
+        Ok(outcome) => {
+
+            println!(
+                "[DATABASE TEST] Shader reconciliation complete:"
+            );
+
+            println!(
+                "  inserted:          {}",
+                outcome.inserted
+            );
+
+            println!(
+                "  updated:           {}",
+                outcome.updated
+            );
+
+            println!(
+                "  unchanged:         {}",
+                outcome.unchanged
+            );
+
+            println!(
+                "  marked missing:    {}",
+                outcome.marked_missing
+            );
+
+            println!(
+                "  marked unreadable: {}",
+                outcome.marked_unreadable
+            );
+
+            println!(
+                "  rejected:          {}",
+                outcome.rejected
+            );
+        }
+
+
+        Err(error) => {
+
+            eprintln!(
+                "[DATABASE TEST] Shader reconciliation failed: {}",
+                error
+            );
+
+
+            return;
+        }
+    }
+
+
+
+match database_connection.query_row(
+    "SELECT
+         shader_id,
+         file_status,
+         source_hash
+     FROM shaders
+     WHERE source_path = ?1
+       AND filename = ?2",
+    rusqlite::params![
+        crate::locate_paths::shader_dir()
+            .to_string_lossy()
+            .to_string(),
+        "Tillamook Bay.glsl",
+    ],
+    |row| {
+        Ok(
+            (
+                row.get::<_, i64>(
+                    0
+                )?,
+                row.get::<_, String>(
+                    1
+                )?,
+                row.get::<_, Option<String>>(
+                    2
+                )?,
+            )
+        )
+    },
+) {
+    Ok(
+        (
+            shader_id,
+            file_status,
+            source_hash,
+        )
+    ) => {
+
+        println!(
+            "[DATABASE TEST] Tillamook Bay.glsl:"
+        );
+
+        println!(
+            "  shader_id:   {}",
+            shader_id
+        );
+
+        println!(
+            "  file_status: {}",
+            file_status
+        );
+
+        println!(
+            "  source_hash: {}",
+            source_hash
+                .as_deref()
+                .unwrap_or(
+                    "<none>"
+                )
+        );
+    }
+
+
+    Err(error) => {
+
+        eprintln!(
+            "[DATABASE TEST] Unable to inspect Tillamook Bay.glsl: {}",
+            error
+        );
+    }
+}
+
 
 
     match command {

@@ -325,7 +325,7 @@ pub fn run(
 
             Err(
                 format!(
-                    "--control requires a shader file, not a directory: {}",
+                    "--edit-shader requires a shader file, not a directory: {}",
                     path.display(),
                 )
             )
@@ -458,7 +458,7 @@ fn run_empty_session(
             .map_err(
                 |error| {
                     format!(
-                        "Unable to create Control Center window: {}",
+                        "Unable to create edit-shader window: {}",
                         error,
                     )
                 }
@@ -471,7 +471,7 @@ fn run_empty_session(
             .map_err(
                 |error| {
                     format!(
-                        "Unable to create Control Center OpenGL context: {}",
+                        "Unable to create edit-shader OpenGL context: {}",
                         error,
                     )
                 }
@@ -523,7 +523,7 @@ fn run_empty_session(
             .map_err(
                 |error| {
                     format!(
-                        "Unable to create Control Center SDL event pump: {}",
+                        "Unable to create edit-shader SDL event pump: {}",
                         error,
                     )
                 }
@@ -1104,7 +1104,7 @@ fn run_empty_session(
 
         if editor_output.bulk_create_browse_requested {
             let starting_directory =
-                crate::locate_paths::screensaver_shader_dir();
+                crate::locate_paths::shader_dir();
 
 
             let selected_paths =
@@ -1275,7 +1275,7 @@ fn run_empty_session(
             let selected_path =
                 if editor_output.browse_shader_requested {
                     let starting_directory =
-                        crate::locate_paths::screensaver_shader_dir();
+                        crate::locate_paths::shader_dir();
 
                     let selected_path =
                         rfd::FileDialog::new()
@@ -1806,11 +1806,11 @@ fn run_empty_session(
             let starting_directory =
                 match target {
                     crate::editor_layout::PolicyTarget::Screensaver => {
-                        crate::locate_paths::screensaver_shader_dir()
+                        crate::locate_paths::shader_dir()
                     }
 
                     crate::editor_layout::PolicyTarget::Wallpaper => {
-                        crate::locate_paths::wallpaper_shader_dir()
+                        crate::locate_paths::shader_dir()
                     }
                 };
 
@@ -2369,7 +2369,7 @@ fn run_paths(
             .map_err(
                 |error| {
                     format!(
-                        "Unable to create Control Center window: {}",
+                        "Unable to create edit-shader window: {}",
                         error,
                     )
                 }
@@ -3345,11 +3345,11 @@ fn run_paths(
                 let starting_directory =
                     match target {
                         crate::editor_layout::PolicyTarget::Screensaver => {
-                            crate::locate_paths::screensaver_shader_dir()
+                            crate::locate_paths::shader_dir()
                         }
 
                         crate::editor_layout::PolicyTarget::Wallpaper => {
-                            crate::locate_paths::wallpaper_shader_dir()
+                            crate::locate_paths::shader_dir()
                         }
                     };
 
@@ -4317,11 +4317,11 @@ fn run_paths(
                     edit_window.set_status_message(
                         match requested_target {
                             crate::editor_layout::PolicyTarget::Screensaver => {
-                                "This shader cannot use a Screensaver policy because it does not exist in the screensavers folder."
+                                "This shader cannot use a Screensaver policy in the current editing session."
                             }
 
                             crate::editor_layout::PolicyTarget::Wallpaper => {
-                                "This shader cannot use a Wallpaper policy because it does not exist in the wallpapers folder."
+                                "This shader cannot use a Wallpaper policy in the current editing session."
                             }
                         }
                     );
@@ -5245,7 +5245,7 @@ fn run_paths(
 
                 if !selected_target_available {
                     edit_window.set_status_message(
-                        "The selected policy target is unavailable because the shader file is missing from its target folder."
+                        "The selected policy target is unavailable in the current editing session."
                     );
 
                     continue;
@@ -6375,10 +6375,10 @@ fn move_policy_shader(
     let destination_directory =
         match destination_target {
             crate::editor_layout::PolicyTarget::Screensaver =>
-                crate::locate_paths::screensaver_shader_dir(),
+                crate::locate_paths::shader_dir(),
 
             crate::editor_layout::PolicyTarget::Wallpaper =>
-                crate::locate_paths::wallpaper_shader_dir(),
+                crate::locate_paths::shader_dir(),
         };
 
     std::fs::create_dir_all(
@@ -6825,29 +6825,12 @@ fn create_bulk_policies(
 
 
 fn managed_policy_target_for_path(
-    shader_path: &Path,
+    _shader_path: &Path,
 ) -> Option<crate::editor_layout::PolicyTarget> {
 
-    if path_is_within_directory(
-        shader_path,
-        &crate::locate_paths::screensaver_shader_dir(),
-    ) {
-        return Some(
-            crate::editor_layout::PolicyTarget::Screensaver
-        );
-    }
-
-
-    if path_is_within_directory(
-        shader_path,
-        &crate::locate_paths::wallpaper_shader_dir(),
-    ) {
-        return Some(
-            crate::editor_layout::PolicyTarget::Wallpaper
-        );
-    }
-
-
+    // A shader's physical location no longer determines its policy target.
+    // Files in the canonical shader library may have Screensaver, Wallpaper,
+    // both, or no policies. External files are likewise target-neutral.
     None
 }
 
@@ -6884,59 +6867,34 @@ fn path_is_within_directory(
 
 
 fn target_shader_path(
-    target: crate::editor_layout::PolicyTarget,
+    _target: crate::editor_layout::PolicyTarget,
     shader_name: &str,
 ) -> PathBuf {
-    match target {
-        crate::editor_layout::PolicyTarget::Screensaver => {
-            crate::locate_paths::screensaver_shader_dir()
-                .join(shader_name)
-        }
 
-        crate::editor_layout::PolicyTarget::Wallpaper => {
-            crate::locate_paths::wallpaper_shader_dir()
-                .join(shader_name)
-        }
-    }
+    crate::locate_paths::shader_dir()
+        .join(
+            shader_name
+        )
 }
 
 
 fn resolve_information_path(
     loaded_path: &Path,
     shader_name: &str,
-    policy_target: Option<crate::editor_layout::PolicyTarget>,
+    _policy_target: Option<crate::editor_layout::PolicyTarget>,
 ) -> PathBuf {
 
-    let target_path =
-        match policy_target {
-            Some(
-                crate::editor_layout::PolicyTarget::Screensaver
-            ) => {
-                crate::locate_paths::screensaver_shader_dir()
-                    .join(
-                        shader_name
-                    )
-            }
-
-            Some(
-                crate::editor_layout::PolicyTarget::Wallpaper
-            ) => {
-                crate::locate_paths::wallpaper_shader_dir()
-                    .join(
-                        shader_name
-                    )
-            }
-
-            None => {
-                return loaded_path.to_path_buf();
-            }
-        };
+    let managed_path =
+        crate::locate_paths::shader_dir()
+            .join(
+                shader_name
+            );
 
 
     if loaded_path.is_file() {
         loaded_path.to_path_buf()
-    } else if target_path.is_file() {
-        target_path
+    } else if managed_path.is_file() {
+        managed_path
     } else {
         loaded_path.to_path_buf()
     }

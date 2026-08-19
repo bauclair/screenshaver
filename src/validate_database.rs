@@ -470,7 +470,9 @@ fn validate_default_shader(
                      file_status,
                      validation_status,
                      preprocessed_source,
-                     preprocessor_version
+                     preprocessor_version,
+                     channel_usage_mask,
+                     shader_inputs_json
                  FROM shaders
                  WHERE filename = 'default.glsl'"
             )
@@ -602,6 +604,34 @@ fn validate_default_shader(
         )?;
 
 
+    let channel_usage_mask: i64 =
+        row.get(
+            6
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to read default channel_usage_mask: {}",
+                    error,
+                )
+            }
+        )?;
+
+
+    let shader_inputs_json: String =
+        row.get(
+            7
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to read default shader_inputs_json: {}",
+                    error,
+                )
+            }
+        )?;
+
+
     if rows
         .next()
         .map_err(
@@ -676,6 +706,32 @@ fn validate_default_shader(
                 "Default-shader validation failed: expected runtime-source preparation version {}, found {}",
                 EXPECTED_RUNTIME_SOURCE_PREPARATION_VERSION,
                 preprocessor_version,
+            )
+        );
+    }
+
+
+    if !(0..=31)
+        .contains(
+            &channel_usage_mask
+        )
+    {
+        return Err(
+            format!(
+                "Default-shader validation failed: channel_usage_mask {} is outside the valid range 0..31",
+                channel_usage_mask,
+            )
+        );
+    }
+
+
+    if shader_inputs_json
+        != "[]"
+    {
+        return Err(
+            format!(
+                "Default-shader validation failed: native default.glsl must store an empty ShaderInput list, found '{}'",
+                shader_inputs_json,
             )
         );
     }

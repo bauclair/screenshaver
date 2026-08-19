@@ -1120,14 +1120,8 @@ pub fn reconcile_shader_move(
             config_path
         )?;
 
-    let screensaver_managed_path =
-        crate::locate_paths::screensaver_shader_dir()
-            .join(
-                &shader
-            );
-
-    let wallpaper_managed_path =
-        crate::locate_paths::wallpaper_shader_dir()
+    let managed_path =
+        crate::locate_paths::shader_dir()
             .join(
                 &shader
             );
@@ -1155,16 +1149,7 @@ pub fn reconcile_shader_move(
             continue;
         }
 
-        let managed_path =
-            match target {
-                PolicyTarget::Screensaver =>
-                    &screensaver_managed_path,
-
-                PolicyTarget::Wallpaper =>
-                    &wallpaper_managed_path,
-            };
-
-        if destination_path == managed_path {
+        if destination_path == &managed_path {
             set_source_path_metadata(
                 &mut document,
                 target,
@@ -2580,21 +2565,12 @@ fn resolved_policy_source_path(
 
 
 fn managed_shader_path(
-    target: PolicyTarget,
+    _target: PolicyTarget,
     shader: &str,
 ) -> PathBuf {
 
-    match target {
-        PolicyTarget::Screensaver => {
-            crate::locate_paths::screensaver_shader_dir()
-                .join(shader)
-        }
-
-        PolicyTarget::Wallpaper => {
-            crate::locate_paths::wallpaper_shader_dir()
-                .join(shader)
-        }
-    }
+    crate::locate_paths::shader_dir()
+        .join(shader)
 }
 
 
