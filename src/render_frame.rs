@@ -1787,29 +1787,37 @@ fn select_safe_shader_program(
             )
         );
 
+        let managed_source_path =
+            crate::locate_paths::shader_dir()
+                .join(
+                    &requested_shader_name
+                );
+
+
+        let is_managed_shader =
+            resolved_source_path
+                .as_ref()
+                .is_none_or(
+                    |path| {
+                        paths_refer_to_same_file(
+                            path,
+                            &managed_source_path,
+                        )
+                    }
+                );
+
+
         let loaded_shader =
-            if shader_directory.is_none()
-                && resolved_source_path
-                    .as_ref()
-                    .is_some_and(
-                        |path| {
-                            *path
-                                == crate::locate_paths::shader_dir()
-                                    .join(
-                                        &requested_shader_name
-                                    )
-                        }
-                    )
+            if is_managed_shader
             {
-                // Preserve managed-shader quarantine semantics.
                 crate::load_shader::load_shader(
                     &requested_shader_name
                 )
             } else if let Some(source_path) =
                 resolved_source_path.as_ref()
             {
-                // Explicit-source and external shaders are loaded directly and
-                // are never quarantined from their source location.
+                // Explicit-source and genuinely external shaders are loaded
+                // directly from their physical source location.
                 crate::load_shader::load_shader_for_preview(
                     source_path
                 )

@@ -727,12 +727,33 @@ fn select_safe_wallpaper_shader(
             requested_shader.name.clone();
 
 
-        let shader_path =
-            requested_shader.source_path
-                .unwrap_or_else(
+        let resolved_source_path =
+            requested_shader.source_path.clone()
+                .or_else(
                     || {
-                        wallpaper_directory.join(
-                            &requested_shader_name
+                        Some(
+                            wallpaper_directory.join(
+                                &requested_shader_name
+                            )
+                        )
+                    }
+                );
+
+
+        let managed_source_path =
+            wallpaper_directory.join(
+                &requested_shader_name
+            );
+
+
+        let is_managed_shader =
+            resolved_source_path
+                .as_ref()
+                .is_none_or(
+                    |path| {
+                        paths_refer_to_same_file(
+                            path,
+                            &managed_source_path,
                         )
                     }
                 );
@@ -743,15 +764,40 @@ fn select_safe_wallpaper_shader(
         );
 
 
-        println!(
-            "    {}",
-            shader_path.display()
-        );
+        if is_managed_shader {
+            println!(
+                "    {} (database-backed managed shader)",
+                requested_shader_name
+            );
+        } else if let Some(source_path) =
+            resolved_source_path.as_ref()
+        {
+            println!(
+                "    {} (external physical shader)",
+                source_path.display()
+            );
+        }
 
 
-        match crate::load_shader::load_shader_for_preview(
-            &shader_path
-        ) {
+        let loaded_shader =
+            if is_managed_shader {
+                crate::load_shader::load_shader(
+                    &requested_shader_name
+                )
+            } else if let Some(source_path) =
+                resolved_source_path.as_ref()
+            {
+                crate::load_shader::load_shader_for_preview(
+                    source_path
+                )
+            } else {
+                crate::load_shader::load_shader(
+                    &requested_shader_name
+                )
+            };
+
+
+        match loaded_shader {
             crate::load_shader::ShaderLoadResult::Ready {
                 source,
                 shader_name,
@@ -762,7 +808,11 @@ fn select_safe_wallpaper_shader(
                 return Ok(
                     ActiveWallpaperShader {
                         manager_name: requested_shader_name,
-                        source_path: shader_path,
+                        source_path:
+                            resolved_source_path
+                                .unwrap_or(
+                                    managed_source_path
+                                ),
                         source,
                         shader_name,
                         channel_usage,
@@ -840,6 +890,41 @@ fn select_safe_wallpaper_shader(
         "No usable wallpaper shaders remain"
             .to_string()
     )
+}
+
+
+fn paths_refer_to_same_file(
+    left: &Path,
+    right: &Path,
+) -> bool {
+
+    if left
+        == right
+    {
+        return true;
+    }
+
+
+    match (
+        std::fs::canonicalize(
+            left
+        ),
+        std::fs::canonicalize(
+            right
+        ),
+    ) {
+        (
+            Ok(left),
+            Ok(right),
+        ) => {
+            left
+                == right
+        }
+
+        _ => {
+            false
+        }
+    }
 }
 
 

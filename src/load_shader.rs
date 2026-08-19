@@ -35,17 +35,170 @@ pub fn load_shader(
     shader_name: &str,
 ) -> ShaderLoadResult {
 
-    let source_path =
-        crate::locate_paths::shader_dir()
-            .join(
-                shader_name
+    log_debug(
+        &format!(
+            "[SHADER] Attempting to load managed shader from database: {}",
+            shader_name,
+        )
+    );
+
+
+    match crate::load_shader_source::load_managed_shader_source(
+        shader_name
+    ) {
+
+        Ok(
+            crate::load_shader_source::ShaderSourceResult::Ready {
+                source,
+                shader_type,
+                channel_usage,
+                shader_inputs,
+            }
+        ) => {
+
+            log_information(
+                &format!(
+                    "[SHADER] Successfully loaded managed shader from database: {}",
+                    shader_name,
+                )
             );
 
 
-    load_shader_path_internal(
-        &source_path,
-        true,
-    )
+            log_debug(
+                &format!(
+                    "[SHADER] Runtime source: {} bytes",
+                    source.len(),
+                )
+            );
+
+
+            log_debug(
+                &format!(
+                    "[SHADER] Type: {}",
+                    match shader_type.as_str() {
+                        "native" => "Native GLSL",
+                        "shadertoy" => "ShaderToy",
+                        "isf" => "ISF",
+                        other => other,
+                    },
+                )
+            );
+
+
+            ShaderLoadResult::Ready {
+                source,
+                shader_name:
+                    shader_name.to_string(),
+                built_in_default:
+                    false,
+                channel_usage,
+                shader_inputs,
+            }
+        }
+
+
+        Ok(
+            crate::load_shader_source::ShaderSourceResult::Rejected {
+                reason,
+                message,
+            }
+        ) => {
+
+            let mut reasons =
+                Vec::<String>::new();
+
+
+            if let Some(reason) =
+                reason
+            {
+                reasons.push(
+                    reason
+                );
+            }
+
+
+            if let Some(message) =
+                message
+            {
+                if !reasons.contains(
+                    &message
+                )
+                {
+                    reasons.push(
+                        message
+                    );
+                }
+            }
+
+
+            if reasons.is_empty() {
+                reasons.push(
+                    "Shader is rejected by the Screenshaver database"
+                        .to_string()
+                );
+            }
+
+
+            log_warning(
+                &format!(
+                    "[SHADER] Managed shader '{}' is rejected: {}",
+                    shader_name,
+                    reasons.join(
+                        "; "
+                    ),
+                )
+            );
+
+
+            ShaderLoadResult::Rejected {
+                shader_name:
+                    shader_name.to_string(),
+                reasons,
+            }
+        }
+
+
+        Ok(
+            crate::load_shader_source::ShaderSourceResult::Unavailable {
+                error,
+            }
+        ) => {
+
+            log_error(
+                &format!(
+                    "[SHADER] Managed shader '{}' is unavailable: {}",
+                    shader_name,
+                    error,
+                )
+            );
+
+
+            ShaderLoadResult::Unavailable {
+                shader_name:
+                    shader_name.to_string(),
+                error,
+            }
+        }
+
+
+        Err(error) => {
+
+            log_error(
+                &format!(
+                    "[SHADER] Unable to load managed shader '{}' from database: {}",
+                    shader_name,
+                    error,
+                )
+            );
+
+
+            ShaderLoadResult::Unavailable {
+                shader_name:
+                    shader_name.to_string(),
+                error,
+            }
+        }
+    }
 }
 
 
