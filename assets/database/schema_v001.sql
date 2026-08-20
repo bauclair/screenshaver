@@ -194,12 +194,11 @@ CREATE TABLE shader_policies (
     --
     -- SQLite's built-in NOCASE collation is ASCII-only, so it is NOT
     -- sufficient for the agreed requirement that Policy Names support Unicode
-    -- while remaining truly case-insensitively unique.
+    -- while remaining truly case-insensitively unique within a Policy Target.
     --
     -- Rust must derive policy_name_key from policy_name using one canonical
     -- normalization/case-folding algorithm before every insert/update.
     policy_name_key        TEXT NOT NULL
-                           UNIQUE
                            CHECK (length(policy_name_key) > 0),
 
     shader_id              INTEGER NOT NULL,
@@ -300,6 +299,14 @@ CREATE TABLE shader_policies (
 
     hue_rotation           REAL NOT NULL
                            DEFAULT 0.0,
+
+    -- Policy Names are case-insensitively unique within each Policy Target.
+    -- The same user-visible name may therefore exist once for screensaver,
+    -- once for wallpaper, and once for unassigned.
+    UNIQUE (
+        policy_name_key,
+        policy_target
+    ),
 
     FOREIGN KEY (shader_id)
         REFERENCES shaders(shader_id)

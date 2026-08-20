@@ -200,6 +200,162 @@ fn bulk_edit_completion_message(
 }
 
 
+fn process_policy_rename_ui(
+    edit_window:
+        &mut crate::editor_layout::EditWindowOverlay,
+    editor_output:
+        &crate::editor_layout::EditorOutput,
+    config:
+        &mut crate::load_config::Config,
+    policy_display_rows:
+        &mut Vec<crate::editor_layout::PolicyDisplayRow>,
+) {
+    if let Some((
+        row,
+        requested_name,
+    )) =
+        editor_output
+            .rename_policy_requested
+            .as_ref()
+    {
+        let manage_target =
+            match row.policy_target {
+                crate::editor_layout::PolicyTarget::Screensaver =>
+                    crate::manage_policies::PolicyTarget::Screensaver,
+                crate::editor_layout::PolicyTarget::Wallpaper =>
+                    crate::manage_policies::PolicyTarget::Wallpaper,
+                crate::editor_layout::PolicyTarget::Unassigned =>
+                    crate::manage_policies::PolicyTarget::Unassigned,
+            };
+
+        match crate::manage_policies::rename_policy_by_key(
+            &row.policy_key,
+            manage_target,
+            requested_name,
+        ) {
+            Ok(()) => {
+                match crate::load_config::load_config(
+                    &crate::locate_paths::config_path()
+                ) {
+                    Ok(reloaded_config) => {
+                        *config =
+                            reloaded_config.config;
+
+                        *policy_display_rows =
+                            build_policy_display_rows(
+                                config
+                            );
+
+                        if let Some(
+                            renamed_row
+                        ) =
+                            policy_display_rows
+                                .iter()
+                                .find(
+                                    |candidate| {
+                                        candidate.policy_key
+                                            .eq_ignore_ascii_case(
+                                                requested_name
+                                            )
+                                            && candidate.policy_target
+                                                == row.policy_target
+                                    }
+                                )
+                        {
+                            edit_window.select_policy_row_persistently(
+                                crate::editor_layout::PolicyRowReference {
+                                    policy_key:
+                                        renamed_row.policy_key.clone(),
+                                    filename:
+                                        renamed_row.filename.clone(),
+                                    full_path:
+                                        renamed_row.full_path.clone(),
+                                    policy_target:
+                                        renamed_row.policy_target,
+                                    unassigned:
+                                        renamed_row.unassigned,
+                                }
+                            );
+                        }
+
+                        edit_window.complete_policy_rename();
+
+                        edit_window.set_status_message(
+                            format!(
+                                "Policy renamed to '{}'.",
+                                requested_name,
+                            )
+                        );
+
+                        log_information(
+                            &format!(
+                                "[EDIT_SHADER] Renamed policy '{}' as '{}'",
+                                row.policy_key,
+                                requested_name,
+                            )
+                        );
+                    }
+
+                    Err(error) => {
+                        edit_window.set_policy_rename_validation_message(
+                            format!(
+                                "Policy was renamed, but configuration reload failed: {}",
+                                error,
+                            )
+                        );
+
+                        log_warning(
+                            &format!(
+                                "[EDIT_SHADER] Policy '{}' renamed as '{}', but configuration reload failed: {}",
+                                row.policy_key,
+                                requested_name,
+                                error,
+                            )
+                        );
+                    }
+                }
+            }
+
+            Err(error) => {
+                edit_window.set_policy_rename_validation_message(
+                    error.clone()
+                );
+
+                edit_window.set_status_message(
+                    format!(
+                        "Unable to rename policy: {}",
+                        error,
+                    )
+                );
+
+                log_warning(
+                    &format!(
+                        "[EDIT_SHADER] Unable to rename policy '{}': {}",
+                        row.policy_key,
+                        error,
+                    )
+                );
+            }
+        }
+
+        return;
+    }
+
+    if let Some((
+        row,
+        crate::editor_layout::PolicyRowCommand::RenamePolicy,
+    )) =
+        editor_output
+            .policy_row_command_requested
+            .as_ref()
+    {
+        edit_window.begin_policy_rename(
+            row.clone()
+        );
+    }
+}
+
+
 fn process_policy_clone_ui(
     edit_window:
         &mut crate::editor_layout::EditWindowOverlay,
@@ -218,8 +374,19 @@ fn process_policy_clone_ui(
             .clone_policy_requested
             .as_ref()
     {
+        let manage_target =
+            match row.policy_target {
+                crate::editor_layout::PolicyTarget::Screensaver =>
+                    crate::manage_policies::PolicyTarget::Screensaver,
+                crate::editor_layout::PolicyTarget::Wallpaper =>
+                    crate::manage_policies::PolicyTarget::Wallpaper,
+                crate::editor_layout::PolicyTarget::Unassigned =>
+                    crate::manage_policies::PolicyTarget::Unassigned,
+            };
+
         match crate::manage_policies::clone_policy_by_key(
             &row.policy_key,
+            manage_target,
             requested_name,
         ) {
             Ok(()) => {
@@ -246,6 +413,8 @@ fn process_policy_clone_ui(
                                             .eq_ignore_ascii_case(
                                                 requested_name
                                             )
+                                            && candidate.policy_target
+                                                == row.policy_target
                                     }
                                 )
                         {
@@ -341,8 +510,19 @@ fn process_policy_clone_ui(
             .policy_row_command_requested
             .as_ref()
     {
+        let manage_target =
+            match row.policy_target {
+                crate::editor_layout::PolicyTarget::Screensaver =>
+                    crate::manage_policies::PolicyTarget::Screensaver,
+                crate::editor_layout::PolicyTarget::Wallpaper =>
+                    crate::manage_policies::PolicyTarget::Wallpaper,
+                crate::editor_layout::PolicyTarget::Unassigned =>
+                    crate::manage_policies::PolicyTarget::Unassigned,
+            };
+
         match crate::manage_policies::suggested_clone_policy_name(
-            &row.policy_key
+            &row.policy_key,
+            manage_target,
         ) {
             Ok(suggested_name) => {
                 edit_window.begin_policy_clone(
@@ -851,6 +1031,14 @@ fn run_empty_session(
                 &policy_display_rows,
                 Some(&config),
             );
+
+        process_policy_rename_ui(
+            &mut edit_window,
+            &editor_output,
+            &mut config,
+            &mut policy_display_rows,
+        );
+
 
         process_policy_clone_ui(
             &mut edit_window,
@@ -2776,6 +2964,14 @@ fn run_paths(
                 window.gl_swap_window();
 
 
+                process_policy_rename_ui(
+                    &mut edit_window,
+                    &editor_output,
+                    &mut config,
+                    &mut policy_display_rows,
+                );
+
+
                 process_policy_clone_ui(
                     &mut edit_window,
                     &editor_output,
@@ -3639,8 +3835,26 @@ fn run_paths(
                     .active_specification_selection();
 
 
+            let active_policy_name =
+                edit_window
+                    .active_selected_policy_row()
+                    .map(
+                        |row| {
+                            row.policy_key
+                        }
+                    )
+                    .unwrap_or_else(
+                        || {
+                            "—".to_string()
+                        }
+                    );
+
+
             let shader_information =
                 crate::editor_layout::ShaderInformation {
+                    policy_name:
+                        active_policy_name,
+
                     filename:
                         information_path
                             .file_name()
@@ -3664,12 +3878,6 @@ fn run_paths(
                     shader_type:
                         describe_shader_type(
                             &information_path
-                        ),
-
-                    policies:
-                        describe_policy_availability(
-                            screensaver_policy_exists,
-                            wallpaper_policy_exists,
                         ),
 
                     texture_usage:
@@ -3739,6 +3947,14 @@ fn run_paths(
                     &policy_display_rows,
                     Some(&config),
                 );
+
+            process_policy_rename_ui(
+                &mut edit_window,
+                &editor_output,
+                &mut config,
+                &mut policy_display_rows,
+            );
+
 
             process_policy_clone_ui(
                 &mut edit_window,
@@ -5892,8 +6108,7 @@ fn run_paths(
 
                 let selected_policy_before_save =
                     edit_window
-                        .policy_list_state_snapshot()
-                        .selected_policy_row;
+                        .active_selected_policy_row();
 
 
                 let retarget_result =
@@ -5925,6 +6140,7 @@ fn run_paths(
                         {
                             crate::manage_policies::retarget_policy_by_key(
                                 &selected_policy.policy_key,
+                                selected_manage_target,
                                 manage_target,
                             )
                             .map(
@@ -6564,6 +6780,10 @@ fn run_paths(
 
                     crate::editor_layout::PolicyRowCommand::ClonePolicy => {
                         // Clone Policy is handled by process_policy_clone_ui().
+                    }
+
+                    crate::editor_layout::PolicyRowCommand::RenamePolicy => {
+                        // Rename Policy is handled by process_policy_rename_ui().
                     }
                 }
             }
@@ -7739,49 +7959,6 @@ fn resolve_information_path(
         managed_path
     } else {
         loaded_path.to_path_buf()
-    }
-}
-
-
-fn describe_policy_availability(
-    screensaver_policy_exists: bool,
-    wallpaper_policy_exists: bool,
-) -> String {
-    match (
-        screensaver_policy_exists,
-        wallpaper_policy_exists,
-    ) {
-        (
-            true,
-            true,
-        ) => {
-            "Screensaver + Wallpaper"
-                .to_string()
-        }
-
-        (
-            true,
-            false,
-        ) => {
-            "Screensaver"
-                .to_string()
-        }
-
-        (
-            false,
-            true,
-        ) => {
-            "Wallpaper"
-                .to_string()
-        }
-
-        (
-            false,
-            false,
-        ) => {
-            "None"
-                .to_string()
-        }
     }
 }
 

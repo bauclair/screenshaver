@@ -281,10 +281,10 @@ impl ColorPrecisionSelection {
 
 #[derive(Clone, Debug)]
 pub struct ShaderInformation {
+    pub policy_name: String,
     pub filename: String,
     pub folder: String,
     pub shader_type: String,
-    pub policies: String,
     pub texture_usage: String,
     pub status: String,
 }
@@ -486,6 +486,7 @@ pub struct PolicyListStateSnapshot {
 pub enum PolicyRowCommand {
     Edit,
     ClonePolicy,
+    RenamePolicy,
     RefreshShader,
     MoveToScreensavers,
     MoveToWallpapers,
@@ -503,6 +504,14 @@ struct PendingConfirmation {
 
 #[derive(Clone, Debug)]
 struct PendingPolicyClone {
+    row: PolicyRowReference,
+    policy_name: String,
+    validation_message: String,
+}
+
+
+#[derive(Clone, Debug)]
+struct PendingPolicyRename {
     row: PolicyRowReference,
     policy_name: String,
     validation_message: String,
@@ -590,6 +599,8 @@ pub struct EditorOutput {
     pub policy_row_command_requested:
         Option<(PolicyRowReference, PolicyRowCommand)>,
     pub clone_policy_requested:
+        Option<(PolicyRowReference, String)>,
+    pub rename_policy_requested:
         Option<(PolicyRowReference, String)>,
     pub control_configuration: Option<ControlConfiguration>,
     pub policy_dirty: bool,
@@ -943,6 +954,9 @@ pub struct EditWindowOverlay {
     pending_policy_clone:
         Option<PendingPolicyClone>,
 
+    pending_policy_rename:
+        Option<PendingPolicyRename>,
+
     control_configuration:
         Option<ControlConfiguration>,
 
@@ -1251,6 +1265,9 @@ impl EditWindowOverlay {
                     None,
 
                 pending_policy_clone:
+                    None,
+
+                pending_policy_rename:
                     None,
 
                 control_configuration:
@@ -2184,11 +2201,18 @@ impl EditWindowOverlay {
         let mut pending_policy_clone =
             self.pending_policy_clone.clone();
 
+        let mut pending_policy_rename =
+            self.pending_policy_rename.clone();
+
         let mut policy_row_command_requested:
             Option<(PolicyRowReference, PolicyRowCommand)> =
             None;
 
         let mut clone_policy_requested:
+            Option<(PolicyRowReference, String)> =
+            None;
+
+        let mut rename_policy_requested:
             Option<(PolicyRowReference, String)> =
             None;
 
@@ -2925,6 +2949,13 @@ impl EditWindowOverlay {
                     );
 
 
+                    draw_policy_rename_modal(
+                        context,
+                        &mut pending_policy_rename,
+                        &mut rename_policy_requested,
+                    );
+
+
                     draw_bulk_save_confirmation_modal(
                         context,
                         &mut self.pending_bulk_save_confirmation,
@@ -3104,18 +3135,6 @@ impl EditWindowOverlay {
         self.policy_sort_ascending =
             policy_sort_ascending;
 
-        if self
-            .transient_policy_selection_persisted_row
-            .is_some()
-            && selected_policy_row
-                != self.selected_policy_row
-        {
-            // A subsequent user navigation/click becomes the new ordinary
-            // selection and resumes normal state.json persistence.
-            self.transient_policy_selection_persisted_row =
-                None;
-        }
-
         self.selected_policy_row =
             selected_policy_row;
 
@@ -3172,6 +3191,9 @@ impl EditWindowOverlay {
 
         self.pending_policy_clone =
             pending_policy_clone;
+
+        self.pending_policy_rename =
+            pending_policy_rename;
 
         self.control_configuration =
             control_configuration.clone();
@@ -3352,6 +3374,8 @@ impl EditWindowOverlay {
 
             clone_policy_requested,
 
+            rename_policy_requested,
+
             policy_dirty:
                 EditorConfiguration::new(
                     displayed_fps,
@@ -3468,15 +3492,10 @@ impl EditWindowOverlay {
         &mut self,
         row: PolicyRowReference,
     ) {
-        if self
-            .transient_policy_selection_persisted_row
-            .is_none()
-        {
-            self.transient_policy_selection_persisted_row =
-                Some(
-                    self.selected_policy_row.clone()
-                );
-        }
+        // Clone focus is now treated as an ordinary selection so state.json
+        // follows the newly-created policy instead of preserving the original.
+        self.transient_policy_selection_persisted_row =
+            None;
 
         self.selected_policy_row =
             Some(
@@ -3485,6 +3504,13 @@ impl EditWindowOverlay {
 
         self.restore_selected_policy_scroll =
             true;
+    }
+
+
+    pub fn active_selected_policy_row(
+        &self,
+    ) -> Option<PolicyRowReference> {
+        self.selected_policy_row.clone()
     }
 
 
@@ -3512,14 +3538,7 @@ impl EditWindowOverlay {
                 self.policy_sort_ascending,
 
             selected_policy_row:
-                self.transient_policy_selection_persisted_row
-                    .as_ref()
-                    .cloned()
-                    .unwrap_or_else(
-                        || {
-                            self.selected_policy_row.clone()
-                        }
-                    ),
+                self.selected_policy_row.clone(),
 
             window_x:
                 self.persisted_window_position
@@ -3619,6 +3638,64 @@ impl EditWindowOverlay {
             pending.validation_message =
                 message.into();
         }
+    }
+
+
+    pub fn begin_policy_rename(
+        &mut self,
+        row: PolicyRowReference,
+    ) {
+        self.pending_policy_rename =
+            Some(
+                PendingPolicyRename {
+                    policy_name:
+                        row.policy_key.clone(),
+                    row,
+                    validation_message:
+                        String::new(),
+                }
+            );
+    }
+
+
+    pub fn complete_policy_rename(
+        &mut self,
+    ) {
+        self.pending_policy_rename =
+            None;
+    }
+
+
+    pub fn set_policy_rename_validation_message(
+        &mut self,
+        message: impl Into<String>,
+    ) {
+        if let Some(
+            pending
+        ) =
+            self.pending_policy_rename
+                .as_mut()
+        {
+            pending.validation_message =
+                message.into();
+        }
+    }
+
+
+    pub fn select_policy_row_persistently(
+        &mut self,
+        row: PolicyRowReference,
+    ) {
+        self.transient_policy_selection_persisted_row =
+            None;
+
+        self.selected_policy_row =
+            Some(
+                row
+            );
+
+        self.restore_selected_policy_scroll =
+            true;
     }
 
 
@@ -4633,26 +4710,26 @@ fn draw_compact_header(
     );
 
     let (
+        policy_name,
         filename,
         folder,
         shader_type,
-        policies,
     ) =
         if let Some(information) =
             shader_information
         {
             (
+                information.policy_name.as_str(),
                 information.filename.as_str(),
                 information.folder.as_str(),
                 information.shader_type.as_str(),
-                information.policies.as_str(),
             )
         } else {
             (
+                "—",
                 "No shader loaded",
                 "—",
                 "—",
-                "None",
             )
         };
 
@@ -4676,6 +4753,10 @@ fn draw_compact_header(
                     .show(
                         ui,
                         |ui| {
+                            ui.label("Policy Name:");
+                            ui.label(policy_name);
+                            ui.end_row();
+
                             ui.label("Filename:");
                             ui.label(filename);
                             ui.end_row();
@@ -4695,10 +4776,6 @@ fn draw_compact_header(
 
                             ui.label("Type:");
                             ui.label(shader_type);
-                            ui.end_row();
-
-                            ui.label("Policies:");
-                            ui.label(policies);
                             ui.end_row();
                         },
                     );
@@ -6005,6 +6082,27 @@ fn draw_policies_tab(
 
                                                     ui.close();
                                                 }
+
+                                                if ui.button(
+                                                    "Rename Policy..."
+                                                )
+                                                .clicked()
+                                                {
+                                                    *selected_row =
+                                                        Some(
+                                                            row_reference.clone()
+                                                        );
+
+                                                    *command_requested =
+                                                        Some(
+                                                            (
+                                                                row_reference.clone(),
+                                                                PolicyRowCommand::RenamePolicy,
+                                                            )
+                                                        );
+
+                                                    ui.close();
+                                                }
                                             }
 
                                             if ui.button(
@@ -6772,6 +6870,137 @@ fn draw_exit_confirmation_modal(
 }
 
 
+fn draw_policy_rename_modal(
+    context: &egui::Context,
+    pending_rename: &mut Option<PendingPolicyRename>,
+    rename_requested:
+        &mut Option<(PolicyRowReference, String)>,
+) {
+    let Some(rename) =
+        pending_rename.as_mut()
+    else {
+        return;
+    };
+
+    let mut keep_open = true;
+    let mut save_clicked = false;
+    let mut cancel_clicked = false;
+
+    egui::Window::new(
+        "Rename Policy"
+    )
+    .id(
+        egui::Id::new(
+            "editor_rename_policy"
+        )
+    )
+    .order(
+        egui::Order::Foreground
+    )
+    .collapsible(false)
+    .resizable(false)
+    .movable(false)
+    .anchor(
+        egui::Align2::CENTER_CENTER,
+        egui::Vec2::ZERO,
+    )
+    .open(
+        &mut keep_open
+    )
+    .show(
+        context,
+        |ui| {
+            ui.label(
+                "Change the user-facing Policy Name. The shader and policy settings are unchanged."
+            );
+
+            ui.add_space(8.0);
+
+            ui.label(
+                "Policy Name:"
+            );
+
+            let response =
+                ui.add(
+                    egui::TextEdit::singleline(
+                        &mut rename.policy_name
+                    )
+                    .desired_width(
+                        320.0
+                    )
+                );
+
+            if response.changed() {
+                rename.validation_message.clear();
+            }
+
+            if !rename.validation_message.is_empty() {
+                ui.add_space(4.0);
+                ui.label(
+                    &rename.validation_message
+                );
+            }
+
+            ui.add_space(12.0);
+
+            ui.horizontal(
+                |ui| {
+                    if ui.button(
+                        "Save"
+                    )
+                    .clicked()
+                    {
+                        save_clicked = true;
+                    }
+
+                    if ui.button(
+                        "Cancel"
+                    )
+                    .clicked()
+                    {
+                        cancel_clicked = true;
+                    }
+                },
+            );
+        },
+    );
+
+    if save_clicked {
+        let proposed =
+            rename.policy_name.trim();
+
+        let length =
+            proposed.chars().count();
+
+        if !(1..=128).contains(
+            &length
+        ) {
+            rename.validation_message =
+                format!(
+                    "Policy Name must contain between 1 and 128 characters; found {}.",
+                    length,
+                );
+        } else if proposed == rename.row.policy_key {
+            rename.validation_message =
+                "Enter a different Policy Name."
+                    .to_string();
+        } else {
+            *rename_requested =
+                Some(
+                    (
+                        rename.row.clone(),
+                        proposed.to_string(),
+                    )
+                );
+        }
+    } else if cancel_clicked
+        || !keep_open
+    {
+        *pending_rename = None;
+    }
+}
+
+
 fn draw_policy_clone_modal(
     context: &egui::Context,
     pending_clone: &mut Option<PendingPolicyClone>,
@@ -7039,7 +7268,7 @@ fn draw_policy_confirmation_modal(
                 PolicyRowCommand::DeletePolicy => {
                     ui.label(
                         format!(
-                            "Delete the {} policy for:",
+                            "Delete this {} policy:",
                             target_name,
                         )
                     );
@@ -7047,7 +7276,7 @@ fn draw_policy_confirmation_modal(
                     ui.add_space(6.0);
 
                     ui.strong(
-                        &confirmation.row.filename
+                        &confirmation.row.policy_key
                     );
 
                     ui.add_space(8.0);

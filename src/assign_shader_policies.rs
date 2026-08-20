@@ -556,10 +556,11 @@ fn insert_default_policy(
 ) -> Result<(), String> {
 
     let policy_name =
-        generated_policy_name(
+        available_policy_name(
+            connection,
             &shader.filename,
             target,
-        );
+        )?;
 
 
     let policy_name_key =
@@ -612,63 +613,112 @@ fn insert_default_policy(
 
 fn generated_policy_name(
     filename: &str,
-    target: &str,
 ) -> String {
 
     let filename =
         filename.trim();
 
+    std::path::Path::new(
+        filename
+    )
+    .file_stem()
+    .and_then(
+        |value| value.to_str()
+    )
+    .filter(
+        |value| !value.trim().is_empty()
+    )
+    .unwrap_or(
+        filename
+    )
+    .trim()
+    .chars()
+    .take(128)
+    .collect::<String>()
+}
 
-    let stem =
-        std::path::Path::new(
+
+fn available_policy_name(
+    connection: &Connection,
+    filename: &str,
+    target: &str,
+) -> Result<String, String> {
+
+    let base =
+        generated_policy_name(
             filename
-        )
-        .file_stem()
-        .and_then(
-            |value| {
-                value.to_str()
-            }
-        )
-        .filter(
-            |value| {
-                !value.trim().is_empty()
-            }
-        )
-        .unwrap_or(
-            filename
-        )
-        .trim();
-
-
-    let suffix =
-        format!(
-            " ({})",
-            target,
         );
 
+    for ordinal in 1_u32..=10_000 {
+        let candidate =
+            if ordinal == 1 {
+                base.clone()
+            } else {
+                let suffix =
+                    format!(
+                        " ({})",
+                        ordinal,
+                    );
 
-    let maximum_stem_characters =
-        128_usize
-            .saturating_sub(
-                suffix
-                    .chars()
-                    .count()
+                let stem_limit =
+                    128_usize.saturating_sub(
+                        suffix.chars().count()
+                    );
+
+                format!(
+                    "{}{}",
+                    base.chars()
+                        .take(stem_limit)
+                        .collect::<String>(),
+                    suffix,
+                )
+            };
+
+        let key =
+            candidate
+                .chars()
+                .flat_map(
+                    |character| character.to_lowercase()
+                )
+                .collect::<String>();
+
+        let count: i64 =
+            connection
+                .query_row(
+                    "SELECT COUNT(*)
+                     FROM shader_policies
+                     WHERE policy_name_key = ?1
+                       AND policy_target = ?2",
+                    params![
+                        key,
+                        target,
+                    ],
+                    |row| row.get(0),
+                )
+                .map_err(
+                    |error| {
+                        format!(
+                            "Unable to validate generated Policy Name '{}' for target {}: {}",
+                            candidate,
+                            target,
+                            error,
+                        )
+                    }
+                )?;
+
+        if count == 0 {
+            return Ok(
+                candidate
             );
+        }
+    }
 
-
-    let trimmed_stem =
-        stem
-            .chars()
-            .take(
-                maximum_stem_characters
-            )
-            .collect::<String>();
-
-
-    format!(
-        "{}{}",
-        trimmed_stem,
-        suffix,
+    Err(
+        format!(
+            "Unable to generate a unique Policy Name for '{}' in target {}",
+            filename,
+            target,
+        )
     )
 }
 
