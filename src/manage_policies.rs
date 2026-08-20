@@ -32,6 +32,8 @@ pub enum PolicyTarget {
     Screensaver,
 
     Wallpaper,
+
+    Unassigned,
 }
 
 
@@ -58,10 +60,16 @@ impl PolicyTarget {
                 )
             }
 
+            "unassigned" => {
+                Ok(
+                    Self::Unassigned
+                )
+            }
+
             other => {
                 Err(
                     format!(
-                        "Unknown policy target '{}'; supported targets: screensaver, wallpaper",
+                        "Unknown policy target '{}'; supported targets: screensaver, wallpaper, unassigned",
                         other,
                     )
                 )
@@ -82,6 +90,10 @@ impl PolicyTarget {
             Self::Wallpaper => {
                 "wallpaper"
             }
+
+            Self::Unassigned => {
+                "unassigned"
+            }
         }
     }
 
@@ -97,6 +109,10 @@ impl PolicyTarget {
 
             Self::Wallpaper => {
                 "wallpaper_policies"
+            }
+
+            Self::Unassigned => {
+                "unassigned_policies"
             }
         }
     }
@@ -114,6 +130,10 @@ impl PolicyTarget {
             Self::Wallpaper => {
                 "wallpaper_external_paths"
             }
+
+            Self::Unassigned => {
+                "unassigned_external_paths"
+            }
         }
     }
 
@@ -129,6 +149,10 @@ impl PolicyTarget {
 
             Self::Wallpaper => {
                 "wallpaper_shader_paths"
+            }
+
+            Self::Unassigned => {
+                "unassigned_shader_paths"
             }
         }
     }
@@ -274,8 +298,445 @@ impl PolicyDefinition {
 // ------------------------------------------------------------
 //
 
+pub fn retarget_policy_by_key(
+    policy_key: &str,
+    destination_target: PolicyTarget,
+) -> Result<(), String> {
+
+    let policy_name =
+        policy_key.trim();
+
+
+    if policy_name.is_empty() {
+
+        return Err(
+            "Policy Name may not be empty"
+                .to_string()
+        );
+    }
+
+
+    let policy_name_key =
+        database_policy_name_key(
+            policy_name
+        )?;
+
+
+    let mut connection =
+        crate::open_database::open()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to open database while changing policy target for '{}': {}",
+                        policy_name,
+                        error,
+                    )
+                }
+            )?;
+
+
+    let transaction =
+        connection
+            .transaction()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to begin policy retarget transaction for '{}': {}",
+                        policy_name,
+                        error,
+                    )
+                }
+            )?;
+
+
+    let (
+        policy_id,
+        filename,
+        current_target,
+        stored_policy_name,
+    ):
+        (
+            i64,
+            String,
+            String,
+            String,
+        ) =
+        transaction
+            .query_row(
+                "SELECT
+                     p.policy_id,
+                     s.filename,
+                     p.policy_target,
+                     p.policy_name
+                 FROM shader_policies AS p
+                 JOIN shaders AS s
+                   ON s.shader_id = p.shader_id
+                 WHERE p.policy_name_key = ?1",
+                rusqlite::params![
+                    policy_name_key
+                ],
+                |row| {
+                    Ok(
+                        (
+                            row.get(0)?,
+                            row.get(1)?,
+                            row.get(2)?,
+                            row.get(3)?,
+                        )
+                    )
+                },
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to locate policy '{}' for retargeting: {}",
+                        policy_name,
+                        error,
+                    )
+                }
+            )?;
+
+
+    let generated_current_name =
+        format!(
+            "{} ({})",
+            filename,
+            current_target,
+        );
+
+
+    let (
+        replacement_name,
+        replacement_key,
+    ) =
+        if stored_policy_name.eq_ignore_ascii_case(
+            &generated_current_name
+        ) {
+            let replacement_name =
+                format!(
+                    "{} ({})",
+                    filename,
+                    destination_target.name(),
+                );
+
+            let replacement_key =
+                database_policy_name_key(
+                    &replacement_name
+                )?;
+
+            (
+                replacement_name,
+                replacement_key,
+            )
+        } else {
+            (
+                stored_policy_name,
+                database_policy_name_key(
+                    policy_name
+                )?,
+            )
+        };
+
+
+    transaction
+        .execute(
+            "UPDATE shader_policies
+             SET policy_target = ?1,
+                 policy_name = ?2,
+                 policy_name_key = ?3
+             WHERE policy_id = ?4",
+            rusqlite::params![
+                destination_target.name(),
+                replacement_name,
+                replacement_key,
+                policy_id,
+            ],
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to change Policy Target for '{}': {}",
+                    policy_name,
+                    error,
+                )
+            }
+        )?;
+
+
+    transaction
+        .commit()
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to commit Policy Target change for '{}': {}",
+                    policy_name,
+                    error,
+                )
+            }
+        )
+}
+
+pub fn assign_unassigned_policies_by_key(
+    policy_keys: &[String],
+    destination_target: PolicyTarget,
+) -> Result<usize, String> {
+
+    if policy_keys.is_empty() {
+
+        return Ok(
+            0
+        );
+    }
+
+
+    let mut connection =
+        crate::open_database::open()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to open database while assigning unassigned policies: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    let transaction =
+        connection
+            .transaction()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to begin unassigned-policy assignment transaction: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    let mut changed =
+        0_usize;
+
+
+    for policy_key in policy_keys {
+
+        let policy_name =
+            policy_key.trim();
+
+
+        if policy_name.is_empty() {
+
+            return Err(
+                "Unassigned policy name may not be empty"
+                    .to_string()
+            );
+        }
+
+
+        let policy_name_key =
+            database_policy_name_key(
+                policy_name
+            )?;
+
+
+        let (
+            policy_id,
+            filename,
+            stored_policy_name,
+        ): (
+            i64,
+            String,
+            String,
+        ) =
+            transaction
+                .query_row(
+                    "SELECT
+                         p.policy_id,
+                         s.filename,
+                         p.policy_name
+                     FROM shader_policies AS p
+                     JOIN shaders AS s
+                       ON s.shader_id = p.shader_id
+                     WHERE p.policy_name_key = ?1
+                       AND p.policy_target = 'unassigned'",
+                    rusqlite::params![
+                        policy_name_key
+                    ],
+                    |row| {
+                        Ok(
+                            (
+                                row.get(0)?,
+                                row.get(1)?,
+                                row.get(2)?,
+                            )
+                        )
+                    },
+                )
+                .map_err(
+                    |error| {
+                        format!(
+                            "Policy '{}' is no longer an Unassigned policy: {}",
+                            policy_name,
+                            error,
+                        )
+                    }
+                )?;
+
+
+        let generated_unassigned_name =
+            format!(
+                "{} (unassigned)",
+                filename,
+            );
+
+
+        if stored_policy_name
+            .eq_ignore_ascii_case(
+                &generated_unassigned_name
+            )
+        {
+            let desired_name =
+                format!(
+                    "{} ({})",
+                    filename,
+                    destination_target.name(),
+                );
+
+
+            let desired_key =
+                database_policy_name_key(
+                    &desired_name
+                )?;
+
+
+            let name_conflict_count: i64 =
+                transaction
+                    .query_row(
+                        "SELECT COUNT(*)
+                         FROM shader_policies
+                         WHERE policy_name_key = ?1
+                           AND policy_id <> ?2",
+                        rusqlite::params![
+                            desired_key,
+                            policy_id,
+                        ],
+                        |row| {
+                            row.get(0)
+                        },
+                    )
+                    .map_err(
+                        |error| {
+                            format!(
+                                "Unable to validate generated Policy Name '{}': {}",
+                                desired_name,
+                                error,
+                            )
+                        }
+                    )?;
+
+
+            if name_conflict_count
+                == 0
+            {
+                transaction
+                    .execute(
+                        "UPDATE shader_policies
+                         SET policy_target = ?1,
+                             policy_name = ?2,
+                             policy_name_key = ?3
+                         WHERE policy_id = ?4
+                           AND policy_target = 'unassigned'",
+                        rusqlite::params![
+                            destination_target.name(),
+                            desired_name,
+                            desired_key,
+                            policy_id,
+                        ],
+                    )
+                    .map_err(
+                        |error| {
+                            format!(
+                                "Unable to assign and rename policy '{}': {}",
+                                stored_policy_name,
+                                error,
+                            )
+                        }
+                    )?;
+            } else {
+                // Preserve the existing name rather than inventing a new user-
+                // visible name when the canonical target name is already used.
+                transaction
+                    .execute(
+                        "UPDATE shader_policies
+                         SET policy_target = ?1
+                         WHERE policy_id = ?2
+                           AND policy_target = 'unassigned'",
+                        rusqlite::params![
+                            destination_target.name(),
+                            policy_id,
+                        ],
+                    )
+                    .map_err(
+                        |error| {
+                            format!(
+                                "Unable to assign policy '{}': {}",
+                                stored_policy_name,
+                                error,
+                            )
+                        }
+                    )?;
+            }
+        } else {
+            // A custom Policy Name belongs to the user and is never rewritten
+            // merely because its target changes.
+            transaction
+                .execute(
+                    "UPDATE shader_policies
+                     SET policy_target = ?1
+                     WHERE policy_id = ?2
+                       AND policy_target = 'unassigned'",
+                    rusqlite::params![
+                        destination_target.name(),
+                        policy_id,
+                    ],
+                )
+                .map_err(
+                    |error| {
+                        format!(
+                            "Unable to assign policy '{}': {}",
+                            stored_policy_name,
+                            error,
+                        )
+                    }
+                )?;
+        }
+
+
+        changed +=
+            1;
+    }
+
+
+    transaction
+        .commit()
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to commit unassigned-policy assignment transaction: {}",
+                    error,
+                )
+            }
+        )?;
+
+
+    Ok(
+        changed
+    )
+}
+
+
 pub fn policy_exists_for_source(
-    config_path: &Path,
+    _config_path: &Path,
     target: PolicyTarget,
     shader: &str,
     source_path: &Path,
@@ -286,146 +747,62 @@ pub fn policy_exists_for_source(
             shader
         )?;
 
-    let document =
-        load_document(
-            config_path
-        )?;
 
-    Ok(
-        matching_policy_key_for_source(
-            &document,
-            target,
+    let shader_id =
+        database_shader_id_for_source(
             &shader,
             source_path,
-        )?
-        .is_some()
-    )
-}
-
-
-pub fn add_policy_for_source(
-    config_path: &Path,
-    target: PolicyTarget,
-    shader: &str,
-    properties: PolicyDefinition,
-    source_path: &Path,
-) -> Result<(), String> {
-
-    let shader =
-        normalized_shader_name(
-            shader
         )?;
 
-    validate_properties(
-        target,
-        &properties
-    )?;
 
-    let source_path =
-        canonical_or_absolute(
-            source_path
-        )?;
-
-    let mut document =
-        load_document(
-            config_path
-        )?;
-
-    if let Some(existing_key) =
-        matching_policy_key_for_source(
-            &document,
-            target,
-            &shader,
-            &source_path,
-        )?
-    {
-        return Err(
-            format!(
-                "Shader '{}' at '{}' already has an policy in [{}]",
-                shader,
-                source_path.display(),
-                target.table_name(),
-            )
-        );
-    }
-
-    let storage_key =
-        {
-            let table =
-                policy_table_mut(
-                    &mut document,
-                    target,
-                )?;
-
-            unique_policy_storage_key(
-                table,
-                &shader,
-                &source_path,
-            )
-        };
-
-    {
-        let table =
-            policy_table_mut(
-                &mut document,
-                target,
+    let connection =
+        crate::open_database::open()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to open database while checking {} policy for '{}': {}",
+                        target.name(),
+                        shader,
+                        error,
+                    )
+                }
             )?;
 
-        table[
-            &storage_key
-        ] =
-            value(
-                format_policy(
-                    &properties
-                )
-            );
-    }
 
-    let managed_path =
-        managed_shader_path(
-            target,
-            &shader,
-        );
+    let count: i64 =
+        connection
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM shader_policies
+                 WHERE shader_id = ?1
+                   AND policy_target = ?2",
+                rusqlite::params![
+                    shader_id,
+                    target.name(),
+                ],
+                |row| {
+                    row.get(0)
+                },
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to check {} policy for '{}': {}",
+                        target.name(),
+                        shader,
+                        error,
+                    )
+                }
+            )?;
 
-    if paths_refer_to_same_source(
-        &source_path,
-        &managed_path,
-    ) {
-        remove_source_path_metadata(
-            &mut document,
-            target,
-            &storage_key,
-        )?;
-    } else {
-        let source_text =
-            source_path
-                .to_str()
-                .ok_or_else(
-                    || {
-                        format!(
-                            "Shader path is not valid UTF-8: {}",
-                            source_path.display(),
-                        )
-                    }
-                )?;
 
-        set_source_path_metadata(
-            &mut document,
-            target,
-            &storage_key,
-            Some(source_text),
-        )?;
-    }
-
-    save_document(
-        config_path,
-        &document,
+    Ok(
+        count > 0
     )
 }
 
-
-pub fn replace_policy_for_source(
-    config_path: &Path,
+pub fn add_policy_for_source(
+    _config_path: &Path,
     target: PolicyTarget,
     shader: &str,
     properties: PolicyDefinition,
@@ -437,98 +814,407 @@ pub fn replace_policy_for_source(
             shader
         )?;
 
+
     validate_properties(
         target,
         &properties
     )?;
 
-    let source_path =
-        canonical_or_absolute(
-            source_path
-        )?;
 
-    let mut document =
-        load_document(
-            config_path
-        )?;
-
-    let storage_key =
-        matching_policy_key_for_source(
-            &document,
-            target,
+    let shader_id =
+        database_shader_id_for_source(
             &shader,
-            &source_path,
-        )?
-        .ok_or_else(
-            || {
+            source_path,
+        )?;
+
+
+    let values =
+        database_policy_values(
+            &properties
+        )?;
+
+
+    let mut connection =
+        crate::open_database::open()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to open database while adding {} policy for '{}': {}",
+                        target.name(),
+                        shader,
+                        error,
+                    )
+                }
+            )?;
+
+
+    let transaction =
+        connection
+            .transaction()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to begin database transaction while adding {} policy for '{}': {}",
+                        target.name(),
+                        shader,
+                        error,
+                    )
+                }
+            )?;
+
+
+    let existing_count: i64 =
+        transaction
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM shader_policies
+                 WHERE shader_id = ?1
+                   AND policy_target = ?2",
+                rusqlite::params![
+                    shader_id,
+                    target.name(),
+                ],
+                |row| {
+                    row.get(0)
+                },
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to check existing {} policy for '{}': {}",
+                        target.name(),
+                        shader,
+                        error,
+                    )
+                }
+            )?;
+
+
+    if existing_count > 0 {
+
+        return Err(
+            format!(
+                "Shader '{}' already has a {} policy",
+                shader,
+                target.name(),
+            )
+        );
+    }
+
+
+    let policy_name =
+        next_database_policy_name(
+            &transaction,
+            &shader,
+        )?;
+
+
+    let policy_name_key =
+        database_policy_name_key(
+            &policy_name
+        )?;
+
+
+    transaction
+        .execute(
+            "INSERT INTO shader_policies (
+                 policy_name,
+                 policy_name_key,
+                 shader_id,
+                 policy_target,
+                 texture_mode,
+                 texture_family,
+                 texture_primitives,
+                 palette_mode,
+                 palette_color,
+                 rendered_fps,
+                 animation_speed,
+                 anti_aliasing,
+                 dithering,
+                 color_precision,
+                 render_scale,
+                 bloom_mode,
+                 bloom_intensity,
+                 bloom_threshold,
+                 invert_colors,
+                 flip_horizontal,
+                 flip_vertical,
+                 hue_rotation
+             )
+             VALUES (
+                 ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
+                 ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20,
+                 ?21, ?22
+             )",
+            rusqlite::params![
+                policy_name,
+                policy_name_key,
+                shader_id,
+                target.name(),
+                values.texture_mode,
+                values.texture_family,
+                values.texture_primitives,
+                values.palette_mode,
+                values.palette_color,
+                values.rendered_fps,
+                values.animation_speed,
+                values.anti_aliasing,
+                values.dithering,
+                values.color_precision,
+                values.render_scale,
+                values.bloom_mode,
+                values.bloom_intensity,
+                values.bloom_threshold,
+                values.invert_colors,
+                values.flip_horizontal,
+                values.flip_vertical,
+                values.hue_rotation,
+            ],
+        )
+        .map_err(
+            |error| {
                 format!(
-                    "Shader '{}' at '{}' does not have an policy in [{}]",
+                    "Unable to insert {} policy for '{}': {}",
+                    target.name(),
                     shader,
-                    source_path.display(),
-                    target.table_name(),
+                    error,
                 )
             }
         )?;
 
-    {
-        let table =
-            policy_table_mut(
-                &mut document,
-                target,
-            )?;
 
-        table[
-            &storage_key
-        ] =
-            value(
-                format_policy(
-                    &properties
+    transaction
+        .commit()
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to commit {} policy for '{}': {}",
+                    target.name(),
+                    shader,
+                    error,
                 )
-            );
-    }
-
-    let managed_path =
-        managed_shader_path(
-            target,
-            &shader,
-        );
-
-    if paths_refer_to_same_source(
-        &source_path,
-        &managed_path,
-    ) {
-        remove_source_path_metadata(
-            &mut document,
-            target,
-            &storage_key,
-        )?;
-    } else {
-        let source_text =
-            source_path
-                .to_str()
-                .ok_or_else(
-                    || {
-                        format!(
-                            "Shader path is not valid UTF-8: {}",
-                            source_path.display(),
-                        )
-                    }
-                )?;
-
-        set_source_path_metadata(
-            &mut document,
-            target,
-            &storage_key,
-            Some(source_text),
-        )?;
-    }
-
-    save_document(
-        config_path,
-        &document,
-    )
+            }
+        )
 }
 
+pub fn replace_policy_for_source(
+    _config_path: &Path,
+    target: PolicyTarget,
+    shader: &str,
+    properties: PolicyDefinition,
+    source_path: &Path,
+) -> Result<(), String> {
+
+    let shader =
+        normalized_shader_name(
+            shader
+        )?;
+
+
+    validate_properties(
+        target,
+        &properties
+    )?;
+
+
+    let shader_id =
+        database_shader_id_for_source(
+            &shader,
+            source_path,
+        )?;
+
+
+    let values =
+        database_policy_values(
+            &properties
+        )?;
+
+
+    let connection =
+        crate::open_database::open()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to open database while replacing {} policy for '{}': {}",
+                        target.name(),
+                        shader,
+                        error,
+                    )
+                }
+            )?;
+
+
+    let policy_ids =
+        {
+            let mut statement =
+                connection
+                    .prepare(
+                        "SELECT policy_id
+                         FROM shader_policies
+                         WHERE shader_id = ?1
+                           AND policy_target = ?2
+                         ORDER BY policy_id"
+                    )
+                    .map_err(
+                        |error| {
+                            format!(
+                                "Unable to prepare {} policy lookup for '{}': {}",
+                                target.name(),
+                                shader,
+                                error,
+                            )
+                        }
+                    )?;
+
+
+            let rows =
+                statement
+                    .query_map(
+                        rusqlite::params![
+                            shader_id,
+                            target.name(),
+                        ],
+                        |row| {
+                            row.get::<_, i64>(0)
+                        },
+                    )
+                    .map_err(
+                        |error| {
+                            format!(
+                                "Unable to query {} policy for '{}': {}",
+                                target.name(),
+                                shader,
+                                error,
+                            )
+                        }
+                    )?;
+
+
+            let mut policy_ids =
+                Vec::new();
+
+
+            for row in rows {
+                policy_ids.push(
+                    row.map_err(
+                        |error| {
+                            format!(
+                                "Unable to decode {} policy for '{}': {}",
+                                target.name(),
+                                shader,
+                                error,
+                            )
+                        }
+                    )?
+                );
+            }
+
+
+            policy_ids
+        };
+
+
+    let policy_id =
+        match policy_ids.as_slice() {
+
+            [] => {
+                return Err(
+                    format!(
+                        "Shader '{}' does not have a {} policy",
+                        shader,
+                        target.name(),
+                    )
+                );
+            }
+
+            [policy_id] => {
+                *policy_id
+            }
+
+            _ => {
+                return Err(
+                    format!(
+                        "Shader '{}' has multiple {} policies; source-based replacement is ambiguous",
+                        shader,
+                        target.name(),
+                    )
+                );
+            }
+        };
+
+
+    let changed =
+        connection
+            .execute(
+                "UPDATE shader_policies
+                 SET texture_mode = ?1,
+                     texture_family = ?2,
+                     texture_primitives = ?3,
+                     palette_mode = ?4,
+                     palette_color = ?5,
+                     rendered_fps = ?6,
+                     animation_speed = ?7,
+                     anti_aliasing = ?8,
+                     dithering = ?9,
+                     color_precision = ?10,
+                     render_scale = ?11,
+                     bloom_mode = ?12,
+                     bloom_intensity = ?13,
+                     bloom_threshold = ?14,
+                     invert_colors = ?15,
+                     flip_horizontal = ?16,
+                     flip_vertical = ?17,
+                     hue_rotation = ?18
+                 WHERE policy_id = ?19",
+                rusqlite::params![
+                    values.texture_mode,
+                    values.texture_family,
+                    values.texture_primitives,
+                    values.palette_mode,
+                    values.palette_color,
+                    values.rendered_fps,
+                    values.animation_speed,
+                    values.anti_aliasing,
+                    values.dithering,
+                    values.color_precision,
+                    values.render_scale,
+                    values.bloom_mode,
+                    values.bloom_intensity,
+                    values.bloom_threshold,
+                    values.invert_colors,
+                    values.flip_horizontal,
+                    values.flip_vertical,
+                    values.hue_rotation,
+                    policy_id,
+                ],
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to update {} policy for '{}': {}",
+                        target.name(),
+                        shader,
+                        error,
+                    )
+                }
+            )?;
+
+
+    if changed != 1 {
+
+        return Err(
+            format!(
+                "Expected to update one {} policy for '{}', updated {}",
+                target.name(),
+                shader,
+                changed,
+            )
+        );
+    }
+
+
+    Ok(())
+}
 
 pub fn add_policies_for_sources(
     config_path: &Path,
@@ -764,62 +1450,93 @@ pub fn replace_policies_by_key(
 
 
 pub fn delete_policy_by_key(
-    config_path: &Path,
+    _config_path: &Path,
     target: PolicyTarget,
     policy_key: &str,
 ) -> Result<(), String> {
 
-    let mut document =
-        load_document(
-            config_path
+    let policy_name =
+        policy_key.trim();
+
+
+    if policy_name.is_empty() {
+
+        return Err(
+            "Policy key may not be empty"
+                .to_string()
+        );
+    }
+
+
+    let policy_name_key =
+        database_policy_name_key(
+            policy_name
         )?;
 
-    let table =
-        policy_table_mut(
-            &mut document,
-            target,
-        )?;
 
-    let existing_key =
-        table
-            .iter()
-            .find_map(
-                |(key, _)| {
-                    if key.eq_ignore_ascii_case(
-                        policy_key
-                    ) {
-                        Some(key.to_string())
-                    } else {
-                        None
-                    }
-                }
-            )
-            .ok_or_else(
-                || {
+    let connection =
+        crate::open_database::open()
+            .map_err(
+                |error| {
                     format!(
-                        "Policy key '{}' does not exist in [{}]",
-                        policy_key,
-                        target.table_name(),
+                        "Unable to open database while deleting policy '{}': {}",
+                        policy_name,
+                        error,
                     )
                 }
             )?;
 
-    table.remove(
-        &existing_key
-    );
 
-    remove_source_path_metadata(
-        &mut document,
-        target,
-        &existing_key,
-    )?;
+    let deleted =
+        connection
+            .execute(
+                "DELETE FROM shader_policies
+                 WHERE policy_name_key = ?1
+                   AND policy_target = ?2",
+                rusqlite::params![
+                    policy_name_key,
+                    target.name(),
+                ],
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to delete {} policy '{}': {}",
+                        target.name(),
+                        policy_name,
+                        error,
+                    )
+                }
+            )?;
 
-    save_document(
-        config_path,
-        &document,
-    )
+
+    match deleted {
+
+        1 => {
+            Ok(())
+        }
+
+        0 => {
+            Err(
+                format!(
+                    "Policy '{}' does not exist for target {}",
+                    policy_name,
+                    target.name(),
+                )
+            )
+        }
+
+        count => {
+            Err(
+                format!(
+                    "Deleting policy '{}' unexpectedly removed {} rows",
+                    policy_name,
+                    count,
+                )
+            )
+        }
+    }
 }
-
 
 pub fn reconcile_shader_move_from_source(
     config_path: &Path,
@@ -1853,6 +2570,653 @@ fn remove_source_path_metadata_from_named_table(
 
 //
 // ------------------------------------------------------------
+// SQLite single-policy helpers
+// ------------------------------------------------------------
+//
+
+#[derive(Debug)]
+struct DatabasePolicyValues {
+
+    texture_mode:
+        Option<String>,
+
+    texture_family:
+        Option<String>,
+
+    texture_primitives:
+        Option<i64>,
+
+    palette_mode:
+        Option<String>,
+
+    palette_color:
+        Option<String>,
+
+    rendered_fps:
+        Option<i64>,
+
+    animation_speed:
+        Option<f64>,
+
+    anti_aliasing:
+        Option<String>,
+
+    dithering:
+        Option<String>,
+
+    color_precision:
+        Option<String>,
+
+    render_scale:
+        Option<f64>,
+
+    bloom_mode:
+        String,
+
+    bloom_intensity:
+        f64,
+
+    bloom_threshold:
+        f64,
+
+    invert_colors:
+        i64,
+
+    flip_horizontal:
+        i64,
+
+    flip_vertical:
+        i64,
+
+    hue_rotation:
+        f64,
+}
+
+
+fn database_shader_id_for_source(
+    shader: &str,
+    source_path: &Path,
+) -> Result<i64, String> {
+
+    let source_path =
+        canonical_or_absolute(
+            source_path
+        )?;
+
+
+    let filename =
+        source_path
+            .file_name()
+            .and_then(
+                |name| {
+                    name.to_str()
+                }
+            )
+            .ok_or_else(
+                || {
+                    format!(
+                        "Shader path has no valid UTF-8 filename: {}",
+                        source_path.display(),
+                    )
+                }
+            )?;
+
+
+    if !filename.eq_ignore_ascii_case(
+        shader
+    ) {
+
+        return Err(
+            format!(
+                "Shader name '{}' does not match source filename '{}'",
+                shader,
+                filename,
+            )
+        );
+    }
+
+
+    let registered_directory =
+        source_path
+            .parent()
+            .ok_or_else(
+                || {
+                    format!(
+                        "Shader path has no parent directory: {}",
+                        source_path.display(),
+                    )
+                }
+            )?
+            .to_string_lossy()
+            .to_string();
+
+
+    let connection =
+        crate::open_database::open()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to open database while resolving shader '{}': {}",
+                        shader,
+                        error,
+                    )
+                }
+            )?;
+
+
+    let mut statement =
+        connection
+            .prepare(
+                "SELECT shader_id
+                 FROM shaders
+                 WHERE filename = ?1
+                   AND source_path = ?2
+                 ORDER BY shader_id"
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to prepare shader lookup for '{}': {}",
+                        shader,
+                        error,
+                    )
+                }
+            )?;
+
+
+    let rows =
+        statement
+            .query_map(
+                rusqlite::params![
+                    filename,
+                    registered_directory,
+                ],
+                |row| {
+                    row.get::<_, i64>(0)
+                },
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to query database shader '{}': {}",
+                        shader,
+                        error,
+                    )
+                }
+            )?;
+
+
+    let mut shader_ids =
+        Vec::new();
+
+
+    for row in rows {
+
+        shader_ids.push(
+            row.map_err(
+                |error| {
+                    format!(
+                        "Unable to decode database shader '{}': {}",
+                        shader,
+                        error,
+                    )
+                }
+            )?
+        );
+    }
+
+
+    match shader_ids.as_slice() {
+
+        [shader_id] => {
+            Ok(
+                *shader_id
+            )
+        }
+
+        [] => {
+            Err(
+                format!(
+                    "Shader '{}' at '{}' is not registered in screenshaver.db",
+                    shader,
+                    source_path.display(),
+                )
+            )
+        }
+
+        _ => {
+            Err(
+                format!(
+                    "Shader '{}' at '{}' resolves to multiple database rows",
+                    shader,
+                    source_path.display(),
+                )
+            )
+        }
+    }
+}
+
+
+fn database_policy_values(
+    properties: &PolicyDefinition,
+) -> Result<DatabasePolicyValues, String> {
+
+    let (
+        texture_mode,
+        texture_family,
+        texture_primitives,
+    ) =
+        match properties.texture
+            .as_deref()
+            .map(
+                |value| {
+                    value.trim()
+                        .to_ascii_lowercase()
+                }
+            )
+        {
+
+            None => {
+                (
+                    None,
+                    None,
+                    None,
+                )
+            }
+
+            Some(value)
+                if value == "random" =>
+            {
+                (
+                    Some(
+                        "random".to_string()
+                    ),
+                    None,
+                    None,
+                )
+            }
+
+            Some(value) => {
+
+                let specification =
+                    crate::parse_texture_specification::parse_texture_specification(
+                        &value
+                    )
+                    .map_err(
+                        |error| {
+                            format!(
+                                "Invalid texture policy '{}': {}",
+                                value,
+                                error,
+                            )
+                        }
+                    )?;
+
+
+                (
+                    Some(
+                        "specific".to_string()
+                    ),
+                    Some(
+                        specification.family
+                            .name()
+                            .to_ascii_lowercase()
+                    ),
+                    Some(
+                        i64::try_from(
+                            specification.requested_primitive_count
+                        )
+                        .map_err(
+                            |_| {
+                                format!(
+                                    "Texture primitive count {} is too large for SQLite storage",
+                                    specification.requested_primitive_count,
+                                )
+                            }
+                        )?
+                    ),
+                )
+            }
+        };
+
+
+    let (
+        palette_mode,
+        palette_color,
+    ) =
+        match properties.palette
+            .as_deref()
+            .map(
+                |value| {
+                    value.trim()
+                        .to_ascii_lowercase()
+                }
+            )
+        {
+
+            None => {
+                (
+                    None,
+                    None,
+                )
+            }
+
+            Some(value)
+                if value == "random" =>
+            {
+                (
+                    Some(
+                        "random".to_string()
+                    ),
+                    None,
+                )
+            }
+
+            Some(value) => {
+
+                let color =
+                    crate::palettes::PaletteColor::parse_hex(
+                        &value
+                    )
+                    .map_err(
+                        |error| {
+                            format!(
+                                "Invalid palette policy '{}': {}",
+                                value,
+                                error,
+                            )
+                        }
+                    )?;
+
+
+                (
+                    Some(
+                        "specific".to_string()
+                    ),
+                    Some(
+                        color.to_hex()
+                            .to_ascii_lowercase()
+                    ),
+                )
+            }
+        };
+
+
+    let bloom_mode =
+        properties.bloom
+            .as_deref()
+            .unwrap_or(
+                "off"
+            )
+            .trim()
+            .to_ascii_lowercase();
+
+
+    Ok(
+        DatabasePolicyValues {
+
+            texture_mode,
+
+            texture_family,
+
+            texture_primitives,
+
+            palette_mode,
+
+            palette_color,
+
+            rendered_fps:
+                properties.fps
+                    .map(
+                        i64::from
+                    ),
+
+            animation_speed:
+                properties.speed
+                    .map(
+                        f64::from
+                    ),
+
+            anti_aliasing:
+                properties.anti_aliasing
+                    .as_deref()
+                    .map(
+                        |value| {
+                            value.trim()
+                                .to_ascii_lowercase()
+                        }
+                    ),
+
+            dithering:
+                properties.dithering
+                    .as_deref()
+                    .map(
+                        |value| {
+                            value.trim()
+                                .to_ascii_lowercase()
+                        }
+                    ),
+
+            color_precision:
+                properties.color_precision
+                    .as_deref()
+                    .map(
+                        |value| {
+                            value.trim()
+                                .to_ascii_lowercase()
+                        }
+                    ),
+
+            render_scale:
+                properties.render_scale
+                    .map(
+                        f64::from
+                    ),
+
+            bloom_mode,
+
+            bloom_intensity:
+                properties.bloom_intensity
+                    .unwrap_or(
+                        crate::render_bloom::BLOOM_INTENSITY_DEFAULT
+                    )
+                    as f64,
+
+            bloom_threshold:
+                properties.bloom_threshold
+                    .unwrap_or(
+                        crate::render_bloom::BLOOM_THRESHOLD_DEFAULT
+                    )
+                    as f64,
+
+            invert_colors:
+                if properties.invert_colors
+                    .unwrap_or(
+                        false
+                    )
+                {
+                    1
+                } else {
+                    0
+                },
+
+            flip_horizontal:
+                if properties.flip_horizontal
+                    .unwrap_or(
+                        false
+                    )
+                {
+                    1
+                } else {
+                    0
+                },
+
+            flip_vertical:
+                if properties.flip_vertical
+                    .unwrap_or(
+                        false
+                    )
+                {
+                    1
+                } else {
+                    0
+                },
+
+            hue_rotation:
+                properties.hue_rotation
+                    .unwrap_or(
+                        crate::postprocess_shader::HUE_ROTATION_DEFAULT
+                    )
+                    as f64,
+        }
+    )
+}
+
+
+fn database_policy_name_key(
+    policy_name: &str,
+) -> Result<String, String> {
+
+    let policy_name =
+        policy_name.trim();
+
+
+    let length =
+        policy_name
+            .chars()
+            .count();
+
+
+    if !(1..=128)
+        .contains(
+            &length
+        )
+    {
+
+        return Err(
+            format!(
+                "Policy Name must contain between 1 and 128 characters; found {}",
+                length,
+            )
+        );
+    }
+
+
+    // Schema V1 requires a stable case-insensitive key.  Rust's Unicode
+    // lowercase mapping is used here as the current canonical implementation.
+    // A future normalization-library dependency may strengthen this to full
+    // Unicode normalization/case folding without changing the SQL schema.
+    let key =
+        policy_name
+            .chars()
+            .flat_map(
+                |character| {
+                    character.to_lowercase()
+                }
+            )
+            .collect::<String>();
+
+
+    if key.is_empty() {
+
+        return Err(
+            "Policy Name produced an empty comparison key"
+                .to_string()
+        );
+    }
+
+
+    Ok(
+        key
+    )
+}
+
+
+fn next_database_policy_name(
+    connection: &rusqlite::Connection,
+    shader: &str,
+) -> Result<String, String> {
+
+    let base =
+        shader.trim();
+
+
+    for ordinal in 1_u32..=10_000 {
+
+        let candidate =
+            if ordinal == 1 {
+
+                base.to_string()
+
+            } else {
+
+                format!(
+                    "{} ({})",
+                    base,
+                    ordinal,
+                )
+            };
+
+
+        if candidate
+            .chars()
+            .count()
+            > 128
+        {
+            continue;
+        }
+
+
+        let key =
+            database_policy_name_key(
+                &candidate
+            )?;
+
+
+        let count: i64 =
+            connection
+                .query_row(
+                    "SELECT COUNT(*)
+                     FROM shader_policies
+                     WHERE policy_name_key = ?1",
+                    rusqlite::params![
+                        key
+                    ],
+                    |row| {
+                        row.get(0)
+                    },
+                )
+                .map_err(
+                    |error| {
+                        format!(
+                            "Unable to check Policy Name '{}': {}",
+                            candidate,
+                            error,
+                        )
+                    }
+                )?;
+
+
+        if count == 0 {
+
+            return Ok(
+                candidate
+            );
+        }
+    }
+
+
+    Err(
+        format!(
+            "Unable to generate a unique Policy Name for shader '{}'",
+            shader,
+        )
+    )
+}
+
+
+//
+// ------------------------------------------------------------
 // Policy formatting and validation
 // ------------------------------------------------------------
 //
@@ -1949,6 +3313,17 @@ fn validate_properties(
                 PolicyTarget::Wallpaper => (
                     crate::define_constants::WALLPAPER_SPEED_MIN,
                     crate::define_constants::WALLPAPER_SPEED_MAX,
+                ),
+
+                PolicyTarget::Unassigned => (
+                    crate::define_constants::SCREENSAVER_SPEED_MIN
+                        .min(
+                            crate::define_constants::WALLPAPER_SPEED_MIN
+                        ),
+                    crate::define_constants::SCREENSAVER_SPEED_MAX
+                        .max(
+                            crate::define_constants::WALLPAPER_SPEED_MAX
+                        ),
                 ),
             };
 
@@ -3415,6 +4790,10 @@ fn display_target_name(
 
         PolicyTarget::Wallpaper => {
             "Wallpaper"
+        }
+
+        PolicyTarget::Unassigned => {
+            "Unassigned"
         }
     }
 }

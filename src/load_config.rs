@@ -922,6 +922,13 @@ pub struct Config {
             ShaderPolicy
         >,
 
+    // Control Center/editor staging policies. These are intentionally excluded
+    // from all runtime screensaver/wallpaper policy resolution.
+    pub unassigned_policies:
+        Vec<
+            ShaderPolicy
+        >,
+
     pub screensaver_speed_policy:
         AnimationSpeedPolicy,
 
@@ -1213,6 +1220,12 @@ pub fn load_config(
         )?;
 
 
+    let unassigned_policies =
+        load_database_policy_table(
+            PolicyTarget::Unassigned
+        )?;
+
+
     let screensaver_texture_policy_entries =
         texture_policy_entries_from(
             &screensaver_policies
@@ -1408,6 +1421,8 @@ pub fn load_config(
 
             wallpaper_policies,
 
+            unassigned_policies,
+
             screensaver_speed_policy,
 
             wallpaper_speed_policy,
@@ -1581,6 +1596,11 @@ pub fn load_config(
             format!(
                 "[CONFIG] wallpaper policy count = {}",
                 config.wallpaper_policies.len(),
+            ),
+
+            format!(
+                "[CONFIG] unassigned policy count = {}",
+                config.unassigned_policies.len(),
             ),
 
             format!(
@@ -1822,6 +1842,26 @@ pub fn load_config(
     }
 
 
+    diagnostics.push(
+        format!(
+            "[CONFIG] unassigned_policies count = {}",
+            config.unassigned_policies.len(),
+        )
+    );
+
+
+    for shader_policy in
+        &config.unassigned_policies
+    {
+        diagnostics.push(
+            format_shader_policy_diagnostic(
+                "unassigned_policies",
+                shader_policy,
+            )
+        );
+    }
+
+
     Ok(
         ConfigResult {
 
@@ -1841,6 +1881,7 @@ pub fn load_config(
 enum PolicyTarget {
     Screensaver,
     Wallpaper,
+    Unassigned,
 }
 
 
@@ -1853,6 +1894,7 @@ impl PolicyTarget {
         match self {
             Self::Screensaver => "screensaver_policies",
             Self::Wallpaper => "wallpaper_policies",
+            Self::Unassigned => "unassigned_policies",
         }
     }
 
@@ -1864,6 +1906,7 @@ impl PolicyTarget {
         match self {
             Self::Screensaver => "screensaver_external_paths",
             Self::Wallpaper => "wallpaper_external_paths",
+            Self::Unassigned => "unassigned_external_paths",
         }
     }
 
@@ -1880,6 +1923,16 @@ impl PolicyTarget {
             Self::Wallpaper => (
                 crate::define_constants::WALLPAPER_SPEED_MIN,
                 crate::define_constants::WALLPAPER_SPEED_MAX,
+            ),
+            Self::Unassigned => (
+                crate::define_constants::SCREENSAVER_SPEED_MIN
+                    .min(
+                        crate::define_constants::WALLPAPER_SPEED_MIN
+                    ),
+                crate::define_constants::SCREENSAVER_SPEED_MAX
+                    .max(
+                        crate::define_constants::WALLPAPER_SPEED_MAX
+                    ),
             ),
         }
     }
@@ -1967,6 +2020,7 @@ fn load_database_policy_table(
         match target {
             PolicyTarget::Screensaver => "screensaver",
             PolicyTarget::Wallpaper => "wallpaper",
+            PolicyTarget::Unassigned => "unassigned",
         };
 
 

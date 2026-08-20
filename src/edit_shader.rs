@@ -683,6 +683,67 @@ fn run_empty_session(
 
 
         if editor_output.bulk_save_requested {
+            match assign_selected_unassigned_policies(
+                &editor_output.bulk_selected_policy_rows,
+                editor_output.policy_target_change_requested,
+            ) {
+                Ok(Some(changed)) => {
+                    let config_path =
+                        crate::locate_paths::config_path();
+
+                    match crate::load_config::load_config(
+                        &config_path
+                    ) {
+                        Ok(reloaded_config) => {
+                            config =
+                                reloaded_config.config;
+
+                            policy_display_rows =
+                                build_policy_display_rows(
+                                    &config
+                                );
+
+                            edit_window.complete_bulk_save(
+                                false
+                            );
+
+                            edit_window.set_status_message(
+                                format!(
+                                    "Bulk assignment complete: {} Unassigned policies assigned.",
+                                    changed,
+                                )
+                            );
+                        }
+
+                        Err(error) => {
+                            edit_window.set_status_message(
+                                "Policies were assigned, but configuration reload failed."
+                            );
+
+                            log_warning(
+                                &format!(
+                                    "[EDIT_SHADER] Unassigned Bulk Edit saved, but configuration reload failed: {}",
+                                    error,
+                                )
+                            );
+                        }
+                    }
+
+                    continue;
+                }
+
+                Ok(None) => {}
+
+                Err(error) => {
+                    edit_window.set_status_message(
+                        error
+                    );
+
+                    continue;
+                }
+            }
+
+
             let selected_rows =
                 &editor_output.bulk_selected_policy_rows;
 
@@ -739,6 +800,9 @@ fn run_empty_session(
 
                                     crate::editor_layout::PolicyTarget::Wallpaper =>
                                         "Wallpaper",
+
+                                    crate::editor_layout::PolicyTarget::Unassigned =>
+                                        "Unassigned",
                                 },
                                 row.policy_key,
                             )
@@ -836,6 +900,10 @@ fn run_empty_session(
 
                         crate::editor_layout::PolicyTarget::Wallpaper => {
                             crate::manage_policies::PolicyTarget::Wallpaper
+                        }
+
+                        crate::editor_layout::PolicyTarget::Unassigned => {
+                            crate::manage_policies::PolicyTarget::Unassigned
                         }
                     };
 
@@ -1394,6 +1462,10 @@ fn run_empty_session(
                     crate::editor_layout::PolicyTarget::Wallpaper => {
                         crate::manage_policies::PolicyTarget::Wallpaper
                     }
+
+                    crate::editor_layout::PolicyTarget::Unassigned => {
+                        crate::manage_policies::PolicyTarget::Unassigned
+                    }
                 };
 
 
@@ -1497,6 +1569,10 @@ fn run_empty_session(
 
                     crate::editor_layout::PolicyTarget::Wallpaper => {
                         crate::manage_policies::PolicyTarget::Wallpaper
+                    }
+
+                    crate::editor_layout::PolicyTarget::Unassigned => {
+                        crate::manage_policies::PolicyTarget::Unassigned
                     }
                 };
 
@@ -1730,6 +1806,10 @@ fn run_empty_session(
                     }
 
                     crate::editor_layout::PolicyTarget::Wallpaper => {
+                        crate::locate_paths::shader_dir()
+                    }
+
+                    crate::editor_layout::PolicyTarget::Unassigned => {
                         crate::locate_paths::shader_dir()
                     }
                 };
@@ -2033,6 +2113,15 @@ fn run_paths(
                         )
                     }
 
+                    Some(
+                        crate::editor_layout::PolicyTarget::Unassigned
+                    ) => {
+                        (
+                            true,
+                            true,
+                        )
+                    }
+
                     None => {
                         // Shaders outside Screenshaver's managed folders remain
                         // intentionally unrestricted and may be assigned to
@@ -2148,6 +2237,22 @@ fn run_paths(
                 wallpaper_policy_exists
             }
 
+            Some(
+                crate::editor_layout::PolicyTarget::Unassigned
+            ) => {
+                config.unassigned_policies
+                    .iter()
+                    .any(
+                        |policy| {
+                            policy_applies_to_path(
+                                policy,
+                                crate::editor_layout::PolicyTarget::Unassigned,
+                                initial_shader_path,
+                            )
+                        }
+                    )
+            }
+
             None => {
                 false
             }
@@ -2182,6 +2287,20 @@ fn run_paths(
                 crate::editor_layout::PolicyTarget::Screensaver
             ) => {
                 "Screensaver target enforced by shader location. New Screensaver policy is ready to save."
+                    .to_string()
+            }
+
+            Some(
+                crate::editor_layout::PolicyTarget::Unassigned
+            ) if initial_policy_exists => {
+                "Loaded existing Unassigned policy for this shader."
+                    .to_string()
+            }
+
+            Some(
+                crate::editor_layout::PolicyTarget::Unassigned
+            ) => {
+                "New Unassigned policy is ready to save."
                     .to_string()
             }
 
@@ -3191,6 +3310,10 @@ fn run_paths(
                         crate::editor_layout::PolicyTarget::Wallpaper => {
                             crate::locate_paths::shader_dir()
                         }
+
+                        crate::editor_layout::PolicyTarget::Unassigned => {
+                            crate::locate_paths::shader_dir()
+                        }
                     };
 
                 let selected_path =
@@ -3657,6 +3780,15 @@ fn run_paths(
                                     )
                                 }
 
+                                Some(
+                                    crate::editor_layout::PolicyTarget::Unassigned
+                                ) => {
+                                    (
+                                        true,
+                                        true,
+                                    )
+                                }
+
                                 None => {
                                     (
                                         true,
@@ -3777,6 +3909,22 @@ fn run_paths(
                             new_wallpaper_policy_exists
                         }
 
+                        Some(
+                            crate::editor_layout::PolicyTarget::Unassigned
+                        ) => {
+                            config.unassigned_policies
+                                .iter()
+                                .any(
+                                    |policy| {
+                                        policy_applies_to_path(
+                                            policy,
+                                            crate::editor_layout::PolicyTarget::Unassigned,
+                                            &selected_path,
+                                        )
+                                    }
+                                )
+                        }
+
                         None => {
                             false
                         }
@@ -3825,6 +3973,20 @@ fn run_paths(
                             crate::editor_layout::PolicyTarget::Screensaver
                         ) => {
                             "No Screensaver policy exists. Loaded Screensaver defaults."
+                                .to_string()
+                        }
+
+                        Some(
+                            crate::editor_layout::PolicyTarget::Unassigned
+                        ) if new_policy_exists => {
+                            "Loaded shader with its existing Unassigned policy."
+                                .to_string()
+                        }
+
+                        Some(
+                            crate::editor_layout::PolicyTarget::Unassigned
+                        ) => {
+                            "No Unassigned policy exists. Loaded defaults for a new Unassigned policy."
                                 .to_string()
                         }
 
@@ -4099,6 +4261,22 @@ fn run_paths(
                                     wallpaper_policy_exists
                                 }
 
+                                Some(
+                                    crate::editor_layout::PolicyTarget::Unassigned
+                                ) => {
+                                    config.unassigned_policies
+                                        .iter()
+                                        .any(
+                                            |policy| {
+                                                policy_applies_to_path(
+                                                    policy,
+                                                    crate::editor_layout::PolicyTarget::Unassigned,
+                                                    &active.path,
+                                                )
+                                            }
+                                        )
+                                }
+
                                 None => {
                                     false
                                 }
@@ -4151,6 +4329,10 @@ fn run_paths(
                         crate::editor_layout::PolicyTarget::Wallpaper => {
                             wallpaper_target_available
                         }
+
+                        crate::editor_layout::PolicyTarget::Unassigned => {
+                            true
+                        }
                     };
 
                 if !target_available {
@@ -4162,6 +4344,10 @@ fn run_paths(
 
                             crate::editor_layout::PolicyTarget::Wallpaper => {
                                 "This shader cannot use a Wallpaper policy in the current editing session."
+                            }
+
+                            crate::editor_layout::PolicyTarget::Unassigned => {
+                                "This shader cannot use an Unassigned policy in the current editing session."
                             }
                         }
                     );
@@ -4177,6 +4363,20 @@ fn run_paths(
 
                         crate::editor_layout::PolicyTarget::Wallpaper => {
                             wallpaper_policy_exists
+                        }
+
+                        crate::editor_layout::PolicyTarget::Unassigned => {
+                            config.unassigned_policies
+                                .iter()
+                                .any(
+                                    |policy| {
+                                        policy_applies_to_path(
+                                            policy,
+                                            crate::editor_layout::PolicyTarget::Unassigned,
+                                            &active.path,
+                                        )
+                                    }
+                                )
                         }
                     };
 
@@ -4300,6 +4500,10 @@ fn run_paths(
 
                         crate::editor_layout::PolicyTarget::Wallpaper => {
                             "Wallpaper"
+                        }
+
+                        crate::editor_layout::PolicyTarget::Unassigned => {
+                            "Unassigned"
                         }
                     };
 
@@ -4693,6 +4897,67 @@ fn run_paths(
 
 
             if editor_output.bulk_save_requested {
+                match assign_selected_unassigned_policies(
+                    &editor_output.bulk_selected_policy_rows,
+                    editor_output.policy_target_change_requested,
+                ) {
+                    Ok(Some(changed)) => {
+                        let config_path =
+                            crate::locate_paths::config_path();
+
+                        match crate::load_config::load_config(
+                            &config_path
+                        ) {
+                            Ok(reloaded_config) => {
+                                config =
+                                    reloaded_config.config;
+
+                                policy_display_rows =
+                                    build_policy_display_rows(
+                                        &config
+                                    );
+
+                                edit_window.complete_bulk_save(
+                                    false
+                                );
+
+                                edit_window.set_status_message(
+                                    format!(
+                                        "Bulk assignment complete: {} Unassigned policies assigned.",
+                                        changed,
+                                    )
+                                );
+                            }
+
+                            Err(error) => {
+                                edit_window.set_status_message(
+                                    "Policies were assigned, but configuration reload failed."
+                                );
+
+                                log_warning(
+                                    &format!(
+                                        "[EDIT_SHADER] Unassigned Bulk Edit saved, but configuration reload failed: {}",
+                                        error,
+                                    )
+                                );
+                            }
+                        }
+
+                        continue;
+                    }
+
+                    Ok(None) => {}
+
+                    Err(error) => {
+                        edit_window.set_status_message(
+                            error
+                        );
+
+                        continue;
+                    }
+                }
+
+
                 let selected_rows =
                     &editor_output.bulk_selected_policy_rows;
 
@@ -4756,6 +5021,9 @@ fn run_paths(
 
                                         crate::editor_layout::PolicyTarget::Wallpaper =>
                                             "Wallpaper",
+
+                                        crate::editor_layout::PolicyTarget::Unassigned =>
+                                            "Unassigned",
                                     },
                                     row.policy_key,
                                 )
@@ -4813,6 +5081,10 @@ fn run_paths(
 
                             crate::editor_layout::PolicyTarget::Wallpaper => {
                                 crate::manage_policies::PolicyTarget::Wallpaper
+                            }
+
+                            crate::editor_layout::PolicyTarget::Unassigned => {
+                                crate::manage_policies::PolicyTarget::Unassigned
                             }
                         };
 
@@ -5081,6 +5353,10 @@ fn run_paths(
                         crate::editor_layout::PolicyTarget::Wallpaper => {
                             wallpaper_target_available
                         }
+
+                        crate::editor_layout::PolicyTarget::Unassigned => {
+                            true
+                        }
                     };
 
                 if !selected_target_available {
@@ -5208,6 +5484,10 @@ fn run_paths(
                         crate::editor_layout::PolicyTarget::Wallpaper => {
                             crate::manage_policies::PolicyTarget::Wallpaper
                         }
+
+                        crate::editor_layout::PolicyTarget::Unassigned => {
+                            crate::manage_policies::PolicyTarget::Unassigned
+                        }
                     };
 
                 let config_path =
@@ -5221,30 +5501,96 @@ fn run_paths(
                 // with the first target's file, causing that runtime to miss the
                 // policy and fall back to its global texture/palette defaults.
                 let policy_source_path =
-                    match managed_policy_target_for_path(
-                        &active.path
-                    ) {
-                        Some(
-                            managed_target
-                        ) => {
-                            target_shader_path(
-                                managed_target,
-                                &active.shader_name,
-                            )
-                        }
+                    if policy_target
+                        == crate::editor_layout::PolicyTarget::Unassigned
+                    {
+                        active.path.clone()
+                    } else {
+                        match managed_policy_target_for_path(
+                            &active.path
+                        ) {
+                            Some(
+                                managed_target
+                            ) => {
+                                target_shader_path(
+                                    managed_target,
+                                    &active.shader_name,
+                                )
+                            }
 
-                        None => {
-                            // External shaders must retain their actual source
-                            // path in the policy.  The selected policy target
-                            // determines which policy table is used, but it
-                            // must not relocate the shader logically into one
-                            // of Screenshaver's managed shader directories.
-                            active.path.clone()
+                            None => {
+                                active.path.clone()
+                            }
                         }
                     };
 
+                let selected_policy_before_save =
+                    edit_window
+                        .policy_list_state_snapshot()
+                        .selected_policy_row;
+
+
+                let retarget_result =
+                    if let Some(
+                        selected_policy
+                    ) =
+                        selected_policy_before_save
+                            .as_ref()
+                    {
+                        let selected_manage_target =
+                            match selected_policy.policy_target {
+
+                                crate::editor_layout::PolicyTarget::Screensaver => {
+                                    crate::manage_policies::PolicyTarget::Screensaver
+                                }
+
+                                crate::editor_layout::PolicyTarget::Wallpaper => {
+                                    crate::manage_policies::PolicyTarget::Wallpaper
+                                }
+
+                                crate::editor_layout::PolicyTarget::Unassigned => {
+                                    crate::manage_policies::PolicyTarget::Unassigned
+                                }
+                            };
+
+
+                        if selected_manage_target
+                            != manage_target
+                        {
+                            crate::manage_policies::retarget_policy_by_key(
+                                &selected_policy.policy_key,
+                                manage_target,
+                            )
+                            .map(
+                                |_| {
+                                    true
+                                }
+                            )
+                        } else {
+                            Ok(
+                                false
+                            )
+                        }
+                    } else {
+                        Ok(
+                            false
+                        )
+                    };
+
+
                 let save_result =
-                    if crate::manage_policies::policy_exists_for_source(
+                    match retarget_result {
+
+                        Err(error) => {
+                            Err(
+                                error
+                            )
+                        }
+
+                        Ok(
+                            _retargeted
+                        ) => {
+                            if crate::manage_policies::policy_exists_for_source(
                         &config_path,
                         manage_target,
                         &active.shader_name,
@@ -5265,6 +5611,8 @@ fn run_paths(
                             properties,
                             &policy_source_path,
                         )
+                            }
+                        }
                     };
 
                 match save_result {
@@ -5462,6 +5810,20 @@ fn run_paths(
                                                 wallpaper_policy_exists =
                                                     true;
                                             }
+
+                                            crate::editor_layout::PolicyTarget::Unassigned => {
+                                                screensaver_target_available =
+                                                    true;
+
+                                                wallpaper_target_available =
+                                                    true;
+
+                                                screensaver_policy_exists =
+                                                    false;
+
+                                                wallpaper_policy_exists =
+                                                    false;
+                                            }
                                         }
 
 
@@ -5517,6 +5879,9 @@ fn run_paths(
 
                                                     crate::editor_layout::PolicyTarget::Wallpaper =>
                                                         "Wallpaper",
+
+                                                    crate::editor_layout::PolicyTarget::Unassigned =>
+                                                        "Unassigned",
                                                 },
                                             ),
                                         );
@@ -5585,6 +5950,10 @@ fn run_paths(
 
                                 crate::editor_layout::PolicyTarget::Wallpaper => {
                                     crate::manage_policies::PolicyTarget::Wallpaper
+                                }
+
+                                crate::editor_layout::PolicyTarget::Unassigned => {
+                                    crate::manage_policies::PolicyTarget::Unassigned
                                 }
                             };
 
@@ -5694,6 +6063,10 @@ fn run_paths(
 
                                 crate::editor_layout::PolicyTarget::Wallpaper => {
                                     crate::manage_policies::PolicyTarget::Wallpaper
+                                }
+
+                                crate::editor_layout::PolicyTarget::Unassigned => {
+                                    crate::manage_policies::PolicyTarget::Unassigned
                                 }
                             };
 
@@ -5921,6 +6294,10 @@ fn resolve_policy_shader_path(
             crate::editor_layout::PolicyTarget::Wallpaper => {
                 &config.wallpaper_policies
             }
+
+            crate::editor_layout::PolicyTarget::Unassigned => {
+                &config.unassigned_policies
+            }
         };
 
 
@@ -5997,6 +6374,17 @@ fn editor_policy_context_for_path(
                 config.screensaver_speed_policy
                     .global_speed,
                 &config.screensaver_policies,
+            ),
+
+            Some(
+                crate::editor_layout::PolicyTarget::Unassigned
+            ) => (
+                config.global_rendered_fps,
+                &config.texture_policy,
+                &config.screensaver_postprocess_policy,
+                config.screensaver_speed_policy
+                    .global_speed,
+                &config.unassigned_policies,
             ),
 
             None => (
@@ -6219,6 +6607,9 @@ fn move_policy_shader(
 
             crate::editor_layout::PolicyTarget::Wallpaper =>
                 crate::locate_paths::shader_dir(),
+
+            crate::editor_layout::PolicyTarget::Unassigned =>
+                crate::locate_paths::shader_dir(),
         };
 
     std::fs::create_dir_all(
@@ -6256,6 +6647,9 @@ fn move_policy_shader(
 
                     crate::editor_layout::PolicyTarget::Wallpaper =>
                         "/wallpapers",
+
+                    crate::editor_layout::PolicyTarget::Unassigned =>
+                        "/shaders",
                 }
             )
         );
@@ -6290,6 +6684,9 @@ fn move_policy_shader(
 
                 crate::editor_layout::PolicyTarget::Wallpaper =>
                     crate::manage_policies::PolicyTarget::Wallpaper,
+
+                crate::editor_layout::PolicyTarget::Unassigned =>
+                    crate::manage_policies::PolicyTarget::Unassigned,
             },
         )
     {
@@ -6616,6 +7013,10 @@ fn create_bulk_policies(
                 crate::editor_layout::PolicyTarget::Wallpaper => {
                     crate::manage_policies::PolicyTarget::Wallpaper
                 }
+
+                crate::editor_layout::PolicyTarget::Unassigned => {
+                    crate::manage_policies::PolicyTarget::Unassigned
+                }
             };
 
 
@@ -6821,6 +7222,74 @@ fn describe_shader_type(
 }
 
 
+fn assign_selected_unassigned_policies(
+    selected_rows: &[crate::editor_layout::PolicyRowReference],
+    requested_target: Option<crate::editor_layout::PolicyTarget>,
+) -> Result<Option<usize>, String> {
+
+    if selected_rows.is_empty()
+        || !selected_rows
+            .iter()
+            .all(
+                |row| {
+                    row.unassigned
+                }
+            )
+    {
+        return Ok(
+            None
+        );
+    }
+
+
+    let requested_target =
+        requested_target
+            .ok_or_else(
+                || {
+                    "Select Screensaver or Wallpaper as the Policy Target for the selected Unassigned policies."
+                        .to_string()
+                }
+            )?;
+
+
+    let destination_target =
+        match requested_target {
+
+            crate::editor_layout::PolicyTarget::Screensaver => {
+                crate::manage_policies::PolicyTarget::Screensaver
+            }
+
+            crate::editor_layout::PolicyTarget::Wallpaper => {
+                crate::manage_policies::PolicyTarget::Wallpaper
+            }
+
+            crate::editor_layout::PolicyTarget::Unassigned => {
+                crate::manage_policies::PolicyTarget::Unassigned
+            }
+        };
+
+
+    let policy_keys =
+        selected_rows
+            .iter()
+            .map(
+                |row| {
+                    row.policy_key.clone()
+                }
+            )
+            .collect::<Vec<_>>();
+
+
+    crate::manage_policies::assign_unassigned_policies_by_key(
+        &policy_keys,
+        destination_target,
+    )
+    .map(
+        Some
+    )
+}
+
+
 fn policy_for_bulk_row<'a>(
     config: &'a crate::load_config::Config,
     row: &crate::editor_layout::PolicyRowReference,
@@ -6834,6 +7303,10 @@ fn policy_for_bulk_row<'a>(
 
             crate::editor_layout::PolicyTarget::Wallpaper => {
                 &config.wallpaper_policies
+            }
+
+            crate::editor_layout::PolicyTarget::Unassigned => {
+                &config.unassigned_policies
             }
         };
 
@@ -6968,6 +7441,9 @@ fn build_policy_display_rows(
 
                         policy_target:
                             crate::editor_layout::PolicyTarget::Screensaver,
+
+                        unassigned:
+                            false,
                     }
                 }
             )
@@ -7008,14 +7484,174 @@ fn build_policy_display_rows(
 
                         policy_target:
                             crate::editor_layout::PolicyTarget::Wallpaper,
+
+                        unassigned:
+                            false,
                     }
                 }
             )
     );
 
 
+    match load_unassigned_policy_display_rows() {
+
+        Ok(
+            unassigned_rows
+        ) => {
+            rows.extend(
+                unassigned_rows
+            );
+        }
+
+        Err(error) => {
+            log_warning(
+                &format!(
+                    "[EDIT_SHADER] Unable to load Unassigned policies for Policy List: {}",
+                    error,
+                )
+            );
+        }
+    }
+
+
     rows
 }
+
+
+fn load_unassigned_policy_display_rows(
+) -> Result<Vec<crate::editor_layout::PolicyDisplayRow>, String> {
+
+    let connection =
+        crate::open_database::open()?;
+
+
+    let managed_source_path =
+        crate::locate_paths::shader_dir()
+            .to_string_lossy()
+            .to_string();
+
+
+    let mut statement =
+        connection
+            .prepare(
+                "SELECT
+                     p.policy_name,
+                     s.filename,
+                     s.source_path,
+                     s.file_status
+                 FROM shader_policies AS p
+                 JOIN shaders AS s
+                   ON s.shader_id = p.shader_id
+                 WHERE p.policy_target = 'unassigned'
+                   AND s.source_path = ?1
+                 ORDER BY
+                     p.policy_name_key,
+                     p.policy_id"
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to prepare Unassigned-policy Policy List query: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    let query_rows =
+        statement
+            .query_map(
+                [
+                    managed_source_path
+                ],
+                |row| {
+                    Ok(
+                        (
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, String>(2)?,
+                            row.get::<_, String>(3)?,
+                        )
+                    )
+                },
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to query Unassigned policies for Policy List: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    let mut display_rows =
+        Vec::new();
+
+
+    for query_row in query_rows {
+
+        let (
+            policy_name,
+            filename,
+            source_path,
+            file_status,
+        ) =
+            query_row.map_err(
+                |error| {
+                    format!(
+                        "Unable to decode Unassigned policy row: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+        let resolved_path =
+            PathBuf::from(
+                source_path
+            )
+            .join(
+                &filename
+            );
+
+
+        display_rows.push(
+            crate::editor_layout::PolicyDisplayRow {
+                policy_key:
+                    policy_name,
+
+                filename,
+
+                full_path:
+                    resolved_path
+                        .display()
+                        .to_string(),
+
+                accessible:
+                    file_status != "missing"
+                        && resolved_path.is_file(),
+
+                texture:
+                    shader_requires_texture_for_policy_row(
+                        &resolved_path
+                    ),
+
+                policy_target:
+                    crate::editor_layout::PolicyTarget::Unassigned,
+
+                unassigned:
+                    true,
+            }
+        );
+    }
+
+
+    Ok(
+        display_rows
+    )
+}
+
 
 fn resolve_preview_fps(
     global_rendered_fps: u32,
@@ -7741,6 +8377,9 @@ fn policy_target_state_name(
 
         crate::editor_layout::PolicyTarget::Wallpaper =>
             "wallpaper",
+
+        crate::editor_layout::PolicyTarget::Unassigned =>
+            "unassigned",
     }
 }
 
@@ -7765,6 +8404,9 @@ fn restored_policy_row(
 
             "wallpaper" =>
                 crate::editor_layout::PolicyTarget::Wallpaper,
+
+            "unassigned" =>
+                crate::editor_layout::PolicyTarget::Unassigned,
 
             _ =>
                 return None,
@@ -7797,6 +8439,9 @@ fn restored_policy_row(
 
                     policy_target:
                         row.policy_target,
+
+                    unassigned:
+                        row.unassigned,
                 }
             }
         )

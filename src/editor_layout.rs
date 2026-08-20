@@ -66,6 +66,7 @@ struct SliderDragState {
 pub enum PolicyTarget {
     Screensaver,
     Wallpaper,
+    Unassigned,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -442,6 +443,7 @@ pub struct PolicyDisplayRow {
     pub accessible: bool,
     pub texture: bool,
     pub policy_target: PolicyTarget,
+    pub unassigned: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -466,6 +468,7 @@ pub struct PolicyRowReference {
     pub filename: String,
     pub full_path: String,
     pub policy_target: PolicyTarget,
+    pub unassigned: bool,
 }
 
 
@@ -1889,6 +1892,14 @@ impl EditWindowOverlay {
                     PolicyTarget::Wallpaper => {
                         wallpaper_policy_exists
                     }
+
+                    PolicyTarget::Unassigned => {
+                        self.selected_policy_row
+                            .as_ref()
+                            .is_some_and(
+                                |row| row.unassigned
+                            )
+                    }
                 };
 
 
@@ -2220,6 +2231,16 @@ impl EditWindowOverlay {
                                         wallpaper_policy_exists
                                     }
 
+                                    Some(PolicyTarget::Unassigned) => {
+                                        selected_policy_row
+                                            .as_ref()
+                                            .is_some_and(
+                                                |row| {
+                                                    row.unassigned
+                                                }
+                                            )
+                                    }
+
                                     None => {
                                         false
                                     }
@@ -2510,6 +2531,7 @@ impl EditWindowOverlay {
                                 &mut displayed_animation_speed,
                                 &mut displayed_render_scale,
                                 &mut policy_target,
+                                &mut policy_target_change_requested,
                                 &mut texture,
                                 &mut palette,
                                 &mut primitive_count,
@@ -3526,6 +3548,10 @@ impl EditWindowOverlay {
                 configuration.wallpaper_single_filename =
                     filename;
             }
+
+            PolicyTarget::Unassigned => {
+                // Unassigned policies are not executable display modes.
+            }
         }
     }
 
@@ -3837,13 +3863,19 @@ fn draw_compact_header(
                                 PolicyTarget::Wallpaper
                             ) =>
                                 "Wallpaper",
+                            Some(
+                                PolicyTarget::Unassigned
+                            ) =>
+                                "Unassigned",
                             None =>
                                 "Select...",
                         };
 
+                    // Managed shaders now share one /shaders repository.
+                    // Policy Target is an editable database property, not a
+                    // physical-directory restriction.
                     let policy_target_locked =
-                        screensaver_target_available
-                            ^ wallpaper_target_available;
+                        false;
 
 
                     let target_response =
@@ -3948,6 +3980,43 @@ fn draw_compact_header(
                                                                 *policy_target_change_requested =
                                                                     Some(
                                                                         PolicyTarget::Wallpaper
+                                                                    );
+                                                            }
+
+                                                            ui.close();
+                                                        }
+
+                                                        let unassigned_response =
+                                                            ui.selectable_label(
+                                                                policy_target
+                                                                    == Some(
+                                                                        PolicyTarget::Unassigned
+                                                                    ),
+                                                                "Unassigned",
+                                                            );
+
+                                                        update_hover_help(
+                                                            &unassigned_response,
+                                                            hover_help_message,
+                                                            "Keep this policy and all of its settings, but exclude it from screensaver and wallpaper rendering until it is reassigned.",
+                                                        );
+
+                                                        if unassigned_response.clicked()
+                                                            && policy_target
+                                                                != Some(
+                                                                    PolicyTarget::Unassigned
+                                                                )
+                                                        {
+                                                            if configuration_changed
+                                                                && policy_target.is_some()
+                                                            {
+                                                                *status_message =
+                                                                    "Save or cancel the current changes before switching policy targets."
+                                                                        .to_string();
+                                                            } else {
+                                                                *policy_target_change_requested =
+                                                                    Some(
+                                                                        PolicyTarget::Unassigned
                                                                     );
                                                             }
 
@@ -4112,6 +4181,7 @@ fn draw_compact_action_row(
     displayed_animation_speed: &mut f32,
     displayed_render_scale: &mut f32,
     policy_target: &mut Option<PolicyTarget>,
+    policy_target_change_requested: &mut Option<PolicyTarget>,
     texture: &mut TextureSelection,
     palette: &mut PaletteSelection,
     primitive_count: &mut u32,
@@ -4266,6 +4336,9 @@ fn draw_compact_action_row(
 
                     bulk_selected_policy_rows.clear();
 
+                    *policy_target_change_requested =
+                        None;
+
                     *status_message =
                         "Bulk Edit Mode canceled"
                             .to_string();
@@ -4274,6 +4347,97 @@ fn draw_compact_action_row(
                         "Changes canceled"
                             .to_string();
                 }
+            }
+
+
+
+            let all_bulk_rows_unassigned =
+                bulk_edit_mode
+                    && !bulk_selected_policy_rows.is_empty()
+                    && bulk_selected_policy_rows
+                        .iter()
+                        .all(
+                            |row| {
+                                row.unassigned
+                            }
+                        );
+
+
+            if all_bulk_rows_unassigned {
+
+                ui.separator();
+
+                let selected_text =
+                    match *policy_target_change_requested {
+
+                        Some(
+                            PolicyTarget::Screensaver
+                        ) => {
+                            "Assign Screensaver"
+                        }
+
+                        Some(
+                            PolicyTarget::Wallpaper
+                        ) => {
+                            "Assign Wallpaper"
+                        }
+
+                        Some(
+                            PolicyTarget::Unassigned
+                        ) => {
+                            "Assign Target..."
+                        }
+
+                        None => {
+                            "Assign Target..."
+                        }
+                    };
+
+
+                egui::ComboBox::from_id_source(
+                    "bulk_unassigned_policy_target"
+                )
+                .selected_text(
+                    selected_text
+                )
+                .width(
+                    145.0 * metrics.scale
+                )
+                .show_ui(
+                    ui,
+                    |ui| {
+                        if ui.selectable_label(
+                            *policy_target_change_requested
+                                == Some(
+                                    PolicyTarget::Screensaver
+                                ),
+                            "Screensaver",
+                        )
+                        .clicked()
+                        {
+                            *policy_target_change_requested =
+                                Some(
+                                    PolicyTarget::Screensaver
+                                );
+                        }
+
+
+                        if ui.selectable_label(
+                            *policy_target_change_requested
+                                == Some(
+                                    PolicyTarget::Wallpaper
+                                ),
+                            "Wallpaper",
+                        )
+                        .clicked()
+                        {
+                            *policy_target_change_requested =
+                                Some(
+                                    PolicyTarget::Wallpaper
+                                );
+                        }
+                    },
+                );
             }
 
 
@@ -4581,15 +4745,29 @@ fn draw_policies_tab(
                             &right.texture
                         ),
 
-                    PolicySortColumn::PolicyType =>
-                        policy_target_name(
-                            left.policy_target
+                    PolicySortColumn::PolicyType => {
+                        let left_name =
+                            if left.unassigned {
+                                "Unassigned"
+                            } else {
+                                policy_target_name(
+                                    left.policy_target
+                                )
+                            };
+
+                        let right_name =
+                            if right.unassigned {
+                                "Unassigned"
+                            } else {
+                                policy_target_name(
+                                    right.policy_target
+                                )
+                            };
+
+                        left_name.cmp(
+                            right_name
                         )
-                        .cmp(
-                            policy_target_name(
-                                right.policy_target
-                            )
-                        ),
+                    },
                 };
 
             if *sort_ascending {
@@ -4693,6 +4871,9 @@ fn draw_policies_tab(
 
                     policy_target:
                         row.policy_target,
+
+                    unassigned:
+                        row.unassigned,
                 };
 
             *selected_row =
@@ -4801,6 +4982,9 @@ fn draw_policies_tab(
                                                         row.full_path.clone(),
                                                     policy_target:
                                                         row.policy_target,
+
+                                                    unassigned:
+                                                        row.unassigned,
                                                 },
                                             )
                                         }
@@ -4857,6 +5041,9 @@ fn draw_policies_tab(
 
                                                     policy_target:
                                                         row.policy_target,
+
+                                                    unassigned:
+                                                        row.unassigned,
                                                 }
                                             }
                                         )
@@ -5050,6 +5237,9 @@ fn draw_policies_tab(
 
                                     policy_target:
                                         row.policy_target,
+
+                                    unassigned:
+                                        row.unassigned,
                                 };
 
                             let mut bulk_checked =
@@ -5174,23 +5364,28 @@ fn draw_policies_tab(
                                     ui,
                                     status_width,
                                     row_height,
-                                    if row.accessible {
-                                        "✅"
-                                    } else {
+                                    if !row.accessible {
                                         "❌"
+                                    } else if row.unassigned {
+                                        "X"
+                                    } else {
+                                        "✅"
                                     },
                                     egui::Sense::click(),
                                     row_selected,
                                 )
                                 .on_hover_text(
-                                    if row.accessible {
-                                        format!(
-                                            "Shader is accessible:\n{}",
-                                            row.full_path,
-                                        )
-                                    } else {
+                                    if !row.accessible {
                                         format!(
                                             "Shader file cannot be accessed:\n{}",
+                                            row.full_path,
+                                        )
+                                    } else if row.unassigned {
+                                        "Unassigned policy — this shader cannot be rendered until its Policy Target is changed to Screensaver or Wallpaper."
+                                            .to_string()
+                                    } else {
+                                        format!(
+                                            "Shader is accessible:\n{}",
                                             row.full_path,
                                         )
                                     }
@@ -5215,9 +5410,13 @@ fn draw_policies_tab(
                                     ui,
                                     policy_width,
                                     row_height,
-                                    policy_target_name(
-                                        row.policy_target
-                                    ),
+                                    if row.unassigned {
+                                        "Unassigned"
+                                    } else {
+                                        policy_target_name(
+                                            row.policy_target
+                                        )
+                                    },
                                     egui::Sense::click(),
                                     row_selected,
                                 );
@@ -6229,6 +6428,9 @@ fn draw_policy_confirmation_modal(
 
                             PolicyTarget::Wallpaper =>
                                 "Any Screensaver shader or Screensaver policy with the same filename will not be changed.",
+
+                            PolicyTarget::Unassigned =>
+                                "The shader file will not be changed.",
                         }
                     );
                 }
@@ -6286,6 +6488,9 @@ fn policy_target_name(
 
         PolicyTarget::Wallpaper =>
             "Wallpaper",
+
+        PolicyTarget::Unassigned =>
+            "Unassigned",
     }
 }
 

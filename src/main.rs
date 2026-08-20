@@ -32,6 +32,7 @@ mod load_shader;
 mod load_shader_source;
 mod compile_shader;
 mod reconcile_shaders;
+mod assign_shader_policies;
 mod render_frame;
 mod splash_screen;
 mod generate_bricks;
@@ -292,6 +293,96 @@ fn main() {
                 return;
             }
         };
+
+
+    // Keep the managed shader inventory current before configuration is
+    // hydrated from SQLite.  This is normal production startup behavior.
+    match crate::reconcile_shaders::reconcile(
+        &mut database_connection
+    ) {
+        Ok(outcome) => {
+            crate::logger::information(
+                &logfile,
+                &format!(
+                    "[DATABASE] Shader reconciliation complete: inserted={}, updated={}, unchanged={}, missing={}, unreadable={}, rejected={}",
+                    outcome.inserted,
+                    outcome.updated,
+                    outcome.unchanged,
+                    outcome.marked_missing,
+                    outcome.marked_unreadable,
+                    outcome.rejected,
+                ),
+            );
+        }
+
+        Err(error) => {
+            eprintln!(
+                "[MAIN] SHADER RECONCILIATION ERROR: {}",
+                error
+            );
+
+            crate::logger::error(
+                &logfile,
+                &format!(
+                    "[DATABASE] Shader reconciliation failed: {}",
+                    error,
+                ),
+            );
+
+            return;
+        }
+    }
+
+
+    match crate::assign_shader_policies::offer_assignment_if_needed(
+        &mut database_connection
+    ) {
+        Ok(
+            crate::assign_shader_policies::AssignmentOutcome::NoPoliciesNeeded
+        ) => {}
+
+        Ok(
+            crate::assign_shader_policies::AssignmentOutcome::Dismissed {
+                shader_count,
+            }
+        ) => {
+            crate::logger::information(
+                &logfile,
+                &format!(
+                    "[POLICY] New-policy assignment dismissed; {} shader(s) remain without policies",
+                    shader_count,
+                ),
+            );
+        }
+
+        Ok(
+            crate::assign_shader_policies::AssignmentOutcome::Created {
+                shader_count,
+                policy_count,
+                assignment,
+            }
+        ) => {
+            crate::logger::information(
+                &logfile,
+                &format!(
+                    "[POLICY] Created {} policy/policies for {} shader(s) using '{}'",
+                    policy_count,
+                    shader_count,
+                    assignment.name(),
+                ),
+            );
+        }
+
+        Err(error) => {
+            crate::logger::warning(
+                &logfile,
+                &format!(
+                    "[POLICY] Unable to offer new-policy assignment: {}",
+                    error,
+                ),
+            );
+        }
+    }
 
 
     let cfg_path =
