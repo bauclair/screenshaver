@@ -2517,6 +2517,14 @@ fn run_paths(
                     );
 
 
+                // The active shader has intentionally been unloaded during
+                // Bulk Edit.  Present the cleared black frame plus the egui
+                // Control Center overlay every iteration; otherwise the
+                // front buffer retains the final shader frame and appears
+                // to have "frozen".
+                window.gl_swap_window();
+
+
                 save_policy_list_state_if_changed(
                     &edit_window,
                     &mut last_saved_policy_list_state,
