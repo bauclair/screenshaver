@@ -532,6 +532,47 @@ fn main() {
     }
 
 
+    // A configuration with both renderers disabled is valid, but there is no
+    // useful resident runtime to start.  --control has already been handled
+    // above, so ordinary Run/Start invocations can report the inactive state
+    // and exit successfully before initializing audio, singleton/tray state,
+    // or any rendering backend.
+    if !cfg.screensaver_enabled
+        && !cfg.wallpaper_enabled
+    {
+        eprintln!(
+            "WARNING: Screensaver and wallpaper rendering are both disabled."
+        );
+
+        eprintln!(
+            "Screenshaver has no active rendering functions and will exit."
+        );
+
+        eprintln!(
+            "Run \"screenshaver --control\" to enable screensavers or wallpapers."
+        );
+
+
+        crate::logger::warning(
+            &logfile,
+            "[MAIN] Screensaver and wallpaper rendering are both disabled; no renderer will be started",
+        );
+
+
+        crate::logger::information(
+            &logfile,
+            "[MAIN] Screenshaver exiting normally because no rendering functions are enabled",
+        );
+
+
+        drop(
+            database_connection
+        );
+
+        return;
+    }
+
+
     // Audio is an optional runtime capability.  Failure to locate a usable
     // backend must never prevent Screenshaver from continuing normally.
     let audio_backend =

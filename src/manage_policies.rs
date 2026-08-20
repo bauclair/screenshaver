@@ -159,6 +159,23 @@ impl PolicyTarget {
 }
 
 
+/// Returns true for either canonical default.glsl fallback policy.
+/// These policies guarantee at least one Screensaver and Wallpaper target.
+pub fn is_protected_default_policy(
+    filename: &str,
+    _policy_name: &str,
+    target: PolicyTarget,
+) -> bool {
+    filename.eq_ignore_ascii_case(
+        "default.glsl"
+    )
+        && matches!(
+            target,
+            PolicyTarget::Screensaver | PolicyTarget::Wallpaper
+        )
+}
+
+
 #[derive(
     Debug,
     Clone,
@@ -434,6 +451,27 @@ pub fn retarget_policy_by_key(
                     )
                 }
             )?;
+
+
+    let parsed_current_target =
+        PolicyTarget::parse(
+            &current_target
+        )?;
+
+
+    if is_protected_default_policy(
+        &filename,
+        &stored_policy_name,
+        parsed_current_target,
+    ) && destination_target != parsed_current_target
+    {
+        return Err(
+            format!(
+                "Policy Target for protected fallback policy '{}' cannot be changed",
+                stored_policy_name,
+            )
+        );
+    }
 
 
     let generated_current_name =
@@ -1519,6 +1557,13 @@ pub fn patch_policies_by_key(
             );
         }
 
+        let target_change_allowed =
+            !is_protected_default_policy(
+                &filename,
+                &stored_policy_name,
+                patch.current_target,
+            );
+
         let property_fields_changed =
             patch.fields.texture
                 || patch.fields.palette
@@ -1554,8 +1599,8 @@ pub fn patch_policies_by_key(
                     )?;
 
 
-            if destination
-                != patch.current_target
+            if target_change_allowed
+                && destination != patch.current_target
             {
                 let generated_current_name =
                     format!(
@@ -1852,7 +1897,7 @@ pub fn patch_policies_by_key(
                         }
                     )?;
 
-            if destination != patch.current_target {
+            if target_change_allowed && destination != patch.current_target {
                 let generated_current_name =
                     format!(
                         "{} ({})",
@@ -2009,6 +2054,57 @@ pub fn delete_policy_by_key(
                     )
                 }
             )?;
+
+
+    let (
+        filename,
+        stored_policy_name,
+    ): (String, String) =
+        connection
+            .query_row(
+                "SELECT
+                     s.filename,
+                     p.policy_name
+                 FROM shader_policies AS p
+                 JOIN shaders AS s
+                   ON s.shader_id = p.shader_id
+                 WHERE p.policy_name_key = ?1
+                   AND p.policy_target = ?2",
+                rusqlite::params![
+                    policy_name_key,
+                    target.name(),
+                ],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                    ))
+                },
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to locate {} policy '{}' before deletion: {}",
+                        target.name(),
+                        policy_name,
+                        error,
+                    )
+                }
+            )?;
+
+
+    if is_protected_default_policy(
+        &filename,
+        &stored_policy_name,
+        target,
+    ) {
+        return Err(
+            format!(
+                "Protected fallback policy '{}' cannot be deleted",
+                stored_policy_name,
+            )
+        );
+    }
 
 
     let deleted =

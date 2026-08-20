@@ -220,9 +220,10 @@ impl ShaderManager {
     }
 
 
-    /// Load managed shader discovery from SQLite and preserve each shader's
-    /// registered physical source path.  Physical directory enumeration belongs
-    /// to reconciliation, not normal runtime selection.
+    /// Load screensaver-eligible managed shaders from SQLite and preserve each
+    /// shader's registered physical source path. A managed shader is selectable
+    /// only when it has at least one Screensaver-target policy. Physical directory
+    /// enumeration belongs to reconciliation, not normal runtime selection.
     pub fn load_shader_entries() -> Vec<ShaderEntry> {
 
         let managed_source_path =
@@ -243,11 +244,17 @@ impl ShaderManager {
                     "SELECT
                          filename,
                          source_path
-                     FROM shaders
-                     WHERE source_path = ?1
-                       AND file_status = 'present'
-                     ORDER BY filename COLLATE NOCASE,
-                              filename"
+                     FROM shaders AS s
+                     WHERE s.source_path = ?1
+                       AND s.file_status = 'present'
+                       AND EXISTS (
+                           SELECT 1
+                           FROM shader_policies AS p
+                           WHERE p.shader_id = s.shader_id
+                             AND p.policy_target = 'screensaver'
+                       )
+                     ORDER BY s.filename COLLATE NOCASE,
+                              s.filename"
                 ) {
 
                     Ok(mut statement) => {
@@ -279,7 +286,7 @@ impl ShaderManager {
 
                                             log_debug(
                                                 &format!(
-                                                    "[SHADER] Discovered managed shader from database: {}",
+                                                    "[SHADER] Discovered screensaver-eligible managed shader from database: {}",
                                                     filename
                                                 )
                                             );

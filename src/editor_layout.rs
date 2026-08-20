@@ -2531,6 +2531,7 @@ impl EditWindowOverlay {
                                 ui,
                                 metrics,
                                 shader_information,
+                                selected_policy_row.as_ref(),
                                 &self.branding_texture,
                                 self.branding_aspect_ratio,
                                 configuration_changed,
@@ -4003,6 +4004,7 @@ fn draw_compact_header(
     ui: &mut egui::Ui,
     metrics: EditorMetrics,
     shader_information: Option<&ShaderInformation>,
+    selected_policy_row: Option<&PolicyRowReference>,
     branding_texture: &egui::TextureHandle,
     branding_aspect_ratio: f32,
     configuration_changed: bool,
@@ -4219,11 +4221,31 @@ fn draw_compact_header(
                                 "Select...",
                         };
 
-                    // Managed shaders now share one /shaders repository.
-                    // Policy Target is an editable database property, not a
-                    // physical-directory restriction.
+                    // The canonical default.glsl policies are fallbacks.
+                    // Their rendering settings remain editable, but their
+                    // Policy Target assignments are immutable. Bulk Edit is
+                    // intentionally not disabled here because other checked
+                    // policies may still be retargeted.
                     let policy_target_locked =
-                        false;
+                        !bulk_edit_mode
+                            && selected_policy_row
+                                .map(
+                                    |row| {
+                                        crate::manage_policies::is_protected_default_policy(
+                                            &row.filename,
+                                            &row.policy_key,
+                                            match row.policy_target {
+                                                PolicyTarget::Screensaver =>
+                                                    crate::manage_policies::PolicyTarget::Screensaver,
+                                                PolicyTarget::Wallpaper =>
+                                                    crate::manage_policies::PolicyTarget::Wallpaper,
+                                                PolicyTarget::Unassigned =>
+                                                    crate::manage_policies::PolicyTarget::Unassigned,
+                                            },
+                                        )
+                                    }
+                                )
+                                .unwrap_or(false);
 
 
                     let target_response =
@@ -4456,11 +4478,7 @@ fn draw_compact_header(
                         update_hover_help(
                             &target_response.response,
                             hover_help_message,
-                            if screensaver_target_available {
-                                "Policy Target is locked to Screensaver because this shader is physically located in the managed screensavers folder."
-                            } else {
-                                "Policy Target is locked to Wallpaper because this shader is physically located in the managed wallpapers folder."
-                            },
+                            "default.glsl provides Screenshaver's guaranteed fallback policy. Its Policy Target cannot be changed.",
                         );
                     }
 

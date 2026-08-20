@@ -136,6 +136,70 @@ struct PersistentPolicyIdentity {
 }
 
 
+fn protected_bulk_target_skip_count(
+    patches: &[crate::manage_policies::BulkPolicyPatch],
+    rows: &[crate::editor_layout::PolicyRowReference],
+) -> usize {
+    patches
+        .iter()
+        .zip(rows.iter())
+        .filter(
+            |(patch, row)| {
+                patch.fields.policy_target
+                    && patch.destination_target
+                        .map(
+                            |destination| {
+                                destination != patch.current_target
+                            }
+                        )
+                        .unwrap_or(false)
+                    && crate::manage_policies::is_protected_default_policy(
+                        &row.filename,
+                        &row.policy_key,
+                        patch.current_target,
+                    )
+            }
+        )
+        .count()
+}
+
+
+fn bulk_edit_completion_message(
+    changed: usize,
+    protected_target_skips: usize,
+) -> String {
+    if protected_target_skips == 0 {
+        return format!(
+            "Bulk Edit complete: {} policies updated.",
+            changed,
+        );
+    }
+
+    if changed == 0 {
+        return format!(
+            "No policies changed. Policy Target cannot be changed for {} protected default {}.",
+            protected_target_skips,
+            if protected_target_skips == 1 {
+                "policy"
+            } else {
+                "policies"
+            },
+        );
+    }
+
+    format!(
+        "Bulk Edit complete: {} policies updated. Policy Target was preserved for {} protected default {}.",
+        changed,
+        protected_target_skips,
+        if protected_target_skips == 1 {
+            "policy"
+        } else {
+            "policies"
+        },
+    )
+}
+
+
 fn default_policy_sort_column() -> String {
     "filename".to_string()
 }
@@ -760,6 +824,12 @@ fn run_empty_session(
                 continue;
             }
 
+            let protected_target_skips =
+                protected_bulk_target_skip_count(
+                    &patches,
+                    &editor_output.bulk_selected_policy_rows,
+                );
+
             match crate::manage_policies::patch_policies_by_key(
                 &patches
             ) {
@@ -784,9 +854,9 @@ fn run_empty_session(
                             );
 
                             edit_window.set_status_message(
-                                format!(
-                                    "Bulk Edit complete: {} policies updated.",
+                                bulk_edit_completion_message(
                                     changed,
+                                    protected_target_skips,
                                 )
                             );
 
@@ -2618,6 +2688,12 @@ fn run_paths(
                                 )
                             );
                         } else {
+                            let protected_target_skips =
+                                protected_bulk_target_skip_count(
+                                    &patches,
+                                    &editor_output.bulk_selected_policy_rows,
+                                );
+
                             match crate::manage_policies::patch_policies_by_key(
                                 &patches
                             ) {
@@ -2639,9 +2715,9 @@ fn run_paths(
                                             );
 
                                             edit_window.set_status_message(
-                                                format!(
-                                                    "Bulk Edit complete: {} policies updated.",
+                                                bulk_edit_completion_message(
                                                     changed,
+                                                    protected_target_skips,
                                                 )
                                             );
 
@@ -5318,6 +5394,12 @@ fn run_paths(
                 continue;
             }
 
+            let protected_target_skips =
+                protected_bulk_target_skip_count(
+                    &patches,
+                    &editor_output.bulk_selected_policy_rows,
+                );
+
             match crate::manage_policies::patch_policies_by_key(
                 &patches
             ) {
@@ -5342,9 +5424,9 @@ fn run_paths(
                             );
 
                             edit_window.set_status_message(
-                                format!(
-                                    "Bulk Edit complete: {} policies updated.",
+                                bulk_edit_completion_message(
                                     changed,
+                                    protected_target_skips,
                                 )
                             );
 
@@ -7589,45 +7671,185 @@ fn shader_requires_texture_for_bulk_edit(
     shader_path: &Path,
 ) -> Result<bool, String> {
 
-    match crate::load_shader::load_shader_for_preview(
+    let filename =
         shader_path
-    ) {
-        crate::load_shader::ShaderLoadResult::Ready {
-            channel_usage,
-            ..
-        } => {
-            Ok(
-                channel_usage
-                    .uses_any_channel()
+            .file_name()
+            .and_then(
+                |name| name.to_str()
             )
-        }
+            .ok_or_else(
+                || {
+                    format!(
+                        "Shader path has no valid filename: {}",
+                        shader_path.display(),
+                    )
+                }
+            )?;
 
-        crate::load_shader::ShaderLoadResult::Rejected {
-            shader_name,
-            reasons,
-        } => {
-            Err(
-                format!(
-                    "Unable to analyze '{}' for texture use: {}",
-                    shader_name,
-                    reasons.join("; "),
-                )
-            )
-        }
 
-        crate::load_shader::ShaderLoadResult::Unavailable {
-            shader_name,
-            error,
-        } => {
-            Err(
-                format!(
-                    "Unable to analyze '{}' for texture use: {}",
-                    shader_name,
-                    error,
-                )
+    let source_path =
+        shader_path
+            .parent()
+            .unwrap_or_else(
+                || Path::new(".")
             )
-        }
+            .to_string_lossy()
+            .to_string();
+
+
+    let connection =
+        crate::open_database::open()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to open database while reading shader metadata for '{}': {}",
+                        filename,
+                        error,
+                    )
+                }
+            )?;
+
+
+    let row =
+        connection
+            .query_row(
+                "SELECT
+                     file_status,
+                     validation_status,
+                     validation_reason,
+                     validation_message,
+                     channel_usage_mask
+                 FROM shaders
+                 WHERE filename = ?1
+                   AND source_path = ?2
+                 LIMIT 1",
+                rusqlite::params![
+                    filename,
+                    source_path,
+                ],
+                |row| {
+                    Ok(
+                        (
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, Option<String>>(2)?,
+                            row.get::<_, Option<String>>(3)?,
+                            row.get::<_, Option<i64>>(4)?,
+                        )
+                    )
+                },
+            );
+
+
+    let (
+        file_status,
+        validation_status,
+        validation_reason,
+        validation_message,
+        channel_usage_mask,
+    ) =
+        match row {
+            Ok(row) => row,
+
+            Err(
+                rusqlite::Error::QueryReturnedNoRows
+            ) => {
+                return Err(
+                    format!(
+                        "Shader '{}' is not registered in the Screenshaver database",
+                        shader_path.display(),
+                    )
+                );
+            }
+
+            Err(error) => {
+                return Err(
+                    format!(
+                        "Unable to read database metadata for '{}': {}",
+                        shader_path.display(),
+                        error,
+                    )
+                );
+            }
+        };
+
+
+    if file_status != "present" {
+        return Err(
+            format!(
+                "Shader '{}' has file_status '{}'",
+                filename,
+                file_status,
+            )
+        );
     }
+
+
+    if validation_status == "rejected" {
+        let reason =
+            validation_message
+                .or(
+                    validation_reason
+                )
+                .unwrap_or_else(
+                    || {
+                        "shader is rejected"
+                            .to_string()
+                    }
+                );
+
+        return Err(
+            format!(
+                "Shader '{}' is rejected: {}",
+                filename,
+                reason,
+            )
+        );
+    }
+
+
+    if validation_status != "valid" {
+        return Err(
+            format!(
+                "Shader '{}' has validation_status '{}'; expected 'valid'",
+                filename,
+                validation_status,
+            )
+        );
+    }
+
+
+    let mask =
+        channel_usage_mask
+            .ok_or_else(
+                || {
+                    format!(
+                        "Valid shader '{}' has no channel-usage metadata",
+                        filename,
+                    )
+                }
+            )?;
+
+
+    if !(0..=31).contains(
+        &mask
+    ) {
+        return Err(
+            format!(
+                "Shader '{}' has invalid channel-usage mask {}",
+                filename,
+                mask,
+            )
+        );
+    }
+
+
+    // Bits 0-3 represent iChannel0-iChannel3. Bit 4 records the
+    // mipmap requirement and does not, by itself, imply texture use.
+    Ok(
+        mask & 0x0f
+            != 0
+    )
 }
 
 
