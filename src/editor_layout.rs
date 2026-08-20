@@ -485,6 +485,7 @@ pub struct PolicyListStateSnapshot {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PolicyRowCommand {
     Edit,
+    ClonePolicy,
     RefreshShader,
     MoveToScreensavers,
     MoveToWallpapers,
@@ -497,6 +498,14 @@ pub enum PolicyRowCommand {
 struct PendingConfirmation {
     row: PolicyRowReference,
     command: PolicyRowCommand,
+}
+
+
+#[derive(Clone, Debug)]
+struct PendingPolicyClone {
+    row: PolicyRowReference,
+    policy_name: String,
+    validation_message: String,
 }
 
 
@@ -580,6 +589,8 @@ pub struct EditorOutput {
     pub refresh_shader_requested: bool,
     pub policy_row_command_requested:
         Option<(PolicyRowReference, PolicyRowCommand)>,
+    pub clone_policy_requested:
+        Option<(PolicyRowReference, String)>,
     pub control_configuration: Option<ControlConfiguration>,
     pub policy_dirty: bool,
     pub control_configuration_dirty: bool,
@@ -907,6 +918,13 @@ pub struct EditWindowOverlay {
     selected_policy_row:
         Option<PolicyRowReference>,
 
+    // When a clone is created, Control Center temporarily focuses the new
+    // policy without changing the persisted last-edited policy in state.json.
+    // Outer Some means transient focus is active; the inner Option preserves
+    // the selection that was persistent before cloning.
+    transient_policy_selection_persisted_row:
+        Option<Option<PolicyRowReference>>,
+
     restore_selected_policy_scroll:
         bool,
 
@@ -921,6 +939,9 @@ pub struct EditWindowOverlay {
 
     pending_confirmation:
         Option<PendingConfirmation>,
+
+    pending_policy_clone:
+        Option<PendingPolicyClone>,
 
     control_configuration:
         Option<ControlConfiguration>,
@@ -1211,6 +1232,9 @@ impl EditWindowOverlay {
                 selected_policy_row:
                     None,
 
+                transient_policy_selection_persisted_row:
+                    None,
+
                 restore_selected_policy_scroll:
                     false,
 
@@ -1224,6 +1248,9 @@ impl EditWindowOverlay {
                     None,
 
                 pending_confirmation:
+                    None,
+
+                pending_policy_clone:
                     None,
 
                 control_configuration:
@@ -2154,8 +2181,15 @@ impl EditWindowOverlay {
         let mut pending_confirmation =
             self.pending_confirmation.clone();
 
+        let mut pending_policy_clone =
+            self.pending_policy_clone.clone();
+
         let mut policy_row_command_requested:
             Option<(PolicyRowReference, PolicyRowCommand)> =
+            None;
+
+        let mut clone_policy_requested:
+            Option<(PolicyRowReference, String)> =
             None;
 
         let mut control_configuration_save_requested =
@@ -2884,6 +2918,13 @@ impl EditWindowOverlay {
                     );
 
 
+                    draw_policy_clone_modal(
+                        context,
+                        &mut pending_policy_clone,
+                        &mut clone_policy_requested,
+                    );
+
+
                     draw_bulk_save_confirmation_modal(
                         context,
                         &mut self.pending_bulk_save_confirmation,
@@ -3063,6 +3104,18 @@ impl EditWindowOverlay {
         self.policy_sort_ascending =
             policy_sort_ascending;
 
+        if self
+            .transient_policy_selection_persisted_row
+            .is_some()
+            && selected_policy_row
+                != self.selected_policy_row
+        {
+            // A subsequent user navigation/click becomes the new ordinary
+            // selection and resumes normal state.json persistence.
+            self.transient_policy_selection_persisted_row =
+                None;
+        }
+
         self.selected_policy_row =
             selected_policy_row;
 
@@ -3116,6 +3169,9 @@ impl EditWindowOverlay {
 
         self.pending_confirmation =
             pending_confirmation;
+
+        self.pending_policy_clone =
+            pending_policy_clone;
 
         self.control_configuration =
             control_configuration.clone();
@@ -3294,6 +3350,8 @@ impl EditWindowOverlay {
 
             policy_row_command_requested,
 
+            clone_policy_requested,
+
             policy_dirty:
                 EditorConfiguration::new(
                     displayed_fps,
@@ -3376,6 +3434,9 @@ impl EditWindowOverlay {
         self.selected_policy_row =
             selected_policy_row;
 
+        self.transient_policy_selection_persisted_row =
+            None;
+
         self.restore_selected_policy_scroll =
             self.selected_policy_row.is_some();
 
@@ -3403,6 +3464,30 @@ impl EditWindowOverlay {
     }
 
 
+    pub fn select_policy_row_transiently(
+        &mut self,
+        row: PolicyRowReference,
+    ) {
+        if self
+            .transient_policy_selection_persisted_row
+            .is_none()
+        {
+            self.transient_policy_selection_persisted_row =
+                Some(
+                    self.selected_policy_row.clone()
+                );
+        }
+
+        self.selected_policy_row =
+            Some(
+                row
+            );
+
+        self.restore_selected_policy_scroll =
+            true;
+    }
+
+
     pub fn policy_list_state_snapshot(
         &self,
     ) -> PolicyListStateSnapshot {
@@ -3427,7 +3512,14 @@ impl EditWindowOverlay {
                 self.policy_sort_ascending,
 
             selected_policy_row:
-                self.selected_policy_row.clone(),
+                self.transient_policy_selection_persisted_row
+                    .as_ref()
+                    .cloned()
+                    .unwrap_or_else(
+                        || {
+                            self.selected_policy_row.clone()
+                        }
+                    ),
 
             window_x:
                 self.persisted_window_position
@@ -3484,6 +3576,48 @@ impl EditWindowOverlay {
 
             self.window_position_changed_at =
                 None;
+        }
+    }
+
+
+    pub fn begin_policy_clone(
+        &mut self,
+        row: PolicyRowReference,
+        suggested_name: String,
+    ) {
+        self.pending_policy_clone =
+            Some(
+                PendingPolicyClone {
+                    row,
+                    policy_name:
+                        suggested_name,
+                    validation_message:
+                        String::new(),
+                }
+            );
+    }
+
+
+    pub fn complete_policy_clone(
+        &mut self,
+    ) {
+        self.pending_policy_clone =
+            None;
+    }
+
+
+    pub fn set_policy_clone_validation_message(
+        &mut self,
+        message: impl Into<String>,
+    ) {
+        if let Some(
+            pending
+        ) =
+            self.pending_policy_clone
+                .as_mut()
+        {
+            pending.validation_message =
+                message.into();
         }
     }
 
@@ -5079,10 +5213,10 @@ fn draw_policies_tab(
             let ordering =
                 match *sort_column {
                     PolicySortColumn::Filename =>
-                        left.filename
+                        left.policy_key
                             .to_ascii_lowercase()
                             .cmp(
-                                &right.filename
+                                &right.policy_key
                                     .to_ascii_lowercase()
                             ),
 
@@ -5412,7 +5546,7 @@ fn draw_policies_tab(
                                 row_height,
                                 egui::RichText::new(
                                     header_text(
-                                        "Filename",
+                                        "Policy Name",
                                         PolicySortColumn::Filename,
                                         *sort_column,
                                         *sort_ascending,
@@ -5668,12 +5802,17 @@ fn draw_policies_tab(
                                     ui,
                                     filename_width,
                                     row_height,
-                                    &row.filename,
+                                    &row.policy_key,
                                     egui::Sense::click(),
                                     row_selected,
                                 )
                                 .on_hover_text(
-                                    &row.full_path
+                                    format!(
+                                        "Policy Name: {}\nShader: {}\nPath: {}",
+                                        row.policy_key,
+                                        row.filename,
+                                        row.full_path,
+                                    )
                                 );
 
                             if *restore_selected_policy_scroll
@@ -5816,7 +5955,8 @@ fn draw_policies_tab(
                             // Single Edit mode.  Bulk Edit keeps only the
                             // selection checkboxes interactive.
                             let mut show_context_menu =
-                                |response: &egui::Response| {
+                                |response: &egui::Response,
+                                 allow_clone: bool| {
                                     if bulk_selected_rows.len() > 1 {
                                         return;
                                     }
@@ -5842,6 +5982,29 @@ fn draw_policies_tab(
                                                     );
 
                                                 ui.close();
+                                            }
+
+                                            if allow_clone {
+                                                if ui.button(
+                                                    "Clone Policy..."
+                                                )
+                                                .clicked()
+                                                {
+                                                    *selected_row =
+                                                        Some(
+                                                            row_reference.clone()
+                                                        );
+
+                                                    *command_requested =
+                                                        Some(
+                                                            (
+                                                                row_reference.clone(),
+                                                                PolicyRowCommand::ClonePolicy,
+                                                            )
+                                                        );
+
+                                                    ui.close();
+                                                }
                                             }
 
                                             if ui.button(
@@ -5924,16 +6087,20 @@ fn draw_policies_tab(
                                 };
 
                             show_context_menu(
-                                &filename_response
+                                &filename_response,
+                                true,
                             );
                             show_context_menu(
-                                &status_response
+                                &status_response,
+                                false,
                             );
                             show_context_menu(
-                                &texture_response
+                                &texture_response,
+                                false,
                             );
                             show_context_menu(
-                                &policy_response
+                                &policy_response,
+                                false,
                             );
                         }
                     },
@@ -6601,6 +6768,139 @@ fn draw_exit_confirmation_modal(
     if !keep_open {
         *pending_exit_confirmation =
             false;
+    }
+}
+
+
+fn draw_policy_clone_modal(
+    context: &egui::Context,
+    pending_clone: &mut Option<PendingPolicyClone>,
+    clone_requested:
+        &mut Option<(PolicyRowReference, String)>,
+) {
+    let Some(clone) =
+        pending_clone.as_mut()
+    else {
+        return;
+    };
+
+    let mut keep_open =
+        true;
+
+    let mut save_clicked =
+        false;
+
+    let mut cancel_clicked =
+        false;
+
+    egui::Window::new(
+        "Clone Policy"
+    )
+    .id(
+        egui::Id::new(
+            "editor_clone_policy"
+        )
+    )
+    .order(
+        egui::Order::Foreground
+    )
+    .collapsible(false)
+    .resizable(false)
+    .movable(false)
+    .anchor(
+        egui::Align2::CENTER_CENTER,
+        egui::Vec2::ZERO,
+    )
+    .open(
+        &mut keep_open
+    )
+    .show(
+        context,
+        |ui| {
+            ui.label(
+                "Create a new policy with the same shader, target, and settings."
+            );
+
+            ui.add_space(8.0);
+
+            ui.label(
+                "Policy Name:"
+            );
+
+            let response =
+                ui.add(
+                    egui::TextEdit::singleline(
+                        &mut clone.policy_name
+                    )
+                    .desired_width(
+                        320.0
+                    )
+                );
+
+            if response.changed() {
+                clone.validation_message.clear();
+            }
+
+            if !clone.validation_message.is_empty() {
+                ui.add_space(4.0);
+
+                ui.label(
+                    &clone.validation_message
+                );
+            }
+
+            ui.add_space(12.0);
+
+            ui.horizontal(
+                |ui| {
+                    if ui.button(
+                        "Save"
+                    )
+                    .clicked()
+                    {
+                        save_clicked = true;
+                    }
+
+                    if ui.button(
+                        "Cancel"
+                    )
+                    .clicked()
+                    {
+                        cancel_clicked = true;
+                    }
+                },
+            );
+        },
+    );
+
+    if save_clicked {
+        let proposed =
+            clone.policy_name.trim();
+
+        let length =
+            proposed.chars().count();
+
+        if !(1..=128).contains(
+            &length
+        ) {
+            clone.validation_message =
+                format!(
+                    "Policy Name must contain between 1 and 128 characters; found {}.",
+                    length,
+                );
+        } else {
+            *clone_requested =
+                Some(
+                    (
+                        clone.row.clone(),
+                        proposed.to_string(),
+                    )
+                );
+        }
+    } else if cancel_clicked
+        || !keep_open
+    {
+        *pending_clone = None;
     }
 }
 

@@ -1,5 +1,4 @@
 use serde::Deserialize;
-use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -198,32 +197,6 @@ struct RawToml {
     screensaver: ScreensaverSection,
 
     wallpaper: WallpaperSection,
-
-    #[serde(default)]
-    screensaver_policies:
-        BTreeMap<String, String>,
-
-    #[serde(default)]
-    wallpaper_policies:
-        BTreeMap<String, String>,
-
-    #[serde(default)]
-    screensaver_external_paths:
-        BTreeMap<String, String>,
-
-    #[serde(default)]
-    wallpaper_external_paths:
-        BTreeMap<String, String>,
-
-    // Transitional compatibility for the first external-path checkpoint.
-    // New writes use *_external_paths exclusively.
-    #[serde(default)]
-    screensaver_shader_paths:
-        BTreeMap<String, String>,
-
-    #[serde(default)]
-    wallpaper_shader_paths:
-        BTreeMap<String, String>,
 
     #[serde(default)]
     postprocess: PostprocessSection,
@@ -1899,18 +1872,6 @@ impl PolicyTarget {
     }
 
 
-    fn path_table_name(
-        self,
-    ) -> &'static str {
-
-        match self {
-            Self::Screensaver => "screensaver_external_paths",
-            Self::Wallpaper => "wallpaper_external_paths",
-            Self::Unassigned => "unassigned_external_paths",
-        }
-    }
-
-
     fn speed_range(
         self,
     ) -> (f32, f32) {
@@ -1939,52 +1900,6 @@ impl PolicyTarget {
 }
 
 
-
-fn merge_external_path_tables(
-    legacy_paths: BTreeMap<String, String>,
-    external_paths: BTreeMap<String, String>,
-) -> BTreeMap<String, String> {
-
-    let mut merged =
-        legacy_paths;
-
-
-    for (
-        shader,
-        path,
-    ) in external_paths
-    {
-        let existing_key =
-            merged
-                .keys()
-                .find(
-                    |key| {
-                        key.eq_ignore_ascii_case(
-                            &shader
-                        )
-                    }
-                )
-                .cloned();
-
-
-        if let Some(existing_key) =
-            existing_key
-        {
-            merged.remove(
-                &existing_key
-            );
-        }
-
-
-        merged.insert(
-            shader,
-            path,
-        );
-    }
-
-
-    merged
-}
 
 fn load_database_policy_table(
     target: PolicyTarget,
@@ -2411,162 +2326,6 @@ fn load_database_policy_table(
     )
 }
 
-
-fn parse_policy_table(
-    raw_policies: BTreeMap<String, String>,
-    mut raw_shader_paths: BTreeMap<String, String>,
-    target: PolicyTarget,
-) -> Result<Vec<ShaderPolicy>, String> {
-
-    let mut policies =
-        Vec::with_capacity(
-            raw_policies.len()
-        );
-
-
-    for (policy_key, specification) in
-        raw_policies
-    {
-        let policy_key =
-            policy_key.trim().to_string();
-
-
-        if policy_key.is_empty() {
-            return Err(
-                format!(
-                    "[{}] contains an empty shader policy key",
-                    target.table_name(),
-                )
-            );
-        }
-
-
-        let source_path =
-            take_policy_source_path(
-                &mut raw_shader_paths,
-                &policy_key,
-                target,
-            )?;
-
-
-        let shader =
-            source_path
-                .as_ref()
-                .and_then(
-                    |path| {
-                        path.file_name()
-                            .and_then(|name| name.to_str())
-                    }
-                )
-                .map(str::to_string)
-                .unwrap_or_else(
-                    || {
-                        crate::manage_policies::policy_display_name_from_key(
-                            &policy_key
-                        )
-                        .to_string()
-                    }
-                );
-
-
-        policies.push(
-            parse_policy_specification(
-                policy_key,
-                shader,
-                source_path,
-                &specification,
-                target,
-            )?
-        );
-    }
-
-
-    // Path entries without matching policies are intentionally inert.
-    // This keeps configuration loading tolerant of stale hand-edited
-    // metadata while preserving the rule that an external shader cannot
-    // enter normal operation without an actual policy.
-    Ok(policies)
-}
-
-
-fn take_policy_source_path(
-    raw_shader_paths: &mut BTreeMap<String, String>,
-    shader: &str,
-    target: PolicyTarget,
-) -> Result<Option<PathBuf>, String> {
-
-    let matching_key =
-        raw_shader_paths
-            .keys()
-            .find(
-                |key| {
-                    key.eq_ignore_ascii_case(
-                        shader
-                    )
-                }
-            )
-            .cloned();
-
-
-    let Some(matching_key) =
-        matching_key
-    else {
-        return Ok(
-            None
-        );
-    };
-
-
-    let raw_path =
-        raw_shader_paths
-            .remove(
-                &matching_key
-            )
-            .unwrap_or_default();
-
-
-    let raw_path =
-        raw_path.trim();
-
-
-    if raw_path.is_empty() {
-        return Err(
-            format!(
-                "[{}] path for '{}' may not be empty",
-                target.path_table_name(),
-                shader,
-            )
-        );
-    }
-
-
-    let path =
-        PathBuf::from(
-            raw_path
-        );
-
-
-    if !path.is_absolute() {
-        return Err(
-            format!(
-                "[{}] path for '{}' must be absolute: {}",
-                target.path_table_name(),
-                shader,
-                raw_path,
-            )
-        );
-    }
-
-
-    // Do not require the file to exist while loading configuration.
-    // A missing external file must leave its policy visible so the
-    // Control Center can report and eventually repair the reference.
-    Ok(
-        Some(
-            path
-        )
-    )
-}
 
 fn parse_policy_specification(
     policy_key: String,

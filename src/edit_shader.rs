@@ -200,6 +200,178 @@ fn bulk_edit_completion_message(
 }
 
 
+fn process_policy_clone_ui(
+    edit_window:
+        &mut crate::editor_layout::EditWindowOverlay,
+    editor_output:
+        &crate::editor_layout::EditorOutput,
+    config:
+        &mut crate::load_config::Config,
+    policy_display_rows:
+        &mut Vec<crate::editor_layout::PolicyDisplayRow>,
+) {
+    if let Some((
+        row,
+        requested_name,
+    )) =
+        editor_output
+            .clone_policy_requested
+            .as_ref()
+    {
+        match crate::manage_policies::clone_policy_by_key(
+            &row.policy_key,
+            requested_name,
+        ) {
+            Ok(()) => {
+                match crate::load_config::load_config(
+                    &crate::locate_paths::config_path()
+                ) {
+                    Ok(reloaded_config) => {
+                        *config =
+                            reloaded_config.config;
+
+                        *policy_display_rows =
+                            build_policy_display_rows(
+                                config
+                            );
+
+                        if let Some(
+                            clone_row
+                        ) =
+                            policy_display_rows
+                                .iter()
+                                .find(
+                                    |candidate| {
+                                        candidate.policy_key
+                                            .eq_ignore_ascii_case(
+                                                requested_name
+                                            )
+                                    }
+                                )
+                        {
+                            edit_window.select_policy_row_transiently(
+                                crate::editor_layout::PolicyRowReference {
+                                    policy_key:
+                                        clone_row.policy_key.clone(),
+
+                                    filename:
+                                        clone_row.filename.clone(),
+
+                                    full_path:
+                                        clone_row.full_path.clone(),
+
+                                    policy_target:
+                                        clone_row.policy_target,
+
+                                    unassigned:
+                                        clone_row.unassigned,
+                                }
+                            );
+                        }
+
+                        edit_window.complete_policy_clone();
+
+                        edit_window.set_status_message(
+                            format!(
+                                "Policy cloned as '{}'.",
+                                requested_name,
+                            )
+                        );
+
+                        log_information(
+                            &format!(
+                                "[EDIT_SHADER] Cloned policy '{}' as '{}'",
+                                row.policy_key,
+                                requested_name,
+                            )
+                        );
+                    }
+
+                    Err(error) => {
+                        edit_window.set_policy_clone_validation_message(
+                            format!(
+                                "Policy was cloned, but configuration reload failed: {}",
+                                error,
+                            )
+                        );
+
+                        log_warning(
+                            &format!(
+                                "[EDIT_SHADER] Policy '{}' cloned as '{}', but configuration reload failed: {}",
+                                row.policy_key,
+                                requested_name,
+                                error,
+                            )
+                        );
+                    }
+                }
+            }
+
+            Err(error) => {
+                edit_window.set_policy_clone_validation_message(
+                    error.clone()
+                );
+
+                edit_window.set_status_message(
+                    format!(
+                        "Unable to clone policy: {}",
+                        error,
+                    )
+                );
+
+                log_warning(
+                    &format!(
+                        "[EDIT_SHADER] Unable to clone policy '{}': {}",
+                        row.policy_key,
+                        error,
+                    )
+                );
+            }
+        }
+
+        return;
+    }
+
+
+    if let Some((
+        row,
+        crate::editor_layout::PolicyRowCommand::ClonePolicy,
+    )) =
+        editor_output
+            .policy_row_command_requested
+            .as_ref()
+    {
+        match crate::manage_policies::suggested_clone_policy_name(
+            &row.policy_key
+        ) {
+            Ok(suggested_name) => {
+                edit_window.begin_policy_clone(
+                    row.clone(),
+                    suggested_name,
+                );
+            }
+
+            Err(error) => {
+                edit_window.set_status_message(
+                    format!(
+                        "Unable to prepare policy clone: {}",
+                        error,
+                    )
+                );
+
+                log_warning(
+                    &format!(
+                        "[EDIT_SHADER] Unable to prepare clone for policy '{}': {}",
+                        row.policy_key,
+                        error,
+                    )
+                );
+            }
+        }
+    }
+}
+
+
 fn default_policy_sort_column() -> String {
     "filename".to_string()
 }
@@ -679,6 +851,14 @@ fn run_empty_session(
                 &policy_display_rows,
                 Some(&config),
             );
+
+        process_policy_clone_ui(
+            &mut edit_window,
+            &editor_output,
+            &mut config,
+            &mut policy_display_rows,
+        );
+
 
         save_policy_list_state_if_changed(
             &edit_window,
@@ -2037,6 +2217,7 @@ fn run_paths(
             &config,
             initial_editor_target,
             initial_shader_path,
+            None,
             command_line_animation_speed,
         );
 
@@ -2595,7 +2776,15 @@ fn run_paths(
                 window.gl_swap_window();
 
 
-                save_policy_list_state_if_changed(
+                process_policy_clone_ui(
+                    &mut edit_window,
+                    &editor_output,
+                    &mut config,
+                    &mut policy_display_rows,
+                );
+
+
+            save_policy_list_state_if_changed(
                     &edit_window,
                     &mut last_saved_policy_list_state,
                 );
@@ -2806,6 +2995,13 @@ fn run_paths(
                                     &config,
                                     restored_target,
                                     &restored_path,
+                                    edit_window
+                                        .policy_list_state_snapshot()
+                                        .selected_policy_row
+                                        .as_ref()
+                                        .map(
+                                            |row| row.policy_key.as_str()
+                                        ),
                                     command_line_animation_speed,
                                 );
 
@@ -3543,6 +3739,14 @@ fn run_paths(
                     &policy_display_rows,
                     Some(&config),
                 );
+
+            process_policy_clone_ui(
+                &mut edit_window,
+                &editor_output,
+                &mut config,
+                &mut policy_display_rows,
+            );
+
 
             save_policy_list_state_if_changed(
             &edit_window,
@@ -4312,6 +4516,16 @@ fn run_paths(
                         &config,
                         new_editor_target,
                         &selected_path,
+                        policy_row_open_request
+                            .as_ref()
+                            .map(
+                                |(
+                                    row,
+                                    _command,
+                                )| {
+                                    row.policy_key.as_str()
+                                }
+                            ),
                         command_line_animation_speed,
                     );
 
@@ -4814,6 +5028,13 @@ fn run_paths(
                             requested_target
                         ),
                         &active.path,
+                        edit_window
+                            .policy_list_state_snapshot()
+                            .selected_policy_row
+                            .as_ref()
+                            .map(
+                                |row| row.policy_key.as_str()
+                            ),
                         command_line_animation_speed,
                     );
 
@@ -5741,13 +5962,26 @@ fn run_paths(
                         &active.shader_name,
                         &policy_source_path,
                     )? {
-                        crate::manage_policies::replace_policy_for_source(
-                            &config_path,
-                            manage_target,
-                            &active.shader_name,
-                            properties,
-                            &policy_source_path,
-                        )
+                        if let Some(
+                            selected_policy
+                        ) =
+                            selected_policy_before_save
+                                .as_ref()
+                        {
+                            crate::manage_policies::replace_policy_by_key(
+                                &selected_policy.policy_key,
+                                manage_target,
+                                properties,
+                            )
+                        } else {
+                            crate::manage_policies::replace_policy_for_source(
+                                &config_path,
+                                manage_target,
+                                &active.shader_name,
+                                properties,
+                                &policy_source_path,
+                            )
+                        }
                     } else {
                         crate::manage_policies::add_policy_for_source(
                             &config_path,
@@ -6327,6 +6561,10 @@ fn run_paths(
                         // These commands are handled by the shader-load branch
                         // above so the row target is loaded explicitly.
                     }
+
+                    crate::editor_layout::PolicyRowCommand::ClonePolicy => {
+                        // Clone Policy is handled by process_policy_clone_ui().
+                    }
                 }
             }
 
@@ -6481,6 +6719,7 @@ fn editor_policy_context_for_path(
     config: &crate::load_config::Config,
     target: Option<crate::editor_layout::PolicyTarget>,
     loaded_path: &Path,
+    selected_policy_name: Option<&str>,
     command_line_animation_speed: Option<f32>,
 ) -> (
     u32,
@@ -6547,15 +6786,34 @@ fn editor_policy_context_for_path(
     let matching_policy =
         target.and_then(
             |resolved_target| {
-                policies
-                    .iter()
-                    .find(
-                        |policy| {
-                            policy_applies_to_path(
-                                policy,
-                                resolved_target,
-                                loaded_path,
-                            )
+                selected_policy_name
+                    .and_then(
+                        |selected_name| {
+                            policies
+                                .iter()
+                                .find(
+                                    |policy| {
+                                        policy.policy_key
+                                            .eq_ignore_ascii_case(
+                                                selected_name
+                                            )
+                                    }
+                                )
+                        }
+                    )
+                    .or_else(
+                        || {
+                            policies
+                                .iter()
+                                .find(
+                                    |policy| {
+                                        policy_applies_to_path(
+                                            policy,
+                                            resolved_target,
+                                            loaded_path,
+                                        )
+                                    }
+                                )
                         }
                     )
             }
@@ -7880,138 +8138,33 @@ fn shader_requires_texture_for_policy_row(
 
 
 fn build_policy_display_rows(
-    config: &crate::load_config::Config,
+    _config: &crate::load_config::Config,
 ) -> Vec<crate::editor_layout::PolicyDisplayRow> {
 
-    let mut rows =
-        Vec::with_capacity(
-            config.screensaver_policies.len()
-                + config.wallpaper_policies.len()
-        );
-
-
-    rows.extend(
-        config.screensaver_policies
-            .iter()
-            .map(
-                |policy| {
-                    let resolved_path =
-                        resolved_shader_policy_path(
-                            policy,
-                            crate::editor_layout::PolicyTarget::Screensaver,
-                        );
-
-
-                    crate::editor_layout::PolicyDisplayRow {
-                        policy_key:
-                            policy.policy_key.clone(),
-
-                        filename:
-                            policy.shader.clone(),
-
-                        full_path:
-                            resolved_path
-                                .display()
-                                .to_string(),
-
-                        accessible:
-                            resolved_path.is_file(),
-
-                        texture:
-                            shader_requires_texture_for_policy_row(
-                                &resolved_path
-                            ),
-
-                        policy_target:
-                            crate::editor_layout::PolicyTarget::Screensaver,
-
-                        unassigned:
-                            false,
-                    }
-                }
-            )
-    );
-
-
-    rows.extend(
-        config.wallpaper_policies
-            .iter()
-            .map(
-                |policy| {
-                    let resolved_path =
-                        resolved_shader_policy_path(
-                            policy,
-                            crate::editor_layout::PolicyTarget::Wallpaper,
-                        );
-
-
-                    crate::editor_layout::PolicyDisplayRow {
-                        policy_key:
-                            policy.policy_key.clone(),
-
-                        filename:
-                            policy.shader.clone(),
-
-                        full_path:
-                            resolved_path
-                                .display()
-                                .to_string(),
-
-                        accessible:
-                            resolved_path.is_file(),
-
-                        texture:
-                            shader_requires_texture_for_policy_row(
-                                &resolved_path
-                            ),
-
-                        policy_target:
-                            crate::editor_layout::PolicyTarget::Wallpaper,
-
-                        unassigned:
-                            false,
-                    }
-                }
-            )
-    );
-
-
-    match load_unassigned_policy_display_rows() {
-
-        Ok(
-            unassigned_rows
-        ) => {
-            rows.extend(
-                unassigned_rows
-            );
+    match load_database_policy_display_rows() {
+        Ok(rows) => {
+            rows
         }
 
         Err(error) => {
             log_warning(
                 &format!(
-                    "[EDIT_SHADER] Unable to load Unassigned policies for Policy List: {}",
+                    "[EDIT_SHADER] Unable to load Policy List rows from database: {}",
                     error,
                 )
             );
+
+            Vec::new()
         }
     }
-
-
-    rows
 }
 
 
-fn load_unassigned_policy_display_rows(
+fn load_database_policy_display_rows(
 ) -> Result<Vec<crate::editor_layout::PolicyDisplayRow>, String> {
 
     let connection =
         crate::open_database::open()?;
-
-
-    let managed_source_path =
-        crate::locate_paths::shader_dir()
-            .to_string_lossy()
-            .to_string();
 
 
     let mut statement =
@@ -8021,12 +8174,11 @@ fn load_unassigned_policy_display_rows(
                      p.policy_name,
                      s.filename,
                      s.source_path,
-                     s.file_status
+                     s.file_status,
+                     p.policy_target
                  FROM shader_policies AS p
                  JOIN shaders AS s
                    ON s.shader_id = p.shader_id
-                 WHERE p.policy_target = 'unassigned'
-                   AND s.source_path = ?1
                  ORDER BY
                      p.policy_name_key,
                      p.policy_id"
@@ -8034,7 +8186,7 @@ fn load_unassigned_policy_display_rows(
             .map_err(
                 |error| {
                     format!(
-                        "Unable to prepare Unassigned-policy Policy List query: {}",
+                        "Unable to prepare Policy List database query: {}",
                         error,
                     )
                 }
@@ -8044,9 +8196,7 @@ fn load_unassigned_policy_display_rows(
     let query_rows =
         statement
             .query_map(
-                [
-                    managed_source_path
-                ],
+                [],
                 |row| {
                     Ok(
                         (
@@ -8054,6 +8204,7 @@ fn load_unassigned_policy_display_rows(
                             row.get::<_, String>(1)?,
                             row.get::<_, String>(2)?,
                             row.get::<_, String>(3)?,
+                            row.get::<_, String>(4)?,
                         )
                     )
                 },
@@ -8061,7 +8212,7 @@ fn load_unassigned_policy_display_rows(
             .map_err(
                 |error| {
                     format!(
-                        "Unable to query Unassigned policies for Policy List: {}",
+                        "Unable to query Policy List rows from database: {}",
                         error,
                     )
                 }
@@ -8079,15 +8230,43 @@ fn load_unassigned_policy_display_rows(
             filename,
             source_path,
             file_status,
+            policy_target,
         ) =
             query_row.map_err(
                 |error| {
                     format!(
-                        "Unable to decode Unassigned policy row: {}",
+                        "Unable to decode Policy List database row: {}",
                         error,
                     )
                 }
             )?;
+
+
+        let policy_target =
+            match policy_target
+                .trim()
+                .to_ascii_lowercase()
+                .as_str()
+            {
+                "screensaver" =>
+                    crate::editor_layout::PolicyTarget::Screensaver,
+
+                "wallpaper" =>
+                    crate::editor_layout::PolicyTarget::Wallpaper,
+
+                "unassigned" =>
+                    crate::editor_layout::PolicyTarget::Unassigned,
+
+                other => {
+                    return Err(
+                        format!(
+                            "Policy '{}' has unsupported policy_target '{}'",
+                            policy_name,
+                            other,
+                        )
+                    );
+                }
+            };
 
 
         let resolved_path =
@@ -8120,11 +8299,11 @@ fn load_unassigned_policy_display_rows(
                         &resolved_path
                     ),
 
-                policy_target:
-                    crate::editor_layout::PolicyTarget::Unassigned,
+                policy_target,
 
                 unassigned:
-                    true,
+                    policy_target
+                        == crate::editor_layout::PolicyTarget::Unassigned,
             }
         );
     }

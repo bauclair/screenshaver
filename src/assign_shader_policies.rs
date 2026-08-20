@@ -615,6 +615,31 @@ fn generated_policy_name(
     target: &str,
 ) -> String {
 
+    let filename =
+        filename.trim();
+
+
+    let stem =
+        std::path::Path::new(
+            filename
+        )
+        .file_stem()
+        .and_then(
+            |value| {
+                value.to_str()
+            }
+        )
+        .filter(
+            |value| {
+                !value.trim().is_empty()
+            }
+        )
+        .unwrap_or(
+            filename
+        )
+        .trim();
+
+
     let suffix =
         format!(
             " ({})",
@@ -622,7 +647,7 @@ fn generated_policy_name(
         );
 
 
-    let maximum_filename_characters =
+    let maximum_stem_characters =
         128_usize
             .saturating_sub(
                 suffix
@@ -631,19 +656,18 @@ fn generated_policy_name(
             );
 
 
-    let trimmed_filename =
-        filename
-            .trim()
+    let trimmed_stem =
+        stem
             .chars()
             .take(
-                maximum_filename_characters
+                maximum_stem_characters
             )
             .collect::<String>();
 
 
     format!(
         "{}{}",
-        trimmed_filename,
+        trimmed_stem,
         suffix,
     )
 }
