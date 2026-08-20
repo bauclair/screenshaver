@@ -500,6 +500,50 @@ struct PendingConfirmation {
 }
 
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct BulkEditChanges {
+    pub policy_target: bool,
+    pub fps: bool,
+    pub animation_speed: bool,
+    pub render_scale: bool,
+    pub texture: bool,
+    pub palette: bool,
+    pub primitive_count: bool,
+    pub anti_aliasing: bool,
+    pub dithering: bool,
+    pub color_precision: bool,
+    pub bloom: bool,
+    pub bloom_intensity: bool,
+    pub bloom_threshold: bool,
+    pub invert_colors: bool,
+    pub flip_horizontal: bool,
+    pub flip_vertical: bool,
+    pub hue_rotation: bool,
+}
+
+impl BulkEditChanges {
+    pub fn any(self) -> bool {
+        self.policy_target
+            || self.fps
+            || self.animation_speed
+            || self.render_scale
+            || self.texture
+            || self.palette
+            || self.primitive_count
+            || self.anti_aliasing
+            || self.dithering
+            || self.color_precision
+            || self.bloom
+            || self.bloom_intensity
+            || self.bloom_threshold
+            || self.invert_colors
+            || self.flip_horizontal
+            || self.flip_vertical
+            || self.hue_rotation
+    }
+}
+
+
 #[derive(Clone, Debug)]
 pub struct EditorOutput {
     pub fps: u32,
@@ -522,6 +566,7 @@ pub struct EditorOutput {
     pub policy_target_change_requested: Option<PolicyTarget>,
     pub save_requested: bool,
     pub bulk_save_requested: bool,
+    pub bulk_edit_changes: BulkEditChanges,
     pub bulk_selected_policy_rows:
         Vec<PolicyRowReference>,
     pub cancel_requested: bool,
@@ -621,6 +666,49 @@ impl EditorConfiguration {
             flip_vertical,
             hue_rotation:
                 normalize_editor_float(hue_rotation),
+        }
+    }
+
+
+    fn bulk_changes_from(
+        self,
+        baseline: Self,
+    ) -> BulkEditChanges {
+        BulkEditChanges {
+            policy_target:
+                self.policy_target != baseline.policy_target,
+            fps:
+                self.fps != baseline.fps,
+            animation_speed:
+                (self.animation_speed - baseline.animation_speed).abs() > 0.0001,
+            render_scale:
+                (self.render_scale - baseline.render_scale).abs() > 0.0001,
+            texture:
+                self.texture != baseline.texture,
+            palette:
+                self.palette != baseline.palette,
+            primitive_count:
+                self.primitive_count != baseline.primitive_count,
+            anti_aliasing:
+                self.anti_aliasing != baseline.anti_aliasing,
+            dithering:
+                self.dithering != baseline.dithering,
+            color_precision:
+                self.color_precision != baseline.color_precision,
+            bloom:
+                self.bloom != baseline.bloom,
+            bloom_intensity:
+                (self.bloom_intensity - baseline.bloom_intensity).abs() > 0.0001,
+            bloom_threshold:
+                (self.bloom_threshold - baseline.bloom_threshold).abs() > 0.0001,
+            invert_colors:
+                self.invert_colors != baseline.invert_colors,
+            flip_horizontal:
+                self.flip_horizontal != baseline.flip_horizontal,
+            flip_vertical:
+                self.flip_vertical != baseline.flip_vertical,
+            hue_rotation:
+                (self.hue_rotation - baseline.hue_rotation).abs() > 0.0001,
         }
     }
 
@@ -824,6 +912,9 @@ pub struct EditWindowOverlay {
 
     bulk_selected_policy_rows:
         Vec<PolicyRowReference>,
+
+    bulk_edit_baseline:
+        Option<EditorConfiguration>,
 
     pending_policy_navigation:
         Option<PolicyNavigation>,
@@ -1125,6 +1216,9 @@ impl EditWindowOverlay {
 
                 bulk_selected_policy_rows:
                     Vec::new(),
+
+                bulk_edit_baseline:
+                    None,
 
                 pending_policy_navigation:
                     None,
@@ -2108,6 +2202,143 @@ impl EditWindowOverlay {
             bulk_selected_policy_rows.len() > 1;
 
 
+        if bulk_edit_mode {
+            if self.bulk_edit_baseline.is_none() {
+                self.bulk_edit_baseline =
+                    Some(
+                        EditorConfiguration::new(
+                            displayed_fps,
+                            displayed_animation_speed,
+                            displayed_render_scale,
+                            policy_target,
+                            texture,
+                            palette,
+                            primitive_count,
+                            anti_aliasing,
+                            dithering,
+                            color_precision,
+                            bloom,
+                            bloom_intensity,
+                            bloom_threshold,
+                            invert_colors,
+                            flip_horizontal,
+                            flip_vertical,
+                            hue_rotation,
+                        )
+                    );
+
+                // Policy Target has special Bulk Edit semantics.  A blank
+                // target means "leave every checked policy's target unchanged."
+                // The original loaded-policy target remains in the baseline
+                // and is restored when Bulk Edit ends.
+                policy_target =
+                    None;
+
+                policy_target_change_requested =
+                    None;
+            }
+        } else {
+            if let Some(
+                suspended_baseline
+            ) =
+                self.bulk_edit_baseline
+                    .take()
+            {
+                // Bulk Edit ended because fewer than two policy rows remain
+                // checked.  Discard unsaved Bulk Edit working values and
+                // restore the exact single-policy editor state that existed
+                // before Bulk Edit began.
+                displayed_fps =
+                    suspended_baseline.fps;
+
+                displayed_animation_speed =
+                    suspended_baseline.animation_speed;
+
+                displayed_render_scale =
+                    suspended_baseline.render_scale;
+
+                policy_target =
+                    suspended_baseline.policy_target;
+
+                texture =
+                    suspended_baseline.texture;
+
+                palette =
+                    suspended_baseline.palette;
+
+                primitive_count =
+                    suspended_baseline.primitive_count;
+
+                anti_aliasing =
+                    suspended_baseline.anti_aliasing;
+
+                dithering =
+                    suspended_baseline.dithering;
+
+                color_precision =
+                    suspended_baseline.color_precision;
+
+                bloom =
+                    suspended_baseline.bloom;
+
+                bloom_intensity =
+                    suspended_baseline.bloom_intensity;
+
+                bloom_threshold =
+                    suspended_baseline.bloom_threshold;
+
+                invert_colors =
+                    suspended_baseline.invert_colors;
+
+                flip_horizontal =
+                    suspended_baseline.flip_horizontal;
+
+                flip_vertical =
+                    suspended_baseline.flip_vertical;
+
+                hue_rotation =
+                    suspended_baseline.hue_rotation;
+
+                palette_hex_input =
+                    palette
+                        .palette()
+                        .to_hex();
+
+                let palette_color =
+                    palette
+                        .palette();
+
+                color_picker_preview =
+                    egui::Color32::from_rgb(
+                        palette_color.red(),
+                        palette_color.green(),
+                        palette_color.blue(),
+                    );
+
+                fps_drag_state =
+                    None;
+
+                animation_speed_drag_state =
+                    None;
+
+                render_scale_drag_state =
+                    None;
+
+                bloom_intensity_drag_state =
+                    None;
+
+                bloom_threshold_drag_state =
+                    None;
+
+                hue_rotation_drag_state =
+                    None;
+            }
+        }
+
+        let bulk_edit_baseline =
+            self.bulk_edit_baseline;
+
+
         let bulk_texture_required =
             if bulk_edit_mode {
                 bulk_selected_policy_rows
@@ -2246,49 +2477,78 @@ impl EditWindowOverlay {
                                     }
                                 };
 
+                            let mut pending_bulk_changes =
+                                bulk_edit_baseline
+                                    .map(
+                                        |baseline| {
+                                            current_configuration
+                                                .bulk_changes_from(
+                                                    baseline
+                                                )
+                                        }
+                                    )
+                                    .unwrap_or_default();
+
+                            // Blank is the Bulk Edit "no Policy Target change"
+                            // sentinel.  Any explicit target choice is dirty.
+                            pending_bulk_changes.policy_target =
+                                bulk_edit_mode
+                                    && policy_target.is_some();
+
+
                             let policy_dirty =
-                                configuration_changed
-                                    || self.policy_creation_pending;
+                                if bulk_edit_mode {
+                                    pending_bulk_changes.any()
+                                } else {
+                                    configuration_changed
+                                        || self.policy_creation_pending
+                                };
 
 
                             let can_save =
-                                mandatory_information_complete
-                                    && (
-                                        configuration_changed
-                                            || !current_policy_exists
-                                    );
+                                if bulk_edit_mode {
+                                    pending_bulk_changes.any()
+                                } else {
+                                    mandatory_information_complete
+                                        && (
+                                            configuration_changed
+                                                || !current_policy_exists
+                                        )
+                                };
+
 
                             let can_cancel =
-                                configuration_changed;
+                                if bulk_edit_mode {
+                                    true
+                                } else {
+                                    configuration_changed
+                                };
 
                             // -----------------------------------------------------------------
                             // Permanent header: Load Shader + Policy Target + Shader Information
                             // -----------------------------------------------------------------
-                            ui.add_enabled_ui(
-                                !bulk_edit_mode,
-                                |ui| {
-                                    draw_compact_header(
-                                        ui,
-                                        metrics,
-                                        shader_information,
-                                        &self.branding_texture,
-                                        self.branding_aspect_ratio,
-                                        configuration_changed,
-                                        recent_shader_paths,
-                                        policy_target,
-                                        screensaver_target_available,
-                                        wallpaper_target_available,
-                                        screensaver_target_session_restricted,
-                                        wallpaper_target_session_restricted,
-                                        &mut browse_shader_requested,
-                                        &mut bulk_create_browse_requested,
-                                        &mut recent_shader_requested,
-                                        &mut clear_recent_files_requested,
-                                        &mut policy_target_change_requested,
-                                        &mut status_message,
-                                        &mut hover_help_message,
-                                    );
-                                },
+                            draw_compact_header(
+                                ui,
+                                metrics,
+                                shader_information,
+                                &self.branding_texture,
+                                self.branding_aspect_ratio,
+                                configuration_changed,
+                                recent_shader_paths,
+                                &mut policy_target,
+                                bulk_edit_mode,
+                                bulk_edit_baseline,
+                                screensaver_target_available,
+                                wallpaper_target_available,
+                                screensaver_target_session_restricted,
+                                wallpaper_target_session_restricted,
+                                &mut browse_shader_requested,
+                                &mut bulk_create_browse_requested,
+                                &mut recent_shader_requested,
+                                &mut clear_recent_files_requested,
+                                &mut policy_target_change_requested,
+                                &mut status_message,
+                                &mut hover_help_message,
                             );
 
                             ui.add_space(
@@ -2352,6 +2612,7 @@ impl EditWindowOverlay {
                                                         &mut fps_drag_state,
                                                         &mut animation_speed_drag_state,
                                                         &mut render_scale_drag_state,
+                                                        bulk_edit_baseline,
                                                         &mut hover_help_message,
                                                     );
                                                 },
@@ -2369,6 +2630,7 @@ impl EditWindowOverlay {
                                                         &mut texture,
                                                         &mut palette,
                                                         &mut primitive_count,
+                                                        bulk_edit_baseline,
                                                         &mut hover_help_message,
                                                     );
 
@@ -2399,15 +2661,34 @@ impl EditWindowOverlay {
                                                             );
 
 
-                                                            draw_color_picker_placeholder(
-                                                                ui,
-                                                                metrics,
-                                                                &mut palette,
-                                                                &mut palette_hex_input,
-                                                                &mut color_picker_preview,
-                                                                texture_thumbnail.as_ref(),
-                                                                &mut hover_help_message,
-                                                            );
+                                                            let palette_scope =
+                                                                ui.scope(
+                                                                    |ui| {
+                                                                        draw_color_picker_placeholder(
+                                                                            ui,
+                                                                            metrics,
+                                                                            &mut palette,
+                                                                            &mut palette_hex_input,
+                                                                            &mut color_picker_preview,
+                                                                            texture_thumbnail.as_ref(),
+                                                                            &mut hover_help_message,
+                                                                        );
+                                                                    },
+                                                                );
+
+                                                            if bulk_edit_baseline
+                                                                .is_some_and(
+                                                                    |baseline| {
+                                                                        palette != baseline.palette
+                                                                    }
+                                                                )
+                                                            {
+                                                                editor_theme::paint_bulk_edit_border(
+                                                                    ui,
+                                                                    palette_scope.response.rect,
+                                                                    metrics.scale,
+                                                                );
+                                                            }
                                                         },
                                                     );
                                                 },
@@ -2435,6 +2716,7 @@ impl EditWindowOverlay {
                                                         &mut flip_vertical,
                                                         &mut hue_rotation,
                                                         &mut hue_rotation_drag_state,
+                                                        bulk_edit_baseline,
                                                         &mut hover_help_message,
                                                     );
                                                 },
@@ -2488,7 +2770,8 @@ impl EditWindowOverlay {
                                     displayed_render_scale
                                 );
 
-                            if !can_save
+                            if !bulk_edit_mode
+                                && !can_save
                                 && configuration_changed
                                 && policy_target.is_none()
                             {
@@ -2686,7 +2969,9 @@ impl EditWindowOverlay {
                         policy_dirty,
                         control_configuration_dirty,
                         policy_target.is_some(),
+                        bulk_edit_mode,
                         &mut save_requested,
+                        &mut bulk_save_requested,
                         &mut control_configuration_save_requested,
                         &mut exit_after_save_requested,
                         &mut exit_discard_requested,
@@ -2785,6 +3070,44 @@ impl EditWindowOverlay {
 
         let bulk_selected_policy_rows_for_output =
             bulk_selected_policy_rows.clone();
+
+
+        let current_editor_configuration =
+            EditorConfiguration::new(
+                displayed_fps,
+                displayed_animation_speed,
+                displayed_render_scale,
+                policy_target,
+                texture,
+                palette,
+                primitive_count,
+                anti_aliasing,
+                dithering,
+                color_precision,
+                bloom,
+                bloom_intensity,
+                bloom_threshold,
+                invert_colors,
+                flip_horizontal,
+                flip_vertical,
+                hue_rotation,
+            );
+
+        let mut bulk_edit_changes =
+            bulk_edit_baseline
+                .map(
+                    |baseline| {
+                        current_editor_configuration
+                            .bulk_changes_from(baseline)
+                    }
+                )
+                .unwrap_or_default();
+
+        // Policy Target uses a deliberate blank sentinel in Bulk Edit.
+        // Blank means "no target change"; any explicit target is pending.
+        bulk_edit_changes.policy_target =
+            bulk_edit_mode
+                && policy_target.is_some();
 
 
         self.bulk_selected_policy_rows =
@@ -2946,6 +3269,8 @@ impl EditWindowOverlay {
             save_requested,
 
             bulk_save_requested,
+
+            bulk_edit_changes,
 
             bulk_selected_policy_rows:
                 bulk_selected_policy_rows_for_output,
@@ -3366,9 +3691,21 @@ impl EditWindowOverlay {
         &mut self,
         active_policy_was_selected: bool,
     ) {
+        // Preserve the exact editor state that existed when Bulk Edit began.
+        // This may contain unsaved single-policy changes and therefore must
+        // not be replaced with initial_configuration after a successful
+        // Bulk Edit operation.
+        let suspended_editor_state =
+            self.bulk_edit_baseline;
+
+
         self.bulk_selected_policy_rows.clear();
+
         self.pending_bulk_save_confirmation =
             false;
+
+        self.bulk_edit_baseline =
+            None;
 
 
         if active_policy_was_selected {
@@ -3380,7 +3717,7 @@ impl EditWindowOverlay {
         let Some(
             baseline
         ) =
-            self.initial_configuration
+            suspended_editor_state
         else {
             return;
         };
@@ -3415,15 +3752,17 @@ impl EditWindowOverlay {
                 .palette()
                 .to_hex();
 
-        let palette_color =
-            baseline.palette
-                .palette();
-
         self.color_picker_preview =
             egui::Color32::from_rgb(
-                palette_color.red(),
-                palette_color.green(),
-                palette_color.blue(),
+                baseline.palette
+                    .palette()
+                    .red(),
+                baseline.palette
+                    .palette()
+                    .green(),
+                baseline.palette
+                    .palette()
+                    .blue(),
             );
 
         self.primitive_count =
@@ -3446,6 +3785,7 @@ impl EditWindowOverlay {
 
         self.bloom_threshold =
             baseline.bloom_threshold;
+
         self.invert_colors =
             baseline.invert_colors;
 
@@ -3471,6 +3811,9 @@ impl EditWindowOverlay {
             None;
 
         self.bloom_threshold_drag_state =
+            None;
+
+        self.hue_rotation_drag_state =
             None;
     }
 
@@ -3664,7 +4007,9 @@ fn draw_compact_header(
     branding_aspect_ratio: f32,
     configuration_changed: bool,
     recent_shader_paths: &[PathBuf],
-    policy_target: Option<PolicyTarget>,
+    policy_target: &mut Option<PolicyTarget>,
+    bulk_edit_mode: bool,
+    bulk_edit_baseline: Option<EditorConfiguration>,
     screensaver_target_available: bool,
     wallpaper_target_available: bool,
     screensaver_target_session_restricted: bool,
@@ -3854,7 +4199,7 @@ fn draw_compact_header(
                 ),
                 |ui| {
                     let selected_text =
-                        match policy_target {
+                        match *policy_target {
                             Some(
                                 PolicyTarget::Screensaver
                             ) =>
@@ -3867,6 +4212,9 @@ fn draw_compact_header(
                                 PolicyTarget::Unassigned
                             ) =>
                                 "Unassigned",
+                            None if bulk_edit_mode =>
+                                "",
+
                             None =>
                                 "Select...",
                         };
@@ -3894,11 +4242,38 @@ fn draw_compact_header(
                                                 .show_ui(
                                                     ui,
                                                     |ui| {
+                                                        if bulk_edit_mode {
+                                                            let no_change_response =
+                                                                ui.selectable_label(
+                                                                    policy_target.is_none(),
+                                                                    "No Change",
+                                                                );
+
+                                                            update_hover_help(
+                                                                &no_change_response,
+                                                                hover_help_message,
+                                                                "Leave Policy Target unchanged for every checked policy.",
+                                                            );
+
+                                                            if no_change_response.clicked() {
+                                                                *policy_target =
+                                                                    None;
+
+                                                                *policy_target_change_requested =
+                                                                    None;
+
+                                                                ui.close();
+                                                            }
+
+                                                            ui.separator();
+                                                        }
+
                                                         let screensaver_response =
                                                             ui.add_enabled(
-                                                                screensaver_target_available,
+                                                                bulk_edit_mode
+                                                                    || screensaver_target_available,
                                                                 egui::SelectableLabel::new(
-                                                                    policy_target
+                                                                    *policy_target
                                                                         == Some(
                                                                             PolicyTarget::Screensaver
                                                                         ),
@@ -3919,12 +4294,23 @@ fn draw_compact_header(
                                                         );
 
                                                         if screensaver_response.clicked()
-                                                            && policy_target
+                                                            && *policy_target
                                                                 != Some(
                                                                     PolicyTarget::Screensaver
                                                                 )
                                                         {
-                                                            if configuration_changed
+                                                            if bulk_edit_mode {
+                                                                *policy_target =
+                                                                    Some(
+                                                                        PolicyTarget::Screensaver
+                                                                    );
+
+                                                                // Bulk Edit target dirty-state is derived from
+                                                                // the persistent target versus the Bulk baseline.
+                                                                // Do not emit a single-policy target-switch event.
+                                                                *policy_target_change_requested =
+                                                                    None;
+                                                            } else if configuration_changed
                                                                 && policy_target.is_some()
                                                             {
                                                                 *status_message =
@@ -3942,9 +4328,10 @@ fn draw_compact_header(
 
                                                         let wallpaper_response =
                                                             ui.add_enabled(
-                                                                wallpaper_target_available,
+                                                                bulk_edit_mode
+                                                                    || wallpaper_target_available,
                                                                 egui::SelectableLabel::new(
-                                                                    policy_target
+                                                                    *policy_target
                                                                         == Some(
                                                                             PolicyTarget::Wallpaper
                                                                         ),
@@ -3965,12 +4352,23 @@ fn draw_compact_header(
                                                         );
 
                                                         if wallpaper_response.clicked()
-                                                            && policy_target
+                                                            && *policy_target
                                                                 != Some(
                                                                     PolicyTarget::Wallpaper
                                                                 )
                                                         {
-                                                            if configuration_changed
+                                                            if bulk_edit_mode {
+                                                                *policy_target =
+                                                                    Some(
+                                                                        PolicyTarget::Wallpaper
+                                                                    );
+
+                                                                // Bulk Edit target dirty-state is derived from
+                                                                // the persistent target versus the Bulk baseline.
+                                                                // Do not emit a single-policy target-switch event.
+                                                                *policy_target_change_requested =
+                                                                    None;
+                                                            } else if configuration_changed
                                                                 && policy_target.is_some()
                                                             {
                                                                 *status_message =
@@ -3988,7 +4386,7 @@ fn draw_compact_header(
 
                                                         let unassigned_response =
                                                             ui.selectable_label(
-                                                                policy_target
+                                                                *policy_target
                                                                     == Some(
                                                                         PolicyTarget::Unassigned
                                                                     ),
@@ -4002,12 +4400,23 @@ fn draw_compact_header(
                                                         );
 
                                                         if unassigned_response.clicked()
-                                                            && policy_target
+                                                            && *policy_target
                                                                 != Some(
                                                                     PolicyTarget::Unassigned
                                                                 )
                                                         {
-                                                            if configuration_changed
+                                                            if bulk_edit_mode {
+                                                                *policy_target =
+                                                                    Some(
+                                                                        PolicyTarget::Unassigned
+                                                                    );
+
+                                                                // Bulk Edit target dirty-state is derived from
+                                                                // the persistent target versus the Bulk baseline.
+                                                                // Do not emit a single-policy target-switch event.
+                                                                *policy_target_change_requested =
+                                                                    None;
+                                                            } else if configuration_changed
                                                                 && policy_target.is_some()
                                                             {
                                                                 *status_message =
@@ -4027,6 +4436,20 @@ fn draw_compact_header(
 
                             },
                         );
+
+
+                    let bulk_policy_target_changed =
+                        bulk_edit_mode
+                            && policy_target.is_some();
+
+
+                    if bulk_policy_target_changed {
+                        editor_theme::paint_bulk_edit_border(
+                            ui,
+                            target_response.response.rect,
+                            metrics.scale,
+                        );
+                    }
 
 
                     if policy_target_locked {
@@ -4349,96 +4772,6 @@ fn draw_compact_action_row(
                 }
             }
 
-
-
-            let all_bulk_rows_unassigned =
-                bulk_edit_mode
-                    && !bulk_selected_policy_rows.is_empty()
-                    && bulk_selected_policy_rows
-                        .iter()
-                        .all(
-                            |row| {
-                                row.unassigned
-                            }
-                        );
-
-
-            if all_bulk_rows_unassigned {
-
-                ui.separator();
-
-                let selected_text =
-                    match *policy_target_change_requested {
-
-                        Some(
-                            PolicyTarget::Screensaver
-                        ) => {
-                            "Assign Screensaver"
-                        }
-
-                        Some(
-                            PolicyTarget::Wallpaper
-                        ) => {
-                            "Assign Wallpaper"
-                        }
-
-                        Some(
-                            PolicyTarget::Unassigned
-                        ) => {
-                            "Assign Target..."
-                        }
-
-                        None => {
-                            "Assign Target..."
-                        }
-                    };
-
-
-                egui::ComboBox::from_id_source(
-                    "bulk_unassigned_policy_target"
-                )
-                .selected_text(
-                    selected_text
-                )
-                .width(
-                    145.0 * metrics.scale
-                )
-                .show_ui(
-                    ui,
-                    |ui| {
-                        if ui.selectable_label(
-                            *policy_target_change_requested
-                                == Some(
-                                    PolicyTarget::Screensaver
-                                ),
-                            "Screensaver",
-                        )
-                        .clicked()
-                        {
-                            *policy_target_change_requested =
-                                Some(
-                                    PolicyTarget::Screensaver
-                                );
-                        }
-
-
-                        if ui.selectable_label(
-                            *policy_target_change_requested
-                                == Some(
-                                    PolicyTarget::Wallpaper
-                                ),
-                            "Wallpaper",
-                        )
-                        .clicked()
-                        {
-                            *policy_target_change_requested =
-                                Some(
-                                    PolicyTarget::Wallpaper
-                                );
-                        }
-                    },
-                );
-            }
 
 
             let policy_text =
@@ -6108,7 +6441,9 @@ fn draw_exit_confirmation_modal(
     policy_dirty: bool,
     control_configuration_dirty: bool,
     policy_target_selected: bool,
+    bulk_edit_mode: bool,
     save_requested: &mut bool,
+    bulk_save_requested: &mut bool,
     control_configuration_save_requested: &mut bool,
     exit_after_save_requested: &mut bool,
     exit_discard_requested: &mut bool,
@@ -6164,7 +6499,8 @@ fn draw_exit_confirmation_modal(
 
 
             let save_exit_enabled =
-                !policy_dirty
+                bulk_edit_mode
+                    || !policy_dirty
                     || policy_target_selected;
 
 
@@ -6181,8 +6517,13 @@ fn draw_exit_confirmation_modal(
 
                     if save_response.clicked() {
                         if policy_dirty {
-                            *save_requested =
-                                true;
+                            if bulk_edit_mode {
+                                *bulk_save_requested =
+                                    true;
+                            } else {
+                                *save_requested =
+                                    true;
+                            }
                         }
 
                         if control_configuration_dirty {
@@ -6519,6 +6860,7 @@ fn draw_render_panel(
     fps_drag_state: &mut Option<SliderDragState>,
     animation_speed_drag_state: &mut Option<SliderDragState>,
     render_scale_drag_state: &mut Option<SliderDragState>,
+    bulk_edit_baseline: Option<EditorConfiguration>,
     hover_help_message: &mut Option<&'static str>,
 ) {
     editor_theme::section_heading(
@@ -6602,6 +6944,10 @@ fn draw_render_panel(
                         crate::define_constants::MAX_RENDER_FPS as f32,
                     ) as u32;
 
+            if bulk_edit_baseline.is_some_and(|baseline| *displayed_fps != baseline.fps) {
+                editor_theme::paint_bulk_edit_border(ui, fps_response.rect, metrics.scale);
+            }
+
             let speed_response =
                 draw_aligned_log_speed_grid_row(
                     ui,
@@ -6627,6 +6973,12 @@ fn draw_render_panel(
                 "Adjust animation speed on a logarithmic scale. The slider midpoint is 1.0x. Hold Shift for fine adjustment.",
             );
 
+            if bulk_edit_baseline.is_some_and(
+                |baseline| (*displayed_animation_speed - baseline.animation_speed).abs() > 0.0001
+            ) {
+                editor_theme::paint_bulk_edit_border(ui, speed_response.rect, metrics.scale);
+            }
+
             let scale_response =
                 draw_aligned_slider_grid_row(
                     ui,
@@ -6651,6 +7003,12 @@ fn draw_render_panel(
                 hover_help_message,
                 "Change internal rendering resolution. Lower values improve performance; higher values improve quality.",
             );
+
+            if bulk_edit_baseline.is_some_and(
+                |baseline| (*displayed_render_scale - baseline.render_scale).abs() > 0.0001
+            ) {
+                editor_theme::paint_bulk_edit_border(ui, scale_response.rect, metrics.scale);
+            }
         },
     );
 }
@@ -7266,6 +7624,7 @@ fn draw_texture_panel(
     texture: &mut TextureSelection,
     _palette: &mut PaletteSelection,
     primitive_count: &mut u32,
+    bulk_edit_baseline: Option<EditorConfiguration>,
     hover_help_message: &mut Option<&'static str>,
 ) {
     ui.add_enabled_ui(
@@ -7386,6 +7745,10 @@ fn draw_texture_panel(
                         "Select the procedural texture family generated in memory for this shader.",
                     );
 
+                    if bulk_edit_baseline.is_some_and(|baseline| *texture != baseline.texture) {
+                        editor_theme::paint_bulk_edit_border(ui, texture_response.rect, metrics.scale);
+                    }
+
 
                     ui.add_space(
                         inter_control_gap
@@ -7497,6 +7860,12 @@ fn draw_texture_panel(
                         hover_help_message,
                         "Set the number of graphical elements used to generate the procedural texture.",
                     );
+
+                    if bulk_edit_baseline.is_some_and(
+                        |baseline| *primitive_count != baseline.primitive_count
+                    ) {
+                        editor_theme::paint_bulk_edit_border(ui, primitive_response.rect, metrics.scale);
+                    }
                 },
             );
         },
@@ -8644,6 +9013,7 @@ fn draw_post_processing_tab(
     flip_vertical: &mut bool,
     hue_rotation: &mut f32,
     hue_rotation_drag_state: &mut Option<SliderDragState>,
+    bulk_edit_baseline: Option<EditorConfiguration>,
     hover_help_message: &mut Option<&'static str>,
 ) {
     draw_post_processing_panel(
@@ -8652,6 +9022,7 @@ fn draw_post_processing_tab(
         anti_aliasing,
         dithering,
         color_precision,
+        bulk_edit_baseline,
         hover_help_message,
     );
 
@@ -8715,7 +9086,9 @@ fn draw_post_processing_tab(
                 &response,
                 hover_help_message,
                 "Select the bloom processing mode. Highlight bloom affects bright image regions; Audio bloom targets bass, midrange, and high-frequency color bands.",
-            );
+            ); if bulk_edit_baseline.is_some_and(|baseline| *bloom != baseline.bloom) {
+                editor_theme::paint_bulk_edit_border(ui, response.rect, metrics.scale);
+            }
             ui.end_row();
 
             ui.label("Bloom Intensity");
@@ -8783,7 +9156,11 @@ fn draw_post_processing_tab(
                 &intensity_response,
                 hover_help_message,
                 "Set the strength of the bloom effect. Hold Shift while dragging for fine adjustment. Lower values are suitable for subtle wallpaper bloom; higher values produce a stronger effect.",
-            );
+            ); if bulk_edit_baseline.is_some_and(
+                |baseline| (*bloom_intensity - baseline.bloom_intensity).abs() > 0.0001
+            ) {
+                editor_theme::paint_bulk_edit_border(ui, intensity_response.rect, metrics.scale);
+            }
             ui.end_row();
 
             ui.label("Bloom Threshold");
@@ -8851,7 +9228,11 @@ fn draw_post_processing_tab(
                 &threshold_response,
                 hover_help_message,
                 "Set the minimum luminance that contributes to Highlight Bloom. Lower values include more of the image; higher values restrict bloom to brighter regions. Hold Shift while dragging for fine adjustment.",
-            );
+            ); if bulk_edit_baseline.is_some_and(
+                |baseline| (*bloom_threshold - baseline.bloom_threshold).abs() > 0.0001
+            ) {
+                editor_theme::paint_bulk_edit_border(ui, threshold_response.rect, metrics.scale);
+            }
             ui.end_row();
             ui.label("Invert Colors");
             let invert_response = ui.checkbox(invert_colors, "Enabled");
@@ -8859,7 +9240,9 @@ fn draw_post_processing_tab(
                 &invert_response,
                 hover_help_message,
                 "Invert the rendered shader colors before Bloom and the remaining post-processing stages.",
-            );
+            ); if bulk_edit_baseline.is_some_and(|baseline| *invert_colors != baseline.invert_colors) {
+                editor_theme::paint_bulk_edit_border(ui, invert_response.rect, metrics.scale);
+            }
             ui.end_row();
 
             ui.label("Flip Horizontal");
@@ -8868,7 +9251,9 @@ fn draw_post_processing_tab(
                 &flip_horizontal_response,
                 hover_help_message,
                 "Mirror the rendered shader from left to right without changing its aspect ratio.",
-            );
+            ); if bulk_edit_baseline.is_some_and(|baseline| *flip_horizontal != baseline.flip_horizontal) {
+                editor_theme::paint_bulk_edit_border(ui, flip_horizontal_response.rect, metrics.scale);
+            }
             ui.end_row();
 
             ui.label("Flip Vertical");
@@ -8877,7 +9262,9 @@ fn draw_post_processing_tab(
                 &flip_vertical_response,
                 hover_help_message,
                 "Mirror the rendered shader from top to bottom without changing its aspect ratio.",
-            );
+            ); if bulk_edit_baseline.is_some_and(|baseline| *flip_vertical != baseline.flip_vertical) {
+                editor_theme::paint_bulk_edit_border(ui, flip_vertical_response.rect, metrics.scale);
+            }
             ui.end_row();
 
             ui.label("Hue Rotation");
@@ -8932,7 +9319,11 @@ fn draw_post_processing_tab(
                 &hue_response,
                 hover_help_message,
                 "Rotate shader hue from -180° through +180°. Hold Shift while dragging for 10x finer adjustment.",
-            );
+            ); if bulk_edit_baseline.is_some_and(
+                |baseline| (*hue_rotation - baseline.hue_rotation).abs() > 0.0001
+            ) {
+                editor_theme::paint_bulk_edit_border(ui, hue_response.rect, metrics.scale);
+            }
             ui.end_row();
 
         },
@@ -8951,6 +9342,7 @@ fn draw_post_processing_panel(
     anti_aliasing: &mut AntiAliasingSelection,
     dithering: &mut DitheringSelection,
     color_precision: &mut ColorPrecisionSelection,
+    bulk_edit_baseline: Option<EditorConfiguration>,
     hover_help_message: &mut Option<&'static str>,
 ) {
     editor_theme::panel_frame(
@@ -9020,7 +9412,9 @@ fn draw_post_processing_panel(
                         &response,
                         hover_help_message,
                         "Select the anti-aliasing method used to smooth rendered edges.",
-                    );
+                    ); if bulk_edit_baseline.is_some_and(|baseline| *anti_aliasing != baseline.anti_aliasing) {
+                        editor_theme::paint_bulk_edit_border(ui, response.rect, metrics.scale);
+                    }
                     ui.end_row();
 
                     ui.label("Dithering");
@@ -9061,7 +9455,9 @@ fn draw_post_processing_panel(
                         &response,
                         hover_help_message,
                         "Reduce visible color banding in smooth gradients.",
-                    );
+                    ); if bulk_edit_baseline.is_some_and(|baseline| *dithering != baseline.dithering) {
+                        editor_theme::paint_bulk_edit_border(ui, response.rect, metrics.scale);
+                    }
                     ui.end_row();
 
                     ui.label("Color Precision");
@@ -9102,7 +9498,9 @@ fn draw_post_processing_panel(
                         &response,
                         hover_help_message,
                         "Controls off-screen render-target precision. Higher precision can reduce banding but may use more GPU memory.",
-                    );
+                    ); if bulk_edit_baseline.is_some_and(|baseline| *color_precision != baseline.color_precision) {
+                        editor_theme::paint_bulk_edit_border(ui, response.rect, metrics.scale);
+                    }
                     ui.end_row();
                 },
             );

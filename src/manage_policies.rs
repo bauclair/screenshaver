@@ -267,6 +267,45 @@ pub struct BulkPolicyReplacement {
 }
 
 
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+)]
+pub struct BulkPolicyFieldMask {
+    pub policy_target: bool,
+    pub texture: bool,
+    pub palette: bool,
+    pub fps: bool,
+    pub speed: bool,
+    pub render_scale: bool,
+    pub anti_aliasing: bool,
+    pub dithering: bool,
+    pub color_precision: bool,
+    pub bloom: bool,
+    pub bloom_intensity: bool,
+    pub bloom_threshold: bool,
+    pub invert_colors: bool,
+    pub flip_horizontal: bool,
+    pub flip_vertical: bool,
+    pub hue_rotation: bool,
+}
+
+
+#[derive(
+    Debug,
+    Clone,
+)]
+pub struct BulkPolicyPatch {
+    pub current_target: PolicyTarget,
+    pub destination_target: Option<PolicyTarget>,
+    pub policy_key: String,
+    pub properties: PolicyDefinition,
+    pub fields: BulkPolicyFieldMask,
+}
+
+
 impl PolicyDefinition {
 
     pub fn is_empty(
@@ -1367,86 +1406,571 @@ pub fn add_policies_for_sources(
 }
 
 
-pub fn replace_policies_by_key(
-    config_path: &Path,
-    replacements: &[BulkPolicyReplacement],
-) -> Result<(), String> {
+pub fn patch_policies_by_key(
+    patches: &[BulkPolicyPatch],
+) -> Result<usize, String> {
 
-    if replacements.is_empty() {
-        return Ok(());
+    if patches.is_empty() {
+        return Ok(0);
     }
 
-
-    let mut document =
-        load_document(
-            config_path
-        )?;
-
-
-    // Apply every requested update to the in-memory TOML document first.
-    // save_document() is called only after every policy has been located and
-    // validated, so a pre-write failure cannot leave a partially updated set.
-    for replacement in replacements {
-
-        validate_properties(
-            replacement.target,
-            &replacement.properties,
-        )?;
-
-
-        let table =
-            policy_table_mut(
-                &mut document,
-                replacement.target,
+    let mut connection =
+        crate::open_database::open()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to open database for Bulk Edit: {}",
+                        error,
+                    )
+                }
             )?;
 
+    let transaction =
+        connection
+            .transaction()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to begin Bulk Edit transaction: {}",
+                        error,
+                    )
+                }
+            )?;
 
-        let existing_key =
-            table
-                .iter()
-                .find_map(
-                    |(key, _)| {
-                        if key.eq_ignore_ascii_case(
-                            &replacement.policy_key
-                        ) {
-                            Some(
-                                key.to_string()
+    let mut changed_policies =
+        0_usize;
+
+    for patch in patches {
+        // A Bulk Edit may legitimately change only Policy Target.  In that
+        // case PolicyDefinition is intentionally empty because none of the
+        // Rendering, Texture, or Post-Processing columns are being changed.
+        // The ordinary single-policy validator requires at least one property,
+        // so invoke it only when this patch actually contains property values.
+        if !patch.properties.is_empty() {
+            validate_properties(
+                patch.destination_target
+                    .unwrap_or(patch.current_target),
+                &patch.properties,
+            )?;
+        }
+
+        let policy_name =
+            patch.policy_key.trim();
+
+        let policy_name_key =
+            database_policy_name_key(
+                policy_name
+            )?;
+
+        let (
+            policy_id,
+            filename,
+            stored_target,
+            stored_policy_name,
+        ): (
+            i64,
+            String,
+            String,
+            String,
+        ) =
+            transaction
+                .query_row(
+                    "SELECT
+                         p.policy_id,
+                         s.filename,
+                         p.policy_target,
+                         p.policy_name
+                     FROM shader_policies AS p
+                     JOIN shaders AS s
+                       ON s.shader_id = p.shader_id
+                     WHERE p.policy_name_key = ?1",
+                    rusqlite::params![
+                        policy_name_key
+                    ],
+                    |row| {
+                        Ok(
+                            (
+                                row.get(0)?,
+                                row.get(1)?,
+                                row.get(2)?,
+                                row.get(3)?,
                             )
-                        } else {
-                            None
-                        }
-                    }
+                        )
+                    },
                 )
-                .ok_or_else(
-                    || {
+                .map_err(
+                    |error| {
                         format!(
-                            "Policy key '{}' does not exist in [{}]",
-                            replacement.policy_key,
-                            replacement.target.table_name(),
+                            "Unable to locate policy '{}' for Bulk Edit: {}",
+                            policy_name,
+                            error,
                         )
                     }
                 )?;
 
-
-        table[
-            &existing_key
-        ] =
-            value(
-                format_policy(
-                    &replacement.properties
+        if !stored_target.eq_ignore_ascii_case(
+            patch.current_target.name()
+        ) {
+            return Err(
+                format!(
+                    "Policy '{}' changed target before Bulk Edit could be saved",
+                    policy_name,
                 )
             );
+        }
+
+        let property_fields_changed =
+            patch.fields.texture
+                || patch.fields.palette
+                || patch.fields.fps
+                || patch.fields.speed
+                || patch.fields.render_scale
+                || patch.fields.anti_aliasing
+                || patch.fields.dithering
+                || patch.fields.color_precision
+                || patch.fields.bloom
+                || patch.fields.bloom_intensity
+                || patch.fields.bloom_threshold
+                || patch.fields.invert_colors
+                || patch.fields.flip_horizontal
+                || patch.fields.flip_vertical
+                || patch.fields.hue_rotation;
+
+
+        // A Policy-Target-only Bulk Edit is a complete operation in its own
+        // right.  Do not route it through policy-property conversion.
+        if patch.fields.policy_target
+            && !property_fields_changed
+        {
+            let destination =
+                patch.destination_target
+                    .ok_or_else(
+                        || {
+                            format!(
+                                "Bulk Edit marked Policy Target changed for '{}', but no destination target was supplied",
+                                policy_name,
+                            )
+                        }
+                    )?;
+
+
+            if destination
+                != patch.current_target
+            {
+                let generated_current_name =
+                    format!(
+                        "{} ({})",
+                        filename,
+                        patch.current_target.name(),
+                    );
+
+
+                let (
+                    replacement_name,
+                    replacement_key,
+                ) =
+                    if stored_policy_name
+                        .eq_ignore_ascii_case(
+                            &generated_current_name
+                        )
+                    {
+                        let desired_name =
+                            format!(
+                                "{} ({})",
+                                filename,
+                                destination.name(),
+                            );
+
+
+                        let desired_key =
+                            database_policy_name_key(
+                                &desired_name
+                            )?;
+
+
+                        let conflict_count: i64 =
+                            transaction
+                                .query_row(
+                                    "SELECT COUNT(*)
+                                     FROM shader_policies
+                                     WHERE policy_name_key = ?1
+                                       AND policy_id <> ?2",
+                                    rusqlite::params![
+                                        desired_key,
+                                        policy_id,
+                                    ],
+                                    |row| {
+                                        row.get(
+                                            0
+                                        )
+                                    },
+                                )
+                                .map_err(
+                                    |error| {
+                                        format!(
+                                            "Unable to validate generated Policy Name '{}': {}",
+                                            desired_name,
+                                            error,
+                                        )
+                                    }
+                                )?;
+
+
+                        if conflict_count
+                            == 0
+                        {
+                            (
+                                desired_name,
+                                desired_key,
+                            )
+                        } else {
+                            (
+                                stored_policy_name.clone(),
+                                database_policy_name_key(
+                                    &stored_policy_name
+                                )?,
+                            )
+                        }
+                    } else {
+                        (
+                            stored_policy_name.clone(),
+                            database_policy_name_key(
+                                &stored_policy_name
+                            )?,
+                        )
+                    };
+
+
+                transaction
+                    .execute(
+                        "UPDATE shader_policies
+                         SET policy_target = ?1,
+                             policy_name = ?2,
+                             policy_name_key = ?3
+                         WHERE policy_id = ?4",
+                        rusqlite::params![
+                            destination.name(),
+                            replacement_name,
+                            replacement_key,
+                            policy_id,
+                        ],
+                    )
+                    .map_err(
+                        |error| {
+                            format!(
+                                "Unable to change Policy Target for '{}': {}",
+                                policy_name,
+                                error,
+                            )
+                        }
+                    )?;
+
+
+                changed_policies +=
+                    1;
+            }
+
+
+            continue;
+        }
+
+
+        let values =
+            database_policy_values(
+                &patch.properties
+            )?;
+
+        let mut policy_changed =
+            false;
+
+        macro_rules! update_one {
+            ($enabled:expr, $sql:expr, $value:expr, $label:expr) => {
+                if $enabled {
+                    transaction
+                        .execute(
+                            $sql,
+                            rusqlite::params![
+                                $value,
+                                policy_id,
+                            ],
+                        )
+                        .map_err(
+                            |error| {
+                                format!(
+                                    "Unable to update {} for policy '{}': {}",
+                                    $label,
+                                    policy_name,
+                                    error,
+                                )
+                            }
+                        )?;
+                    policy_changed = true;
+                }
+            };
+        }
+
+        if patch.fields.texture {
+            transaction
+                .execute(
+                    "UPDATE shader_policies
+                     SET texture_mode = ?1,
+                         texture_family = ?2,
+                         texture_primitives = ?3
+                     WHERE policy_id = ?4",
+                    rusqlite::params![
+                        values.texture_mode,
+                        values.texture_family,
+                        values.texture_primitives,
+                        policy_id,
+                    ],
+                )
+                .map_err(
+                    |error| {
+                        format!(
+                            "Unable to update texture for policy '{}': {}",
+                            policy_name,
+                            error,
+                        )
+                    }
+                )?;
+            policy_changed = true;
+        }
+
+        if patch.fields.palette {
+            transaction
+                .execute(
+                    "UPDATE shader_policies
+                     SET palette_mode = ?1,
+                         palette_color = ?2
+                     WHERE policy_id = ?3",
+                    rusqlite::params![
+                        values.palette_mode,
+                        values.palette_color,
+                        policy_id,
+                    ],
+                )
+                .map_err(
+                    |error| {
+                        format!(
+                            "Unable to update palette for policy '{}': {}",
+                            policy_name,
+                            error,
+                        )
+                    }
+                )?;
+            policy_changed = true;
+        }
+
+        update_one!(
+            patch.fields.fps,
+            "UPDATE shader_policies SET rendered_fps = ?1 WHERE policy_id = ?2",
+            values.rendered_fps,
+            "FPS"
+        );
+        update_one!(
+            patch.fields.speed,
+            "UPDATE shader_policies SET animation_speed = ?1 WHERE policy_id = ?2",
+            values.animation_speed,
+            "animation speed"
+        );
+        update_one!(
+            patch.fields.render_scale,
+            "UPDATE shader_policies SET render_scale = ?1 WHERE policy_id = ?2",
+            values.render_scale,
+            "render scale"
+        );
+        update_one!(
+            patch.fields.anti_aliasing,
+            "UPDATE shader_policies SET anti_aliasing = ?1 WHERE policy_id = ?2",
+            values.anti_aliasing,
+            "anti-aliasing"
+        );
+        update_one!(
+            patch.fields.dithering,
+            "UPDATE shader_policies SET dithering = ?1 WHERE policy_id = ?2",
+            values.dithering,
+            "dithering"
+        );
+        update_one!(
+            patch.fields.color_precision,
+            "UPDATE shader_policies SET color_precision = ?1 WHERE policy_id = ?2",
+            values.color_precision,
+            "color precision"
+        );
+        update_one!(
+            patch.fields.bloom,
+            "UPDATE shader_policies SET bloom_mode = ?1 WHERE policy_id = ?2",
+            values.bloom_mode,
+            "Bloom mode"
+        );
+        update_one!(
+            patch.fields.bloom_intensity,
+            "UPDATE shader_policies SET bloom_intensity = ?1 WHERE policy_id = ?2",
+            values.bloom_intensity,
+            "Bloom intensity"
+        );
+        update_one!(
+            patch.fields.bloom_threshold,
+            "UPDATE shader_policies SET bloom_threshold = ?1 WHERE policy_id = ?2",
+            values.bloom_threshold,
+            "Bloom threshold"
+        );
+        update_one!(
+            patch.fields.invert_colors,
+            "UPDATE shader_policies SET invert_colors = ?1 WHERE policy_id = ?2",
+            values.invert_colors,
+            "Invert Colors"
+        );
+        update_one!(
+            patch.fields.flip_horizontal,
+            "UPDATE shader_policies SET flip_horizontal = ?1 WHERE policy_id = ?2",
+            values.flip_horizontal,
+            "Flip Horizontal"
+        );
+        update_one!(
+            patch.fields.flip_vertical,
+            "UPDATE shader_policies SET flip_vertical = ?1 WHERE policy_id = ?2",
+            values.flip_vertical,
+            "Flip Vertical"
+        );
+        update_one!(
+            patch.fields.hue_rotation,
+            "UPDATE shader_policies SET hue_rotation = ?1 WHERE policy_id = ?2",
+            values.hue_rotation,
+            "Hue Rotation"
+        );
+
+        if patch.fields.policy_target {
+            let destination =
+                patch.destination_target
+                    .ok_or_else(
+                        || {
+                            format!(
+                                "Bulk Edit marked Policy Target changed for '{}', but no destination target was supplied",
+                                policy_name,
+                            )
+                        }
+                    )?;
+
+            if destination != patch.current_target {
+                let generated_current_name =
+                    format!(
+                        "{} ({})",
+                        filename,
+                        patch.current_target.name(),
+                    );
+
+                let (
+                    replacement_name,
+                    replacement_key,
+                ) =
+                    if stored_policy_name.eq_ignore_ascii_case(
+                        &generated_current_name
+                    ) {
+                        let desired_name =
+                            format!(
+                                "{} ({})",
+                                filename,
+                                destination.name(),
+                            );
+
+                        let desired_key =
+                            database_policy_name_key(
+                                &desired_name
+                            )?;
+
+                        let conflict_count: i64 =
+                            transaction
+                                .query_row(
+                                    "SELECT COUNT(*)
+                                     FROM shader_policies
+                                     WHERE policy_name_key = ?1
+                                       AND policy_id <> ?2",
+                                    rusqlite::params![
+                                        desired_key,
+                                        policy_id,
+                                    ],
+                                    |row| row.get(0),
+                                )
+                                .map_err(
+                                    |error| {
+                                        format!(
+                                            "Unable to validate generated Policy Name '{}': {}",
+                                            desired_name,
+                                            error,
+                                        )
+                                    }
+                                )?;
+
+                        if conflict_count == 0 {
+                            (
+                                desired_name,
+                                desired_key,
+                            )
+                        } else {
+                            (
+                                stored_policy_name.clone(),
+                                database_policy_name_key(
+                                    &stored_policy_name
+                                )?,
+                            )
+                        }
+                    } else {
+                        (
+                            stored_policy_name.clone(),
+                            database_policy_name_key(
+                                &stored_policy_name
+                            )?,
+                        )
+                    };
+
+                transaction
+                    .execute(
+                        "UPDATE shader_policies
+                         SET policy_target = ?1,
+                             policy_name = ?2,
+                             policy_name_key = ?3
+                         WHERE policy_id = ?4",
+                        rusqlite::params![
+                            destination.name(),
+                            replacement_name,
+                            replacement_key,
+                            policy_id,
+                        ],
+                    )
+                    .map_err(
+                        |error| {
+                            format!(
+                                "Unable to change Policy Target for '{}': {}",
+                                policy_name,
+                                error,
+                            )
+                        }
+                    )?;
+
+                policy_changed = true;
+            }
+        }
+
+        if policy_changed {
+            changed_policies += 1;
+        }
     }
 
+    transaction
+        .commit()
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to commit Bulk Edit transaction: {}",
+                    error,
+                )
+            }
+        )?;
 
-    // Intentionally leave source-path metadata untouched. Bulk Edit is
-    // permitted to change policy properties only; it may not change policy
-    // target assignments or shader source locations.
-    save_document(
-        config_path,
-        &document,
-    )
+    Ok(changed_policies)
 }
+
 
 
 pub fn delete_policy_by_key(
