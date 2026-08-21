@@ -618,45 +618,6 @@ pub fn add_policy_for_source(
             )?;
 
 
-    let existing_count: i64 =
-        transaction
-            .query_row(
-                "SELECT COUNT(*)
-                 FROM shader_policies
-                 WHERE shader_id = ?1
-                   AND policy_target = ?2",
-                rusqlite::params![
-                    shader_id,
-                    target.name(),
-                ],
-                |row| {
-                    row.get(0)
-                },
-            )
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to check existing {} policy for '{}': {}",
-                        target.name(),
-                        shader,
-                        error,
-                    )
-                }
-            )?;
-
-
-    if existing_count > 0 {
-
-        return Err(
-            format!(
-                "Shader '{}' already has a {} policy",
-                shader,
-                target.name(),
-            )
-        );
-    }
-
-
     let policy_name =
         next_database_policy_name(
             &transaction,
@@ -2391,7 +2352,7 @@ fn next_database_policy_name(
 
     Err(
         format!(
-            "Unable to generate a unique Policy Name for shader '{}'",
+            "Unable to generate an available suggested Policy Name for shader '{}'",
             shader,
         )
     )

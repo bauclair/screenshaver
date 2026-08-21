@@ -750,142 +750,65 @@ fn validate_default_policy(
     policy_target: &str,
 ) -> Result<(), String> {
 
-    let mut statement =
+    // Policy Name is display/search metadata, not policy identity.  Duplicate
+    // names are valid in Schema V1, so default-policy validation must identify
+    // the protected fallback row structurally: the oldest policy_id for the
+    // managed default.glsl shader in the required target.
+    let fallback =
         connection
-            .prepare(
-                "SELECT shader_id,
-                        policy_target
+            .query_row(
+                "SELECT policy_id,
+                        policy_name_key
                  FROM shader_policies
-                 WHERE policy_name_key = ?1"
+                 WHERE shader_id = ?1
+                   AND policy_target = ?2
+                 ORDER BY policy_id
+                 LIMIT 1",
+                rusqlite::params![
+                    expected_shader_id,
+                    policy_target,
+                ],
+                |row| {
+                    Ok(
+                        (
+                            row.get::<_, i64>(0)?,
+                            row.get::<_, String>(1)?,
+                        )
+                    )
+                },
             )
             .map_err(
                 |error| {
                     format!(
-                        "Unable to prepare default-policy validation query for '{}': {}",
-                        policy_name_key,
+                        "Default-policy validation failed: required '{}' fallback policy for shader_id {} is missing: {}",
+                        policy_target,
+                        expected_shader_id,
                         error,
                     )
                 }
             )?;
 
+    let (
+        fallback_policy_id,
+        stored_name_key,
+    ) = fallback;
 
-    let mut rows =
-        statement
-            .query(
-                [policy_name_key]
-            )
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to query default policy '{}': {}",
-                        policy_name_key,
-                        error,
-                    )
-                }
-            )?;
-
-
-    let row =
-        rows
-            .next()
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to read default policy '{}': {}",
-                        policy_name_key,
-                        error,
-                    )
-                }
-            )?
-            .ok_or_else(
-                || {
-                    format!(
-                        "Default-policy validation failed: '{}' is missing",
-                        policy_name_key,
-                    )
-                }
-            )?;
-
-
-    let shader_id: i64 =
-        row.get(
-            0
-        )
-        .map_err(
-            |error| {
-                format!(
-                    "Unable to read shader_id for default policy '{}': {}",
-                    policy_name_key,
-                    error,
-                )
-            }
-        )?;
-
-
-    let stored_target: String =
-        row.get(
-            1
-        )
-        .map_err(
-            |error| {
-                format!(
-                    "Unable to read policy_target for default policy '{}': {}",
-                    policy_name_key,
-                    error,
-                )
-            }
-        )?;
-
-
-    if rows
-        .next()
-        .map_err(
-            |error| {
-                format!(
-                    "Unable to check for duplicate default policy '{}': {}",
-                    policy_name_key,
-                    error,
-                )
-            }
-        )?
-        .is_some()
+    // During fresh initialization the canonical fallback names should still be
+    // the seeded names.  This is a content check only; it is deliberately not
+    // a uniqueness check.  Other policies may freely use the same name/target.
+    if stored_name_key
+        != policy_name_key
     {
         return Err(
             format!(
-                "Default-policy validation failed: more than one '{}' policy exists",
-                policy_name_key,
-            )
-        );
-    }
-
-
-    if shader_id
-        != expected_shader_id
-    {
-        return Err(
-            format!(
-                "Default-policy validation failed: '{}' references shader_id {}, expected {}",
-                policy_name_key,
-                shader_id,
-                expected_shader_id,
-            )
-        );
-    }
-
-
-    if stored_target
-        != policy_target
-    {
-        return Err(
-            format!(
-                "Default-policy validation failed: '{}' target is '{}', expected '{}'",
-                policy_name_key,
-                stored_target,
+                "Default-policy validation failed: protected {} fallback policy ID {} has Policy Name key '{}', expected seeded key '{}'",
                 policy_target,
+                fallback_policy_id,
+                stored_name_key,
+                policy_name_key,
             )
         );
     }
-
 
     Ok(())
 }

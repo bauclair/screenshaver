@@ -715,7 +715,7 @@ fn available_policy_name(
 
     Err(
         format!(
-            "Unable to generate a unique Policy Name for '{}' in target {}",
+            "Unable to generate an available suggested Policy Name for '{}' in target {}",
             filename,
             target,
         )
