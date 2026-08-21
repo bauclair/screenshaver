@@ -33,6 +33,7 @@ pub fn load_shader_entries(
         connection
             .prepare(
                 "SELECT
+                     p.policy_id,
                      s.filename,
                      s.source_path,
                      p.policy_name
@@ -66,9 +67,10 @@ pub fn load_shader_entries(
                 |row| {
                     Ok(
                         (
-                            row.get::<_, String>(0)?,
+                            row.get::<_, i64>(0)?,
                             row.get::<_, String>(1)?,
                             row.get::<_, String>(2)?,
+                            row.get::<_, String>(3)?,
                         )
                     )
                 },
@@ -86,6 +88,7 @@ pub fn load_shader_entries(
     for row in rows {
 
         let (
+            policy_id,
             filename,
             source_path,
             policy_name,
@@ -101,7 +104,8 @@ pub fn load_shader_entries(
 
 
         shader_entries.push(
-            crate::manage_shader::ShaderEntry::with_policy_source_path(
+            crate::manage_shader::ShaderEntry::with_policy_id_source_path(
+                policy_id,
                 filename.clone(),
                 policy_name,
                 std::path::PathBuf::from(
@@ -119,13 +123,14 @@ pub fn load_shader_entries(
         crate::locate_paths::config_path();
 
 
-    match crate::manage_policies::external_policy_paths(
+    match crate::manage_policies::external_policy_entries(
         &config_path,
         crate::manage_policies::PolicyTarget::Wallpaper,
     ) {
         Ok(external_paths) => {
 
             for (
+                policy_id,
                 policy_name,
                 name,
                 source_path,
@@ -143,7 +148,8 @@ pub fn load_shader_entries(
 
 
                 shader_entries.push(
-                    crate::manage_shader::ShaderEntry::with_policy_source_path(
+                    crate::manage_shader::ShaderEntry::with_policy_id_source_path(
+                        policy_id,
                         name,
                         policy_name,
                         source_path,
@@ -183,11 +189,15 @@ pub fn load_shader_entries(
                     )
                 }
             )
+            .then_with(
+                || {
+                    left.policy_id.cmp(
+                        &right.policy_id
+                    )
+                }
+            )
         }
     );
-
-
-    shader_entries.dedup();
 
 
     Ok(

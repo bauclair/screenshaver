@@ -20,6 +20,11 @@ pub enum ShaderMode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShaderEntry {
 
+    /// SQLite policy identity. Zero is reserved for compatibility-only
+    /// synthetic entries that were not loaded from the policy database.
+    pub policy_id:
+        i64,
+
     /// Physical/logical shader filename used for loading and configured
     /// Single-mode matching.
     pub name:
@@ -41,6 +46,8 @@ impl ShaderEntry {
     ) -> Self {
 
         Self {
+            policy_id:
+                0,
             policy_name:
                 name.clone(),
             name,
@@ -56,6 +63,8 @@ impl ShaderEntry {
     ) -> Self {
 
         Self {
+            policy_id:
+                0,
             policy_name:
                 name.clone(),
             name,
@@ -72,6 +81,25 @@ impl ShaderEntry {
     ) -> Self {
 
         Self {
+            policy_id:
+                0,
+            name,
+            policy_name,
+            source_path:
+                Some(source_path),
+        }
+    }
+
+
+    pub fn with_policy_id_source_path(
+        policy_id: i64,
+        name: String,
+        policy_name: String,
+        source_path: PathBuf,
+    ) -> Self {
+
+        Self {
+            policy_id,
             name,
             policy_name,
             source_path:
@@ -220,6 +248,13 @@ impl ShaderManager {
                     )
                     .then_with(
                         || {
+                            left.policy_id.cmp(
+                                &right.policy_id
+                            )
+                        }
+                    )
+                    .then_with(
+                        || {
                             left.source_path
                                 .cmp(
                                     &right.source_path
@@ -275,6 +310,7 @@ impl ShaderManager {
 
                 match connection.prepare(
                     "SELECT
+                         p.policy_id,
                          s.filename,
                          s.source_path,
                          p.policy_name
@@ -287,7 +323,8 @@ impl ShaderManager {
                      ORDER BY s.filename COLLATE NOCASE,
                               s.filename,
                               p.policy_name COLLATE NOCASE,
-                              p.policy_name"
+                              p.policy_name,
+                              p.policy_id"
                 ) {
 
                     Ok(mut statement) => {
@@ -299,9 +336,10 @@ impl ShaderManager {
                             |row| {
                                 Ok(
                                     (
-                                        row.get::<_, String>(0)?,
+                                        row.get::<_, i64>(0)?,
                                         row.get::<_, String>(1)?,
                                         row.get::<_, String>(2)?,
+                                        row.get::<_, String>(3)?,
                                     )
                                 )
                             },
@@ -314,6 +352,7 @@ impl ShaderManager {
                                     match row {
 
                                         Ok((
+                                            policy_id,
                                             filename,
                                             source_path,
                                             policy_name,
@@ -338,7 +377,8 @@ impl ShaderManager {
 
 
                                             shaders.push(
-                                                ShaderEntry::with_policy_source_path(
+                                                ShaderEntry::with_policy_id_source_path(
+                                                    policy_id,
                                                     filename,
                                                     policy_name,
                                                     physical_path,
@@ -402,12 +442,13 @@ impl ShaderManager {
         let config_path =
             crate::locate_paths::config_path();
 
-        match crate::manage_policies::external_policy_paths(
+        match crate::manage_policies::external_policy_entries(
             &config_path,
             crate::manage_policies::PolicyTarget::Screensaver,
         ) {
             Ok(external_paths) => {
                 for (
+                    policy_id,
                     policy_name,
                     name,
                     source_path,
@@ -426,7 +467,8 @@ impl ShaderManager {
                     }
 
                     shaders.push(
-                        ShaderEntry::with_policy_source_path(
+                        ShaderEntry::with_policy_id_source_path(
+                            policy_id,
                             name,
                             policy_name,
                             source_path,
@@ -458,6 +500,13 @@ impl ShaderManager {
                                 .cmp(
                                     &right.policy_name
                                 )
+                        }
+                    )
+                    .then_with(
+                        || {
+                            left.policy_id.cmp(
+                                &right.policy_id
+                            )
                         }
                     )
                     .then_with(
@@ -535,6 +584,41 @@ impl ShaderManager {
             &format!(
                 "[SHADER] Removed rejected shader from active list: {}",
                 shader_name
+            )
+        );
+    }
+
+
+    pub fn remove_entry(
+        &mut self,
+        entry: &ShaderEntry,
+    ) {
+
+        self.shaders.retain(
+            |shader| {
+                shader != entry
+            }
+        );
+
+
+        if self.shaders.is_empty() {
+
+            self.index =
+                0;
+
+        } else if self.index
+            >= self.shaders.len()
+        {
+            self.index %=
+                self.shaders.len();
+        }
+
+
+        log_information(
+            &format!(
+                "[SHADER] Removed rejected policy entry from active list: policy_id={}, shader={}",
+                entry.policy_id,
+                entry.name,
             )
         );
     }

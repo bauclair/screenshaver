@@ -222,6 +222,9 @@ struct RawToml {
 )]
 pub struct ShaderPolicy {
 
+    pub policy_id:
+        i64,
+
     pub policy_key:
         String,
 
@@ -317,6 +320,23 @@ impl AnimationSpeedPolicy {
         command_line_speed: Option<f32>,
     ) -> f32 {
 
+        self.animation_speed_for_policy(
+            0,
+            shader_name,
+            source_path,
+            command_line_speed,
+        )
+    }
+
+
+    pub fn animation_speed_for_policy(
+        &self,
+        policy_id: i64,
+        shader_name: &str,
+        source_path: Option<&Path>,
+        command_line_speed: Option<f32>,
+    ) -> f32 {
+
         if let Some(speed) =
             command_line_speed
         {
@@ -324,8 +344,9 @@ impl AnimationSpeedPolicy {
         }
 
 
-        matching_shader_policy(
+        matching_shader_policy_by_id(
             &self.shader_policies,
+            policy_id,
             shader_name,
             source_path,
         )
@@ -399,6 +420,39 @@ fn managed_policy_name_matches(
 }
 
 
+fn matching_shader_policy_by_id<'a>(
+    policies: &'a [ShaderPolicy],
+    policy_id: i64,
+    shader_name: &str,
+    source_path: Option<&Path>,
+) -> Option<&'a ShaderPolicy> {
+
+    if policy_id > 0 {
+        if let Some(policy) =
+            policies
+                .iter()
+                .find(
+                    |policy| {
+                        policy.policy_id
+                            == policy_id
+                    }
+                )
+        {
+            return Some(
+                policy
+            );
+        }
+    }
+
+
+    matching_shader_policy(
+        policies,
+        shader_name,
+        source_path,
+    )
+}
+
+
 fn matching_shader_policy<'a>(
     policies: &'a [ShaderPolicy],
     shader_name: &str,
@@ -445,6 +499,39 @@ fn matching_shader_policy<'a>(
                     )
             }
         )
+}
+
+
+fn matching_fps_policy_by_id<'a>(
+    policies: &'a [FpsPolicyEntry],
+    policy_id: i64,
+    shader_name: &str,
+    source_path: Option<&Path>,
+) -> Option<&'a FpsPolicyEntry> {
+
+    if policy_id > 0 {
+        if let Some(policy) =
+            policies
+                .iter()
+                .find(
+                    |policy| {
+                        policy.policy_id
+                            == policy_id
+                    }
+                )
+        {
+            return Some(
+                policy
+            );
+        }
+    }
+
+
+    matching_fps_policy(
+        policies,
+        shader_name,
+        source_path,
+    )
 }
 
 
@@ -503,6 +590,9 @@ fn matching_fps_policy<'a>(
 )]
 pub struct TexturePolicyEntry {
 
+    pub policy_id:
+        i64,
+
     pub shader:
         String,
 
@@ -526,6 +616,9 @@ pub struct TexturePolicyEntry {
     Clone,
 )]
 pub struct FpsPolicyEntry {
+
+    pub policy_id:
+        i64,
 
     pub shader:
         String,
@@ -562,6 +655,23 @@ impl FpsPolicy {
         command_line_fps: Option<u32>,
     ) -> u32 {
 
+        self.rendered_fps_for_policy(
+            0,
+            shader_name,
+            source_path,
+            command_line_fps,
+        )
+    }
+
+
+    pub fn rendered_fps_for_policy(
+        &self,
+        policy_id: i64,
+        shader_name: &str,
+        source_path: Option<&Path>,
+        command_line_fps: Option<u32>,
+    ) -> u32 {
+
         if let Some(fps) =
             command_line_fps
         {
@@ -571,8 +681,9 @@ impl FpsPolicy {
         }
 
 
-        matching_fps_policy(
+        matching_fps_policy_by_id(
             &self.fps_policy_entries,
+            policy_id,
             shader_name,
             source_path,
         )
@@ -740,9 +851,25 @@ impl PostprocessPolicy {
         source_path: Option<&Path>,
     ) -> PostprocessProfile {
 
+        self.profile_for_policy(
+            0,
+            shader_name,
+            source_path,
+        )
+    }
+
+
+    pub(crate) fn profile_for_policy(
+        &self,
+        policy_id: i64,
+        shader_name: &str,
+        source_path: Option<&Path>,
+    ) -> PostprocessProfile {
+
         let shader_policy =
-            matching_shader_policy(
+            matching_shader_policy_by_id(
                 &self.shader_policies,
+                policy_id,
                 shader_name,
                 source_path,
             );
@@ -1907,6 +2034,7 @@ fn load_database_policy_table(
 
     #[derive(Debug)]
     struct DatabasePolicyRow {
+        policy_id: i64,
         policy_name: String,
         filename: String,
         source_path: String,
@@ -1956,6 +2084,7 @@ fn load_database_policy_table(
         connection
             .prepare(
                 "SELECT
+                     p.policy_id,
                      p.policy_name,
                      s.filename,
                      s.source_path,
@@ -2004,27 +2133,28 @@ fn load_database_policy_table(
                 |row| {
                     Ok(
                         DatabasePolicyRow {
-                            policy_name: row.get(0)?,
-                            filename: row.get(1)?,
-                            source_path: row.get(2)?,
-                            texture_mode: row.get(3)?,
-                            texture_family: row.get(4)?,
-                            texture_primitives: row.get(5)?,
-                            palette_mode: row.get(6)?,
-                            palette_color: row.get(7)?,
-                            rendered_fps: row.get(8)?,
-                            animation_speed: row.get(9)?,
-                            anti_aliasing: row.get(10)?,
-                            dithering: row.get(11)?,
-                            color_precision: row.get(12)?,
-                            render_scale: row.get(13)?,
-                            bloom_mode: row.get(14)?,
-                            bloom_intensity: row.get(15)?,
-                            bloom_threshold: row.get(16)?,
-                            invert_colors: row.get(17)?,
-                            flip_horizontal: row.get(18)?,
-                            flip_vertical: row.get(19)?,
-                            hue_rotation: row.get(20)?,
+                            policy_id: row.get(0)?,
+                            policy_name: row.get(1)?,
+                            filename: row.get(2)?,
+                            source_path: row.get(3)?,
+                            texture_mode: row.get(4)?,
+                            texture_family: row.get(5)?,
+                            texture_primitives: row.get(6)?,
+                            palette_mode: row.get(7)?,
+                            palette_color: row.get(8)?,
+                            rendered_fps: row.get(9)?,
+                            animation_speed: row.get(10)?,
+                            anti_aliasing: row.get(11)?,
+                            dithering: row.get(12)?,
+                            color_precision: row.get(13)?,
+                            render_scale: row.get(14)?,
+                            bloom_mode: row.get(15)?,
+                            bloom_intensity: row.get(16)?,
+                            bloom_threshold: row.get(17)?,
+                            invert_colors: row.get(18)?,
+                            flip_horizontal: row.get(19)?,
+                            flip_vertical: row.get(20)?,
+                            hue_rotation: row.get(21)?,
                         }
                     )
                 },
@@ -2311,6 +2441,7 @@ fn load_database_policy_table(
 
         policies.push(
             parse_policy_specification(
+                row.policy_id,
                 row.policy_name,
                 row.filename,
                 source_path,
@@ -2328,6 +2459,7 @@ fn load_database_policy_table(
 
 
 fn parse_policy_specification(
+    policy_id: i64,
     policy_key: String,
     shader: String,
     source_path: Option<PathBuf>,
@@ -2740,6 +2872,7 @@ fn parse_policy_specification(
 
     Ok(
         ShaderPolicy {
+            policy_id,
             policy_key,
             shader,
             source_path,
@@ -2793,6 +2926,8 @@ fn texture_policy_entries_from(
         .map(
             |shader_policy| {
                 TexturePolicyEntry {
+                    policy_id:
+                        shader_policy.policy_id,
                     shader:
                         shader_policy.shader.clone(),
                     source_path:
@@ -2820,6 +2955,8 @@ fn fps_policy_entries_from(
                     .map(
                         |rendered_fps| {
                             FpsPolicyEntry {
+                                policy_id:
+                                    shader_policy.policy_id,
                                 shader:
                                     shader_policy.shader.clone(),
                                 source_path:

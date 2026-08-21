@@ -437,6 +437,7 @@ fn format_texture_specification(
 
 #[derive(Clone, Debug)]
 pub struct PolicyDisplayRow {
+    pub policy_id: i64,
     pub policy_key: String,
     pub filename: String,
     pub full_path: String,
@@ -464,6 +465,7 @@ pub struct BulkCreateRequest {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PolicyRowReference {
+    pub policy_id: i64,
     pub policy_key: String,
     pub filename: String,
     pub full_path: String,
@@ -2411,12 +2413,7 @@ impl EditWindowOverlay {
                                 .iter()
                                 .any(
                                     |row| {
-                                        row.policy_target
-                                            == selected.policy_target
-                                            && row.policy_key
-                                                .eq_ignore_ascii_case(
-                                                    &selected.policy_key
-                                                )
+                                        row.policy_id == selected.policy_id
                                             && row.texture
                                     }
                                 )
@@ -4443,17 +4440,9 @@ fn draw_compact_header(
                                 .map(
                                     |row| {
                                         crate::manage_policies::is_protected_default_policy(
-                                            &row.filename,
-                                            &row.policy_key,
-                                            match row.policy_target {
-                                                PolicyTarget::Screensaver =>
-                                                    crate::manage_policies::PolicyTarget::Screensaver,
-                                                PolicyTarget::Wallpaper =>
-                                                    crate::manage_policies::PolicyTarget::Wallpaper,
-                                                PolicyTarget::Unassigned =>
-                                                    crate::manage_policies::PolicyTarget::Unassigned,
-                                            },
+                                            row.policy_id
                                         )
+                                        .unwrap_or(false)
                                     }
                                 )
                                 .unwrap_or(false);
@@ -5216,12 +5205,7 @@ fn draw_policies_tab(
         selected_rows.iter()
             .any(
                 |selected| {
-                    selected.policy_key
-                        .eq_ignore_ascii_case(
-                            &row.policy_key
-                        )
-                        && selected.policy_target
-                            == row.policy_target
+                    selected.policy_id == row.policy_id
                 }
             )
     }
@@ -5332,6 +5316,15 @@ fn draw_policies_tab(
                     },
                 };
 
+            let ordering =
+                ordering.then_with(
+                    || {
+                        left.policy_id.cmp(
+                            &right.policy_id
+                        )
+                    }
+                );
+
             if *sort_ascending {
                 ordering
             } else {
@@ -5361,12 +5354,7 @@ fn draw_policies_tab(
                             rows.iter()
                                 .position(
                                     |row| {
-                                        row.policy_key
-                                            .eq_ignore_ascii_case(
-                                                &selected.policy_key
-                                            )
-                                            && row.policy_target
-                                                == selected.policy_target
+                                        row.policy_id == selected.policy_id
                                     }
                                 )
                         }
@@ -5422,6 +5410,9 @@ fn draw_policies_tab(
 
             let row_reference =
                 PolicyRowReference {
+                    policy_id:
+                        row.policy_id,
+
                     policy_key:
                         row.policy_key.clone(),
 
@@ -5536,6 +5527,9 @@ fn draw_policies_tab(
                                             row_is_bulk_selected(
                                                 bulk_selected_rows,
                                                 &PolicyRowReference {
+                                                    policy_id:
+                                                        row.policy_id,
+
                                                     policy_key:
                                                         row.policy_key.clone(),
                                                     filename:
@@ -5592,6 +5586,9 @@ fn draw_policies_tab(
                                         .map(
                                             |row| {
                                                 PolicyRowReference {
+                                                    policy_id:
+                                                        row.policy_id,
+
                                                     policy_key:
                                                         row.policy_key.clone(),
 
@@ -5788,6 +5785,9 @@ fn draw_policies_tab(
                         for row in rows {
                             let row_reference =
                                 PolicyRowReference {
+                                    policy_id:
+                                        row.policy_id,
+
                                     policy_key:
                                         row.policy_key.clone(),
 
@@ -5847,12 +5847,7 @@ fn draw_policies_tab(
                                     bulk_selected_rows.retain(
                                         |selected| {
                                             !(
-                                                selected.policy_key
-                                                    .eq_ignore_ascii_case(
-                                                        &row_reference.policy_key
-                                                    )
-                                                && selected.policy_target
-                                                    == row_reference.policy_target
+                                                selected.policy_id == row_reference.policy_id
                                             )
                                         }
                                     );
@@ -5865,12 +5860,7 @@ fn draw_policies_tab(
                                     .as_ref()
                                     .is_some_and(
                                         |selected| {
-                                            selected.policy_key
-                                                .eq_ignore_ascii_case(
-                                                    &row_reference.policy_key
-                                                )
-                                                && selected.policy_target
-                                                    == row_reference.policy_target
+                                            selected.policy_id == row_reference.policy_id
                                         }
                                     );
 
@@ -5910,12 +5900,7 @@ fn draw_policies_tab(
                                 .as_ref()
                                 .is_some_and(
                                     |selected| {
-                                        selected.policy_key
-                                            .eq_ignore_ascii_case(
-                                                &row_reference.policy_key
-                                            )
-                                            && selected.policy_target
-                                                == row_reference.policy_target
+                                        selected.policy_id == row_reference.policy_id
                                     }
                                 )
                             {
@@ -6483,12 +6468,7 @@ fn draw_bulk_save_confirmation_modal(
                 .iter()
                 .find(
                     |row| {
-                        row.policy_target
-                            == selected.policy_target
-                            && row.policy_key
-                                .eq_ignore_ascii_case(
-                                    &selected.policy_key
-                                )
+                        row.policy_id == selected.policy_id
                     }
                 )
                 .map(
@@ -6547,12 +6527,7 @@ fn draw_bulk_save_confirmation_modal(
                         .iter()
                         .find(
                             |row| {
-                                row.policy_target
-                                    == selected.policy_target
-                                    && row.policy_key
-                                        .eq_ignore_ascii_case(
-                                            &selected.policy_key
-                                        )
+                                row.policy_id == selected.policy_id
                             }
                         )
                         .map(
@@ -6980,10 +6955,6 @@ fn draw_policy_rename_modal(
                     "Policy Name must contain between 1 and 128 characters; found {}.",
                     length,
                 );
-        } else if proposed == rename.row.policy_key {
-            rename.validation_message =
-                "Enter a different Policy Name."
-                    .to_string();
         } else {
             *rename_requested =
                 Some(

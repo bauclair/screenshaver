@@ -125,6 +125,10 @@ impl Default
     Clone,
 )]
 struct PersistentPolicyIdentity {
+    #[serde(default)]
+    policy_id:
+        Option<i64>,
+
     policy_key:
         String,
 
@@ -154,10 +158,9 @@ fn protected_bulk_target_skip_count(
                         )
                         .unwrap_or(false)
                     && crate::manage_policies::is_protected_default_policy(
-                        &row.filename,
-                        &row.policy_key,
-                        patch.current_target,
+                        row.policy_id
                     )
+                    .unwrap_or(false)
             }
         )
         .count()
@@ -228,9 +231,8 @@ fn process_policy_rename_ui(
                     crate::manage_policies::PolicyTarget::Unassigned,
             };
 
-        match crate::manage_policies::rename_policy_by_key(
-            &row.policy_key,
-            manage_target,
+        match crate::manage_policies::rename_policy_by_id(
+            row.policy_id,
             requested_name,
         ) {
             Ok(()) => {
@@ -253,17 +255,15 @@ fn process_policy_rename_ui(
                                 .iter()
                                 .find(
                                     |candidate| {
-                                        candidate.policy_key
-                                            .eq_ignore_ascii_case(
-                                                requested_name
-                                            )
-                                            && candidate.policy_target
-                                                == row.policy_target
+                                        candidate.policy_id == row.policy_id
                                     }
                                 )
                         {
                             edit_window.select_policy_row_persistently(
                                 crate::editor_layout::PolicyRowReference {
+                                    policy_id:
+                                        renamed_row.policy_id,
+
                                     policy_key:
                                         renamed_row.policy_key.clone(),
                                     filename:
@@ -384,12 +384,11 @@ fn process_policy_clone_ui(
                     crate::manage_policies::PolicyTarget::Unassigned,
             };
 
-        match crate::manage_policies::clone_policy_by_key(
-            &row.policy_key,
-            manage_target,
+        match crate::manage_policies::clone_policy_by_id(
+            row.policy_id,
             requested_name,
         ) {
-            Ok(()) => {
+            Ok(new_policy_id) => {
                 match crate::load_config::load_config(
                     &crate::locate_paths::config_path()
                 ) {
@@ -409,17 +408,15 @@ fn process_policy_clone_ui(
                                 .iter()
                                 .find(
                                     |candidate| {
-                                        candidate.policy_key
-                                            .eq_ignore_ascii_case(
-                                                requested_name
-                                            )
-                                            && candidate.policy_target
-                                                == row.policy_target
+                                        candidate.policy_id == new_policy_id
                                     }
                                 )
                         {
-                            edit_window.select_policy_row_transiently(
+                            edit_window.select_policy_row_persistently(
                                 crate::editor_layout::PolicyRowReference {
+                                    policy_id:
+                                        clone_row.policy_id,
+
                                     policy_key:
                                         clone_row.policy_key.clone(),
 
@@ -521,8 +518,7 @@ fn process_policy_clone_ui(
             };
 
         match crate::manage_policies::suggested_clone_policy_name(
-            &row.policy_key,
-            manage_target,
+            row.policy_id,
         ) {
             Ok(suggested_name) => {
                 edit_window.begin_policy_clone(
@@ -731,6 +727,8 @@ pub fn run(
                 None,
                 EditorTargetRestriction::Unrestricted,
                 None,
+                None,
+                None,
                 audio_bands,
             )
         }
@@ -771,6 +769,8 @@ pub fn run_wallpaper_only(
         Some(
             crate::editor_layout::PolicyTarget::Wallpaper
         ),
+        None,
+        None,
         audio_bands,
     )
 }
@@ -792,6 +792,8 @@ pub fn run_screensaver_only(
         Some(
             crate::editor_layout::PolicyTarget::Screensaver
         ),
+        None,
+        None,
         audio_bands,
     )
 }
@@ -952,6 +954,8 @@ fn run_empty_session(
             Option<
                 crate::editor_layout::PolicyTarget
             >,
+            Option<i64>,
+            Option<String>,
         )> =
         None;
 
@@ -1209,7 +1213,7 @@ fn run_empty_session(
                     &editor_output.bulk_selected_policy_rows,
                 );
 
-            match crate::manage_policies::patch_policies_by_key(
+            match crate::manage_policies::patch_policies_by_id(
                 &patches
             ) {
                 Ok(changed) => {
@@ -1548,6 +1552,8 @@ fn run_empty_session(
                     (
                         selected_path,
                         None,
+                        None,
+                        None,
                     )
                 );
 
@@ -1670,10 +1676,9 @@ fn run_empty_session(
                 crate::locate_paths::config_path();
 
 
-            match crate::manage_policies::delete_policy_by_key(
+            match crate::manage_policies::delete_policy_by_id(
                 &config_path,
-                manage_target,
-                &row.policy_key,
+                row.policy_id,
             ) {
                 Ok(()) => {
 
@@ -1805,10 +1810,9 @@ fn run_empty_session(
             }
 
 
-            match crate::manage_policies::delete_policy_by_key(
+            match crate::manage_policies::delete_policy_by_id(
                 &config_path,
-                manage_target,
-                &row.policy_key,
+                row.policy_id,
             ) {
                 Ok(()) => {
                     match std::fs::remove_file(
@@ -1954,6 +1958,12 @@ fn run_empty_session(
                         selected_path,
                         Some(
                             row.policy_target
+                        ),
+                        Some(
+                            row.policy_id
+                        ),
+                        Some(
+                            row.policy_key.clone()
                         ),
                     )
                 );
@@ -2132,6 +2142,8 @@ fn run_empty_session(
     if let Some((
         shader_path,
         policy_target,
+        policy_id,
+        policy_name,
     )) =
         policy_open_request
     {
@@ -2146,6 +2158,8 @@ fn run_empty_session(
             None,
             EditorTargetRestriction::Unrestricted,
             policy_target,
+            policy_id,
+            policy_name,
             audio_bands,
         );
     }
@@ -2213,6 +2227,8 @@ fn run_paths(
         Option<
             crate::editor_layout::PolicyTarget
         >,
+    requested_initial_policy_id: Option<i64>,
+    requested_initial_policy_name: Option<String>,
     audio_bands:
         Option<crate::audio_backend::SharedAudioBands>,
 ) -> Result<(), String> {
@@ -2416,7 +2432,8 @@ fn run_paths(
             &config,
             initial_editor_target,
             initial_shader_path,
-            None,
+            requested_initial_policy_id,
+            requested_initial_policy_name.as_deref(),
             command_line_animation_speed,
         );
 
@@ -3101,7 +3118,7 @@ fn run_paths(
                                     &editor_output.bulk_selected_policy_rows,
                                 );
 
-                            match crate::manage_policies::patch_policies_by_key(
+                            match crate::manage_policies::patch_policies_by_id(
                                 &patches
                             ) {
                                 Ok(changed) => {
@@ -3213,6 +3230,13 @@ fn run_paths(
                                     &config,
                                     restored_target,
                                     &restored_path,
+                                    edit_window
+                                        .policy_list_state_snapshot()
+                                        .selected_policy_row
+                                        .as_ref()
+                                        .map(
+                                            |row| row.policy_id
+                                        ),
                                     edit_window
                                         .policy_list_state_snapshot()
                                         .selected_policy_row
@@ -4761,6 +4785,16 @@ fn run_paths(
                                     row,
                                     _command,
                                 )| {
+                                    row.policy_id
+                                }
+                            ),
+                        policy_row_open_request
+                            .as_ref()
+                            .map(
+                                |(
+                                    row,
+                                    _command,
+                                )| {
                                     row.policy_key.as_str()
                                 }
                             ),
@@ -5266,6 +5300,13 @@ fn run_paths(
                             requested_target
                         ),
                         &active.path,
+                        edit_window
+                            .policy_list_state_snapshot()
+                            .selected_policy_row
+                            .as_ref()
+                            .map(
+                                |row| row.policy_id
+                            ),
                         edit_window
                             .policy_list_state_snapshot()
                             .selected_policy_row
@@ -5870,7 +5911,7 @@ fn run_paths(
                     &editor_output.bulk_selected_policy_rows,
                 );
 
-            match crate::manage_policies::patch_policies_by_key(
+            match crate::manage_policies::patch_policies_by_id(
                 &patches
             ) {
                 Ok(changed) => {
@@ -6171,9 +6212,8 @@ fn run_paths(
                         if selected_manage_target
                             != manage_target
                         {
-                            crate::manage_policies::retarget_policy_by_key(
-                                &selected_policy.policy_key,
-                                selected_manage_target,
+                            crate::manage_policies::retarget_policy_by_id(
+                                selected_policy.policy_id,
                                 manage_target,
                             )
                             .map(
@@ -6217,9 +6257,8 @@ fn run_paths(
                             selected_policy_before_save
                                 .as_ref()
                         {
-                            crate::manage_policies::replace_policy_by_key(
-                                &selected_policy.policy_key,
-                                manage_target,
+                            crate::manage_policies::replace_policy_by_id(
+                                selected_policy.policy_id,
                                 properties,
                             )
                         } else {
@@ -6589,11 +6628,10 @@ fn run_paths(
                         let config_path =
                             crate::locate_paths::config_path();
 
-                        match crate::manage_policies::delete_policy_by_key(
-                            &config_path,
-                            manage_target,
-                            &row.policy_key,
-                        ) {
+                        match crate::manage_policies::delete_policy_by_id(
+                &config_path,
+                row.policy_id,
+            ) {
                             Ok(()) => {
                                 match crate::load_config::load_config(
                                     &config_path
@@ -6708,11 +6746,10 @@ fn run_paths(
                             crate::locate_paths::config_path();
 
                         let policy_delete_result =
-                            crate::manage_policies::delete_policy_by_key(
-                                &config_path,
-                                manage_target,
-                                &row.policy_key,
-                            );
+                            crate::manage_policies::delete_policy_by_id(
+                &config_path,
+                row.policy_id,
+            );
 
                         match policy_delete_result {
                             Ok(()) => {
@@ -6972,6 +7009,7 @@ fn editor_policy_context_for_path(
     config: &crate::load_config::Config,
     target: Option<crate::editor_layout::PolicyTarget>,
     loaded_path: &Path,
+    selected_policy_id: Option<i64>,
     selected_policy_name: Option<&str>,
     command_line_animation_speed: Option<f32>,
 ) -> (
@@ -7039,34 +7077,59 @@ fn editor_policy_context_for_path(
     let matching_policy =
         target.and_then(
             |resolved_target| {
-                selected_policy_name
+                selected_policy_id
                     .and_then(
-                        |selected_name| {
+                        |selected_id| {
                             policies
                                 .iter()
                                 .find(
                                     |policy| {
-                                        policy.policy_key
-                                            .eq_ignore_ascii_case(
-                                                selected_name
-                                            )
+                                        policy.policy_id
+                                            == selected_id
                                     }
                                 )
                         }
                     )
                     .or_else(
                         || {
-                            policies
-                                .iter()
-                                .find(
-                                    |policy| {
-                                        policy_applies_to_path(
-                                            policy,
-                                            resolved_target,
-                                            loaded_path,
-                                        )
-                                    }
-                                )
+                            if selected_policy_id.is_some() {
+                                None
+                            } else {
+                                selected_policy_name
+                                    .and_then(
+                                        |selected_name| {
+                                            policies
+                                                .iter()
+                                                .find(
+                                                    |policy| {
+                                                        policy.policy_key
+                                                            .eq_ignore_ascii_case(
+                                                                selected_name
+                                                            )
+                                                    }
+                                                )
+                                        }
+                                    )
+                            }
+                        }
+                    )
+                    .or_else(
+                        || {
+                            if selected_policy_id.is_some() {
+                                None
+                            } else {
+                                policies
+                                    .iter()
+                                    .find(
+                                        |policy| {
+                                            policy_applies_to_path(
+                                                policy,
+                                                resolved_target,
+                                                loaded_path,
+                                            )
+                                        }
+                                    )
+                            }
                         }
                     )
             }
@@ -7081,6 +7144,8 @@ fn editor_policy_context_for_path(
                         .map(
                             |rendered_fps| {
                                 crate::load_config::FpsPolicyEntry {
+                                    policy_id:
+                                        policy.policy_id,
                                     shader:
                                         policy.shader.clone(),
                                     source_path:
@@ -7106,6 +7171,8 @@ fn editor_policy_context_for_path(
             .map(
                 |policy| {
                     crate::load_config::TexturePolicyEntry {
+                        policy_id:
+                            policy.policy_id,
                         shader:
                             policy.shader.clone(),
                         source_path:
@@ -7605,6 +7672,8 @@ fn bulk_policy_patch_from_editor_output(
         };
 
     crate::manage_policies::BulkPolicyPatch {
+        policy_id:
+            row.policy_id,
         current_target,
         destination_target,
         policy_key:
@@ -8080,19 +8149,19 @@ fn assign_selected_unassigned_policies(
         };
 
 
-    let policy_keys =
+    let policy_ids =
         selected_rows
             .iter()
             .map(
                 |row| {
-                    row.policy_key.clone()
+                    row.policy_id
                 }
             )
             .collect::<Vec<_>>();
 
 
-    crate::manage_policies::assign_unassigned_policies_by_key(
-        &policy_keys,
+    crate::manage_policies::assign_unassigned_policies_by_id(
+        &policy_ids,
         destination_target,
     )
     .map(
@@ -8126,10 +8195,7 @@ fn policy_for_bulk_row<'a>(
         .iter()
         .find(
             |policy| {
-                policy.policy_key
-                    .eq_ignore_ascii_case(
-                        &row.policy_key
-                    )
+                policy.policy_id == row.policy_id
             }
         )
 }
@@ -8381,6 +8447,7 @@ fn load_database_policy_display_rows(
         connection
             .prepare(
                 "SELECT
+                     p.policy_id,
                      p.policy_name,
                      s.filename,
                      s.source_path,
@@ -8410,11 +8477,12 @@ fn load_database_policy_display_rows(
                 |row| {
                     Ok(
                         (
-                            row.get::<_, String>(0)?,
+                            row.get::<_, i64>(0)?,
                             row.get::<_, String>(1)?,
                             row.get::<_, String>(2)?,
                             row.get::<_, String>(3)?,
                             row.get::<_, String>(4)?,
+                            row.get::<_, String>(5)?,
                         )
                     )
                 },
@@ -8436,6 +8504,7 @@ fn load_database_policy_display_rows(
     for query_row in query_rows {
 
         let (
+            policy_id,
             policy_name,
             filename,
             source_path,
@@ -8490,6 +8559,8 @@ fn load_database_policy_display_rows(
 
         display_rows.push(
             crate::editor_layout::PolicyDisplayRow {
+                policy_id,
+
                 policy_key:
                     policy_name,
 
@@ -9519,17 +9590,35 @@ fn restored_policy_row(
         .iter()
         .find(
             |row| {
-                row.policy_target
-                    == target
-                    && row.policy_key
-                        .eq_ignore_ascii_case(
-                            &identity.policy_key
-                        )
+                identity.policy_id
+                    .is_some_and(
+                        |policy_id| row.policy_id == policy_id
+                    )
+            }
+        )
+        .or_else(
+            || {
+                policy_rows
+                    .iter()
+                    .find(
+                        |row| {
+                            identity.policy_id.is_none()
+                                && row.policy_target == target
+                                && row.policy_key.eq_ignore_ascii_case(
+                                    &identity.policy_key
+                                )
+                                && (identity.source_path.is_empty()
+                                    || row.full_path == identity.source_path)
+                        }
+                    )
             }
         )
         .map(
             |row| {
                 crate::editor_layout::PolicyRowReference {
+                    policy_id:
+                        row.policy_id,
+
                     policy_key:
                         row.policy_key.clone(),
 
@@ -9604,6 +9693,9 @@ fn save_policy_list_state_if_changed(
             .map(
                 |row| {
                     PersistentPolicyIdentity {
+                        policy_id:
+                            Some(row.policy_id),
+
                         policy_key:
                             row.policy_key.clone(),
 

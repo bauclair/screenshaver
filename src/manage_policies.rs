@@ -91,17 +91,73 @@ impl PolicyTarget {
 /// Returns true for either canonical default.glsl fallback policy.
 /// These policies guarantee at least one Screensaver and Wallpaper target.
 pub fn is_protected_default_policy(
-    filename: &str,
-    _policy_name: &str,
-    target: PolicyTarget,
-) -> bool {
-    filename.eq_ignore_ascii_case(
-        "default.glsl"
+    policy_id: i64,
+) -> Result<bool, String> {
+    let connection =
+        crate::open_database::open()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to open database while checking protected policy ID {}: {}",
+                        policy_id,
+                        error,
+                    )
+                }
+            )?;
+
+    is_protected_default_policy_in_connection(
+        &connection,
+        policy_id,
     )
-        && matches!(
-            target,
-            PolicyTarget::Screensaver | PolicyTarget::Wallpaper
-        )
+}
+
+
+fn is_protected_default_policy_in_connection(
+    connection: &rusqlite::Connection,
+    policy_id: i64,
+) -> Result<bool, String> {
+    let managed_source_path =
+        crate::locate_paths::shader_dir()
+            .to_string_lossy()
+            .to_string();
+
+    let count: i64 =
+        connection
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM shader_policies AS p
+                 JOIN shaders AS s
+                   ON s.shader_id = p.shader_id
+                 WHERE p.policy_id = ?1
+                   AND lower(s.filename) = 'default.glsl'
+                   AND s.source_path = ?2
+                   AND p.policy_target IN ('screensaver', 'wallpaper')
+                   AND p.policy_id = (
+                       SELECT MIN(p2.policy_id)
+                       FROM shader_policies AS p2
+                       JOIN shaders AS s2
+                         ON s2.shader_id = p2.shader_id
+                       WHERE lower(s2.filename) = 'default.glsl'
+                         AND s2.source_path = ?2
+                         AND p2.policy_target = p.policy_target
+                   )",
+                rusqlite::params![
+                    policy_id,
+                    managed_source_path,
+                ],
+                |row| row.get(0),
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to determine whether policy ID {} is a protected fallback policy: {}",
+                        policy_id,
+                        error,
+                    )
+                }
+            )?;
+
+    Ok(count == 1)
 }
 
 
@@ -244,6 +300,7 @@ pub struct BulkPolicyFieldMask {
     Clone,
 )]
 pub struct BulkPolicyPatch {
+    pub policy_id: i64,
     pub current_target: PolicyTarget,
     pub destination_target: Option<PolicyTarget>,
     pub policy_key: String,
@@ -283,916 +340,154 @@ impl PolicyDefinition {
 // ------------------------------------------------------------
 //
 
-pub fn retarget_policy_by_key(
-    policy_key: &str,
-    current_target: PolicyTarget,
+pub fn retarget_policy_by_id(
+    policy_id: i64,
     destination_target: PolicyTarget,
 ) -> Result<(), String> {
+    let mut connection = crate::open_database::open()
+        .map_err(|error| format!("Unable to open database while changing target for policy ID {}: {}", policy_id, error))?;
+    let transaction = connection.transaction()
+        .map_err(|error| format!("Unable to begin retarget transaction for policy ID {}: {}", policy_id, error))?;
 
-    let policy_name =
-        policy_key.trim();
+    let (stored_name, stored_target): (String, String) = transaction.query_row(
+        "SELECT policy_name, policy_target FROM shader_policies WHERE policy_id = ?1",
+        [policy_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    ).map_err(|error| format!("Unable to locate policy ID {} for retargeting: {}", policy_id, error))?;
 
-    if policy_name.is_empty() {
-        return Err(
-            "Policy Name may not be empty"
-                .to_string()
-        );
+    let current_target = PolicyTarget::parse(&stored_target)?;
+    if current_target == destination_target { return Ok(()); }
+
+    if is_protected_default_policy_in_connection(&transaction, policy_id)? {
+        return Err(format!("Policy Target for protected fallback policy '{}' cannot be changed", stored_name));
     }
 
-    if current_target == destination_target {
-        return Ok(());
-    }
-
-    let policy_name_key =
-        database_policy_name_key(
-            policy_name
-        )?;
-
-    let mut connection =
-        crate::open_database::open()
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to open database while changing policy target for '{}': {}",
-                        policy_name,
-                        error,
-                    )
-                }
-            )?;
-
-    let transaction =
-        connection
-            .transaction()
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to begin policy retarget transaction for '{}': {}",
-                        policy_name,
-                        error,
-                    )
-                }
-            )?;
-
-    let (
-        policy_id,
-        filename,
-        stored_policy_name,
-    ): (
-        i64,
-        String,
-        String,
-    ) =
-        transaction
-            .query_row(
-                "SELECT
-                     p.policy_id,
-                     s.filename,
-                     p.policy_name
-                 FROM shader_policies AS p
-                 JOIN shaders AS s
-                   ON s.shader_id = p.shader_id
-                 WHERE p.policy_name_key = ?1
-                   AND p.policy_target = ?2",
-                rusqlite::params![
-                    policy_name_key,
-                    current_target.name(),
-                ],
-                |row| {
-                    Ok(
-                        (
-                            row.get(0)?,
-                            row.get(1)?,
-                            row.get(2)?,
-                        )
-                    )
-                },
-            )
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to locate {} policy '{}' for retargeting: {}",
-                        current_target.name(),
-                        policy_name,
-                        error,
-                    )
-                }
-            )?;
-
-    if is_protected_default_policy(
-        &filename,
-        &stored_policy_name,
-        current_target,
-    ) {
-        return Err(
-            format!(
-                "Policy Target for protected fallback policy '{}' cannot be changed",
-                stored_policy_name,
-            )
-        );
-    }
-
-    let conflict_count: i64 =
-        transaction
-            .query_row(
-                "SELECT COUNT(*)
-                 FROM shader_policies
-                 WHERE policy_name_key = ?1
-                   AND policy_target = ?2
-                   AND policy_id <> ?3",
-                rusqlite::params![
-                    policy_name_key,
-                    destination_target.name(),
-                    policy_id,
-                ],
-                |row| row.get(0),
-            )
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to validate destination Policy Name '{}' for target {}: {}",
-                        stored_policy_name,
-                        destination_target.name(),
-                        error,
-                    )
-                }
-            )?;
-
-    if conflict_count != 0 {
-        return Err(
-            format!(
-                "Policy Name '{}' is already in use for target {}",
-                stored_policy_name,
-                destination_target.name(),
-            )
-        );
-    }
-
-    let changed =
-        transaction
-            .execute(
-                "UPDATE shader_policies
-                 SET policy_target = ?1
-                 WHERE policy_id = ?2",
-                rusqlite::params![
-                    destination_target.name(),
-                    policy_id,
-                ],
-            )
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to change Policy Target for '{}': {}",
-                        policy_name,
-                        error,
-                    )
-                }
-            )?;
+    let changed = transaction.execute(
+        "UPDATE shader_policies SET policy_target = ?1 WHERE policy_id = ?2",
+        rusqlite::params![destination_target.name(), policy_id],
+    ).map_err(|error| format!("Unable to change Policy Target for policy ID {} ('{}'): {}", policy_id, stored_name, error))?;
 
     if changed != 1 {
-        return Err(
-            format!(
-                "Expected to retarget one {} policy '{}', updated {}",
-                current_target.name(),
-                policy_name,
-                changed,
-            )
-        );
+        return Err(format!("Expected to retarget policy ID {}, updated {}", policy_id, changed));
     }
 
-    transaction
-        .commit()
-        .map_err(
-            |error| {
-                format!(
-                    "Unable to commit Policy Target change for '{}': {}",
-                    policy_name,
-                    error,
-                )
-            }
-        )
+    transaction.commit().map_err(|error| format!("Unable to commit Policy Target change for policy ID {}: {}", policy_id, error))
 }
 
-pub fn assign_unassigned_policies_by_key(
-    policy_keys: &[String],
+pub fn assign_unassigned_policies_by_id(
+    policy_ids: &[i64],
     destination_target: PolicyTarget,
 ) -> Result<usize, String> {
-
-    if policy_keys.is_empty() {
-
-        return Ok(
-            0
-        );
+    if destination_target == PolicyTarget::Unassigned {
+        return Err("Unassigned policies must be assigned to Screensaver or Wallpaper".to_string());
     }
 
+    let mut connection = crate::open_database::open()
+        .map_err(|error| format!("Unable to open database while assigning Unassigned policies: {}", error))?;
+    let transaction = connection.transaction()
+        .map_err(|error| format!("Unable to begin Unassigned-policy assignment transaction: {}", error))?;
+    let mut changed = 0_usize;
 
-    let mut connection =
-        crate::open_database::open()
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to open database while assigning unassigned policies: {}",
-                        error,
-                    )
-                }
-            )?;
+    for &policy_id in policy_ids {
+        let (filename, stored_name, stored_target): (String, String, String) = transaction.query_row(
+            "SELECT s.filename, p.policy_name, p.policy_target FROM shader_policies AS p JOIN shaders AS s ON s.shader_id = p.shader_id WHERE p.policy_id = ?1",
+            [policy_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).map_err(|error| format!("Unable to locate policy ID {} while assigning Unassigned policies: {}", policy_id, error))?;
 
-
-    let transaction =
-        connection
-            .transaction()
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to begin unassigned-policy assignment transaction: {}",
-                        error,
-                    )
-                }
-            )?;
-
-
-    let mut changed =
-        0_usize;
-
-
-    for policy_key in policy_keys {
-
-        let policy_name =
-            policy_key.trim();
-
-
-        if policy_name.is_empty() {
-
-            return Err(
-                "Unassigned policy name may not be empty"
-                    .to_string()
-            );
+        if !stored_target.eq_ignore_ascii_case("unassigned") {
+            return Err(format!("Policy ID {} ('{}') is no longer Unassigned", policy_id, stored_name));
         }
 
-
-        let policy_name_key =
-            database_policy_name_key(
-                policy_name
-            )?;
-
-
-        let (
-            policy_id,
-            filename,
-            stored_policy_name,
-        ): (
-            i64,
-            String,
-            String,
-        ) =
-            transaction
-                .query_row(
-                    "SELECT
-                         p.policy_id,
-                         s.filename,
-                         p.policy_name
-                     FROM shader_policies AS p
-                     JOIN shaders AS s
-                       ON s.shader_id = p.shader_id
-                     WHERE p.policy_name_key = ?1
-                       AND p.policy_target = 'unassigned'",
-                    rusqlite::params![
-                        policy_name_key
-                    ],
-                    |row| {
-                        Ok(
-                            (
-                                row.get(0)?,
-                                row.get(1)?,
-                                row.get(2)?,
-                            )
-                        )
-                    },
-                )
-                .map_err(
-                    |error| {
-                        format!(
-                            "Policy '{}' is no longer an Unassigned policy: {}",
-                            policy_name,
-                            error,
-                        )
-                    }
-                )?;
-
-
-        let generated_unassigned_name =
-            format!(
-                "{} (unassigned)",
-                filename,
-            );
-
-
-        if stored_policy_name
-            .eq_ignore_ascii_case(
-                &generated_unassigned_name
+        let generated_unassigned_name = format!("{} (unassigned)", filename);
+        let updated = if stored_name.eq_ignore_ascii_case(&generated_unassigned_name) {
+            let desired_name = format!("{} ({})", filename, destination_target.name());
+            let desired_key = database_policy_name_key(&desired_name)?;
+            transaction.execute(
+                "UPDATE shader_policies SET policy_target = ?1, policy_name = ?2, policy_name_key = ?3 WHERE policy_id = ?4 AND policy_target = 'unassigned'",
+                rusqlite::params![destination_target.name(), desired_name, desired_key, policy_id],
             )
-        {
-            let desired_name =
-                format!(
-                    "{} ({})",
-                    filename,
-                    destination_target.name(),
-                );
-
-
-            let desired_key =
-                database_policy_name_key(
-                    &desired_name
-                )?;
-
-
-            let name_conflict_count: i64 =
-                transaction
-                    .query_row(
-                        "SELECT COUNT(*)
-                         FROM shader_policies
-                         WHERE policy_name_key = ?1
-                           AND policy_id <> ?2",
-                        rusqlite::params![
-                            desired_key,
-                            policy_id,
-                        ],
-                        |row| {
-                            row.get(0)
-                        },
-                    )
-                    .map_err(
-                        |error| {
-                            format!(
-                                "Unable to validate generated Policy Name '{}': {}",
-                                desired_name,
-                                error,
-                            )
-                        }
-                    )?;
-
-
-            if name_conflict_count
-                == 0
-            {
-                transaction
-                    .execute(
-                        "UPDATE shader_policies
-                         SET policy_target = ?1,
-                             policy_name = ?2,
-                             policy_name_key = ?3
-                         WHERE policy_id = ?4
-                           AND policy_target = 'unassigned'",
-                        rusqlite::params![
-                            destination_target.name(),
-                            desired_name,
-                            desired_key,
-                            policy_id,
-                        ],
-                    )
-                    .map_err(
-                        |error| {
-                            format!(
-                                "Unable to assign and rename policy '{}': {}",
-                                stored_policy_name,
-                                error,
-                            )
-                        }
-                    )?;
-            } else {
-                // Preserve the existing name rather than inventing a new user-
-                // visible name when the canonical target name is already used.
-                transaction
-                    .execute(
-                        "UPDATE shader_policies
-                         SET policy_target = ?1
-                         WHERE policy_id = ?2
-                           AND policy_target = 'unassigned'",
-                        rusqlite::params![
-                            destination_target.name(),
-                            policy_id,
-                        ],
-                    )
-                    .map_err(
-                        |error| {
-                            format!(
-                                "Unable to assign policy '{}': {}",
-                                stored_policy_name,
-                                error,
-                            )
-                        }
-                    )?;
-            }
         } else {
-            // A custom Policy Name belongs to the user and is never rewritten
-            // merely because its target changes.
-            transaction
-                .execute(
-                    "UPDATE shader_policies
-                     SET policy_target = ?1
-                     WHERE policy_id = ?2
-                       AND policy_target = 'unassigned'",
-                    rusqlite::params![
-                        destination_target.name(),
-                        policy_id,
-                    ],
-                )
-                .map_err(
-                    |error| {
-                        format!(
-                            "Unable to assign policy '{}': {}",
-                            stored_policy_name,
-                            error,
-                        )
-                    }
-                )?;
-        }
+            transaction.execute(
+                "UPDATE shader_policies SET policy_target = ?1 WHERE policy_id = ?2 AND policy_target = 'unassigned'",
+                rusqlite::params![destination_target.name(), policy_id],
+            )
+        }.map_err(|error| format!("Unable to assign policy ID {} ('{}'): {}", policy_id, stored_name, error))?;
 
-
-        changed +=
-            1;
+        if updated != 1 { return Err(format!("Expected to assign policy ID {}, updated {}", policy_id, updated)); }
+        changed += 1;
     }
 
-
-    transaction
-        .commit()
-        .map_err(
-            |error| {
-                format!(
-                    "Unable to commit unassigned-policy assignment transaction: {}",
-                    error,
-                )
-            }
-        )?;
-
-
-    Ok(
-        changed
-    )
+    transaction.commit().map_err(|error| format!("Unable to commit Unassigned-policy assignment transaction: {}", error))?;
+    Ok(changed)
 }
 
 
 
 pub fn suggested_clone_policy_name(
-    policy_name: &str,
-    target: PolicyTarget,
+    policy_id: i64,
 ) -> Result<String, String> {
+    let connection = crate::open_database::open()
+        .map_err(|error| format!("Unable to open database while generating clone name for policy ID {}: {}", policy_id, error))?;
 
-    let source_name =
-        policy_name.trim();
+    let (source_name, target): (String, String) = connection.query_row(
+        "SELECT policy_name, policy_target FROM shader_policies WHERE policy_id = ?1",
+        [policy_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    ).map_err(|error| format!("Unable to locate policy ID {} while generating clone name: {}", policy_id, error))?;
 
-    let source_key =
-        database_policy_name_key(
-            source_name
-        )?;
-
-
-    let connection =
-        crate::open_database::open()
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to open database while generating clone Policy Name for '{}': {}",
-                        source_name,
-                        error,
-                    )
-                }
-            )?;
-
-
-    let filename: String =
-        connection
-            .query_row(
-                "SELECT s.filename
-                 FROM shader_policies AS p
-                 JOIN shaders AS s
-                   ON s.shader_id = p.shader_id
-                 WHERE p.policy_name_key = ?1
-                   AND p.policy_target = ?2",
-                rusqlite::params![
-                    source_key,
-                    target.name(),
-                ],
-                |row| {
-                    row.get(0)
-                },
-            )
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to locate shader filename for policy '{}': {}",
-                        source_name,
-                        error,
-                    )
-                }
-            )?;
-
-
-    let base =
-        Path::new(
-            &filename
-        )
-        .file_stem()
-        .and_then(
-            |value| {
-                value.to_str()
-            }
-        )
-        .filter(
-            |value| {
-                !value.trim().is_empty()
-            }
-        )
-        .unwrap_or(
-            filename.as_str()
-        )
-        .trim();
-
-
+    let base = source_name.trim();
     for ordinal in 2_u32..=10_000 {
-
-        let candidate =
-            format!(
-                "{} ({})",
-                base,
-                ordinal,
-            );
-
-
-        if candidate
-            .chars()
-            .count()
-            > 128
-        {
-            continue;
-        }
-
-
-        let candidate_key =
-            database_policy_name_key(
-                &candidate
-            )?;
-
-
-        let count: i64 =
-            connection
-                .query_row(
-                    "SELECT COUNT(*)
-                     FROM shader_policies
-                     WHERE policy_name_key = ?1
-                       AND policy_target = ?2",
-                    rusqlite::params![
-                        candidate_key,
-                        target.name(),
-                    ],
-                    |row| {
-                        row.get(0)
-                    },
-                )
-                .map_err(
-                    |error| {
-                        format!(
-                            "Unable to check clone Policy Name '{}': {}",
-                            candidate,
-                            error,
-                        )
-                    }
-                )?;
-
-
-        if count == 0 {
-            return Ok(
-                candidate
-            );
-        }
+        let candidate = format!("{} ({})", base, ordinal);
+        if candidate.chars().count() > 128 { continue; }
+        let candidate_key = database_policy_name_key(&candidate)?;
+        let count: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM shader_policies WHERE policy_name_key = ?1 AND policy_target = ?2",
+            rusqlite::params![candidate_key, target],
+            |row| row.get(0),
+        ).map_err(|error| format!("Unable to check suggested clone name '{}': {}", candidate, error))?;
+        if count == 0 { return Ok(candidate); }
     }
 
-
-    Err(
-        format!(
-            "Unable to generate a unique clone Policy Name for '{}'",
-            source_name,
-        )
-    )
+    Err(format!("Unable to generate a clone name for policy ID {} ('{}')", policy_id, source_name))
 }
 
 
-pub fn clone_policy_by_key(
-    source_policy_name: &str,
-    source_target: PolicyTarget,
+pub fn clone_policy_by_id(
+    source_policy_id: i64,
     new_policy_name: &str,
-) -> Result<(), String> {
+) -> Result<i64, String> {
+    let destination_name = new_policy_name.trim();
+    let destination_key = database_policy_name_key(destination_name)?;
 
-    let source_name =
-        source_policy_name.trim();
-
-    let destination_name =
-        new_policy_name.trim();
-
-
-    let source_key =
-        database_policy_name_key(
-            source_name
-        )?;
-
-    let destination_key =
-        database_policy_name_key(
-            destination_name
-        )?;
-
-
-    if source_key == destination_key {
-        return Err(
-            "The cloned Policy Name must be different from the source Policy Name"
-                .to_string()
-        );
-    }
-
-
-    let mut connection =
-        crate::open_database::open()
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to open database while cloning policy '{}': {}",
-                        source_name,
-                        error,
-                    )
-                }
-            )?;
-
-
-    let transaction =
-        connection
-            .transaction()
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to begin clone transaction for policy '{}': {}",
-                        source_name,
-                        error,
-                    )
-                }
-            )?;
-
-
-    let destination_count: i64 =
-        transaction
-            .query_row(
-                "SELECT COUNT(*)
-                 FROM shader_policies
-                 WHERE policy_name_key = ?1
-                   AND policy_target = ?2",
-                rusqlite::params![
-                    destination_key,
-                    source_target.name(),
-                ],
-                |row| {
-                    row.get(0)
-                },
-            )
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to validate clone Policy Name '{}': {}",
-                        destination_name,
-                        error,
-                    )
-                }
-            )?;
-
-
-    if destination_count != 0 {
-        return Err(
-            format!(
-                "Policy Name '{}' is already in use",
-                destination_name,
-            )
-        );
-    }
-
+    let mut connection = crate::open_database::open()
+        .map_err(|error| format!("Unable to open database while cloning policy ID {}: {}", source_policy_id, error))?;
+    let transaction = connection.transaction()
+        .map_err(|error| format!("Unable to begin clone transaction for policy ID {}: {}", source_policy_id, error))?;
 
     #[derive(Debug)]
     struct CloneSource {
-        shader_id: i64,
-        policy_target: String,
-        texture_mode: Option<String>,
-        texture_family: Option<String>,
-        texture_primitives: Option<i64>,
-        palette_mode: Option<String>,
-        palette_color: Option<String>,
-        rendered_fps: Option<i64>,
-        animation_speed: Option<f64>,
-        anti_aliasing: Option<String>,
-        dithering: Option<String>,
-        color_precision: Option<String>,
-        render_scale: Option<f64>,
-        bloom_mode: Option<String>,
-        bloom_intensity: Option<f64>,
-        bloom_threshold: Option<f64>,
-        invert_colors: Option<i64>,
-        flip_horizontal: Option<i64>,
-        flip_vertical: Option<i64>,
-        hue_rotation: Option<f64>,
+        shader_id: i64, policy_target: String, texture_mode: Option<String>, texture_family: Option<String>,
+        texture_primitives: Option<i64>, palette_mode: Option<String>, palette_color: Option<String>,
+        rendered_fps: Option<i64>, animation_speed: Option<f64>, anti_aliasing: Option<String>, dithering: Option<String>,
+        color_precision: Option<String>, render_scale: Option<f64>, bloom_mode: Option<String>, bloom_intensity: Option<f64>,
+        bloom_threshold: Option<f64>, invert_colors: Option<i64>, flip_horizontal: Option<i64>, flip_vertical: Option<i64>, hue_rotation: Option<f64>,
     }
 
+    let source = transaction.query_row(
+        "SELECT shader_id, policy_target, texture_mode, texture_family, texture_primitives, palette_mode, palette_color, rendered_fps, animation_speed, anti_aliasing, dithering, color_precision, render_scale, bloom_mode, bloom_intensity, bloom_threshold, invert_colors, flip_horizontal, flip_vertical, hue_rotation FROM shader_policies WHERE policy_id = ?1",
+        [source_policy_id],
+        |row| Ok(CloneSource { shader_id: row.get(0)?, policy_target: row.get(1)?, texture_mode: row.get(2)?, texture_family: row.get(3)?, texture_primitives: row.get(4)?, palette_mode: row.get(5)?, palette_color: row.get(6)?, rendered_fps: row.get(7)?, animation_speed: row.get(8)?, anti_aliasing: row.get(9)?, dithering: row.get(10)?, color_precision: row.get(11)?, render_scale: row.get(12)?, bloom_mode: row.get(13)?, bloom_intensity: row.get(14)?, bloom_threshold: row.get(15)?, invert_colors: row.get(16)?, flip_horizontal: row.get(17)?, flip_vertical: row.get(18)?, hue_rotation: row.get(19)? }),
+    ).map_err(|error| format!("Unable to read source policy ID {} before cloning: {}", source_policy_id, error))?;
 
-    let source =
-        transaction
-            .query_row(
-                "SELECT
-                     shader_id,
-                     policy_target,
-                     texture_mode,
-                     texture_family,
-                     texture_primitives,
-                     palette_mode,
-                     palette_color,
-                     rendered_fps,
-                     animation_speed,
-                     anti_aliasing,
-                     dithering,
-                     color_precision,
-                     render_scale,
-                     bloom_mode,
-                     bloom_intensity,
-                     bloom_threshold,
-                     invert_colors,
-                     flip_horizontal,
-                     flip_vertical,
-                     hue_rotation
-                 FROM shader_policies
-                 WHERE policy_name_key = ?1
-                   AND policy_target = ?2",
-                rusqlite::params![
-                    source_key,
-                    source_target.name(),
-                ],
-                |row| {
-                    Ok(
-                        CloneSource {
-                            shader_id: row.get(0)?,
-                            policy_target: row.get(1)?,
-                            texture_mode: row.get(2)?,
-                            texture_family: row.get(3)?,
-                            texture_primitives: row.get(4)?,
-                            palette_mode: row.get(5)?,
-                            palette_color: row.get(6)?,
-                            rendered_fps: row.get(7)?,
-                            animation_speed: row.get(8)?,
-                            anti_aliasing: row.get(9)?,
-                            dithering: row.get(10)?,
-                            color_precision: row.get(11)?,
-                            render_scale: row.get(12)?,
-                            bloom_mode: row.get(13)?,
-                            bloom_intensity: row.get(14)?,
-                            bloom_threshold: row.get(15)?,
-                            invert_colors: row.get(16)?,
-                            flip_horizontal: row.get(17)?,
-                            flip_vertical: row.get(18)?,
-                            hue_rotation: row.get(19)?,
-                        }
-                    )
-                },
-            )
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to read source policy '{}' before cloning: {}",
-                        source_name,
-                        error,
-                    )
-                }
-            )?;
-
-
-    let inserted =
-        transaction
-            .execute(
-                "INSERT INTO shader_policies (
-                     policy_name,
-                     policy_name_key,
-                     shader_id,
-                     policy_target,
-                     texture_mode,
-                     texture_family,
-                     texture_primitives,
-                     palette_mode,
-                     palette_color,
-                     rendered_fps,
-                     animation_speed,
-                     anti_aliasing,
-                     dithering,
-                     color_precision,
-                     render_scale,
-                     bloom_mode,
-                     bloom_intensity,
-                     bloom_threshold,
-                     invert_colors,
-                     flip_horizontal,
-                     flip_vertical,
-                     hue_rotation
-                 )
-                 VALUES (
-                     ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
-                     ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20,
-                     ?21, ?22
-                 )",
-                rusqlite::params![
-                    destination_name,
-                    destination_key,
-                    source.shader_id,
-                    source.policy_target,
-                    source.texture_mode,
-                    source.texture_family,
-                    source.texture_primitives,
-                    source.palette_mode,
-                    source.palette_color,
-                    source.rendered_fps,
-                    source.animation_speed,
-                    source.anti_aliasing,
-                    source.dithering,
-                    source.color_precision,
-                    source.render_scale,
-                    source.bloom_mode,
-                    source.bloom_intensity,
-                    source.bloom_threshold,
-                    source.invert_colors,
-                    source.flip_horizontal,
-                    source.flip_vertical,
-                    source.hue_rotation,
-                ],
-            )
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to clone policy '{}' as '{}': {}",
-                        source_name,
-                        destination_name,
-                        error,
-                    )
-                }
-            )?;
-
-
-    if inserted != 1 {
-        return Err(
-            format!(
-                "Expected to clone one policy '{}', cloned {}",
-                source_name,
-                inserted,
-            )
-        );
-    }
-
-
-    let stored_name: String =
-        transaction
-            .query_row(
-                "SELECT policy_name
-                 FROM shader_policies
-                 WHERE policy_name_key = ?1
-                   AND policy_target = ?2",
-                rusqlite::params![
-                    destination_key,
-                    source_target.name(),
-                ],
-                |row| {
-                    row.get(0)
-                },
-            )
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to verify cloned policy '{}': {}",
-                        destination_name,
-                        error,
-                    )
-                }
-            )?;
-
-
-    if stored_name != destination_name {
-        return Err(
-            format!(
-                "Clone verification failed: requested Policy Name '{}', database stored '{}'",
-                destination_name,
-                stored_name,
-            )
-        );
-    }
-
-
-    transaction
-        .commit()
-        .map_err(
-            |error| {
-                format!(
-                    "Unable to commit cloned policy '{}': {}",
-                    destination_name,
-                    error,
-                )
-            }
-        )
+    let inserted = transaction.execute(
+        "INSERT INTO shader_policies (policy_name, policy_name_key, shader_id, policy_target, texture_mode, texture_family, texture_primitives, palette_mode, palette_color, rendered_fps, animation_speed, anti_aliasing, dithering, color_precision, render_scale, bloom_mode, bloom_intensity, bloom_threshold, invert_colors, flip_horizontal, flip_vertical, hue_rotation) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)",
+        rusqlite::params![destination_name, destination_key, source.shader_id, source.policy_target, source.texture_mode, source.texture_family, source.texture_primitives, source.palette_mode, source.palette_color, source.rendered_fps, source.animation_speed, source.anti_aliasing, source.dithering, source.color_precision, source.render_scale, source.bloom_mode, source.bloom_intensity, source.bloom_threshold, source.invert_colors, source.flip_horizontal, source.flip_vertical, source.hue_rotation],
+    ).map_err(|error| format!("Unable to clone policy ID {} as '{}': {}", source_policy_id, destination_name, error))?;
+    if inserted != 1 { return Err(format!("Expected to clone one policy ID {}, cloned {}", source_policy_id, inserted)); }
+    let new_policy_id = transaction.last_insert_rowid();
+    transaction.commit().map_err(|error| format!("Unable to commit clone of policy ID {}: {}", source_policy_id, error))?;
+    Ok(new_policy_id)
 }
 
 pub fn policy_exists_for_source(
@@ -1460,301 +755,40 @@ pub fn add_policy_for_source(
 
 
 
-pub fn rename_policy_by_key(
-    current_policy_name: &str,
-    target: PolicyTarget,
+pub fn rename_policy_by_id(
+    policy_id: i64,
     new_policy_name: &str,
 ) -> Result<(), String> {
-
-    let current_name =
-        current_policy_name.trim();
-
-    let destination_name =
-        new_policy_name.trim();
-
-    let current_key =
-        database_policy_name_key(
-            current_name
-        )?;
-
-    let destination_key =
-        database_policy_name_key(
-            destination_name
-        )?;
-
-    let mut connection =
-        crate::open_database::open()
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to open database while renaming policy '{}': {}",
-                        current_name,
-                        error,
-                    )
-                }
-            )?;
-
-    let transaction =
-        connection
-            .transaction()
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to begin rename transaction for policy '{}': {}",
-                        current_name,
-                        error,
-                    )
-                }
-            )?;
-
-    let source_count: i64 =
-        transaction
-            .query_row(
-                "SELECT COUNT(*)
-                 FROM shader_policies
-                 WHERE policy_name_key = ?1
-                   AND policy_target = ?2",
-                rusqlite::params![
-                    current_key,
-                    target.name(),
-                ],
-                |row| row.get(0),
-            )
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to locate {} policy '{}' before rename: {}",
-                        target.name(),
-                        current_name,
-                        error,
-                    )
-                }
-            )?;
-
-    if source_count != 1 {
-        return Err(
-            if source_count == 0 {
-                format!(
-                    "Policy '{}' no longer exists for target {}",
-                    current_name,
-                    target.name(),
-                )
-            } else {
-                format!(
-                    "Policy '{}' is not unique within target {}",
-                    current_name,
-                    target.name(),
-                )
-            }
-        );
-    }
-
-    if destination_key != current_key {
-        let destination_count: i64 =
-            transaction
-                .query_row(
-                    "SELECT COUNT(*)
-                     FROM shader_policies
-                     WHERE policy_name_key = ?1
-                       AND policy_target = ?2",
-                    rusqlite::params![
-                        destination_key,
-                        target.name(),
-                    ],
-                    |row| row.get(0),
-                )
-                .map_err(
-                    |error| {
-                        format!(
-                            "Unable to validate Policy Name '{}' for target {}: {}",
-                            destination_name,
-                            target.name(),
-                            error,
-                        )
-                    }
-                )?;
-
-        if destination_count != 0 {
-            return Err(
-                format!(
-                    "Policy Name '{}' is already in use for target {}",
-                    destination_name,
-                    target.name(),
-                )
-            );
-        }
-    }
-
-    let changed =
-        transaction
-            .execute(
-                "UPDATE shader_policies
-                 SET policy_name = ?1,
-                     policy_name_key = ?2
-                 WHERE policy_name_key = ?3
-                   AND policy_target = ?4",
-                rusqlite::params![
-                    destination_name,
-                    destination_key,
-                    current_key,
-                    target.name(),
-                ],
-            )
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to rename {} policy '{}' as '{}': {}",
-                        target.name(),
-                        current_name,
-                        destination_name,
-                        error,
-                    )
-                }
-            )?;
-
-    if changed != 1 {
-        return Err(
-            format!(
-                "Expected to rename one {} policy '{}', updated {}",
-                target.name(),
-                current_name,
-                changed,
-            )
-        );
-    }
-
-    transaction
-        .commit()
-        .map_err(
-            |error| {
-                format!(
-                    "Unable to commit renamed policy '{}': {}",
-                    destination_name,
-                    error,
-                )
-            }
-        )
+    let destination_name = new_policy_name.trim();
+    let destination_key = database_policy_name_key(destination_name)?;
+    let connection = crate::open_database::open()
+        .map_err(|error| format!("Unable to open database while renaming policy ID {}: {}", policy_id, error))?;
+    let changed = connection.execute(
+        "UPDATE shader_policies SET policy_name = ?1, policy_name_key = ?2 WHERE policy_id = ?3",
+        rusqlite::params![destination_name, destination_key, policy_id],
+    ).map_err(|error| format!("Unable to rename policy ID {} as '{}': {}", policy_id, destination_name, error))?;
+    match changed { 1 => Ok(()), 0 => Err(format!("Policy ID {} no longer exists", policy_id)), count => Err(format!("Policy ID {} unexpectedly matched {} rows", policy_id, count)) }
 }
 
-pub fn replace_policy_by_key(
-    policy_name: &str,
-    target: PolicyTarget,
+pub fn replace_policy_by_id(
+    policy_id: i64,
     properties: PolicyDefinition,
 ) -> Result<(), String> {
-
-    let policy_name =
-        policy_name.trim();
-
-
-    let policy_name_key =
-        database_policy_name_key(
-            policy_name
-        )?;
-
-
-    validate_properties(
-        target,
-        &properties
-    )?;
-
-
-    let values =
-        database_policy_values(
-            &properties
-        )?;
-
-
-    let connection =
-        crate::open_database::open()
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to open database while replacing policy '{}': {}",
-                        policy_name,
-                        error,
-                    )
-                }
-            )?;
-
-
-    let changed =
-        connection
-            .execute(
-                "UPDATE shader_policies
-                 SET texture_mode = ?1,
-                     texture_family = ?2,
-                     texture_primitives = ?3,
-                     palette_mode = ?4,
-                     palette_color = ?5,
-                     rendered_fps = ?6,
-                     animation_speed = ?7,
-                     anti_aliasing = ?8,
-                     dithering = ?9,
-                     color_precision = ?10,
-                     render_scale = ?11,
-                     bloom_mode = ?12,
-                     bloom_intensity = ?13,
-                     bloom_threshold = ?14,
-                     invert_colors = ?15,
-                     flip_horizontal = ?16,
-                     flip_vertical = ?17,
-                     hue_rotation = ?18
-                 WHERE policy_name_key = ?19
-                   AND policy_target = ?20",
-                rusqlite::params![
-                    values.texture_mode,
-                    values.texture_family,
-                    values.texture_primitives,
-                    values.palette_mode,
-                    values.palette_color,
-                    values.rendered_fps,
-                    values.animation_speed,
-                    values.anti_aliasing,
-                    values.dithering,
-                    values.color_precision,
-                    values.render_scale,
-                    values.bloom_mode,
-                    values.bloom_intensity,
-                    values.bloom_threshold,
-                    values.invert_colors,
-                    values.flip_horizontal,
-                    values.flip_vertical,
-                    values.hue_rotation,
-                    policy_name_key,
-                    target.name(),
-                ],
-            )
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to update {} policy '{}': {}",
-                        target.name(),
-                        policy_name,
-                        error,
-                    )
-                }
-            )?;
-
-
-    match changed {
-        1 => Ok(()),
-
-        0 => Err(
-            format!(
-                "Policy '{}' does not exist for target {}",
-                policy_name,
-                target.name(),
-            )
-        ),
-
-        count => Err(
-            format!(
-                "Policy '{}' unexpectedly matched {} database rows",
-                policy_name,
-                count,
-            )
-        ),
-    }
+    let connection = crate::open_database::open()
+        .map_err(|error| format!("Unable to open database while replacing policy ID {}: {}", policy_id, error))?;
+    let (stored_name, stored_target): (String, String) = connection.query_row(
+        "SELECT policy_name, policy_target FROM shader_policies WHERE policy_id = ?1",
+        [policy_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    ).map_err(|error| format!("Unable to locate policy ID {} before save: {}", policy_id, error))?;
+    let target = PolicyTarget::parse(&stored_target)?;
+    validate_properties(target, &properties)?;
+    let values = database_policy_values(&properties)?;
+    let changed = connection.execute(
+        "UPDATE shader_policies SET texture_mode = ?1, texture_family = ?2, texture_primitives = ?3, palette_mode = ?4, palette_color = ?5, rendered_fps = ?6, animation_speed = ?7, anti_aliasing = ?8, dithering = ?9, color_precision = ?10, render_scale = ?11, bloom_mode = ?12, bloom_intensity = ?13, bloom_threshold = ?14, invert_colors = ?15, flip_horizontal = ?16, flip_vertical = ?17, hue_rotation = ?18 WHERE policy_id = ?19",
+        rusqlite::params![values.texture_mode, values.texture_family, values.texture_primitives, values.palette_mode, values.palette_color, values.rendered_fps, values.animation_speed, values.anti_aliasing, values.dithering, values.color_precision, values.render_scale, values.bloom_mode, values.bloom_intensity, values.bloom_threshold, values.invert_colors, values.flip_horizontal, values.flip_vertical, values.hue_rotation, policy_id],
+    ).map_err(|error| format!("Unable to update policy ID {} ('{}'): {}", policy_id, stored_name, error))?;
+    match changed { 1 => Ok(()), 0 => Err(format!("Policy ID {} no longer exists", policy_id)), count => Err(format!("Policy ID {} unexpectedly matched {} rows", policy_id, count)) }
 }
 
 
@@ -2040,633 +1074,81 @@ pub fn add_policies_for_sources(
 }
 
 
-pub fn patch_policies_by_key(
+pub fn patch_policies_by_id(
     patches: &[BulkPolicyPatch],
 ) -> Result<usize, String> {
-
-    if patches.is_empty() {
-        return Ok(0);
-    }
-
-    let mut connection =
-        crate::open_database::open()
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to open database for Bulk Edit: {}",
-                        error,
-                    )
-                }
-            )?;
-
-    let transaction =
-        connection
-            .transaction()
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to begin Bulk Edit transaction: {}",
-                        error,
-                    )
-                }
-            )?;
-
-    let mut changed_policies =
-        0_usize;
+    let mut connection = crate::open_database::open()
+        .map_err(|error| format!("Unable to open database for Bulk Edit: {}", error))?;
+    let transaction = connection.transaction()
+        .map_err(|error| format!("Unable to begin Bulk Edit transaction: {}", error))?;
+    let mut changed_policies = 0_usize;
 
     for patch in patches {
-        // A Bulk Edit may legitimately change only Policy Target.  In that
-        // case PolicyDefinition is intentionally empty because none of the
-        // Rendering, Texture, or Post-Processing columns are being changed.
-        // The ordinary single-policy validator requires at least one property,
-        // so invoke it only when this patch actually contains property values.
         if !patch.properties.is_empty() {
-            validate_properties(
-                patch.destination_target
-                    .unwrap_or(patch.current_target),
-                &patch.properties,
-            )?;
+            validate_properties(patch.destination_target.unwrap_or(patch.current_target), &patch.properties)?;
         }
-
-        let policy_name =
-            patch.policy_key.trim();
-
-        let policy_name_key =
-            database_policy_name_key(
-                policy_name
-            )?;
-
-        let (
-            policy_id,
-            filename,
-            stored_target,
-            stored_policy_name,
-        ): (
-            i64,
-            String,
-            String,
-            String,
-        ) =
-            transaction
-                .query_row(
-                    "SELECT
-                         p.policy_id,
-                         s.filename,
-                         p.policy_target,
-                         p.policy_name
-                     FROM shader_policies AS p
-                     JOIN shaders AS s
-                       ON s.shader_id = p.shader_id
-                     WHERE p.policy_name_key = ?1
-                       AND p.policy_target = ?2",
-                    rusqlite::params![
-                        policy_name_key,
-                        patch.current_target.name(),
-                    ],
-                    |row| {
-                        Ok(
-                            (
-                                row.get(0)?,
-                                row.get(1)?,
-                                row.get(2)?,
-                                row.get(3)?,
-                            )
-                        )
-                    },
-                )
-                .map_err(
-                    |error| {
-                        format!(
-                            "Unable to locate policy '{}' for Bulk Edit: {}",
-                            policy_name,
-                            error,
-                        )
-                    }
-                )?;
-
-        if !stored_target.eq_ignore_ascii_case(
-            patch.current_target.name()
-        ) {
-            return Err(
-                format!(
-                    "Policy '{}' changed target before Bulk Edit could be saved",
-                    policy_name,
-                )
-            );
+        let (stored_name, stored_target): (String, String) = transaction.query_row(
+            "SELECT policy_name, policy_target FROM shader_policies WHERE policy_id = ?1",
+            [patch.policy_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        ).map_err(|error| format!("Unable to locate policy ID {} for Bulk Edit: {}", patch.policy_id, error))?;
+        let current_target = PolicyTarget::parse(&stored_target)?;
+        if current_target != patch.current_target {
+            return Err(format!("Policy ID {} ('{}') changed target before Bulk Edit could be saved", patch.policy_id, stored_name));
         }
+        let values = database_policy_values(&patch.properties)?;
+        let protected = is_protected_default_policy_in_connection(&transaction, patch.policy_id)?;
+        let mut policy_changed = false;
 
-        let target_change_allowed =
-            !is_protected_default_policy(
-                &filename,
-                &stored_policy_name,
-                patch.current_target,
-            );
-
-        let property_fields_changed =
-            patch.fields.texture
-                || patch.fields.palette
-                || patch.fields.fps
-                || patch.fields.speed
-                || patch.fields.render_scale
-                || patch.fields.anti_aliasing
-                || patch.fields.dithering
-                || patch.fields.color_precision
-                || patch.fields.bloom
-                || patch.fields.bloom_intensity
-                || patch.fields.bloom_threshold
-                || patch.fields.invert_colors
-                || patch.fields.flip_horizontal
-                || patch.fields.flip_vertical
-                || patch.fields.hue_rotation;
-
-
-        // A Policy-Target-only Bulk Edit is a complete operation in its own
-        // right.  Do not route it through policy-property conversion.
-        if patch.fields.policy_target
-            && !property_fields_changed
-        {
-            let destination =
-                patch.destination_target
-                    .ok_or_else(
-                        || {
-                            format!(
-                                "Bulk Edit marked Policy Target changed for '{}', but no destination target was supplied",
-                                policy_name,
-                            )
-                        }
-                    )?;
-
-
-            if target_change_allowed
-                && destination != patch.current_target
-            {
-                let conflict_count: i64 =
-                    transaction
-                        .query_row(
-                            "SELECT COUNT(*)
-                             FROM shader_policies
-                             WHERE policy_name_key = ?1
-                               AND policy_target = ?2
-                               AND policy_id <> ?3",
-                            rusqlite::params![
-                                database_policy_name_key(
-                                    &stored_policy_name
-                                )?,
-                                destination.name(),
-                                policy_id,
-                            ],
-                            |row| row.get(0),
-                        )
-                        .map_err(
-                            |error| {
-                                format!(
-                                    "Unable to validate Policy Name '{}' for destination target {}: {}",
-                                    stored_policy_name,
-                                    destination.name(),
-                                    error,
-                                )
-                            }
-                        )?;
-
-                if conflict_count != 0 {
-                    return Err(
-                        format!(
-                            "Policy Name '{}' is already in use for target {}",
-                            stored_policy_name,
-                            destination.name(),
-                        )
-                    );
-                }
-
-                transaction
-                    .execute(
-                        "UPDATE shader_policies
-                         SET policy_target = ?1
-                         WHERE policy_id = ?2",
-                        rusqlite::params![
-                            destination.name(),
-                            policy_id,
-                        ],
-                    )
-                    .map_err(
-                        |error| {
-                            format!(
-                                "Unable to change Policy Target for '{}': {}",
-                                policy_name,
-                                error,
-                            )
-                        }
-                    )?;
-
-
-                changed_policies +=
-                    1;
-            }
-
-
-            continue;
-        }
-
-
-        let values =
-            database_policy_values(
-                &patch.properties
-            )?;
-
-        let mut policy_changed =
-            false;
-
-        macro_rules! update_one {
-            ($enabled:expr, $sql:expr, $value:expr, $label:expr) => {
-                if $enabled {
-                    transaction
-                        .execute(
-                            $sql,
-                            rusqlite::params![
-                                $value,
-                                policy_id,
-                            ],
-                        )
-                        .map_err(
-                            |error| {
-                                format!(
-                                    "Unable to update {} for policy '{}': {}",
-                                    $label,
-                                    policy_name,
-                                    error,
-                                )
-                            }
-                        )?;
-                    policy_changed = true;
-                }
-            };
-        }
-
-        if patch.fields.texture {
-            transaction
-                .execute(
-                    "UPDATE shader_policies
-                     SET texture_mode = ?1,
-                         texture_family = ?2,
-                         texture_primitives = ?3
-                     WHERE policy_id = ?4",
-                    rusqlite::params![
-                        values.texture_mode,
-                        values.texture_family,
-                        values.texture_primitives,
-                        policy_id,
-                    ],
-                )
-                .map_err(
-                    |error| {
-                        format!(
-                            "Unable to update texture for policy '{}': {}",
-                            policy_name,
-                            error,
-                        )
-                    }
-                )?;
-            policy_changed = true;
-        }
-
-        if patch.fields.palette {
-            transaction
-                .execute(
-                    "UPDATE shader_policies
-                     SET palette_mode = ?1,
-                         palette_color = ?2
-                     WHERE policy_id = ?3",
-                    rusqlite::params![
-                        values.palette_mode,
-                        values.palette_color,
-                        policy_id,
-                    ],
-                )
-                .map_err(
-                    |error| {
-                        format!(
-                            "Unable to update palette for policy '{}': {}",
-                            policy_name,
-                            error,
-                        )
-                    }
-                )?;
-            policy_changed = true;
-        }
-
-        update_one!(
-            patch.fields.fps,
-            "UPDATE shader_policies SET rendered_fps = ?1 WHERE policy_id = ?2",
-            values.rendered_fps,
-            "FPS"
-        );
-        update_one!(
-            patch.fields.speed,
-            "UPDATE shader_policies SET animation_speed = ?1 WHERE policy_id = ?2",
-            values.animation_speed,
-            "animation speed"
-        );
-        update_one!(
-            patch.fields.render_scale,
-            "UPDATE shader_policies SET render_scale = ?1 WHERE policy_id = ?2",
-            values.render_scale,
-            "render scale"
-        );
-        update_one!(
-            patch.fields.anti_aliasing,
-            "UPDATE shader_policies SET anti_aliasing = ?1 WHERE policy_id = ?2",
-            values.anti_aliasing,
-            "anti-aliasing"
-        );
-        update_one!(
-            patch.fields.dithering,
-            "UPDATE shader_policies SET dithering = ?1 WHERE policy_id = ?2",
-            values.dithering,
-            "dithering"
-        );
-        update_one!(
-            patch.fields.color_precision,
-            "UPDATE shader_policies SET color_precision = ?1 WHERE policy_id = ?2",
-            values.color_precision,
-            "color precision"
-        );
-        update_one!(
-            patch.fields.bloom,
-            "UPDATE shader_policies SET bloom_mode = ?1 WHERE policy_id = ?2",
-            values.bloom_mode,
-            "Bloom mode"
-        );
-        update_one!(
-            patch.fields.bloom_intensity,
-            "UPDATE shader_policies SET bloom_intensity = ?1 WHERE policy_id = ?2",
-            values.bloom_intensity,
-            "Bloom intensity"
-        );
-        update_one!(
-            patch.fields.bloom_threshold,
-            "UPDATE shader_policies SET bloom_threshold = ?1 WHERE policy_id = ?2",
-            values.bloom_threshold,
-            "Bloom threshold"
-        );
-        update_one!(
-            patch.fields.invert_colors,
-            "UPDATE shader_policies SET invert_colors = ?1 WHERE policy_id = ?2",
-            values.invert_colors,
-            "Invert Colors"
-        );
-        update_one!(
-            patch.fields.flip_horizontal,
-            "UPDATE shader_policies SET flip_horizontal = ?1 WHERE policy_id = ?2",
-            values.flip_horizontal,
-            "Flip Horizontal"
-        );
-        update_one!(
-            patch.fields.flip_vertical,
-            "UPDATE shader_policies SET flip_vertical = ?1 WHERE policy_id = ?2",
-            values.flip_vertical,
-            "Flip Vertical"
-        );
-        update_one!(
-            patch.fields.hue_rotation,
-            "UPDATE shader_policies SET hue_rotation = ?1 WHERE policy_id = ?2",
-            values.hue_rotation,
-            "Hue Rotation"
-        );
+        if patch.fields.texture { transaction.execute("UPDATE shader_policies SET texture_mode=?1, texture_family=?2, texture_primitives=?3 WHERE policy_id=?4", rusqlite::params![values.texture_mode, values.texture_family, values.texture_primitives, patch.policy_id]).map_err(|e| format!("Unable to update texture for policy ID {}: {}", patch.policy_id,e))?; policy_changed=true; }
+        if patch.fields.palette { transaction.execute("UPDATE shader_policies SET palette_mode=?1, palette_color=?2 WHERE policy_id=?3", rusqlite::params![values.palette_mode, values.palette_color, patch.policy_id]).map_err(|e| format!("Unable to update palette for policy ID {}: {}", patch.policy_id,e))?; policy_changed=true; }
+        macro_rules! update_one { ($flag:expr,$column:literal,$value:expr) => { if $flag { transaction.execute(concat!("UPDATE shader_policies SET ",$column," = ?1 WHERE policy_id = ?2"), rusqlite::params![$value, patch.policy_id]).map_err(|e| format!("Unable to update {} for policy ID {}: {}", $column, patch.policy_id,e))?; policy_changed=true; } }; }
+        update_one!(patch.fields.fps, "rendered_fps", values.rendered_fps);
+        update_one!(patch.fields.speed, "animation_speed", values.animation_speed);
+        update_one!(patch.fields.render_scale, "render_scale", values.render_scale);
+        update_one!(patch.fields.anti_aliasing, "anti_aliasing", values.anti_aliasing);
+        update_one!(patch.fields.dithering, "dithering", values.dithering);
+        update_one!(patch.fields.color_precision, "color_precision", values.color_precision);
+        update_one!(patch.fields.bloom, "bloom_mode", values.bloom_mode);
+        update_one!(patch.fields.bloom_intensity, "bloom_intensity", values.bloom_intensity);
+        update_one!(patch.fields.bloom_threshold, "bloom_threshold", values.bloom_threshold);
+        update_one!(patch.fields.invert_colors, "invert_colors", values.invert_colors);
+        update_one!(patch.fields.flip_horizontal, "flip_horizontal", values.flip_horizontal);
+        update_one!(patch.fields.flip_vertical, "flip_vertical", values.flip_vertical);
+        update_one!(patch.fields.hue_rotation, "hue_rotation", values.hue_rotation);
 
         if patch.fields.policy_target {
-            let destination =
-                patch.destination_target
-                    .ok_or_else(
-                        || {
-                            format!(
-                                "Bulk Edit marked Policy Target changed for '{}', but no destination target was supplied",
-                                policy_name,
-                            )
-                        }
-                    )?;
-
-            if target_change_allowed && destination != patch.current_target {
-                let conflict_count: i64 =
-                    transaction
-                        .query_row(
-                            "SELECT COUNT(*)
-                             FROM shader_policies
-                             WHERE policy_name_key = ?1
-                               AND policy_target = ?2
-                               AND policy_id <> ?3",
-                            rusqlite::params![
-                                database_policy_name_key(
-                                    &stored_policy_name
-                                )?,
-                                destination.name(),
-                                policy_id,
-                            ],
-                            |row| row.get(0),
-                        )
-                        .map_err(
-                            |error| {
-                                format!(
-                                    "Unable to validate Policy Name '{}' for destination target {}: {}",
-                                    stored_policy_name,
-                                    destination.name(),
-                                    error,
-                                )
-                            }
-                        )?;
-
-                if conflict_count != 0 {
-                    return Err(
-                        format!(
-                            "Policy Name '{}' is already in use for target {}",
-                            stored_policy_name,
-                            destination.name(),
-                        )
-                    );
-                }
-
-                transaction
-                    .execute(
-                        "UPDATE shader_policies
-                         SET policy_target = ?1
-                         WHERE policy_id = ?2",
-                        rusqlite::params![
-                            destination.name(),
-                            policy_id,
-                        ],
-                    )
-                    .map_err(
-                        |error| {
-                            format!(
-                                "Unable to change Policy Target for '{}': {}",
-                                policy_name,
-                                error,
-                            )
-                        }
-                    )?;
-
-                policy_changed = true;
+            let destination = patch.destination_target.ok_or_else(|| format!("Bulk Edit marked Policy Target changed for policy ID {}, but no destination target was supplied", patch.policy_id))?;
+            if !protected && destination != current_target {
+                transaction.execute("UPDATE shader_policies SET policy_target=?1 WHERE policy_id=?2", rusqlite::params![destination.name(), patch.policy_id]).map_err(|e| format!("Unable to change Policy Target for policy ID {}: {}", patch.policy_id,e))?;
+                policy_changed=true;
             }
         }
-
-        if policy_changed {
-            changed_policies += 1;
-        }
+        if policy_changed { changed_policies += 1; }
     }
-
-    transaction
-        .commit()
-        .map_err(
-            |error| {
-                format!(
-                    "Unable to commit Bulk Edit transaction: {}",
-                    error,
-                )
-            }
-        )?;
-
+    transaction.commit().map_err(|error| format!("Unable to commit Bulk Edit transaction: {}", error))?;
     Ok(changed_policies)
 }
 
 
 
-pub fn delete_policy_by_key(
+pub fn delete_policy_by_id(
     _config_path: &Path,
-    target: PolicyTarget,
-    policy_key: &str,
+    policy_id: i64,
 ) -> Result<(), String> {
-
-    let policy_name =
-        policy_key.trim();
-
-
-    if policy_name.is_empty() {
-
-        return Err(
-            "Policy key may not be empty"
-                .to_string()
-        );
+    let connection = crate::open_database::open()
+        .map_err(|error| format!("Unable to open database while deleting policy ID {}: {}", policy_id, error))?;
+    let stored_name: String = connection.query_row(
+        "SELECT policy_name FROM shader_policies WHERE policy_id = ?1",
+        [policy_id],
+        |row| row.get(0),
+    ).map_err(|error| format!("Unable to locate policy ID {} before deletion: {}", policy_id, error))?;
+    if is_protected_default_policy_in_connection(&connection, policy_id)? {
+        return Err(format!("Protected fallback policy '{}' cannot be deleted", stored_name));
     }
-
-
-    let policy_name_key =
-        database_policy_name_key(
-            policy_name
-        )?;
-
-
-    let connection =
-        crate::open_database::open()
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to open database while deleting policy '{}': {}",
-                        policy_name,
-                        error,
-                    )
-                }
-            )?;
-
-
-    let (
-        filename,
-        stored_policy_name,
-    ): (String, String) =
-        connection
-            .query_row(
-                "SELECT
-                     s.filename,
-                     p.policy_name
-                 FROM shader_policies AS p
-                 JOIN shaders AS s
-                   ON s.shader_id = p.shader_id
-                 WHERE p.policy_name_key = ?1
-                   AND p.policy_target = ?2",
-                rusqlite::params![
-                    policy_name_key,
-                    target.name(),
-                ],
-                |row| {
-                    Ok((
-                        row.get(0)?,
-                        row.get(1)?,
-                    ))
-                },
-            )
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to locate {} policy '{}' before deletion: {}",
-                        target.name(),
-                        policy_name,
-                        error,
-                    )
-                }
-            )?;
-
-
-    if is_protected_default_policy(
-        &filename,
-        &stored_policy_name,
-        target,
-    ) {
-        return Err(
-            format!(
-                "Protected fallback policy '{}' cannot be deleted",
-                stored_policy_name,
-            )
-        );
-    }
-
-
-    let deleted =
-        connection
-            .execute(
-                "DELETE FROM shader_policies
-                 WHERE policy_name_key = ?1
-                   AND policy_target = ?2",
-                rusqlite::params![
-                    policy_name_key,
-                    target.name(),
-                ],
-            )
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to delete {} policy '{}': {}",
-                        target.name(),
-                        policy_name,
-                        error,
-                    )
-                }
-            )?;
-
-
-    match deleted {
-
-        1 => {
-            Ok(())
-        }
-
-        0 => {
-            Err(
-                format!(
-                    "Policy '{}' does not exist for target {}",
-                    policy_name,
-                    target.name(),
-                )
-            )
-        }
-
-        count => {
-            Err(
-                format!(
-                    "Deleting policy '{}' unexpectedly removed {} rows",
-                    policy_name,
-                    count,
-                )
-            )
-        }
-    }
+    let deleted = connection.execute("DELETE FROM shader_policies WHERE policy_id = ?1", [policy_id])
+        .map_err(|error| format!("Unable to delete policy ID {} ('{}'): {}", policy_id, stored_name, error))?;
+    match deleted { 1 => Ok(()), 0 => Err(format!("Policy ID {} does not exist", policy_id)), count => Err(format!("Deleting policy ID {} unexpectedly removed {} rows", policy_id, count)) }
 }
 
 pub fn reconcile_shader_move_from_source(
@@ -2893,6 +1375,148 @@ pub fn reconcile_shader_move(
 /// Return source paths for policies whose shader is outside the canonical
 /// managed shader directory. SQLite is authoritative for both policy target
 /// and shader source location.
+pub fn external_policy_entries(
+    _config_path: &Path,
+    target: PolicyTarget,
+) -> Result<Vec<(i64, String, String, PathBuf)>, String> {
+
+    let managed_directory =
+        crate::locate_paths::shader_dir();
+
+
+    let connection =
+        crate::open_database::open()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to open database while reading external {} shader paths: {}",
+                        target.name(),
+                        error,
+                    )
+                }
+            )?;
+
+
+    let mut statement =
+        connection
+            .prepare(
+                "SELECT
+                     p.policy_id,
+                     p.policy_name,
+                     s.filename,
+                     s.source_path
+                 FROM shader_policies AS p
+                 JOIN shaders AS s
+                   ON s.shader_id = p.shader_id
+                 WHERE p.policy_target = ?1
+                 ORDER BY lower(s.filename),
+                          lower(p.policy_name),
+                          p.policy_id"
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to prepare external {} shader-path query: {}",
+                        target.name(),
+                        error,
+                    )
+                }
+            )?;
+
+
+    let rows =
+        statement
+            .query_map(
+                rusqlite::params![
+                    target.name()
+                ],
+                |row| {
+                    Ok(
+                        (
+                            row.get::<_, i64>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, String>(2)?,
+                            row.get::<_, String>(3)?,
+                        )
+                    )
+                },
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to query external {} shader paths: {}",
+                        target.name(),
+                        error,
+                    )
+                }
+            )?;
+
+
+    let mut paths =
+        Vec::new();
+
+
+    for row in rows {
+
+        let (
+            policy_id,
+            policy_name,
+            filename,
+            source_directory,
+        ) =
+            row.map_err(
+                |error| {
+                    format!(
+                        "Unable to decode external {} shader path: {}",
+                        target.name(),
+                        error,
+                    )
+                }
+            )?;
+
+
+        let source_path =
+            PathBuf::from(
+                source_directory
+            )
+            .join(
+                &filename
+            );
+
+
+        let source_parent =
+            source_path
+                .parent()
+                .unwrap_or_else(
+                    || Path::new("")
+                );
+
+
+        if paths_refer_to_same_source(
+            source_parent,
+            &managed_directory,
+        ) {
+            continue;
+        }
+
+
+        paths.push(
+            (
+                policy_id,
+                policy_name,
+                filename,
+                source_path,
+            )
+        );
+    }
+
+
+    Ok(
+        paths
+    )
+}
+
+
 pub fn external_policy_paths(
     _config_path: &Path,
     target: PolicyTarget,

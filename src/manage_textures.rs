@@ -136,6 +136,7 @@ struct TextureRequest {
 }
 
 fn resolve_texture_selection(
+    policy_id: i64,
     shader_name: &str,
     source_path: Option<&std::path::Path>,
     policy: &TexturePolicy,
@@ -152,6 +153,7 @@ fn resolve_texture_selection(
 
     let shader_policy =
         matching_policy(
+            policy_id,
             shader_name,
             source_path,
             &policy.texture_policy_entries,
@@ -365,12 +367,31 @@ fn random_palette(
 
 
 fn matching_policy<'a>(
+    policy_id: i64,
     shader_name: &str,
     source_path: Option<&std::path::Path>,
     overrides: &'a [TexturePolicyEntry],
 ) -> Option<
     &'a TexturePolicyEntry
 > {
+
+    if policy_id > 0 {
+        if let Some(policy) =
+            overrides
+                .iter()
+                .find(
+                    |policy| {
+                        policy.policy_id
+                            == policy_id
+                    }
+                )
+        {
+            return Some(
+                policy
+            );
+        }
+    }
+
 
     if let Some(source_path) =
         source_path
@@ -670,7 +691,8 @@ impl TextureManager {
         channel_usage: ShaderChannelUsage,
     ) -> Result<(), String> {
 
-        self.prepare_for_shader_with_path_and_selection(
+        self.prepare_for_shader_with_policy_path_and_selection(
+            0,
             shader_name,
             source_path,
             channel_usage,
@@ -686,7 +708,8 @@ impl TextureManager {
         preview_selection: PreviewTextureSelection,
     ) -> Result<(), String> {
 
-        self.prepare_for_shader_with_path_and_selection(
+        self.prepare_for_shader_with_policy_path_and_selection(
+            0,
             shader_name,
             None,
             channel_usage,
@@ -695,8 +718,27 @@ impl TextureManager {
     }
 
 
-    fn prepare_for_shader_with_path_and_selection(
+    pub fn prepare_for_policy_with_path(
         &mut self,
+        policy_id: i64,
+        shader_name: &str,
+        source_path: Option<&std::path::Path>,
+        channel_usage: ShaderChannelUsage,
+    ) -> Result<(), String> {
+
+        self.prepare_for_shader_with_policy_path_and_selection(
+            policy_id,
+            shader_name,
+            source_path,
+            channel_usage,
+            PreviewTextureSelection::default(),
+        )
+    }
+
+
+    fn prepare_for_shader_with_policy_path_and_selection(
+        &mut self,
+        policy_id: i64,
         shader_name: &str,
         source_path: Option<&std::path::Path>,
         channel_usage: ShaderChannelUsage,
@@ -722,6 +764,7 @@ impl TextureManager {
 
 
             if matching_policy(
+                policy_id,
                 shader_name,
                 source_path,
                 &self.policy.texture_policy_entries,
@@ -755,6 +798,7 @@ impl TextureManager {
             palette_source,
         ) =
             resolve_texture_selection(
+                policy_id,
                 shader_name,
                 source_path,
                 &self.policy,
@@ -763,6 +807,7 @@ impl TextureManager {
 
 
         if matching_policy(
+            policy_id,
             shader_name,
             source_path,
             &self.policy.texture_policy_entries,
