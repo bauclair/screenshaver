@@ -15,7 +15,7 @@ use crate::fps_monitor::FpsWarningState;
 )]
 pub struct WallpaperMetadata {
 
-    pub wallpaper: String,
+    pub policy_name: String,
 
     pub animation_speed: f32,
 
@@ -38,8 +38,8 @@ impl WallpaperMetadata {
         let mut lines =
             vec![
                 format!(
-                    "Shader: {} ({})",
-                    self.wallpaper,
+                    "Policy: {} ({})",
+                    self.policy_name,
                     format_animation_speed(
                         self.animation_speed
                     ),

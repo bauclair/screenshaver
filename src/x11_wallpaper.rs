@@ -387,8 +387,8 @@ fn wallpaper_metadata(
 ) -> crate::notify_wallpaper::WallpaperMetadata {
 
     crate::notify_wallpaper::WallpaperMetadata {
-        wallpaper:
-            metadata.shader_name.clone(),
+        policy_name:
+            metadata.policy_name.clone(),
         animation_speed:
             metadata.animation_speed,
         texture:

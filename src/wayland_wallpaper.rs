@@ -691,6 +691,7 @@ pub fn probe_capabilities(
 #[derive(Debug, Clone)]
 struct ActiveWallpaperShader {
     manager_name: String,
+    policy_name: String,
     source_path: PathBuf,
     source: String,
     shader_name: String,
@@ -808,6 +809,8 @@ fn select_safe_wallpaper_shader(
                 return Ok(
                     ActiveWallpaperShader {
                         manager_name: requested_shader_name,
+                        policy_name:
+                            requested_shader.policy_name.clone(),
                         source_path:
                             resolved_source_path
                                 .unwrap_or(
@@ -3313,8 +3316,8 @@ fn notify_active_wallpaper(
 
     let metadata =
         crate::notify_wallpaper::WallpaperMetadata {
-            wallpaper:
-                shader.shader_name.clone(),
+            policy_name:
+                shader.policy_name.clone(),
 
             animation_speed,
 

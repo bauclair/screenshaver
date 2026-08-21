@@ -2896,7 +2896,7 @@ pub fn reconcile_shader_move(
 pub fn external_policy_paths(
     _config_path: &Path,
     target: PolicyTarget,
-) -> Result<Vec<(String, PathBuf)>, String> {
+) -> Result<Vec<(String, String, PathBuf)>, String> {
 
     let managed_directory =
         crate::locate_paths::shader_dir();
@@ -2918,14 +2918,17 @@ pub fn external_policy_paths(
     let mut statement =
         connection
             .prepare(
-                "SELECT DISTINCT
+                "SELECT
+                     p.policy_name,
                      s.filename,
                      s.source_path
                  FROM shader_policies AS p
                  JOIN shaders AS s
                    ON s.shader_id = p.shader_id
                  WHERE p.policy_target = ?1
-                 ORDER BY lower(s.filename), s.shader_id"
+                 ORDER BY lower(s.filename),
+                          lower(p.policy_name),
+                          p.policy_id"
             )
             .map_err(
                 |error| {
@@ -2949,6 +2952,7 @@ pub fn external_policy_paths(
                         (
                             row.get::<_, String>(0)?,
                             row.get::<_, String>(1)?,
+                            row.get::<_, String>(2)?,
                         )
                     )
                 },
@@ -2971,6 +2975,7 @@ pub fn external_policy_paths(
     for row in rows {
 
         let (
+            policy_name,
             filename,
             source_directory,
         ) =
@@ -3012,6 +3017,7 @@ pub fn external_policy_paths(
 
         paths.push(
             (
+                policy_name,
                 filename,
                 source_path,
             )

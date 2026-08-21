@@ -20,7 +20,13 @@ pub enum ShaderMode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShaderEntry {
 
+    /// Physical/logical shader filename used for loading and configured
+    /// Single-mode matching.
     pub name:
+        String,
+
+    /// User-facing Policy Name. This is independent of the shader filename.
+    pub policy_name:
         String,
 
     pub source_path:
@@ -35,6 +41,8 @@ impl ShaderEntry {
     ) -> Self {
 
         Self {
+            policy_name:
+                name.clone(),
             name,
             source_path:
                 None,
@@ -48,7 +56,24 @@ impl ShaderEntry {
     ) -> Self {
 
         Self {
+            policy_name:
+                name.clone(),
             name,
+            source_path:
+                Some(source_path),
+        }
+    }
+
+
+    pub fn with_policy_source_path(
+        name: String,
+        policy_name: String,
+        source_path: PathBuf,
+    ) -> Self {
+
+        Self {
+            name,
+            policy_name,
             source_path:
                 Some(source_path),
         }
@@ -187,6 +212,14 @@ impl ShaderManager {
                     )
                     .then_with(
                         || {
+                            left.policy_name
+                                .cmp(
+                                    &right.policy_name
+                                )
+                        }
+                    )
+                    .then_with(
+                        || {
                             left.source_path
                                 .cmp(
                                     &right.source_path
@@ -242,19 +275,19 @@ impl ShaderManager {
 
                 match connection.prepare(
                     "SELECT
-                         filename,
-                         source_path
-                     FROM shaders AS s
+                         s.filename,
+                         s.source_path,
+                         p.policy_name
+                     FROM shader_policies AS p
+                     JOIN shaders AS s
+                       ON s.shader_id = p.shader_id
                      WHERE s.source_path = ?1
                        AND s.file_status = 'present'
-                       AND EXISTS (
-                           SELECT 1
-                           FROM shader_policies AS p
-                           WHERE p.shader_id = s.shader_id
-                             AND p.policy_target = 'screensaver'
-                       )
+                       AND p.policy_target = 'screensaver'
                      ORDER BY s.filename COLLATE NOCASE,
-                              s.filename"
+                              s.filename,
+                              p.policy_name COLLATE NOCASE,
+                              p.policy_name"
                 ) {
 
                     Ok(mut statement) => {
@@ -268,6 +301,7 @@ impl ShaderManager {
                                     (
                                         row.get::<_, String>(0)?,
                                         row.get::<_, String>(1)?,
+                                        row.get::<_, String>(2)?,
                                     )
                                 )
                             },
@@ -282,11 +316,13 @@ impl ShaderManager {
                                         Ok((
                                             filename,
                                             source_path,
+                                            policy_name,
                                         )) => {
 
                                             log_debug(
                                                 &format!(
-                                                    "[SHADER] Discovered screensaver-eligible managed shader from database: {}",
+                                                    "[SHADER] Discovered screensaver policy '{}' for managed shader '{}'",
+                                                    policy_name,
                                                     filename
                                                 )
                                             );
@@ -302,8 +338,9 @@ impl ShaderManager {
 
 
                                             shaders.push(
-                                                ShaderEntry::with_source_path(
+                                                ShaderEntry::with_policy_source_path(
                                                     filename,
+                                                    policy_name,
                                                     physical_path,
                                                 )
                                             );
@@ -371,6 +408,7 @@ impl ShaderManager {
         ) {
             Ok(external_paths) => {
                 for (
+                    policy_name,
                     name,
                     source_path,
                 ) in external_paths
@@ -388,8 +426,9 @@ impl ShaderManager {
                     }
 
                     shaders.push(
-                        ShaderEntry::with_source_path(
+                        ShaderEntry::with_policy_source_path(
                             name,
+                            policy_name,
                             source_path,
                         )
                     );
@@ -412,6 +451,14 @@ impl ShaderManager {
                 left.name
                     .cmp(
                         &right.name
+                    )
+                    .then_with(
+                        || {
+                            left.policy_name
+                                .cmp(
+                                    &right.policy_name
+                                )
+                        }
                     )
                     .then_with(
                         || {

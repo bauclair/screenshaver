@@ -34,18 +34,18 @@ pub fn load_shader_entries(
             .prepare(
                 "SELECT
                      s.filename,
-                     s.source_path
-                 FROM shaders AS s
+                     s.source_path,
+                     p.policy_name
+                 FROM shader_policies AS p
+                 JOIN shaders AS s
+                   ON s.shader_id = p.shader_id
                  WHERE s.source_path = ?1
                    AND s.file_status = 'present'
-                   AND EXISTS (
-                       SELECT 1
-                       FROM shader_policies AS p
-                       WHERE p.shader_id = s.shader_id
-                         AND p.policy_target = 'wallpaper'
-                   )
+                   AND p.policy_target = 'wallpaper'
                  ORDER BY s.filename COLLATE NOCASE,
-                          s.filename"
+                          s.filename,
+                          p.policy_name COLLATE NOCASE,
+                          p.policy_name"
             )
             .map_err(
                 |error| {
@@ -68,6 +68,7 @@ pub fn load_shader_entries(
                         (
                             row.get::<_, String>(0)?,
                             row.get::<_, String>(1)?,
+                            row.get::<_, String>(2)?,
                         )
                     )
                 },
@@ -87,6 +88,7 @@ pub fn load_shader_entries(
         let (
             filename,
             source_path,
+            policy_name,
         ) =
             row.map_err(
                 |error| {
@@ -99,8 +101,9 @@ pub fn load_shader_entries(
 
 
         shader_entries.push(
-            crate::manage_shader::ShaderEntry::with_source_path(
+            crate::manage_shader::ShaderEntry::with_policy_source_path(
                 filename.clone(),
+                policy_name,
                 std::path::PathBuf::from(
                     source_path
                 )
@@ -123,6 +126,7 @@ pub fn load_shader_entries(
         Ok(external_paths) => {
 
             for (
+                policy_name,
                 name,
                 source_path,
             ) in external_paths
@@ -139,8 +143,9 @@ pub fn load_shader_entries(
 
 
                 shader_entries.push(
-                    crate::manage_shader::ShaderEntry::with_source_path(
+                    crate::manage_shader::ShaderEntry::with_policy_source_path(
                         name,
+                        policy_name,
                         source_path,
                     )
                 );
@@ -163,6 +168,13 @@ pub fn load_shader_entries(
         |left, right| {
             left.name.cmp(
                 &right.name
+            )
+            .then_with(
+                || {
+                    left.policy_name.cmp(
+                        &right.policy_name
+                    )
+                }
             )
             .then_with(
                 || {

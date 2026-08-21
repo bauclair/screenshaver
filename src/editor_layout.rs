@@ -2294,6 +2294,10 @@ impl EditWindowOverlay {
 
                 policy_target_change_requested =
                     None;
+
+                status_message =
+                    "Bulk Edit Mode active-- click Cancel to return to Single Edit mode."
+                        .to_string();
             }
         } else {
             if let Some(
@@ -2904,15 +2908,11 @@ impl EditWindowOverlay {
                             );
 
                             let displayed_status: &str =
-                                if bulk_edit_mode {
-                                    "Bulk Edit Mode active-- click Cancel to return to Single Edit mode."
-                                } else {
-                                    match hover_help_message {
-                                        Some(message) =>
-                                            message,
-                                        None =>
-                                            status_message.as_str(),
-                                    }
+                                match hover_help_message {
+                                    Some(message) =>
+                                        message,
+                                    None =>
+                                        status_message.as_str(),
                                 };
 
                             draw_compact_status_row(

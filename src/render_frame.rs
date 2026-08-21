@@ -26,6 +26,7 @@ pub enum ScreensaverRunOutcome {
 #[derive(Debug)]
 struct ActiveShader {
     program: u32,
+    policy_name: String,
     shader_name: String,
     source_path: Option<PathBuf>,
     channel_usage: crate::preprocess_shader::ShaderChannelUsage,
@@ -96,6 +97,7 @@ impl RenderFpsPolicy {
 
 #[derive(Clone, Debug)]
 pub(crate) struct FrameRenderMetadata {
+    pub policy_name: String,
     pub shader_name: String,
     pub shader_path: Option<PathBuf>,
     pub animation_speed: f32,
@@ -896,6 +898,8 @@ impl FrameRenderEngine {
                 .active_specification_selection();
 
         FrameRenderMetadata {
+            policy_name:
+                self.active_shader.policy_name.clone(),
             shader_name:
                 self.active_shader.shader_name.clone(),
             shader_path:
@@ -1710,7 +1714,7 @@ fn build_subtitle_overlay(
                     "Collect more shaders at https://editor.isf.video/shaders and https://shadertoy.com/browse"
                         .to_string()
                 } else {
-                    shader.shader_name
+                    shader.policy_name
                         .clone()
                 };
 
@@ -1845,6 +1849,8 @@ fn select_safe_shader_program(
                         return Ok(
                             ActiveShader {
                                 program,
+                                policy_name:
+                                    requested_shader.policy_name.clone(),
                                 shader_name,
                                 source_path:
                                     if built_in_default {
@@ -1954,6 +1960,8 @@ fn select_safe_shader_program(
             Ok(
                 ActiveShader {
                     program,
+                    policy_name:
+                        shader_name.clone(),
                     shader_name,
                     source_path: None,
                     channel_usage,

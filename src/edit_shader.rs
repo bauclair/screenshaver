@@ -1116,7 +1116,18 @@ fn run_empty_session(
 
 
         if editor_output.bulk_save_requested {
+            log_information(
+                &format!(
+                    "[EDIT_SHADER] Confirmed Bulk Edit save request received: selected_policies={}, changes={:?}",
+                    editor_output.bulk_selected_policy_rows.len(),
+                    editor_output.bulk_edit_changes,
+                )
+            );
+
             if !editor_output.bulk_edit_changes.any() {
+                log_warning(
+                    "[EDIT_SHADER] Bulk Edit save request contained an empty field-change mask; no database update was attempted"
+                );
                 edit_window.set_status_message(
                     "Bulk Edit contains no changed settings."
                 );
@@ -3002,7 +3013,18 @@ fn run_paths(
 
 
                 if editor_output.bulk_save_requested {
+                    log_information(
+                        &format!(
+                            "[EDIT_SHADER] Confirmed Bulk Edit save request received while preview was suspended: selected_policies={}, changes={:?}",
+                            editor_output.bulk_selected_policy_rows.len(),
+                            editor_output.bulk_edit_changes,
+                        )
+                    );
+
                     if !editor_output.bulk_edit_changes.any() {
+                        log_warning(
+                            "[EDIT_SHADER] Bulk Edit save request contained an empty field-change mask while preview was suspended; no database update was attempted"
+                        );
                         edit_window.set_status_message(
                             "Bulk Edit contains no changed settings."
                         );
@@ -5755,7 +5777,18 @@ fn run_paths(
 
 
             if editor_output.bulk_save_requested {
+            log_information(
+                &format!(
+                    "[EDIT_SHADER] Confirmed Bulk Edit save request received: selected_policies={}, changes={:?}",
+                    editor_output.bulk_selected_policy_rows.len(),
+                    editor_output.bulk_edit_changes,
+                )
+            );
+
             if !editor_output.bulk_edit_changes.any() {
+                log_warning(
+                    "[EDIT_SHADER] Bulk Edit save request contained an empty field-change mask; no database update was attempted"
+                );
                 edit_window.set_status_message(
                     "Bulk Edit contains no changed settings."
                 );
