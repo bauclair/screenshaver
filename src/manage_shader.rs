@@ -648,18 +648,49 @@ impl ShaderManager {
         match &self.mode {
 
             ShaderMode::Single(
-                name
+                selector
             ) => {
 
-                if let Some(shader) =
-                    self.shaders
-                        .iter()
-                        .find(
-                            |shader| {
-                                shader.name
-                                    == *name
+                let requested_policy_id =
+                    selector
+                        .trim()
+                        .parse::<i64>()
+                        .ok()
+                        .filter(
+                            |policy_id| {
+                                *policy_id > 0
                             }
-                        )
+                        );
+
+
+                let selected =
+                    if let Some(policy_id) =
+                        requested_policy_id
+                    {
+                        self.shaders
+                            .iter()
+                            .find(
+                                |shader| {
+                                    shader.policy_id
+                                        == policy_id
+                                }
+                            )
+                    } else {
+                        // Compatibility fallback for synthetic/legacy callers
+                        // that still construct Single mode with a filename.
+                        self.shaders
+                            .iter()
+                            .find(
+                                |shader| {
+                                    shader.name
+                                        == *selector
+                                }
+                            )
+                    };
+
+
+                if let Some(shader) =
+                    selected
                 {
                     Some(
                         shader.clone()
@@ -669,8 +700,8 @@ impl ShaderManager {
 
                     log_warning(
                         &format!(
-                            "[SHADER] Requested shader '{}' is unavailable; selecting another shader",
-                            name
+                            "[SHADER] Requested Single policy '{}' is unavailable; selecting another policy",
+                            selector
                         )
                     );
 

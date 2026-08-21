@@ -74,8 +74,6 @@ struct ScreensaverSection {
     #[serde(default = "default_subtitle_placement")]
     subtitle_placement: String,
 
-    mode: String,
-
     idle_timeout: String,
 
     #[serde(default)]
@@ -94,8 +92,6 @@ struct WallpaperSection {
 
     #[serde(default = "default_wallpaper_enabled")]
     enabled: bool,
-
-    mode: String,
 
     #[serde(default)]
     global_texture: Option<String>,
@@ -1476,6 +1472,18 @@ pub fn load_config(
         );
 
 
+    let screensaver_mode =
+        crate::manage_configuration::load_runtime_mode(
+            "screensaver"
+        )?;
+
+
+    let wallpaper_mode =
+        crate::manage_configuration::load_runtime_mode(
+            "wallpaper"
+        )?;
+
+
     //---------------------------------------------------------
     // Flatten configuration
     //---------------------------------------------------------
@@ -1499,7 +1507,7 @@ pub fn load_config(
                 raw.appearance.show_splash,
 
             mode:
-                raw.screensaver.mode,
+                screensaver_mode,
 
             idle_timeout:
                 raw.screensaver.idle_timeout,
@@ -1509,7 +1517,7 @@ pub fn load_config(
             wallpaper,
 
             wallpaper_mode:
-                raw.wallpaper.mode,
+                wallpaper_mode,
 
             wallpaper_texture_policy,
 

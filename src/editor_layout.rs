@@ -298,7 +298,8 @@ pub struct ControlConfiguration {
     pub subtitles: bool,
     pub screensaver_display: String,
     pub screensaver_interval_seconds: u64,
-    pub screensaver_single_filename: String,
+    pub screensaver_single_policy_id: Option<i64>,
+    pub screensaver_single_policy_name: String,
     pub idle_timeout: String,
     pub screensaver_global_texture: String,
     pub screensaver_global_palette: String,
@@ -306,7 +307,8 @@ pub struct ControlConfiguration {
     pub notifications: bool,
     pub wallpaper_display: String,
     pub wallpaper_interval_seconds: u64,
-    pub wallpaper_single_filename: String,
+    pub wallpaper_single_policy_id: Option<i64>,
+    pub wallpaper_single_policy_name: String,
     pub wallpaper_global_texture: String,
     pub wallpaper_global_palette: String,
 }
@@ -318,23 +320,36 @@ impl ControlConfiguration {
         let (
             screensaver_display,
             screensaver_interval_seconds,
-            screensaver_single_filename,
+            screensaver_single_policy_id,
         ) =
             split_display_mode(&config.mode);
 
         let (
             wallpaper_display,
             wallpaper_interval_seconds,
-            wallpaper_single_filename,
+            wallpaper_single_policy_id,
         ) =
             split_display_mode(&config.wallpaper_mode);
+
+        let screensaver_single_policy_name =
+            policy_name_for_id(
+                &config.screensaver_policies,
+                screensaver_single_policy_id,
+            );
+
+        let wallpaper_single_policy_name =
+            policy_name_for_id(
+                &config.wallpaper_policies,
+                wallpaper_single_policy_id,
+            );
 
         Self {
             screensaver_enabled: config.screensaver_enabled,
             subtitles: config.subtitles,
             screensaver_display,
             screensaver_interval_seconds,
-            screensaver_single_filename,
+            screensaver_single_policy_id,
+            screensaver_single_policy_name,
             idle_timeout: config.idle_timeout.clone(),
             screensaver_global_texture:
                 config.texture_policy.global_texture.as_ref()
@@ -348,7 +363,8 @@ impl ControlConfiguration {
             notifications: config.wallpaper.notifications,
             wallpaper_display,
             wallpaper_interval_seconds,
-            wallpaper_single_filename,
+            wallpaper_single_policy_id,
+            wallpaper_single_policy_name,
             wallpaper_global_texture:
                 config.wallpaper_texture_policy.global_texture.as_ref()
                     .map(format_texture_specification)
@@ -361,9 +377,37 @@ impl ControlConfiguration {
     }
 }
 
+
+fn policy_name_for_id(
+    policies: &[crate::load_config::ShaderPolicy],
+    policy_id: Option<i64>,
+) -> String {
+
+    let Some(policy_id) =
+        policy_id
+    else {
+        return String::new();
+    };
+
+    policies
+        .iter()
+        .find(
+            |policy| {
+                policy.policy_id == policy_id
+            }
+        )
+        .map(
+            |policy| {
+                policy.policy_key.clone()
+            }
+        )
+        .unwrap_or_default()
+}
+
+
 fn split_display_mode(
     mode: &str,
-) -> (String, u64, String) {
+) -> (String, u64, Option<i64>) {
 
     const DEFAULT_INTERVAL_SECONDS: u64 =
         600;
@@ -404,19 +448,26 @@ fn split_display_mode(
                 .unwrap_or(
                     DEFAULT_INTERVAL_SECONDS
                 ),
-            String::new(),
+            None,
         ),
 
         "single" => (
             "single".to_string(),
             DEFAULT_INTERVAL_SECONDS,
-            argument.to_string(),
+            argument
+                .parse::<i64>()
+                .ok()
+                .filter(
+                    |value| {
+                        *value > 0
+                    }
+                ),
         ),
 
         _ => (
             "random".to_string(),
             DEFAULT_INTERVAL_SECONDS,
-            String::new(),
+            None,
         ),
     }
 }
@@ -2792,6 +2843,7 @@ impl EditWindowOverlay {
                                                         metrics,
                                                         &mut control_configuration,
                                                         control_configuration_baseline.as_ref(),
+                                                        policy_rows,
                                                         recent_shader_paths,
                                                         &mut clear_recent_files_requested,
                                                         &mut control_configuration_save_requested,
@@ -4079,32 +4131,14 @@ impl EditWindowOverlay {
     pub fn set_control_single_filename(
         &mut self,
         target: PolicyTarget,
-        filename: impl Into<String>,
+        _filename: impl Into<String>,
     ) {
-        let Some(configuration) =
-            self.control_configuration.as_mut()
-        else {
-            return;
-        };
-
-        let filename =
-            filename.into();
-
-        match target {
-            PolicyTarget::Screensaver => {
-                configuration.screensaver_single_filename =
-                    filename;
-            }
-
-            PolicyTarget::Wallpaper => {
-                configuration.wallpaper_single_filename =
-                    filename;
-            }
-
-            PolicyTarget::Unassigned => {
-                // Unassigned policies are not executable display modes.
-            }
-        }
+        // Legacy compatibility hook. Config-tab Single selection is now
+        // policy-centric and is performed directly by policy_id in the UI.
+        // Retained temporarily so older event-handling call sites remain
+        // source-compatible while they become unreachable.
+        let _ =
+            target;
     }
 
 
@@ -10040,6 +10074,7 @@ fn draw_config_tab(
     metrics: EditorMetrics,
     configuration: &mut Option<ControlConfiguration>,
     baseline: Option<&ControlConfiguration>,
+    policy_rows: &[PolicyDisplayRow],
     recent_shader_paths: &[PathBuf],
     clear_recent_files_requested: &mut bool,
     save_requested: &mut bool,
@@ -10098,7 +10133,9 @@ fn draw_config_tab(
                 None,
                 &mut configuration.screensaver_display,
                 &mut configuration.screensaver_interval_seconds,
-                &mut configuration.screensaver_single_filename,
+                &mut configuration.screensaver_single_policy_id,
+                &mut configuration.screensaver_single_policy_name,
+                policy_rows,
                 Some(
                     &mut configuration.idle_timeout
                 ),
@@ -10126,7 +10163,9 @@ fn draw_config_tab(
                 ),
                 &mut configuration.wallpaper_display,
                 &mut configuration.wallpaper_interval_seconds,
-                &mut configuration.wallpaper_single_filename,
+                &mut configuration.wallpaper_single_policy_id,
+                &mut configuration.wallpaper_single_policy_name,
+                policy_rows,
                 None,
                 &mut configuration.wallpaper_global_texture,
                 &mut configuration.wallpaper_global_palette,
@@ -10160,22 +10199,20 @@ fn draw_config_tab(
                 false
             );
 
-    let single_filename_missing =
+    let single_policy_missing =
         (
             configuration.screensaver_display
                 == "single"
                 && configuration
-                    .screensaver_single_filename
-                    .trim()
-                    .is_empty()
+                    .screensaver_single_policy_id
+                    .is_none()
         )
         || (
             configuration.wallpaper_display
                 == "single"
                 && configuration
-                    .wallpaper_single_filename
-                    .trim()
-                    .is_empty()
+                    .wallpaper_single_policy_id
+                    .is_none()
         );
 
     ui.horizontal(
@@ -10183,7 +10220,7 @@ fn draw_config_tab(
             let save_response =
                 ui.add_enabled(
                     dirty
-                        && !single_filename_missing,
+                        && !single_policy_missing,
                     egui::Button::new(
                         "Save Configuration"
                     ),
@@ -10192,8 +10229,8 @@ fn draw_config_tab(
             update_hover_help(
                 &save_response,
                 hover_help_message,
-                if single_filename_missing {
-                    "Select a shader filename before saving Single display mode."
+                if single_policy_missing {
+                    "Select a shader policy before saving Single display mode."
                 } else {
                     "Save configuration changes."
                 },
@@ -10251,7 +10288,9 @@ fn draw_config_target_column(
     notifications: Option<&mut bool>,
     display_mode: &mut String,
     interval_seconds: &mut u64,
-    single_filename: &mut String,
+    single_policy_id: &mut Option<i64>,
+    single_policy_name: &mut String,
+    policy_rows: &[PolicyDisplayRow],
     idle_timeout: Option<&mut String>,
     global_texture: &mut String,
     global_palette: &mut String,
@@ -10379,106 +10418,92 @@ fn draw_config_target_column(
                 == "single"
             {
                 ui.label(
-                    "Filename"
+                    "Policy"
                 );
 
-                let displayed_filename =
-                    if single_filename
-                        .trim()
-                        .is_empty()
+                let displayed_policy =
+                    if single_policy_id.is_none()
+                        || single_policy_name
+                            .trim()
+                            .is_empty()
                     {
-                        "<select shader>"
+                        "<select policy>"
+                            .to_string()
                     } else {
-                        single_filename
-                            .as_str()
+                        single_policy_name
+                            .clone()
                     };
 
                 ui.menu_button(
-                    displayed_filename,
+                    displayed_policy,
                     |ui| {
-                        if recent_shader_paths
-                            .is_empty()
-                        {
-                            ui.add_enabled(
-                                false,
-                                egui::Button::new(
-                                    "Recent Files (empty)"
-                                ),
-                            );
-                        } else {
-                            for (
-                                index,
-                                path,
-                            ) in recent_shader_paths
-                                .iter()
-                                .enumerate()
-                            {
-                                let display_name =
-                                    path
-                                        .file_name()
-                                        .and_then(
-                                            |name| {
-                                                name.to_str()
+                        egui::ScrollArea::vertical()
+                            .max_height(
+                                320.0 * metrics.scale
+                            )
+                            .show(
+                                ui,
+                                |ui| {
+                                    let mut eligible_count =
+                                        0_usize;
+
+                                    for row in policy_rows
+                                        .iter()
+                                        .filter(
+                                            |row| {
+                                                row.policy_target
+                                                    == target
+                                                    && row.accessible
                                             }
                                         )
-                                        .unwrap_or(
-                                            "Unnamed shader"
+                                    {
+                                        eligible_count +=
+                                            1;
+
+                                        let response =
+                                            ui.selectable_label(
+                                                *single_policy_id
+                                                    == Some(row.policy_id),
+                                                row.policy_key
+                                                    .as_str(),
+                                            );
+
+                                        if response.clicked() {
+                                            *single_policy_id =
+                                                Some(
+                                                    row.policy_id
+                                                );
+
+                                            *single_policy_name =
+                                                row.policy_key
+                                                    .clone();
+
+                                            *status_message =
+                                                format!(
+                                                    "Single {} policy selected: {}.",
+                                                    match target {
+                                                        PolicyTarget::Screensaver => "screensaver",
+                                                        PolicyTarget::Wallpaper => "wallpaper",
+                                                        PolicyTarget::Unassigned => "unassigned",
+                                                    },
+                                                    row.policy_key,
+                                                );
+
+                                            ui.close();
+                                        }
+                                    }
+
+
+                                    if eligible_count == 0 {
+                                        ui.add_enabled(
+                                            false,
+                                            egui::Button::new(
+                                                "No eligible policies"
+                                            ),
                                         );
-
-                                let response =
-                                    ui.button(
-                                        display_name
-                                    );
-
-                                response
-                                    .clone()
-                                    .on_hover_text(
-                                        path.display()
-                                            .to_string()
-                                    );
-
-                                if response.clicked() {
-                                    *single_recent_requested =
-                                        Some(
-                                            (
-                                                target,
-                                                index,
-                                            )
-                                        );
-
-                                    ui.close();
-                                }
-                            }
-                        }
-
-                        ui.separator();
-
-                        if ui.button(
-                            "Browse..."
-                        )
-                        .clicked()
-                        {
-                            *single_browse_requested =
-                                Some(
-                                    target
-                                );
-
-                            ui.close();
-                        }
-
-                        if ui.add_enabled(
-                            !recent_shader_paths.is_empty(),
-                            egui::Button::new(
-                                "Clear Recent Files"
-                            ),
-                        )
-                        .clicked()
-                        {
-                            *clear_recent_files_requested =
-                                true;
-
-                            ui.close();
-                        }
+                                    }
+                                },
+                            );
                     },
                 );
 
@@ -10582,12 +10607,11 @@ fn draw_config_target_column(
 
     if display_mode.as_str()
         == "single"
-        && single_filename
-            .trim()
-            .is_empty()
+        && single_policy_id
+            .is_none()
     {
         *status_message =
-            "Select a shader for Single display mode."
+            "Select a shader policy for Single display mode."
                 .to_string();
     }
 }

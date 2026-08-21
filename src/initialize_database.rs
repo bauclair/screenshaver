@@ -139,9 +139,20 @@ fn initialize_contents(
         )?;
 
 
-    create_default_policies(
+    let (
+        default_screensaver_policy_id,
+        default_wallpaper_policy_id,
+    ) =
+        create_default_policies(
+            connection,
+            default_shader_id,
+        )?;
+
+
+    create_runtime_targets(
         connection,
-        default_shader_id,
+        default_screensaver_policy_id,
+        default_wallpaper_policy_id,
     )?;
 
 
@@ -517,27 +528,34 @@ fn register_default_shader(
 fn create_default_policies(
     connection: &Connection,
     shader_id: i64,
-) -> Result<(), String> {
+) -> Result<(i64, i64), String> {
 
-    insert_default_policy(
-        connection,
-        shader_id,
-        "Default Screensaver",
-        "default screensaver",
-        "screensaver",
-    )?;
-
-
-    insert_default_policy(
-        connection,
-        shader_id,
-        "Default Wallpaper",
-        "default wallpaper",
-        "wallpaper",
-    )?;
+    let screensaver_policy_id =
+        insert_default_policy(
+            connection,
+            shader_id,
+            "screensaver default",
+            "screensaver default",
+            "screensaver",
+        )?;
 
 
-    Ok(())
+    let wallpaper_policy_id =
+        insert_default_policy(
+            connection,
+            shader_id,
+            "wallpaper default",
+            "wallpaper default",
+            "wallpaper",
+        )?;
+
+
+    Ok(
+        (
+            screensaver_policy_id,
+            wallpaper_policy_id,
+        )
+    )
 }
 
 
@@ -547,7 +565,7 @@ fn insert_default_policy(
     policy_name: &str,
     policy_name_key: &str,
     policy_target: &str,
-) -> Result<(), String> {
+) -> Result<i64, String> {
 
     connection
         .execute(
@@ -579,6 +597,77 @@ fn insert_default_policy(
                 )
             }
         )?;
+
+
+    Ok(
+        connection.last_insert_rowid()
+    )
+}
+
+
+fn create_runtime_targets(
+    connection: &Connection,
+    screensaver_policy_id: i64,
+    wallpaper_policy_id: i64,
+) -> Result<(), String> {
+
+    let mut statement =
+        connection
+            .prepare(
+                "INSERT INTO runtime_targets (
+                     target,
+                     display_mode,
+                     interval_seconds,
+                     single_policy_id
+                 )
+                 VALUES (
+                     ?1,
+                     'single',
+                     NULL,
+                     ?2
+                 )"
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to prepare initial runtime-target configuration: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    for (
+        target,
+        policy_id,
+    ) in [
+        (
+            "screensaver",
+            screensaver_policy_id,
+        ),
+        (
+            "wallpaper",
+            wallpaper_policy_id,
+        ),
+    ] {
+        statement
+            .execute(
+                params![
+                    target,
+                    policy_id,
+                ]
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to create initial {} runtime target using policy ID {}: {}",
+                        target,
+                        policy_id,
+                        error,
+                    )
+                }
+            )?;
+    }
 
 
     Ok(())

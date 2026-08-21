@@ -99,19 +99,28 @@ pub fn validate_initialization(
         )?;
 
 
-    validate_default_policy(
-        connection,
-        default_shader_id,
-        "default screensaver",
-        "screensaver",
-    )?;
+    let default_screensaver_policy_id =
+        validate_default_policy(
+            connection,
+            default_shader_id,
+            "screensaver default",
+            "screensaver",
+        )?;
 
 
-    validate_default_policy(
+    let default_wallpaper_policy_id =
+        validate_default_policy(
+            connection,
+            default_shader_id,
+            "wallpaper default",
+            "wallpaper",
+        )?;
+
+
+    validate_runtime_targets(
         connection,
-        default_shader_id,
-        "default wallpaper",
-        "wallpaper",
+        default_screensaver_policy_id,
+        default_wallpaper_policy_id,
     )?;
 
 
@@ -231,10 +240,11 @@ fn validate_required_tables(
     connection: &Connection,
 ) -> Result<(), String> {
 
-    const REQUIRED_TABLES: [&str; 4] = [
+    const REQUIRED_TABLES: [&str; 5] = [
         "schema_metadata",
         "shaders",
         "shader_policies",
+        "runtime_targets",
         "curated_palette",
     ];
 
@@ -748,7 +758,7 @@ fn validate_default_policy(
     expected_shader_id: i64,
     policy_name_key: &str,
     policy_target: &str,
-) -> Result<(), String> {
+) -> Result<i64, String> {
 
     // Policy Name is display/search metadata, not policy identity.  Duplicate
     // names are valid in Schema V1, so default-policy validation must identify
@@ -809,6 +819,121 @@ fn validate_default_policy(
             )
         );
     }
+
+    Ok(
+        fallback_policy_id
+    )
+}
+
+
+fn validate_runtime_targets(
+    connection: &Connection,
+    expected_screensaver_policy_id: i64,
+    expected_wallpaper_policy_id: i64,
+) -> Result<(), String> {
+
+    let row_count: i64 =
+        connection
+            .query_row(
+                "SELECT COUNT(*) FROM runtime_targets",
+                [],
+                |row| {
+                    row.get(0)
+                },
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to count runtime-target rows during initialization validation: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    if row_count != 2 {
+        return Err(
+            format!(
+                "Runtime-target validation failed: expected exactly 2 rows, found {}",
+                row_count,
+            )
+        );
+    }
+
+
+    for (
+        target,
+        expected_policy_id,
+    ) in [
+        (
+            "screensaver",
+            expected_screensaver_policy_id,
+        ),
+        (
+            "wallpaper",
+            expected_wallpaper_policy_id,
+        ),
+    ] {
+        let (
+            display_mode,
+            interval_seconds,
+            single_policy_id,
+            selected_policy_target,
+        ): (
+            String,
+            Option<i64>,
+            Option<i64>,
+            Option<String>,
+        ) =
+            connection
+                .query_row(
+                    "SELECT
+                         rt.display_mode,
+                         rt.interval_seconds,
+                         rt.single_policy_id,
+                         p.policy_target
+                     FROM runtime_targets AS rt
+                     LEFT JOIN shader_policies AS p
+                       ON p.policy_id = rt.single_policy_id
+                     WHERE rt.target = ?1",
+                    [target],
+                    |row| {
+                        Ok(
+                            (
+                                row.get(0)?,
+                                row.get(1)?,
+                                row.get(2)?,
+                                row.get(3)?,
+                            )
+                        )
+                    },
+                )
+                .map_err(
+                    |error| {
+                        format!(
+                            "Runtime-target validation failed: unable to read '{}' row: {}",
+                            target,
+                            error,
+                        )
+                    }
+                )?;
+
+
+        if display_mode != "single"
+            || interval_seconds.is_some()
+            || single_policy_id != Some(expected_policy_id)
+            || selected_policy_target.as_deref() != Some(target)
+        {
+            return Err(
+                format!(
+                    "Runtime-target validation failed: '{}' must initially be Single using policy ID {} for the same target",
+                    target,
+                    expected_policy_id,
+                )
+            );
+        }
+    }
+
 
     Ok(())
 }

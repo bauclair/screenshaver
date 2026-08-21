@@ -9943,7 +9943,7 @@ fn save_control_configuration(
     fn build_mode(
         display: &str,
         interval_seconds: u64,
-        single_filename: &str,
+        single_policy_id: Option<i64>,
     ) -> Result<String, String> {
 
         match display
@@ -9964,24 +9964,28 @@ fn save_control_configuration(
                     interval_seconds,
                 )
             }
-            "single" => {
-                let filename =
-                    single_filename
-                        .trim();
 
-                if filename.is_empty() {
-                    Err(
-                        "Single display mode requires a shader filename."
-                            .to_string()
-                    )
-                } else {
-                    Ok(
-                        format!(
-                            "single:{}",
-                            filename,
+            "single" => {
+                let policy_id =
+                    single_policy_id
+                        .filter(
+                            |policy_id| {
+                                *policy_id > 0
+                            }
                         )
+                        .ok_or_else(
+                            || {
+                                "Single display mode requires a shader policy selection."
+                                    .to_string()
+                            }
+                        )?;
+
+                Ok(
+                    format!(
+                        "single:{}",
+                        policy_id,
                     )
-                }
+                )
             }
 
             other => {
@@ -10008,7 +10012,7 @@ fn save_control_configuration(
                 build_mode(
                     &control.screensaver_display,
                     control.screensaver_interval_seconds,
-                    &control.screensaver_single_filename,
+                    control.screensaver_single_policy_id,
                 )?,
 
             idle_timeout:
@@ -10034,7 +10038,7 @@ fn save_control_configuration(
                 build_mode(
                     &control.wallpaper_display,
                     control.wallpaper_interval_seconds,
-                    &control.wallpaper_single_filename,
+                    control.wallpaper_single_policy_id,
                 )?,
 
             wallpaper_global_texture:

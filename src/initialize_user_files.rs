@@ -6,13 +6,13 @@ use std::path::{Path, PathBuf};
 const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 
 ################################
-# APPEARANCE
+# APPEARANCE DEFAULTS
 ################################
 [appearance]
   show_splash = true       # Show Screenshaver splash screen when run
 
 ################################
-# SCREENSAVER MODE
+# SCREENSAVER MODE DEFAULTS
 ################################
 [screensaver]
   enabled = true           # Enable automatic screensaver activation
@@ -26,17 +26,7 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 #     bottom:center
 #     bottom:right
   subtitle_placement = "bottom:center"
-# Screensaver shaders are loaded from:
-#     ~/.config/screenshaver/shaders/
-
-# Displays a single predefined shader.
-# mode = "single:default.glsl"
-
-# Displays a shader at random every <nn> seconds.
-  mode = "random:60"
-
-# Displays shaders in alphanumerical order by filename every <nn> seconds.
-# mode = "ordered:10"
+# Screensaver shader selection mode is maintained in screenshaver.db.
 
 # Idle time before the screensaver activates.
 # Accepted suffixes are (s)ec, (m)in, and (h)rs.
@@ -51,22 +41,11 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
   global_palette = "random"
 
 ################################
-# WALLPAPER MODE
+# WALLPAPER MODE DEFAULTS
 ################################
 [wallpaper]
-  enabled = false          # Enable wallpaper rendering mode
-# Wallpaper shaders are loaded from:
-#     ~/.config/screenshaver/shaders/
-
-# Displays a single predefined wallpaper shader.
-# mode = "single:default.glsl"
-
-# Displays a wallpaper shader at random every <nn> seconds.
-# mode = "random:60"
-
-# Displays wallpaper shaders in alphanumerical order by filename
-# every <nn> seconds.
-  mode = "ordered:10"
+  enabled = true           # Enable wallpaper rendering mode
+# Wallpaper shader selection mode is maintained in screenshaver.db.
 
 # Default animation speed for wallpaper shaders.
   global_speed = 0.025
@@ -89,58 +68,7 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
   notifications = true
 
 ################################
-# TEXTURES AND PALETTES
-################################
-# Background textures available for compatible texture-based shaders:
-#
-#     bricks             Brick/block wall textures.
-#     cells              Voronoi / lichen textures.
-#     clouds             Soft cloud and smoke textures.
-#     facets             Tetrahedral textures.
-#     hexagons           Hexagonal textures.
-#     marble             Marble and stone textures.
-#     mesh               Mesh textures.
-#     noise              Procedural noise textures.
-#     radial             Radial textures.
-#     random             Randomly select a texture family.
-#
-# Color palettes available for compatible texture-based shaders:
-#
-#     brick
-#     bronze
-#     lichen
-#     mist
-#     sandstone
-#     random
-#     slate
-
-################################
-# PER-SHADER POLICIES
-################################
-# Policy properties may be written in any order.
-# Supported properties are:
-#     texture:<family>
-#     palette:<palette>
-#     fps:<frames-per-second>
-#     speed:<animation-multiplier>
-#     anti_aliasing:<off|fxaa>
-#     dithering:<off|subtle>
-#     color_precision:<auto|standard|high>
-#
-# Property names and post-processing values are case-insensitive and are
-# normalized internally to lowercase.
-#
-# Properties not included in a policy continue to use the active mode's
-# global setting or normal random fallback.
-
-[screensaver_policies]
-# "CandyWarp.fs" = "texture:bricks palette:mist fps:24 speed:0.5 anti_aliasing:fxaa dithering:subtle color_precision:high"
-
-[wallpaper_policies]
-# "CandyWarp.fs" = "fps:16 speed:0.125 anti_aliasing:off dithering:off color_precision:standard"
-
-################################
-# POST-PROCESSING
+# POST-PROCESSING DEFAULTS
 ################################
 [postprocess]
 # Built-in defaults are used when a setting is omitted.
@@ -157,7 +85,7 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
   render_scale = 1.0
 
 ################################
-# PERFORMANCE
+# PERFORMANCE DEFAULTS
 ################################
 [performance]
 # Frames per second for all shaders in all rendering modes.
@@ -165,13 +93,13 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 
 
 ################################
-# SCREEN LOCKING
+# SCREEN LOCKING DEFAULTS
 ################################
 [locking]
   screen_lock = false     # Invoke lock screen when screensaver deactivates
 
 ################################
-# DEBUGGING
+# DEBUGGING DEFAULTS
 ################################
 [debug]
   debug_log = true        # Enable screenshaver.log

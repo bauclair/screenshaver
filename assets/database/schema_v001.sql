@@ -371,6 +371,63 @@ CREATE INDEX idx_shader_policies_name_target
     );
 
 -- ---------------------------------------------------------------------------
+-- runtime_targets
+-- ---------------------------------------------------------------------------
+-- Application-level runtime selection state for Screensaver and Wallpaper.
+-- Policy definitions remain in shader_policies; this table records only how
+-- each runtime target selects among those policies.
+CREATE TABLE runtime_targets (
+    target                  TEXT NOT NULL
+                            PRIMARY KEY
+                            CHECK (
+                                target IN (
+                                    'screensaver',
+                                    'wallpaper'
+                                )
+                            ),
+
+    display_mode            TEXT NOT NULL
+                            CHECK (
+                                display_mode IN (
+                                    'single',
+                                    'ordered',
+                                    'random'
+                                )
+                            ),
+
+    -- Rotation interval for ordered/random modes.
+    -- NULL when display_mode = 'single'.
+    interval_seconds        INTEGER
+                            CHECK (
+                                interval_seconds IS NULL
+                                OR interval_seconds > 0
+                            ),
+
+    -- Exact policy selected for Single mode.
+    -- NULL for ordered/random modes. ON DELETE SET NULL deliberately leaves
+    -- Single mode recoverable if its selected policy is deleted.
+    single_policy_id        INTEGER,
+
+    FOREIGN KEY (single_policy_id)
+        REFERENCES shader_policies(policy_id)
+        ON DELETE SET NULL,
+
+    CHECK (
+        (
+            display_mode = 'single'
+            AND interval_seconds IS NULL
+        )
+        OR
+        (
+            display_mode IN ('ordered', 'random')
+            AND interval_seconds IS NOT NULL
+            AND single_policy_id IS NULL
+        )
+    )
+);
+
+
+-- ---------------------------------------------------------------------------
 -- curated_palette
 -- ---------------------------------------------------------------------------
 -- Developer-maintained reference catalog only.
@@ -422,8 +479,8 @@ COMMIT;
 --      Native GLSL is stored unchanged in preprocessed_source.
 --
 --   5. Create TWO policies referencing the same default.glsl shader_id:
---        Default Screensaver -> policy_target = 'screensaver'
---        Default Wallpaper   -> policy_target = 'wallpaper'
+--        screensaver default -> policy_target = 'screensaver'
+--        wallpaper default   -> policy_target = 'wallpaper'
 --
 --      Their inherited operational fields remain NULL.
 --      Their explicit visual defaults are:
@@ -435,13 +492,20 @@ COMMIT;
 --        flip_vertical    = 0
 --        hue_rotation     = 0.0
 --
---   6. Insert schema_metadata LAST:
+--   6. Insert TWO runtime_targets rows using the exact policy_id values
+--      created above:
+--        screensaver -> display_mode = 'single', single_policy_id = the
+--                       screensaver default policy
+--        wallpaper   -> display_mode = 'single', single_policy_id = the
+--                       wallpaper default policy
+--
+--   7. Insert schema_metadata LAST:
 --        metadata_id              = 1
 --        schema_version           = 1
 --        created_by_version       = current Screenshaver version
 --        last_migrated_by_version = current Screenshaver version
 --
---   7. Run initialization validation / foreign-key checks.
+--   8. Run initialization validation / foreign-key checks.
 --
 -- If first-time initialization fails before user data exists, the incomplete
 -- database may be discarded and rebuilt on the next database-dependent launch.
