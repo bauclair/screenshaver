@@ -1,10 +1,8 @@
 //! Application-level configuration persistence for the Screenshaver Control Center.
 //!
-//! This module edits the global [screensaver] and [wallpaper] fields exposed by
-//! the Control Center Config tab. Runtime display mode state is stored in
-//! screenshaver.db (runtime_targets), while non-policy global settings remain in
-//! screenshaver.toml. toml_edit preserves unrelated settings and formatting as
-//! far as practical.
+//! Runtime display-mode state and inherited rendering defaults are stored in
+//! screenshaver.db. The TOML file retains only startup/recovery settings that must
+//! remain manually editable even when database-backed configuration is unavailable.
 
 use std::fs;
 use std::path::Path;
@@ -40,7 +38,8 @@ pub struct ConfigurationUpdates {
     pub screensaver_mode:
         String,
 
-    /// Complete idle-timeout string as stored in screenshaver.toml.
+    /// Screensaver idle timeout represented as a duration string for the UI.
+    /// Persistence authority is target_defaults.idle_timeout_seconds.
     pub idle_timeout:
         String,
 
@@ -62,7 +61,7 @@ pub struct ConfigurationUpdates {
 
     pub notifications: bool,
 
-    /// Complete wallpaper mode string as stored in screenshaver.toml.
+    /// Canonical Wallpaper runtime-mode string backed by runtime_targets.
     pub wallpaper_mode:
         String,
 
@@ -82,12 +81,12 @@ pub struct ConfigurationUpdates {
 
 impl ConfigurationUpdates {
 
-    /// Build an editable Config-tab snapshot from the already-loaded runtime
-    /// configuration.
+    /// Build the legacy configuration-save snapshot from the already-loaded
+    /// runtime configuration.
     ///
-    /// This is intentionally limited to fields represented by the first Config
-    /// tab design.  Other screenshaver.toml settings remain outside this
-    /// structure and therefore cannot be accidentally overwritten by
+    /// Database-backed application/target defaults are persisted through
+    /// AppDefaults and TargetDefaults. This structure remains responsible for
+    /// the retained TOML enable flags and runtime-target mode strings used by
     /// save_configuration().
     pub fn from_config(
         config: &crate::load_config::Config,
@@ -145,6 +144,419 @@ impl ConfigurationUpdates {
 
 //
 // ------------------------------------------------------------
+// Database-backed application / target defaults
+// ------------------------------------------------------------
+//
+
+#[derive(Debug, Clone)]
+pub struct AppDefaults {
+    pub show_splash: bool,
+    pub screensaver_subtitles: bool,
+    pub subtitle_placement: String,
+    pub wallpaper_notifications: bool,
+    pub rendered_fps: i64,
+    pub anti_aliasing: String,
+    pub dithering: String,
+    pub color_precision: String,
+    pub render_scale: f64,
+}
+
+
+#[derive(Debug, Clone)]
+pub struct CuratedPaletteChoice {
+    pub color_hex: String,
+    pub description: String,
+}
+
+
+#[derive(Debug, Clone)]
+pub struct TargetDefaults {
+    pub target: String,
+    pub idle_timeout_seconds: Option<i64>,
+    pub animation_speed: f64,
+    pub texture_mode: String,
+    pub texture_family: Option<String>,
+    pub texture_primitives: i64,
+    pub palette_mode: String,
+    pub palette_color: Option<String>,
+}
+
+
+pub fn load_app_defaults() -> Result<AppDefaults, String> {
+    let connection =
+        crate::open_database::open()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to open database while loading application defaults: {}",
+                        error,
+                    )
+                }
+            )?;
+
+    connection
+        .query_row(
+            "SELECT
+                 show_splash,
+                 screensaver_subtitles,
+                 subtitle_placement,
+                 wallpaper_notifications,
+                 rendered_fps,
+                 anti_aliasing,
+                 dithering,
+                 color_precision,
+                 render_scale
+             FROM app_defaults
+             WHERE defaults_id = 1",
+            [],
+            |row| {
+                Ok(
+                    AppDefaults {
+                        show_splash:
+                            row.get::<_, i64>(0)? != 0,
+                        screensaver_subtitles:
+                            row.get::<_, i64>(1)? != 0,
+                        subtitle_placement:
+                            row.get(2)?,
+                        wallpaper_notifications:
+                            row.get::<_, i64>(3)? != 0,
+                        rendered_fps:
+                            row.get(4)?,
+                        anti_aliasing:
+                            row.get(5)?,
+                        dithering:
+                            row.get(6)?,
+                        color_precision:
+                            row.get(7)?,
+                        render_scale:
+                            row.get(8)?,
+                    }
+                )
+            },
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to load application defaults: {}",
+                    error,
+                )
+            }
+        )
+}
+
+
+pub fn load_texture_choices(
+) -> Result<Vec<String>, String> {
+
+    let connection =
+        crate::open_database::open()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to open database while loading texture choices: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    let mut statement =
+        connection
+            .prepare(
+                "SELECT texture_name
+                 FROM textures
+                 ORDER BY lower(texture_name),
+                          texture_name"
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to prepare texture-catalog query: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    let rows =
+        statement
+            .query_map(
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to query texture choices: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    let mut choices = Vec::new();
+
+
+    for row in rows {
+        choices.push(
+            row.map_err(
+                |error| {
+                    format!(
+                        "Unable to decode texture-catalog row: {}",
+                        error,
+                    )
+                }
+            )?
+        );
+    }
+
+
+    Ok(choices)
+}
+
+
+pub fn load_curated_palette_choices(
+) -> Result<Vec<CuratedPaletteChoice>, String> {
+    let connection = crate::open_database::open()
+        .map_err(|error| format!("Unable to open database while loading curated palette choices: {}", error))?;
+
+    let mut statement = connection.prepare(
+        "SELECT color_hex, description FROM curated_palette ORDER BY lower(description), color_hex"
+    ).map_err(|error| format!("Unable to prepare curated palette query: {}", error))?;
+
+    let rows = statement.query_map([], |row| {
+        Ok(CuratedPaletteChoice {
+            color_hex: row.get(0)?,
+            description: row.get(1)?,
+        })
+    }).map_err(|error| format!("Unable to query curated palette choices: {}", error))?;
+
+    let mut choices = Vec::new();
+    for row in rows {
+        choices.push(row.map_err(|error| format!("Unable to decode curated palette row: {}", error))?);
+    }
+
+    Ok(choices)
+}
+
+
+pub fn load_target_defaults(
+    target: &str,
+) -> Result<TargetDefaults, String> {
+    validate_target_name(
+        target
+    )?;
+
+    let connection =
+        crate::open_database::open()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to open database while loading {} defaults: {}",
+                        target,
+                        error,
+                    )
+                }
+            )?;
+
+    connection
+        .query_row(
+            "SELECT
+                 target,
+                 idle_timeout_seconds,
+                 animation_speed,
+                 texture_mode,
+                 texture_family,
+                 texture_primitives,
+                 palette_mode,
+                 palette_color
+             FROM target_defaults
+             WHERE target = ?1",
+            [target],
+            |row| {
+                Ok(
+                    TargetDefaults {
+                        target:
+                            row.get(0)?,
+                        idle_timeout_seconds:
+                            row.get(1)?,
+                        animation_speed:
+                            row.get(2)?,
+                        texture_mode:
+                            row.get(3)?,
+                        texture_family:
+                            row.get(4)?,
+                        texture_primitives:
+                            row.get(5)?,
+                        palette_mode:
+                            row.get(6)?,
+                        palette_color:
+                            row.get(7)?,
+                    }
+                )
+            },
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to load {} defaults: {}",
+                    target,
+                    error,
+                )
+            }
+        )
+}
+
+
+pub fn save_app_defaults(
+    defaults: &AppDefaults,
+) -> Result<(), String> {
+    let connection =
+        crate::open_database::open()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to open database while saving application defaults: {}",
+                        error,
+                    )
+                }
+            )?;
+
+    let changed =
+        connection
+            .execute(
+                "UPDATE app_defaults
+                 SET show_splash = ?1,
+                     screensaver_subtitles = ?2,
+                     subtitle_placement = ?3,
+                     wallpaper_notifications = ?4,
+                     rendered_fps = ?5,
+                     anti_aliasing = ?6,
+                     dithering = ?7,
+                     color_precision = ?8,
+                     render_scale = ?9
+                 WHERE defaults_id = 1",
+                rusqlite::params![
+                    defaults.show_splash,
+                    defaults.screensaver_subtitles,
+                    defaults.subtitle_placement,
+                    defaults.wallpaper_notifications,
+                    defaults.rendered_fps,
+                    defaults.anti_aliasing,
+                    defaults.dithering,
+                    defaults.color_precision,
+                    defaults.render_scale,
+                ],
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to save application defaults: {}",
+                        error,
+                    )
+                }
+            )?;
+
+    if changed != 1 {
+        return Err(
+            format!(
+                "Unable to save application defaults: expected one row, updated {}",
+                changed,
+            )
+        );
+    }
+
+    Ok(())
+}
+
+
+pub fn save_target_defaults(
+    defaults: &TargetDefaults,
+) -> Result<(), String> {
+    validate_target_name(
+        &defaults.target
+    )?;
+
+    let connection =
+        crate::open_database::open()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to open database while saving {} defaults: {}",
+                        defaults.target,
+                        error,
+                    )
+                }
+            )?;
+
+    let changed =
+        connection
+            .execute(
+                "UPDATE target_defaults
+                 SET idle_timeout_seconds = ?1,
+                     animation_speed = ?2,
+                     texture_mode = ?3,
+                     texture_family = ?4,
+                     texture_primitives = ?5,
+                     palette_mode = ?6,
+                     palette_color = ?7
+                 WHERE target = ?8",
+                rusqlite::params![
+                    defaults.idle_timeout_seconds,
+                    defaults.animation_speed,
+                    defaults.texture_mode,
+                    defaults.texture_family,
+                    defaults.texture_primitives,
+                    defaults.palette_mode,
+                    defaults.palette_color,
+                    defaults.target,
+                ],
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to save {} defaults: {}",
+                        defaults.target,
+                        error,
+                    )
+                }
+            )?;
+
+    if changed != 1 {
+        return Err(
+            format!(
+                "Unable to save {} defaults: expected one row, updated {}",
+                defaults.target,
+                changed,
+            )
+        );
+    }
+
+    Ok(())
+}
+
+
+fn validate_target_name(
+    target: &str,
+) -> Result<(), String> {
+    if matches!(
+        target,
+        "screensaver" | "wallpaper"
+    ) {
+        Ok(())
+    } else {
+        Err(
+            format!(
+                "Unsupported configuration target '{}'",
+                target,
+            )
+        )
+    }
+}
+
+
+//
+// ------------------------------------------------------------
 // Runtime-target database helpers
 // ------------------------------------------------------------
 //
@@ -153,17 +565,9 @@ pub fn load_runtime_mode(
     target: &str,
 ) -> Result<String, String> {
 
-    if !matches!(
-        target,
-        "screensaver" | "wallpaper"
-    ) {
-        return Err(
-            format!(
-                "Unsupported runtime target '{}'",
-                target,
-            )
-        );
-    }
+    validate_target_name(
+        target
+    )?;
 
 
     let connection =
@@ -747,15 +1151,22 @@ pub fn parse_rotation_mode(
 
         "single" => {
 
-            let shader =
+            let policy_id =
                 argument
                     .unwrap_or("")
-                    .trim();
+                    .trim()
+                    .parse::<i64>()
+                    .ok()
+                    .filter(
+                        |policy_id| {
+                            *policy_id > 0
+                        }
+                    );
 
 
-            if shader.is_empty() {
+            if policy_id.is_none() {
                 return Err(
-                    "Single display mode requires a shader filename"
+                    "Single display mode requires a valid policy ID"
                         .to_string()
                 );
             }
@@ -785,12 +1196,11 @@ pub fn parse_rotation_mode(
 // ------------------------------------------------------------
 //
 
-/// Save only the application-level fields represented by the Config tab.
+/// Save the retained TOML enable flags and database-backed runtime modes.
 ///
-/// This function does not rebuild screenshaver.toml from Config.  It loads the
-/// existing TOML document, changes only the intended keys, and writes the
-/// resulting document back.  Policy tables and unrelated application settings
-/// therefore remain untouched.
+/// Runtime display modes are written to runtime_targets. The existing TOML
+/// document is then loaded and only screensaver.enabled and wallpaper.enabled
+/// are changed. All database-backed defaults remain outside this function.
 pub fn save_configuration(
     config_path: &Path,
     updates: &ConfigurationUpdates,
@@ -800,18 +1210,15 @@ pub fn save_configuration(
         updates
     )?;
 
-
     write_runtime_modes(
         &updates.screensaver_mode,
         &updates.wallpaper_mode,
     )?;
 
-
     let mut document =
         load_document(
             config_path
         )?;
-
 
     {
         let screensaver =
@@ -820,65 +1227,16 @@ pub fn save_configuration(
                 "screensaver",
             )?;
 
-
-        screensaver[
-            "enabled"
-        ] =
+        screensaver["enabled"] =
             value(
                 updates.screensaver_enabled
             );
 
-
-        screensaver[
-            "subtitles"
-        ] =
-            value(
-                updates.subtitles
-            );
-
-
         // Runtime display-mode state belongs to screenshaver.db.
-        // Remove legacy mode keys when the Config tab is saved.
-        let _ =
-            screensaver.remove(
-                "mode"
-            );
+        let _ = screensaver.remove("mode");
 
-
-        screensaver[
-            "idle_timeout"
-        ] =
-            value(
-                updates
-                    .idle_timeout
-                    .trim()
-            );
-
-
-        screensaver[
-            "global_texture"
-        ] =
-            value(
-                format_global_texture(
-                    updates
-                        .screensaver_global_texture
-                        .as_ref()
-                )
-            );
-
-
-        screensaver[
-            "global_palette"
-        ] =
-            value(
-                format_global_palette(
-                    updates
-                        .screensaver_global_palette
-                        .as_ref()
-                )
-            );
+        // Database-backed defaults are deliberately not written to TOML.
     }
-
 
     {
         let wallpaper =
@@ -887,55 +1245,16 @@ pub fn save_configuration(
                 "wallpaper",
             )?;
 
-
-        wallpaper[
-            "enabled"
-        ] =
+        wallpaper["enabled"] =
             value(
                 updates.wallpaper_enabled
             );
 
-
-        wallpaper[
-            "notifications"
-        ] =
-            value(
-                updates.notifications
-            );
-
-
         // Runtime display-mode state belongs to screenshaver.db.
-        // Remove legacy mode keys when the Config tab is saved.
-        let _ =
-            wallpaper.remove(
-                "mode"
-            );
+        let _ = wallpaper.remove("mode");
 
-
-        wallpaper[
-            "global_texture"
-        ] =
-            value(
-                format_global_texture(
-                    updates
-                        .wallpaper_global_texture
-                        .as_ref()
-                )
-            );
-
-
-        wallpaper[
-            "global_palette"
-        ] =
-            value(
-                format_global_palette(
-                    updates
-                        .wallpaper_global_palette
-                        .as_ref()
-                )
-            );
+        // Database-backed defaults are deliberately not written to TOML.
     }
-
 
     save_document(
         config_path,
@@ -959,26 +1278,10 @@ fn validate_updates(
         &updates.screensaver_mode,
     )?;
 
-
     validate_mode_string(
         "wallpaper.mode",
         &updates.wallpaper_mode,
-    )?;
-
-
-    if updates
-        .idle_timeout
-        .trim()
-        .is_empty()
-    {
-        return Err(
-            "screensaver.idle_timeout may not be empty"
-                .to_string()
-        );
-    }
-
-
-    Ok(())
+    )
 }
 
 
@@ -1203,65 +1506,3 @@ fn section_table_mut<'a>(
             }
         )
 }
-
-
-//
-// ------------------------------------------------------------
-// Global texture / palette serialization
-// ------------------------------------------------------------
-//
-
-fn format_global_texture(
-    texture:
-        Option<
-            &crate::parse_texture_specification::TextureSpecification
-        >,
-) -> String {
-
-    let Some(texture) =
-        texture
-    else {
-        return "random"
-            .to_string();
-    };
-
-
-    if texture.count_was_explicit {
-
-        format!(
-            "{}:{}",
-            texture.family.name(),
-            texture.requested_primitive_count,
-        )
-
-    } else {
-
-        texture
-            .family
-            .name()
-            .to_string()
-    }
-}
-
-
-fn format_global_palette(
-    palette:
-        Option<
-            &crate::palettes::PaletteColor
-        >,
-) -> String {
-
-    palette
-        .map(
-            |palette| {
-                palette.to_hex()
-            }
-        )
-        .unwrap_or_else(
-            || {
-                "random"
-                    .to_string()
-            }
-        )
-}
-

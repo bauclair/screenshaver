@@ -101,6 +101,7 @@ impl RenderFpsPolicy {
 
 #[derive(Clone, Debug)]
 pub(crate) struct FrameRenderMetadata {
+    pub policy_id: i64,
     pub policy_name: String,
     pub shader_name: String,
     pub shader_path: Option<PathBuf>,
@@ -910,6 +911,8 @@ impl FrameRenderEngine {
                 .active_specification_selection();
 
         FrameRenderMetadata {
+            policy_id:
+                self.active_shader.policy_id,
             policy_name:
                 self.active_shader.policy_name.clone(),
             shader_name:

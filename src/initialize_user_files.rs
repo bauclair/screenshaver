@@ -6,54 +6,16 @@ use std::path::{Path, PathBuf};
 const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 
 ################################
-# APPEARANCE DEFAULTS
-################################
-[appearance]
-  show_splash = true       # Show Screenshaver splash screen when run
-
-################################
-# SCREENSAVER MODE DEFAULTS
+# SCREENSAVER
 ################################
 [screensaver]
   enabled = true           # Enable automatic screensaver activation
-  subtitles = true         # Show subtitle information at bottom of each shader
-
-# Accepted subtitle placement combinations:
-#     top:left
-#     top:center
-#     top:right
-#     bottom:left
-#     bottom:center
-#     bottom:right
-  subtitle_placement = "bottom:center"
-# Screensaver shader selection mode is maintained in screenshaver.db.
-
-# Idle time before the screensaver activates.
-# Accepted suffixes are (s)ec, (m)in, and (h)rs.
-  idle_timeout = "10m"
-
-# Default animation speed for screensaver shaders.
-  global_speed = 1.0
-
-# Default texture and palette policy for screensaver shaders.
-# These values may differ from the wallpaper defaults.
-  global_texture = "random"
-  global_palette = "random"
 
 ################################
-# WALLPAPER MODE DEFAULTS
+# WALLPAPER
 ################################
 [wallpaper]
   enabled = true           # Enable wallpaper rendering mode
-# Wallpaper shader selection mode is maintained in screenshaver.db.
-
-# Default animation speed for wallpaper shaders.
-  global_speed = 0.025
-
-# Default texture and palette policy for wallpaper shaders.
-# These values may differ from the screensaver defaults.
-  global_texture = "random"
-  global_palette = "random"
 
 # Initial multi-monitor support renders the same shader independently on
 # every monitor. Each monitor uses its own native resolution while sharing
@@ -63,46 +25,17 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 #     mirror
   monitor_mode = "mirror"
 
-# Use desktop notifications for wallpaper shader changes and sustained
-# performance warnings.
-  notifications = true
-
 ################################
-# POST-PROCESSING DEFAULTS
-################################
-[postprocess]
-# Built-in defaults are used when a setting is omitted.
-# Supported anti-aliasing values: off, fxaa
-  anti_aliasing = "fxaa"
-# Supported dithering values: off, subtle
-  dithering = "subtle"
-# Supported color-precision values:
-#     auto      Prefer RGBA16F and fall back to RGBA8 when unavailable.
-#     standard  Require RGBA8 render targets.
-#     high      Require RGBA16F render targets.
-  color_precision = "auto"
-# Supported render scaling values are from 0.25 to 2.0.
-  render_scale = 1.0
-
-################################
-# PERFORMANCE DEFAULTS
-################################
-[performance]
-# Frames per second for all shaders in all rendering modes.
-  global_rendered_fps = 30
-
-
-################################
-# SCREEN LOCKING DEFAULTS
+# SCREEN LOCKING
 ################################
 [locking]
-  screen_lock = false     # Invoke lock screen when screensaver deactivates
+  screen_lock = false      # Invoke lock screen when screensaver deactivates
 
 ################################
-# DEBUGGING DEFAULTS
+# DEBUGGING
 ################################
 [debug]
-  debug_log = true        # Enable screenshaver.log
+  debug_log = true         # Enable screenshaver.log
   log_level = 4
 
 "#;

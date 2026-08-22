@@ -750,6 +750,7 @@ pub fn run(
 
 pub fn run_wallpaper_only(
     shader_path: PathBuf,
+    policy_id: i64,
     audio_bands:
         Option<crate::audio_backend::SharedAudioBands>,
 ) -> Result<(), String> {
@@ -769,7 +770,9 @@ pub fn run_wallpaper_only(
         Some(
             crate::editor_layout::PolicyTarget::Wallpaper
         ),
-        None,
+        Some(
+            policy_id
+        ),
         None,
         audio_bands,
     )
@@ -2684,6 +2687,70 @@ fn run_paths(
             .policy_list_state_snapshot();
 
 
+    if let Some(
+        requested_policy_id
+    ) =
+        requested_initial_policy_id
+    {
+        if let Some(
+            requested_row
+        ) =
+            policy_display_rows
+                .iter()
+                .find(
+                    |row| {
+                        row.policy_id
+                            == requested_policy_id
+                    }
+                )
+        {
+            edit_window.select_policy_row_persistently(
+                crate::editor_layout::PolicyRowReference {
+                    policy_id:
+                        requested_row.policy_id,
+
+                    policy_key:
+                        requested_row.policy_key.clone(),
+
+                    filename:
+                        requested_row.filename.clone(),
+
+                    full_path:
+                        requested_row.full_path.clone(),
+
+                    policy_target:
+                        requested_row.policy_target,
+
+                    unassigned:
+                        requested_row.unassigned,
+                }
+            );
+
+
+            save_policy_list_state_if_changed(
+                &edit_window,
+                &mut last_saved_policy_list_state,
+            );
+
+
+            log_information(
+                &format!(
+                    "[EDIT_SHADER] Startup Policy List selection set from requested policy_id={}: '{}'",
+                    requested_row.policy_id,
+                    requested_row.policy_key,
+                )
+            );
+        } else {
+            log_warning(
+                &format!(
+                    "[EDIT_SHADER] Requested startup policy_id={} is not present in the current Policy List; retaining restored selection",
+                    requested_policy_id,
+                )
+            );
+        }
+    }
+
+
     let (
         width,
         height,
@@ -3803,6 +3870,48 @@ fn run_paths(
                 } else {
                     active.fps_warning_state
                 };
+
+
+            let active_overlay_policy_name =
+                edit_window
+                    .active_selected_policy_row()
+                    .map(
+                        |row| {
+                            row.policy_key
+                        }
+                    )
+                    .unwrap_or_else(
+                        || {
+                            active.shader_name.clone()
+                        }
+                    );
+
+
+            let desired_overlay_policy =
+                format!(
+                    "{} | {}",
+                    active_overlay_policy_name,
+                    format_animation_speed(
+                        animation_speed
+                    ),
+                );
+
+
+            if active.overlay_descriptor
+                .shader
+                .as_deref()
+                != Some(
+                    desired_overlay_policy.as_str()
+                )
+            {
+                active.overlay_descriptor.shader =
+                    Some(
+                        desired_overlay_policy
+                    );
+
+                active.subtitle_overlay =
+                    None;
+            }
 
 
             let warning_overlay_active =
@@ -9880,197 +9989,136 @@ fn save_control_configuration(
         &crate::editor_layout::ControlConfiguration,
 ) -> Result<crate::load_config::Config, String> {
 
-    fn parse_global_texture(
-        value: &str,
-    ) -> Result<
-        Option<
-            crate::parse_texture_specification::TextureSpecification
-        >,
-        String,
-    > {
-        let normalized =
-            value
-                .trim()
-                .to_ascii_lowercase();
-
-        if normalized.is_empty()
-            || normalized == "random"
-        {
-            return Ok(
-                None
-            );
-        }
-
-        crate::parse_texture_specification::parse_texture_specification(
-            &normalized
-        )
-        .map(
-            Some
-        )
-    }
-
-
-    fn parse_global_palette(
-        value: &str,
-    ) -> Result<
-        Option<
-            crate::palettes::PaletteColor
-        >,
-        String,
-    > {
-        let normalized =
-            value
-                .trim()
-                .to_ascii_lowercase();
-
-        if normalized.is_empty()
-            || normalized == "random"
-        {
-            return Ok(
-                None
-            );
-        }
-
-        crate::palettes::PaletteColor::parse_hex(
-            &normalized
-        )
-        .map(
-            Some
-        )
-    }
-
-
     fn build_mode(
         display: &str,
         interval_seconds: u64,
         single_policy_id: Option<i64>,
     ) -> Result<String, String> {
-
-        match display
-            .trim()
-            .to_ascii_lowercase()
-            .as_str()
-        {
-            "ordered" => {
-                crate::manage_configuration::format_rotation_mode(
-                    crate::manage_configuration::RotationMode::Ordered,
-                    interval_seconds,
-                )
-            }
-
-            "random" => {
-                crate::manage_configuration::format_rotation_mode(
-                    crate::manage_configuration::RotationMode::Random,
-                    interval_seconds,
-                )
-            }
-
+        match display.trim().to_ascii_lowercase().as_str() {
+            "ordered" => crate::manage_configuration::format_rotation_mode(
+                crate::manage_configuration::RotationMode::Ordered,
+                interval_seconds,
+            ),
+            "random" => crate::manage_configuration::format_rotation_mode(
+                crate::manage_configuration::RotationMode::Random,
+                interval_seconds,
+            ),
             "single" => {
-                let policy_id =
-                    single_policy_id
-                        .filter(
-                            |policy_id| {
-                                *policy_id > 0
-                            }
-                        )
-                        .ok_or_else(
-                            || {
-                                "Single display mode requires a shader policy selection."
-                                    .to_string()
-                            }
-                        )?;
-
-                Ok(
-                    format!(
-                        "single:{}",
-                        policy_id,
-                    )
-                )
+                let policy_id = single_policy_id
+                    .filter(|policy_id| *policy_id > 0)
+                    .ok_or_else(|| {
+                        "Single display mode requires a shader policy selection."
+                            .to_string()
+                    })?;
+                Ok(format!("single:{}", policy_id))
             }
-
-            other => {
-                Err(
-                    format!(
-                        "Unsupported display mode '{}'.",
-                        other,
-                    )
-                )
-            }
+            other => Err(format!("Unsupported display mode '{}'.", other)),
         }
     }
 
+    fn texture_fields(value: &str) -> (String, Option<String>) {
+        let normalized = value.trim().to_ascii_lowercase();
+        if normalized.is_empty() || normalized == "random" {
+            ("random".to_string(), None)
+        } else {
+            ("specific".to_string(), Some(normalized))
+        }
+    }
 
-    let updates =
-        crate::manage_configuration::ConfigurationUpdates {
-            screensaver_enabled:
-                control.screensaver_enabled,
+    fn palette_fields(value: &str) -> Result<(String, Option<String>), String> {
+        let normalized = value.trim().to_ascii_lowercase();
+        if normalized.is_empty() || normalized == "random" {
+            return Ok(("random".to_string(), None));
+        }
 
-            subtitles:
-                control.subtitles,
+        crate::palettes::PaletteColor::parse_hex(&normalized)?;
+        Ok(("specific".to_string(), Some(normalized)))
+    }
 
-            screensaver_mode:
-                build_mode(
-                    &control.screensaver_display,
-                    control.screensaver_interval_seconds,
-                    control.screensaver_single_policy_id,
-                )?,
-
-            idle_timeout:
-                control.idle_timeout.clone(),
-
-            screensaver_global_texture:
-                parse_global_texture(
-                    &control.screensaver_global_texture
-                )?,
-
-            screensaver_global_palette:
-                parse_global_palette(
-                    &control.screensaver_global_palette
-                )?,
-
-            wallpaper_enabled:
-                control.wallpaper_enabled,
-
-            notifications:
-                control.notifications,
-
-            wallpaper_mode:
-                build_mode(
-                    &control.wallpaper_display,
-                    control.wallpaper_interval_seconds,
-                    control.wallpaper_single_policy_id,
-                )?,
-
-            wallpaper_global_texture:
-                parse_global_texture(
-                    &control.wallpaper_global_texture
-                )?,
-
-            wallpaper_global_palette:
-                parse_global_palette(
-                    &control.wallpaper_global_palette
-                )?,
-        };
-
-
-    let config_path =
-        crate::locate_paths::config_path();
-
-
-    crate::manage_configuration::save_configuration(
-        &config_path,
-        &updates,
+    let screensaver_mode = build_mode(
+        &control.screensaver_display,
+        control.screensaver_interval_seconds,
+        control.screensaver_single_policy_id,
     )?;
 
+    let wallpaper_mode = build_mode(
+        &control.wallpaper_display,
+        control.wallpaper_interval_seconds,
+        control.wallpaper_single_policy_id,
+    )?;
 
-    crate::load_config::load_config(
-        &config_path
-    )
-    .map(
-        |result| {
-            result.config
-        }
-    )
+    let (screensaver_texture_mode, screensaver_texture_family) =
+        texture_fields(&control.screensaver_global_texture);
+    let (wallpaper_texture_mode, wallpaper_texture_family) =
+        texture_fields(&control.wallpaper_global_texture);
+    let (screensaver_palette_mode, screensaver_palette_color) =
+        palette_fields(&control.screensaver_global_palette)?;
+    let (wallpaper_palette_mode, wallpaper_palette_color) =
+        palette_fields(&control.wallpaper_global_palette)?;
+
+    let app_defaults =
+        crate::manage_configuration::AppDefaults {
+            show_splash: control.show_splash,
+            screensaver_subtitles: control.subtitles,
+            subtitle_placement: control.subtitle_placement.clone(),
+            wallpaper_notifications: control.notifications,
+            rendered_fps: control.rendered_fps,
+            anti_aliasing: control.anti_aliasing.clone(),
+            dithering: control.dithering.clone(),
+            color_precision: control.color_precision.clone(),
+            render_scale: control.render_scale,
+        };
+
+    let screensaver_defaults =
+        crate::manage_configuration::TargetDefaults {
+            target: "screensaver".to_string(),
+            idle_timeout_seconds: Some(control.screensaver_idle_timeout_seconds),
+            animation_speed: control.screensaver_animation_speed,
+            texture_mode: screensaver_texture_mode,
+            texture_family: screensaver_texture_family,
+            texture_primitives: control.screensaver_texture_primitives,
+            palette_mode: screensaver_palette_mode,
+            palette_color: screensaver_palette_color,
+        };
+
+    let wallpaper_defaults =
+        crate::manage_configuration::TargetDefaults {
+            target: "wallpaper".to_string(),
+            idle_timeout_seconds: None,
+            animation_speed: control.wallpaper_animation_speed,
+            texture_mode: wallpaper_texture_mode,
+            texture_family: wallpaper_texture_family,
+            texture_primitives: control.wallpaper_texture_primitives,
+            palette_mode: wallpaper_palette_mode,
+            palette_color: wallpaper_palette_color,
+        };
+
+    crate::manage_configuration::save_app_defaults(&app_defaults)?;
+    crate::manage_configuration::save_target_defaults(&screensaver_defaults)?;
+    crate::manage_configuration::save_target_defaults(&wallpaper_defaults)?;
+
+    // Runtime target state is database-backed.  The TOML writer invoked below
+    // retains only startup/recovery settings (currently the two enabled flags).
+    let updates =
+        crate::manage_configuration::ConfigurationUpdates {
+            screensaver_enabled: control.screensaver_enabled,
+            subtitles: control.subtitles,
+            screensaver_mode,
+            idle_timeout: control.screensaver_idle_timeout_seconds.to_string(),
+            screensaver_global_texture: None,
+            screensaver_global_palette: None,
+            wallpaper_enabled: control.wallpaper_enabled,
+            notifications: control.notifications,
+            wallpaper_mode,
+            wallpaper_global_texture: None,
+            wallpaper_global_palette: None,
+        };
+
+    let config_path = crate::locate_paths::config_path();
+    crate::manage_configuration::save_configuration(&config_path, &updates)?;
+
+    crate::load_config::load_config(&config_path)
+        .map(|result| result.config)
 }
 
 

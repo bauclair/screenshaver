@@ -1,5 +1,7 @@
-use rusqlite::Connection;
-
+use rusqlite::{
+        params,
+        Connection,
+};
 
 const EXPECTED_SCHEMA_VERSION: i64 = 1;
 const EXPECTED_RUNTIME_SOURCE_PREPARATION_VERSION: i64 = 1;
@@ -88,7 +90,22 @@ pub fn validate_initialization(
     )?;
 
 
+    validate_textures(
+        connection
+    )?;
+
+
     validate_curated_palette(
+        connection
+    )?;
+
+
+    validate_app_defaults(
+        connection
+    )?;
+
+
+    validate_target_defaults(
         connection
     )?;
 
@@ -240,11 +257,14 @@ fn validate_required_tables(
     connection: &Connection,
 ) -> Result<(), String> {
 
-    const REQUIRED_TABLES: [&str; 5] = [
+    const REQUIRED_TABLES: [&str; 8] = [
         "schema_metadata",
         "shaders",
         "shader_policies",
         "runtime_targets",
+        "app_defaults",
+        "target_defaults",
+        "textures",
         "curated_palette",
     ];
 
@@ -419,6 +439,89 @@ fn validate_schema_metadata(
 }
 
 
+fn validate_textures(
+    connection: &Connection,
+) -> Result<(), String> {
+
+    let row_count: i64 =
+        connection
+            .query_row(
+                "SELECT COUNT(*) FROM textures",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to count texture-catalog rows during initialization validation: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    let expected_count =
+        crate::generate_textures::TextureFamily::ALL.len() as i64;
+
+
+    if row_count != expected_count {
+        return Err(
+            format!(
+                "Texture-catalog validation failed: expected {} rows, found {}",
+                expected_count,
+                row_count,
+            )
+        );
+    }
+
+
+    for (
+        display_order,
+        family,
+    ) in crate::generate_textures::TextureFamily::ALL
+        .iter()
+        .enumerate()
+    {
+        let matching_count: i64 =
+            connection
+                .query_row(
+                    "SELECT COUNT(*)
+                     FROM textures
+                     WHERE texture_name = ?1
+                       AND display_order = ?2",
+                    params![
+                        family.name(),
+                        display_order as i64,
+                    ],
+                    |row| row.get(0),
+                )
+                .map_err(
+                    |error| {
+                        format!(
+                            "Unable to validate texture family '{}': {}",
+                            family.name(),
+                            error,
+                        )
+                    }
+                )?;
+
+
+        if matching_count != 1 {
+            return Err(
+                format!(
+                    "Texture-catalog validation failed: expected exactly one '{}' row at display order {}",
+                    family.name(),
+                    display_order,
+                )
+            );
+        }
+    }
+
+
+    Ok(())
+}
+
+
 fn validate_curated_palette(
     connection: &Connection,
 ) -> Result<(), String> {
@@ -460,6 +563,232 @@ fn validate_curated_palette(
                 stored_count,
             )
         );
+    }
+
+
+    Ok(())
+}
+
+
+fn validate_app_defaults(
+    connection: &Connection,
+) -> Result<(), String> {
+
+    let row_count: i64 =
+        connection
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM app_defaults",
+                [],
+                |row| {
+                    row.get(
+                        0
+                    )
+                },
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to count application-default rows during initialization validation: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    if row_count
+        != 1
+    {
+        return Err(
+            format!(
+                "Application-default validation failed: expected exactly 1 row, found {}",
+                row_count,
+            )
+        );
+    }
+
+
+    let valid_count: i64 =
+        connection
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM app_defaults
+                 WHERE defaults_id = 1
+                   AND show_splash = 1
+                   AND screensaver_subtitles = 1
+                   AND subtitle_placement = 'bottom:center'
+                   AND wallpaper_notifications = 1
+                   AND rendered_fps = 30
+                   AND anti_aliasing = 'fxaa'
+                   AND dithering = 'subtle'
+                   AND color_precision = 'auto'
+                   AND render_scale = 1.0",
+                [],
+                |row| {
+                    row.get(
+                        0
+                    )
+                },
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to validate initial application-default values: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    if valid_count
+        != 1
+    {
+        return Err(
+            "Application-default validation failed: initial values do not match Schema V1 factory defaults"
+                .to_string()
+        );
+    }
+
+
+    Ok(())
+}
+
+
+fn validate_target_defaults(
+    connection: &Connection,
+) -> Result<(), String> {
+
+    let row_count: i64 =
+        connection
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM target_defaults",
+                [],
+                |row| {
+                    row.get(
+                        0
+                    )
+                },
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to count target-default rows during initialization validation: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    if row_count
+        != 2
+    {
+        return Err(
+            format!(
+                "Target-default validation failed: expected exactly 2 rows, found {}",
+                row_count,
+            )
+        );
+    }
+
+
+    for (
+        target,
+        expected_idle_timeout_seconds,
+        expected_animation_speed,
+    ) in [
+        (
+            "screensaver",
+            Some(600_i64),
+            1.0_f64,
+        ),
+        (
+            "wallpaper",
+            None,
+            0.03_f64,
+        ),
+    ] {
+        let (
+            idle_timeout_seconds,
+            animation_speed,
+            texture_mode,
+            texture_family,
+            texture_primitives,
+            palette_mode,
+            palette_color,
+        ): (
+            Option<i64>,
+            f64,
+            String,
+            Option<String>,
+            i64,
+            String,
+            Option<String>,
+        ) =
+            connection
+                .query_row(
+                    "SELECT
+                         idle_timeout_seconds,
+                         animation_speed,
+                         texture_mode,
+                         texture_family,
+                         texture_primitives,
+                         palette_mode,
+                         palette_color
+                     FROM target_defaults
+                     WHERE target = ?1",
+                    [target],
+                    |row| {
+                        Ok(
+                            (
+                                row.get(0)?,
+                                row.get(1)?,
+                                row.get(2)?,
+                                row.get(3)?,
+                                row.get(4)?,
+                                row.get(5)?,
+                                row.get(6)?,
+                            )
+                        )
+                    },
+                )
+                .map_err(
+                    |error| {
+                        format!(
+                            "Target-default validation failed: unable to read '{}' row: {}",
+                            target,
+                            error,
+                        )
+                    }
+                )?;
+
+
+        if idle_timeout_seconds
+                != expected_idle_timeout_seconds
+            || (
+                animation_speed
+                    - expected_animation_speed
+            )
+            .abs()
+                > f64::EPSILON
+            || texture_mode
+                != "random"
+            || texture_family
+                .is_some()
+            || texture_primitives
+                != 64
+            || palette_mode
+                != "random"
+            || palette_color
+                .is_some()
+        {
+            return Err(
+                format!(
+                    "Target-default validation failed: '{}' initial values do not match Schema V1 factory defaults",
+                    target,
+                )
+            );
+        }
     }
 
 

@@ -292,16 +292,22 @@ pub struct ShaderInformation {
 
 
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ControlConfiguration {
+    pub show_splash: bool,
     pub screensaver_enabled: bool,
     pub subtitles: bool,
+    pub subtitle_placement: String,
     pub screensaver_display: String,
     pub screensaver_interval_seconds: u64,
     pub screensaver_single_policy_id: Option<i64>,
     pub screensaver_single_policy_name: String,
+    pub screensaver_idle_timeout_seconds: i64,
+    // Legacy compatibility mirror for the retired two-column Config renderer.
     pub idle_timeout: String,
+    pub screensaver_animation_speed: f64,
     pub screensaver_global_texture: String,
+    pub screensaver_texture_primitives: i64,
     pub screensaver_global_palette: String,
     pub wallpaper_enabled: bool,
     pub notifications: bool,
@@ -309,74 +315,106 @@ pub struct ControlConfiguration {
     pub wallpaper_interval_seconds: u64,
     pub wallpaper_single_policy_id: Option<i64>,
     pub wallpaper_single_policy_name: String,
+    pub wallpaper_animation_speed: f64,
     pub wallpaper_global_texture: String,
+    pub wallpaper_texture_primitives: i64,
     pub wallpaper_global_palette: String,
+    pub rendered_fps: i64,
+    pub anti_aliasing: String,
+    pub dithering: String,
+    pub color_precision: String,
+    pub render_scale: f64,
 }
 
 impl ControlConfiguration {
-    pub fn from_config(
-        config: &crate::load_config::Config,
-    ) -> Self {
-        let (
-            screensaver_display,
-            screensaver_interval_seconds,
-            screensaver_single_policy_id,
-        ) =
+    pub fn from_config(config: &crate::load_config::Config) -> Self {
+        let (screensaver_display, screensaver_interval_seconds, screensaver_single_policy_id) =
             split_display_mode(&config.mode);
-
-        let (
-            wallpaper_display,
-            wallpaper_interval_seconds,
-            wallpaper_single_policy_id,
-        ) =
+        let (wallpaper_display, wallpaper_interval_seconds, wallpaper_single_policy_id) =
             split_display_mode(&config.wallpaper_mode);
 
         let screensaver_single_policy_name =
-            policy_name_for_id(
-                &config.screensaver_policies,
-                screensaver_single_policy_id,
-            );
-
+            policy_name_for_id(&config.screensaver_policies, screensaver_single_policy_id);
         let wallpaper_single_policy_name =
-            policy_name_for_id(
-                &config.wallpaper_policies,
-                wallpaper_single_policy_id,
-            );
+            policy_name_for_id(&config.wallpaper_policies, wallpaper_single_policy_id);
+
+        let app_defaults = crate::manage_configuration::load_app_defaults().ok();
+        let screensaver_defaults =
+            crate::manage_configuration::load_target_defaults("screensaver").ok();
+        let wallpaper_defaults =
+            crate::manage_configuration::load_target_defaults("wallpaper").ok();
+
+        let target_texture = |defaults: Option<&crate::manage_configuration::TargetDefaults>,
+                              legacy: String| {
+            defaults
+                .map(|defaults| {
+                    if defaults.texture_mode == "specific" {
+                        defaults.texture_family.clone().unwrap_or_else(|| "random".to_string())
+                    } else {
+                        "random".to_string()
+                    }
+                })
+                .unwrap_or(legacy)
+        };
+
+        let target_palette = |defaults: Option<&crate::manage_configuration::TargetDefaults>,
+                              legacy: String| {
+            defaults
+                .map(|defaults| {
+                    if defaults.palette_mode == "specific" {
+                        defaults.palette_color.clone().unwrap_or_else(|| "random".to_string())
+                    } else {
+                        "random".to_string()
+                    }
+                })
+                .unwrap_or(legacy)
+        };
 
         Self {
+            show_splash: app_defaults.as_ref().map(|d| d.show_splash).unwrap_or(true),
             screensaver_enabled: config.screensaver_enabled,
-            subtitles: config.subtitles,
+            subtitles: app_defaults.as_ref().map(|d| d.screensaver_subtitles).unwrap_or(config.subtitles),
+            subtitle_placement: app_defaults.as_ref().map(|d| d.subtitle_placement.clone()).unwrap_or_else(|| "bottom:center".to_string()),
             screensaver_display,
             screensaver_interval_seconds,
             screensaver_single_policy_id,
             screensaver_single_policy_name,
-            idle_timeout: config.idle_timeout.clone(),
-            screensaver_global_texture:
-                config.texture_policy.global_texture.as_ref()
-                    .map(format_texture_specification)
-                    .unwrap_or_else(|| "random".to_string()),
-            screensaver_global_palette:
-                config.texture_policy.global_palette
-                    .map(|palette| palette.to_hex())
-                    .unwrap_or_else(|| "random".to_string()),
+            screensaver_idle_timeout_seconds: screensaver_defaults.as_ref().and_then(|d| d.idle_timeout_seconds).unwrap_or(600),
+            idle_timeout: screensaver_defaults.as_ref().and_then(|d| d.idle_timeout_seconds).unwrap_or(600).to_string(),
+            screensaver_animation_speed: screensaver_defaults.as_ref().map(|d| d.animation_speed).unwrap_or(1.0),
+            screensaver_global_texture: target_texture(
+                screensaver_defaults.as_ref(),
+                config.texture_policy.global_texture.as_ref().map(format_texture_specification).unwrap_or_else(|| "random".to_string()),
+            ),
+            screensaver_texture_primitives: screensaver_defaults.as_ref().map(|d| d.texture_primitives).unwrap_or(64),
+            screensaver_global_palette: target_palette(
+                screensaver_defaults.as_ref(),
+                config.texture_policy.global_palette.map(|palette| palette.to_hex()).unwrap_or_else(|| "random".to_string()),
+            ),
             wallpaper_enabled: config.wallpaper_enabled,
-            notifications: config.wallpaper.notifications,
+            notifications: app_defaults.as_ref().map(|d| d.wallpaper_notifications).unwrap_or(config.wallpaper.notifications),
             wallpaper_display,
             wallpaper_interval_seconds,
             wallpaper_single_policy_id,
             wallpaper_single_policy_name,
-            wallpaper_global_texture:
-                config.wallpaper_texture_policy.global_texture.as_ref()
-                    .map(format_texture_specification)
-                    .unwrap_or_else(|| "random".to_string()),
-            wallpaper_global_palette:
-                config.wallpaper_texture_policy.global_palette
-                    .map(|palette| palette.to_hex())
-                    .unwrap_or_else(|| "random".to_string()),
+            wallpaper_animation_speed: wallpaper_defaults.as_ref().map(|d| d.animation_speed).unwrap_or(0.03),
+            wallpaper_global_texture: target_texture(
+                wallpaper_defaults.as_ref(),
+                config.wallpaper_texture_policy.global_texture.as_ref().map(format_texture_specification).unwrap_or_else(|| "random".to_string()),
+            ),
+            wallpaper_texture_primitives: wallpaper_defaults.as_ref().map(|d| d.texture_primitives).unwrap_or(64),
+            wallpaper_global_palette: target_palette(
+                wallpaper_defaults.as_ref(),
+                config.wallpaper_texture_policy.global_palette.map(|palette| palette.to_hex()).unwrap_or_else(|| "random".to_string()),
+            ),
+            rendered_fps: app_defaults.as_ref().map(|d| d.rendered_fps).unwrap_or(30),
+            anti_aliasing: app_defaults.as_ref().map(|d| d.anti_aliasing.clone()).unwrap_or_else(|| "fxaa".to_string()),
+            dithering: app_defaults.as_ref().map(|d| d.dithering.clone()).unwrap_or_else(|| "subtle".to_string()),
+            color_precision: app_defaults.as_ref().map(|d| d.color_precision.clone()).unwrap_or_else(|| "auto".to_string()),
+            render_scale: app_defaults.as_ref().map(|d| d.render_scale).unwrap_or(1.0),
         }
     }
 }
-
 
 fn policy_name_for_id(
     policies: &[crate::load_config::ShaderPolicy],
@@ -2838,19 +2876,13 @@ impl EditWindowOverlay {
                                             ui.add_enabled_ui(
                                                 !bulk_edit_mode,
                                                 |ui| {
-                                                    draw_config_tab(
+                                                    crate::nested_tabs::draw_configuration(
                                                         ui,
-                                                        metrics,
                                                         &mut control_configuration,
                                                         control_configuration_baseline.as_ref(),
                                                         policy_rows,
-                                                        recent_shader_paths,
-                                                        &mut clear_recent_files_requested,
                                                         &mut control_configuration_save_requested,
-                                                        &mut control_single_browse_requested,
-                                                        &mut control_single_recent_requested,
                                                         &mut status_message,
-                                                        &mut hover_help_message,
                                                     );
                                                 },
                                             );

@@ -5,14 +5,9 @@ use std::path::{Path, PathBuf};
 
 //
 // ------------------------------------------------------------
-// Default values
+// TOML startup/recovery configuration
 // ------------------------------------------------------------
 //
-
-fn default_show_splash() -> bool {
-    true
-}
-
 
 fn default_screensaver_enabled() -> bool {
     true
@@ -20,27 +15,7 @@ fn default_screensaver_enabled() -> bool {
 
 
 fn default_wallpaper_enabled() -> bool {
-    false
-}
-
-
-fn default_global_rendered_fps() -> u32 {
-    crate::define_constants::DEFAULT_RENDER_FPS
-}
-
-
-fn default_screensaver_global_speed() -> f32 {
-    crate::define_constants::SCREENSAVER_SPEED_DEFAULT
-}
-
-
-fn default_wallpaper_global_speed() -> f32 {
-    crate::define_constants::WALLPAPER_SPEED_DEFAULT
-}
-
-
-fn default_subtitle_placement() -> String {
-    "bottom:left".to_string()
+    true
 }
 
 
@@ -49,41 +24,11 @@ fn default_log_level() -> u8 {
 }
 
 
-//
-// ------------------------------------------------------------
-// Structures that exactly match screenshaver.toml
-// ------------------------------------------------------------
-//
-
-#[derive(Debug, Deserialize)]
-struct AppearanceSection {
-
-    #[serde(default = "default_show_splash")]
-    show_splash: bool,
-}
-
-
 #[derive(Debug, Deserialize)]
 struct ScreensaverSection {
 
     #[serde(default = "default_screensaver_enabled")]
     enabled: bool,
-
-    subtitles: bool,
-
-    #[serde(default = "default_subtitle_placement")]
-    subtitle_placement: String,
-
-    idle_timeout: String,
-
-    #[serde(default)]
-    global_texture: Option<String>,
-
-    #[serde(default)]
-    global_palette: Option<String>,
-
-    #[serde(default = "default_screensaver_global_speed")]
-    global_speed: f32,
 }
 
 
@@ -93,78 +38,7 @@ struct WallpaperSection {
     #[serde(default = "default_wallpaper_enabled")]
     enabled: bool,
 
-    #[serde(default)]
-    global_texture: Option<String>,
-
-    #[serde(default)]
-    global_palette: Option<String>,
-
     monitor_mode: String,
-
-    notifications: bool,
-
-    #[serde(default = "default_wallpaper_global_speed")]
-    global_speed: f32,
-}
-
-
-
-
-#[derive(Debug, Deserialize, Default)]
-struct PostprocessSection {
-
-    #[serde(default)]
-    anti_aliasing: Option<String>,
-
-    #[serde(default)]
-    dithering: Option<String>,
-
-    #[serde(default)]
-    color_precision: Option<String>,
-
-    #[serde(default)]
-    render_scale: Option<f32>,
-
-    #[serde(default)]
-    bloom: Option<String>,
-
-    #[serde(default)]
-    bloom_intensity: Option<f32>,
-
-    #[serde(default)]
-    bloom_threshold: Option<f32>,
-
-    #[serde(default)]
-    invert_colors: Option<bool>,
-
-    #[serde(default)]
-    flip_horizontal: Option<bool>,
-
-    #[serde(default)]
-    flip_vertical: Option<bool>,
-
-    #[serde(default)]
-    hue_rotation: Option<f32>,
-}
-
-
-#[derive(Debug, Deserialize)]
-struct PerformanceSection {
-
-    #[serde(default = "default_global_rendered_fps")]
-    global_rendered_fps: u32,
-}
-
-
-impl Default for PerformanceSection {
-
-    fn default() -> Self {
-
-        Self {
-            global_rendered_fps:
-                default_global_rendered_fps(),
-        }
-    }
 }
 
 
@@ -188,17 +62,9 @@ struct DebugSection {
 #[derive(Debug, Deserialize)]
 struct RawToml {
 
-    appearance: AppearanceSection,
-
     screensaver: ScreensaverSection,
 
     wallpaper: WallpaperSection,
-
-    #[serde(default)]
-    postprocess: PostprocessSection,
-
-    #[serde(default)]
-    performance: PerformanceSection,
 
     locking: LockingSection,
 
@@ -1114,8 +980,24 @@ pub fn load_config(
 
 
     //---------------------------------------------------------
-    // Parse global post-processing policy
+    // Load database-backed application / target defaults
     //---------------------------------------------------------
+
+    let app_defaults =
+        crate::manage_configuration::load_app_defaults()?;
+
+
+    let screensaver_defaults =
+        crate::manage_configuration::load_target_defaults(
+            "screensaver"
+        )?;
+
+
+    let wallpaper_defaults =
+        crate::manage_configuration::load_target_defaults(
+            "wallpaper"
+        )?;
+
 
     let built_in_postprocess_profile =
         PostprocessProfile::default();
@@ -1126,9 +1008,9 @@ pub fn load_config(
         anti_aliasing_warning,
     ) =
         parse_global_anti_aliasing(
-            raw.postprocess
-                .anti_aliasing
-                .as_deref(),
+            Some(
+                &app_defaults.anti_aliasing
+            ),
             built_in_postprocess_profile
                 .anti_aliasing,
         );
@@ -1139,9 +1021,9 @@ pub fn load_config(
         dithering_warning,
     ) =
         parse_global_dithering(
-            raw.postprocess
-                .dithering
-                .as_deref(),
+            Some(
+                &app_defaults.dithering
+            ),
             built_in_postprocess_profile
                 .dithering,
         );
@@ -1152,9 +1034,9 @@ pub fn load_config(
         color_precision_warning,
     ) =
         parse_global_color_precision(
-            raw.postprocess
-                .color_precision
-                .as_deref(),
+            Some(
+                &app_defaults.color_precision
+            ),
             built_in_postprocess_profile
                 .color_precision,
         );
@@ -1165,68 +1047,16 @@ pub fn load_config(
         render_scale_warning,
     ) =
         parse_global_render_scale(
-            raw.postprocess
-                .render_scale,
+            Some(
+                app_defaults.render_scale as f32
+            ),
             built_in_postprocess_profile
                 .render_scale,
         );
 
 
-    let (
-        global_bloom,
-        bloom_warning,
-    ) =
-        parse_global_bloom(
-            raw.postprocess
-                .bloom
-                .as_deref(),
-            built_in_postprocess_profile
-                .bloom,
-        );
-
-
-    let (
-        global_bloom_intensity,
-        bloom_intensity_warning,
-    ) =
-        parse_global_bloom_intensity(
-            raw.postprocess
-                .bloom_intensity,
-            built_in_postprocess_profile
-                .bloom_intensity,
-        );
-
-    let (
-        global_bloom_threshold,
-        bloom_threshold_warning,
-    ) =
-        parse_global_bloom_threshold(
-            raw.postprocess
-                .bloom_threshold,
-            built_in_postprocess_profile
-                .bloom_threshold,
-        );
-
-
-    let global_invert_colors =
-        raw.postprocess.invert_colors.unwrap_or(false);
-
-    let global_flip_horizontal =
-        raw.postprocess.flip_horizontal.unwrap_or(false);
-
-    let global_flip_vertical =
-        raw.postprocess.flip_vertical.unwrap_or(false);
-
-    let (
-        global_hue_rotation,
-        hue_rotation_warning,
-    ) =
-        parse_global_hue_rotation(
-            raw.postprocess.hue_rotation,
-            built_in_postprocess_profile.hue_rotation,
-        );
-
-
+    // Bloom and transform effects remain per-policy. Their inherited
+    // fallback is the built-in profile rather than screenshaver.toml.
     let global_postprocess_profile =
         PostprocessProfile {
             anti_aliasing:
@@ -1237,68 +1067,39 @@ pub fn load_config(
                 global_color_precision,
             render_scale:
                 global_render_scale,
-            bloom:
-                global_bloom,
-            bloom_intensity:
-                global_bloom_intensity,
-            bloom_threshold:
-                global_bloom_threshold,
-            invert_colors:
-                global_invert_colors,
-            flip_horizontal:
-                global_flip_horizontal,
-            flip_vertical:
-                global_flip_vertical,
-            hue_rotation:
-                global_hue_rotation,
+            ..built_in_postprocess_profile
         };
 
-
-    //---------------------------------------------------------
-    // Parse subtitle placement
-    //---------------------------------------------------------
 
     let parsed_subtitle_placement =
         crate::parse_subtitle_placement::parse(
             Some(
-                &raw.screensaver.subtitle_placement
+                &app_defaults.subtitle_placement
             )
         );
 
 
-    //---------------------------------------------------------
-    // Parse global texture and palette policy
-    //---------------------------------------------------------
-
     let screensaver_global_texture =
-        parse_global_texture(
-            raw.screensaver
-                .global_texture
-                .as_deref()
+        parse_database_global_texture(
+            &screensaver_defaults
         )?;
 
 
     let screensaver_global_palette =
-        parse_global_palette(
-            raw.screensaver
-                .global_palette
-                .as_deref()
+        parse_database_global_palette(
+            &screensaver_defaults
         )?;
 
 
     let wallpaper_global_texture =
-        parse_global_texture(
-            raw.wallpaper
-                .global_texture
-                .as_deref()
+        parse_database_global_texture(
+            &wallpaper_defaults
         )?;
 
 
     let wallpaper_global_palette =
-        parse_global_palette(
-            raw.wallpaper
-                .global_palette
-                .as_deref()
+        parse_database_global_palette(
+            &wallpaper_defaults
         )?;
 
 
@@ -1368,7 +1169,7 @@ pub fn load_config(
                 wallpaper_monitor_mode,
 
             notifications:
-                raw.wallpaper.notifications,
+                app_defaults.wallpaper_notifications,
         };
 
 
@@ -1377,7 +1178,7 @@ pub fn load_config(
         screensaver_global_speed_warning,
     ) =
         validate_animation_speed(
-            raw.screensaver.global_speed,
+            screensaver_defaults.animation_speed as f32,
             crate::define_constants::SCREENSAVER_SPEED_MIN,
             crate::define_constants::SCREENSAVER_SPEED_MAX,
             crate::define_constants::SCREENSAVER_SPEED_DEFAULT,
@@ -1390,7 +1191,7 @@ pub fn load_config(
         wallpaper_global_speed_warning,
     ) =
         validate_animation_speed(
-            raw.wallpaper.global_speed,
+            wallpaper_defaults.animation_speed as f32,
             crate::define_constants::WALLPAPER_SPEED_MIN,
             crate::define_constants::WALLPAPER_SPEED_MAX,
             crate::define_constants::WALLPAPER_SPEED_DEFAULT,
@@ -1403,7 +1204,10 @@ pub fn load_config(
         global_rendered_fps_warning,
     ) =
         validate_rendered_fps(
-            raw.performance.global_rendered_fps
+            u32::try_from(
+                app_defaults.rendered_fps
+            )
+            .unwrap_or(0)
         );
 
 
@@ -1498,19 +1302,33 @@ pub fn load_config(
                 raw.wallpaper.enabled,
 
             subtitles:
-                raw.screensaver.subtitles,
+                app_defaults.screensaver_subtitles,
 
             subtitle_placement:
                 parsed_subtitle_placement.placement,
 
             show_splash:
-                raw.appearance.show_splash,
+                app_defaults.show_splash,
 
             mode:
                 screensaver_mode,
 
             idle_timeout:
-                raw.screensaver.idle_timeout,
+                screensaver_defaults
+                    .idle_timeout_seconds
+                    .map(
+                        |seconds| {
+                            format!(
+                                "{}s",
+                                seconds
+                            )
+                        }
+                    )
+                    .unwrap_or_else(
+                        || {
+                            "0s".to_string()
+                        }
+                    ),
 
             texture_policy,
 
@@ -1858,42 +1676,6 @@ pub fn load_config(
 
     if let Some(warning) =
         render_scale_warning
-    {
-        diagnostics.push(
-            warning
-        );
-    }
-
-
-    if let Some(warning) =
-        bloom_warning
-    {
-        diagnostics.push(
-            warning
-        );
-    }
-
-
-    if let Some(warning) =
-        bloom_intensity_warning
-    {
-        diagnostics.push(
-            warning
-        );
-    }
-
-
-    if let Some(warning) =
-        bloom_threshold_warning
-    {
-        diagnostics.push(
-            warning
-        );
-    }
-
-
-    if let Some(warning) =
-        hue_rotation_warning
     {
         diagnostics.push(
             warning
@@ -3885,7 +3667,7 @@ fn validate_rendered_fps(
         fallback,
         Some(
             format!(
-                "[CONFIG] WARNING: global_rendered_fps = {} is outside the supported range {}-{}; using {}",
+                "[CONFIG] WARNING: app_defaults.rendered_fps = {} is outside the supported range {}-{}; using {}",
                 value,
                 crate::define_constants::MIN_RENDER_FPS,
                 crate::define_constants::MAX_RENDER_FPS,
@@ -3931,6 +3713,103 @@ fn format_texture_specification(
             .to_string()
     }
 }
+
+fn parse_database_global_texture(
+    defaults: &crate::manage_configuration::TargetDefaults,
+) -> Result<Option<crate::parse_texture_specification::TextureSpecification>, String> {
+
+    match defaults.texture_mode.as_str() {
+        "random" =>
+            parse_global_texture(
+                Some(
+                    "random"
+                )
+            ),
+
+        "specific" => {
+            let family =
+                defaults
+                    .texture_family
+                    .as_deref()
+                    .ok_or_else(
+                        || {
+                            format!(
+                                "Database target defaults for '{}' specify texture_mode=specific without texture_family",
+                                defaults.target,
+                            )
+                        }
+                    )?;
+
+            let specification =
+                format!(
+                    "{}:{}",
+                    family,
+                    defaults.texture_primitives,
+                );
+
+            parse_global_texture(
+                Some(
+                    &specification
+                )
+            )
+        }
+
+        other =>
+            Err(
+                format!(
+                    "Database target defaults for '{}' contain unsupported texture_mode '{}'",
+                    defaults.target,
+                    other,
+                )
+            ),
+    }
+}
+
+
+fn parse_database_global_palette(
+    defaults: &crate::manage_configuration::TargetDefaults,
+) -> Result<Option<crate::palettes::PaletteColor>, String> {
+
+    match defaults.palette_mode.as_str() {
+        "random" =>
+            parse_global_palette(
+                Some(
+                    "random"
+                )
+            ),
+
+        "specific" => {
+            let color =
+                defaults
+                    .palette_color
+                    .as_deref()
+                    .ok_or_else(
+                        || {
+                            format!(
+                                "Database target defaults for '{}' specify palette_mode=specific without palette_color",
+                                defaults.target,
+                            )
+                        }
+                    )?;
+
+            parse_global_palette(
+                Some(
+                    color
+                )
+            )
+        }
+
+        other =>
+            Err(
+                format!(
+                    "Database target defaults for '{}' contain unsupported palette_mode '{}'",
+                    defaults.target,
+                    other,
+                )
+            ),
+    }
+}
+
 
 fn parse_global_texture(
     value: Option<&str>,

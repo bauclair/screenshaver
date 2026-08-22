@@ -415,6 +415,7 @@ fn notify_wallpaper_events(
             FrameRenderEvent::ShaderChanged(metadata) => {
                 if let Some(shader_path) = metadata.shader_path.clone() {
                     tray_status.set_active(
+                        metadata.policy_id,
                         metadata.shader_name.clone(),
                         shader_path,
                     );
@@ -673,6 +674,7 @@ impl WallpaperBackend for X11WallpaperBackend {
 
             if let Some(shader_path) = initial_metadata.shader_path.clone() {
                 runtime.tray_status.set_active(
+                    initial_metadata.policy_id,
                     initial_metadata.shader_name.clone(),
                     shader_path,
                 );

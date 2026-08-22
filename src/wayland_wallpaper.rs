@@ -691,6 +691,7 @@ pub fn probe_capabilities(
 #[derive(Debug, Clone)]
 struct ActiveWallpaperShader {
     manager_name: String,
+    policy_id: i64,
     policy_name: String,
     source_path: PathBuf,
     source: String,
@@ -809,6 +810,8 @@ fn select_safe_wallpaper_shader(
                 return Ok(
                     ActiveWallpaperShader {
                         manager_name: requested_shader_name,
+                        policy_id:
+                            requested_shader.policy_id,
                         policy_name:
                             requested_shader.policy_name.clone(),
                         source_path:
@@ -991,6 +994,7 @@ pub fn run_egl_background_surface(
 
 
     runtime.tray_status.set_active(
+        active_shader.policy_id,
         active_shader.shader_name.clone(),
         active_shader.source_path.clone(),
     );
@@ -2815,6 +2819,7 @@ fn render_mirror_frames(
 
 
                                 runtime.tray_status.set_active(
+                                    current_shader.policy_id,
                                     current_shader.shader_name.clone(),
                                     current_shader.source_path.clone(),
                                 );

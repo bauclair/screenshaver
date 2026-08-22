@@ -128,7 +128,22 @@ fn initialize_contents(
         )?;
 
 
+    seed_textures(
+        connection
+    )?;
+
+
     seed_curated_palette(
+        connection
+    )?;
+
+
+    create_app_defaults(
+        connection
+    )?;
+
+
+    create_target_defaults(
         connection
     )?;
 
@@ -164,6 +179,118 @@ fn initialize_contents(
     crate::validate_database::validate_initialization(
         connection
     )?;
+
+
+    Ok(())
+}
+
+
+fn seed_textures(
+    connection: &mut Connection,
+) -> Result<(), String> {
+
+    let transaction =
+        connection
+            .transaction()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to begin texture-catalog initialization transaction: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    {
+        let mut statement =
+            transaction
+                .prepare(
+                    "INSERT INTO textures (
+                         texture_name,
+                         display_order
+                     )
+                     VALUES (?1, ?2)"
+                )
+                .map_err(
+                    |error| {
+                        format!(
+                            "Unable to prepare texture-catalog insert statement: {}",
+                            error,
+                        )
+                    }
+                )?;
+
+
+        for (
+            display_order,
+            family,
+        ) in crate::generate_textures::TextureFamily::ALL
+            .iter()
+            .enumerate()
+        {
+            statement
+                .execute(
+                    params![
+                        family.name(),
+                        display_order as i64,
+                    ]
+                )
+                .map_err(
+                    |error| {
+                        format!(
+                            "Unable to insert texture family '{}': {}",
+                            family.name(),
+                            error,
+                        )
+                    }
+                )?;
+        }
+    }
+
+
+    let stored_count: i64 =
+        transaction
+            .query_row(
+                "SELECT COUNT(*) FROM textures",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to verify texture-catalog row count: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    let expected_count =
+        crate::generate_textures::TextureFamily::ALL.len() as i64;
+
+
+    if stored_count != expected_count {
+        return Err(
+            format!(
+                "Texture-catalog initialization verification failed: expected {} rows, found {}",
+                expected_count,
+                stored_count,
+            )
+        );
+    }
+
+
+    transaction
+        .commit()
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to commit texture-catalog initialization: {}",
+                    error,
+                )
+            }
+        )?;
 
 
     Ok(())
@@ -286,6 +413,130 @@ fn seed_curated_palette(
                 )
             }
         )?;
+
+
+    Ok(())
+}
+
+
+fn create_app_defaults(
+    connection: &Connection,
+) -> Result<(), String> {
+
+    connection
+        .execute(
+            "INSERT INTO app_defaults (
+                 defaults_id,
+                 show_splash,
+                 screensaver_subtitles,
+                 subtitle_placement,
+                 wallpaper_notifications,
+                 rendered_fps,
+                 anti_aliasing,
+                 dithering,
+                 color_precision,
+                 render_scale
+             )
+             VALUES (
+                 1,
+                 1,
+                 1,
+                 'bottom:center',
+                 1,
+                 30,
+                 'fxaa',
+                 'subtle',
+                 'auto',
+                 1.0
+             )",
+            [],
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to create initial application defaults: {}",
+                    error,
+                )
+            }
+        )?;
+
+
+    Ok(())
+}
+
+
+fn create_target_defaults(
+    connection: &Connection,
+) -> Result<(), String> {
+
+    let mut statement =
+        connection
+            .prepare(
+                "INSERT INTO target_defaults (
+                     target,
+                     idle_timeout_seconds,
+                     animation_speed,
+                     texture_mode,
+                     texture_family,
+                     texture_primitives,
+                     palette_mode,
+                     palette_color
+                 )
+                 VALUES (
+                     ?1,
+                     ?2,
+                     ?3,
+                     'random',
+                     NULL,
+                     64,
+                     'random',
+                     NULL
+                 )"
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to prepare initial target-default configuration: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    for (
+        target,
+        idle_timeout_seconds,
+        animation_speed,
+    ) in [
+        (
+            "screensaver",
+            Some(600_i64),
+            1.0_f64,
+        ),
+        (
+            "wallpaper",
+            None,
+            0.03_f64,
+        ),
+    ] {
+        statement
+            .execute(
+                params![
+                    target,
+                    idle_timeout_seconds,
+                    animation_speed,
+                ]
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to create initial {} defaults: {}",
+                        target,
+                        error,
+                    )
+                }
+            )?;
+    }
 
 
     Ok(())

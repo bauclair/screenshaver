@@ -52,6 +52,7 @@ mod generate_textures;
 mod preview_texture_thumbnail;
 mod edit_shader;
 mod editor_layout;
+mod nested_tabs;
 mod editor_theme;
 mod preview_shader_directory;
 mod palettes;
@@ -1144,6 +1145,7 @@ fn main() {
                         Some(active_wallpaper) => {
                             crate::edit_shader::run_wallpaper_only(
                                 active_wallpaper.path,
+                                active_wallpaper.policy_id,
                                 audio_backend
                                     .as_ref()
                                     .map(

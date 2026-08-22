@@ -247,7 +247,7 @@ CREATE TABLE shader_policies (
     palette_color          TEXT,
 
     -- Operational / rendering-quality overrides.
-    -- NULL means inherit the applicable global value from screenshaver.toml.
+    -- NULL means inherit from app_defaults and/or the applicable target_defaults row.
     rendered_fps           INTEGER
                            CHECK (
                                rendered_fps IS NULL
@@ -428,6 +428,212 @@ CREATE TABLE runtime_targets (
 
 
 -- ---------------------------------------------------------------------------
+-- app_defaults
+-- ---------------------------------------------------------------------------
+-- Single-row application defaults used by all runtime targets unless a more
+-- specific target default or per-policy override applies.
+--
+-- Settings deliberately retained in screenshaver.toml for startup/recovery
+-- purposes (screensaver/wallpaper enable flags, debug_log, log_level,
+-- monitor_mode, screen_lock) are NOT stored here.
+CREATE TABLE app_defaults (
+    defaults_id             INTEGER NOT NULL
+                            PRIMARY KEY
+                            CHECK (defaults_id = 1),
+
+    show_splash             INTEGER NOT NULL
+                            DEFAULT 1
+                            CHECK (show_splash IN (0, 1)),
+
+    screensaver_subtitles   INTEGER NOT NULL
+                            DEFAULT 1
+                            CHECK (screensaver_subtitles IN (0, 1)),
+
+    subtitle_placement      TEXT NOT NULL
+                            DEFAULT 'bottom:center'
+                            CHECK (
+                                subtitle_placement IN (
+                                    'top:left',
+                                    'top:center',
+                                    'top:right',
+                                    'bottom:left',
+                                    'bottom:center',
+                                    'bottom:right'
+                                )
+                            ),
+
+    wallpaper_notifications INTEGER NOT NULL
+                            DEFAULT 1
+                            CHECK (wallpaper_notifications IN (0, 1)),
+
+    rendered_fps            INTEGER NOT NULL
+                            DEFAULT 30
+                            CHECK (
+                                rendered_fps BETWEEN 16 AND 120
+                            ),
+
+    anti_aliasing           TEXT NOT NULL
+                            DEFAULT 'fxaa'
+                            CHECK (
+                                anti_aliasing IN (
+                                    'off',
+                                    'fxaa'
+                                )
+                            ),
+
+    dithering               TEXT NOT NULL
+                            DEFAULT 'subtle'
+                            CHECK (
+                                dithering IN (
+                                    'off',
+                                    'subtle'
+                                )
+                            ),
+
+    color_precision         TEXT NOT NULL
+                            DEFAULT 'auto'
+                            CHECK (
+                                color_precision IN (
+                                    'auto',
+                                    'standard',
+                                    'high'
+                                )
+                            ),
+
+    render_scale            REAL NOT NULL
+                            DEFAULT 1.0
+                            CHECK (
+                                render_scale BETWEEN 0.25 AND 2.0
+                            )
+);
+
+
+-- ---------------------------------------------------------------------------
+-- target_defaults
+-- ---------------------------------------------------------------------------
+-- Target-specific inherited defaults. Exactly one screensaver row and one
+-- wallpaper row are created during database initialization.
+--
+-- Primitive count is always concrete. There is intentionally NO random
+-- primitive mode. If texture_mode = 'random', only the texture family is
+-- randomized; texture_primitives remains the stored target default.
+CREATE TABLE target_defaults (
+    target                  TEXT NOT NULL
+                            PRIMARY KEY
+                            CHECK (
+                                target IN (
+                                    'screensaver',
+                                    'wallpaper'
+                                )
+                            ),
+
+    -- Screensaver-only idle delay. Wallpaper must store NULL.
+    idle_timeout_seconds    INTEGER
+                            CHECK (
+                                idle_timeout_seconds IS NULL
+                                OR idle_timeout_seconds > 0
+                            ),
+
+    animation_speed         REAL NOT NULL
+                            CHECK (
+                                animation_speed > 0.0
+                            ),
+
+    texture_mode            TEXT NOT NULL
+                            DEFAULT 'random'
+                            CHECK (
+                                texture_mode IN (
+                                    'specific',
+                                    'random'
+                                )
+                            ),
+
+    texture_family          TEXT,
+
+    texture_primitives      INTEGER NOT NULL
+                            DEFAULT 64
+                            CHECK (
+                                texture_primitives BETWEEN 1 AND 1024
+                            ),
+
+    palette_mode            TEXT NOT NULL
+                            DEFAULT 'random'
+                            CHECK (
+                                palette_mode IN (
+                                    'specific',
+                                    'random'
+                                )
+                            ),
+
+    palette_color           TEXT,
+
+    -- Screensaver has an idle timeout; Wallpaper does not.
+    CHECK (
+        (
+            target = 'screensaver'
+            AND idle_timeout_seconds IS NOT NULL
+        )
+        OR
+        (
+            target = 'wallpaper'
+            AND idle_timeout_seconds IS NULL
+        )
+    ),
+
+    -- Random texture selection randomizes family only.
+    CHECK (
+        (
+            texture_mode = 'random'
+            AND texture_family IS NULL
+        )
+        OR
+        (
+            texture_mode = 'specific'
+            AND texture_family IS NOT NULL
+            AND length(trim(texture_family)) > 0
+        )
+    ),
+
+    -- Palette semantics and canonical lowercase #rrggbb storage.
+    CHECK (
+        (
+            palette_mode = 'random'
+            AND palette_color IS NULL
+        )
+        OR
+        (
+            palette_mode = 'specific'
+            AND palette_color IS NOT NULL
+            AND length(palette_color) = 7
+            AND substr(palette_color, 1, 1) = '#'
+            AND palette_color = lower(palette_color)
+            AND substr(palette_color, 2) NOT GLOB '*[^0-9a-f]*'
+        )
+    )
+);
+
+
+-- ---------------------------------------------------------------------------
+-- textures
+-- ---------------------------------------------------------------------------
+-- Developer-maintained catalog of procedural texture families supported by
+-- this Screenshaver build. Runtime initialization seeds these rows directly
+-- from crate::generate_textures::TextureFamily::ALL.
+CREATE TABLE textures (
+    texture_name           TEXT NOT NULL
+                           PRIMARY KEY
+                           CHECK (
+                               length(trim(texture_name)) > 0
+                               AND texture_name = lower(texture_name)
+                           ),
+
+    display_order          INTEGER NOT NULL
+                           UNIQUE
+                           CHECK (display_order >= 0)
+);
+
+
+-- ---------------------------------------------------------------------------
 -- curated_palette
 -- ---------------------------------------------------------------------------
 -- Developer-maintained reference catalog only.
@@ -455,13 +661,49 @@ COMMIT;
 --
 -- After the transaction above succeeds, initialization code should:
 --
---   1. Seed curated_palette from the developer-maintained curated catalog.
+--   1. Seed textures from crate::generate_textures::TextureFamily::ALL.
 --
---   2. Ensure ~/.config/screenshaver/shaders/default.glsl exists.
+--   2. Seed curated_palette from the developer-maintained curated catalog.
 --
---   3. Hash, analyze, and validate default.glsl.
+--   3. Insert the single app_defaults row:
+--        defaults_id             = 1
+--        show_splash             = 1
+--        screensaver_subtitles   = 1
+--        subtitle_placement      = 'bottom:center'
+--        wallpaper_notifications = 1
+--        rendered_fps            = 30
+--        anti_aliasing           = 'fxaa'
+--        dithering               = 'subtle'
+--        color_precision         = 'auto'
+--        render_scale            = 1.0
 --
---   4. Insert one shaders row for default.glsl using its actual runtime:
+--   4. Insert TWO target_defaults rows:
+--        screensaver:
+--          idle_timeout_seconds = 600
+--          animation_speed      = 1.0
+--          texture_mode         = 'random'
+--          texture_family       = NULL
+--          texture_primitives   = 64
+--          palette_mode         = 'random'
+--          palette_color        = NULL
+--
+--        wallpaper:
+--          idle_timeout_seconds = NULL
+--          animation_speed      = 0.03
+--          texture_mode         = 'random'
+--          texture_family       = NULL
+--          texture_primitives   = 64
+--          palette_mode         = 'random'
+--          palette_color        = NULL
+--
+--      Primitive count is NEVER randomized. Random texture mode chooses only
+--      the texture family and continues using the stored primitive count.
+--
+--   5. Ensure ~/.config/screenshaver/shaders/default.glsl exists.
+--
+--   6. Hash, analyze, and validate default.glsl.
+--
+--   7. Insert one shaders row for default.glsl using its actual runtime:
 --        filename
 --        source_path
 --        shader_type
@@ -478,7 +720,7 @@ COMMIT;
 --      The final four fields form the complete derived runtime package.
 --      Native GLSL is stored unchanged in preprocessed_source.
 --
---   5. Create TWO policies referencing the same default.glsl shader_id:
+--   8. Create TWO policies referencing the same default.glsl shader_id:
 --        screensaver default -> policy_target = 'screensaver'
 --        wallpaper default   -> policy_target = 'wallpaper'
 --
@@ -492,20 +734,20 @@ COMMIT;
 --        flip_vertical    = 0
 --        hue_rotation     = 0.0
 --
---   6. Insert TWO runtime_targets rows using the exact policy_id values
+--   9. Insert TWO runtime_targets rows using the exact policy_id values
 --      created above:
 --        screensaver -> display_mode = 'single', single_policy_id = the
 --                       screensaver default policy
 --        wallpaper   -> display_mode = 'single', single_policy_id = the
 --                       wallpaper default policy
 --
---   7. Insert schema_metadata LAST:
+--   10. Insert schema_metadata LAST:
 --        metadata_id              = 1
 --        schema_version           = 1
 --        created_by_version       = current Screenshaver version
 --        last_migrated_by_version = current Screenshaver version
 --
---   8. Run initialization validation / foreign-key checks.
+--   11. Run initialization validation / foreign-key checks.
 --
 -- If first-time initialization fails before user data exists, the incomplete
 -- database may be discarded and rebuilt on the next database-dependent launch.
