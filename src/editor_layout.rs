@@ -2710,7 +2710,7 @@ impl EditWindowOverlay {
                                 };
 
                             // -----------------------------------------------------------------
-                            // Permanent header: Load Shader + Policy Target + Shader Information
+                            // Permanent header: Policy Target + Shader Information + branding
                             // -----------------------------------------------------------------
                             draw_compact_header(
                                 ui,
@@ -2735,10 +2735,6 @@ impl EditWindowOverlay {
                                 &mut policy_target_change_requested,
                                 &mut status_message,
                                 &mut hover_help_message,
-                            );
-
-                            ui.add_space(
-                                6.0 * metrics.scale
                             );
 
                             let policy_controls_enabled =
@@ -4316,179 +4312,50 @@ fn draw_compact_header(
     status_message: &mut String,
     hover_help_message: &mut Option<&'static str>,
 ) {
+    // The branding thumbnail is deliberately positioned independently of
+    // the left-side header flow so its height cannot push Policy Name /
+    // Filename / Folder / Type downward.
+    let branding_width =
+        130.0 * metrics.scale;
+
+    let branding_height =
+        branding_width
+            / branding_aspect_ratio
+                .max(0.001);
+
+    let branding_rect =
+        egui::Rect::from_min_size(
+            egui::pos2(
+                ui.max_rect().right()
+                    - branding_width,
+                ui.cursor().top(),
+            ),
+            egui::vec2(
+                branding_width,
+                branding_height,
+            ),
+        );
+
+    ui.painter().image(
+        branding_texture.id(),
+        branding_rect,
+        egui::Rect::from_min_max(
+            egui::pos2(
+                0.0,
+                0.0,
+            ),
+            egui::pos2(
+                1.0,
+                1.0,
+            ),
+        ),
+        egui::Color32::WHITE,
+    );
+
     ui.horizontal(
         |ui| {
-            ui.scope(
-                |ui| {
-                    let button_blue =
-                        egui::Color32::from_rgb(
-                            45,
-                            92,
-                            155,
-                        );
-
-                    {
-                        let visuals =
-                            ui.visuals_mut();
-
-                        let borderless =
-                            egui::Stroke::new(
-                                0.0,
-                                egui::Color32::TRANSPARENT,
-                            );
-
-                        visuals.widgets.inactive.bg_fill =
-                            button_blue;
-                        visuals.widgets.inactive.bg_stroke =
-                            borderless;
-
-                        visuals.widgets.hovered.bg_fill =
-                            button_blue;
-                        visuals.widgets.hovered.bg_stroke =
-                            borderless;
-
-                        visuals.widgets.active.bg_fill =
-                            button_blue;
-                        visuals.widgets.active.bg_stroke =
-                            borderless;
-
-                        visuals.widgets.open.bg_fill =
-                            button_blue;
-                        visuals.widgets.open.bg_stroke =
-                            borderless;
-
-                        visuals.widgets.inactive.fg_stroke.color =
-                            egui::Color32::WHITE;
-
-                        visuals.widgets.hovered.fg_stroke.color =
-                            egui::Color32::WHITE;
-
-                        visuals.widgets.active.fg_stroke.color =
-                            egui::Color32::WHITE;
-
-                        visuals.widgets.open.fg_stroke.color =
-                            egui::Color32::WHITE;
-                    }
-
-                ui.menu_button(
-                    egui::RichText::new(
-                        "  Load Shader  "
-                    )
-                    .strong()
-                    .color(
-                        egui::Color32::WHITE
-                    ),
-                    |ui| {
-                        if recent_shader_paths.is_empty() {
-                            ui.add_enabled(
-                                false,
-                                egui::Button::new(
-                                    "Recent Files (empty)"
-                                ),
-                            );
-                        } else {
-                            for (
-                                index,
-                                path,
-                            ) in recent_shader_paths
-                                .iter()
-                                .enumerate()
-                            {
-                                let display_name =
-                                    path.file_name()
-                                        .and_then(
-                                            |name| {
-                                                name.to_str()
-                                            }
-                                        )
-                                        .unwrap_or(
-                                            "Unnamed shader"
-                                        );
-    
-                                let response =
-                                    ui.button(
-                                        display_name
-                                    );
-    
-                                response
-                                    .clone()
-                                    .on_hover_text(
-                                        path.display()
-                                            .to_string()
-                                    );
-    
-                                if response.clicked() {
-                                    if configuration_changed {
-                                        *status_message =
-                                            "Save or cancel the current changes before loading another shader."
-                                                .to_string();
-                                    } else {
-                                        *recent_shader_requested =
-                                            Some(index);
-                                    }
-    
-                                    ui.close();
-                                }
-                            }
-                        }
-    
-                        ui.separator();
-    
-                        if ui.button(
-                            "Browse..."
-                        )
-                        .clicked()
-                        {
-                            if configuration_changed {
-                                *status_message =
-                                    "Save or cancel the current changes before loading another shader."
-                                        .to_string();
-                            } else {
-                                *browse_shader_requested =
-                                    true;
-                            }
-    
-                            ui.close();
-                        }
-    
-                        if ui.button(
-                            "Create Policies from Multiple Shaders..."
-                        )
-                        .clicked()
-                        {
-                            if configuration_changed {
-                                *status_message =
-                                    "Save or cancel the current changes before creating policies."
-                                        .to_string();
-                            } else {
-                                *bulk_create_browse_requested =
-                                    true;
-                            }
-
-                            ui.close();
-                        }
-
-
-                        if ui.add_enabled(
-                            !recent_shader_paths.is_empty(),
-                            egui::Button::new(
-                                "Clear Recent Files"
-                            ),
-                        )
-                        .clicked()
-                        {
-                            *clear_recent_files_requested =
-                                true;
-    
-                            ui.close();
-                        }
-                    },
-                );
-                },
-            );
-
             ui.with_layout(
-                egui::Layout::right_to_left(
+                egui::Layout::left_to_right(
                     egui::Align::Center
                 ),
                 |ui| {
@@ -4531,6 +4398,13 @@ fn draw_compact_header(
                                 )
                                 .unwrap_or(false);
 
+
+                    ui.label(
+                        egui::RichText::new(
+                            "Policy Target:"
+                        )
+                        .strong(),
+                    );
 
                     let target_response =
                         ui.add_enabled_ui(
@@ -4767,20 +4641,13 @@ fn draw_compact_header(
                     }
 
 
-                    ui.label(
-                        egui::RichText::new(
-                            "Policy Target:"
-                        )
-                        .strong(),
-                    );
                 },
             );
+
+
         },
     );
 
-    ui.add_space(
-        4.0 * metrics.scale
-    );
 
     let (
         policy_name,
@@ -4806,10 +4673,14 @@ fn draw_compact_header(
             )
         };
 
-    ui.horizontal_top(
+    ui.vertical(
         |ui| {
-            ui.vertical(
-                |ui| {
+            ui.set_max_width(
+                (ui.available_width()
+                    - 150.0 * metrics.scale)
+                    .max(260.0 * metrics.scale)
+            );
+
                     egui::Grid::new(
                         "editor_compact_shader_information"
                     )
@@ -4852,37 +4723,6 @@ fn draw_compact_header(
                             ui.end_row();
                         },
                     );
-                },
-            );
-
-
-            ui.with_layout(
-                egui::Layout::right_to_left(
-                    egui::Align::TOP
-                ),
-                |ui| {
-                    let branding_width =
-                        130.0 * metrics.scale;
-
-                    let branding_height =
-                        branding_width
-                            / branding_aspect_ratio
-                                .max(0.001);
-
-
-                    ui.add(
-                        egui::Image::new(
-                            branding_texture
-                        )
-                        .fit_to_exact_size(
-                            egui::vec2(
-                                branding_width,
-                                branding_height,
-                            )
-                        ),
-                    );
-                },
-            );
         },
     );
 }
