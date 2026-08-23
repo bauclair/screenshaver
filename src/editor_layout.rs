@@ -1091,6 +1091,9 @@ pub struct EditWindowOverlay {
     pending_policy_rename:
         Option<PendingPolicyRename>,
 
+    qbe_state:
+        crate::qbe_layout::QbeLayoutState,
+
     control_configuration:
         Option<ControlConfiguration>,
 
@@ -1403,6 +1406,9 @@ impl EditWindowOverlay {
 
                 pending_policy_rename:
                     None,
+
+                qbe_state:
+                    crate::qbe_layout::QbeLayoutState::default(),
 
                 control_configuration:
                     None,
@@ -2332,6 +2338,9 @@ impl EditWindowOverlay {
         let mut pending_confirmation =
             self.pending_confirmation.clone();
 
+        let mut qbe_state =
+            self.qbe_state.clone();
+
         let mut pending_policy_clone =
             self.pending_policy_clone.clone();
 
@@ -2777,6 +2786,7 @@ impl EditWindowOverlay {
                                                 &mut pending_policy_navigation,
                                                 &mut pending_confirmation,
                                                 &mut policy_row_command_requested,
+                                                &mut qbe_state,
                                             );
                                         }
 
@@ -3248,6 +3258,9 @@ impl EditWindowOverlay {
 
         self.policy_sort_ascending =
             policy_sort_ascending;
+
+        self.qbe_state =
+            qbe_state;
 
         self.selected_policy_row =
             selected_policy_row;
@@ -5100,6 +5113,8 @@ fn draw_policies_tab(
     pending_confirmation: &mut Option<PendingConfirmation>,
     command_requested:
         &mut Option<(PolicyRowReference, PolicyRowCommand)>,
+    qbe_state:
+        &mut crate::qbe_layout::QbeLayoutState,
 ) {
     fn header_text(
         label: &str,
@@ -5435,7 +5450,7 @@ fn draw_policies_tab(
             ]
         )
         .max_height(
-            292.0 * metrics.scale
+            270.0 * metrics.scale
         )
         .show(
             ui,
@@ -6118,6 +6133,19 @@ fn draw_policies_tab(
                 );
             },
         );
+
+    // Keep the QBE strip close to the Policy List. The Policies tab already
+    // has a fixed content height, so avoid consuming ui.available_height()
+    // here; doing so can enlarge the enclosing Control Center window.
+    ui.add_space(
+        4.0 * metrics.scale
+    );
+
+    crate::qbe_layout::draw_qbe_strip(
+        ui,
+        metrics.scale,
+        qbe_state,
+    );
 }
 
 

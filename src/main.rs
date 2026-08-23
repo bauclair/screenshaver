@@ -91,6 +91,10 @@ mod validate_database;
 mod migrate_database;
 mod hash_shader;
 
+mod qbe_layout;
+mod parse_qbe;
+mod query_database;
+
 use std::sync::Arc;
 use std::sync::atomic::{
     AtomicBool,
