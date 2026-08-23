@@ -1955,6 +1955,35 @@ fn run_empty_session(
             }
 
 
+            if matches!(
+                *command,
+                crate::editor_layout::PolicyRowCommand::Edit
+            ) {
+                if let Err(error) =
+                    shader_requires_texture_for_bulk_edit(
+                        &selected_path
+                    )
+                {
+                    edit_window.set_status_message(
+                        format!(
+                            "Policy cannot be opened because its shader is not renderable: {}",
+                            error,
+                        )
+                    );
+
+                    log_warning(
+                        &format!(
+                            "[EDIT_SHADER] Blocked Policy List Edit for non-renderable shader {}: {}",
+                            selected_path.display(),
+                            error,
+                        )
+                    );
+
+                    continue;
+                }
+            }
+
+
             policy_open_request =
                 Some(
                     (
@@ -4485,6 +4514,42 @@ fn run_paths(
 
                     continue;
                 };
+
+
+                if let Some((
+                    _row,
+                    command,
+                )) =
+                    policy_row_open_request.as_ref()
+                {
+                    if matches!(
+                        *command,
+                        crate::editor_layout::PolicyRowCommand::Edit
+                    ) {
+                        if let Err(error) =
+                            shader_requires_texture_for_bulk_edit(
+                                &selected_path
+                            )
+                        {
+                            edit_window.set_status_message(
+                                format!(
+                                    "Policy cannot be opened because its shader is not renderable: {}",
+                                    error,
+                                )
+                            );
+
+                            log_warning(
+                                &format!(
+                                    "[EDIT_SHADER] Blocked Policy List Edit for non-renderable shader {}: {}",
+                                    selected_path.display(),
+                                    error,
+                                )
+                            );
+
+                            continue;
+                        }
+                    }
+                }
 
 
                 let selected_shader_name =
@@ -8326,6 +8391,9 @@ fn load_database_policy_display_rows(
                      s.filename,
                      s.source_path,
                      s.file_status,
+                     s.validation_status,
+                     s.validation_reason,
+                     s.validation_message,
                      p.policy_target
                  FROM shader_policies AS p
                  JOIN shaders AS s
@@ -8357,6 +8425,9 @@ fn load_database_policy_display_rows(
                             row.get::<_, String>(3)?,
                             row.get::<_, String>(4)?,
                             row.get::<_, String>(5)?,
+                            row.get::<_, Option<String>>(6)?,
+                            row.get::<_, Option<String>>(7)?,
+                            row.get::<_, String>(8)?,
                         )
                     )
                 },
@@ -8383,6 +8454,9 @@ fn load_database_policy_display_rows(
             filename,
             source_path,
             file_status,
+            validation_status,
+            validation_reason,
+            validation_message,
             policy_target,
         ) =
             query_row.map_err(
@@ -8446,8 +8520,14 @@ fn load_database_policy_display_rows(
                         .to_string(),
 
                 accessible:
-                    file_status != "missing"
+                    file_status == "present"
                         && resolved_path.is_file(),
+
+                validation_status,
+
+                validation_reason,
+
+                validation_message,
 
                 texture:
                     shader_requires_texture_for_policy_row(

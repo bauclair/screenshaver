@@ -530,9 +530,55 @@ pub struct PolicyDisplayRow {
     pub filename: String,
     pub full_path: String,
     pub accessible: bool,
+    pub validation_status: String,
+    pub validation_reason: Option<String>,
+    pub validation_message: Option<String>,
     pub texture: bool,
     pub policy_target: PolicyTarget,
     pub unassigned: bool,
+}
+
+impl PolicyDisplayRow {
+    pub fn shader_renderable(&self) -> bool {
+        self.accessible
+            && self.validation_status.eq_ignore_ascii_case("valid")
+    }
+
+    pub fn shader_status_tooltip(&self) -> String {
+        if !self.accessible {
+            return format!("Shader file cannot be accessed:\n{}", self.full_path);
+        }
+
+        if self.validation_status.eq_ignore_ascii_case("rejected") {
+            let reason = self.validation_message.as_deref()
+                .or(self.validation_reason.as_deref())
+                .unwrap_or("Shader validation failed.");
+
+            return format!(
+                "Shader cannot be rendered.\nStatus: Rejected\nReason: {}\nSee screenshaver.log for further details.",
+                reason,
+            );
+        }
+
+        if !self.validation_status.eq_ignore_ascii_case("valid") {
+            let reason = self.validation_message.as_deref()
+                .or(self.validation_reason.as_deref())
+                .unwrap_or("Shader validation state is unavailable.");
+
+            return format!(
+                "Shader cannot be rendered.\nStatus: {}\nReason: {}\nSee screenshaver.log for further details.",
+                self.validation_status,
+                reason,
+            );
+        }
+
+        if self.unassigned {
+            return "Unassigned policy — this shader cannot be rendered until its Policy Target is changed to Screensaver or Wallpaper."
+                .to_string();
+        }
+
+        format!("Shader is accessible and validated:\n{}", self.full_path)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -5319,10 +5365,22 @@ fn draw_policies_tab(
                                     .to_ascii_lowercase()
                             ),
 
-                    PolicySortColumn::Status =>
-                        left.accessible.cmp(
-                            &right.accessible
-                        ),
+                    PolicySortColumn::Status => {
+                        let status_rank =
+                            |row: &PolicyDisplayRow| -> u8 {
+                                if !row.shader_renderable() {
+                                    0
+                                } else if row.unassigned {
+                                    1
+                                } else {
+                                    2
+                                }
+                            };
+
+                        status_rank(left).cmp(
+                            &status_rank(right)
+                        )
+                    },
 
                     PolicySortColumn::Texture =>
                         left.texture.cmp(
@@ -5954,7 +6012,7 @@ fn draw_policies_tab(
                                     ui,
                                     status_width,
                                     row_height,
-                                    if !row.accessible {
+                                    if !row.shader_renderable() {
                                         "❌"
                                     } else if row.unassigned {
                                         "X"
@@ -5965,20 +6023,7 @@ fn draw_policies_tab(
                                     row_selected,
                                 )
                                 .on_hover_text(
-                                    if !row.accessible {
-                                        format!(
-                                            "Shader file cannot be accessed:\n{}",
-                                            row.full_path,
-                                        )
-                                    } else if row.unassigned {
-                                        "Unassigned policy — this shader cannot be rendered until its Policy Target is changed to Screensaver or Wallpaper."
-                                            .to_string()
-                                    } else {
-                                        format!(
-                                            "Shader is accessible:\n{}",
-                                            row.full_path,
-                                        )
-                                    }
+                                    row.shader_status_tooltip()
                                 );
 
                             let texture_response =
@@ -6042,13 +6087,15 @@ fn draw_policies_tab(
                                         row_reference.clone()
                                     );
 
-                                *command_requested =
-                                    Some(
-                                        (
-                                            row_reference.clone(),
-                                            PolicyRowCommand::Edit,
-                                        )
-                                    );
+                                if row.shader_renderable() {
+                                    *command_requested =
+                                        Some(
+                                            (
+                                                row_reference.clone(),
+                                                PolicyRowCommand::Edit,
+                                            )
+                                        );
+                                }
                             }
 
                             // Any cell may open the same row context menu in
@@ -6063,8 +6110,11 @@ fn draw_policies_tab(
 
                                     response.context_menu(
                                         |ui| {
-                                            if ui.button(
-                                                "Edit Policy..."
+                                            if ui.add_enabled(
+                                                row.shader_renderable(),
+                                                egui::Button::new(
+                                                    "Edit Policy..."
+                                                ),
                                             )
                                             .clicked()
                                             {
