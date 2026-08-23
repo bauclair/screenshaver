@@ -417,7 +417,10 @@ fn draw_target_page(
                 &mut configuration.screensaver_single_policy_name,
                 policy_rows,
                 Some(
-                    &mut configuration.screensaver_idle_timeout_seconds
+                    &mut configuration.screensaver_idle_timeout_value
+                ),
+                Some(
+                    &mut configuration.screensaver_idle_timeout_unit
                 ),
                 &mut configuration.screensaver_animation_speed,
                 &mut configuration.screensaver_global_texture,
@@ -455,6 +458,7 @@ fn draw_target_page(
                 &mut configuration.wallpaper_single_policy_name,
                 policy_rows,
                 None,
+                None,
                 &mut configuration.wallpaper_animation_speed,
                 &mut configuration.wallpaper_global_texture,
                 &mut configuration.wallpaper_texture_primitives,
@@ -478,7 +482,8 @@ fn draw_target_grid(
     single_policy_id: &mut Option<i64>,
     single_policy_name: &mut String,
     policy_rows: &[PolicyDisplayRow],
-    idle_timeout_seconds: Option<&mut i64>,
+    idle_timeout_value: Option<&mut i64>,
+    idle_timeout_unit: Option<&mut String>,
     animation_speed: &mut f64,
     global_texture: &mut String,
     texture_primitives: &mut i64,
@@ -696,20 +701,72 @@ fn draw_target_grid(
             }
 
 
-            if let Some(idle_timeout_seconds) =
-                idle_timeout_seconds
-            {
+            if let (
+                Some(idle_timeout_value),
+                Some(idle_timeout_unit),
+            ) = (
+                idle_timeout_value,
+                idle_timeout_unit,
+            ) {
                 ui.label(
                     "Idle timeout:"
                 );
 
-                ui.horizontal(|ui| {
-                    ui.add(
-                        egui::DragValue::new(idle_timeout_seconds)
-                            .clamp_range(1..=86400)
-                    );
-                    ui.label("seconds");
-                });
+                ui.horizontal(
+                    |ui| {
+                        ui.add(
+                            egui::DragValue::new(
+                                idle_timeout_value
+                            )
+                            .clamp_range(
+                                1..=86400
+                            )
+                        );
+
+                        egui::ComboBox::from_id_source(
+                            "nested_config_idle_timeout_unit"
+                        )
+                        .selected_text(
+                            match idle_timeout_unit.as_str() {
+                                "seconds" => "Seconds",
+                                "minutes" => "Minutes",
+                                "hours" => "Hours",
+                                _ => "Seconds",
+                            }
+                        )
+                        .width(
+                            90.0
+                        )
+                        .show_ui(
+                            ui,
+                            |ui| {
+                                for (
+                                    value,
+                                    label,
+                                ) in [
+                                    (
+                                        "seconds",
+                                        "Seconds",
+                                    ),
+                                    (
+                                        "minutes",
+                                        "Minutes",
+                                    ),
+                                    (
+                                        "hours",
+                                        "Hours",
+                                    ),
+                                ] {
+                                    ui.selectable_value(
+                                        idle_timeout_unit,
+                                        value.to_string(),
+                                        label,
+                                    );
+                                }
+                            },
+                        );
+                    },
+                );
 
                 ui.end_row();
             }

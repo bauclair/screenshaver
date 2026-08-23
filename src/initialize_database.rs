@@ -474,7 +474,8 @@ fn create_target_defaults(
             .prepare(
                 "INSERT INTO target_defaults (
                      target,
-                     idle_timeout_seconds,
+                     idle_timeout_value,
+                     idle_timeout_unit,
                      animation_speed,
                      texture_mode,
                      texture_family,
@@ -486,6 +487,7 @@ fn create_target_defaults(
                      ?1,
                      ?2,
                      ?3,
+                     ?4,
                      'random',
                      NULL,
                      64,
@@ -505,16 +507,19 @@ fn create_target_defaults(
 
     for (
         target,
-        idle_timeout_seconds,
+        idle_timeout_value,
+        idle_timeout_unit,
         animation_speed,
     ) in [
         (
             "screensaver",
-            Some(600_i64),
+            Some(10_i64),
+            Some("minutes"),
             1.0_f64,
         ),
         (
             "wallpaper",
+            None,
             None,
             0.03_f64,
         ),
@@ -523,7 +528,8 @@ fn create_target_defaults(
             .execute(
                 params![
                     target,
-                    idle_timeout_seconds,
+                    idle_timeout_value,
+                    idle_timeout_unit,
                     animation_speed,
                 ]
             )

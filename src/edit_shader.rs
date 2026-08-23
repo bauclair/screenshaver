@@ -9797,7 +9797,8 @@ fn save_control_configuration(
     let screensaver_defaults =
         crate::manage_configuration::TargetDefaults {
             target: "screensaver".to_string(),
-            idle_timeout_seconds: Some(control.screensaver_idle_timeout_seconds),
+            idle_timeout_value: Some(control.screensaver_idle_timeout_value),
+            idle_timeout_unit: Some(control.screensaver_idle_timeout_unit.clone()),
             animation_speed: control.screensaver_animation_speed,
             texture_mode: screensaver_texture_mode,
             texture_family: screensaver_texture_family,
@@ -9809,7 +9810,8 @@ fn save_control_configuration(
     let wallpaper_defaults =
         crate::manage_configuration::TargetDefaults {
             target: "wallpaper".to_string(),
-            idle_timeout_seconds: None,
+            idle_timeout_value: None,
+            idle_timeout_unit: None,
             animation_speed: control.wallpaper_animation_speed,
             texture_mode: wallpaper_texture_mode,
             texture_family: wallpaper_texture_family,
@@ -9829,7 +9831,16 @@ fn save_control_configuration(
             screensaver_enabled: control.screensaver_enabled,
             subtitles: control.subtitles,
             screensaver_mode,
-            idle_timeout: control.screensaver_idle_timeout_seconds.to_string(),
+            idle_timeout: format!(
+                "{}{}",
+                control.screensaver_idle_timeout_value,
+                match control.screensaver_idle_timeout_unit.as_str() {
+                    "seconds" => "s",
+                    "minutes" => "m",
+                    "hours" => "h",
+                    _ => "s",
+                },
+            ),
             screensaver_global_texture: None,
             screensaver_global_palette: None,
             wallpaper_enabled: control.wallpaper_enabled,

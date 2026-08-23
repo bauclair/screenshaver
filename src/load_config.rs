@@ -1314,21 +1314,33 @@ pub fn load_config(
                 screensaver_mode,
 
             idle_timeout:
-                screensaver_defaults
-                    .idle_timeout_seconds
-                    .map(
-                        |seconds| {
-                            format!(
-                                "{}s",
-                                seconds
-                            )
-                        }
-                    )
-                    .unwrap_or_else(
-                        || {
-                            "0s".to_string()
-                        }
-                    ),
+                match (
+                    screensaver_defaults.idle_timeout_value,
+                    screensaver_defaults.idle_timeout_unit.as_deref(),
+                ) {
+                    (
+                        Some(value),
+                        Some(unit),
+                    ) => {
+                        let suffix =
+                            match unit {
+                                "seconds" => "s",
+                                "minutes" => "m",
+                                "hours" => "h",
+                                _ => "s",
+                            };
+
+                        format!(
+                            "{}{}",
+                            value,
+                            suffix,
+                        )
+                    }
+
+                    _ => {
+                        "10m".to_string()
+                    }
+                },
 
             texture_policy,
 

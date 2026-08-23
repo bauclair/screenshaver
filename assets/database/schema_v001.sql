@@ -527,11 +527,23 @@ CREATE TABLE target_defaults (
                                 )
                             ),
 
-    -- Screensaver-only idle delay. Wallpaper must store NULL.
-    idle_timeout_seconds    INTEGER
+    -- Screensaver-only idle delay. Preserve the user's chosen magnitude and
+    -- unit rather than flattening the value to seconds. Wallpaper stores NULL
+    -- for both fields.
+    idle_timeout_value      INTEGER
                             CHECK (
-                                idle_timeout_seconds IS NULL
-                                OR idle_timeout_seconds > 0
+                                idle_timeout_value IS NULL
+                                OR idle_timeout_value > 0
+                            ),
+
+    idle_timeout_unit       TEXT
+                            CHECK (
+                                idle_timeout_unit IS NULL
+                                OR idle_timeout_unit IN (
+                                    'seconds',
+                                    'minutes',
+                                    'hours'
+                                )
                             ),
 
     animation_speed         REAL NOT NULL
@@ -571,12 +583,14 @@ CREATE TABLE target_defaults (
     CHECK (
         (
             target = 'screensaver'
-            AND idle_timeout_seconds IS NOT NULL
+            AND idle_timeout_value IS NOT NULL
+            AND idle_timeout_unit IS NOT NULL
         )
         OR
         (
             target = 'wallpaper'
-            AND idle_timeout_seconds IS NULL
+            AND idle_timeout_value IS NULL
+            AND idle_timeout_unit IS NULL
         )
     ),
 
@@ -679,7 +693,8 @@ COMMIT;
 --
 --   4. Insert TWO target_defaults rows:
 --        screensaver:
---          idle_timeout_seconds = 600
+--          idle_timeout_value = 10
+--          idle_timeout_unit = 'minutes'
 --          animation_speed      = 1.0
 --          texture_mode         = 'random'
 --          texture_family       = NULL
@@ -688,7 +703,8 @@ COMMIT;
 --          palette_color        = NULL
 --
 --        wallpaper:
---          idle_timeout_seconds = NULL
+--          idle_timeout_value = NULL
+--          idle_timeout_unit = NULL
 --          animation_speed      = 0.03
 --          texture_mode         = 'random'
 --          texture_family       = NULL

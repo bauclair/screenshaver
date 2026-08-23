@@ -694,22 +694,26 @@ fn validate_target_defaults(
 
     for (
         target,
-        expected_idle_timeout_seconds,
+        expected_idle_timeout_value,
+        expected_idle_timeout_unit,
         expected_animation_speed,
     ) in [
         (
             "screensaver",
-            Some(600_i64),
+            Some(10_i64),
+            Some("minutes"),
             1.0_f64,
         ),
         (
             "wallpaper",
             None,
+            None,
             0.03_f64,
         ),
     ] {
         let (
-            idle_timeout_seconds,
+            idle_timeout_value,
+            idle_timeout_unit,
             animation_speed,
             texture_mode,
             texture_family,
@@ -718,6 +722,7 @@ fn validate_target_defaults(
             palette_color,
         ): (
             Option<i64>,
+            Option<String>,
             f64,
             String,
             Option<String>,
@@ -728,7 +733,8 @@ fn validate_target_defaults(
             connection
                 .query_row(
                     "SELECT
-                         idle_timeout_seconds,
+                         idle_timeout_value,
+                         idle_timeout_unit,
                          animation_speed,
                          texture_mode,
                          texture_family,
@@ -748,6 +754,7 @@ fn validate_target_defaults(
                                 row.get(4)?,
                                 row.get(5)?,
                                 row.get(6)?,
+                                row.get(7)?,
                             )
                         )
                     },
@@ -763,8 +770,10 @@ fn validate_target_defaults(
                 )?;
 
 
-        if idle_timeout_seconds
-                != expected_idle_timeout_seconds
+        if idle_timeout_value
+                != expected_idle_timeout_value
+            || idle_timeout_unit.as_deref()
+                != expected_idle_timeout_unit
             || (
                 animation_speed
                     - expected_animation_speed

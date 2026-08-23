@@ -39,7 +39,7 @@ pub struct ConfigurationUpdates {
         String,
 
     /// Screensaver idle timeout represented as a duration string for the UI.
-    /// Persistence authority is target_defaults.idle_timeout_seconds.
+    /// Persistence authority is target_defaults.idle_timeout_value + idle_timeout_unit.
     pub idle_timeout:
         String,
 
@@ -172,7 +172,8 @@ pub struct CuratedPaletteChoice {
 #[derive(Debug, Clone)]
 pub struct TargetDefaults {
     pub target: String,
-    pub idle_timeout_seconds: Option<i64>,
+    pub idle_timeout_value: Option<i64>,
+    pub idle_timeout_unit: Option<String>,
     pub animation_speed: f64,
     pub texture_mode: String,
     pub texture_family: Option<String>,
@@ -363,7 +364,8 @@ pub fn load_target_defaults(
         .query_row(
             "SELECT
                  target,
-                 idle_timeout_seconds,
+                 idle_timeout_value,
+                 idle_timeout_unit,
                  animation_speed,
                  texture_mode,
                  texture_family,
@@ -378,20 +380,22 @@ pub fn load_target_defaults(
                     TargetDefaults {
                         target:
                             row.get(0)?,
-                        idle_timeout_seconds:
+                        idle_timeout_value:
                             row.get(1)?,
-                        animation_speed:
+                        idle_timeout_unit:
                             row.get(2)?,
-                        texture_mode:
+                        animation_speed:
                             row.get(3)?,
-                        texture_family:
+                        texture_mode:
                             row.get(4)?,
-                        texture_primitives:
+                        texture_family:
                             row.get(5)?,
-                        palette_mode:
+                        texture_primitives:
                             row.get(6)?,
-                        palette_color:
+                        palette_mode:
                             row.get(7)?,
+                        palette_color:
+                            row.get(8)?,
                     }
                 )
             },
@@ -493,16 +497,18 @@ pub fn save_target_defaults(
         connection
             .execute(
                 "UPDATE target_defaults
-                 SET idle_timeout_seconds = ?1,
-                     animation_speed = ?2,
-                     texture_mode = ?3,
-                     texture_family = ?4,
-                     texture_primitives = ?5,
-                     palette_mode = ?6,
-                     palette_color = ?7
-                 WHERE target = ?8",
+                 SET idle_timeout_value = ?1,
+                     idle_timeout_unit = ?2,
+                     animation_speed = ?3,
+                     texture_mode = ?4,
+                     texture_family = ?5,
+                     texture_primitives = ?6,
+                     palette_mode = ?7,
+                     palette_color = ?8
+                 WHERE target = ?9",
                 rusqlite::params![
-                    defaults.idle_timeout_seconds,
+                    defaults.idle_timeout_value,
+                    defaults.idle_timeout_unit,
                     defaults.animation_speed,
                     defaults.texture_mode,
                     defaults.texture_family,
