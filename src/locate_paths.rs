@@ -41,13 +41,6 @@ pub fn state_path() -> PathBuf {
 }
 
 
-pub fn legacy_recent_shader_history_path() -> PathBuf {
-
-    screenshaver_dir()
-        .join("recent-shaders.json")
-}
-
-
 pub fn config_path() -> PathBuf {
 
     screenshaver_dir()
