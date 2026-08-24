@@ -6,75 +6,16 @@ use std::path::{Path, PathBuf};
 const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 
 ################################
-# APPEARANCE
-################################
-[appearance]
-  show_splash = true       # Show Screenshaver splash screen when run
-
-################################
-# SCREENSAVER MODE
+# SCREENSAVER
 ################################
 [screensaver]
   enabled = true           # Enable automatic screensaver activation
-  subtitles = true         # Show subtitle information at bottom of each shader
-
-# Accepted subtitle placement combinations:
-#     top:left
-#     top:center
-#     top:right
-#     bottom:left
-#     bottom:center
-#     bottom:right
-  subtitle_placement = "bottom:center"
-# Screensaver shaders are loaded from:
-#     ~/.config/screenshaver/screensavers/
-
-# Displays a single predefined shader.
-# mode = "single:default.glsl"
-
-# Displays a shader at random every <nn> seconds.
-  mode = "random:60"
-
-# Displays shaders in alphanumerical order by filename every <nn> seconds.
-# mode = "ordered:60"
-
-# Idle time before the screensaver activates.
-# Accepted suffixes are (s)ec, (m)in, and (h)rs.
-  idle_timeout = "10m"
-
-# Default animation speed for screensaver shaders.
-  global_speed = 1.0
-
-# Default texture and palette policy for screensaver shaders.
-# These values may differ from the wallpaper defaults.
-  global_texture = "random"
-  global_palette = "random"
 
 ################################
-# WALLPAPER MODE
+# WALLPAPER
 ################################
 [wallpaper]
-  enabled = true          # Enable wallpaper rendering mode
-# Wallpaper shaders are loaded from:
-#     ~/.config/screenshaver/wallpapers/
-
-# Displays a single predefined wallpaper shader.
-# mode = "single:default.glsl"
-
-# Displays a wallpaper shader at random every <nn> seconds.
-# mode = "random:60"
-
-# Displays wallpaper shaders in alphanumerical order by filename
-# every <nn> seconds.
-  mode = "ordered:60"
-
-# Default animation speed for wallpaper shaders.
-  global_speed = 0.02
-
-# Default texture and palette policy for wallpaper shaders.
-# These values may differ from the screensaver defaults.
-  global_texture = "random"
-  global_palette = "random"
+  enabled = true           # Enable wallpaper rendering mode
 
 # Initial multi-monitor support renders the same shader independently on
 # every monitor. Each monitor uses its own native resolution while sharing
@@ -84,92 +25,17 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 #     mirror
   monitor_mode = "mirror"
 
-# Use desktop notifications for wallpaper shader changes and sustained
-# performance warnings.
-  notifications = true
-
-################################
-# TEXTURES AND PALETTES
-################################
-# Background textures available for compatible texture-based shaders:
-#
-#     bricks             Brick/block wall textures.
-#     cells              Voronoi / lichen textures.
-#     clouds             Soft cloud and smoke textures.
-#     facets             Tetrahedral textures.
-#     hexagons           Hexagonal textures.
-#     marble             Marble and stone textures.
-#     mesh               Mesh textures.
-#     noise              Procedural noise textures.
-#     radial             Radial textures.
-#     random             Randomly select a texture family.
-#
-# Palette colors for compatible texture-based shaders:
-#
-#     #rrggbb            Explicit hexadecimal RGB color.
-#     random             Randomly select a hexadecimal RGB color.
-
-################################
-# PER-SHADER POLICIES
-################################
-# Policy properties may be written in any order.
-# Supported properties are:
-#     texture:<family>
-#     palette:<#rrggbb|random>
-#     fps:<frames-per-second>
-#     speed:<animation-multiplier>
-#     anti_aliasing:<off|fxaa>
-#     dithering:<off|subtle>
-#     color_precision:<auto|standard|high>
-#
-# Property names and post-processing values are case-insensitive and are
-# normalized internally to lowercase.
-#
-# Properties not included in a policy continue to use the active mode's
-# global setting or normal random fallback.
-
-[screensaver_policies]
-# "CandyWarp.fs" = "texture:bricks palette:#808e9c fps:24 speed:0.5 anti_aliasing:fxaa dithering:subtle color_precision:high"
-
-[wallpaper_policies]
-# "CandyWarp.fs" = "fps:16 speed:0.125 anti_aliasing:off dithering:off color_precision:standard"
-
-################################
-# POST-PROCESSING
-################################
-[postprocess]
-# Built-in defaults are used when a setting is omitted.
-# Supported anti-aliasing values: off, fxaa
-  anti_aliasing = "fxaa"
-# Supported dithering values: off, subtle
-  dithering = "subtle"
-# Supported color-precision values:
-#     auto      Prefer RGBA16F and fall back to RGBA8 when unavailable.
-#     standard  Require RGBA8 render targets.
-#     high      Require RGBA16F render targets.
-  color_precision = "auto"
-# Supported render scaling values are from 0.25 to 2.0.
-  render_scale = 1.0
-
-################################
-# PERFORMANCE
-################################
-[performance]
-# Frames per second for all shaders in all rendering modes.
-  global_rendered_fps = 30
-
-
 ################################
 # SCREEN LOCKING
 ################################
 [locking]
-  screen_lock = false     # Invoke lock screen when screensaver deactivates
+  screen_lock = false      # Invoke lock screen when screensaver deactivates
 
 ################################
 # DEBUGGING
 ################################
 [debug]
-  debug_log = true        # Enable screenshaver.log
+  debug_log = true         # Enable screenshaver.log
   log_level = 4
 
 "#;
@@ -261,20 +127,14 @@ fn create_file_if_missing(path: &Path, contents: &str) -> io::Result<bool> {
 pub fn initialize() -> io::Result<PathBuf> {
     let config_dir = config_directory()?;
 
-    let cache_dir = config_dir.join("cache");
-    let rejected_dir = config_dir.join("rejected");
-    let screensavers_dir = config_dir.join("screensavers");
-    let wallpapers_dir = config_dir.join("wallpapers");
+    let shaders_dir = config_dir.join("shaders");
 
     let config_file = config_dir.join("screenshaver.toml");
-    let default_shader_file = screensavers_dir.join("default.glsl");
+    let default_shader_file = shaders_dir.join("default.glsl");
 
     // create_dir_all() creates missing parents and succeeds when the
     // directories already exist.
-    fs::create_dir_all(&cache_dir)?;
-    fs::create_dir_all(&rejected_dir)?;
-    fs::create_dir_all(&screensavers_dir)?;
-    fs::create_dir_all(&wallpapers_dir)?;
+    fs::create_dir_all(&shaders_dir)?;
 
     create_file_if_missing(&config_file, DEFAULT_CONFIG)?;
     create_file_if_missing(&default_shader_file, DEFAULT_SHADER)?;

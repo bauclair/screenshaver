@@ -691,6 +691,8 @@ pub fn probe_capabilities(
 #[derive(Debug, Clone)]
 struct ActiveWallpaperShader {
     manager_name: String,
+    policy_id: i64,
+    policy_name: String,
     source_path: PathBuf,
     source: String,
     shader_name: String,
@@ -727,12 +729,33 @@ fn select_safe_wallpaper_shader(
             requested_shader.name.clone();
 
 
-        let shader_path =
-            requested_shader.source_path
-                .unwrap_or_else(
+        let resolved_source_path =
+            requested_shader.source_path.clone()
+                .or_else(
                     || {
-                        wallpaper_directory.join(
-                            &requested_shader_name
+                        Some(
+                            wallpaper_directory.join(
+                                &requested_shader_name
+                            )
+                        )
+                    }
+                );
+
+
+        let managed_source_path =
+            wallpaper_directory.join(
+                &requested_shader_name
+            );
+
+
+        let is_managed_shader =
+            resolved_source_path
+                .as_ref()
+                .is_none_or(
+                    |path| {
+                        paths_refer_to_same_file(
+                            path,
+                            &managed_source_path,
                         )
                     }
                 );
@@ -743,15 +766,40 @@ fn select_safe_wallpaper_shader(
         );
 
 
-        println!(
-            "    {}",
-            shader_path.display()
-        );
+        if is_managed_shader {
+            println!(
+                "    {} (database-backed managed shader)",
+                requested_shader_name
+            );
+        } else if let Some(source_path) =
+            resolved_source_path.as_ref()
+        {
+            println!(
+                "    {} (external physical shader)",
+                source_path.display()
+            );
+        }
 
 
-        match crate::load_shader::load_shader_for_preview(
-            &shader_path
-        ) {
+        let loaded_shader =
+            if is_managed_shader {
+                crate::load_shader::load_shader(
+                    &requested_shader_name
+                )
+            } else if let Some(source_path) =
+                resolved_source_path.as_ref()
+            {
+                crate::load_shader::load_shader_for_preview(
+                    source_path
+                )
+            } else {
+                crate::load_shader::load_shader(
+                    &requested_shader_name
+                )
+            };
+
+
+        match loaded_shader {
             crate::load_shader::ShaderLoadResult::Ready {
                 source,
                 shader_name,
@@ -762,7 +810,15 @@ fn select_safe_wallpaper_shader(
                 return Ok(
                     ActiveWallpaperShader {
                         manager_name: requested_shader_name,
-                        source_path: shader_path,
+                        policy_id:
+                            requested_shader.policy_id,
+                        policy_name:
+                            requested_shader.policy_name.clone(),
+                        source_path:
+                            resolved_source_path
+                                .unwrap_or(
+                                    managed_source_path
+                                ),
                         source,
                         shader_name,
                         channel_usage,
@@ -843,6 +899,41 @@ fn select_safe_wallpaper_shader(
 }
 
 
+fn paths_refer_to_same_file(
+    left: &Path,
+    right: &Path,
+) -> bool {
+
+    if left
+        == right
+    {
+        return true;
+    }
+
+
+    match (
+        std::fs::canonicalize(
+            left
+        ),
+        std::fs::canonicalize(
+            right
+        ),
+    ) {
+        (
+            Ok(left),
+            Ok(right),
+        ) => {
+            left
+                == right
+        }
+
+        _ => {
+            false
+        }
+    }
+}
+
+
 fn print_active_wallpaper_shader(
     shader: &ActiveWallpaperShader,
 ) {
@@ -903,6 +994,7 @@ pub fn run_egl_background_surface(
 
 
     runtime.tray_status.set_active(
+        active_shader.policy_id,
         active_shader.shader_name.clone(),
         active_shader.source_path.clone(),
     );
@@ -2727,6 +2819,7 @@ fn render_mirror_frames(
 
 
                                 runtime.tray_status.set_active(
+                                    current_shader.policy_id,
                                     current_shader.shader_name.clone(),
                                     current_shader.source_path.clone(),
                                 );
@@ -2848,6 +2941,22 @@ fn render_mirror_frames(
                 Instant::now();
 
 
+            let current_audio_bands =
+                runtime.audio_bands
+                    .as_ref()
+                    .and_then(
+                        |shared| {
+                            shared
+                                .read()
+                                .ok()
+                                .map(
+                                    |bands| *bands
+                                )
+                        }
+                    )
+                    .unwrap_or_default();
+
+
             for (
                 egl_target,
                 native_target,
@@ -2887,6 +2996,11 @@ fn render_mirror_frames(
                                 )
                             }
                         )?;
+
+
+                postprocess.set_audio_bands(
+                    current_audio_bands
+                );
 
 
                 let target_width =
@@ -3207,8 +3321,8 @@ fn notify_active_wallpaper(
 
     let metadata =
         crate::notify_wallpaper::WallpaperMetadata {
-            wallpaper:
-                shader.shader_name.clone(),
+            policy_name:
+                shader.policy_name.clone(),
 
             animation_speed,
 

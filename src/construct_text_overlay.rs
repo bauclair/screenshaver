@@ -222,7 +222,7 @@ fn format_descriptor(
     let mut fields = Vec::new();
 
     if let Some(value) = nonempty(descriptor.shader.as_deref()) {
-        fields.push(format!("S: {}", value));
+        fields.push(format!("P: {}", value));
     }
     if let Some(value) = nonempty(descriptor.texture.as_deref()) {
         fields.push(format!("T: {}", value));

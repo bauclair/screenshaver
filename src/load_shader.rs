@@ -35,17 +35,170 @@ pub fn load_shader(
     shader_name: &str,
 ) -> ShaderLoadResult {
 
-    let source_path =
-        crate::locate_paths::shader_dir()
-            .join(
-                shader_name
+    log_debug(
+        &format!(
+            "[SHADER] Attempting to load managed shader from database: {}",
+            shader_name,
+        )
+    );
+
+
+    match crate::load_shader_source::load_managed_shader_source(
+        shader_name
+    ) {
+
+        Ok(
+            crate::load_shader_source::ShaderSourceResult::Ready {
+                source,
+                shader_type,
+                channel_usage,
+                shader_inputs,
+            }
+        ) => {
+
+            log_information(
+                &format!(
+                    "[SHADER] Successfully loaded managed shader from database: {}",
+                    shader_name,
+                )
             );
 
 
-    load_shader_path_internal(
-        &source_path,
-        true,
-    )
+            log_debug(
+                &format!(
+                    "[SHADER] Runtime source: {} bytes",
+                    source.len(),
+                )
+            );
+
+
+            log_debug(
+                &format!(
+                    "[SHADER] Type: {}",
+                    match shader_type.as_str() {
+                        "native" => "Native GLSL",
+                        "shadertoy" => "ShaderToy",
+                        "isf" => "ISF",
+                        other => other,
+                    },
+                )
+            );
+
+
+            ShaderLoadResult::Ready {
+                source,
+                shader_name:
+                    shader_name.to_string(),
+                built_in_default:
+                    false,
+                channel_usage,
+                shader_inputs,
+            }
+        }
+
+
+        Ok(
+            crate::load_shader_source::ShaderSourceResult::Rejected {
+                reason,
+                message,
+            }
+        ) => {
+
+            let mut reasons =
+                Vec::<String>::new();
+
+
+            if let Some(reason) =
+                reason
+            {
+                reasons.push(
+                    reason
+                );
+            }
+
+
+            if let Some(message) =
+                message
+            {
+                if !reasons.contains(
+                    &message
+                )
+                {
+                    reasons.push(
+                        message
+                    );
+                }
+            }
+
+
+            if reasons.is_empty() {
+                reasons.push(
+                    "Shader is rejected by the Screenshaver database"
+                        .to_string()
+                );
+            }
+
+
+            log_warning(
+                &format!(
+                    "[SHADER] Managed shader '{}' is rejected: {}",
+                    shader_name,
+                    reasons.join(
+                        "; "
+                    ),
+                )
+            );
+
+
+            ShaderLoadResult::Rejected {
+                shader_name:
+                    shader_name.to_string(),
+                reasons,
+            }
+        }
+
+
+        Ok(
+            crate::load_shader_source::ShaderSourceResult::Unavailable {
+                error,
+            }
+        ) => {
+
+            log_error(
+                &format!(
+                    "[SHADER] Managed shader '{}' is unavailable: {}",
+                    shader_name,
+                    error,
+                )
+            );
+
+
+            ShaderLoadResult::Unavailable {
+                shader_name:
+                    shader_name.to_string(),
+                error,
+            }
+        }
+
+
+        Err(error) => {
+
+            log_error(
+                &format!(
+                    "[SHADER] Unable to load managed shader '{}' from database: {}",
+                    shader_name,
+                    error,
+                )
+            );
+
+
+            ShaderLoadResult::Unavailable {
+                shader_name:
+                    shader_name.to_string(),
+                error,
+            }
+        }
+    }
 }
 
 
@@ -54,15 +207,13 @@ pub fn load_shader_for_preview(
 ) -> ShaderLoadResult {
 
     load_shader_path_internal(
-        source_path,
-        false,
+        source_path
     )
 }
 
 
 fn load_shader_path_internal(
     source_path: &Path,
-    quarantine_on_rejection: bool,
 ) -> ShaderLoadResult {
 
     let shader_name =
@@ -130,45 +281,13 @@ fn load_shader_path_internal(
             log_report(&report.applied, &report.warnings, &report.rejection_reasons);
 
             if !report.rejection_reasons.is_empty() {
-                if quarantine_on_rejection {
-                    quarantine(
-                        source_path,
-                        &shader_name,
-                        &report.rejection_reasons,
-                    );
-                }
                 return ShaderLoadResult::Rejected {
                     shader_name: shader_name.clone(),
                     reasons: report.rejection_reasons,
                 };
             }
 
-            let processed =
-                if let Some(cached) =
-                    try_load_cached_shader(
-                        source_path,
-                        &source,
-                    )
-                {
-                    cached
-                } else {
-
-                    if let Err(error) =
-                        write_cached_shader(
-                            source_path,
-                            &source,
-                            &report.source,
-                        )
-                    {
-                        log_warning(
-                            &format!(
-                                "[CACHE] Failed to write cache entry: {error}"
-                            )
-                        );
-                    }
-
-                    report.source
-                };
+            let processed = report.source;
 
             ShaderLoadResult::Ready {
                 source: processed,
@@ -268,32 +387,7 @@ fn load_shader_path_internal(
                 "[ISF] Status: Supported"
             );
 
-            let processed =
-                if let Some(cached) =
-                    try_load_cached_shader(
-                        source_path,
-                        &source,
-                    )
-                {
-                    cached
-                } else {
-
-                    if let Err(error) =
-                        write_cached_shader(
-                            source_path,
-                            &source,
-                            &report.source,
-                        )
-                    {
-                        log_warning(
-                            &format!(
-                                "[CACHE] Failed to write cache entry: {error}"
-                            )
-                        );
-                    }
-
-                    report.source
-                };
+            let processed = report.source;
 
             ShaderLoadResult::Ready {
                 source:
@@ -326,13 +420,6 @@ fn load_shader_path_internal(
             log_report(&[], &warnings, &rejection_reasons);
 
             if !rejection_reasons.is_empty() {
-                if quarantine_on_rejection {
-                    quarantine(
-                        source_path,
-                        &shader_name,
-                        &rejection_reasons,
-                    );
-                }
                 return ShaderLoadResult::Rejected {
                     shader_name: shader_name.clone(),
                     reasons: rejection_reasons,
@@ -383,21 +470,6 @@ pub fn load_builtin_default_shader() -> ShaderLoadResult {
     }
 }
 
-fn quarantine(source_path: &Path, shader_name: &str, reasons: &[String]) {
-    match crate::reject_shader::reject_shader(source_path, reasons) {
-        Ok(path) => log_information(&format!(
-            "[REJECT] Shader '{}' quarantined at '{}'",
-            shader_name,
-            path.display()
-        )),
-        Err(error) => log_warning(&format!(
-            "[REJECT] Failed to quarantine shader '{}': {}",
-            source_path.display(),
-            error
-        )),
-    }
-}
-
 fn log_report(applied: &[String], warnings: &[String], reasons: &[String]) {
     for item in applied {
         log_debug(&format!("[PREPROCESS] Applied: {item}"));
@@ -407,174 +479,6 @@ fn log_report(applied: &[String], warnings: &[String], reasons: &[String]) {
     }
     for item in reasons {
         log_warning(&format!("[PREPROCESS] Rejection: {item}"));
-    }
-}
-
-fn try_load_cached_shader(
-    source_path: &Path,
-    source: &str,
-) -> Option<String> {
-
-    let cache_path =
-        match crate::manage_cache::cache_path(
-            source_path,
-            source.as_bytes(),
-        ) {
-            Ok(path) => path,
-
-            Err(error) => {
-                log_warning(
-                    &format!(
-                        "[CACHE] Unable to determine cache path: {}",
-                        error,
-                    )
-                );
-
-                return None;
-            }
-        };
-
-
-    if !cache_path.exists() {
-
-        log_debug(
-            &format!(
-                "[CACHE] Miss: {}",
-                cache_path.display()
-            )
-        );
-
-        return None;
-    }
-
-
-    match std::fs::read_to_string(
-        &cache_path
-    ) {
-
-        Ok(cached_source) => {
-
-            log_debug(
-                &format!(
-                    "[CACHE] Hit: {}",
-                    cache_path.display()
-                )
-            );
-
-
-            Some(
-                cached_source
-            )
-        }
-
-
-        Err(error) => {
-
-            log_warning(
-                &format!(
-                    "[CACHE] Failed to read cache entry '{}': {}",
-                    cache_path.display(),
-                    error,
-                )
-            );
-
-
-            None
-        }
-    }
-}
-
-
-fn write_cached_shader(
-    source_path: &Path,
-    source: &str,
-    processed: &str,
-) -> Result<PathBuf, String> {
-
-    let cache_dir =
-        crate::locate_paths::shader_cache_dir();
-
-
-    std::fs::create_dir_all(
-        &cache_dir
-    )
-    .map_err(
-        |error| {
-            format!(
-                "Unable to create cache directory '{}': {}",
-                cache_dir.display(),
-                error,
-            )
-        }
-    )?;
-
-
-    let output_path =
-        crate::manage_cache::cache_path(
-            source_path,
-            source.as_bytes(),
-        )?;
-
-
-    std::fs::write(
-        &output_path,
-        processed,
-    )
-    .map_err(
-        |error| {
-            format!(
-                "Unable to write cache entry '{}': {}",
-                output_path.display(),
-                error,
-            )
-        }
-    )?;
-
-
-    log_debug(
-        &format!(
-            "[CACHE] Cache entry written: {}",
-            output_path.display()
-        )
-    );
-
-
-    Ok(
-        output_path
-    )
-}
-
-
-pub fn cleanup_generated_shaders() {
-    let directory = crate::locate_paths::shader_cache_dir();
-    let entries = match std::fs::read_dir(&directory) {
-        Ok(entries) => entries,
-        Err(error) => {
-            log_warning(&format!(
-                "[CACHE] Failed to read shader cache directory '{}': {}",
-                directory.display(),
-                error
-            ));
-            return;
-        }
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let Some(name) = path.file_name().and_then(|v| v.to_str()) else {
-            continue;
-        };
-        if !name.contains("._gen") || !name.ends_with(".glsl") {
-            continue;
-        }
-        match std::fs::remove_file(&path) {
-            Ok(()) => log_debug(&format!("[CACHE] Deleted generated shader: {}", path.display())),
-            Err(error) => log_warning(&format!(
-                "[CACHE] Failed to delete generated shader '{}': {}",
-                path.display(),
-                error
-            )),
-        }
     }
 }
 

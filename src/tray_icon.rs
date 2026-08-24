@@ -33,16 +33,19 @@ pub enum WallpaperTrayStatus {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActiveWallpaperInfo {
+    pub policy_id: i64,
     pub display_name: String,
     pub path: PathBuf,
 }
 
 impl ActiveWallpaperInfo {
     pub fn new(
+        policy_id: i64,
         display_name: impl Into<String>,
         path: impl Into<PathBuf>,
     ) -> Self {
         Self {
+            policy_id,
             display_name: display_name.into(),
             path: path.into(),
         }
@@ -110,12 +113,14 @@ impl TrayStatusControl {
 
     pub fn set_active(
         &self,
+        policy_id: i64,
         display_name: impl Into<String>,
         path: impl Into<PathBuf>,
     ) {
         self.set_wallpaper_status(
             WallpaperTrayStatus::Active(
                 ActiveWallpaperInfo::new(
+                    policy_id,
                     display_name,
                     path,
                 )

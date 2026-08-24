@@ -387,8 +387,8 @@ fn wallpaper_metadata(
 ) -> crate::notify_wallpaper::WallpaperMetadata {
 
     crate::notify_wallpaper::WallpaperMetadata {
-        wallpaper:
-            metadata.shader_name.clone(),
+        policy_name:
+            metadata.policy_name.clone(),
         animation_speed:
             metadata.animation_speed,
         texture:
@@ -415,6 +415,7 @@ fn notify_wallpaper_events(
             FrameRenderEvent::ShaderChanged(metadata) => {
                 if let Some(shader_path) = metadata.shader_path.clone() {
                     tray_status.set_active(
+                        metadata.policy_id,
                         metadata.shader_name.clone(),
                         shader_path,
                     );
@@ -661,6 +662,7 @@ impl WallpaperBackend for X11WallpaperBackend {
                     runtime.fps_policy.clone(),
                     runtime.texture_policy.clone(),
                     runtime.postprocess_policy.clone(),
+                    runtime.audio_bands.clone(),
                     false,
                     parsed_subtitle_placement.placement,
                     wallpaper_window.width as u32,
@@ -672,6 +674,7 @@ impl WallpaperBackend for X11WallpaperBackend {
 
             if let Some(shader_path) = initial_metadata.shader_path.clone() {
                 runtime.tray_status.set_active(
+                    initial_metadata.policy_id,
                     initial_metadata.shader_name.clone(),
                     shader_path,
                 );

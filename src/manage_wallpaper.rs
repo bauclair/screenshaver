@@ -7,69 +7,131 @@ pub fn load_shader_entries(
     String,
 > {
 
-    let wallpaper_directory =
-        crate::locate_wallpaper::wallpaper_directory()
+    let managed_source_path =
+        crate::locate_paths::shader_dir()
+            .to_string_lossy()
+            .to_string();
+
+
+    let mut shader_entries =
+        Vec::new();
+
+
+    let connection =
+        crate::open_database::open()
             .map_err(
                 |error| {
                     format!(
-                        "Unable to locate the wallpaper directory: {}",
+                        "Unable to open database for wallpaper shader discovery: {}",
                         error,
                     )
                 }
             )?;
 
 
-    let shader_files =
-        crate::locate_wallpaper::locate_shader_files(
-            &wallpaper_directory
-        )
-        .map_err(
-            |error| {
-                format!(
-                    "Unable to enumerate wallpaper shaders in {}: {}",
-                    wallpaper_directory.display(),
-                    error,
-                )
-            }
-        )?;
-
-
-    let mut shader_entries =
-        shader_files
-            .iter()
-            .filter_map(
-                |shader_file| {
-                    shader_file
-                        .file_name()
-                        .and_then(
-                            |name| {
-                                name.to_str()
-                            }
-                        )
-                        .map(
-                            |name| {
-                                crate::manage_shader::ShaderEntry::with_source_path(
-                                    name.to_string(),
-                                    shader_file.clone(),
-                                )
-                            }
-                        )
-                }
+    let mut statement =
+        connection
+            .prepare(
+                "SELECT
+                     p.policy_id,
+                     s.filename,
+                     s.source_path,
+                     p.policy_name
+                 FROM shader_policies AS p
+                 JOIN shaders AS s
+                   ON s.shader_id = p.shader_id
+                 WHERE s.source_path = ?1
+                   AND s.file_status = 'present'
+                   AND p.policy_target = 'wallpaper'
+                 ORDER BY s.filename COLLATE NOCASE,
+                          s.filename,
+                          p.policy_name COLLATE NOCASE,
+                          p.policy_name"
             )
-            .collect::<Vec<_>>();
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to prepare wallpaper shader discovery query: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    let rows =
+        statement
+            .query_map(
+                rusqlite::params![
+                    managed_source_path
+                ],
+                |row| {
+                    Ok(
+                        (
+                            row.get::<_, i64>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, String>(2)?,
+                            row.get::<_, String>(3)?,
+                        )
+                    )
+                },
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to query wallpaper shader discovery rows: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    for row in rows {
+
+        let (
+            policy_id,
+            filename,
+            source_path,
+            policy_name,
+        ) =
+            row.map_err(
+                |error| {
+                    format!(
+                        "Unable to decode wallpaper shader discovery row: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+        shader_entries.push(
+            crate::manage_shader::ShaderEntry::with_policy_id_source_path(
+                policy_id,
+                filename.clone(),
+                policy_name,
+                std::path::PathBuf::from(
+                    source_path
+                )
+                .join(
+                    filename
+                ),
+            )
+        );
+    }
 
 
     let config_path =
         crate::locate_paths::config_path();
 
 
-    match crate::manage_policies::external_policy_paths(
+    match crate::manage_policies::external_policy_entries(
         &config_path,
         crate::manage_policies::PolicyTarget::Wallpaper,
     ) {
         Ok(external_paths) => {
 
             for (
+                policy_id,
+                policy_name,
                 name,
                 source_path,
             ) in external_paths
@@ -85,10 +147,11 @@ pub fn load_shader_entries(
                 }
 
 
-
                 shader_entries.push(
-                    crate::manage_shader::ShaderEntry::with_source_path(
+                    crate::manage_shader::ShaderEntry::with_policy_id_source_path(
+                        policy_id,
                         name,
+                        policy_name,
                         source_path,
                     )
                 );
@@ -112,6 +175,27 @@ pub fn load_shader_entries(
             left.name.cmp(
                 &right.name
             )
+            .then_with(
+                || {
+                    left.policy_name.cmp(
+                        &right.policy_name
+                    )
+                }
+            )
+            .then_with(
+                || {
+                    left.source_path.cmp(
+                        &right.source_path
+                    )
+                }
+            )
+            .then_with(
+                || {
+                    left.policy_id.cmp(
+                        &right.policy_id
+                    )
+                }
+            )
         }
     );
 
@@ -120,7 +204,6 @@ pub fn load_shader_entries(
         shader_entries
     )
 }
-
 
 pub fn run(
     configured_mode: &str,
@@ -204,19 +287,8 @@ pub fn run(
             )?;
 
 
-    let shader_files =
-        crate::locate_wallpaper::locate_shader_files(
-            &wallpaper_directory
-        )
-        .map_err(
-            |error| {
-                format!(
-                    "Unable to enumerate wallpaper shaders in {}: {}",
-                    wallpaper_directory.display(),
-                    error,
-                )
-            }
-        )?;
+    let shader_entries =
+        load_shader_entries()?;
 
 
     println!(
@@ -270,15 +342,15 @@ pub fn run(
 
 
     println!(
-        "Compatible wallpaper shaders: {}",
-        shader_files.len()
+        "Eligible wallpaper shaders: {}",
+        shader_entries.len()
     );
 
 
-    if shader_files.is_empty() {
+    if shader_entries.is_empty() {
 
         println!(
-            "    No .glsl, .fs, or .shaver files were found."
+            "    No present shaders with a Wallpaper policy were found."
         );
 
 
@@ -294,20 +366,14 @@ pub fn run(
     }
 
 
-    for shader_file in
-        &shader_files
+    for shader_entry in
+        &shader_entries
     {
         println!(
             "    {}",
-            display_name(
-                shader_file
-            )
+            shader_entry.name
         );
     }
-
-
-    let shader_entries =
-        load_shader_entries()?;
 
 
     let shader_interval =
@@ -352,20 +418,3 @@ pub fn run(
 
     Ok(())
 }
-
-
-fn display_name(
-    path: &std::path::Path,
-) -> &str {
-
-    path.file_name()
-        .and_then(
-            |name| {
-                name.to_str()
-            }
-        )
-        .unwrap_or(
-            "<invalid filename>"
-        )
-}
-

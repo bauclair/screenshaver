@@ -6,12 +6,13 @@
 , libGL
 , libglvnd
 , wayland
+, libpulseaudio
 , xorg
 }:
 
 rustPlatform.buildRustPackage rec {
   pname = "screenshaver";
-  version = "0.5.0";
+  version = "0.5.2";
 
   src = ./.;
 
@@ -30,6 +31,7 @@ rustPlatform.buildRustPackage rec {
     libglvnd
     wayland
     wayland.dev
+    libpulseaudio
     xorg.libX11
     xorg.libXScrnSaver
   ];

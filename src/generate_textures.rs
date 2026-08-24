@@ -54,12 +54,18 @@ pub enum TextureFamily {
     Hexagons,
 
     Facets,
+
+    Skulls,
+
+    Scales,
+
+    Eyes,
 }
 
 
 impl TextureFamily {
 
-    pub const ALL: [TextureFamily; 9] = [
+    pub const ALL: [TextureFamily; 12] = [
 
 
         TextureFamily::Marble,
@@ -81,6 +87,12 @@ impl TextureFamily {
         TextureFamily::Hexagons,
 
         TextureFamily::Facets,
+
+        TextureFamily::Skulls,
+
+        TextureFamily::Scales,
+
+        TextureFamily::Eyes,
     ];
 
 
@@ -124,6 +136,18 @@ impl TextureFamily {
 
             TextureFamily::Facets => {
                 "facets"
+            }
+
+            TextureFamily::Skulls => {
+                "skulls"
+            }
+
+            TextureFamily::Scales => {
+                "scales"
+            }
+
+            TextureFamily::Eyes => {
+                "eyes"
             }
 
         }
@@ -221,6 +245,24 @@ impl FromStr for TextureFamily {
             "facets" => {
                 Ok(
                     TextureFamily::Facets
+                )
+            }
+
+            "skulls" => {
+                Ok(
+                    TextureFamily::Skulls
+                )
+            }
+
+            "scales" => {
+                Ok(
+                    TextureFamily::Scales
+                )
+            }
+
+            "eyes" => {
+                Ok(
+                    TextureFamily::Eyes
                 )
             }
 
@@ -488,7 +530,31 @@ pub fn generate_from_specification(
                 seed,
                 specification.requested_primitive_count,
             )
-        }       
+        }
+
+        TextureFamily::Skulls => {
+            crate::generate_skulls::generate(
+                palette,
+                seed,
+                specification.requested_primitive_count,
+            )
+        }
+
+        TextureFamily::Scales => {
+            crate::generate_scales::generate(
+                palette,
+                seed,
+                specification.requested_primitive_count,
+            )
+        }
+
+        TextureFamily::Eyes => {
+            crate::generate_eyes::generate(
+                palette,
+                seed,
+                specification.requested_primitive_count,
+            )
+        }
 
     }?;
 
@@ -587,6 +653,30 @@ mod tests {
                 .parse::<TextureFamily>(),
             Ok(
                 TextureFamily::Facets
+            )
+        );
+
+        assert_eq!(
+            "SkUlLs"
+                .parse::<TextureFamily>(),
+            Ok(
+                TextureFamily::Skulls
+            )
+        );
+
+        assert_eq!(
+            "ScAlEs"
+                .parse::<TextureFamily>(),
+            Ok(
+                TextureFamily::Scales
+            )
+        );
+
+        assert_eq!(
+            "EyEs"
+                .parse::<TextureFamily>(),
+            Ok(
+                TextureFamily::Eyes
             )
         );
     }

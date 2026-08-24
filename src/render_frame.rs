@@ -26,6 +26,8 @@ pub enum ScreensaverRunOutcome {
 #[derive(Debug)]
 struct ActiveShader {
     program: u32,
+    policy_id: i64,
+    policy_name: String,
     shader_name: String,
     source_path: Option<PathBuf>,
     channel_usage: crate::preprocess_shader::ShaderChannelUsage,
@@ -66,8 +68,9 @@ enum RenderFpsPolicy {
 }
 
 impl RenderFpsPolicy {
-    fn rendered_fps_for_shader(
+    fn rendered_fps_for_policy(
         &self,
+        policy_id: i64,
         shader_name: &str,
         source_path: Option<&Path>,
     ) -> u32 {
@@ -79,12 +82,14 @@ impl RenderFpsPolicy {
                 resolve_shader_fps(
                     (*global_rendered_fps).max(1),
                     fps_policy_entries,
+                    policy_id,
                     shader_name,
                     source_path,
                 )
             }
             Self::Wallpaper(policy) => {
-                policy.rendered_fps_for_shader(
+                policy.rendered_fps_for_policy(
+                    policy_id,
                     shader_name,
                     source_path,
                     None,
@@ -96,6 +101,8 @@ impl RenderFpsPolicy {
 
 #[derive(Clone, Debug)]
 pub(crate) struct FrameRenderMetadata {
+    pub policy_id: i64,
+    pub policy_name: String,
     pub shader_name: String,
     pub shader_path: Option<PathBuf>,
     pub animation_speed: f32,
@@ -143,6 +150,8 @@ pub(crate) struct FrameRenderEngine {
     fps_policy: RenderFpsPolicy,
     postprocess_policy:
         crate::load_config::PostprocessPolicy,
+    audio_bands:
+        Option<crate::audio_backend::SharedAudioBands>,
     output_policy: FrameOutputPolicy,
     configured_fps: u32,
     fps_warning_state: FpsWarningState,
@@ -171,6 +180,8 @@ impl FrameRenderEngine {
             crate::load_config::TexturePolicy,
         postprocess_policy:
             crate::load_config::PostprocessPolicy,
+        audio_bands:
+            Option<crate::audio_backend::SharedAudioBands>,
         subtitles: bool,
         subtitle_placement:
             crate::parse_subtitle_placement::SubtitlePlacement,
@@ -189,6 +200,7 @@ impl FrameRenderEngine {
             FrameOutputPolicy::PreserveAlpha,
             texture_policy,
             postprocess_policy,
+            audio_bands,
             subtitles,
             true,
             subtitle_placement,
@@ -210,6 +222,8 @@ impl FrameRenderEngine {
             crate::load_config::TexturePolicy,
         postprocess_policy:
             crate::load_config::PostprocessPolicy,
+        audio_bands:
+            Option<crate::audio_backend::SharedAudioBands>,
         subtitles: bool,
         subtitle_placement:
             crate::parse_subtitle_placement::SubtitlePlacement,
@@ -227,6 +241,7 @@ impl FrameRenderEngine {
             FrameOutputPolicy::ForceOpaque,
             texture_policy,
             postprocess_policy,
+            audio_bands,
             subtitles,
             false,
             subtitle_placement,
@@ -248,6 +263,8 @@ impl FrameRenderEngine {
             crate::load_config::TexturePolicy,
         postprocess_policy:
             crate::load_config::PostprocessPolicy,
+        audio_bands:
+            Option<crate::audio_backend::SharedAudioBands>,
         subtitles: bool,
         render_fps_warning_overlay: bool,
         subtitle_placement:
@@ -266,7 +283,8 @@ impl FrameRenderEngine {
             )?;
 
         let animation_speed =
-            animation_speed_policy.animation_speed_for_shader(
+            animation_speed_policy.animation_speed_for_policy(
+                active_shader.policy_id,
                 &active_shader.shader_name,
                 active_shader.source_path.as_deref(),
                 None,
@@ -288,7 +306,8 @@ impl FrameRenderEngine {
                 texture_policy
             );
 
-        texture_manager.prepare_for_shader_with_path(
+        texture_manager.prepare_for_policy_with_path(
+            active_shader.policy_id,
             &active_shader.shader_name,
             active_shader.source_path.as_deref(),
             active_shader.channel_usage,
@@ -299,7 +318,8 @@ impl FrameRenderEngine {
         );
 
         let configured_fps =
-            fps_policy.rendered_fps_for_shader(
+            fps_policy.rendered_fps_for_policy(
+                active_shader.policy_id,
                 &active_shader.shader_name,
                 active_shader.source_path.as_deref(),
             );
@@ -327,7 +347,8 @@ impl FrameRenderEngine {
             };
 
         let postprocess_profile =
-            postprocess_policy.profile_for_shader(
+            postprocess_policy.profile_for_policy(
+                active_shader.policy_id,
                 &active_shader.shader_name,
                 active_shader.source_path.as_deref(),
             );
@@ -379,6 +400,7 @@ impl FrameRenderEngine {
                     ),
                 fps_policy,
                 postprocess_policy,
+                audio_bands,
                 output_policy,
                 configured_fps,
                 fps_warning_state:
@@ -415,7 +437,8 @@ impl FrameRenderEngine {
                 reload.texture_policy.clone()
             );
 
-        replacement_texture_manager.prepare_for_shader_with_path(
+        replacement_texture_manager.prepare_for_policy_with_path(
+            self.active_shader.policy_id,
             &shader_name,
             self.active_shader.source_path.as_deref(),
             self.active_shader.channel_usage,
@@ -423,7 +446,8 @@ impl FrameRenderEngine {
 
         let replacement_animation_speed =
             reload.animation_speed_policy
-                .animation_speed_for_shader(
+                .animation_speed_for_policy(
+                    self.active_shader.policy_id,
                     &shader_name,
                     self.active_shader.source_path.as_deref(),
                     None,
@@ -431,7 +455,8 @@ impl FrameRenderEngine {
 
         let replacement_configured_fps =
             reload.fps_policy
-                .rendered_fps_for_shader(
+                .rendered_fps_for_policy(
+                    self.active_shader.policy_id,
                     &shader_name,
                     self.active_shader.source_path.as_deref(),
                     None,
@@ -439,7 +464,8 @@ impl FrameRenderEngine {
 
         let replacement_postprocess_profile =
             reload.postprocess_policy
-                .profile_for_shader(
+                .profile_for_policy(
+                    self.active_shader.policy_id,
                     &shader_name,
                     self.active_shader.source_path.as_deref(),
                 );
@@ -563,6 +589,18 @@ impl FrameRenderEngine {
         ) =
             self.postprocess
                 .scene_dimensions();
+
+        if let Err(error) =
+            self.texture_manager
+                .update_animations()
+        {
+            log_warning(
+                &format!(
+                    "[TEXTURE] Unable to update animated texture: {error}"
+                )
+            );
+        }
+
 
         unsafe {
             if self.output_policy
@@ -697,6 +735,25 @@ impl FrameRenderEngine {
         width: u32,
         height: u32,
     ) -> FrameRenderEvents {
+        let current_audio_bands =
+            self.audio_bands
+                .as_ref()
+                .and_then(
+                    |shared| {
+                        shared
+                            .read()
+                            .ok()
+                            .map(
+                                |bands| *bands
+                            )
+                    }
+                )
+                .unwrap_or_default();
+
+        self.postprocess.set_audio_bands(
+            current_audio_bands
+        );
+
         let shader_changed =
             self.maybe_switch_shader(
                 width,
@@ -854,6 +911,10 @@ impl FrameRenderEngine {
                 .active_specification_selection();
 
         FrameRenderMetadata {
+            policy_id:
+                self.active_shader.policy_id,
+            policy_name:
+                self.active_shader.policy_name.clone(),
             shader_name:
                 self.active_shader.shader_name.clone(),
             shader_path:
@@ -900,7 +961,8 @@ impl FrameRenderEngine {
         ) {
             Ok(new_shader) => {
                 if let Err(error) =
-                    self.texture_manager.prepare_for_shader_with_path(
+                    self.texture_manager.prepare_for_policy_with_path(
+                        new_shader.policy_id,
                         &new_shader.shader_name,
                         new_shader.source_path.as_deref(),
                         new_shader.channel_usage,
@@ -934,7 +996,8 @@ impl FrameRenderEngine {
 
                 let new_animation_speed =
                     self.animation_speed_policy
-                        .animation_speed_for_shader(
+                        .animation_speed_for_policy(
+                            new_shader.policy_id,
                             &new_shader.shader_name,
                             new_shader.source_path.as_deref(),
                             None,
@@ -943,14 +1006,16 @@ impl FrameRenderEngine {
 
                 let new_configured_fps =
                     self.fps_policy
-                        .rendered_fps_for_shader(
+                        .rendered_fps_for_policy(
+                            new_shader.policy_id,
                             &new_shader.shader_name,
                             new_shader.source_path.as_deref(),
                         );
 
                 let new_postprocess_profile =
                     self.postprocess_policy
-                        .profile_for_shader(
+                        .profile_for_policy(
+                            new_shader.policy_id,
                             &new_shader.shader_name,
                             new_shader.source_path.as_deref(),
                         );
@@ -1119,6 +1184,8 @@ impl FrameRenderer {
             crate::load_config::TexturePolicy,
         postprocess_policy:
             crate::load_config::PostprocessPolicy,
+        audio_bands:
+            Option<crate::audio_backend::SharedAudioBands>,
         subtitles: bool,
         subtitle_placement:
             crate::parse_subtitle_placement::SubtitlePlacement,
@@ -1214,6 +1281,7 @@ impl FrameRenderer {
                 fps_policy_entries,
                 texture_policy,
                 postprocess_policy,
+                audio_bands,
                 subtitles,
                 subtitle_placement,
                 window_width,
@@ -1510,9 +1578,28 @@ fn resolve_shader_fps(
         &[
             crate::load_config::FpsPolicyEntry
         ],
+    policy_id: i64,
     shader_name: &str,
     source_path: Option<&Path>,
 ) -> u32 {
+
+    if policy_id > 0 {
+        if let Some(entry) =
+            fps_policy_entries
+                .iter()
+                .find(
+                    |entry| {
+                        entry.policy_id
+                            == policy_id
+                    }
+                )
+        {
+            return entry.rendered_fps.max(
+                1
+            );
+        }
+    }
+
 
     if let Some(source_path) =
         source_path
@@ -1665,7 +1752,7 @@ fn build_subtitle_overlay(
                     "Collect more shaders at https://editor.isf.video/shaders and https://shadertoy.com/browse"
                         .to_string()
                 } else {
-                    shader.shader_name
+                    shader.policy_name
                         .clone()
                 };
 
@@ -1742,29 +1829,37 @@ fn select_safe_shader_program(
             )
         );
 
+        let managed_source_path =
+            crate::locate_paths::shader_dir()
+                .join(
+                    &requested_shader_name
+                );
+
+
+        let is_managed_shader =
+            resolved_source_path
+                .as_ref()
+                .is_none_or(
+                    |path| {
+                        paths_refer_to_same_file(
+                            path,
+                            &managed_source_path,
+                        )
+                    }
+                );
+
+
         let loaded_shader =
-            if shader_directory.is_none()
-                && resolved_source_path
-                    .as_ref()
-                    .is_some_and(
-                        |path| {
-                            *path
-                                == crate::locate_paths::screensaver_shader_dir()
-                                    .join(
-                                        &requested_shader_name
-                                    )
-                        }
-                    )
+            if is_managed_shader
             {
-                // Preserve managed-screensaver quarantine semantics.
                 crate::load_shader::load_shader(
                     &requested_shader_name
                 )
             } else if let Some(source_path) =
                 resolved_source_path.as_ref()
             {
-                // Wallpaper and external shaders are loaded explicitly and
-                // are never quarantined from their source location.
+                // Explicit-source and genuinely external shaders are loaded
+                // directly from their physical source location.
                 crate::load_shader::load_shader_for_preview(
                     source_path
                 )
@@ -1792,6 +1887,10 @@ fn select_safe_shader_program(
                         return Ok(
                             ActiveShader {
                                 program,
+                                policy_id:
+                                    requested_shader.policy_id,
+                                policy_name:
+                                    requested_shader.policy_name.clone(),
                                 shader_name,
                                 source_path:
                                     if built_in_default {
@@ -1801,7 +1900,7 @@ fn select_safe_shader_program(
                                             .or_else(
                                                 || {
                                                     Some(
-                                                        crate::locate_paths::screensaver_shader_dir()
+                                                        crate::locate_paths::shader_dir()
                                                             .join(
                                                                 &requested_shader_name
                                                             )
@@ -1827,8 +1926,8 @@ fn select_safe_shader_program(
                         );
 
 
-                        shader_manager.remove_shader(
-                            &requested_shader_name
+                        shader_manager.remove_entry(
+                            &requested_shader
                         );
                     }
                 }
@@ -1848,8 +1947,8 @@ fn select_safe_shader_program(
                     )
                 );
 
-                shader_manager.remove_shader(
-                    &requested_shader_name
+                shader_manager.remove_entry(
+                    &requested_shader
                 );
             }
 
@@ -1865,8 +1964,8 @@ fn select_safe_shader_program(
                     )
                 );
 
-                shader_manager.remove_shader(
-                    &requested_shader_name
+                shader_manager.remove_entry(
+                    &requested_shader
                 );
             }
         }
@@ -1901,6 +2000,10 @@ fn select_safe_shader_program(
             Ok(
                 ActiveShader {
                     program,
+                    policy_id:
+                        0,
+                    policy_name:
+                        shader_name.clone(),
                     shader_name,
                     source_path: None,
                     channel_usage,
@@ -1973,8 +2076,10 @@ fn log_active_shader(
 
     log_information(
         &format!(
-            "[RENDER] Active shader: {} (built-in: {}, channels: {}, mipmaps: {})",
+            "[RENDER] Active shader: {} (policy_id: {}, policy: '{}', built-in: {}, channels: {}, mipmaps: {})",
             shader.shader_name,
+            shader.policy_id,
+            shader.policy_name,
             shader.built_in_default,
             channel_description,
             shader.channel_usage.requires_mipmaps,

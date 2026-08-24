@@ -89,3 +89,23 @@ pub fn configure_editor_style(
     context.set_style(style);
 }
 
+
+
+/// Draw the pending-Bulk-Edit cue without changing the control's normal fill.
+/// Orange has one meaning in Control Center: this field will be applied to
+/// every checked policy if Bulk Edit is saved.
+pub fn paint_bulk_edit_border(
+    ui: &egui::Ui,
+    rect: egui::Rect,
+    scale: f32,
+) {
+    ui.painter().rect_stroke(
+        rect.expand(1.0 * scale),
+        2.0,
+        egui::Stroke::new(
+            (2.0 * scale).max(1.0),
+            egui::Color32::from_rgb(255, 165, 0),
+        ),
+        egui::StrokeKind::Outside,
+    );
+}

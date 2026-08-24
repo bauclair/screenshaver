@@ -12,11 +12,11 @@ mod parse_texture_specification;
 
 mod define_constants;
 mod locate_paths;
-mod delete_cache;
-mod manage_cache;
 
 mod query_session;
 mod session_backend;
+mod audio_backend;
+mod analyze_audio;
 
 mod manage_configuration;
 mod manage_shader;
@@ -29,28 +29,33 @@ mod preprocess_isf;
 mod apply_shader_inputs;
 mod preprocess_shader;
 mod load_shader;
+mod load_shader_source;
 mod compile_shader;
+mod reconcile_shaders;
+mod assign_shader_policies;
 mod render_frame;
 mod splash_screen;
-mod reject_shader;
 mod generate_bricks;
 mod generate_cellular;
 mod generate_clouds;
+mod generate_eyes;
+mod blink_eyes;
 mod generate_facets;
 mod generate_hexagons;
 mod generate_marble;
 mod generate_mesh;
 mod generate_noise;
 mod generate_radial;
+mod generate_scales;
+mod generate_skulls;
 mod generate_textures;
-mod preview_texture;
-mod preview_shader;
+mod preview_texture_thumbnail;
 mod edit_shader;
 mod editor_layout;
+mod nested_tabs;
 mod editor_theme;
 mod preview_shader_directory;
 mod palettes;
-mod display_texture;
 mod display_message;
 mod construct_text_overlay;
 mod display_overlay;
@@ -76,7 +81,19 @@ mod postprocess_shader;
 mod render_passthrough;
 mod render_fxaa;
 mod render_dithering;
+mod render_bloom;
 mod select_render_precision;
+
+mod initialize_database;
+mod evaluate_database;
+mod open_database;
+mod validate_database;
+mod migrate_database;
+mod hash_shader;
+
+mod qbe_layout;
+mod parse_qbe;
+mod query_database;
 
 use std::sync::Arc;
 use std::sync::atomic::{
@@ -84,567 +101,92 @@ use std::sync::atomic::{
     Ordering,
 };
 use std::time::Duration;
-use std::io::{self, Write};
 
-
-
-fn confirm_policy_replacement(
-    shader: &str,
-    target: crate::manage_policies::PolicyTarget,
-) -> Result<bool, String> {
-
-    loop {
-        print!(
-            "Shader '{}' already has an policy in [{}] -- delete it? [Y/n] ",
-            shader,
-            target.table_name(),
-        );
-
-        io::stdout()
-            .flush()
-            .map_err(
-                |error| error.to_string()
-            )?;
-
-        let mut response =
-            String::new();
-
-        io::stdin()
-            .read_line(
-                &mut response
-            )
-            .map_err(
-                |error| error.to_string()
-            )?;
-
-        match response
-            .trim()
-            .to_ascii_lowercase()
-            .as_str()
-        {
-            "" | "y" | "yes" => {
-                return Ok(true);
-            }
-
-            "n" | "no" => {
-                return Ok(false);
-            }
-
-            _ => {
-                println!(
-                    "Please answer Y or n."
-                );
-            }
-        }
-    }
-}
 
 
 fn main() {
 
-let config_dir = match initialize_user_files::initialize() {
-    Ok(path) => path,
+    let command =
+        match crate::parse_arguments::parse() {
 
-    Err(error) => {
-        eprintln!(
-            "Screenshaver could not initialize its user files: {error}"
-        );
-        std::process::exit(1);
-    }
-};
-
-println!(
-    "Screenshaver configuration directory: {}",
-    config_dir.display()
-);
-
-let command =
-    match crate::parse_arguments::parse() {
-
-        Ok(command) => command,
-
-        Err(error) => {
-
-            crate::parse_arguments::print_error(
-                &error
-            );
-
-            return;
-        }
-    };
-
-
-let runtime_logfile =
-    match &command {
-
-        crate::parse_arguments::Command::Run
-        | crate::parse_arguments::Command::Start
-        | crate::parse_arguments::Command::PreviewTexture { .. }
-        | crate::parse_arguments::Command::PreviewShader { .. }
-        | crate::parse_arguments::Command::Control { .. }
-        | crate::parse_arguments::Command::EditShader { .. }
-        | crate::parse_arguments::Command::DeleteCache => {
-
-            let logfile =
-                crate::locate_paths::runtime_log_path();
-
-
-            crate::logger::reset_log(
-                &logfile
-            );
-
-
-            Some(logfile)
-        }
-
-        _ => {
-            None
-        }
-    };
-
-
-match command {
-
-    crate::parse_arguments::Command::Run
-    | crate::parse_arguments::Command::Start => {}
-
-
-    crate::parse_arguments::Command::Stop => {
-
-        match crate::singleton::stop() {
-
-            Ok(
-                crate::singleton::StopOutcome::StopRequested {
-                    pid,
-                }
-            ) => {
-
-                println!(
-                    "Screenshaver stop requested for process {}.",
-                    pid
-                );
-            }
-
-            Ok(
-                crate::singleton::StopOutcome::NotRunning
-            ) => {
-
-                println!(
-                    "Screenshaver is not running."
-                );
-            }
+            Ok(command) => command,
 
             Err(error) => {
 
-                eprintln!(
-                    "[MAIN] STOP ERROR: {}",
-                    error
-                );
-            }
-        }
-
-
-        return;
-    }
-
-
-    crate::parse_arguments::Command::AddPolicy {
-        target,
-        shader,
-        properties,
-    } => {
-
-        let cfg_path =
-            crate::locate_paths::config_path();
-
-        let exists =
-            match crate::manage_policies::policy_exists(
-                &cfg_path,
-                target,
-                &shader,
-            ) {
-                Ok(exists) => exists,
-
-                Err(error) => {
-                    eprintln!(
-                        "{}",
-                        error
-                    );
-
-                    return;
-                }
-            };
-
-        if exists {
-            let replace =
-                match confirm_policy_replacement(
-                    &shader,
-                    target,
-                ) {
-                    Ok(replace) => replace,
-
-                    Err(error) => {
-                        eprintln!(
-                            "Unable to read confirmation: {}",
-                            error
-                        );
-
-                        return;
-                    }
-                };
-
-            if !replace {
-                println!(
-                    "Policy addition cancelled."
+                crate::parse_arguments::print_error(
+                    &error
                 );
 
                 return;
             }
+        };
 
-            match crate::manage_policies::replace_policy(
-                &cfg_path,
-                target,
-                &shader,
-                properties,
-            ) {
-                Ok(()) => {
+
+    // Commands that do not require Screenshaver's user environment or
+    // database are handled before any configuration/database initialization.
+    match &command {
+
+        crate::parse_arguments::Command::Stop => {
+
+            match crate::singleton::stop() {
+
+                Ok(
+                    crate::singleton::StopOutcome::StopRequested {
+                        pid,
+                    }
+                ) => {
+
                     println!(
-                        "Replaced {} policy for {}.",
-                        target.name(),
-                        shader,
+                        "Screenshaver stop requested for process {}.",
+                        pid
+                    );
+                }
+
+                Ok(
+                    crate::singleton::StopOutcome::NotRunning
+                ) => {
+
+                    println!(
+                        "Screenshaver is not running."
                     );
                 }
 
                 Err(error) => {
+
                     eprintln!(
-                        "{}",
+                        "[MAIN] STOP ERROR: {}",
                         error
                     );
                 }
             }
-        } else {
-            match crate::manage_policies::add_policy(
-                &cfg_path,
-                target,
-                &shader,
-                properties,
-            ) {
-                Ok(()) => {
-                    println!(
-                        "Added {} policy for {}.",
-                        target.name(),
-                        shader,
-                    );
-                }
 
-                Err(error) => {
-                    eprintln!(
-                        "{}",
-                        error
-                    );
-                }
-            }
+            return;
         }
 
-        return;
-    }
 
+        crate::parse_arguments::Command::Help => {
 
-    crate::parse_arguments::Command::DeletePolicy {
-        target,
-        shader,
-    } => {
+            crate::parse_arguments::print_help();
 
-        let cfg_path =
-            crate::locate_paths::config_path();
-
-        match crate::manage_policies::delete_policy(
-            &cfg_path,
-            target,
-            &shader,
-        ) {
-            Ok(()) => {
-                println!(
-                    "Deleted {} policy for {}.",
-                    target.name(),
-                    shader,
-                );
-            }
-
-            Err(error) => {
-                eprintln!(
-                    "{}",
-                    error
-                );
-            }
+            return;
         }
 
-        return;
-    }
 
+        crate::parse_arguments::Command::Version => {
 
-    crate::parse_arguments::Command::ListPolicies {
-        target,
-    } => {
+            crate::parse_arguments::print_version();
 
-        let cfg_path =
-            crate::locate_paths::config_path();
-
-        if let Err(error) =
-            crate::manage_policies::list_policies(
-                &cfg_path,
-                target,
-            )
-        {
-            eprintln!(
-                "{}",
-                error
-            );
+            return;
         }
 
-        return;
+
+        crate::parse_arguments::Command::Run
+        | crate::parse_arguments::Command::Start
+        | crate::parse_arguments::Command::Control { .. } => {}
     }
 
 
-    crate::parse_arguments::Command::Help => {
-
-        crate::parse_arguments::print_help();
-
-        return;
-    }
-
-
-    crate::parse_arguments::Command::Version => {
-
-        crate::parse_arguments::print_version();
-
-        return;
-    }
-
-
-    crate::parse_arguments::Command::Reserved {
-        option,
-    } => {
-
-        crate::parse_arguments::print_reserved_option(
-            &option
-        );
-
-        return;
-    }
-
-    crate::parse_arguments::Command::PreviewTexture {
-        texture,
-        palette,
-    } => {
-
-        crate::preview_texture::run(
-            texture,
-            palette,
-        );
-
-        return;
-    }
-
-crate::parse_arguments::Command::PreviewShader {
-    shader_name,
-    shader_texture,
-    shader_palette,
-    interval_seconds,
-    fps,
-    animation_speed,
-} => {
-
-    match crate::preview_shader::run(
-        shader_name,
-        shader_texture,
-        shader_palette,
-        interval_seconds,
-        fps,
-        animation_speed,
-    ) {
-
-        Ok(()) => {}
-
-        Err(error) => {
-
-            eprintln!(
-                "[SHADER PREVIEW] {}",
-                error
-            );
-
-
-            if let Some(logfile) =
-                runtime_logfile.as_ref()
-            {
-                crate::logger::error(
-                    logfile,
-                    &format!(
-                        "[PREVIEW_SHADER] {}",
-                        error,
-                    ),
-                );
-            }
-        }
-    }
-
-
-    return;
-}
-
-
-crate::parse_arguments::Command::Control {
-    shader_name,
-} => {
-
-    match crate::edit_shader::run(
-        shader_name
-    ) {
-
-        Ok(()) => {}
-
-        Err(error) => {
-
-            eprintln!(
-                "[CONTROL CENTER] {}",
-                error
-            );
-
-
-            if let Some(logfile) =
-                runtime_logfile.as_ref()
-            {
-                crate::logger::error(
-                    logfile,
-                    &format!(
-                        "[CONTROL_CENTER] {}",
-                        error,
-                    ),
-                );
-            }
-        }
-    }
-
-
-    return;
-}
-
-
-crate::parse_arguments::Command::EditShader {
-    shader_name,
-} => {
-
-    match crate::edit_shader::run(
-        shader_name
-    ) {
-
-        Ok(()) => {}
-
-        Err(error) => {
-
-            eprintln!(
-                "[SHADER EDITOR] {}",
-                error
-            );
-
-
-            if let Some(logfile) =
-                runtime_logfile.as_ref()
-            {
-                crate::logger::error(
-                    logfile,
-                    &format!(
-                        "[EDIT_SHADER] {}",
-                        error,
-                    ),
-                );
-            }
-        }
-    }
-
-
-    return;
-}
-
-
-crate::parse_arguments::Command::DeleteCache => {
-
-    match crate::delete_cache::run() {
-
-        Ok(()) => {}
-
-        Err(error) => {
-
-            eprintln!(
-                "[CACHE] {}",
-                error
-            );
-
-
-            if let Some(logfile) =
-                runtime_logfile.as_ref()
-            {
-                crate::logger::error(
-                    logfile,
-                    &format!(
-                        "[CACHE] {}",
-                        error,
-                    ),
-                );
-            }
-        }
-    }
-
-
-    return;
-}
-
-
-crate::parse_arguments::Command::ListTextures => {
-
-    println!(
-        "Available texture families:"
-    );
-
-    println!(
-        "    marble"
-    );
-
-    println!(
-        "    clouds"
-    );
-
-    println!(
-        "    cells"
-    );
-
-    println!(
-        "    mesh"
-    );
-
-    println!(
-        "    radial"
-    );
-
-    println!(
-        "    noise"
-    ); 
-
-    println!(
-        "    bricks"
-    );
-
-    println!(
-        "    hexagons"
-    ); 
-
-    return;
-}
-
-
-}
-
-     let identity =
+    let identity =
         crate::startup_checks::current_user_identity();
 
     if identity.is_root() {
@@ -688,9 +230,164 @@ crate::parse_arguments::Command::ListTextures => {
         return;
     }
 
+
+    let config_dir =
+        match initialize_user_files::initialize() {
+
+            Ok(path) => path,
+
+            Err(error) => {
+
+                eprintln!(
+                    "Screenshaver could not initialize its user files: {error}"
+                );
+
+                std::process::exit(
+                    1
+                );
+            }
+        };
+
+
+    println!(
+        "Screenshaver configuration directory: {}",
+        config_dir.display()
+    );
+
+
+    let logfile =
+        crate::locate_paths::runtime_log_path();
+
+
+    crate::logger::reset_log(
+        &logfile
+    );
+
+
     println!(
         "[MAIN] Loading configuration..."
     );
+
+
+    // Policy rows are now authoritative in SQLite, so the database must be
+    // available before load_config() hydrates per-shader policy state.
+    let mut database_connection =
+        match crate::evaluate_database::evaluate() {
+
+            Ok(connection) => {
+                connection
+            }
+
+            Err(error) => {
+
+                eprintln!(
+                    "[MAIN] DATABASE ERROR: {}",
+                    error
+                );
+
+
+                crate::logger::error(
+                    &logfile,
+                    &format!(
+                        "[DATABASE] Unable to prepare Screenshaver database: {}",
+                        error,
+                    ),
+                );
+
+
+                return;
+            }
+        };
+
+
+    // Keep the managed shader inventory current before configuration is
+    // hydrated from SQLite.  This is normal production startup behavior.
+    match crate::reconcile_shaders::reconcile(
+        &mut database_connection
+    ) {
+        Ok(outcome) => {
+            crate::logger::information(
+                &logfile,
+                &format!(
+                    "[DATABASE] Shader reconciliation complete: inserted={}, updated={}, unchanged={}, missing={}, unreadable={}, rejected={}",
+                    outcome.inserted,
+                    outcome.updated,
+                    outcome.unchanged,
+                    outcome.marked_missing,
+                    outcome.marked_unreadable,
+                    outcome.rejected,
+                ),
+            );
+        }
+
+        Err(error) => {
+            eprintln!(
+                "[MAIN] SHADER RECONCILIATION ERROR: {}",
+                error
+            );
+
+            crate::logger::error(
+                &logfile,
+                &format!(
+                    "[DATABASE] Shader reconciliation failed: {}",
+                    error,
+                ),
+            );
+
+            return;
+        }
+    }
+
+
+    match crate::assign_shader_policies::offer_assignment_if_needed(
+        &mut database_connection
+    ) {
+        Ok(
+            crate::assign_shader_policies::AssignmentOutcome::NoPoliciesNeeded
+        ) => {}
+
+        Ok(
+            crate::assign_shader_policies::AssignmentOutcome::Dismissed {
+                shader_count,
+            }
+        ) => {
+            crate::logger::information(
+                &logfile,
+                &format!(
+                    "[POLICY] New-policy assignment dismissed; {} shader(s) remain without policies",
+                    shader_count,
+                ),
+            );
+        }
+
+        Ok(
+            crate::assign_shader_policies::AssignmentOutcome::Created {
+                shader_count,
+                policy_count,
+                assignment,
+            }
+        ) => {
+            crate::logger::information(
+                &logfile,
+                &format!(
+                    "[POLICY] Created {} policy/policies for {} shader(s) using '{}'",
+                    policy_count,
+                    shader_count,
+                    assignment.name(),
+                ),
+            );
+        }
+
+        Err(error) => {
+            crate::logger::warning(
+                &logfile,
+                &format!(
+                    "[POLICY] Unable to offer new-policy assignment: {}",
+                    error,
+                ),
+            );
+        }
+    }
 
 
     let cfg_path =
@@ -712,17 +409,13 @@ crate::parse_arguments::Command::ListTextures => {
                 );
 
 
-                if let Some(logfile) =
-                    runtime_logfile.as_ref()
-                {
-                    crate::logger::error(
-                        logfile,
-                        &format!(
-                            "[CONFIG] Unable to load configuration: {}",
-                            error,
-                        ),
-                    );
-                }
+                crate::logger::error(
+                    &logfile,
+                    &format!(
+                        "[CONFIG] Unable to load configuration: {}",
+                        error,
+                    ),
+                );
 
 
                 return;
@@ -732,15 +425,6 @@ crate::parse_arguments::Command::ListTextures => {
 
     let mut cfg =
         result.config;
-
-
-    let logfile =
-        runtime_logfile
-            .as_ref()
-            .expect(
-                "Runtime command did not initialize the log path"
-            )
-            .clone();
 
 
     crate::logger::set_enabled(
@@ -783,6 +467,171 @@ crate::parse_arguments::Command::ListTextures => {
     }
 
 
+    match command {
+
+        crate::parse_arguments::Command::Control {
+            shader_name,
+        } => {
+
+            let control_audio_backend =
+                crate::audio_backend::create_backend()
+                    .ok();
+
+
+            let control_audio_bands =
+                control_audio_backend
+                    .as_ref()
+                    .map(
+                        |backend| {
+                            backend.shared_bands()
+                        }
+                    );
+
+
+            match crate::edit_shader::run(
+                shader_name,
+                control_audio_bands,
+            ) {
+
+                Ok(()) => {}
+
+                Err(error) => {
+
+                    eprintln!(
+                        "[CONTROL CENTER] {}",
+                        error
+                    );
+
+
+                    crate::logger::error(
+                        &logfile,
+                        &format!(
+                            "[CONTROL_CENTER] {}",
+                            error,
+                        ),
+                    );
+                }
+            }
+
+
+            drop(
+                database_connection
+            );
+
+            return;
+        }
+
+
+        crate::parse_arguments::Command::Run
+        | crate::parse_arguments::Command::Start => {}
+
+
+        crate::parse_arguments::Command::Stop
+        | crate::parse_arguments::Command::Help
+        | crate::parse_arguments::Command::Version => {
+
+            unreachable!(
+                "Database-independent command reached runtime startup"
+            );
+        }
+    }
+
+
+    // A configuration with both renderers disabled is valid, but there is no
+    // useful resident runtime to start.  --control has already been handled
+    // above, so ordinary Run/Start invocations can report the inactive state
+    // and exit successfully before initializing audio, singleton/tray state,
+    // or any rendering backend.
+    if !cfg.screensaver_enabled
+        && !cfg.wallpaper_enabled
+    {
+        eprintln!(
+            "WARNING: Screensaver and wallpaper rendering are both disabled."
+        );
+
+        eprintln!(
+            "Screenshaver has no active rendering functions and will exit."
+        );
+
+        eprintln!(
+            "Run \"screenshaver --control\" to enable screensavers or wallpapers."
+        );
+
+
+        crate::logger::warning(
+            &logfile,
+            "[MAIN] Screensaver and wallpaper rendering are both disabled; no renderer will be started",
+        );
+
+
+        crate::logger::information(
+            &logfile,
+            "[MAIN] Screenshaver exiting normally because no rendering functions are enabled",
+        );
+
+
+        drop(
+            database_connection
+        );
+
+        return;
+    }
+
+
+    // Audio is an optional runtime capability.  Failure to locate a usable
+    // backend must never prevent Screenshaver from continuing normally.
+    let audio_backend =
+        match crate::audio_backend::create_backend() {
+
+            Ok(backend) => {
+
+                println!(
+                    "[MAIN] Audio backend = {}",
+                    backend.backend_name()
+                );
+
+
+                crate::logger::information(
+                    &logfile,
+                    &format!(
+                        "[AUDIO] Backend ready: {}",
+                        backend.backend_name(),
+                    ),
+                );
+
+
+                Some(backend)
+            }
+
+
+            Err(error) => {
+
+                println!(
+                    "[AUDIO] No compatible audio backend available: {}",
+                    error
+                );
+
+
+                crate::logger::warning(
+                    &logfile,
+                    &format!(
+                        "[AUDIO] No compatible audio backend available: {}",
+                        error,
+                    ),
+                );
+
+
+                crate::logger::information(
+                    &logfile,
+                    "[AUDIO] Audio Bloom unavailable for this session",
+                );
+
+
+                None
+            }
+        };
+
+
     let _singleton =
         match crate::singleton::acquire() {
 
@@ -809,35 +658,18 @@ crate::parse_arguments::Command::ListTextures => {
                 );
 
 
-                if let Some(logfile) =
-                    runtime_logfile.as_ref()
-                {
-                    crate::logger::error(
-                        logfile,
-                        &format!(
-                            "[MAIN] Singleton acquisition failed: {}",
-                            error,
-                        ),
-                    );
-                }
+                crate::logger::error(
+                    &logfile,
+                    &format!(
+                        "[MAIN] Singleton acquisition failed: {}",
+                        error,
+                    ),
+                );
 
 
                 return;
             }
         };
-
-
-    if let Err(error) =
-        crate::manage_cache::delete_stale_cache_entries()
-    {
-        crate::logger::warning(
-            &logfile,
-            &format!(
-                "[CACHE] Garbage collection was skipped: {}",
-                error,
-            ),
-        );
-    }
 
 
     let (
@@ -872,14 +704,10 @@ crate::parse_arguments::Command::ListTextures => {
                 );
 
 
-                if let Some(logfile) =
-                    runtime_logfile.as_ref()
-                {
-                    crate::logger::information(
-                        logfile,
-                        "[TRAY] System tray icon registered successfully",
-                    );
-                }
+                crate::logger::information(
+                    &logfile,
+                    "[TRAY] System tray icon registered successfully",
+                );
 
 
                 Some(handle)
@@ -893,17 +721,13 @@ crate::parse_arguments::Command::ListTextures => {
                 );
 
 
-                if let Some(logfile) =
-                    runtime_logfile.as_ref()
-                {
-                    crate::logger::warning(
-                        logfile,
-                        &format!(
-                            "[TRAY] System tray icon unavailable: {:?}",
-                            error,
-                        ),
-                    );
-                }
+                crate::logger::warning(
+                    &logfile,
+                    &format!(
+                        "[TRAY] System tray icon unavailable: {:?}",
+                        error,
+                    ),
+                );
 
 
                 None
@@ -1222,6 +1046,14 @@ crate::parse_arguments::Command::ListTextures => {
                 cfg.wallpaper_speed_policy,
             postprocess_policy:
                 cfg.wallpaper_postprocess_policy,
+            audio_bands:
+                audio_backend
+                    .as_ref()
+                    .map(
+                        |backend| {
+                            backend.shared_bands()
+                        }
+                    ),
             tray_status:
                 tray_status.clone(),
         };
@@ -1316,13 +1148,28 @@ crate::parse_arguments::Command::ListTextures => {
                     match active_wallpaper {
                         Some(active_wallpaper) => {
                             crate::edit_shader::run_wallpaper_only(
-                                active_wallpaper.path
+                                active_wallpaper.path,
+                                active_wallpaper.policy_id,
+                                audio_backend
+                                    .as_ref()
+                                    .map(
+                                        |backend| {
+                                            backend.shared_bands()
+                                        }
+                                    ),
                             )
                         }
 
                         None => {
                             crate::edit_shader::run(
-                                None
+                                None,
+                                audio_backend
+                                    .as_ref()
+                                    .map(
+                                        |backend| {
+                                            backend.shared_bands()
+                                        }
+                                    ),
                             )
                         }
                     };
@@ -1550,34 +1397,23 @@ crate::parse_arguments::Command::ListTextures => {
                             )
                         };
 
-                    let effective_shader_interval =
-                        if shader_manager.shader_count() <= 1
-                            && next_shader_interval != 0
-                        {
-                            println!(
-                                "Screensaver rotation disabled: only one eligible shader is available."
-                            );
-
-                            crate::logger::information(
-                                &logfile,
-                                "[RENDER] Screensaver rotation disabled: only one eligible shader is available",
-                            );
-
-                            0
-                        } else {
-                            next_shader_interval
-                        };
-
                     let mut renderer =
                         match crate::render_frame::FrameRenderer::new(
                             &sdl,
                             shader_manager,
-                            effective_shader_interval,
+                            next_shader_interval,
                             cfg.screensaver_speed_policy.clone(),
                             cfg.global_rendered_fps,
                             cfg.screensaver_fps_policy_entries.clone(),
                             cfg.texture_policy.clone(),
                             cfg.screensaver_postprocess_policy.clone(),
+                            audio_backend
+                                .as_ref()
+                                .map(
+                                    |backend| {
+                                        backend.shared_bands()
+                                    }
+                                ),
                             cfg.subtitles,
                             cfg.subtitle_placement,
                         ) {
@@ -1647,7 +1483,14 @@ crate::parse_arguments::Command::ListTextures => {
 
                             let edit_result =
                                 crate::edit_shader::run_screensaver_only(
-                                    shader_path.clone()
+                                    shader_path.clone(),
+                                    audio_backend
+                                        .as_ref()
+                                        .map(
+                                            |backend| {
+                                                backend.shared_bands()
+                                            }
+                                        ),
                                 );
 
                             if let Err(error) = &edit_result {
@@ -1783,6 +1626,11 @@ crate::parse_arguments::Command::ListTextures => {
     crate::logger::information(
         &logfile,
         "[MAIN] Pipeline complete",
+    );
+
+
+    drop(
+        database_connection
     );
 
 

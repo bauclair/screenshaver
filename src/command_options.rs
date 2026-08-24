@@ -24,9 +24,6 @@ pub fn process_command_options() -> bool {
         "--diagnostics"
         | "--list-backends"
         | "--list-shaders"
-        | "--verify-cache"
-        | "--rebuild-cache"
-        | "--clean-cache"
         | "--benchmark" => {
             show_reserved_option(option);
             true
@@ -73,15 +70,6 @@ fn show_help() {
              --list-shaders\n\
                  Display available shaders.\n\
          \n\
-             --verify-cache\n\
-                 Verify shader cache integrity.\n\
-         \n\
-             --rebuild-cache\n\
-                 Rebuild shader cache entries.\n\
-         \n\
-             --clean-cache\n\
-                 Remove obsolete shader cache entries.\n\
-         \n\
              --benchmark\n\
                  Benchmark shader loading and rendering performance.\n\
          \n\
@@ -89,7 +77,6 @@ fn show_help() {
              ~/.config/screenshaver/\n\
              ~/.config/screenshaver/screenshaver.toml\n\
              ~/.config/screenshaver/screensavers/\n\
-             ~/.config/screenshaver/cache/\n\
              ~/.config/screenshaver/screenshaver.log\n\
          \n\
          Project status:\n\

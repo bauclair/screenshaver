@@ -10,6 +10,7 @@ use std::sync::atomic::{
     Ordering,
 };
 use std::time::{
+    Instant,
     SystemTime,
     UNIX_EPOCH,
 };
@@ -135,6 +136,7 @@ struct TextureRequest {
 }
 
 fn resolve_texture_selection(
+    policy_id: i64,
     shader_name: &str,
     source_path: Option<&std::path::Path>,
     policy: &TexturePolicy,
@@ -151,6 +153,7 @@ fn resolve_texture_selection(
 
     let shader_policy =
         matching_policy(
+            policy_id,
             shader_name,
             source_path,
             &policy.texture_policy_entries,
@@ -364,12 +367,31 @@ fn random_palette(
 
 
 fn matching_policy<'a>(
+    policy_id: i64,
     shader_name: &str,
     source_path: Option<&std::path::Path>,
     overrides: &'a [TexturePolicyEntry],
 ) -> Option<
     &'a TexturePolicyEntry
 > {
+
+    if policy_id > 0 {
+        if let Some(policy) =
+            overrides
+                .iter()
+                .find(
+                    |policy| {
+                        policy.policy_id
+                            == policy_id
+                    }
+                )
+        {
+            return Some(
+                policy
+            );
+        }
+    }
+
 
     if let Some(source_path) =
         source_path
@@ -565,12 +587,57 @@ struct GpuTexture {
 
 
 // ============================================================
+// Eyes animation state
+// ============================================================
+
+struct EyesAnimation {
+    source:
+        crate::generate_eyes::EyesAnimationSource,
+
+    controller:
+        crate::blink_eyes::BlinkController,
+}
+
+
+impl std::fmt::Debug for EyesAnimation {
+
+    fn fmt(
+        &self,
+        formatter: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+
+        formatter
+            .debug_struct(
+                "EyesAnimation"
+            )
+            .field(
+                "eye_instance_count",
+                &self.source.eye_instance_count(),
+            )
+            .field(
+                "requested_eye_count",
+                &self.source.requested_eye_count(),
+            )
+            .field(
+                "enabled",
+                &self.controller.is_enabled(),
+            )
+            .finish()
+    }
+}
+
+
+// ============================================================
 // Texture manager
 // ============================================================
 
 #[derive(Debug)]
 pub struct TextureManager {
     texture: Option<GpuTexture>,
+
+    eyes_animation:
+        Option<EyesAnimation>,
+
     active_channels: [bool; CHANNEL_COUNT],
     policy:
         TexturePolicy,
@@ -586,6 +653,10 @@ impl TextureManager {
         Self {
             texture:
                 None,
+
+            eyes_animation:
+                None,
+
             active_channels:
                 [false; CHANNEL_COUNT],
             policy,
@@ -620,7 +691,8 @@ impl TextureManager {
         channel_usage: ShaderChannelUsage,
     ) -> Result<(), String> {
 
-        self.prepare_for_shader_with_path_and_selection(
+        self.prepare_for_shader_with_policy_path_and_selection(
+            0,
             shader_name,
             source_path,
             channel_usage,
@@ -636,7 +708,8 @@ impl TextureManager {
         preview_selection: PreviewTextureSelection,
     ) -> Result<(), String> {
 
-        self.prepare_for_shader_with_path_and_selection(
+        self.prepare_for_shader_with_policy_path_and_selection(
+            0,
             shader_name,
             None,
             channel_usage,
@@ -645,8 +718,27 @@ impl TextureManager {
     }
 
 
-    fn prepare_for_shader_with_path_and_selection(
+    pub fn prepare_for_policy_with_path(
         &mut self,
+        policy_id: i64,
+        shader_name: &str,
+        source_path: Option<&std::path::Path>,
+        channel_usage: ShaderChannelUsage,
+    ) -> Result<(), String> {
+
+        self.prepare_for_shader_with_policy_path_and_selection(
+            policy_id,
+            shader_name,
+            source_path,
+            channel_usage,
+            PreviewTextureSelection::default(),
+        )
+    }
+
+
+    fn prepare_for_shader_with_policy_path_and_selection(
+        &mut self,
+        policy_id: i64,
         shader_name: &str,
         source_path: Option<&std::path::Path>,
         channel_usage: ShaderChannelUsage,
@@ -672,6 +764,7 @@ impl TextureManager {
 
 
             if matching_policy(
+                policy_id,
                 shader_name,
                 source_path,
                 &self.policy.texture_policy_entries,
@@ -705,6 +798,7 @@ impl TextureManager {
             palette_source,
         ) =
             resolve_texture_selection(
+                policy_id,
                 shader_name,
                 source_path,
                 &self.policy,
@@ -713,6 +807,7 @@ impl TextureManager {
 
 
         if matching_policy(
+            policy_id,
             shader_name,
             source_path,
             &self.policy.texture_policy_entries,
@@ -759,6 +854,39 @@ impl TextureManager {
         generated.validate_standard()?;
 
 
+        let eyes_animation =
+            if request.texture.family
+                == TextureFamily::Eyes
+            {
+                let source =
+                    crate::generate_eyes::build_animation_source(
+                        request.palette,
+                        request.seed,
+                        request.texture.requested_primitive_count,
+                    )?;
+
+
+                let controller =
+                    crate::blink_eyes::BlinkController::new(
+                        source.eye_instance_count(),
+                        source.requested_eye_count(),
+                        request.seed,
+                        crate::blink_eyes::DEFAULT_BLINK_SEQUENCE,
+                        Instant::now(),
+                    );
+
+
+                Some(
+                    EyesAnimation {
+                        source,
+                        controller,
+                    }
+                )
+            } else {
+                None
+            };
+
+
         let gpu_texture =
             upload_generated_texture(
                 generated
@@ -788,6 +916,10 @@ impl TextureManager {
                 previous_texture
             );
         }
+
+
+        self.eyes_animation =
+            eyes_animation;
 
 
         log_debug(
@@ -856,6 +988,92 @@ impl TextureManager {
     }
 
 
+    /// Advance any texture-family-specific animation using real elapsed
+    /// time. Static texture families return immediately.
+    ///
+    /// Eyes are reconstructed from a clean palette background whenever at
+    /// least one eye changes frame, then the existing OpenGL texture object is
+    /// updated in place. No previous eye-state pixels survive the rebuild.
+    pub fn update_animations(
+        &mut self,
+    ) -> Result<(), String> {
+
+        let Some(animation) =
+            self.eyes_animation
+                .as_mut()
+        else {
+            return Ok(());
+        };
+
+
+        let Some(texture) =
+            self.texture
+                .as_ref()
+        else {
+            self.eyes_animation =
+                None;
+
+            return Ok(());
+        };
+
+
+        if texture.specification.family
+            != TextureFamily::Eyes
+        {
+            self.eyes_animation =
+                None;
+
+            return Ok(());
+        }
+
+
+        if !animation.controller.update(
+            Instant::now()
+        ) {
+            return Ok(());
+        }
+
+
+        let states =
+            (
+                0
+                    ..animation.controller.eye_count()
+            )
+            .map(
+                |eye_index| {
+                    match animation.controller.frame_for_eye(
+                        eye_index
+                    ) {
+                        crate::blink_eyes::EyeFrame::Open => {
+                            crate::generate_eyes::EyeArtworkState::Open
+                        }
+
+                        crate::blink_eyes::EyeFrame::Half => {
+                            crate::generate_eyes::EyeArtworkState::Half
+                        }
+
+                        crate::blink_eyes::EyeFrame::Closed => {
+                            crate::generate_eyes::EyeArtworkState::Closed
+                        }
+                    }
+                }
+            )
+            .collect::<Vec<_>>();
+
+
+        let pixels =
+            animation.source.render_states(
+                &states
+            )?;
+
+
+        update_generated_texture_pixels(
+            texture,
+            &pixels,
+        )
+    }
+
+
     /// Bind the active GPU texture to each channel referenced by
     /// the current shader. Unused channels are explicitly cleared
     /// so stale OpenGL state cannot leak between shaders.
@@ -920,6 +1138,10 @@ impl TextureManager {
     fn delete_current_texture(
         &mut self,
     ) {
+
+        self.eyes_animation =
+            None;
+
 
         if let Some(texture) =
             self.texture.take()
@@ -1169,6 +1391,101 @@ fn upload_generated_texture(
                 generated.seed,
         }
     )
+}
+
+
+fn update_generated_texture_pixels(
+    texture: &GpuTexture,
+    pixels: &[u8],
+) -> Result<(), String> {
+
+    let width =
+        i32::try_from(
+            texture.width
+        )
+        .map_err(
+            |_| {
+                "Texture width exceeds OpenGL i32 range"
+                    .to_string()
+            }
+        )?;
+
+
+    let height =
+        i32::try_from(
+            texture.height
+        )
+        .map_err(
+            |_| {
+                "Texture height exceeds OpenGL i32 range"
+                    .to_string()
+            }
+        )?;
+
+
+    let flipped_pixels =
+        flip_rgba_rows(
+            pixels,
+            texture.width,
+            texture.height,
+        )?;
+
+
+    clear_gl_errors();
+
+
+    unsafe {
+        gl::BindTexture(
+            gl::TEXTURE_2D,
+            texture.id,
+        );
+
+
+        gl::PixelStorei(
+            gl::UNPACK_ALIGNMENT,
+            1,
+        );
+
+
+        gl::TexSubImage2D(
+            gl::TEXTURE_2D,
+            0,
+            0,
+            0,
+            width,
+            height,
+            gl::RGBA,
+            gl::UNSIGNED_BYTE,
+            flipped_pixels
+                .as_ptr()
+                .cast(),
+        );
+
+
+        gl::GenerateMipmap(
+            gl::TEXTURE_2D
+        );
+
+
+        gl::BindTexture(
+            gl::TEXTURE_2D,
+            0,
+        );
+    }
+
+
+    if let Some(error) =
+        take_gl_error(
+            "updating animated Eyes texture"
+        )
+    {
+        return Err(
+            error
+        );
+    }
+
+
+    Ok(())
 }
 
 

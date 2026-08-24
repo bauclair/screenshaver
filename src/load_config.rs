@@ -1,19 +1,13 @@
 use serde::Deserialize;
-use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 
 //
 // ------------------------------------------------------------
-// Default values
+// TOML startup/recovery configuration
 // ------------------------------------------------------------
 //
-
-fn default_show_splash() -> bool {
-    true
-}
-
 
 fn default_screensaver_enabled() -> bool {
     true
@@ -21,27 +15,7 @@ fn default_screensaver_enabled() -> bool {
 
 
 fn default_wallpaper_enabled() -> bool {
-    false
-}
-
-
-fn default_global_rendered_fps() -> u32 {
-    crate::define_constants::DEFAULT_RENDER_FPS
-}
-
-
-fn default_screensaver_global_speed() -> f32 {
-    crate::define_constants::SCREENSAVER_SPEED_DEFAULT
-}
-
-
-fn default_wallpaper_global_speed() -> f32 {
-    crate::define_constants::WALLPAPER_SPEED_DEFAULT
-}
-
-
-fn default_subtitle_placement() -> String {
-    "bottom:left".to_string()
+    true
 }
 
 
@@ -50,43 +24,11 @@ fn default_log_level() -> u8 {
 }
 
 
-//
-// ------------------------------------------------------------
-// Structures that exactly match screenshaver.toml
-// ------------------------------------------------------------
-//
-
-#[derive(Debug, Deserialize)]
-struct AppearanceSection {
-
-    #[serde(default = "default_show_splash")]
-    show_splash: bool,
-}
-
-
 #[derive(Debug, Deserialize)]
 struct ScreensaverSection {
 
     #[serde(default = "default_screensaver_enabled")]
     enabled: bool,
-
-    subtitles: bool,
-
-    #[serde(default = "default_subtitle_placement")]
-    subtitle_placement: String,
-
-    mode: String,
-
-    idle_timeout: String,
-
-    #[serde(default)]
-    global_texture: Option<String>,
-
-    #[serde(default)]
-    global_palette: Option<String>,
-
-    #[serde(default = "default_screensaver_global_speed")]
-    global_speed: f32,
 }
 
 
@@ -96,59 +38,7 @@ struct WallpaperSection {
     #[serde(default = "default_wallpaper_enabled")]
     enabled: bool,
 
-    mode: String,
-
-    #[serde(default)]
-    global_texture: Option<String>,
-
-    #[serde(default)]
-    global_palette: Option<String>,
-
     monitor_mode: String,
-
-    notifications: bool,
-
-    #[serde(default = "default_wallpaper_global_speed")]
-    global_speed: f32,
-}
-
-
-
-
-#[derive(Debug, Deserialize, Default)]
-struct PostprocessSection {
-
-    #[serde(default)]
-    anti_aliasing: Option<String>,
-
-    #[serde(default)]
-    dithering: Option<String>,
-
-    #[serde(default)]
-    color_precision: Option<String>,
-
-    #[serde(default)]
-    render_scale: Option<f32>,
-}
-
-
-#[derive(Debug, Deserialize)]
-struct PerformanceSection {
-
-    #[serde(default = "default_global_rendered_fps")]
-    global_rendered_fps: u32,
-}
-
-
-impl Default for PerformanceSection {
-
-    fn default() -> Self {
-
-        Self {
-            global_rendered_fps:
-                default_global_rendered_fps(),
-        }
-    }
 }
 
 
@@ -172,43 +62,9 @@ struct DebugSection {
 #[derive(Debug, Deserialize)]
 struct RawToml {
 
-    appearance: AppearanceSection,
-
     screensaver: ScreensaverSection,
 
     wallpaper: WallpaperSection,
-
-    #[serde(default)]
-    screensaver_policies:
-        BTreeMap<String, String>,
-
-    #[serde(default)]
-    wallpaper_policies:
-        BTreeMap<String, String>,
-
-    #[serde(default)]
-    screensaver_external_paths:
-        BTreeMap<String, String>,
-
-    #[serde(default)]
-    wallpaper_external_paths:
-        BTreeMap<String, String>,
-
-    // Transitional compatibility for the first external-path checkpoint.
-    // New writes use *_external_paths exclusively.
-    #[serde(default)]
-    screensaver_shader_paths:
-        BTreeMap<String, String>,
-
-    #[serde(default)]
-    wallpaper_shader_paths:
-        BTreeMap<String, String>,
-
-    #[serde(default)]
-    postprocess: PostprocessSection,
-
-    #[serde(default)]
-    performance: PerformanceSection,
 
     locking: LockingSection,
 
@@ -227,6 +83,9 @@ struct RawToml {
     Clone,
 )]
 pub struct ShaderPolicy {
+
+    pub policy_id:
+        i64,
 
     pub policy_key:
         String,
@@ -273,6 +132,29 @@ pub struct ShaderPolicy {
 
     pub render_scale:
         Option<f32>,
+
+    pub bloom:
+        Option<
+            crate::render_bloom::BloomMode
+        >,
+
+    pub bloom_intensity:
+        Option<f32>,
+
+    pub bloom_threshold:
+        Option<f32>,
+
+    pub invert_colors:
+        Option<bool>,
+
+    pub flip_horizontal:
+        Option<bool>,
+
+    pub flip_vertical:
+        Option<bool>,
+
+    pub hue_rotation:
+        Option<f32>,
 }
 
 
@@ -300,6 +182,23 @@ impl AnimationSpeedPolicy {
         command_line_speed: Option<f32>,
     ) -> f32 {
 
+        self.animation_speed_for_policy(
+            0,
+            shader_name,
+            source_path,
+            command_line_speed,
+        )
+    }
+
+
+    pub fn animation_speed_for_policy(
+        &self,
+        policy_id: i64,
+        shader_name: &str,
+        source_path: Option<&Path>,
+        command_line_speed: Option<f32>,
+    ) -> f32 {
+
         if let Some(speed) =
             command_line_speed
         {
@@ -307,8 +206,9 @@ impl AnimationSpeedPolicy {
         }
 
 
-        matching_shader_policy(
+        matching_shader_policy_by_id(
             &self.shader_policies,
+            policy_id,
             shader_name,
             source_path,
         )
@@ -382,6 +282,39 @@ fn managed_policy_name_matches(
 }
 
 
+fn matching_shader_policy_by_id<'a>(
+    policies: &'a [ShaderPolicy],
+    policy_id: i64,
+    shader_name: &str,
+    source_path: Option<&Path>,
+) -> Option<&'a ShaderPolicy> {
+
+    if policy_id > 0 {
+        if let Some(policy) =
+            policies
+                .iter()
+                .find(
+                    |policy| {
+                        policy.policy_id
+                            == policy_id
+                    }
+                )
+        {
+            return Some(
+                policy
+            );
+        }
+    }
+
+
+    matching_shader_policy(
+        policies,
+        shader_name,
+        source_path,
+    )
+}
+
+
 fn matching_shader_policy<'a>(
     policies: &'a [ShaderPolicy],
     shader_name: &str,
@@ -428,6 +361,39 @@ fn matching_shader_policy<'a>(
                     )
             }
         )
+}
+
+
+fn matching_fps_policy_by_id<'a>(
+    policies: &'a [FpsPolicyEntry],
+    policy_id: i64,
+    shader_name: &str,
+    source_path: Option<&Path>,
+) -> Option<&'a FpsPolicyEntry> {
+
+    if policy_id > 0 {
+        if let Some(policy) =
+            policies
+                .iter()
+                .find(
+                    |policy| {
+                        policy.policy_id
+                            == policy_id
+                    }
+                )
+        {
+            return Some(
+                policy
+            );
+        }
+    }
+
+
+    matching_fps_policy(
+        policies,
+        shader_name,
+        source_path,
+    )
 }
 
 
@@ -486,6 +452,9 @@ fn matching_fps_policy<'a>(
 )]
 pub struct TexturePolicyEntry {
 
+    pub policy_id:
+        i64,
+
     pub shader:
         String,
 
@@ -509,6 +478,9 @@ pub struct TexturePolicyEntry {
     Clone,
 )]
 pub struct FpsPolicyEntry {
+
+    pub policy_id:
+        i64,
 
     pub shader:
         String,
@@ -545,6 +517,23 @@ impl FpsPolicy {
         command_line_fps: Option<u32>,
     ) -> u32 {
 
+        self.rendered_fps_for_policy(
+            0,
+            shader_name,
+            source_path,
+            command_line_fps,
+        )
+    }
+
+
+    pub fn rendered_fps_for_policy(
+        &self,
+        policy_id: i64,
+        shader_name: &str,
+        source_path: Option<&Path>,
+        command_line_fps: Option<u32>,
+    ) -> u32 {
+
         if let Some(fps) =
             command_line_fps
         {
@@ -554,8 +543,9 @@ impl FpsPolicy {
         }
 
 
-        matching_fps_policy(
+        matching_fps_policy_by_id(
             &self.fps_policy_entries,
+            policy_id,
             shader_name,
             source_path,
         )
@@ -616,6 +606,27 @@ pub(crate) struct PostprocessProfile {
 
     pub render_scale:
         f32,
+
+    pub bloom:
+        crate::render_bloom::BloomMode,
+
+    pub bloom_intensity:
+        f32,
+
+    pub bloom_threshold:
+        f32,
+
+    pub invert_colors:
+        bool,
+
+    pub flip_horizontal:
+        bool,
+
+    pub flip_vertical:
+        bool,
+
+    pub hue_rotation:
+        f32,
 }
 
 
@@ -636,6 +647,27 @@ impl Default for PostprocessProfile {
 
             render_scale:
                 crate::define_constants::RENDER_SCALE_DEFAULT,
+
+            bloom:
+                crate::render_bloom::BloomMode::Off,
+
+            bloom_intensity:
+                crate::render_bloom::BLOOM_INTENSITY_DEFAULT,
+
+            bloom_threshold:
+                crate::render_bloom::BLOOM_THRESHOLD_DEFAULT,
+
+            invert_colors:
+                false,
+
+            flip_horizontal:
+                false,
+
+            flip_vertical:
+                false,
+
+            hue_rotation:
+                crate::postprocess_shader::HUE_ROTATION_DEFAULT,
         }
     }
 }
@@ -681,9 +713,25 @@ impl PostprocessPolicy {
         source_path: Option<&Path>,
     ) -> PostprocessProfile {
 
+        self.profile_for_policy(
+            0,
+            shader_name,
+            source_path,
+        )
+    }
+
+
+    pub(crate) fn profile_for_policy(
+        &self,
+        policy_id: i64,
+        shader_name: &str,
+        source_path: Option<&Path>,
+    ) -> PostprocessProfile {
+
         let shader_policy =
-            matching_shader_policy(
+            matching_shader_policy_by_id(
                 &self.shader_policies,
+                policy_id,
                 shader_name,
                 source_path,
             );
@@ -734,6 +782,59 @@ impl PostprocessPolicy {
                     .unwrap_or(
                         self.global_profile.render_scale
                     ),
+
+            bloom:
+                shader_policy
+                    .and_then(
+                        |shader_policy| {
+                            shader_policy.bloom
+                        }
+                    )
+                    .unwrap_or(
+                        self.global_profile.bloom
+                    ),
+
+            bloom_intensity:
+                shader_policy
+                    .and_then(
+                        |shader_policy| {
+                            shader_policy.bloom_intensity
+                        }
+                    )
+                    .unwrap_or(
+                        self.global_profile.bloom_intensity
+                    ),
+
+            bloom_threshold:
+                shader_policy
+                    .and_then(
+                        |shader_policy| {
+                            shader_policy.bloom_threshold
+                        }
+                    )
+                    .unwrap_or(
+                        self.global_profile.bloom_threshold
+                    ),
+
+            invert_colors:
+                shader_policy
+                    .and_then(|p| p.invert_colors)
+                    .unwrap_or(self.global_profile.invert_colors),
+
+            flip_horizontal:
+                shader_policy
+                    .and_then(|p| p.flip_horizontal)
+                    .unwrap_or(self.global_profile.flip_horizontal),
+
+            flip_vertical:
+                shader_policy
+                    .and_then(|p| p.flip_vertical)
+                    .unwrap_or(self.global_profile.flip_vertical),
+
+            hue_rotation:
+                shader_policy
+                    .and_then(|p| p.hue_rotation)
+                    .unwrap_or(self.global_profile.hue_rotation),
         }
     }
 }
@@ -779,6 +880,13 @@ pub struct Config {
         >,
 
     pub wallpaper_policies:
+        Vec<
+            ShaderPolicy
+        >,
+
+    // Control Center/editor staging policies. These are intentionally excluded
+    // from all runtime screensaver/wallpaper policy resolution.
+    pub unassigned_policies:
         Vec<
             ShaderPolicy
         >,
@@ -872,8 +980,24 @@ pub fn load_config(
 
 
     //---------------------------------------------------------
-    // Parse global post-processing policy
+    // Load database-backed application / target defaults
     //---------------------------------------------------------
+
+    let app_defaults =
+        crate::manage_configuration::load_app_defaults()?;
+
+
+    let screensaver_defaults =
+        crate::manage_configuration::load_target_defaults(
+            "screensaver"
+        )?;
+
+
+    let wallpaper_defaults =
+        crate::manage_configuration::load_target_defaults(
+            "wallpaper"
+        )?;
+
 
     let built_in_postprocess_profile =
         PostprocessProfile::default();
@@ -884,9 +1008,9 @@ pub fn load_config(
         anti_aliasing_warning,
     ) =
         parse_global_anti_aliasing(
-            raw.postprocess
-                .anti_aliasing
-                .as_deref(),
+            Some(
+                &app_defaults.anti_aliasing
+            ),
             built_in_postprocess_profile
                 .anti_aliasing,
         );
@@ -897,9 +1021,9 @@ pub fn load_config(
         dithering_warning,
     ) =
         parse_global_dithering(
-            raw.postprocess
-                .dithering
-                .as_deref(),
+            Some(
+                &app_defaults.dithering
+            ),
             built_in_postprocess_profile
                 .dithering,
         );
@@ -910,9 +1034,9 @@ pub fn load_config(
         color_precision_warning,
     ) =
         parse_global_color_precision(
-            raw.postprocess
-                .color_precision
-                .as_deref(),
+            Some(
+                &app_defaults.color_precision
+            ),
             built_in_postprocess_profile
                 .color_precision,
         );
@@ -923,13 +1047,16 @@ pub fn load_config(
         render_scale_warning,
     ) =
         parse_global_render_scale(
-            raw.postprocess
-                .render_scale,
+            Some(
+                app_defaults.render_scale as f32
+            ),
             built_in_postprocess_profile
                 .render_scale,
         );
 
 
+    // Bloom and transform effects remain per-policy. Their inherited
+    // fallback is the built-in profile rather than screenshaver.toml.
     let global_postprocess_profile =
         PostprocessProfile {
             anti_aliasing:
@@ -940,84 +1067,59 @@ pub fn load_config(
                 global_color_precision,
             render_scale:
                 global_render_scale,
+            ..built_in_postprocess_profile
         };
 
-
-    //---------------------------------------------------------
-    // Parse subtitle placement
-    //---------------------------------------------------------
 
     let parsed_subtitle_placement =
         crate::parse_subtitle_placement::parse(
             Some(
-                &raw.screensaver.subtitle_placement
+                &app_defaults.subtitle_placement
             )
         );
 
 
-    //---------------------------------------------------------
-    // Parse global texture and palette policy
-    //---------------------------------------------------------
-
     let screensaver_global_texture =
-        parse_global_texture(
-            raw.screensaver
-                .global_texture
-                .as_deref()
+        parse_database_global_texture(
+            &screensaver_defaults
         )?;
 
 
     let screensaver_global_palette =
-        parse_global_palette(
-            raw.screensaver
-                .global_palette
-                .as_deref()
+        parse_database_global_palette(
+            &screensaver_defaults
         )?;
 
 
     let wallpaper_global_texture =
-        parse_global_texture(
-            raw.wallpaper
-                .global_texture
-                .as_deref()
+        parse_database_global_texture(
+            &wallpaper_defaults
         )?;
 
 
     let wallpaper_global_palette =
-        parse_global_palette(
-            raw.wallpaper
-                .global_palette
-                .as_deref()
+        parse_database_global_palette(
+            &wallpaper_defaults
         )?;
 
 
-    let screensaver_external_paths =
-        merge_external_path_tables(
-            raw.screensaver_shader_paths,
-            raw.screensaver_external_paths,
-        );
-
-
-    let wallpaper_external_paths =
-        merge_external_path_tables(
-            raw.wallpaper_shader_paths,
-            raw.wallpaper_external_paths,
-        );
-
-
+    // Per-shader policy authority now lives in screenshaver.db.
+    // The legacy TOML policy/path tables are intentionally ignored.
     let screensaver_policies =
-        parse_policy_table(
-            raw.screensaver_policies,
-            screensaver_external_paths,
-            PolicyTarget::Screensaver,
+        load_database_policy_table(
+            PolicyTarget::Screensaver
         )?;
 
 
     let wallpaper_policies =
-        parse_policy_table(
-            raw.wallpaper_policies,
-            wallpaper_external_paths,
-            PolicyTarget::Wallpaper,
+        load_database_policy_table(
+            PolicyTarget::Wallpaper
+        )?;
+
+
+    let unassigned_policies =
+        load_database_policy_table(
+            PolicyTarget::Unassigned
         )?;
 
 
@@ -1067,7 +1169,7 @@ pub fn load_config(
                 wallpaper_monitor_mode,
 
             notifications:
-                raw.wallpaper.notifications,
+                app_defaults.wallpaper_notifications,
         };
 
 
@@ -1076,7 +1178,7 @@ pub fn load_config(
         screensaver_global_speed_warning,
     ) =
         validate_animation_speed(
-            raw.screensaver.global_speed,
+            screensaver_defaults.animation_speed as f32,
             crate::define_constants::SCREENSAVER_SPEED_MIN,
             crate::define_constants::SCREENSAVER_SPEED_MAX,
             crate::define_constants::SCREENSAVER_SPEED_DEFAULT,
@@ -1089,7 +1191,7 @@ pub fn load_config(
         wallpaper_global_speed_warning,
     ) =
         validate_animation_speed(
-            raw.wallpaper.global_speed,
+            wallpaper_defaults.animation_speed as f32,
             crate::define_constants::WALLPAPER_SPEED_MIN,
             crate::define_constants::WALLPAPER_SPEED_MAX,
             crate::define_constants::WALLPAPER_SPEED_DEFAULT,
@@ -1102,7 +1204,10 @@ pub fn load_config(
         global_rendered_fps_warning,
     ) =
         validate_rendered_fps(
-            raw.performance.global_rendered_fps
+            u32::try_from(
+                app_defaults.rendered_fps
+            )
+            .unwrap_or(0)
         );
 
 
@@ -1171,6 +1276,18 @@ pub fn load_config(
         );
 
 
+    let screensaver_mode =
+        crate::manage_configuration::load_runtime_mode(
+            "screensaver"
+        )?;
+
+
+    let wallpaper_mode =
+        crate::manage_configuration::load_runtime_mode(
+            "wallpaper"
+        )?;
+
+
     //---------------------------------------------------------
     // Flatten configuration
     //---------------------------------------------------------
@@ -1185,26 +1302,52 @@ pub fn load_config(
                 raw.wallpaper.enabled,
 
             subtitles:
-                raw.screensaver.subtitles,
+                app_defaults.screensaver_subtitles,
 
             subtitle_placement:
                 parsed_subtitle_placement.placement,
 
             show_splash:
-                raw.appearance.show_splash,
+                app_defaults.show_splash,
 
             mode:
-                raw.screensaver.mode,
+                screensaver_mode,
 
             idle_timeout:
-                raw.screensaver.idle_timeout,
+                match (
+                    screensaver_defaults.idle_timeout_value,
+                    screensaver_defaults.idle_timeout_unit.as_deref(),
+                ) {
+                    (
+                        Some(value),
+                        Some(unit),
+                    ) => {
+                        let suffix =
+                            match unit {
+                                "seconds" => "s",
+                                "minutes" => "m",
+                                "hours" => "h",
+                                _ => "s",
+                            };
+
+                        format!(
+                            "{}{}",
+                            value,
+                            suffix,
+                        )
+                    }
+
+                    _ => {
+                        "10m".to_string()
+                    }
+                },
 
             texture_policy,
 
             wallpaper,
 
             wallpaper_mode:
-                raw.wallpaper.mode,
+                wallpaper_mode,
 
             wallpaper_texture_policy,
 
@@ -1215,6 +1358,8 @@ pub fn load_config(
             screensaver_policies,
 
             wallpaper_policies,
+
+            unassigned_policies,
 
             screensaver_speed_policy,
 
@@ -1392,6 +1537,11 @@ pub fn load_config(
             ),
 
             format!(
+                "[CONFIG] unassigned policy count = {}",
+                config.unassigned_policies.len(),
+            ),
+
+            format!(
                 "[CONFIG] global_rendered_fps = {}",
                 config.global_rendered_fps,
             ),
@@ -1429,6 +1579,31 @@ pub fn load_config(
                     .screensaver_postprocess_policy
                     .global_profile
                     .render_scale,
+            ),
+
+            format!(
+                "[CONFIG] postprocess.bloom = {}",
+                config
+                    .screensaver_postprocess_policy
+                    .global_profile
+                    .bloom
+                    .name(),
+            ),
+
+            format!(
+                "[CONFIG] postprocess.bloom_intensity = {:.3}",
+                config
+                    .screensaver_postprocess_policy
+                    .global_profile
+                    .bloom_intensity,
+            ),
+
+            format!(
+                "[CONFIG] postprocess.bloom_threshold = {:.3}",
+                config
+                    .screensaver_postprocess_policy
+                    .global_profile
+                    .bloom_threshold,
             ),
 
             format!(
@@ -1569,6 +1744,26 @@ pub fn load_config(
     }
 
 
+    diagnostics.push(
+        format!(
+            "[CONFIG] unassigned_policies count = {}",
+            config.unassigned_policies.len(),
+        )
+    );
+
+
+    for shader_policy in
+        &config.unassigned_policies
+    {
+        diagnostics.push(
+            format_shader_policy_diagnostic(
+                "unassigned_policies",
+                shader_policy,
+            )
+        );
+    }
+
+
     Ok(
         ConfigResult {
 
@@ -1588,6 +1783,7 @@ pub fn load_config(
 enum PolicyTarget {
     Screensaver,
     Wallpaper,
+    Unassigned,
 }
 
 
@@ -1600,17 +1796,7 @@ impl PolicyTarget {
         match self {
             Self::Screensaver => "screensaver_policies",
             Self::Wallpaper => "wallpaper_policies",
-        }
-    }
-
-
-    fn path_table_name(
-        self,
-    ) -> &'static str {
-
-        match self {
-            Self::Screensaver => "screensaver_external_paths",
-            Self::Wallpaper => "wallpaper_external_paths",
+            Self::Unassigned => "unassigned_policies",
         }
     }
 
@@ -1628,215 +1814,454 @@ impl PolicyTarget {
                 crate::define_constants::WALLPAPER_SPEED_MIN,
                 crate::define_constants::WALLPAPER_SPEED_MAX,
             ),
+            Self::Unassigned => (
+                crate::define_constants::SCREENSAVER_SPEED_MIN
+                    .min(
+                        crate::define_constants::WALLPAPER_SPEED_MIN
+                    ),
+                crate::define_constants::SCREENSAVER_SPEED_MAX
+                    .max(
+                        crate::define_constants::WALLPAPER_SPEED_MAX
+                    ),
+            ),
         }
     }
 }
 
 
 
-fn merge_external_path_tables(
-    legacy_paths: BTreeMap<String, String>,
-    external_paths: BTreeMap<String, String>,
-) -> BTreeMap<String, String> {
-
-    let mut merged =
-        legacy_paths;
-
-
-    for (
-        shader,
-        path,
-    ) in external_paths
-    {
-        let existing_key =
-            merged
-                .keys()
-                .find(
-                    |key| {
-                        key.eq_ignore_ascii_case(
-                            &shader
-                        )
-                    }
-                )
-                .cloned();
-
-
-        if let Some(existing_key) =
-            existing_key
-        {
-            merged.remove(
-                &existing_key
-            );
-        }
-
-
-        merged.insert(
-            shader,
-            path,
-        );
-    }
-
-
-    merged
-}
-
-fn parse_policy_table(
-    raw_policies: BTreeMap<String, String>,
-    mut raw_shader_paths: BTreeMap<String, String>,
+fn load_database_policy_table(
     target: PolicyTarget,
 ) -> Result<Vec<ShaderPolicy>, String> {
 
+    #[derive(Debug)]
+    struct DatabasePolicyRow {
+        policy_id: i64,
+        policy_name: String,
+        filename: String,
+        source_path: String,
+        texture_mode: Option<String>,
+        texture_family: Option<String>,
+        texture_primitives: Option<i64>,
+        palette_mode: Option<String>,
+        palette_color: Option<String>,
+        rendered_fps: Option<i64>,
+        animation_speed: Option<f64>,
+        anti_aliasing: Option<String>,
+        dithering: Option<String>,
+        color_precision: Option<String>,
+        render_scale: Option<f64>,
+        bloom_mode: String,
+        bloom_intensity: f64,
+        bloom_threshold: f64,
+        invert_colors: i64,
+        flip_horizontal: i64,
+        flip_vertical: i64,
+        hue_rotation: f64,
+    }
+
+
+    let target_name =
+        match target {
+            PolicyTarget::Screensaver => "screensaver",
+            PolicyTarget::Wallpaper => "wallpaper",
+            PolicyTarget::Unassigned => "unassigned",
+        };
+
+
+    let connection =
+        crate::open_database::open()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to open Screenshaver database while loading {} policies: {}",
+                        target_name,
+                        error,
+                    )
+                }
+            )?;
+
+
+    let mut statement =
+        connection
+            .prepare(
+                "SELECT
+                     p.policy_id,
+                     p.policy_name,
+                     s.filename,
+                     s.source_path,
+                     p.texture_mode,
+                     p.texture_family,
+                     p.texture_primitives,
+                     p.palette_mode,
+                     p.palette_color,
+                     p.rendered_fps,
+                     p.animation_speed,
+                     p.anti_aliasing,
+                     p.dithering,
+                     p.color_precision,
+                     p.render_scale,
+                     p.bloom_mode,
+                     p.bloom_intensity,
+                     p.bloom_threshold,
+                     p.invert_colors,
+                     p.flip_horizontal,
+                     p.flip_vertical,
+                     p.hue_rotation
+                 FROM shader_policies AS p
+                 JOIN shaders AS s
+                   ON s.shader_id = p.shader_id
+                 WHERE p.policy_target = ?1
+                 ORDER BY p.policy_name_key,
+                          p.policy_id"
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to prepare {} policy query: {}",
+                        target_name,
+                        error,
+                    )
+                }
+            )?;
+
+
+    let rows =
+        statement
+            .query_map(
+                rusqlite::params![
+                    target_name
+                ],
+                |row| {
+                    Ok(
+                        DatabasePolicyRow {
+                            policy_id: row.get(0)?,
+                            policy_name: row.get(1)?,
+                            filename: row.get(2)?,
+                            source_path: row.get(3)?,
+                            texture_mode: row.get(4)?,
+                            texture_family: row.get(5)?,
+                            texture_primitives: row.get(6)?,
+                            palette_mode: row.get(7)?,
+                            palette_color: row.get(8)?,
+                            rendered_fps: row.get(9)?,
+                            animation_speed: row.get(10)?,
+                            anti_aliasing: row.get(11)?,
+                            dithering: row.get(12)?,
+                            color_precision: row.get(13)?,
+                            render_scale: row.get(14)?,
+                            bloom_mode: row.get(15)?,
+                            bloom_intensity: row.get(16)?,
+                            bloom_threshold: row.get(17)?,
+                            invert_colors: row.get(18)?,
+                            flip_horizontal: row.get(19)?,
+                            flip_vertical: row.get(20)?,
+                            hue_rotation: row.get(21)?,
+                        }
+                    )
+                },
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to query {} policies from database: {}",
+                        target_name,
+                        error,
+                    )
+                }
+            )?;
+
+
+    let managed_directory =
+        crate::locate_paths::shader_dir();
+
+
     let mut policies =
-        Vec::with_capacity(
-            raw_policies.len()
-        );
+        Vec::new();
 
 
-    for (policy_key, specification) in
-        raw_policies
-    {
-        let policy_key =
-            policy_key.trim().to_string();
+    for row in rows {
+
+        let row =
+            row.map_err(
+                |error| {
+                    format!(
+                        "Unable to decode {} policy row from database: {}",
+                        target_name,
+                        error,
+                    )
+                }
+            )?;
 
 
-        if policy_key.is_empty() {
-            return Err(
+        let mut tokens =
+            Vec::<String>::new();
+
+
+        match row.texture_mode
+            .as_deref()
+        {
+            None => {}
+
+            Some("random") => {
+                tokens.push(
+                    "texture:random".to_string()
+                );
+            }
+
+            Some("specific") => {
+                let family =
+                    row.texture_family
+                        .as_deref()
+                        .ok_or_else(
+                            || {
+                                format!(
+                                    "Database policy '{}' specifies texture_mode=specific without texture_family",
+                                    row.policy_name,
+                                )
+                            }
+                        )?;
+
+                let primitives =
+                    row.texture_primitives
+                        .ok_or_else(
+                            || {
+                                format!(
+                                    "Database policy '{}' specifies texture_mode=specific without texture_primitives",
+                                    row.policy_name,
+                                )
+                            }
+                        )?;
+
+                tokens.push(
+                    format!(
+                        "texture:{}:{}",
+                        family,
+                        primitives,
+                    )
+                );
+            }
+
+            Some(other) => {
+                return Err(
+                    format!(
+                        "Database policy '{}' has unsupported texture_mode '{}'",
+                        row.policy_name,
+                        other,
+                    )
+                );
+            }
+        }
+
+
+        match row.palette_mode
+            .as_deref()
+        {
+            None => {}
+
+            Some("random") => {
+                tokens.push(
+                    "palette:random".to_string()
+                );
+            }
+
+            Some("specific") => {
+                let color =
+                    row.palette_color
+                        .as_deref()
+                        .ok_or_else(
+                            || {
+                                format!(
+                                    "Database policy '{}' specifies palette_mode=specific without palette_color",
+                                    row.policy_name,
+                                )
+                            }
+                        )?;
+
+                tokens.push(
+                    format!(
+                        "palette:{}",
+                        color,
+                    )
+                );
+            }
+
+            Some(other) => {
+                return Err(
+                    format!(
+                        "Database policy '{}' has unsupported palette_mode '{}'",
+                        row.policy_name,
+                        other,
+                    )
+                );
+            }
+        }
+
+
+        if let Some(value) =
+            row.rendered_fps
+        {
+            tokens.push(
                 format!(
-                    "[{}] contains an empty shader policy key",
-                    target.table_name(),
+                    "fps:{}",
+                    value,
                 )
             );
         }
 
 
-        let source_path =
-            take_policy_source_path(
-                &mut raw_shader_paths,
-                &policy_key,
-                target,
-            )?;
-
-
-        let shader =
-            source_path
-                .as_ref()
-                .and_then(
-                    |path| {
-                        path.file_name()
-                            .and_then(|name| name.to_str())
-                    }
+        if let Some(value) =
+            row.animation_speed
+        {
+            tokens.push(
+                format!(
+                    "speed:{}",
+                    value,
                 )
-                .map(str::to_string)
-                .unwrap_or_else(
-                    || {
-                        crate::manage_policies::policy_display_name_from_key(
-                            &policy_key
+            );
+        }
+
+
+        if let Some(value) =
+            row.anti_aliasing.as_deref()
+        {
+            tokens.push(
+                format!(
+                    "anti_aliasing:{}",
+                    value,
+                )
+            );
+        }
+
+
+        if let Some(value) =
+            row.dithering.as_deref()
+        {
+            tokens.push(
+                format!(
+                    "dithering:{}",
+                    value,
+                )
+            );
+        }
+
+
+        if let Some(value) =
+            row.color_precision.as_deref()
+        {
+            tokens.push(
+                format!(
+                    "color_precision:{}",
+                    value,
+                )
+            );
+        }
+
+
+        if let Some(value) =
+            row.render_scale
+        {
+            tokens.push(
+                format!(
+                    "render_scale:{}",
+                    value,
+                )
+            );
+        }
+
+
+        tokens.push(
+            format!(
+                "bloom:{}",
+                row.bloom_mode,
+            )
+        );
+
+        tokens.push(
+            format!(
+                "bloom_intensity:{}",
+                row.bloom_intensity,
+            )
+        );
+
+        tokens.push(
+            format!(
+                "bloom_threshold:{}",
+                row.bloom_threshold,
+            )
+        );
+
+        tokens.push(
+            format!(
+                "invert_colors:{}",
+                row.invert_colors != 0,
+            )
+        );
+
+        tokens.push(
+            format!(
+                "flip_horizontal:{}",
+                row.flip_horizontal != 0,
+            )
+        );
+
+        tokens.push(
+            format!(
+                "flip_vertical:{}",
+                row.flip_vertical != 0,
+            )
+        );
+
+        tokens.push(
+            format!(
+                "hue_rotation:{}",
+                row.hue_rotation,
+            )
+        );
+
+
+        let registered_directory =
+            PathBuf::from(
+                &row.source_path
+            );
+
+
+        let source_path =
+            if registered_directory
+                == managed_directory
+            {
+                None
+            } else {
+                Some(
+                    registered_directory
+                        .join(
+                            &row.filename
                         )
-                        .to_string()
-                    }
-                );
+                )
+            };
 
 
         policies.push(
             parse_policy_specification(
-                policy_key,
-                shader,
+                row.policy_id,
+                row.policy_name,
+                row.filename,
                 source_path,
-                &specification,
+                &tokens.join(" "),
                 target,
             )?
         );
     }
 
 
-    // Path entries without matching policies are intentionally inert.
-    // This keeps configuration loading tolerant of stale hand-edited
-    // metadata while preserving the rule that an external shader cannot
-    // enter normal operation without an actual policy.
-    Ok(policies)
-}
-
-
-fn take_policy_source_path(
-    raw_shader_paths: &mut BTreeMap<String, String>,
-    shader: &str,
-    target: PolicyTarget,
-) -> Result<Option<PathBuf>, String> {
-
-    let matching_key =
-        raw_shader_paths
-            .keys()
-            .find(
-                |key| {
-                    key.eq_ignore_ascii_case(
-                        shader
-                    )
-                }
-            )
-            .cloned();
-
-
-    let Some(matching_key) =
-        matching_key
-    else {
-        return Ok(
-            None
-        );
-    };
-
-
-    let raw_path =
-        raw_shader_paths
-            .remove(
-                &matching_key
-            )
-            .unwrap_or_default();
-
-
-    let raw_path =
-        raw_path.trim();
-
-
-    if raw_path.is_empty() {
-        return Err(
-            format!(
-                "[{}] path for '{}' may not be empty",
-                target.path_table_name(),
-                shader,
-            )
-        );
-    }
-
-
-    let path =
-        PathBuf::from(
-            raw_path
-        );
-
-
-    if !path.is_absolute() {
-        return Err(
-            format!(
-                "[{}] path for '{}' must be absolute: {}",
-                target.path_table_name(),
-                shader,
-                raw_path,
-            )
-        );
-    }
-
-
-    // Do not require the file to exist while loading configuration.
-    // A missing external file must leave its policy visible so the
-    // Control Center can report and eventually repair the reference.
     Ok(
-        Some(
-            path
-        )
+        policies
     )
 }
 
+
 fn parse_policy_specification(
+    policy_id: i64,
     policy_key: String,
     shader: String,
     source_path: Option<PathBuf>,
@@ -1852,6 +2277,13 @@ fn parse_policy_specification(
     let mut dithering = None;
     let mut color_precision = None;
     let mut render_scale = None;
+    let mut bloom = None;
+    let mut bloom_intensity = None;
+    let mut bloom_threshold = None;
+    let mut invert_colors = None;
+    let mut flip_horizontal = None;
+    let mut flip_vertical = None;
+    let mut hue_rotation = None;
 
 
     for token in
@@ -2084,10 +2516,126 @@ fn parse_policy_specification(
                     );
             }
 
+            "bloom" => {
+                if bloom.is_some() {
+                    return Err(duplicate_policy_property(
+                        &shader,
+                        target,
+                        "bloom",
+                    ));
+                }
+
+                bloom =
+                    Some(
+                        parse_policy_bloom(
+                            &shader,
+                            value,
+                            target.table_name(),
+                        )?
+                    );
+            }
+
+            "bloom_intensity" => {
+                if bloom_intensity.is_some() {
+                    return Err(duplicate_policy_property(
+                        &shader,
+                        target,
+                        "bloom_intensity",
+                    ));
+                }
+
+                bloom_intensity =
+                    Some(
+                        parse_policy_bloom_intensity(
+                            &shader,
+                            value,
+                            target.table_name(),
+                        )?
+                    );
+            }
+
+            "bloom_threshold" => {
+                if bloom_threshold.is_some() {
+                    return Err(duplicate_policy_property(
+                        &shader,
+                        target,
+                        "bloom_threshold",
+                    ));
+                }
+
+                bloom_threshold =
+                    Some(
+                        parse_policy_bloom_threshold(
+                            &shader,
+                            value,
+                            target.table_name(),
+                        )?
+                    );
+            }
+            "invert_colors" => {
+                if invert_colors.is_some() {
+                    return Err(duplicate_policy_property(&shader, target, "invert_colors"));
+                }
+                invert_colors = Some(match value.trim().to_ascii_lowercase().as_str() {
+                    "true" => true,
+                    "false" => false,
+                    other => return Err(format!(
+                        "Invalid invert_colors '{}' for '{}' in [{}]; expected true or false",
+                        other, shader, target.table_name()
+                    )),
+                });
+            }
+            "flip_horizontal" => {
+                if flip_horizontal.is_some() {
+                    return Err(duplicate_policy_property(&shader, target, "flip_horizontal"));
+                }
+                flip_horizontal = Some(match value.trim().to_ascii_lowercase().as_str() {
+                    "true" => true,
+                    "false" => false,
+                    other => return Err(format!(
+                        "Invalid flip_horizontal '{}' for '{}' in [{}]; expected true or false",
+                        other, shader, target.table_name()
+                    )),
+                });
+            }
+            "flip_vertical" => {
+                if flip_vertical.is_some() {
+                    return Err(duplicate_policy_property(&shader, target, "flip_vertical"));
+                }
+                flip_vertical = Some(match value.trim().to_ascii_lowercase().as_str() {
+                    "true" => true,
+                    "false" => false,
+                    other => return Err(format!(
+                        "Invalid flip_vertical '{}' for '{}' in [{}]; expected true or false",
+                        other, shader, target.table_name()
+                    )),
+                });
+            }
+            "hue_rotation" => {
+                if hue_rotation.is_some() {
+                    return Err(
+                        duplicate_policy_property(
+                            &shader,
+                            target,
+                            "hue_rotation",
+                        )
+                    );
+                }
+
+                hue_rotation =
+                    Some(
+                        parse_policy_hue_rotation(
+                            &shader,
+                            value,
+                            target.table_name(),
+                        )?
+                    );
+            }
+
             other => {
                 return Err(
                     format!(
-                        "Unknown policy property '{}' for '{}' in [{}]; supported properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision, render_scale",
+                        "Unknown policy property '{}' for '{}' in [{}]; supported properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision, render_scale, bloom, bloom_intensity, bloom_threshold, invert_colors, flip_horizontal, flip_vertical, hue_rotation",
                         other,
                         shader,
                         target.table_name(),
@@ -2106,6 +2654,13 @@ fn parse_policy_specification(
         && dithering.is_none()
         && color_precision.is_none()
         && render_scale.is_none()
+        && bloom.is_none()
+        && bloom_intensity.is_none()
+        && bloom_threshold.is_none()
+        && invert_colors.is_none()
+        && flip_horizontal.is_none()
+        && flip_vertical.is_none()
+        && hue_rotation.is_none()
     {
         return Err(
             format!(
@@ -2119,6 +2674,7 @@ fn parse_policy_specification(
 
     Ok(
         ShaderPolicy {
+            policy_id,
             policy_key,
             shader,
             source_path,
@@ -2130,6 +2686,13 @@ fn parse_policy_specification(
             dithering,
             color_precision,
             render_scale,
+            bloom,
+            bloom_intensity,
+            bloom_threshold,
+            invert_colors,
+            flip_horizontal,
+            flip_vertical,
+            hue_rotation,
         }
     )
 }
@@ -2165,6 +2728,8 @@ fn texture_policy_entries_from(
         .map(
             |shader_policy| {
                 TexturePolicyEntry {
+                    policy_id:
+                        shader_policy.policy_id,
                     shader:
                         shader_policy.shader.clone(),
                     source_path:
@@ -2192,6 +2757,8 @@ fn fps_policy_entries_from(
                     .map(
                         |rendered_fps| {
                             FpsPolicyEntry {
+                                policy_id:
+                                    shader_policy.policy_id,
                                 shader:
                                     shader_policy.shader.clone(),
                                 source_path:
@@ -2271,8 +2838,50 @@ fn format_shader_policy_diagnostic(
             }
         );
 
+    let bloom = shader_policy.bloom
+        .map(
+            |mode| {
+                mode.name().to_string()
+            }
+        )
+        .unwrap_or_else(
+            || {
+                "<global>".to_string()
+            }
+        );
+
+    let bloom_intensity = shader_policy.bloom_intensity
+        .map(
+            |intensity| {
+                format!(
+                    "{:.3}",
+                    intensity,
+                )
+            }
+        )
+        .unwrap_or_else(
+            || {
+                "<global>".to_string()
+            }
+        );
+
+    let bloom_threshold = shader_policy.bloom_threshold
+        .map(
+            |threshold| {
+                format!(
+                    "{:.3}",
+                    threshold,
+                )
+            }
+        )
+        .unwrap_or_else(
+            || {
+                "<global>".to_string()
+            }
+        );
+
     format!(
-        "[CONFIG] {} shader={} source={} texture={} palette={} fps={} speed={} anti_aliasing={} dithering={} color_precision={} render_scale={}",
+        "[CONFIG] {} shader={} source={} texture={} palette={} fps={} speed={} anti_aliasing={} dithering={} color_precision={} render_scale={} bloom={} bloom_intensity={} bloom_threshold={}",
         table_name,
         shader_policy.shader,
         source_path,
@@ -2284,6 +2893,9 @@ fn format_shader_policy_diagnostic(
         dithering,
         color_precision,
         render_scale,
+        bloom,
+        bloom_intensity,
+        bloom_threshold,
     )
 }
 
@@ -2416,6 +3028,72 @@ fn parse_policy_color_precision(
             )
         }
     }
+}
+
+
+fn parse_policy_bloom(
+    shader: &str,
+    value: &str,
+    table_name: &str,
+) -> Result<
+    crate::render_bloom::BloomMode,
+    String,
+> {
+
+    crate::render_bloom::BloomMode::parse(
+        value
+    )
+    .map_err(
+        |error| {
+            format!(
+                "Invalid bloom value '{}' for '{}' in [{}]: {}",
+                value,
+                shader,
+                table_name,
+                error,
+            )
+        }
+    )
+}
+
+
+fn parse_policy_bloom_intensity(
+    shader: &str,
+    value: &str,
+    table_name: &str,
+) -> Result<f32, String> {
+
+    let intensity =
+        value.parse::<f32>()
+            .map_err(
+                |_| {
+                    format!(
+                        "Invalid bloom_intensity '{}' for '{}' in [{}]; expected a number from {:.2} through {:.2}",
+                        value,
+                        shader,
+                        table_name,
+                        crate::render_bloom::BLOOM_INTENSITY_MIN,
+                        crate::render_bloom::BLOOM_INTENSITY_MAX,
+                    )
+                }
+            )?;
+
+
+    crate::render_bloom::validate_bloom_intensity(
+        intensity
+    )
+    .map_err(
+        |_| {
+            format!(
+                "bloom_intensity {} for '{}' in [{}] is outside the supported range {:.2}-{:.2}",
+                value,
+                shader,
+                table_name,
+                crate::render_bloom::BLOOM_INTENSITY_MIN,
+                crate::render_bloom::BLOOM_INTENSITY_MAX,
+            )
+        }
+    )
 }
 
 
@@ -2616,6 +3294,224 @@ fn parse_global_color_precision(
 }
 
 
+fn parse_policy_hue_rotation(
+    shader: &str,
+    value: &str,
+    table_name: &str,
+) -> Result<f32, String> {
+    let parsed =
+        value.parse::<f32>()
+            .map_err(
+                |_| {
+                    format!(
+                        "Invalid hue_rotation '{}' for '{}' in [{}]; expected a number from {:.1} through {:.1}",
+                        value,
+                        shader,
+                        table_name,
+                        crate::postprocess_shader::HUE_ROTATION_MIN,
+                        crate::postprocess_shader::HUE_ROTATION_MAX,
+                    )
+                }
+            )?;
+
+    crate::postprocess_shader::validate_hue_rotation(parsed)
+}
+
+
+fn parse_policy_bloom_threshold(
+    shader: &str,
+    value: &str,
+    table_name: &str,
+) -> Result<f32, String> {
+
+    let parsed =
+        value.parse::<f32>()
+            .map_err(
+                |_| {
+                    format!(
+                        "Invalid bloom_threshold '{}' for '{}' in [{}]; expected a number from {:.2} through {:.2}",
+                        value,
+                        shader,
+                        table_name,
+                        crate::render_bloom::BLOOM_THRESHOLD_MIN,
+                        crate::render_bloom::BLOOM_THRESHOLD_MAX,
+                    )
+                }
+            )?;
+
+    crate::render_bloom::validate_bloom_threshold(
+        parsed
+    )
+    .map_err(
+        |_| {
+            format!(
+                "bloom_threshold {} for '{}' in [{}] is outside the supported range {:.2}-{:.2}",
+                parsed,
+                shader,
+                table_name,
+                crate::render_bloom::BLOOM_THRESHOLD_MIN,
+                crate::render_bloom::BLOOM_THRESHOLD_MAX,
+            )
+        }
+    )
+}
+
+
+fn parse_global_bloom(
+    value: Option<&str>,
+    fallback: crate::render_bloom::BloomMode,
+) -> (
+    crate::render_bloom::BloomMode,
+    Option<String>,
+) {
+
+    let Some(value) = value
+    else {
+        return (
+            fallback,
+            None,
+        );
+    };
+
+
+    match crate::render_bloom::BloomMode::parse(
+        value
+    ) {
+        Ok(mode) => (
+            mode,
+            None,
+        ),
+
+        Err(_) => (
+            fallback,
+            Some(
+                format!(
+                    "[CONFIG] WARNING: postprocess.bloom = '{}' is unsupported; using '{}'",
+                    value,
+                    fallback.name(),
+                )
+            ),
+        ),
+    }
+}
+
+
+fn parse_global_bloom_intensity(
+    value: Option<f32>,
+    fallback: f32,
+) -> (
+    f32,
+    Option<String>,
+) {
+
+    let Some(value) = value
+    else {
+        return (
+            fallback,
+            None,
+        );
+    };
+
+
+    if crate::render_bloom::validate_bloom_intensity(
+        value
+    )
+    .is_ok()
+    {
+        return (
+            value,
+            None,
+        );
+    }
+
+
+    (
+        fallback,
+        Some(
+            format!(
+                "[CONFIG] WARNING: postprocess.bloom_intensity = '{}' is outside the supported range {:.2}-{:.2}; using '{:.3}'",
+                value,
+                crate::render_bloom::BLOOM_INTENSITY_MIN,
+                crate::render_bloom::BLOOM_INTENSITY_MAX,
+                fallback,
+            )
+        ),
+    )
+}
+
+
+fn parse_global_hue_rotation(
+    value: Option<f32>,
+    fallback: f32,
+) -> (
+    f32,
+    Option<String>,
+) {
+    let Some(value) = value
+    else {
+        return (fallback, None);
+    };
+
+    if crate::postprocess_shader::validate_hue_rotation(value).is_ok() {
+        return (value, None);
+    }
+
+    (
+        fallback,
+        Some(
+            format!(
+                "[CONFIG] WARNING: postprocess.hue_rotation = '{}' is outside the supported range {:.1}-{:.1}; using '{:.1}'",
+                value,
+                crate::postprocess_shader::HUE_ROTATION_MIN,
+                crate::postprocess_shader::HUE_ROTATION_MAX,
+                fallback,
+            )
+        ),
+    )
+}
+
+
+fn parse_global_bloom_threshold(
+    value: Option<f32>,
+    fallback: f32,
+) -> (
+    f32,
+    Option<String>,
+) {
+    let Some(value) = value
+    else {
+        return (
+            fallback,
+            None,
+        );
+    };
+
+    if crate::render_bloom::validate_bloom_threshold(
+        value
+    )
+    .is_ok()
+    {
+        return (
+            value,
+            None,
+        );
+    }
+
+    (
+        fallback,
+        Some(
+            format!(
+                "[CONFIG] WARNING: postprocess.bloom_threshold = '{}' is outside the supported range {:.2}-{:.2}; using '{:.3}'",
+                value,
+                crate::render_bloom::BLOOM_THRESHOLD_MIN,
+                crate::render_bloom::BLOOM_THRESHOLD_MAX,
+                fallback,
+            )
+        ),
+    )
+}
+
+
 fn parse_global_render_scale(
     value: Option<f32>,
     fallback: f32,
@@ -2783,7 +3679,7 @@ fn validate_rendered_fps(
         fallback,
         Some(
             format!(
-                "[CONFIG] WARNING: global_rendered_fps = {} is outside the supported range {}-{}; using {}",
+                "[CONFIG] WARNING: app_defaults.rendered_fps = {} is outside the supported range {}-{}; using {}",
                 value,
                 crate::define_constants::MIN_RENDER_FPS,
                 crate::define_constants::MAX_RENDER_FPS,
@@ -2829,6 +3725,103 @@ fn format_texture_specification(
             .to_string()
     }
 }
+
+fn parse_database_global_texture(
+    defaults: &crate::manage_configuration::TargetDefaults,
+) -> Result<Option<crate::parse_texture_specification::TextureSpecification>, String> {
+
+    match defaults.texture_mode.as_str() {
+        "random" =>
+            parse_global_texture(
+                Some(
+                    "random"
+                )
+            ),
+
+        "specific" => {
+            let family =
+                defaults
+                    .texture_family
+                    .as_deref()
+                    .ok_or_else(
+                        || {
+                            format!(
+                                "Database target defaults for '{}' specify texture_mode=specific without texture_family",
+                                defaults.target,
+                            )
+                        }
+                    )?;
+
+            let specification =
+                format!(
+                    "{}:{}",
+                    family,
+                    defaults.texture_primitives,
+                );
+
+            parse_global_texture(
+                Some(
+                    &specification
+                )
+            )
+        }
+
+        other =>
+            Err(
+                format!(
+                    "Database target defaults for '{}' contain unsupported texture_mode '{}'",
+                    defaults.target,
+                    other,
+                )
+            ),
+    }
+}
+
+
+fn parse_database_global_palette(
+    defaults: &crate::manage_configuration::TargetDefaults,
+) -> Result<Option<crate::palettes::PaletteColor>, String> {
+
+    match defaults.palette_mode.as_str() {
+        "random" =>
+            parse_global_palette(
+                Some(
+                    "random"
+                )
+            ),
+
+        "specific" => {
+            let color =
+                defaults
+                    .palette_color
+                    .as_deref()
+                    .ok_or_else(
+                        || {
+                            format!(
+                                "Database target defaults for '{}' specify palette_mode=specific without palette_color",
+                                defaults.target,
+                            )
+                        }
+                    )?;
+
+            parse_global_palette(
+                Some(
+                    color
+                )
+            )
+        }
+
+        other =>
+            Err(
+                format!(
+                    "Database target defaults for '{}' contain unsupported palette_mode '{}'",
+                    defaults.target,
+                    other,
+                )
+            ),
+    }
+}
+
 
 fn parse_global_texture(
     value: Option<&str>,

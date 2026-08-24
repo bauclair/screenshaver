@@ -20,41 +20,10 @@ pub fn screenshaver_dir() -> PathBuf {
 }
 
 
-pub fn screensaver_shader_dir() -> PathBuf {
-
-    screenshaver_dir()
-        .join("screensavers")
-}
-
-
-pub fn wallpaper_shader_dir() -> PathBuf {
-
-    screenshaver_dir()
-        .join("wallpapers")
-}
-
-
-/// Compatibility alias for existing screensaver-path callers.
-///
-/// New code should use `screensaver_shader_dir()` so that screensaver and
-/// wallpaper shader locations remain unambiguous.
 pub fn shader_dir() -> PathBuf {
 
-    screensaver_shader_dir()
-}
-
-
-pub fn shader_cache_dir() -> PathBuf {
-
     screenshaver_dir()
-        .join("cache")
-}
-
-
-pub fn rejected_shader_dir() -> PathBuf {
-
-    screenshaver_dir()
-        .join("rejected")
+        .join("shaders")
 }
 
 
@@ -72,16 +41,15 @@ pub fn state_path() -> PathBuf {
 }
 
 
-pub fn legacy_recent_shader_history_path() -> PathBuf {
-
-    screenshaver_dir()
-        .join("recent-shaders.json")
-}
-
-
 pub fn config_path() -> PathBuf {
 
     screenshaver_dir()
         .join("screenshaver.toml")
 }
 
+
+pub fn database_path() -> PathBuf {
+
+    screenshaver_dir()
+        .join("screenshaver.db")
+}

@@ -1,4 +1,3 @@
-use std::fs;
 use std::path::PathBuf;
 
 
@@ -21,7 +20,18 @@ pub enum ShaderMode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShaderEntry {
 
+    /// SQLite policy identity. Zero is reserved for compatibility-only
+    /// synthetic entries that were not loaded from the policy database.
+    pub policy_id:
+        i64,
+
+    /// Physical/logical shader filename used for loading and configured
+    /// Single-mode matching.
     pub name:
+        String,
+
+    /// User-facing Policy Name. This is independent of the shader filename.
+    pub policy_name:
         String,
 
     pub source_path:
@@ -36,6 +46,10 @@ impl ShaderEntry {
     ) -> Self {
 
         Self {
+            policy_id:
+                0,
+            policy_name:
+                name.clone(),
             name,
             source_path:
                 None,
@@ -49,7 +63,45 @@ impl ShaderEntry {
     ) -> Self {
 
         Self {
+            policy_id:
+                0,
+            policy_name:
+                name.clone(),
             name,
+            source_path:
+                Some(source_path),
+        }
+    }
+
+
+    pub fn with_policy_source_path(
+        name: String,
+        policy_name: String,
+        source_path: PathBuf,
+    ) -> Self {
+
+        Self {
+            policy_id:
+                0,
+            name,
+            policy_name,
+            source_path:
+                Some(source_path),
+        }
+    }
+
+
+    pub fn with_policy_id_source_path(
+        policy_id: i64,
+        name: String,
+        policy_name: String,
+        source_path: PathBuf,
+    ) -> Self {
+
+        Self {
+            policy_id,
+            name,
+            policy_name,
             source_path:
                 Some(source_path),
         }
@@ -188,6 +240,21 @@ impl ShaderManager {
                     )
                     .then_with(
                         || {
+                            left.policy_name
+                                .cmp(
+                                    &right.policy_name
+                                )
+                        }
+                    )
+                    .then_with(
+                        || {
+                            left.policy_id.cmp(
+                                &right.policy_id
+                            )
+                        }
+                    )
+                    .then_with(
+                        || {
                             left.source_path
                                 .cmp(
                                     &right.source_path
@@ -221,125 +288,168 @@ impl ShaderManager {
     }
 
 
-    /// Scan the managed screensaver shader directory and preserve each
-    /// shader's resolved physical path.
+    /// Load screensaver-eligible managed shaders from SQLite and preserve each
+    /// shader's registered physical source path. A managed shader is selectable
+    /// only when it has at least one Screensaver-target policy. Physical directory
+    /// enumeration belongs to reconciliation, not normal runtime selection.
     pub fn load_shader_entries() -> Vec<ShaderEntry> {
 
-        let directory =
-            crate::locate_paths::shader_dir();
-
-
-        let entries =
-            match fs::read_dir(
-                &directory
-            ) {
-
-                Ok(entries) => entries,
-
-
-                Err(error) => {
-
-                    log_error(
-                        &format!(
-                            "[SHADER] Cannot read shader directory '{}': {}",
-                            directory.display(),
-                            error,
-                        )
-                    );
-
-
-                    return Vec::new();
-                }
-            };
+        let managed_source_path =
+            crate::locate_paths::shader_dir()
+                .to_string_lossy()
+                .to_string();
 
 
         let mut shaders =
             Vec::new();
 
 
-        for entry in
-            entries.flatten()
-        {
-            let path =
-                entry.path();
+        match crate::open_database::open() {
+
+            Ok(connection) => {
+
+                match connection.prepare(
+                    "SELECT
+                         p.policy_id,
+                         s.filename,
+                         s.source_path,
+                         p.policy_name
+                     FROM shader_policies AS p
+                     JOIN shaders AS s
+                       ON s.shader_id = p.shader_id
+                     WHERE s.source_path = ?1
+                       AND s.file_status = 'present'
+                       AND p.policy_target = 'screensaver'
+                     ORDER BY s.filename COLLATE NOCASE,
+                              s.filename,
+                              p.policy_name COLLATE NOCASE,
+                              p.policy_name,
+                              p.policy_id"
+                ) {
+
+                    Ok(mut statement) => {
+
+                        match statement.query_map(
+                            rusqlite::params![
+                                managed_source_path
+                            ],
+                            |row| {
+                                Ok(
+                                    (
+                                        row.get::<_, i64>(0)?,
+                                        row.get::<_, String>(1)?,
+                                        row.get::<_, String>(2)?,
+                                        row.get::<_, String>(3)?,
+                                    )
+                                )
+                            },
+                        ) {
+
+                            Ok(rows) => {
+
+                                for row in rows {
+
+                                    match row {
+
+                                        Ok((
+                                            policy_id,
+                                            filename,
+                                            source_path,
+                                            policy_name,
+                                        )) => {
+
+                                            log_debug(
+                                                &format!(
+                                                    "[SHADER] Discovered screensaver policy '{}' for managed shader '{}'",
+                                                    policy_name,
+                                                    filename
+                                                )
+                                            );
 
 
-            if !path.is_file() {
-
-                continue;
-            }
-
-
-            let file_name =
-                match path.file_name()
-                    .and_then(
-                        |name| name.to_str()
-                    )
-                {
-
-                    Some(name) => name,
-
-                    None => continue,
-                };
+                                            let physical_path =
+                                                PathBuf::from(
+                                                    &source_path
+                                                )
+                                                .join(
+                                                    &filename
+                                                );
 
 
-            let extension =
-                path.extension()
-                    .and_then(
-                        |value| {
-                            value.to_str()
+                                            shaders.push(
+                                                ShaderEntry::with_policy_id_source_path(
+                                                    policy_id,
+                                                    filename,
+                                                    policy_name,
+                                                    physical_path,
+                                                )
+                                            );
+                                        }
+
+
+                                        Err(error) => {
+
+                                            log_warning(
+                                                &format!(
+                                                    "[SHADER] Unable to decode managed shader discovery row: {}",
+                                                    error,
+                                                )
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+
+
+                            Err(error) => {
+
+                                log_error(
+                                    &format!(
+                                        "[SHADER] Unable to query managed shader discovery rows: {}",
+                                        error,
+                                    )
+                                );
+                            }
                         }
+                    }
+
+
+                    Err(error) => {
+
+                        log_error(
+                            &format!(
+                                "[SHADER] Unable to prepare managed shader discovery query: {}",
+                                error,
+                            )
+                        );
+                    }
+                }
+            }
+
+
+            Err(error) => {
+
+                log_error(
+                    &format!(
+                        "[SHADER] Unable to open database for managed shader discovery: {}",
+                        error,
                     )
-                    .unwrap_or_default();
-
-
-            if !extension.eq_ignore_ascii_case(
-                "glsl"
-            )
-                && !extension.eq_ignore_ascii_case(
-                    "fs"
-                )
-                && !extension.eq_ignore_ascii_case(
-                    "shaver"
-                )
-            {
-                continue;
+                );
             }
-
-
-            if file_name.contains(
-                "._gen"
-            ) {
-                continue;
-            }
-
-
-            log_debug(
-                &format!(
-                    "[SHADER] Discovered shader: {}",
-                    file_name
-                )
-            );
-
-
-            shaders.push(
-                ShaderEntry::with_source_path(
-                    file_name.to_string(),
-                    path,
-                )
-            );
         }
 
 
         let config_path =
             crate::locate_paths::config_path();
 
-        match crate::manage_policies::external_policy_paths(
+        match crate::manage_policies::external_policy_entries(
             &config_path,
             crate::manage_policies::PolicyTarget::Screensaver,
         ) {
             Ok(external_paths) => {
                 for (
+                    policy_id,
+                    policy_name,
                     name,
                     source_path,
                 ) in external_paths
@@ -357,8 +467,10 @@ impl ShaderManager {
                     }
 
                     shaders.push(
-                        ShaderEntry::with_source_path(
+                        ShaderEntry::with_policy_id_source_path(
+                            policy_id,
                             name,
+                            policy_name,
                             source_path,
                         )
                     );
@@ -375,11 +487,27 @@ impl ShaderManager {
             }
         }
 
+
         shaders.sort_by(
             |left, right| {
                 left.name
                     .cmp(
                         &right.name
+                    )
+                    .then_with(
+                        || {
+                            left.policy_name
+                                .cmp(
+                                    &right.policy_name
+                                )
+                        }
+                    )
+                    .then_with(
+                        || {
+                            left.policy_id.cmp(
+                                &right.policy_id
+                            )
+                        }
                     )
                     .then_with(
                         || {
@@ -391,6 +519,14 @@ impl ShaderManager {
                     )
             }
         );
+
+
+        if shaders.is_empty() {
+
+            log_warning(
+                "[SHADER] No selectable shaders found"
+            );
+        }
 
 
         shaders
@@ -453,6 +589,41 @@ impl ShaderManager {
     }
 
 
+    pub fn remove_entry(
+        &mut self,
+        entry: &ShaderEntry,
+    ) {
+
+        self.shaders.retain(
+            |shader| {
+                shader != entry
+            }
+        );
+
+
+        if self.shaders.is_empty() {
+
+            self.index =
+                0;
+
+        } else if self.index
+            >= self.shaders.len()
+        {
+            self.index %=
+                self.shaders.len();
+        }
+
+
+        log_information(
+            &format!(
+                "[SHADER] Removed rejected policy entry from active list: policy_id={}, shader={}",
+                entry.policy_id,
+                entry.name,
+            )
+        );
+    }
+
+
     /// Return the next path-aware shader entry according to the configured
     /// mode.
     pub fn next_entry(
@@ -477,18 +648,49 @@ impl ShaderManager {
         match &self.mode {
 
             ShaderMode::Single(
-                name
+                selector
             ) => {
 
-                if let Some(shader) =
-                    self.shaders
-                        .iter()
-                        .find(
-                            |shader| {
-                                shader.name
-                                    == *name
+                let requested_policy_id =
+                    selector
+                        .trim()
+                        .parse::<i64>()
+                        .ok()
+                        .filter(
+                            |policy_id| {
+                                *policy_id > 0
                             }
-                        )
+                        );
+
+
+                let selected =
+                    if let Some(policy_id) =
+                        requested_policy_id
+                    {
+                        self.shaders
+                            .iter()
+                            .find(
+                                |shader| {
+                                    shader.policy_id
+                                        == policy_id
+                                }
+                            )
+                    } else {
+                        // Compatibility fallback for synthetic/legacy callers
+                        // that still construct Single mode with a filename.
+                        self.shaders
+                            .iter()
+                            .find(
+                                |shader| {
+                                    shader.name
+                                        == *selector
+                                }
+                            )
+                    };
+
+
+                if let Some(shader) =
+                    selected
                 {
                     Some(
                         shader.clone()
@@ -498,8 +700,8 @@ impl ShaderManager {
 
                     log_warning(
                         &format!(
-                            "[SHADER] Requested shader '{}' is unavailable; selecting another shader",
-                            name
+                            "[SHADER] Requested Single policy '{}' is unavailable; selecting another policy",
+                            selector
                         )
                     );
 
