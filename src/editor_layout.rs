@@ -1094,6 +1094,15 @@ pub struct EditWindowOverlay {
     qbe_state:
         crate::qbe_layout::QbeLayoutState,
 
+    qbe_policy_ids:
+        Option<Vec<i64>>,
+
+    qbe_returned_count:
+        usize,
+
+    qbe_total_count:
+        usize,
+
     control_configuration:
         Option<ControlConfiguration>,
 
@@ -1409,6 +1418,15 @@ impl EditWindowOverlay {
 
                 qbe_state:
                     crate::qbe_layout::QbeLayoutState::default(),
+
+                qbe_policy_ids:
+                    None,
+
+                qbe_returned_count:
+                    0,
+
+                qbe_total_count:
+                    0,
 
                 control_configuration:
                     None,
@@ -2341,6 +2359,15 @@ impl EditWindowOverlay {
         let mut qbe_state =
             self.qbe_state.clone();
 
+        let mut qbe_policy_ids =
+            self.qbe_policy_ids.clone();
+
+        let mut qbe_returned_count =
+            self.qbe_returned_count;
+
+        let mut qbe_total_count =
+            self.qbe_total_count;
+
         let mut pending_policy_clone =
             self.pending_policy_clone.clone();
 
@@ -2787,6 +2814,10 @@ impl EditWindowOverlay {
                                                 &mut pending_confirmation,
                                                 &mut policy_row_command_requested,
                                                 &mut qbe_state,
+                                                &mut qbe_policy_ids,
+                                                &mut qbe_returned_count,
+                                                &mut qbe_total_count,
+                                                &mut status_message,
                                             );
                                         }
 
@@ -3261,6 +3292,15 @@ impl EditWindowOverlay {
 
         self.qbe_state =
             qbe_state;
+
+        self.qbe_policy_ids =
+            qbe_policy_ids;
+
+        self.qbe_returned_count =
+            qbe_returned_count;
+
+        self.qbe_total_count =
+            qbe_total_count;
 
         self.selected_policy_row =
             selected_policy_row;
@@ -5115,6 +5155,14 @@ fn draw_policies_tab(
         &mut Option<(PolicyRowReference, PolicyRowCommand)>,
     qbe_state:
         &mut crate::qbe_layout::QbeLayoutState,
+    qbe_policy_ids:
+        &mut Option<Vec<i64>>,
+    qbe_returned_count:
+        &mut usize,
+    qbe_total_count:
+        &mut usize,
+    status_message:
+        &mut String,
 ) {
     fn header_text(
         label: &str,
@@ -5206,7 +5254,24 @@ fn draw_policies_tab(
     }
 
     let mut rows =
-        policy_rows.to_vec();
+        policy_rows
+            .iter()
+            .filter(
+                |row| {
+                    qbe_policy_ids
+                        .as_ref()
+                        .map(
+                            |policy_ids| {
+                                policy_ids.contains(
+                                    &row.policy_id
+                                )
+                            }
+                        )
+                        .unwrap_or(true)
+                }
+            )
+            .cloned()
+            .collect::<Vec<_>>();
 
     rows.sort_by(
         |left, right| {
@@ -6141,11 +6206,76 @@ fn draw_policies_tab(
         4.0 * metrics.scale
     );
 
-    crate::qbe_layout::draw_qbe_strip(
-        ui,
-        metrics.scale,
-        qbe_state,
-    );
+    let qbe_action =
+        crate::qbe_layout::draw_qbe_strip(
+            ui,
+            metrics.scale,
+            qbe_state,
+        );
+
+
+    match qbe_action {
+        crate::qbe_layout::QbeStripAction::None => {}
+
+        crate::qbe_layout::QbeStripAction::Clear => {
+            *qbe_policy_ids =
+                None;
+
+            *qbe_returned_count =
+                policy_rows.len();
+
+            *qbe_total_count =
+                policy_rows.len();
+
+            *status_message =
+                format!(
+                    "Policy query cleared — displaying all {} policies.",
+                    policy_rows.len(),
+                );
+        }
+
+        crate::qbe_layout::QbeStripAction::Query => {
+            match crate::query_database::execute_policy_qbe_state(
+                qbe_state
+            ) {
+                Ok(result) => {
+                    *qbe_policy_ids =
+                        Some(
+                            result
+                                .rows
+                                .iter()
+                                .map(
+                                    |row| {
+                                        row.policy_id
+                                    }
+                                )
+                                .collect()
+                        );
+
+                    *qbe_returned_count =
+                        result.returned_count;
+
+                    *qbe_total_count =
+                        result.total_count;
+
+                    *status_message =
+                        format!(
+                            "Policy query returned {} / {} policies.",
+                            result.returned_count,
+                            result.total_count,
+                        );
+                }
+
+                Err(error) => {
+                    *status_message =
+                        format!(
+                            "Policy query failed: {}",
+                            error,
+                        );
+                }
+            }
+        }
+    }
 }
 
 

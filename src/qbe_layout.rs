@@ -1,71 +1,51 @@
 //! Query By Example strip layout for the Policy List.
 //!
-//! This first implementation is deliberately a UI/layout checkpoint.
-//! It owns only transient mockup state and contextual control behavior.
-//! SQL parsing and database execution will be supplied later by
-//! parse_qbe.rs and query_database.rs.
+//! The visual geometry in this module is the approved two-line QBE layout.
+//! QBE semantics, blank-state rules, contextual operators, and value kinds
+//! come from parse_qbe.rs. SQL execution is intentionally not connected yet.
 
-#[derive(Clone, Debug, Default)]
-pub struct QbeLayoutState {
-    pub item_1: Option<String>,
-    pub operator_1: Option<String>,
-    pub value_1: String,
-    pub conditional: Option<String>,
-    pub item_2: Option<String>,
-    pub operator_2: Option<String>,
-    pub value_2: String,
+pub type QbeLayoutState =
+    crate::parse_qbe::QbeState;
+
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum QbeStripAction {
+    None,
+    Query,
+    Clear,
 }
-
-
-const ITEMS: &[&str] = &[
-    "Policy Name",
-    "Shader Filename",
-    "Shader Type",
-    "Policy Target",
-    "Status",
-    "Texture",
-    "Palette",
-    "Rendered FPS",
-    "Animation Speed",
-    "Render Scale",
-    "Anti-Aliasing",
-    "Dithering",
-    "Color Precision",
-    "Bloom Mode",
-];
 
 
 pub fn draw_qbe_strip(
     ui: &mut egui::Ui,
     scale: f32,
     state: &mut QbeLayoutState,
-) {
+) -> QbeStripAction {
+    let mut action =
+        QbeStripAction::None;
+
+
     let old_spacing =
         ui.spacing().item_spacing;
 
     ui.spacing_mut().item_spacing.x =
         4.0 * scale;
 
-    let clause_1_complete =
-        clause_complete(
-            &state.item_1,
-            &state.operator_1,
-            &state.value_1,
-        );
 
-    let clause_2_complete =
-        clause_complete(
-            &state.item_2,
-            &state.operator_2,
-            &state.value_2,
-        );
+    state.normalize();
+
+
+    let lookup_values =
+        crate::query_database::load_qbe_lookup_values()
+            .unwrap_or_default();
+
 
     let query_ready =
-        clause_1_complete
-            && (
-                state.conditional.is_none()
-                    || clause_2_complete
-            );
+        crate::parse_qbe::validate(
+            state
+        )
+        .is_ok();
+
 
     // --------------------------------------------------------
     // Row 1:
@@ -73,7 +53,7 @@ pub fn draw_qbe_strip(
     // --------------------------------------------------------
     ui.horizontal(
         |ui| {
-            let _query_clicked =
+            let query_clicked =
                 ui.add_enabled(
                     query_ready,
                     egui::Button::new(
@@ -88,55 +68,13 @@ pub fn draw_qbe_strip(
                 )
                 .clicked();
 
-            draw_item_combo(
-                ui,
-                "qbe_item_1",
-                130.0 * scale,
-                &mut state.item_1,
-            );
 
-            if state.item_1.is_none() {
-                state.operator_1 = None;
-                state.value_1.clear();
+            if query_clicked {
+                action =
+                    QbeStripAction::Query;
             }
 
-            draw_operator_combo(
-                ui,
-                "qbe_operator_1",
-                72.0 * scale,
-                state.item_1.as_deref(),
-                &mut state.operator_1,
-            );
 
-            if !operator_valid(
-                state.item_1.as_deref(),
-                state.operator_1.as_deref(),
-            ) {
-                state.operator_1 = None;
-                state.value_1.clear();
-            }
-
-            draw_value_control(
-                ui,
-                "qbe_value_1",
-                150.0 * scale,
-                state.item_1.as_deref(),
-                state.operator_1.as_deref(),
-                &mut state.value_1,
-            );
-        },
-    );
-
-    ui.add_space(
-        4.0 * scale
-    );
-
-    // --------------------------------------------------------
-    // Row 2:
-    // AND/OR | Item 2 | Operator 2 | Value 2
-    // --------------------------------------------------------
-    ui.horizontal(
-        |ui| {
             if ui.add(
                 egui::Button::new(
                     "Clear"
@@ -150,13 +88,60 @@ pub fn draw_qbe_strip(
             )
             .clicked()
             {
-                *state =
-                    QbeLayoutState::default();
+                state.clear();
+
+                action =
+                    QbeStripAction::Clear;
             }
+
 
             ui.add_space(
                 4.0 * scale
             );
+
+
+            draw_field_combo(
+                ui,
+                "qbe_item_1",
+                130.0 * scale,
+                true,
+                &mut state.first,
+            );
+
+
+            draw_operator_combo(
+                ui,
+                "qbe_operator_1",
+                72.0 * scale,
+                &mut state.first,
+            );
+
+
+            draw_value_control(
+                ui,
+                "qbe_value_1",
+                150.0 * scale,
+                &mut state.first,
+                &lookup_values,
+            );
+        },
+    );
+
+
+    ui.add_space(
+        4.0 * scale
+    );
+
+
+    // --------------------------------------------------------
+    // Row 2:
+    // AND/OR | Item 2 | Operator 2 | Value 2
+    // --------------------------------------------------------
+    ui.horizontal(
+        |ui| {
+            let clause_1_complete =
+                state.first.is_complete();
+
 
             draw_conditional_combo(
                 ui,
@@ -166,99 +151,59 @@ pub fn draw_qbe_strip(
                 &mut state.conditional,
             );
 
+
             if state.conditional.is_none() {
-                state.item_2 = None;
-                state.operator_2 = None;
-                state.value_2.clear();
+                state.second.clear();
             }
 
-            draw_item_combo_enabled(
+
+            draw_field_combo(
                 ui,
                 "qbe_item_2",
                 130.0 * scale,
                 state.conditional.is_some(),
-                &mut state.item_2,
+                &mut state.second,
             );
 
-            if state.item_2.is_none() {
-                state.operator_2 = None;
-                state.value_2.clear();
-            }
 
             draw_operator_combo(
                 ui,
                 "qbe_operator_2",
                 72.0 * scale,
-                if state.conditional.is_some() {
-                    state.item_2.as_deref()
-                } else {
-                    None
-                },
-                &mut state.operator_2,
+                &mut state.second,
             );
 
-            if !operator_valid(
-                state.item_2.as_deref(),
-                state.operator_2.as_deref(),
-            ) {
-                state.operator_2 = None;
-                state.value_2.clear();
-            }
 
             draw_value_control(
                 ui,
                 "qbe_value_2",
                 150.0 * scale,
-                if state.conditional.is_some() {
-                    state.item_2.as_deref()
-                } else {
-                    None
-                },
-                state.operator_2.as_deref(),
-                &mut state.value_2,
+                &mut state.second,
+                &lookup_values,
             );
         },
     );
 
+
     ui.spacing_mut().item_spacing =
         old_spacing;
+
+
+    action
 }
 
 
-fn clause_complete(
-    item: &Option<String>,
-    operator: &Option<String>,
-    value: &str,
-) -> bool {
-    item.is_some()
-        && operator.is_some()
-        && !value.trim().is_empty()
-}
-
-
-fn draw_item_combo(
-    ui: &mut egui::Ui,
-    id: &'static str,
-    width: f32,
-    selected: &mut Option<String>,
-) {
-    draw_item_combo_enabled(
-        ui,
-        id,
-        width,
-        true,
-        selected,
-    );
-}
-
-
-fn draw_item_combo_enabled(
+fn draw_field_combo(
     ui: &mut egui::Ui,
     id: &'static str,
     width: f32,
     enabled: bool,
-    selected: &mut Option<String>,
+    clause: &mut crate::parse_qbe::QbeClause,
 ) {
+    let previous_field =
+        clause.field;
+
+
     ui.add_enabled_ui(
         enabled,
         |ui| {
@@ -266,26 +211,40 @@ fn draw_item_combo_enabled(
                 id
             )
             .selected_text(
-                selected.as_deref()
+                clause.field
+                    .map(
+                        |field| field.label()
+                    )
                     .unwrap_or("")
             )
             .width(width)
             .show_ui(
                 ui,
                 |ui| {
-                    for item in ITEMS {
+                    for field in
+                        crate::parse_qbe::QbeField::ALL
+                    {
                         ui.selectable_value(
-                            selected,
-                            Some(
-                                (*item).to_string()
-                            ),
-                            *item,
+                            &mut clause.field,
+                            Some(*field),
+                            field.label(),
                         );
                     }
                 },
             );
         },
     );
+
+
+    if clause.field != previous_field {
+        clause.operator =
+            None;
+
+        clause.value.clear();
+    }
+
+
+    clause.normalize_after_field_change();
 }
 
 
@@ -293,39 +252,80 @@ fn draw_operator_combo(
     ui: &mut egui::Ui,
     id: &'static str,
     width: f32,
-    item: Option<&str>,
-    selected: &mut Option<String>,
+    clause: &mut crate::parse_qbe::QbeClause,
 ) {
-    let operators =
-        operators_for(item);
+    let previous_operator =
+        clause.operator;
+
+
+    let Some(field) =
+        clause.field
+    else {
+        clause.operator =
+            None;
+
+        clause.value.clear();
+
+
+        ui.add_enabled_ui(
+            false,
+            |ui| {
+                egui::ComboBox::from_id_source(
+                    id
+                )
+                .selected_text("")
+                .width(width)
+                .show_ui(
+                    ui,
+                    |_ui| {}
+                );
+            },
+        );
+
+        return;
+    };
+
 
     ui.add_enabled_ui(
-        item.is_some(),
+        true,
         |ui| {
             egui::ComboBox::from_id_source(
                 id
             )
             .selected_text(
-                selected.as_deref()
+                clause.operator
+                    .map(
+                        |operator| operator.label()
+                    )
                     .unwrap_or("")
             )
             .width(width)
             .show_ui(
                 ui,
                 |ui| {
-                    for operator in operators {
+                    for operator in
+                        crate::parse_qbe::operators_for(
+                            field
+                        )
+                    {
                         ui.selectable_value(
-                            selected,
-                            Some(
-                                operator.to_string()
-                            ),
-                            *operator,
+                            &mut clause.operator,
+                            Some(*operator),
+                            operator.label(),
                         );
                     }
                 },
             );
         },
     );
+
+
+    if clause.operator != previous_operator {
+        clause.value.clear();
+    }
+
+
+    clause.normalize_after_operator_change();
 }
 
 
@@ -334,8 +334,14 @@ fn draw_conditional_combo(
     id: &'static str,
     width: f32,
     enabled: bool,
-    selected: &mut Option<String>,
+    selected: &mut Option<crate::parse_qbe::QbeConditional>,
 ) {
+    if !enabled {
+        *selected =
+            None;
+    }
+
+
     ui.add_enabled_ui(
         enabled,
         |ui| {
@@ -343,23 +349,23 @@ fn draw_conditional_combo(
                 id
             )
             .selected_text(
-                selected.as_deref()
+                selected
+                    .map(
+                        |conditional| conditional.label()
+                    )
                     .unwrap_or("")
             )
             .width(width)
             .show_ui(
                 ui,
                 |ui| {
-                    for conditional in [
-                        "AND",
-                        "OR",
-                    ] {
+                    for conditional in
+                        crate::parse_qbe::QbeConditional::ALL
+                    {
                         ui.selectable_value(
                             selected,
-                            Some(
-                                conditional.to_string()
-                            ),
-                            conditional,
+                            Some(*conditional),
+                            conditional.label(),
                         );
                     }
                 },
@@ -373,109 +379,195 @@ fn draw_value_control(
     ui: &mut egui::Ui,
     id: &'static str,
     width: f32,
-    item: Option<&str>,
-    operator: Option<&str>,
-    value: &mut String,
+    clause: &mut crate::parse_qbe::QbeClause,
+    lookup_values: &crate::query_database::QbeLookupValues,
 ) {
-    let enabled =
-        item.is_some()
-            && operator.is_some();
+    let (
+        Some(field),
+        Some(operator),
+    ) = (
+        clause.field,
+        clause.operator,
+    )
+    else {
+        clause.value.clear();
 
-    ui.add_enabled_ui(
-        enabled,
-        |ui| {
-            match value_kind(
-                item,
-                operator,
-            ) {
-                MockValueKind::Boolean => {
-                    draw_value_combo(
-                        ui,
-                        id,
+
+        ui.add_enabled_ui(
+            false,
+            |ui| {
+                ui.add_sized(
+                    [
                         width,
-                        value,
-                        &[
-                            "true",
-                            "false",
-                        ],
-                    );
-                }
+                        22.0,
+                    ],
+                    egui::TextEdit::singleline(
+                        &mut clause.value
+                    )
+                    .id_source(id),
+                );
+            },
+        );
 
-                MockValueKind::ShaderType => {
-                    draw_value_combo(
-                        ui,
-                        id,
-                        width,
-                        value,
-                        &[
-                            "NativeGLSL",
-                            "ISF",
-                            "ShaderToy",
-                        ],
-                    );
-                }
+        return;
+    };
 
-                MockValueKind::PolicyTarget => {
-                    draw_value_combo(
-                        ui,
-                        id,
-                        width,
-                        value,
-                        &[
-                            "Screensaver",
-                            "Wallpaper",
-                            "Unassigned",
-                        ],
-                    );
-                }
 
-                MockValueKind::TextureName => {
-                    // Temporary visual choices only. query_database.rs will
-                    // provide the live database-backed texture list later.
-                    draw_value_combo(
-                        ui,
-                        id,
-                        width,
-                        value,
-                        &[
-                            "Bricks",
-                            "Marble",
-                            "Skulls",
-                        ],
-                    );
-                }
+    match crate::parse_qbe::value_kind_for(
+        field,
+        operator,
+    ) {
+        crate::parse_qbe::QbeValueKind::Boolean => {
+            draw_value_combo(
+                ui,
+                id,
+                width,
+                &mut clause.value,
+                &[
+                    "true",
+                    "false",
+                ],
+            );
+        }
 
-                MockValueKind::Status => {
-                    draw_value_combo(
-                        ui,
-                        id,
-                        width,
-                        value,
-                        &[
-                            "OK",
-                            "Rejected",
-                            "Missing",
-                            "Unreadable",
-                        ],
-                    );
-                }
 
-                MockValueKind::Text
-                | MockValueKind::Numeric => {
-                    ui.add_sized(
-                        [
-                            width,
-                            22.0,
-                        ],
-                        egui::TextEdit::singleline(
-                            value
-                        )
-                        .id_source(id),
-                    );
-                }
-            }
-        },
-    );
+        crate::parse_qbe::QbeValueKind::ShaderType => {
+            draw_string_value_combo(
+                ui,
+                id,
+                width,
+                &mut clause.value,
+                &lookup_values.shader_types,
+            );
+        }
+
+
+        crate::parse_qbe::QbeValueKind::PolicyTarget => {
+            draw_value_combo(
+                ui,
+                id,
+                width,
+                &mut clause.value,
+                &[
+                    "Screensaver",
+                    "Wallpaper",
+                    "Unassigned",
+                ],
+            );
+        }
+
+
+        crate::parse_qbe::QbeValueKind::TextureName => {
+            draw_string_value_combo(
+                ui,
+                id,
+                width,
+                &mut clause.value,
+                &lookup_values.texture_names,
+            );
+        }
+
+
+        crate::parse_qbe::QbeValueKind::PaletteName => {
+            draw_palette_value_combo(
+                ui,
+                id,
+                width,
+                &mut clause.value,
+                &lookup_values.palette_choices,
+            );
+        }
+
+
+        crate::parse_qbe::QbeValueKind::Status => {
+            draw_value_combo(
+                ui,
+                id,
+                width,
+                &mut clause.value,
+                &[
+                    "OK",
+                    "Rejected",
+                    "Missing",
+                    "Unreadable",
+                ],
+            );
+        }
+
+
+        crate::parse_qbe::QbeValueKind::AntiAliasing => {
+            draw_value_combo(
+                ui,
+                id,
+                width,
+                &mut clause.value,
+                &[
+                    "Off",
+                    "FXAA",
+                ],
+            );
+        }
+
+
+        crate::parse_qbe::QbeValueKind::Dithering => {
+            draw_value_combo(
+                ui,
+                id,
+                width,
+                &mut clause.value,
+                &[
+                    "Off",
+                    "Subtle",
+                ],
+            );
+        }
+
+
+        crate::parse_qbe::QbeValueKind::ColorPrecision => {
+            draw_value_combo(
+                ui,
+                id,
+                width,
+                &mut clause.value,
+                &[
+                    "Automatic",
+                    "High Precision",
+                    "Standard Precision",
+                ],
+            );
+        }
+
+
+        crate::parse_qbe::QbeValueKind::BloomMode => {
+            draw_value_combo(
+                ui,
+                id,
+                width,
+                &mut clause.value,
+                &[
+                    "Off",
+                    "Highlight",
+                    "Audio",
+                ],
+            );
+        }
+
+
+        crate::parse_qbe::QbeValueKind::Text
+        | crate::parse_qbe::QbeValueKind::Integer
+        | crate::parse_qbe::QbeValueKind::Decimal => {
+            ui.add_sized(
+                [
+                    width,
+                    22.0,
+                ],
+                egui::TextEdit::singleline(
+                    &mut clause.value
+                )
+                .id_source(id),
+            );
+        }
+    }
 }
 
 
@@ -508,157 +600,79 @@ fn draw_value_combo(
 }
 
 
-fn operators_for(
-    item: Option<&str>,
-) -> &'static [&'static str] {
-    match item {
-        Some(
-            "Rendered FPS"
-            | "Animation Speed"
-            | "Render Scale"
-        ) => {
-            &[
-                "eq",
-                "ne",
-                "lt",
-                "le",
-                "gt",
-                "ge",
-            ]
-        }
-
-        Some(
-            "Shader Type"
-            | "Policy Target"
-            | "Status"
-            | "Anti-Aliasing"
-            | "Dithering"
-            | "Color Precision"
-            | "Bloom Mode"
-        ) => {
-            &[
-                "eq",
-                "ne",
-            ]
-        }
-
-        Some(
-            "Texture"
-            | "Palette"
-        ) => {
-            &[
-                "is",
-                "eq",
-                "ne",
-                "like",
-                "not like",
-            ]
-        }
-
-        Some(_) => {
-            &[
-                "eq",
-                "ne",
-                "like",
-                "not like",
-            ]
-        }
-
-        None => {
-            &[]
-        }
-    }
+fn draw_string_value_combo(
+    ui: &mut egui::Ui,
+    id: &'static str,
+    width: f32,
+    value: &mut String,
+    choices: &[String],
+) {
+    egui::ComboBox::from_id_source(
+        id
+    )
+    .selected_text(
+        value.as_str()
+    )
+    .width(width)
+    .show_ui(
+        ui,
+        |ui| {
+            for choice in choices {
+                ui.selectable_value(
+                    value,
+                    choice.clone(),
+                    choice.as_str(),
+                );
+            }
+        },
+    );
 }
 
 
-fn operator_valid(
-    item: Option<&str>,
-    operator: Option<&str>,
-) -> bool {
-    let Some(operator) =
-        operator
-    else {
-        return true;
-    };
+fn draw_palette_value_combo(
+    ui: &mut egui::Ui,
+    id: &'static str,
+    width: f32,
+    value: &mut String,
+    choices: &[crate::query_database::QbePaletteChoice],
+) {
+    egui::ComboBox::from_id_source(
+        id
+    )
+    .selected_text(
+        value.as_str()
+    )
+    .width(width)
+    .show_ui(
+        ui,
+        |ui| {
+            ui.selectable_value(
+                value,
+                "random".to_string(),
+                "random",
+            );
 
-    operators_for(item)
-        .contains(
-            &operator
-        )
+
+            for choice in choices {
+                let label =
+                    if choice.description.trim().is_empty() {
+                        choice.color_hex.clone()
+                    } else {
+                        format!(
+                            "{} ({})",
+                            choice.description,
+                            choice.color_hex,
+                        )
+                    };
+
+
+                ui.selectable_value(
+                    value,
+                    choice.color_hex.clone(),
+                    label,
+                );
+            }
+        },
+    );
 }
 
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum MockValueKind {
-    Boolean,
-    Text,
-    Numeric,
-    ShaderType,
-    PolicyTarget,
-    TextureName,
-    Status,
-}
-
-
-fn value_kind(
-    item: Option<&str>,
-    operator: Option<&str>,
-) -> MockValueKind {
-    match (
-        item,
-        operator,
-    ) {
-        (
-            Some(
-                "Texture"
-                | "Palette"
-            ),
-            Some("is"),
-        ) => {
-            MockValueKind::Boolean
-        }
-
-        (
-            Some("Texture"),
-            _,
-        ) => {
-            MockValueKind::TextureName
-        }
-
-        (
-            Some("Shader Type"),
-            _,
-        ) => {
-            MockValueKind::ShaderType
-        }
-
-        (
-            Some("Policy Target"),
-            _,
-        ) => {
-            MockValueKind::PolicyTarget
-        }
-
-        (
-            Some("Status"),
-            _,
-        ) => {
-            MockValueKind::Status
-        }
-
-        (
-            Some(
-                "Rendered FPS"
-                | "Animation Speed"
-                | "Render Scale"
-            ),
-            _,
-        ) => {
-            MockValueKind::Numeric
-        }
-
-        _ => {
-            MockValueKind::Text
-        }
-    }
-}
