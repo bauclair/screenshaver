@@ -37,3 +37,5 @@ rustfft = "6.4"
 rusqlite = { version = "0.40.1", features = ["bundled"] }
 xkbcommon = "0.9"
 pam = "0.8"
+pam_unix = "0.3.1"
+zeroize = "1.8"

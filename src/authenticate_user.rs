@@ -3,7 +3,7 @@
 // This module verifies credentials only.  It has no access to the Wayland
 // session-lock object and therefore cannot unlock a session.
 
-const PAM_SERVICE: &str = "login";
+const PAM_SERVICE: &str = "screenshaver";
 
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,7 +19,7 @@ pub fn authenticate(
     password: &str,
 ) -> AuthenticationResult {
     let mut client =
-        match pam::Client::with_password(
+        match pam_unix::Client::with_password(
             PAM_SERVICE
         ) {
             Ok(client) => {
@@ -38,6 +38,22 @@ pub fn authenticate(
         };
 
 
+    // Ask Linux-PAM to impose a short delay after authentication
+    // failure. This grants no unlock authority.
+    if let Err(error) =
+        client.set_fail_delay(
+            2_000_000
+        )
+    {
+        return AuthenticationResult::Error(
+            format!(
+                "Unable to configure PAM failure delay: {}",
+                error,
+            )
+        );
+    }
+
+
     client
         .conversation_mut()
         .set_credentials(
@@ -52,7 +68,7 @@ pub fn authenticate(
         }
 
         Err(error) => {
-            use pam::PamReturnCode;
+            use pam_unix::PamReturnCode;
 
 
             match error.0 {

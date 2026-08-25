@@ -1321,6 +1321,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "pam_unix"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3d967ba4a50631c164c3f64deab668c86d10034aadbfab932a5f3531840ede72"
+dependencies = [
+ "libc",
+ "memchr",
+ "pam-macros",
+ "pam-sys",
+ "parking_lot",
+ "uzers",
+ "zeroize",
+]
+
+[[package]]
 name = "parking"
 version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1660,6 +1675,7 @@ dependencies = [
  "libpulse-binding",
  "notify",
  "pam",
+ "pam_unix",
  "regex",
  "rfd",
  "rusqlite",
@@ -1679,6 +1695,7 @@ dependencies = [
  "x11",
  "xkbcommon",
  "zbus",
+ "zeroize",
 ]
 
 [[package]]
@@ -2135,6 +2152,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "uzers"
+version = "0.12.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b8275fb1afee25b4111d2dc8b5c505dbbc4afd0b990cb96deb2d88bff8be18d"
+dependencies = [
+ "libc",
+ "log",
+]
+
+[[package]]
 name = "vcpkg"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2564,6 +2591,26 @@ name = "zerocopy-derive"
 version = "0.8.55"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fe976fb70c78cd64cccfe3a6fc142244e8a77b70959b30faf9d0ac37ee228eb"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.118",
+]
+
+[[package]]
+name = "zeroize"
+version = "1.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e13c156562582aa81c60cb29407084cdb54c4164760106ab78e6c5b0858cf64e"
+dependencies = [
+ "zeroize_derive",
+]
+
+[[package]]
+name = "zeroize_derive"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c50655cbb0fe3fc43170059e702f1ce5e19b84cec58dc87b037a09935c2f328"
 dependencies = [
  "proc-macro2",
  "quote",

@@ -55,6 +55,7 @@ const AUTH_POINTER_MOVEMENT_THRESHOLD: f64 = 24.0;
 enum LockInteractionState {
     Rendering,
     AuthenticationRequested,
+    AuthenticationSucceeded,
 }
 
 
@@ -804,6 +805,22 @@ pub fn run(
 
 
         if state.interaction_state
+            == LockInteractionState::AuthenticationSucceeded
+        {
+            println!(
+                "[LOCK TEST] Authentication succeeded; leaving secure renderer for controlled unlock..."
+            );
+
+            crate::logger::information(
+                logfile,
+                "[LOCK TEST] Authentication succeeded; authenticated controlled unlock requested",
+            );
+
+            break;
+        }
+
+
+        if state.interaction_state
             == LockInteractionState::Rendering
             && authentication_panel.is_some()
         {
@@ -1010,14 +1027,30 @@ pub fn run(
     );
 
 
-    println!(
-        "[LOCK TEST] Requesting controlled unlock..."
-    );
+    let authenticated_unlock =
+        state.interaction_state
+            == LockInteractionState::AuthenticationSucceeded;
 
-    crate::logger::information(
-        logfile,
-        "[LOCK TEST] Requesting controlled unlock",
-    );
+
+    if authenticated_unlock {
+        println!(
+            "[LOCK TEST] Requesting authenticated controlled unlock..."
+        );
+
+        crate::logger::information(
+            logfile,
+            "[LOCK TEST] Requesting authenticated controlled unlock",
+        );
+    } else {
+        println!(
+            "[LOCK TEST] Test timeout reached; requesting emergency controlled unlock..."
+        );
+
+        crate::logger::information(
+            logfile,
+            "[LOCK TEST] Test timeout reached; requesting emergency controlled unlock",
+        );
+    }
 
 
     lock.unlock_and_destroy();
@@ -1555,12 +1588,13 @@ impl Dispatch<
                         let result =
                             crate::authenticate_user::authenticate(
                                 &username,
-                                &password,
+                                password.as_str(),
                             );
 
 
-                        // Drop the local credential copy immediately after PAM
-                        // returns.  Never log it or include it in diagnostics.
+                        // The submitted credential is Zeroizing<String>.
+                        // Dropping it explicitly wipes Screenshaver's
+                        // submitted Rust-owned buffer after PAM returns.
                         drop(
                             password
                         );
@@ -1569,11 +1603,14 @@ impl Dispatch<
                         match result {
                             crate::authenticate_user::AuthenticationResult::Success => {
                                 state.authentication.set_status(
-                                    "PAM authentication succeeded — diagnostic mode remains locked"
+                                    "Authentication successful"
                                 );
 
+                                state.interaction_state =
+                                    LockInteractionState::AuthenticationSucceeded;
+
                                 state.input_events.push(
-                                    "PAM authentication succeeded; diagnostic checkpoint deliberately withheld unlock authority"
+                                    "PAM authentication succeeded; authenticated controlled unlock authorized"
                                         .to_string()
                                 );
                             }

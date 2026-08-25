@@ -3,6 +3,8 @@ use std::ffi::{
     CString,
 };
 
+use zeroize::Zeroizing;
+
 
 const PANEL_VERTEX_SHADER: &str = r#"
 #version 330 core
@@ -44,7 +46,7 @@ pub enum AuthenticationAction {
 
 pub struct LockAuthentication {
     username: String,
-    password: String,
+    password: Zeroizing<String>,
     status: Option<String>,
     revision: u64,
 }
@@ -75,7 +77,9 @@ impl LockAuthentication {
         Self {
             username,
             password:
-                String::new(),
+                Zeroizing::new(
+                    String::new()
+                ),
             status:
                 None,
             revision:
@@ -208,10 +212,13 @@ impl LockAuthentication {
 
     pub fn take_password(
         &mut self
-    ) -> String {
+    ) -> Zeroizing<String> {
         let password =
-            std::mem::take(
-                &mut self.password
+            std::mem::replace(
+                &mut self.password,
+                Zeroizing::new(
+                    String::new()
+                ),
             );
 
         self.bump_revision();
