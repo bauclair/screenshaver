@@ -1,18 +1,22 @@
 { lib
 , rustPlatform
+, stdenv
 , pkg-config
+, llvmPackages
 , SDL2
 , SDL2_ttf
 , libGL
 , libglvnd
 , wayland
 , libpulseaudio
+, libxkbcommon
+, pam
 , xorg
 }:
 
 rustPlatform.buildRustPackage rec {
   pname = "screenshaver";
-  version = "0.5.2";
+  version = "0.5.3";
 
   src = ./.;
 
@@ -22,7 +26,14 @@ rustPlatform.buildRustPackage rec {
 
   nativeBuildInputs = [
     pkg-config
+    llvmPackages.llvm
+    llvmPackages.libclang
   ];
+
+  LIBCLANG_PATH = "${llvmPackages.libclang.lib}/lib";
+  LLVM_CONFIG_PATH = "${llvmPackages.llvm}/bin/llvm-config";
+
+  BINDGEN_EXTRA_CLANG_ARGS = "-I${pam}/include -I${stdenv.cc.libc.dev}/include";
 
   buildInputs = [
     SDL2
@@ -32,6 +43,8 @@ rustPlatform.buildRustPackage rec {
     wayland
     wayland.dev
     libpulseaudio
+    libxkbcommon
+    pam
     xorg.libX11
     xorg.libXScrnSaver
   ];

@@ -15,6 +15,7 @@ mod locate_paths;
 
 mod query_session;
 mod session_backend;
+mod test_screen_lock;
 mod audio_backend;
 mod analyze_audio;
 
@@ -94,6 +95,10 @@ mod hash_shader;
 mod qbe_layout;
 mod parse_qbe;
 mod query_database;
+
+mod create_wayland_lock_context;
+mod display_lock_authentication;
+mod authenticate_user;
 
 use std::sync::Arc;
 use std::sync::atomic::{
@@ -182,6 +187,7 @@ fn main() {
 
         crate::parse_arguments::Command::Run
         | crate::parse_arguments::Command::Start
+        | crate::parse_arguments::Command::TestScreenLock
         | crate::parse_arguments::Command::Control { .. } => {}
     }
 
@@ -262,6 +268,45 @@ fn main() {
     crate::logger::reset_log(
         &logfile
     );
+
+
+    if matches!(
+        command,
+        crate::parse_arguments::Command::TestScreenLock
+    ) {
+        crate::logger::information(
+            &logfile,
+            "[LOCK TEST] Starting controlled Wayland screen-lock diagnostic",
+        );
+
+        match crate::test_screen_lock::run(
+            &logfile
+        ) {
+            Ok(()) => {
+                crate::logger::information(
+                    &logfile,
+                    "[LOCK TEST] Diagnostic completed successfully",
+                );
+            }
+
+            Err(error) => {
+                eprintln!(
+                    "[LOCK TEST] {}",
+                    error
+                );
+
+                crate::logger::error(
+                    &logfile,
+                    &format!(
+                        "[LOCK TEST] Diagnostic failed: {}",
+                        error,
+                    ),
+                );
+            }
+        }
+
+        return;
+    }
 
 
     println!(
@@ -528,7 +573,8 @@ fn main() {
 
         crate::parse_arguments::Command::Stop
         | crate::parse_arguments::Command::Help
-        | crate::parse_arguments::Command::Version => {
+        | crate::parse_arguments::Command::Version
+        | crate::parse_arguments::Command::TestScreenLock => {
 
             unreachable!(
                 "Database-independent command reached runtime startup"

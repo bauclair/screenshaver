@@ -10,6 +10,8 @@ pub enum Command {
 
     Version,
 
+    TestScreenLock,
+
     Control {
         shader_name: Option<String>,
     },
@@ -90,6 +92,20 @@ pub fn parse() -> Result<Command, String> {
 
             Ok(
                 Command::Version
+            )
+        }
+
+
+        "--test-screen-lock" => {
+
+            require_no_extra_arguments(
+                &args,
+                "--test-screen-lock",
+            )?;
+
+
+            Ok(
+                Command::TestScreenLock
             )
         }
 
@@ -237,6 +253,10 @@ pub fn print_help() {
              -V, --version\n\
                  Display the Screenshaver version.\n\
          \n\
+             --test-screen-lock\n\
+                 Run the controlled Wayland secure screen-lock diagnostic.\n\
+                 The test automatically unlocks after 10 seconds.\n\
+         \n\
              --control [PATH]\n\
                  Open the Screenshaver Control Center.\n\
                  If PATH is supplied, preload that shader for policy editing.\n\
@@ -244,6 +264,7 @@ pub fn print_help() {
          Examples:\n\
              screenshaver --start\n\
              screenshaver --stop\n\
+             screenshaver --test-screen-lock\n\
              screenshaver --control\n\
              screenshaver --control \"Heartfelt.glsl\"\n\
          \n\

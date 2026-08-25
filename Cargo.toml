@@ -1,6 +1,6 @@
 [package]
 name = "screenshaver"
-version = "0.5.2"
+version = "0.5.3"
 edition = "2024"
 
 [dependencies]
@@ -15,8 +15,9 @@ notify = "6"
 ctrlc = "3.4"
 evdev = "0.13"
 zbus = "5"
-wayland-client = "0.31"
+wayland-client = { version = "0.31", features = ["system"] }
 wayland-egl = "0.32"
+khronos-egl = { version = "6.0", features = ["static"] }
 wayland-protocols = { version = "0.32", features = ["staging", "client"] }
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
@@ -34,3 +35,5 @@ sha2 = "0.10"
 libpulse-binding = "2.30.1"
 rustfft = "6.4"
 rusqlite = { version = "0.40.1", features = ["bundled"] }
+xkbcommon = "0.9"
+pam = "0.8"
