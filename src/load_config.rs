@@ -23,6 +23,9 @@ fn default_log_level() -> u8 {
     5
 }
 
+fn default_screen_lock_enabled() -> bool {
+    false
+}
 
 #[derive(Debug, Deserialize)]
 struct ScreensaverSection {
@@ -45,7 +48,8 @@ struct WallpaperSection {
 #[derive(Debug, Deserialize)]
 struct LockingSection {
 
-    screen_lock: bool,
+    #[serde(default = "default_screen_lock_enabled")]
+    screen_lock_enabled: bool,
 }
 
 
@@ -913,7 +917,7 @@ pub struct Config {
     pub(crate) wallpaper_postprocess_policy:
         PostprocessPolicy,
 
-    pub screen_lock: bool,
+    pub screen_lock_enabled: bool,
 
     pub debug_log: bool,
 
@@ -1288,6 +1292,13 @@ pub fn load_config(
         )?;
 
 
+    if raw.locking.screen_lock_enabled {
+        validate_screen_lock_screensaver_timeout(
+            &screensaver_defaults
+        )?;
+    }
+
+
     //---------------------------------------------------------
     // Flatten configuration
     //---------------------------------------------------------
@@ -1375,8 +1386,8 @@ pub fn load_config(
 
             wallpaper_postprocess_policy,
 
-            screen_lock:
-                raw.locking.screen_lock,
+            screen_lock_enabled:
+                raw.locking.screen_lock_enabled,
 
             debug_log:
                 raw.debug.debug_log,
@@ -1607,8 +1618,13 @@ pub fn load_config(
             ),
 
             format!(
-                "[CONFIG] screen_lock = {}",
-                config.screen_lock,
+                "[CONFIG] screen_lock_enabled = {}",
+                config.screen_lock_enabled,
+            ),
+
+            format!(
+                "[CONFIG] screen_lock uses screensaver idle_timeout = {}",
+                config.idle_timeout,
             ),
 
             format!(
@@ -4035,3 +4051,88 @@ fn parse_shader_palette(
     )
 }
 
+
+
+//
+// ------------------------------------------------------------
+// Screen-lock idle-timeout validation
+// ------------------------------------------------------------
+//
+
+const SCREEN_LOCK_MIN_IDLE_SECONDS: i64 = 60;
+
+
+fn validate_screen_lock_screensaver_timeout(
+    defaults: &crate::manage_configuration::TargetDefaults,
+) -> Result<(), String> {
+
+    let value =
+        defaults
+            .idle_timeout_value
+            .unwrap_or(10);
+
+
+    let unit =
+        defaults
+            .idle_timeout_unit
+            .as_deref()
+            .unwrap_or("minutes");
+
+
+    if value <= 0 {
+        return Err(
+            format!(
+                "Invalid screensaver idle timeout '{} {}'; screen locking requires a minimum idle timeout of 60 seconds",
+                value,
+                unit,
+            )
+        );
+    }
+
+
+    let multiplier =
+        match unit {
+            "seconds" => 1_i64,
+            "minutes" => 60_i64,
+            "hours" => 3600_i64,
+
+            other => {
+                return Err(
+                    format!(
+                        "Invalid screensaver idle-timeout unit '{}'; screen locking supports seconds, minutes, or hours",
+                        other,
+                    )
+                );
+            }
+        };
+
+
+    let seconds =
+        value
+            .checked_mul(
+                multiplier
+            )
+            .ok_or_else(
+                || {
+                    format!(
+                        "Invalid screensaver idle timeout '{} {}'; duration is too large",
+                        value,
+                        unit,
+                    )
+                }
+            )?;
+
+
+    if seconds < SCREEN_LOCK_MIN_IDLE_SECONDS {
+        return Err(
+            format!(
+                "Invalid screensaver idle timeout '{} {}'; screen locking requires a minimum idle timeout of 60 seconds",
+                value,
+                unit,
+            )
+        );
+    }
+
+
+    Ok(())
+}

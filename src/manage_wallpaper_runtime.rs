@@ -79,12 +79,12 @@ impl WallpaperRuntimeControl {
     pub fn request_pause_after_first_frame(
         &self,
         running: &AtomicBool,
-    ) {
+    ) -> bool {
 
         if !self.enabled
             || !self.active.load(Ordering::SeqCst)
         {
-            return;
+            return true;
         }
 
 
@@ -114,6 +114,9 @@ impl WallpaperRuntimeControl {
                 Duration::from_millis(1)
             );
         }
+
+        !self.active.load(Ordering::SeqCst)
+            || self.pause_acknowledged.load(Ordering::SeqCst)
     }
 
 

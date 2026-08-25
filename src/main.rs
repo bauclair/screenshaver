@@ -15,12 +15,12 @@ mod locate_paths;
 
 mod query_session;
 mod session_backend;
-mod test_screen_lock;
 mod audio_backend;
 mod analyze_audio;
 
 mod manage_configuration;
 mod manage_shader;
+mod manage_screen_lock;
 mod manage_textures;
 mod manage_policies;
 mod classify_shader;
@@ -187,7 +187,6 @@ fn main() {
 
         crate::parse_arguments::Command::Run
         | crate::parse_arguments::Command::Start
-        | crate::parse_arguments::Command::TestScreenLock
         | crate::parse_arguments::Command::Control { .. } => {}
     }
 
@@ -268,45 +267,6 @@ fn main() {
     crate::logger::reset_log(
         &logfile
     );
-
-
-    if matches!(
-        command,
-        crate::parse_arguments::Command::TestScreenLock
-    ) {
-        crate::logger::information(
-            &logfile,
-            "[LOCK TEST] Starting controlled Wayland screen-lock diagnostic",
-        );
-
-        match crate::test_screen_lock::run(
-            &logfile
-        ) {
-            Ok(()) => {
-                crate::logger::information(
-                    &logfile,
-                    "[LOCK TEST] Diagnostic completed successfully",
-                );
-            }
-
-            Err(error) => {
-                eprintln!(
-                    "[LOCK TEST] {}",
-                    error
-                );
-
-                crate::logger::error(
-                    &logfile,
-                    &format!(
-                        "[LOCK TEST] Diagnostic failed: {}",
-                        error,
-                    ),
-                );
-            }
-        }
-
-        return;
-    }
 
 
     println!(
@@ -573,8 +533,7 @@ fn main() {
 
         crate::parse_arguments::Command::Stop
         | crate::parse_arguments::Command::Help
-        | crate::parse_arguments::Command::Version
-        | crate::parse_arguments::Command::TestScreenLock => {
+        | crate::parse_arguments::Command::Version => {
 
             unreachable!(
                 "Database-independent command reached runtime startup"
@@ -919,6 +878,34 @@ fn main() {
         "[MAIN] Idle timeout = {:?}",
         parsed_idle.duration
     );
+
+
+    //---------------------------------------------------------
+    // Screen locking uses the same idle threshold as the
+    // screensaver. load_config() has already enforced the
+    // 60-second minimum whenever screen locking is enabled.
+    //---------------------------------------------------------
+
+    if cfg.screen_lock_enabled {
+        println!(
+            "[LOCK] Screen locking enabled; using screensaver idle timeout ({} seconds)",
+            parsed_idle.duration.as_secs(),
+        );
+
+        crate::logger::information(
+            &logfile,
+            &format!(
+                "[LOCK] Screen locking enabled; using screensaver idle timeout '{}' ({} seconds)",
+                cfg.idle_timeout,
+                parsed_idle.duration.as_secs(),
+            ),
+        );
+    } else {
+        crate::logger::information(
+            &logfile,
+            "[LOCK] Screen locking disabled",
+        );
+    }
 
 
     if cfg.debug_log {
@@ -1442,6 +1429,74 @@ fn main() {
                                 next_shader_mode.clone()
                             )
                         };
+
+                    if cfg.screen_lock_enabled {
+                        crate::logger::information(
+                            &logfile,
+                            "[LOCK] Screensaver idle threshold reached; engaging secure session lock",
+                        );
+
+                        println!(
+                            "[MAIN] Screensaver idle threshold reached: engaging secure session lock"
+                        );
+
+
+                        let lock_result =
+                            crate::manage_screen_lock::run(
+                                &logfile,
+                                running.as_ref(),
+                                &wallpaper_control,
+                                shader_manager,
+                                next_shader_interval,
+                                cfg.screensaver_speed_policy.clone(),
+                                cfg.global_rendered_fps,
+                                cfg.screensaver_fps_policy_entries.clone(),
+                                cfg.texture_policy.clone(),
+                                cfg.screensaver_postprocess_policy.clone(),
+                                audio_backend
+                                    .as_ref()
+                                    .map(
+                                        |backend| {
+                                            backend.shared_bands()
+                                        }
+                                    ),
+                                cfg.subtitles,
+                                cfg.subtitle_placement,
+                            );
+
+
+                        match lock_result {
+                            Ok(()) => {
+                                crate::logger::information(
+                                    &logfile,
+                                    "[LOCK] Authenticated secure-lock session completed",
+                                );
+                            }
+
+                            Err(error) => {
+                                eprintln!(
+                                    "[LOCK] Secure screen lock could not be engaged: {}",
+                                    error,
+                                );
+
+                                crate::logger::error(
+                                    &logfile,
+                                    &format!(
+                                        "[LOCK] Secure screen lock could not be engaged: {}",
+                                        error,
+                                    ),
+                                );
+
+                                wallpaper_control.resume_and_wait_for_frame(
+                                    running.as_ref()
+                                );
+                            }
+                        }
+
+
+                        break 'screensaver_session;
+                    }
+
 
                     let mut renderer =
                         match crate::render_frame::FrameRenderer::new(

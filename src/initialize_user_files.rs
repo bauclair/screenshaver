@@ -29,7 +29,11 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 # SCREEN LOCKING
 ################################
 [locking]
-  screen_lock = false      # Invoke lock screen when screensaver deactivates
+  # Securely lock the session when the screensaver idle timeout is reached.
+  #
+  # When enabled, the configured screensaver idle timeout must be
+  # at least 60 seconds.
+  screen_lock_enabled = false
 
 ################################
 # DEBUGGING
