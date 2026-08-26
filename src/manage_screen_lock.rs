@@ -595,9 +595,6 @@ pub fn run(
         Option<crate::display_lock_authentication::LockAuthenticationPanel> =
         None;
 
-    let mut authentication_panel_revision =
-        0_u64;
-
     let mut rendering_available =
         true;
 
@@ -659,19 +656,13 @@ pub fn run(
             authentication_panel =
                 None;
 
-            authentication_panel_revision =
-                0;
         }
 
 
         if rendering_available
             && state.interaction_state
                 == LockInteractionState::AuthenticationRequested
-            && (
-                authentication_panel.is_none()
-                    || authentication_panel_revision
-                        != state.authentication.revision()
-            )
+            && authentication_panel.is_none()
         {
             let overlay_result =
                 {
@@ -712,8 +703,6 @@ pub fn run(
                             overlay
                         );
 
-                    authentication_panel_revision =
-                        state.authentication.revision();
                 }
 
                 Err(error) => {
@@ -762,6 +751,7 @@ pub fn run(
                                     authentication_panel.as_ref()
                                 {
                                     panel.display(
+                                        &state.authentication,
                                         primary_width,
                                         primary_height,
                                     );
@@ -1454,6 +1444,12 @@ impl Dispatch<
 
 
                 if !pressed {
+                    if state.interaction_state
+                        == LockInteractionState::AuthenticationRequested
+                    {
+                        state.authentication.handle_key_release();
+                    }
+
                     return;
                 }
 
@@ -1579,6 +1575,8 @@ impl Dispatch<
                                     "Authentication failed"
                                 );
 
+                                state.authentication.authentication_failed();
+
                                 state.input_events.push(
                                     "PAM authentication rejected credentials; session remains locked"
                                         .to_string()
@@ -1590,6 +1588,8 @@ impl Dispatch<
                                 state.authentication.set_status(
                                     "Authentication service error"
                                 );
+
+                                state.authentication.authentication_failed();
 
                                 state.input_events.push(
                                     format!(

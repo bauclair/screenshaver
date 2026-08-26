@@ -21,6 +21,7 @@ mod analyze_audio;
 mod manage_configuration;
 mod manage_shader;
 mod manage_screen_lock;
+mod lock_screen_widget;
 mod manage_textures;
 mod manage_policies;
 mod classify_shader;
