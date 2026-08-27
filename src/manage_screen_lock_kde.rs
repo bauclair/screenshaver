@@ -19,6 +19,19 @@ use std::env;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::process::{
+    Command,
+    Output,
+};
+use std::sync::atomic::{
+    AtomicBool,
+    Ordering,
+};
+use std::thread;
+use std::time::{
+    Duration,
+    Instant,
+};
 
 use crate::construct_lock_screen_kde;
 use crate::define_lock_screen_widget::LockScreenWidgetConfig;
@@ -260,11 +273,397 @@ pub fn restore() -> io::Result<KdeIntegrationStatus> {
     status_from_paths(&paths)
 }
 
+/// Engages KDE Plasma's compositor-integrated KScreenLocker and waits until
+/// the authenticated lock session has completed.
+///
+/// The Screenshaver wallpaper renderer is paused before KScreenLocker is
+/// requested and is not resumed until the KDE lock has ended. KScreenLocker
+/// remains responsible for secure input ownership, PAM authentication,
+/// multi-monitor locking, and unlock authority.
+///
+/// This backend intentionally does not fall back to Screenshaver's native
+/// `ext-session-lock-v1` implementation. On a detected KDE Plasma session,
+/// KScreenLocker is the authoritative secure-lock backend.
+pub fn run(
+    logfile: &Path,
+    running: &AtomicBool,
+    wallpaper_control:
+        &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+) -> Result<(), String> {
+    crate::logger::information(
+        logfile,
+        "[LOCK] KDE Plasma detected; engaging KScreenLocker backend",
+    );
+
+    if !wallpaper_control.request_pause_after_first_frame(
+        running
+    ) {
+        crate::logger::error(
+            logfile,
+            "[LOCK] Unable to confirm wallpaper renderer pause before KScreenLocker request",
+        );
+
+        return Err(
+            "Wallpaper renderer did not acknowledge pause before KDE secure screen lock"
+                .to_string()
+        );
+    }
+
+    crate::logger::information(
+        logfile,
+        "[LOCK] Wallpaper renderer paused; requesting KDE secure screen lock",
+    );
+
+    let dbus_command =
+        locate_qdbus_command()
+            .ok_or_else(|| {
+                "Unable to locate qdbus6 or qdbus for KDE KScreenLocker control"
+                    .to_string()
+            });
+
+    let dbus_command =
+        match dbus_command {
+            Ok(command) => command,
+
+            Err(error) => {
+                resume_wallpaper_after_kde_lock(
+                    wallpaper_control,
+                    running,
+                    logfile,
+                );
+
+                return Err(error);
+            }
+        };
+
+    let lock_output =
+        run_qdbus(
+            &dbus_command,
+            "Lock",
+        )
+        .map_err(
+            |error| {
+                resume_wallpaper_after_kde_lock(
+                    wallpaper_control,
+                    running,
+                    logfile,
+                );
+
+                error
+            }
+        )?;
+
+    if !lock_output.status.success() {
+        resume_wallpaper_after_kde_lock(
+            wallpaper_control,
+            running,
+            logfile,
+        );
+
+        return Err(
+            format!(
+                "KScreenLocker lock request failed: {}",
+                command_failure_message(
+                    &lock_output
+                ),
+            )
+        );
+    }
+
+    crate::logger::information(
+        logfile,
+        "[LOCK] KScreenLocker reported secure lock acquisition",
+    );
+
+    let observation_started =
+        Instant::now();
+
+    let mut lock_observed =
+        false;
+
+    let mut shutdown_deferred_logged =
+        false;
+
+    loop {
+        if !running.load(Ordering::SeqCst)
+            && !shutdown_deferred_logged
+        {
+            crate::logger::information(
+                logfile,
+                "[LOCK] Shutdown requested while KScreenLocker is active; deferring renderer/session cleanup until authenticated unlock",
+            );
+
+            shutdown_deferred_logged =
+                true;
+        }
+
+        let active =
+            query_kde_lock_active(
+                &dbus_command
+            )
+            .unwrap_or(false);
+
+        let greeter_running =
+            kscreenlocker_greeter_running();
+
+        if active
+            || greeter_running
+        {
+            lock_observed =
+                true;
+        }
+
+        if lock_observed
+            && !active
+            && !greeter_running
+        {
+            break;
+        }
+
+        if !lock_observed
+            && observation_started.elapsed()
+                >= Duration::from_secs(5)
+        {
+            crate::logger::warning(
+                logfile,
+                "[LOCK] KScreenLocker lock request succeeded but lock state could not be observed; waiting for greeter completion as a safety precaution",
+            );
+
+            if !greeter_running {
+                resume_wallpaper_after_kde_lock(
+                    wallpaper_control,
+                    running,
+                    logfile,
+                );
+
+                return Err(
+                    "KScreenLocker accepted the lock request, but Screenshaver could not observe an active secure-lock session"
+                        .to_string()
+                );
+            }
+        }
+
+        thread::sleep(
+            Duration::from_millis(100)
+        );
+    }
+
+    crate::logger::information(
+        logfile,
+        "[LOCK] KDE KScreenLocker session unlocked successfully",
+    );
+
+    resume_wallpaper_after_kde_lock(
+        wallpaper_control,
+        running,
+        logfile,
+    );
+
+    Ok(())
+}
+
 /// Returns the current Screenshaver/KDE integration state without modifying
 /// any files.
 pub fn status() -> io::Result<KdeIntegrationStatus> {
     let paths = integration_paths()?;
     status_from_paths(&paths)
+}
+
+fn locate_qdbus_command(
+) -> Option<String> {
+    for command in [
+        "qdbus6",
+        "qdbus",
+    ] {
+        if Command::new(command)
+            .arg("--version")
+            .output()
+            .is_ok()
+        {
+            return Some(
+                command.to_string()
+            );
+        }
+    }
+
+    None
+}
+
+fn run_qdbus(
+    command: &str,
+    method: &str,
+) -> Result<Output, String> {
+    Command::new(command)
+        .arg(
+            "org.freedesktop.ScreenSaver"
+        )
+        .arg(
+            "/ScreenSaver"
+        )
+        .arg(method)
+        .output()
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to execute {} for KDE KScreenLocker control: {}",
+                    command,
+                    error,
+                )
+            }
+        )
+}
+
+fn query_kde_lock_active(
+    command: &str,
+) -> Result<bool, String> {
+    let output =
+        run_qdbus(
+            command,
+            "GetActive",
+        )?;
+
+    if !output.status.success() {
+        return Err(
+            format!(
+                "KScreenLocker GetActive query failed: {}",
+                command_failure_message(
+                    &output
+                ),
+            )
+        );
+    }
+
+    match String::from_utf8_lossy(
+        &output.stdout
+    )
+    .trim()
+    .to_ascii_lowercase()
+    .as_str()
+    {
+        "true" => Ok(true),
+        "false" => Ok(false),
+
+        value => Err(
+            format!(
+                "KScreenLocker GetActive returned unexpected value '{}'",
+                value,
+            )
+        ),
+    }
+}
+
+fn kscreenlocker_greeter_running(
+) -> bool {
+    let Ok(entries) =
+        fs::read_dir("/proc")
+    else {
+        return false;
+    };
+
+    for entry in entries.flatten() {
+        let file_name =
+            entry.file_name();
+
+        let Some(pid_text) =
+            file_name.to_str()
+        else {
+            continue;
+        };
+
+        if !pid_text
+            .bytes()
+            .all(
+                |byte| {
+                    byte.is_ascii_digit()
+                }
+            )
+        {
+            continue;
+        }
+
+        let cmdline_path =
+            entry.path()
+                .join("cmdline");
+
+        let Ok(cmdline) =
+            fs::read(
+                cmdline_path
+            )
+        else {
+            continue;
+        };
+
+        if cmdline
+            .windows(
+                b"kscreenlocker_greet".len()
+            )
+            .any(
+                |window| {
+                    window
+                        == b"kscreenlocker_greet"
+                }
+            )
+        {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn command_failure_message(
+    output: &Output,
+) -> String {
+    let stderr =
+        String::from_utf8_lossy(
+            &output.stderr
+        )
+        .trim()
+        .to_string();
+
+    if !stderr.is_empty() {
+        return stderr;
+    }
+
+    let stdout =
+        String::from_utf8_lossy(
+            &output.stdout
+        )
+        .trim()
+        .to_string();
+
+    if !stdout.is_empty() {
+        return stdout;
+    }
+
+    format!(
+        "process exited with status {}",
+        output.status
+    )
+}
+
+fn resume_wallpaper_after_kde_lock(
+    wallpaper_control:
+        &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+    running: &AtomicBool,
+    logfile: &Path,
+) {
+    if running.load(Ordering::SeqCst) {
+        wallpaper_control
+            .resume_and_wait_for_frame(
+                running
+            );
+
+        crate::logger::information(
+            logfile,
+            "[LOCK] Wallpaper renderer resumed after KDE lock session",
+        );
+    } else {
+        crate::logger::information(
+            logfile,
+            "[LOCK] KDE lock session ended with shutdown pending; wallpaper renderer will remain stopped",
+        );
+    }
 }
 
 fn status_from_paths(
