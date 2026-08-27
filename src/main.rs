@@ -880,6 +880,72 @@ fn main() {
         };
 
 
+    let _kde_idle_lock_inhibitor =
+        if desktop_environment.is_kde_plasma()
+            && cfg.screen_lock_enabled
+        {
+
+            match crate::manage_screen_lock_kde::KdeIdleLockInhibitor::acquire() {
+
+                Ok(inhibitor) => {
+
+                    println!(
+                        "[LOCK] KDE native idle locking inhibited while Screenshaver is running."
+                    );
+
+
+                    crate::logger::information(
+                        &logfile,
+                        &format!(
+                            "[LOCK] KDE native idle locking inhibited; cookie={}",
+                            inhibitor.cookie(),
+                        ),
+                    );
+
+
+                    Some(
+                        inhibitor
+                    )
+                }
+
+
+                Err(error) => {
+
+                    eprintln!(
+                        "[LOCK] Unable to inhibit KDE native idle locking: {}",
+                        error
+                    );
+
+
+                    crate::logger::error(
+                        &logfile,
+                        &format!(
+                            "[LOCK] Unable to inhibit KDE native idle locking: {}",
+                            error,
+                        ),
+                    );
+
+
+                    crate::logger::error(
+                        &logfile,
+                        "[LOCK] Refusing to continue with KDE screen locking enabled because two independent idle-lock authorities would remain active",
+                    );
+
+
+                    drop(
+                        database_connection
+                    );
+
+                    return;
+                }
+            }
+
+        } else {
+
+            None
+        };
+
+
     let (
         tray_command_sender,
         tray_command_receiver,
@@ -1636,54 +1702,36 @@ fn main() {
                     if cfg.screen_lock_enabled {
                         crate::logger::information(
                             &logfile,
-                            "[LOCK] Screensaver idle threshold reached; engaging negotiated secure-lock backend",
+                            "[LOCK] Screensaver idle threshold reached; engaging secure session lock",
                         );
 
                         println!(
-                            "[MAIN] Screensaver idle threshold reached: engaging negotiated secure-lock backend"
+                            "[MAIN] Screensaver idle threshold reached: engaging secure session lock"
                         );
 
 
                         let lock_result =
-                            if desktop_environment
-                                .is_kde_plasma()
-                            {
-
-                                drop(
-                                    shader_manager
-                                );
-
-
-                                crate::manage_screen_lock_kde::run(
-                                    &logfile,
-                                    running.as_ref(),
-                                    &wallpaper_control,
-                                )
-
-                            } else {
-
-                                crate::manage_screen_lock::run(
-                                    &logfile,
-                                    running.as_ref(),
-                                    &wallpaper_control,
-                                    shader_manager,
-                                    next_shader_interval,
-                                    cfg.screensaver_speed_policy.clone(),
-                                    cfg.global_rendered_fps,
-                                    cfg.screensaver_fps_policy_entries.clone(),
-                                    cfg.texture_policy.clone(),
-                                    cfg.screensaver_postprocess_policy.clone(),
-                                    audio_backend
-                                        .as_ref()
-                                        .map(
-                                            |backend| {
-                                                backend.shared_bands()
-                                            }
-                                        ),
-                                    cfg.subtitles,
-                                    cfg.subtitle_placement,
-                                )
-                            };
+                            crate::manage_screen_lock::run(
+                                &logfile,
+                                running.as_ref(),
+                                &wallpaper_control,
+                                shader_manager,
+                                next_shader_interval,
+                                cfg.screensaver_speed_policy.clone(),
+                                cfg.global_rendered_fps,
+                                cfg.screensaver_fps_policy_entries.clone(),
+                                cfg.texture_policy.clone(),
+                                cfg.screensaver_postprocess_policy.clone(),
+                                audio_backend
+                                    .as_ref()
+                                    .map(
+                                        |backend| {
+                                            backend.shared_bands()
+                                        }
+                                    ),
+                                cfg.subtitles,
+                                cfg.subtitle_placement,
+                            );
 
 
                         match lock_result {

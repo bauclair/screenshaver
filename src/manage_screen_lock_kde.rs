@@ -70,6 +70,87 @@ pub struct KdeIntegrationStatus {
     pub previous_shell_package: Option<String>,
 }
 
+
+/// Lifetime-owned inhibition of KDE's own idle-triggered screen locking.
+///
+/// While this object exists, KDE's native idle timer is suppressed.
+/// Screenshaver can still explicitly request KScreenLocker at its own
+/// configured idle threshold.
+///
+/// The session D-Bus connection is intentionally retained for the full
+/// lifetime of this object. If Screenshaver terminates abnormally, the
+/// connection disappears and KDE releases the inhibition automatically.
+pub struct KdeIdleLockInhibitor {
+    connection: zbus::blocking::Connection,
+    cookie: u32,
+}
+
+impl KdeIdleLockInhibitor {
+    pub fn acquire() -> Result<Self, String> {
+        let connection =
+            zbus::blocking::Connection::session()
+                .map_err(|error| {
+                    format!(
+                        "Unable to connect to the session D-Bus for KDE screen-lock inhibition: {}",
+                        error,
+                    )
+                })?;
+
+        let reply =
+            connection
+                .call_method(
+                    Some("org.freedesktop.ScreenSaver"),
+                    "/ScreenSaver",
+                    Some("org.freedesktop.ScreenSaver"),
+                    "Inhibit",
+                    &(
+                        "Screenshaver",
+                        "Screenshaver manages idle screen locking",
+                    ),
+                )
+                .map_err(|error| {
+                    format!(
+                        "Unable to inhibit KDE's native idle screen lock: {}",
+                        error,
+                    )
+                })?;
+
+        let cookie =
+            reply
+                .body()
+                .deserialize::<u32>()
+                .map_err(|error| {
+                    format!(
+                        "Unable to read KDE screen-lock inhibition cookie: {}",
+                        error,
+                    )
+                })?;
+
+        Ok(Self {
+            connection,
+            cookie,
+        })
+    }
+
+    pub fn cookie(&self) -> u32 {
+        self.cookie
+    }
+}
+
+impl Drop for KdeIdleLockInhibitor {
+    fn drop(&mut self) {
+        let _ =
+            self.connection
+                .call_method(
+                    Some("org.freedesktop.ScreenSaver"),
+                    "/ScreenSaver",
+                    Some("org.freedesktop.ScreenSaver"),
+                    "UnInhibit",
+                    &(self.cookie,),
+                );
+    }
+}
+
 pub fn integration_paths() -> io::Result<KdeIntegrationPaths> {
     let home = env::var_os("HOME")
         .map(PathBuf::from)
