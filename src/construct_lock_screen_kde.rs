@@ -631,6 +631,12 @@ pub fn construct_lock_screen_kde(
     writeln!(qml).unwrap();
 
     writeln!(qml, "        Keys.onPressed: event => {{").unwrap();
+    writeln!(qml, "            if (!root.widgetVisible) {{").unwrap();
+    writeln!(qml, "                root.revealAuthenticationDisplay()").unwrap();
+    writeln!(qml, "                event.accepted = true").unwrap();
+    writeln!(qml, "                return").unwrap();
+    writeln!(qml, "            }}").unwrap();
+    writeln!(qml).unwrap();
     writeln!(
         qml,
         "            if (event.key === Qt.Key_Escape) {{"
@@ -640,8 +646,6 @@ pub fn construct_lock_screen_kde(
     writeln!(qml, "                event.accepted = true").unwrap();
     writeln!(qml, "                return").unwrap();
     writeln!(qml, "            }}").unwrap();
-    writeln!(qml).unwrap();
-    writeln!(qml, "            root.revealAuthenticationDisplay()").unwrap();
     writeln!(qml).unwrap();
     writeln!(
         qml,
