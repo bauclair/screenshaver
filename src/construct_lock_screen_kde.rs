@@ -202,6 +202,32 @@ pub fn construct_lock_screen_kde(
     writeln!(qml, "    implicitHeight: 600").unwrap();
     writeln!(qml).unwrap();
 
+    writeln!(qml, "    Keys.priority: Keys.BeforeItem").unwrap();
+    writeln!(qml, "    Keys.onPressed: event => {{").unwrap();
+    writeln!(
+        qml,
+        "        if (event.key === Qt.Key_Escape) {{"
+    )
+    .unwrap();
+    writeln!(qml, "            if (root.widgetVisible) {{").unwrap();
+    writeln!(qml, "                root.dismissAuthenticationDisplay()").unwrap();
+    writeln!(qml, "            }} else {{").unwrap();
+    writeln!(qml, "                root.revealAuthenticationDisplay()").unwrap();
+    writeln!(qml, "            }}").unwrap();
+    writeln!(qml, "            event.accepted = true").unwrap();
+    writeln!(qml, "            return").unwrap();
+    writeln!(qml, "        }}").unwrap();
+    writeln!(qml).unwrap();
+    writeln!(qml, "        if (!root.widgetVisible) {{").unwrap();
+    writeln!(qml, "            root.revealAuthenticationDisplay()").unwrap();
+    writeln!(qml, "            event.accepted = true").unwrap();
+    writeln!(qml, "            return").unwrap();
+    writeln!(qml, "        }}").unwrap();
+    writeln!(qml).unwrap();
+    writeln!(qml, "        event.accepted = false").unwrap();
+    writeln!(qml, "    }}").unwrap();
+    writeln!(qml).unwrap();
+
     writeln!(qml, "    function chooseChild() {{").unwrap();
     writeln!(qml, "        if (!randomizeChildDisplay) {{").unwrap();
     writeln!(qml, "            const chosen = nextSequentialChild").unwrap();
@@ -639,26 +665,6 @@ pub fn construct_lock_screen_kde(
     writeln!(qml).unwrap();
 
     writeln!(qml, "        Keys.onPressed: event => {{").unwrap();
-    writeln!(
-        qml,
-        "            if (event.key === Qt.Key_Escape) {{"
-    )
-    .unwrap();
-    writeln!(qml, "                if (root.widgetVisible) {{").unwrap();
-    writeln!(qml, "                    root.dismissAuthenticationDisplay()").unwrap();
-    writeln!(qml, "                }} else {{").unwrap();
-    writeln!(qml, "                    root.revealAuthenticationDisplay()").unwrap();
-    writeln!(qml, "                }}").unwrap();
-    writeln!(qml, "                event.accepted = true").unwrap();
-    writeln!(qml, "                return").unwrap();
-    writeln!(qml, "            }}").unwrap();
-    writeln!(qml).unwrap();
-    writeln!(qml, "            if (!root.widgetVisible) {{").unwrap();
-    writeln!(qml, "                root.revealAuthenticationDisplay()").unwrap();
-    writeln!(qml, "                event.accepted = true").unwrap();
-    writeln!(qml, "                return").unwrap();
-    writeln!(qml, "            }}").unwrap();
-    writeln!(qml).unwrap();
     writeln!(
         qml,
         "            if (root.authenticationFailed) {{"
