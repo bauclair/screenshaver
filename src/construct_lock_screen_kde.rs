@@ -224,7 +224,38 @@ pub fn construct_lock_screen_kde(
     writeln!(qml, "            return").unwrap();
     writeln!(qml, "        }}").unwrap();
     writeln!(qml).unwrap();
-    writeln!(qml, "        event.accepted = false").unwrap();
+    writeln!(qml, "        if (root.authenticationFailed) {{").unwrap();
+    writeln!(qml, "            event.accepted = true").unwrap();
+    writeln!(qml, "            return").unwrap();
+    writeln!(qml, "        }}").unwrap();
+    writeln!(qml).unwrap();
+    writeln!(qml, "        if (event.key === Qt.Key_Backspace) {{").unwrap();
+    writeln!(qml, "            root.removePasswordCharacter()").unwrap();
+    writeln!(qml, "            event.accepted = true").unwrap();
+    writeln!(qml, "            return").unwrap();
+    writeln!(qml, "        }}").unwrap();
+    writeln!(qml).unwrap();
+    writeln!(qml, "        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {{").unwrap();
+    writeln!(qml, "            if (passwordInput.text.length > 0) {{").unwrap();
+    writeln!(qml, "                authenticator.respond(passwordInput.text)").unwrap();
+    writeln!(qml, "            }}").unwrap();
+    writeln!(qml, "            event.accepted = true").unwrap();
+    writeln!(qml, "            return").unwrap();
+    writeln!(qml, "        }}").unwrap();
+    writeln!(qml).unwrap();
+    writeln!(qml, "        if (event.text && event.text.length > 0 && event.text.charCodeAt(0) >= 0x20) {{").unwrap();
+    writeln!(qml, "            root.acceptPasswordText(event.text, event.key)").unwrap();
+    writeln!(qml, "            event.accepted = true").unwrap();
+    writeln!(qml, "            return").unwrap();
+    writeln!(qml, "        }}").unwrap();
+    writeln!(qml).unwrap();
+    writeln!(qml, "        event.accepted = true").unwrap();
+    writeln!(qml, "    }}").unwrap();
+    writeln!(qml).unwrap();
+
+    writeln!(qml, "    Keys.onReleased: event => {{").unwrap();
+    writeln!(qml, "        root.releasePasswordKey(event.key)").unwrap();
+    writeln!(qml, "        event.accepted = true").unwrap();
     writeln!(qml, "    }}").unwrap();
     writeln!(qml).unwrap();
 
@@ -373,7 +404,7 @@ pub fn construct_lock_screen_kde(
     writeln!(qml, "        resetTransientHighlights()").unwrap();
     writeln!(qml, "        nextSequentialChild = 0").unwrap();
     writeln!(qml, "        lastRandomChild = -1").unwrap();
-    writeln!(qml, "        passwordInput.forceActiveFocus()").unwrap();
+    writeln!(qml, "        root.forceActiveFocus()").unwrap();
     writeln!(qml, "    }}").unwrap();
     writeln!(qml).unwrap();
 
@@ -398,7 +429,7 @@ pub fn construct_lock_screen_kde(
     writeln!(qml, "        if (!widgetVisible) {{").unwrap();
     writeln!(qml, "            widgetVisible = true").unwrap();
     writeln!(qml, "            pointerAnchorValid = false").unwrap();
-    writeln!(qml, "            passwordInput.forceActiveFocus()").unwrap();
+    writeln!(qml, "            root.forceActiveFocus()").unwrap();
     writeln!(qml, "            authenticator.startAuthenticating()").unwrap();
     writeln!(qml, "        }}").unwrap();
     writeln!(qml, "    }}").unwrap();
@@ -419,7 +450,7 @@ pub fn construct_lock_screen_kde(
     writeln!(qml).unwrap();
 
     writeln!(qml, "    Component.onCompleted: {{").unwrap();
-    writeln!(qml, "        passwordInput.forceActiveFocus()").unwrap();
+    writeln!(qml, "        root.forceActiveFocus()").unwrap();
     writeln!(qml, "        authenticator.startAuthenticating()").unwrap();
     writeln!(qml, "    }}").unwrap();
     writeln!(qml).unwrap();
@@ -446,7 +477,7 @@ pub fn construct_lock_screen_kde(
         "        function onPromptForSecretChanged() {{"
     )
     .unwrap();
-    writeln!(qml, "            passwordInput.forceActiveFocus()").unwrap();
+    writeln!(qml, "            root.forceActiveFocus()").unwrap();
     writeln!(qml, "        }}").unwrap();
 
     writeln!(qml, "    }}").unwrap();
@@ -462,7 +493,7 @@ pub fn construct_lock_screen_kde(
     writeln!(qml, "        repeat: false").unwrap();
     writeln!(qml, "        onTriggered: {{").unwrap();
     writeln!(qml, "            root.authenticationFailed = false").unwrap();
-    writeln!(qml, "            passwordInput.forceActiveFocus()").unwrap();
+    writeln!(qml, "            root.forceActiveFocus()").unwrap();
     writeln!(qml, "            authenticator.startAuthenticating()").unwrap();
     writeln!(qml, "        }}").unwrap();
     writeln!(qml, "    }}").unwrap();
@@ -661,76 +692,13 @@ pub fn construct_lock_screen_kde(
     writeln!(qml, "        height: 1").unwrap();
     writeln!(qml, "        opacity: 0").unwrap();
     writeln!(qml, "        echoMode: TextInput.Password").unwrap();
-    writeln!(qml, "        focus: true").unwrap();
+    writeln!(qml, "        focus: false").unwrap();
     writeln!(qml).unwrap();
 
-    writeln!(qml, "        Keys.onPressed: event => {{").unwrap();
-    writeln!(
-        qml,
-        "            if (root.authenticationFailed) {{"
-    )
-    .unwrap();
-    writeln!(qml, "                event.accepted = true").unwrap();
-    writeln!(qml, "                return").unwrap();
-    writeln!(qml, "            }}").unwrap();
-    writeln!(qml).unwrap();
-
-    writeln!(
-        qml,
-        "            if (event.key === Qt.Key_Backspace) {{"
-    )
-    .unwrap();
-    writeln!(qml, "                root.removePasswordCharacter()").unwrap();
-    writeln!(qml, "                event.accepted = true").unwrap();
-    writeln!(qml, "                return").unwrap();
-    writeln!(qml, "            }}").unwrap();
-    writeln!(qml).unwrap();
-
-    writeln!(
-        qml,
-        "            if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {{"
-    )
-    .unwrap();
-    writeln!(
-        qml,
-        "                if (passwordInput.text.length > 0) {{"
-    )
-    .unwrap();
-    writeln!(
-        qml,
-        "                    authenticator.respond(passwordInput.text)"
-    )
-    .unwrap();
-    writeln!(qml, "                }}").unwrap();
-    writeln!(qml, "                event.accepted = true").unwrap();
-    writeln!(qml, "                return").unwrap();
-    writeln!(qml, "            }}").unwrap();
-    writeln!(qml).unwrap();
-
-    writeln!(
-        qml,
-        "            if (event.text && event.text.length > 0 && event.text.charCodeAt(0) >= 0x20) {{"
-    )
-    .unwrap();
-    writeln!(
-        qml,
-        "                root.acceptPasswordText(event.text, event.key)"
-    )
-    .unwrap();
-    writeln!(qml, "                event.accepted = true").unwrap();
-    writeln!(qml, "            }}").unwrap();
-
-    writeln!(qml, "        }}").unwrap();
-    writeln!(qml).unwrap();
-
-    writeln!(qml, "        Keys.onReleased: event => {{").unwrap();
-    writeln!(
-        qml,
-        "            root.releasePasswordKey(event.key)"
-    )
-    .unwrap();
-    writeln!(qml, "        }}").unwrap();
-
+    /*
+     * Keyboard events are handled by the root Item so focus never transfers
+     * between the lock-screen control surface and the hidden password store.
+     */
     writeln!(qml, "    }}").unwrap();
     writeln!(qml).unwrap();
 
@@ -747,7 +715,7 @@ pub fn construct_lock_screen_kde(
 
     writeln!(qml, "        function activateFromPointer() {{").unwrap();
     writeln!(qml, "            root.revealAuthenticationDisplay()").unwrap();
-    writeln!(qml, "            passwordInput.forceActiveFocus()").unwrap();
+    writeln!(qml, "            root.forceActiveFocus()").unwrap();
     writeln!(qml, "        }}").unwrap();
     writeln!(qml).unwrap();
 
