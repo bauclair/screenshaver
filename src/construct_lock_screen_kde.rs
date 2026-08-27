@@ -630,6 +630,17 @@ pub fn construct_lock_screen_kde(
     writeln!(qml, "        focus: true").unwrap();
     writeln!(qml).unwrap();
 
+    writeln!(qml, "        Keys.onShortcutOverride: event => {{").unwrap();
+    writeln!(
+        qml,
+        "            if (event.key === Qt.Key_Escape) {{"
+    )
+    .unwrap();
+    writeln!(qml, "                event.accepted = true").unwrap();
+    writeln!(qml, "            }}").unwrap();
+    writeln!(qml, "        }}").unwrap();
+    writeln!(qml).unwrap();
+
     writeln!(qml, "        Keys.onPressed: event => {{").unwrap();
     writeln!(qml, "            if (!root.widgetVisible) {{").unwrap();
     writeln!(qml, "                root.revealAuthenticationDisplay()").unwrap();
