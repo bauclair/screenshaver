@@ -192,7 +192,10 @@ pub fn construct_lock_screen_kde(
     writeln!(qml, "    property int activeKey: -1").unwrap();
     writeln!(qml, "    property bool authenticationFailed: false").unwrap();
     writeln!(qml, "    property bool widgetVisible: true").unwrap();
-    writeln!(qml, "    property bool escapeHeld: false").unwrap();
+    writeln!(qml, "    property bool pointerAnchorValid: false").unwrap();
+    writeln!(qml, "    property real pointerAnchorX: 0.0").unwrap();
+    writeln!(qml, "    property real pointerAnchorY: 0.0").unwrap();
+    writeln!(qml, "    readonly property real pointerWakeThreshold: 24.0").unwrap();
     writeln!(qml).unwrap();
 
     writeln!(qml, "    implicitWidth: 800").unwrap();
@@ -354,6 +357,9 @@ pub fn construct_lock_screen_kde(
     )
     .unwrap();
     writeln!(qml, "        clearAuthenticationDisplay()").unwrap();
+    writeln!(qml, "        pointerAnchorX = pointerArea.mouseX").unwrap();
+    writeln!(qml, "        pointerAnchorY = pointerArea.mouseY").unwrap();
+    writeln!(qml, "        pointerAnchorValid = true").unwrap();
     writeln!(qml, "        widgetVisible = false").unwrap();
     writeln!(qml, "    }}").unwrap();
     writeln!(qml).unwrap();
@@ -365,6 +371,7 @@ pub fn construct_lock_screen_kde(
     .unwrap();
     writeln!(qml, "        if (!widgetVisible) {{").unwrap();
     writeln!(qml, "            widgetVisible = true").unwrap();
+    writeln!(qml, "            pointerAnchorValid = false").unwrap();
     writeln!(qml, "            passwordInput.forceActiveFocus()").unwrap();
     writeln!(qml, "            authenticator.startAuthenticating()").unwrap();
     writeln!(qml, "        }}").unwrap();
@@ -631,30 +638,16 @@ pub fn construct_lock_screen_kde(
     writeln!(qml, "        focus: true").unwrap();
     writeln!(qml).unwrap();
 
-    writeln!(qml, "        Keys.onShortcutOverride: event => {{").unwrap();
-    writeln!(
-        qml,
-        "            if (event.key === Qt.Key_Escape) {{"
-    )
-    .unwrap();
-    writeln!(qml, "                event.accepted = true").unwrap();
-    writeln!(qml, "            }}").unwrap();
-    writeln!(qml, "        }}").unwrap();
-    writeln!(qml).unwrap();
-
     writeln!(qml, "        Keys.onPressed: event => {{").unwrap();
     writeln!(
         qml,
         "            if (event.key === Qt.Key_Escape) {{"
     )
     .unwrap();
-    writeln!(qml, "                if (!root.escapeHeld) {{").unwrap();
-    writeln!(qml, "                    root.escapeHeld = true").unwrap();
-    writeln!(qml, "                    if (root.widgetVisible) {{").unwrap();
-    writeln!(qml, "                        root.dismissAuthenticationDisplay()").unwrap();
-    writeln!(qml, "                    }} else {{").unwrap();
-    writeln!(qml, "                        root.revealAuthenticationDisplay()").unwrap();
-    writeln!(qml, "                    }}").unwrap();
+    writeln!(qml, "                if (root.widgetVisible) {{").unwrap();
+    writeln!(qml, "                    root.dismissAuthenticationDisplay()").unwrap();
+    writeln!(qml, "                }} else {{").unwrap();
+    writeln!(qml, "                    root.revealAuthenticationDisplay()").unwrap();
     writeln!(qml, "                }}").unwrap();
     writeln!(qml, "                event.accepted = true").unwrap();
     writeln!(qml, "                return").unwrap();
@@ -725,12 +718,6 @@ pub fn construct_lock_screen_kde(
     writeln!(qml).unwrap();
 
     writeln!(qml, "        Keys.onReleased: event => {{").unwrap();
-    writeln!(qml, "            if (event.key === Qt.Key_Escape) {{").unwrap();
-    writeln!(qml, "                root.escapeHeld = false").unwrap();
-    writeln!(qml, "                event.accepted = true").unwrap();
-    writeln!(qml, "                return").unwrap();
-    writeln!(qml, "            }}").unwrap();
-    writeln!(qml).unwrap();
     writeln!(
         qml,
         "            root.releasePasswordKey(event.key)"
@@ -742,6 +729,7 @@ pub fn construct_lock_screen_kde(
     writeln!(qml).unwrap();
 
     writeln!(qml, "    MouseArea {{").unwrap();
+    writeln!(qml, "        id: pointerArea").unwrap();
     writeln!(qml, "        anchors.fill: parent").unwrap();
     writeln!(qml, "        hoverEnabled: true").unwrap();
     writeln!(
@@ -757,8 +745,23 @@ pub fn construct_lock_screen_kde(
     writeln!(qml, "        }}").unwrap();
     writeln!(qml).unwrap();
 
-    writeln!(qml, "        onPositionChanged: {{").unwrap();
-    writeln!(qml, "            activateFromPointer()").unwrap();
+    writeln!(qml, "        onPositionChanged: mouse => {{").unwrap();
+    writeln!(qml, "            if (root.widgetVisible) {{").unwrap();
+    writeln!(qml, "                return").unwrap();
+    writeln!(qml, "            }}").unwrap();
+    writeln!(qml).unwrap();
+    writeln!(qml, "            if (!root.pointerAnchorValid) {{").unwrap();
+    writeln!(qml, "                root.pointerAnchorX = mouse.x").unwrap();
+    writeln!(qml, "                root.pointerAnchorY = mouse.y").unwrap();
+    writeln!(qml, "                root.pointerAnchorValid = true").unwrap();
+    writeln!(qml, "                return").unwrap();
+    writeln!(qml, "            }}").unwrap();
+    writeln!(qml).unwrap();
+    writeln!(qml, "            const dx = mouse.x - root.pointerAnchorX").unwrap();
+    writeln!(qml, "            const dy = mouse.y - root.pointerAnchorY").unwrap();
+    writeln!(qml, "            if ((dx * dx) + (dy * dy) >= root.pointerWakeThreshold * root.pointerWakeThreshold) {{").unwrap();
+    writeln!(qml, "                activateFromPointer()").unwrap();
+    writeln!(qml, "            }}").unwrap();
     writeln!(qml, "        }}").unwrap();
     writeln!(qml).unwrap();
 
