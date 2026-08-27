@@ -14,9 +14,7 @@ pub enum Command {
         shader_name: Option<String>,
     },
 
-    ConstructLockScreenKde {
-        output_path: String,
-    },
+    ConstructLockScreenKde,
 }
 
 
@@ -197,35 +195,17 @@ fn parse_construct_lock_screen_kde(
     args: &[String],
 ) -> Result<Command, String> {
 
-    if args.len() != 1 {
+    if !args.is_empty() {
 
         return Err(
-            "--construct-lock-screen-kde requires exactly one output path"
-                .to_string()
-        );
-    }
-
-
-    let output_path =
-        args[0].trim();
-
-
-    if output_path.is_empty()
-        || output_path.starts_with('-')
-    {
-
-        return Err(
-            "--construct-lock-screen-kde requires a valid output path"
+            "--construct-lock-screen-kde does not accept additional arguments"
                 .to_string()
         );
     }
 
 
     Ok(
-        Command::ConstructLockScreenKde {
-            output_path:
-                output_path.to_string(),
-        }
+        Command::ConstructLockScreenKde
     )
 }
 

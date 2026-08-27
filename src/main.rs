@@ -24,6 +24,7 @@ mod manage_screen_lock;
 mod lock_screen_widget;
 mod define_lock_screen_widget;
 mod construct_lock_screen_kde;
+mod manage_screen_lock_kde;
 mod manage_textures;
 mod manage_policies;
 mod classify_shader;
@@ -188,39 +189,63 @@ fn main() {
         }
 
 
-        crate::parse_arguments::Command::ConstructLockScreenKde {
-            output_path,
-        } => {
+        crate::parse_arguments::Command::ConstructLockScreenKde => {
 
             let config =
                 crate::define_lock_screen_widget::LockScreenWidgetConfig::default();
 
 
-            let path =
-                std::path::Path::new(
-                    output_path
-                );
-
-
-            match crate::construct_lock_screen_kde::write_lock_screen_kde(
-                &config,
-                path,
+            match crate::manage_screen_lock_kde::install(
+                &config
             ) {
 
-                Ok(()) => {
+                Ok(status) => {
 
                     println!(
-                        "Screenshaver KDE lock screen written to {}.",
-                        path.display()
+                        "Screenshaver KDE lock screen constructed and installed."
                     );
+
+                    println!(
+                        "KDE shell package installed: {}",
+                        status.shell_package_installed
+                    );
+
+                    println!(
+                        "KDE LockScreen.qml installed: {}",
+                        status.lockscreen_qml_installed
+                    );
+
+                    println!(
+                        "Screenshaver selected as KDE lock shell: {}",
+                        status.screenshaver_selected
+                    );
+
+                    if let Some(active_shell) =
+                        status.active_shell_package
+                    {
+
+                        println!(
+                            "Active KDE shell package: {}",
+                            active_shell
+                        );
+                    }
+
+                    if let Some(previous_shell) =
+                        status.previous_shell_package
+                    {
+
+                        println!(
+                            "Previous KDE shell package preserved: {}",
+                            previous_shell
+                        );
+                    }
                 }
 
 
                 Err(error) => {
 
                     eprintln!(
-                        "Unable to write Screenshaver KDE lock screen to {}: {}",
-                        path.display(),
+                        "Unable to construct and install Screenshaver KDE lock screen: {}",
                         error
                     );
 
@@ -584,7 +609,7 @@ fn main() {
         crate::parse_arguments::Command::Stop
         | crate::parse_arguments::Command::Help
         | crate::parse_arguments::Command::Version
-        | crate::parse_arguments::Command::ConstructLockScreenKde { .. } => {
+        | crate::parse_arguments::Command::ConstructLockScreenKde => {
 
             unreachable!(
                 "Database-independent command reached runtime startup"
