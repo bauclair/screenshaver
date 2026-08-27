@@ -191,18 +191,12 @@ fn main() {
 
         crate::parse_arguments::Command::ConstructLockScreenKde => {
 
-            let config =
-                crate::define_lock_screen_widget::LockScreenWidgetConfig::default();
-
-
-            match crate::manage_screen_lock_kde::install(
-                &config
-            ) {
+            match crate::manage_screen_lock_kde::restore() {
 
                 Ok(status) => {
 
                     println!(
-                        "Screenshaver KDE lock screen constructed and installed."
+                        "Screenshaver KDE lock-screen integration restoration completed."
                     );
 
                     println!(
