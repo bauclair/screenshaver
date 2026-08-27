@@ -22,6 +22,8 @@ mod manage_configuration;
 mod manage_shader;
 mod manage_screen_lock;
 mod lock_screen_widget;
+mod define_lock_screen_widget;
+mod construct_lock_screen_kde;
 mod manage_textures;
 mod manage_policies;
 mod classify_shader;
@@ -181,6 +183,53 @@ fn main() {
         crate::parse_arguments::Command::Version => {
 
             crate::parse_arguments::print_version();
+
+            return;
+        }
+
+
+        crate::parse_arguments::Command::ConstructLockScreenKde {
+            output_path,
+        } => {
+
+            let config =
+                crate::define_lock_screen_widget::LockScreenWidgetConfig::default();
+
+
+            let path =
+                std::path::Path::new(
+                    output_path
+                );
+
+
+            match crate::construct_lock_screen_kde::write_lock_screen_kde(
+                &config,
+                path,
+            ) {
+
+                Ok(()) => {
+
+                    println!(
+                        "Screenshaver KDE lock screen written to {}.",
+                        path.display()
+                    );
+                }
+
+
+                Err(error) => {
+
+                    eprintln!(
+                        "Unable to write Screenshaver KDE lock screen to {}: {}",
+                        path.display(),
+                        error
+                    );
+
+                    std::process::exit(
+                        1
+                    );
+                }
+            }
+
 
             return;
         }
@@ -534,7 +583,8 @@ fn main() {
 
         crate::parse_arguments::Command::Stop
         | crate::parse_arguments::Command::Help
-        | crate::parse_arguments::Command::Version => {
+        | crate::parse_arguments::Command::Version
+        | crate::parse_arguments::Command::ConstructLockScreenKde { .. } => {
 
             unreachable!(
                 "Database-independent command reached runtime startup"

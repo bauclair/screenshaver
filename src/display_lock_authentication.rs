@@ -56,7 +56,9 @@ impl LockAuthentication {
                 1,
 
             widget:
-                crate::lock_screen_widget::LockScreenWidget::new(),
+                crate::lock_screen_widget::LockScreenWidget::with_config(
+                    crate::define_lock_screen_widget::LockScreenWidgetConfig::default()
+                ),
         }
     }
 

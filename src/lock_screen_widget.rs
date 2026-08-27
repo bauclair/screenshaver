@@ -23,68 +23,7 @@ use std::time::{
 // ------------------------------------------------------------
 //
 
-#[allow(non_upper_case_globals)]
-pub const ParentRadius: f32 = 130.0;
-
-#[allow(non_upper_case_globals)]
-pub const ChildRadius: f32 = 24.0;
-
-#[allow(non_upper_case_globals)]
-pub const BackgroundRadius: f32 = 180.0;
-
-#[allow(non_upper_case_globals)]
-pub const ChildInactiveColor: [f32; 4] = [
-    0.02,
-    0.02,
-    0.02,
-    1.00,
-];
-
-#[allow(non_upper_case_globals)]
-pub const ChildActiveColor: [f32; 4] = [
-    1.00,
-    0.6470588,
-    0.0,
-    1.00,
-];
-
-#[allow(non_upper_case_globals)]
-pub const ChildErrorColor: [f32; 4] = [
-    0.95,
-    0.10,
-    0.10,
-    1.00,
-];
-
-#[allow(non_upper_case_globals)]
-pub const BackgroundColor: [f32; 4] = [
-    0.02,
-    0.02,
-    0.02,
-    1.00,
-];
-
-#[allow(non_upper_case_globals)]
-pub const HaloColor: [f32; 4] = [
-    1.00,
-    1.00,
-    0.00,
-    1.00,
-];
-
-#[allow(non_upper_case_globals)]
-pub const HaloStrength: f32 = 0.08;
-
-#[allow(non_upper_case_globals)]
-pub const RandomizeChildDisplay: bool = true;
-
-#[allow(non_upper_case_globals)]
-pub const ChildActiveFadeTime: Duration =
-    Duration::from_millis(300);
-
-#[allow(non_upper_case_globals)]
-pub const AuthenticationFailureDuration: Duration =
-    Duration::from_secs(2);
+use crate::define_lock_screen_widget::LockScreenWidgetConfig;
 
 const CHILD_COUNT: usize = 12;
 const CIRCLE_SEGMENTS: usize = 64;
@@ -105,11 +44,22 @@ pub struct LockScreenWidget {
 
     random_state: u64,
     last_random_child: Option<usize>,
+
+    config: LockScreenWidgetConfig,
 }
 
 
 impl LockScreenWidget {
     pub fn new() -> Self {
+        Self::with_config(
+            LockScreenWidgetConfig::default()
+        )
+    }
+
+
+    pub fn with_config(
+        config: LockScreenWidgetConfig,
+    ) -> Self {
         Self {
             next_child: 0,
             active_child: None,
@@ -121,6 +71,8 @@ impl LockScreenWidget {
 
             last_random_child:
                 None,
+
+            config,
         }
     }
 
@@ -140,7 +92,7 @@ impl LockScreenWidget {
 
 
         let child_index =
-            if RandomizeChildDisplay {
+            if self.config.randomize_child_display {
                 self.next_random_child()
             } else {
                 let child_index =
@@ -293,7 +245,7 @@ impl LockScreenWidget {
         self.error_until =
             Some(
                 Instant::now()
-                    + AuthenticationFailureDuration
+                    + self.config.authentication_failure_duration
             );
 
         self.last_random_child =
@@ -322,14 +274,14 @@ impl LockScreenWidget {
         child_index: usize,
     ) -> [f32; 4] {
         if self.error_is_active() {
-            return ChildErrorColor;
+            return self.config.child_error_color;
         }
 
 
         if self.active_child
             == Some(child_index)
         {
-            return ChildActiveColor;
+            return self.config.child_active_color;
         }
 
 
@@ -337,11 +289,11 @@ impl LockScreenWidget {
             self.fade_started[child_index]
         {
             let fade_seconds =
-                ChildActiveFadeTime
+                self.config.child_active_fade_time
                     .as_secs_f32();
 
             if fade_seconds <= f32::EPSILON {
-                return ChildInactiveColor;
+                return self.config.child_inactive_color;
             }
 
             let progress =
@@ -358,15 +310,15 @@ impl LockScreenWidget {
 
             if progress < 1.0 {
                 return interpolate_color(
-                    ChildActiveColor,
-                    ChildInactiveColor,
+                    self.config.child_active_color,
+                    self.config.child_inactive_color,
                     progress,
                 );
             }
         }
 
 
-        ChildInactiveColor
+        self.config.child_inactive_color
     }
 }
 
@@ -737,14 +689,15 @@ impl LockScreenWidgetRenderer {
         self.draw_halo(
             center_x,
             center_y,
+            &widget.config,
         );
 
 
         self.draw_circle(
             center_x,
             center_y,
-            BackgroundRadius,
-            BackgroundColor,
+            widget.config.background_radius,
+            widget.config.background_color,
         );
 
 
@@ -763,19 +716,19 @@ impl LockScreenWidgetRenderer {
 
             let child_center_x =
                 center_x
-                    + ParentRadius
+                    + widget.config.parent_radius
                         * angle.cos();
 
             let child_center_y =
                 center_y
-                    + ParentRadius
+                    + widget.config.parent_radius
                         * angle.sin();
 
 
             self.draw_circle(
                 child_center_x,
                 child_center_y,
-                ChildRadius,
+                widget.config.child_radius,
                 widget.child_color(
                     child_index
                 ),
@@ -803,30 +756,31 @@ impl LockScreenWidgetRenderer {
         &self,
         center_x: f32,
         center_y: f32,
+        config: &LockScreenWidgetConfig,
     ) {
         let halo_strength =
-            HaloStrength.clamp(
+            config.halo_strength.clamp(
                 0.0,
                 1.0,
             );
 
         if halo_strength <= f32::EPSILON
-            || BackgroundRadius <= f32::EPSILON
+            || config.background_radius <= f32::EPSILON
         {
             return;
         }
 
 
         let halo_distance =
-            BackgroundRadius
+            config.background_radius
                 * halo_strength;
 
         let outer_radius =
-            BackgroundRadius
+            config.background_radius
                 + halo_distance;
 
         let inner_ratio =
-            BackgroundRadius
+            config.background_radius
                 / outer_radius;
 
 
@@ -854,10 +808,10 @@ impl LockScreenWidgetRenderer {
 
             gl::Uniform4f(
                 self.color_location,
-                HaloColor[0],
-                HaloColor[1],
-                HaloColor[2],
-                HaloColor[3],
+                config.halo_color[0],
+                config.halo_color[1],
+                config.halo_color[2],
+                config.halo_color[3],
             );
 
             gl::DrawArrays(
