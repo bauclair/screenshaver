@@ -349,6 +349,29 @@ pub fn construct_lock_screen_kde(
 
     writeln!(
         qml,
+        "    function dismissAuthenticationDisplay() {{"
+    )
+    .unwrap();
+    writeln!(qml, "        clearAuthenticationDisplay()").unwrap();
+    writeln!(qml, "        widgetVisible = false").unwrap();
+    writeln!(qml, "    }}").unwrap();
+    writeln!(qml).unwrap();
+
+    writeln!(
+        qml,
+        "    function revealAuthenticationDisplay() {{"
+    )
+    .unwrap();
+    writeln!(qml, "        if (!widgetVisible) {{").unwrap();
+    writeln!(qml, "            widgetVisible = true").unwrap();
+    writeln!(qml, "            passwordInput.forceActiveFocus()").unwrap();
+    writeln!(qml, "            authenticator.startAuthenticating()").unwrap();
+    writeln!(qml, "        }}").unwrap();
+    writeln!(qml, "    }}").unwrap();
+    writeln!(qml).unwrap();
+
+    writeln!(
+        qml,
         "    function beginAuthenticationFailure() {{"
     )
     .unwrap();
