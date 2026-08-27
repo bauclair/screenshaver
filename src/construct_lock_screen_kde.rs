@@ -211,8 +211,6 @@ pub fn construct_lock_screen_kde(
     .unwrap();
     writeln!(qml, "            if (root.widgetVisible) {{").unwrap();
     writeln!(qml, "                root.dismissAuthenticationDisplay()").unwrap();
-    writeln!(qml, "            }} else {{").unwrap();
-    writeln!(qml, "                root.revealAuthenticationDisplay()").unwrap();
     writeln!(qml, "            }}").unwrap();
     writeln!(qml, "            event.accepted = true").unwrap();
     writeln!(qml, "            return").unwrap();
@@ -430,7 +428,6 @@ pub fn construct_lock_screen_kde(
     writeln!(qml, "            widgetVisible = true").unwrap();
     writeln!(qml, "            pointerAnchorValid = false").unwrap();
     writeln!(qml, "            root.forceActiveFocus()").unwrap();
-    writeln!(qml, "            authenticator.startAuthenticating()").unwrap();
     writeln!(qml, "        }}").unwrap();
     writeln!(qml, "    }}").unwrap();
     writeln!(qml).unwrap();
