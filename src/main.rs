@@ -25,6 +25,7 @@ mod lock_screen_widget;
 mod define_lock_screen_widget;
 mod construct_lock_screen_kde;
 mod manage_screen_lock_kde;
+mod detect_desktop_environment;
 mod manage_textures;
 mod manage_policies;
 mod classify_shader;
@@ -191,12 +192,38 @@ fn main() {
 
         crate::parse_arguments::Command::ConstructLockScreenKde => {
 
-            match crate::manage_screen_lock_kde::restore() {
+            let desktop_environment =
+                crate::detect_desktop_environment::detect();
+
+
+            println!(
+                "Detected desktop environment: {}",
+                desktop_environment.name()
+            );
+
+
+            if !desktop_environment.is_kde_plasma() {
+
+                eprintln!(
+                    "Screenshaver KDE lock-screen integration was not modified because KDE Plasma is not the detected desktop environment."
+                );
+
+                return;
+            }
+
+
+            let config =
+                crate::define_lock_screen_widget::LockScreenWidgetConfig::default();
+
+
+            match crate::manage_screen_lock_kde::install(
+                &config
+            ) {
 
                 Ok(status) => {
 
                     println!(
-                        "Screenshaver KDE lock-screen integration restoration completed."
+                        "Screenshaver KDE lock screen constructed and installed."
                     );
 
                     println!(
@@ -252,7 +279,6 @@ fn main() {
 
             return;
         }
-
 
         crate::parse_arguments::Command::Run
         | crate::parse_arguments::Command::Start
