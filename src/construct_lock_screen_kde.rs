@@ -714,12 +714,31 @@ pub fn construct_lock_screen_kde(
 
     writeln!(qml, "    MouseArea {{").unwrap();
     writeln!(qml, "        anchors.fill: parent").unwrap();
-    writeln!(qml, "        acceptedButtons: Qt.LeftButton").unwrap();
-    writeln!(qml, "        onClicked: {{").unwrap();
+    writeln!(qml, "        hoverEnabled: true").unwrap();
+    writeln!(
+        qml,
+        "        acceptedButtons: Qt.LeftButton | Qt.RightButton"
+    )
+    .unwrap();
+    writeln!(qml).unwrap();
+
+    writeln!(qml, "        function activateFromPointer() {{").unwrap();
     writeln!(qml, "            root.revealAuthenticationDisplay()").unwrap();
     writeln!(qml, "            passwordInput.forceActiveFocus()").unwrap();
     writeln!(qml, "        }}").unwrap();
+    writeln!(qml).unwrap();
+
+    writeln!(qml, "        onPositionChanged: {{").unwrap();
+    writeln!(qml, "            activateFromPointer()").unwrap();
+    writeln!(qml, "        }}").unwrap();
+    writeln!(qml).unwrap();
+
+    writeln!(qml, "        onPressed: mouse => {{").unwrap();
+    writeln!(qml, "            activateFromPointer()").unwrap();
+    writeln!(qml, "            mouse.accepted = true").unwrap();
+    writeln!(qml, "        }}").unwrap();
     writeln!(qml, "    }}").unwrap();
+    writeln!(qml).unwrap();
 
     writeln!(qml, "}}").unwrap();
 
