@@ -191,6 +191,7 @@ pub fn construct_lock_screen_kde(
     writeln!(qml, "    property int activeChild: -1").unwrap();
     writeln!(qml, "    property int activeKey: -1").unwrap();
     writeln!(qml, "    property bool authenticationFailed: false").unwrap();
+    writeln!(qml, "    property bool widgetVisible: true").unwrap();
     writeln!(qml).unwrap();
 
     writeln!(qml, "    implicitWidth: 800").unwrap();
@@ -435,6 +436,7 @@ pub fn construct_lock_screen_kde(
     .unwrap();
     writeln!(qml, "        height: width").unwrap();
     writeln!(qml, "        anchors.centerIn: parent").unwrap();
+    writeln!(qml, "        visible: root.widgetVisible").unwrap();
     writeln!(qml).unwrap();
 
     // Approximate the OpenGL halo's radial alpha falloff with a stack of
@@ -608,6 +610,18 @@ pub fn construct_lock_screen_kde(
     writeln!(qml, "        Keys.onPressed: event => {{").unwrap();
     writeln!(
         qml,
+        "            if (event.key === Qt.Key_Escape) {{"
+    )
+    .unwrap();
+    writeln!(qml, "                root.dismissAuthenticationDisplay()").unwrap();
+    writeln!(qml, "                event.accepted = true").unwrap();
+    writeln!(qml, "                return").unwrap();
+    writeln!(qml, "            }}").unwrap();
+    writeln!(qml).unwrap();
+    writeln!(qml, "            root.revealAuthenticationDisplay()").unwrap();
+    writeln!(qml).unwrap();
+    writeln!(
+        qml,
         "            if (root.authenticationFailed) {{"
     )
     .unwrap();
@@ -678,11 +692,10 @@ pub fn construct_lock_screen_kde(
     writeln!(qml, "    MouseArea {{").unwrap();
     writeln!(qml, "        anchors.fill: parent").unwrap();
     writeln!(qml, "        acceptedButtons: Qt.LeftButton").unwrap();
-    writeln!(
-        qml,
-        "        onClicked: passwordInput.forceActiveFocus()"
-    )
-    .unwrap();
+    writeln!(qml, "        onClicked: {{").unwrap();
+    writeln!(qml, "            root.revealAuthenticationDisplay()").unwrap();
+    writeln!(qml, "            passwordInput.forceActiveFocus()").unwrap();
+    writeln!(qml, "        }}").unwrap();
     writeln!(qml, "    }}").unwrap();
 
     writeln!(qml, "}}").unwrap();
