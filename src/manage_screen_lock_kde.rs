@@ -2,15 +2,16 @@
 //!
 //! Installs and manages Screenshaver's KDE Plasma / KScreenLocker integration.
 //!
-//! KDE Plasma's Wayland screen locker is owned by KWin. KWin passes its own
-//! startup environment to KScreenLocker, which launches `kscreenlocker_greet`
-//! using that environment. Screenshaver therefore scopes
-//! `PLASMA_DEFAULT_SHELL=org.screenshaver` to KWin only through a user-level
-//! systemd drop-in for `plasma-kwin_wayland.service`.
+//! Screenshaver deliberately leaves KDE's normal `org.kde.plasma.desktop`
+//! shell identity in place. KDE's system shell package is copied into a
+//! same-ID user overlay under XDG_DATA_HOME, where Screenshaver can later add
+//! its lock-screen rendering integration without changing `plasmashellrc`,
+//! `PLASMA_DEFAULT_SHELL`, or KWin's environment.
 //!
-//! This module deliberately does NOT modify `plasmashellrc` or replace
-//! Plasma's desktop ShellPackage. Plasma's normal desktop shell therefore
-//! remains unaffected across logout/login and reboot.
+//! This first-stage overlay manager intentionally does not install the native
+//! renderer plugin yet. It establishes ownership, refresh, and restore rules
+//! for the safe user overlay. Native renderer/QML installation is layered on
+//! top in the following integration step.
 
 use std::env;
 use std::fs;
@@ -19,34 +20,14 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use crate::construct_lock_screen_kde;
 use crate::define_lock_screen_widget::LockScreenWidgetConfig;
 
-const SCREENSHAVER_SHELL_PACKAGE: &str = "org.screenshaver";
-const KWIN_DROPIN_DIRECTORY: &str = "plasma-kwin_wayland.service.d";
-const KWIN_DROPIN_FILENAME: &str = "screenshaver.conf";
-const KWIN_DROPIN_CONTENTS: &str =
-    "[Service]\nEnvironment=PLASMA_DEFAULT_SHELL=org.screenshaver\n";
-
-const KDE_METADATA_JSON: &str = r#"{
-    "KPackageStructure": "Plasma/Shell",
-    "KPlugin": {
-        "Authors": [
-            {
-                "Name": "Screenshaver Project"
-            }
-        ],
-        "Description": "Screenshaver KDE lock-screen shell",
-        "Id": "org.screenshaver",
-        "License": "GPL-3.0-or-later",
-        "Name": "Screenshaver Lock Screen",
-        "Version": "1.0"
-    },
-    "X-Plasma-APIVersion": "2"
-}
-"#;
+const KDE_SHELL_PACKAGE: &str = "org.kde.plasma.desktop";
+const OWNERSHIP_MARKER_FILENAME: &str = ".screenshaver-overlay";
+const OWNERSHIP_MARKER_MAGIC: &str = "screenshaver-kde-overlay-v1";
+const LOCKSCREEN_QML_RELATIVE_PATH: &str = "contents/lockscreen/LockScreenUi.qml";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KdeIntegrationPaths {
@@ -54,13 +35,11 @@ pub struct KdeIntegrationPaths {
     pub metadata_path: PathBuf,
     pub lockscreen_dir: PathBuf,
     pub lockscreen_qml_path: PathBuf,
-    pub systemd_user_dir: PathBuf,
-    pub kwin_dropin_dir: PathBuf,
-    pub kwin_dropin_path: PathBuf,
+    pub ownership_marker_path: PathBuf,
 }
 
 /// Compatibility status structure retained so existing callers do not need to
-/// change while KDE integration moves away from `plasmashellrc`.
+/// change while KDE integration moves to a same-ID user shell overlay.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KdeIntegrationStatus {
     pub shell_package_installed: bool,
@@ -69,7 +48,6 @@ pub struct KdeIntegrationStatus {
     pub screenshaver_selected: bool,
     pub previous_shell_package: Option<String>,
 }
-
 
 /// Lifetime-owned inhibition of KDE's own idle-triggered screen locking.
 ///
@@ -165,98 +143,101 @@ pub fn integration_paths() -> io::Result<KdeIntegrationPaths> {
         .map(PathBuf::from)
         .unwrap_or_else(|| home.join(".local").join("share"));
 
-    let config_home = env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| home.join(".config"));
-
     let shell_package_dir = data_home
         .join("plasma")
         .join("shells")
-        .join(SCREENSHAVER_SHELL_PACKAGE);
+        .join(KDE_SHELL_PACKAGE);
 
     let lockscreen_dir = shell_package_dir
         .join("contents")
         .join("lockscreen");
 
-    let systemd_user_dir = config_home
-        .join("systemd")
-        .join("user");
-
-    let kwin_dropin_dir = systemd_user_dir
-        .join(KWIN_DROPIN_DIRECTORY);
-
     Ok(KdeIntegrationPaths {
         metadata_path: shell_package_dir.join("metadata.json"),
-        lockscreen_qml_path: lockscreen_dir.join("LockScreen.qml"),
-        kwin_dropin_path: kwin_dropin_dir.join(KWIN_DROPIN_FILENAME),
+        lockscreen_qml_path: shell_package_dir.join(LOCKSCREEN_QML_RELATIVE_PATH),
+        ownership_marker_path: shell_package_dir.join(OWNERSHIP_MARKER_FILENAME),
         shell_package_dir,
         lockscreen_dir,
-        systemd_user_dir,
-        kwin_dropin_dir,
     })
 }
 
-/// Installs or updates the Screenshaver KDE shell package and the KWin-only
-/// systemd environment override. This operation is idempotent and never edits
-/// `plasmashellrc`.
+/// Installs the safe same-ID KDE shell overlay.
+///
+/// The user's system `org.kde.plasma.desktop` package is copied verbatim into
+/// XDG_DATA_HOME. This stage does not yet modify LockScreenUi.qml or install
+/// the native renderer plugin. If a user overlay already exists and is not
+/// marked as Screenshaver-owned, installation refuses to alter it.
 pub fn install(
-    config: &LockScreenWidgetConfig,
+    _config: &LockScreenWidgetConfig,
 ) -> io::Result<KdeIntegrationStatus> {
     let paths = integration_paths()?;
 
-    fs::create_dir_all(&paths.lockscreen_dir)?;
-    fs::write(&paths.metadata_path, KDE_METADATA_JSON)?;
+    if paths.shell_package_dir.exists()
+        && !overlay_is_screenshaver_owned(&paths)?
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            format!(
+                "Refusing to install Screenshaver KDE integration because {} already exists and is not Screenshaver-owned",
+                paths.shell_package_dir.display(),
+            ),
+        ));
+    }
 
-    construct_lock_screen_kde::write_lock_screen_kde(
-        config,
-        &paths.lockscreen_qml_path,
-    )?;
-
-    fs::create_dir_all(&paths.kwin_dropin_dir)?;
-
-    write_text_atomic(
-        &paths.kwin_dropin_path,
-        KWIN_DROPIN_CONTENTS,
-    )?;
-
-    systemd_user_daemon_reload()?;
-
+    rebuild_owned_overlay(&paths)?;
     status_from_paths(&paths)
 }
 
-/// Refreshes the generated Plasma package/QML without changing the KWin
-/// systemd drop-in.
+/// Refreshes a Screenshaver-owned overlay from KDE's currently installed
+/// system shell package.
+///
+/// Refresh deliberately rebuilds from the current system package rather than
+/// preserving an old copied KDE tree across Plasma upgrades. A foreign user
+/// overlay is never overwritten.
 pub fn refresh(
-    config: &LockScreenWidgetConfig,
+    _config: &LockScreenWidgetConfig,
 ) -> io::Result<KdeIntegrationStatus> {
     let paths = integration_paths()?;
 
-    fs::create_dir_all(&paths.lockscreen_dir)?;
-    fs::write(&paths.metadata_path, KDE_METADATA_JSON)?;
+    if paths.shell_package_dir.exists()
+        && !overlay_is_screenshaver_owned(&paths)?
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!(
+                "Refusing to refresh Screenshaver KDE integration because {} is not Screenshaver-owned",
+                paths.shell_package_dir.display(),
+            ),
+        ));
+    }
 
-    construct_lock_screen_kde::write_lock_screen_kde(
-        config,
-        &paths.lockscreen_qml_path,
-    )?;
-
+    rebuild_owned_overlay(&paths)?;
     status_from_paths(&paths)
 }
 
-/// Disables Screenshaver's KDE integration by removing only the
-/// Screenshaver-owned KWin drop-in. The installed shell package is deliberately
-/// retained. No Plasma desktop-shell configuration is changed.
+/// Restores KDE's normal system-shell behavior by removing only a
+/// Screenshaver-owned same-ID user overlay.
+///
+/// If the overlay is absent, restore is already complete. If a foreign user
+/// overlay occupies the same path, restore refuses to remove it.
 pub fn restore() -> io::Result<KdeIntegrationStatus> {
     let paths = integration_paths()?;
 
-    match fs::remove_file(&paths.kwin_dropin_path) {
-        Ok(()) => {}
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error),
+    if !paths.shell_package_dir.exists() {
+        return status_from_paths(&paths);
     }
 
-    remove_directory_if_empty(&paths.kwin_dropin_dir)?;
-    systemd_user_daemon_reload()?;
+    if !overlay_is_screenshaver_owned(&paths)? {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!(
+                "Refusing to remove KDE user overlay {} because it is not Screenshaver-owned",
+                paths.shell_package_dir.display(),
+            ),
+        ));
+    }
 
+    fs::remove_dir_all(&paths.shell_package_dir)?;
     status_from_paths(&paths)
 }
 
@@ -411,18 +392,15 @@ pub fn status() -> io::Result<KdeIntegrationStatus> {
 fn status_from_paths(
     paths: &KdeIntegrationPaths,
 ) -> io::Result<KdeIntegrationStatus> {
-    let dropin_active = match fs::read_to_string(&paths.kwin_dropin_path) {
-        Ok(contents) => contents == KWIN_DROPIN_CONTENTS,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => false,
-        Err(error) => return Err(error),
-    };
+    let owned = overlay_is_screenshaver_owned(paths)?;
+    let overlay_exists = paths.shell_package_dir.is_dir();
 
     Ok(KdeIntegrationStatus {
-        shell_package_installed: paths.metadata_path.is_file(),
-        lockscreen_qml_installed: paths.lockscreen_qml_path.is_file(),
-        screenshaver_selected: dropin_active,
-        active_shell_package: if dropin_active {
-            Some(SCREENSHAVER_SHELL_PACKAGE.to_string())
+        shell_package_installed: overlay_exists,
+        lockscreen_qml_installed: owned && paths.lockscreen_qml_path.is_file(),
+        screenshaver_selected: owned,
+        active_shell_package: if owned {
+            Some(KDE_SHELL_PACKAGE.to_string())
         } else {
             None
         },
@@ -430,31 +408,270 @@ fn status_from_paths(
     })
 }
 
-fn systemd_user_daemon_reload() -> io::Result<()> {
-    let output = Command::new("systemctl")
-        .arg("--user")
-        .arg("daemon-reload")
-        .output()?;
+fn rebuild_owned_overlay(paths: &KdeIntegrationPaths) -> io::Result<()> {
+    let system_shell_dir = locate_system_shell_package()?;
 
-    if output.status.success() {
-        return Ok(());
+    validate_system_shell_package(&system_shell_dir)?;
+
+    let parent = paths
+        .shell_package_dir
+        .parent()
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "Unable to determine parent directory for {}",
+                    paths.shell_package_dir.display(),
+                ),
+            )
+        })?;
+
+    fs::create_dir_all(parent)?;
+
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+
+    let staging_dir = parent.join(format!(
+        ".{}.screenshaver-staging-{}-{}",
+        KDE_SHELL_PACKAGE,
+        std::process::id(),
+        nonce,
+    ));
+
+    let previous_dir = parent.join(format!(
+        ".{}.screenshaver-previous-{}-{}",
+        KDE_SHELL_PACKAGE,
+        std::process::id(),
+        nonce,
+    ));
+
+    if staging_dir.exists() {
+        fs::remove_dir_all(&staging_dir)?;
+    }
+
+    copy_directory_tree(&system_shell_dir, &staging_dir)?;
+
+    let staged_marker = staging_dir.join(OWNERSHIP_MARKER_FILENAME);
+    write_ownership_marker(&staged_marker, &system_shell_dir)?;
+
+    let staged_lockscreen = staging_dir.join(LOCKSCREEN_QML_RELATIVE_PATH);
+    if !staged_lockscreen.is_file() {
+        let _ = fs::remove_dir_all(&staging_dir);
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!(
+                "KDE system shell package {} does not contain {}",
+                system_shell_dir.display(),
+                LOCKSCREEN_QML_RELATIVE_PATH,
+            ),
+        ));
+    }
+
+    if paths.shell_package_dir.exists() {
+        fs::rename(&paths.shell_package_dir, &previous_dir)?;
+    }
+
+    match fs::rename(&staging_dir, &paths.shell_package_dir) {
+        Ok(()) => {
+            if previous_dir.exists() {
+                fs::remove_dir_all(previous_dir)?;
+            }
+            Ok(())
+        }
+        Err(error) => {
+            if previous_dir.exists() && !paths.shell_package_dir.exists() {
+                let _ = fs::rename(&previous_dir, &paths.shell_package_dir);
+            }
+            let _ = fs::remove_dir_all(&staging_dir);
+            Err(error)
+        }
+    }
+}
+
+fn locate_system_shell_package() -> io::Result<PathBuf> {
+    let mut data_dirs = Vec::new();
+
+    if let Some(value) = env::var_os("XDG_DATA_DIRS") {
+        for path in env::split_paths(&value) {
+            push_unique_path(&mut data_dirs, path);
+        }
+    }
+
+    for path in [
+        PathBuf::from("/run/current-system/sw/share"),
+        PathBuf::from("/usr/local/share"),
+        PathBuf::from("/usr/share"),
+    ] {
+        push_unique_path(&mut data_dirs, path);
+    }
+
+    for data_dir in data_dirs {
+        let candidate = data_dir
+            .join("plasma")
+            .join("shells")
+            .join(KDE_SHELL_PACKAGE);
+
+        if validate_system_shell_package(&candidate).is_ok() {
+            return Ok(candidate);
+        }
     }
 
     Err(io::Error::new(
-        io::ErrorKind::Other,
+        io::ErrorKind::NotFound,
         format!(
-            "systemctl --user daemon-reload failed: {}",
-            command_failure_message(&output),
+            "Unable to locate KDE system shell package {} in XDG_DATA_DIRS or standard system data paths",
+            KDE_SHELL_PACKAGE,
         ),
     ))
 }
 
-fn remove_directory_if_empty(path: &Path) -> io::Result<()> {
-    match fs::remove_dir(path) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(error) if error.kind() == io::ErrorKind::DirectoryNotEmpty => Ok(()),
+fn validate_system_shell_package(path: &Path) -> io::Result<()> {
+    if !path.is_dir() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!(
+                "KDE shell package directory does not exist: {}",
+                path.display(),
+            ),
+        ));
+    }
+
+    if !path.join("metadata.json").is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!(
+                "KDE shell package is missing metadata.json: {}",
+                path.display(),
+            ),
+        ));
+    }
+
+    if !path.join(LOCKSCREEN_QML_RELATIVE_PATH).is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!(
+                "KDE shell package is missing {}: {}",
+                LOCKSCREEN_QML_RELATIVE_PATH,
+                path.display(),
+            ),
+        ));
+    }
+
+    Ok(())
+}
+
+fn overlay_is_screenshaver_owned(
+    paths: &KdeIntegrationPaths,
+) -> io::Result<bool> {
+    match fs::read_to_string(&paths.ownership_marker_path) {
+        Ok(contents) => Ok(
+            contents
+                .lines()
+                .next()
+                .map(str::trim)
+                == Some(OWNERSHIP_MARKER_MAGIC),
+        ),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(error),
+    }
+}
+
+fn write_ownership_marker(
+    marker_path: &Path,
+    system_shell_dir: &Path,
+) -> io::Result<()> {
+    let contents = format!(
+        "{}\nsystem_source={}\n",
+        OWNERSHIP_MARKER_MAGIC,
+        system_shell_dir.display(),
+    );
+
+    fs::write(marker_path, contents)
+}
+
+fn copy_directory_tree(source: &Path, destination: &Path) -> io::Result<()> {
+    let metadata = fs::symlink_metadata(source)?;
+
+    if !metadata.is_dir() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "Expected directory while copying KDE shell package: {}",
+                source.display(),
+            ),
+        ));
+    }
+
+    fs::create_dir_all(destination)?;
+    fs::set_permissions(destination, metadata.permissions())?;
+
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        copy_tree_entry(&source_path, &destination_path)?;
+    }
+
+    Ok(())
+}
+
+fn copy_tree_entry(source: &Path, destination: &Path) -> io::Result<()> {
+    let metadata = fs::symlink_metadata(source)?;
+    let file_type = metadata.file_type();
+
+    if file_type.is_dir() {
+        return copy_directory_tree(source, destination);
+    }
+
+    if file_type.is_file() {
+        fs::copy(source, destination)?;
+        fs::set_permissions(destination, metadata.permissions())?;
+        return Ok(());
+    }
+
+    if file_type.is_symlink() {
+        let target = fs::read_link(source)?;
+        return create_symlink(&target, destination, source);
+    }
+
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        format!(
+            "Unsupported file type in KDE shell package: {}",
+            source.display(),
+        ),
+    ))
+}
+
+#[cfg(unix)]
+fn create_symlink(
+    target: &Path,
+    destination: &Path,
+    _source: &Path,
+) -> io::Result<()> {
+    std::os::unix::fs::symlink(target, destination)
+}
+
+#[cfg(not(unix))]
+fn create_symlink(
+    _target: &Path,
+    _destination: &Path,
+    source: &Path,
+) -> io::Result<()> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        format!(
+            "KDE shell-package symlink copying is unsupported on this platform: {}",
+            source.display(),
+        ),
+    ))
+}
+
+fn push_unique_path(paths: &mut Vec<PathBuf>, path: PathBuf) {
+    if !paths.iter().any(|existing| existing == &path) {
+        paths.push(path);
     }
 }
 
@@ -584,31 +801,4 @@ fn resume_wallpaper_after_kde_lock(
             "[LOCK] KDE lock session ended with shutdown pending; wallpaper renderer will remain stopped",
         );
     }
-}
-
-fn write_text_atomic(path: &Path, contents: &str) -> io::Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
-    let file_name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidInput,
-                format!(
-                    "Unable to construct temporary file name for {}",
-                    path.display(),
-                ),
-            )
-        })?;
-
-    let temporary_path = path.with_file_name(format!(
-        ".{}.screenshaver.tmp",
-        file_name,
-    ));
-
-    fs::write(&temporary_path, contents)?;
-    fs::rename(&temporary_path, path)
 }
