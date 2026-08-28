@@ -2,6 +2,7 @@
 name = "screenshaver"
 version = "0.5.3"
 edition = "2024"
+autolib = false
 
 [dependencies]
 sdl2 = { version = "0.38", features = ["ttf", "raw-window-handle"] }
@@ -39,3 +40,7 @@ xkbcommon = "0.9"
 pam = "0.8"
 pam_unix = "0.3.1"
 zeroize = "1.8"
+
+[features]
+default = []
+kde-host = []

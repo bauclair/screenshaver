@@ -1,0 +1,11 @@
+/etc/nixos/pkgs/screenshaver/kde-renderer/target/release/deps/xkbcommon-c11b1a0508cd6469.d: /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/xkbcommon-0.9.0/src/lib.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/xkbcommon-0.9.0/src/xkb/mod.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/xkbcommon-0.9.0/src/xkb/compose.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/xkbcommon-0.9.0/src/xkb/ffi.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/xkbcommon-0.9.0/src/xkb/keysyms.rs
+
+/etc/nixos/pkgs/screenshaver/kde-renderer/target/release/deps/libxkbcommon-c11b1a0508cd6469.rlib: /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/xkbcommon-0.9.0/src/lib.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/xkbcommon-0.9.0/src/xkb/mod.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/xkbcommon-0.9.0/src/xkb/compose.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/xkbcommon-0.9.0/src/xkb/ffi.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/xkbcommon-0.9.0/src/xkb/keysyms.rs
+
+/etc/nixos/pkgs/screenshaver/kde-renderer/target/release/deps/libxkbcommon-c11b1a0508cd6469.rmeta: /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/xkbcommon-0.9.0/src/lib.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/xkbcommon-0.9.0/src/xkb/mod.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/xkbcommon-0.9.0/src/xkb/compose.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/xkbcommon-0.9.0/src/xkb/ffi.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/xkbcommon-0.9.0/src/xkb/keysyms.rs
+
+/home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/xkbcommon-0.9.0/src/lib.rs:
+/home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/xkbcommon-0.9.0/src/xkb/mod.rs:
+/home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/xkbcommon-0.9.0/src/xkb/compose.rs:
+/home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/xkbcommon-0.9.0/src/xkb/ffi.rs:
+/home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/xkbcommon-0.9.0/src/xkb/keysyms.rs:

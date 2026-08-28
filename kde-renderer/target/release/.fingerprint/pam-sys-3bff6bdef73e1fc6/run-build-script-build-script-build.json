@@ -1,0 +1,1 @@
+{"rustc":3869633755253446030,"features":"","declared_features":"","target":0,"profile":0,"path":0,"deps":[[7600096165224899531,"build_script_build",false,11145642721300127068]],"local":[{"RerunIfChanged":{"output":"release/build/pam-sys-3bff6bdef73e1fc6/output","paths":["wrapper.h"]}}],"rustflags":[],"config":0,"compile_kind":0}

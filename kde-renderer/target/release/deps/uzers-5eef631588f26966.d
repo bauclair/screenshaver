@@ -1,0 +1,12 @@
+/etc/nixos/pkgs/screenshaver/kde-renderer/target/release/deps/uzers-5eef631588f26966.d: /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uzers-0.12.2/src/lib.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uzers-0.12.2/src/base.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uzers-0.12.2/src/cache.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uzers-0.12.2/src/mock.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uzers-0.12.2/src/switch.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uzers-0.12.2/src/traits.rs
+
+/etc/nixos/pkgs/screenshaver/kde-renderer/target/release/deps/libuzers-5eef631588f26966.rlib: /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uzers-0.12.2/src/lib.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uzers-0.12.2/src/base.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uzers-0.12.2/src/cache.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uzers-0.12.2/src/mock.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uzers-0.12.2/src/switch.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uzers-0.12.2/src/traits.rs
+
+/etc/nixos/pkgs/screenshaver/kde-renderer/target/release/deps/libuzers-5eef631588f26966.rmeta: /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uzers-0.12.2/src/lib.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uzers-0.12.2/src/base.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uzers-0.12.2/src/cache.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uzers-0.12.2/src/mock.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uzers-0.12.2/src/switch.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uzers-0.12.2/src/traits.rs
+
+/home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uzers-0.12.2/src/lib.rs:
+/home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uzers-0.12.2/src/base.rs:
+/home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uzers-0.12.2/src/cache.rs:
+/home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uzers-0.12.2/src/mock.rs:
+/home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uzers-0.12.2/src/switch.rs:
+/home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/uzers-0.12.2/src/traits.rs:

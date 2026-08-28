@@ -1,0 +1,3 @@
+cargo:rustc-link-lib=pam
+cargo:rustc-link-lib=pam_misc
+cargo:rerun-if-changed=wrapper.h

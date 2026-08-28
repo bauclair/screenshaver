@@ -1,0 +1,10 @@
+/etc/nixos/pkgs/screenshaver/kde-renderer/target/release/deps/zbus_macros-198f7113314450e2.d: /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zbus_macros-5.19.0/src/lib.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zbus_macros-5.19.0/src/error.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zbus_macros-5.19.0/src/iface.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zbus_macros-5.19.0/src/proxy.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zbus_macros-5.19.0/src/utils.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zbus_macros-5.19.0/src/../README.md
+
+/etc/nixos/pkgs/screenshaver/kde-renderer/target/release/deps/libzbus_macros-198f7113314450e2.so: /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zbus_macros-5.19.0/src/lib.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zbus_macros-5.19.0/src/error.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zbus_macros-5.19.0/src/iface.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zbus_macros-5.19.0/src/proxy.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zbus_macros-5.19.0/src/utils.rs /home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zbus_macros-5.19.0/src/../README.md
+
+/home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zbus_macros-5.19.0/src/lib.rs:
+/home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zbus_macros-5.19.0/src/error.rs:
+/home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zbus_macros-5.19.0/src/iface.rs:
+/home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zbus_macros-5.19.0/src/proxy.rs:
+/home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zbus_macros-5.19.0/src/utils.rs:
+/home/bauclair/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zbus_macros-5.19.0/src/../README.md:
