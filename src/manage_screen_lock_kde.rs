@@ -8,10 +8,10 @@
 //! its lock-screen rendering integration without changing `plasmashellrc`,
 //! `PLASMA_DEFAULT_SHELL`, or KWin's environment.
 //!
-//! This first-stage overlay manager intentionally does not install the native
-//! renderer plugin yet. It establishes ownership, refresh, and restore rules
-//! for the safe user overlay. Native renderer/QML installation is layered on
-//! top in the following integration step.
+//! Screenshaver augments that same-ID overlay with its packaged
+//! `ScreenshaverNativeGL` QML module and inserts a QSGRenderNode-backed
+//! renderer into KDE's existing `LockScreenUi.qml`. KDE retains ownership of
+//! authentication, input, session security, and lock-screen lifecycle.
 
 use std::env;
 use std::fs;
@@ -28,6 +28,15 @@ const KDE_SHELL_PACKAGE: &str = "org.kde.plasma.desktop";
 const OWNERSHIP_MARKER_FILENAME: &str = ".screenshaver-overlay";
 const OWNERSHIP_MARKER_MAGIC: &str = "screenshaver-kde-overlay-v1";
 const LOCKSCREEN_QML_RELATIVE_PATH: &str = "contents/lockscreen/LockScreenUi.qml";
+const NATIVE_QML_MODULE_DIRECTORY: &str = "ScreenshaverNativeGL";
+const NATIVE_PLUGIN_FILENAME: &str = "libScreenshaverNativeGLPlugin.so";
+const NATIVE_RENDERER_FILENAME: &str = "libscreenshaver.so";
+const NATIVE_QMLDIR_FILENAME: &str = "qmldir";
+const NATIVE_RUNTIME_RELATIVE_DIR: &str = "lib/screenshaver/kde";
+const NATIVE_IMPORT_LINE: &str =
+    "import \"ScreenshaverNativeGL\" as ScreenshaverNativeGL";
+const QML_INTEGRATION_MARKER: &str =
+    "// SCREENSHAVER_NATIVE_GL_INTEGRATION";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KdeIntegrationPaths {
@@ -36,6 +45,7 @@ pub struct KdeIntegrationPaths {
     pub lockscreen_dir: PathBuf,
     pub lockscreen_qml_path: PathBuf,
     pub ownership_marker_path: PathBuf,
+    pub native_qml_module_dir: PathBuf,
 }
 
 /// Compatibility status structure retained so existing callers do not need to
@@ -156,6 +166,7 @@ pub fn integration_paths() -> io::Result<KdeIntegrationPaths> {
         metadata_path: shell_package_dir.join("metadata.json"),
         lockscreen_qml_path: shell_package_dir.join(LOCKSCREEN_QML_RELATIVE_PATH),
         ownership_marker_path: shell_package_dir.join(OWNERSHIP_MARKER_FILENAME),
+        native_qml_module_dir: lockscreen_dir.join(NATIVE_QML_MODULE_DIRECTORY),
         shell_package_dir,
         lockscreen_dir,
     })
@@ -163,10 +174,10 @@ pub fn integration_paths() -> io::Result<KdeIntegrationPaths> {
 
 /// Installs the safe same-ID KDE shell overlay.
 ///
-/// The user's system `org.kde.plasma.desktop` package is copied verbatim into
-/// XDG_DATA_HOME. This stage does not yet modify LockScreenUi.qml or install
-/// the native renderer plugin. If a user overlay already exists and is not
-/// marked as Screenshaver-owned, installation refuses to alter it.
+/// The user's system `org.kde.plasma.desktop` package is copied into
+/// XDG_DATA_HOME, then augmented with Screenshaver's packaged native QML
+/// renderer. If a user overlay already exists and is not marked as
+/// Screenshaver-owned, installation refuses to alter it.
 pub fn install(
     _config: &LockScreenWidgetConfig,
 ) -> io::Result<KdeIntegrationStatus> {
@@ -395,11 +406,28 @@ fn status_from_paths(
     let owned = overlay_is_screenshaver_owned(paths)?;
     let overlay_exists = paths.shell_package_dir.is_dir();
 
+    let native_module_installed =
+        paths.native_qml_module_dir.join(NATIVE_PLUGIN_FILENAME).is_file()
+        && paths.native_qml_module_dir.join(NATIVE_RENDERER_FILENAME).is_file()
+        && paths.native_qml_module_dir.join(NATIVE_QMLDIR_FILENAME).is_file();
+
+    let qml_integrated = if owned && paths.lockscreen_qml_path.is_file() {
+        fs::read_to_string(&paths.lockscreen_qml_path)
+            .map(|contents| {
+                contents.contains(NATIVE_IMPORT_LINE)
+                    && contents.contains(QML_INTEGRATION_MARKER)
+            })?
+    } else {
+        false
+    };
+
+    let integrated = owned && native_module_installed && qml_integrated;
+
     Ok(KdeIntegrationStatus {
         shell_package_installed: overlay_exists,
-        lockscreen_qml_installed: owned && paths.lockscreen_qml_path.is_file(),
-        screenshaver_selected: owned,
-        active_shell_package: if owned {
+        lockscreen_qml_installed: integrated,
+        screenshaver_selected: integrated,
+        active_shell_package: if integrated {
             Some(KDE_SHELL_PACKAGE.to_string())
         } else {
             None
@@ -469,6 +497,14 @@ fn rebuild_owned_overlay(paths: &KdeIntegrationPaths) -> io::Result<()> {
         ));
     }
 
+    if let Err(error) = install_native_renderer_into_staging(
+        &staging_dir,
+        &staged_lockscreen,
+    ) {
+        let _ = fs::remove_dir_all(&staging_dir);
+        return Err(error);
+    }
+
     if paths.shell_package_dir.exists() {
         fs::rename(&paths.shell_package_dir, &previous_dir)?;
     }
@@ -488,6 +524,289 @@ fn rebuild_owned_overlay(paths: &KdeIntegrationPaths) -> io::Result<()> {
             Err(error)
         }
     }
+}
+
+fn install_native_renderer_into_staging(
+    staging_dir: &Path,
+    lockscreen_qml_path: &Path,
+) -> io::Result<()> {
+    let runtime_dir = locate_native_runtime_directory()?;
+    let module_dir = staging_dir
+        .join("contents")
+        .join("lockscreen")
+        .join(NATIVE_QML_MODULE_DIRECTORY);
+
+    fs::create_dir_all(&module_dir)?;
+
+    for filename in [
+        NATIVE_PLUGIN_FILENAME,
+        NATIVE_RENDERER_FILENAME,
+        NATIVE_QMLDIR_FILENAME,
+    ] {
+        let source = runtime_dir.join(filename);
+        if !source.is_file() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!(
+                    "Screenshaver KDE native runtime asset is missing: {}",
+                    source.display(),
+                ),
+            ));
+        }
+
+        fs::copy(&source, module_dir.join(filename))?;
+    }
+
+    patch_lock_screen_ui(lockscreen_qml_path)
+}
+
+fn locate_native_runtime_directory() -> io::Result<PathBuf> {
+    if let Some(path) = env::var_os("SCREENSHAVER_KDE_RUNTIME_DIR") {
+        let candidate = PathBuf::from(path);
+        validate_native_runtime_directory(&candidate)?;
+        return Ok(candidate);
+    }
+
+    let executable = env::current_exe()?;
+    let prefix = executable
+        .parent()
+        .and_then(Path::parent)
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                format!(
+                    "Unable to derive Screenshaver installation prefix from {}",
+                    executable.display(),
+                ),
+            )
+        })?;
+
+    let candidate = prefix.join(NATIVE_RUNTIME_RELATIVE_DIR);
+    validate_native_runtime_directory(&candidate)?;
+    Ok(candidate)
+}
+
+fn validate_native_runtime_directory(path: &Path) -> io::Result<()> {
+    for filename in [
+        NATIVE_PLUGIN_FILENAME,
+        NATIVE_RENDERER_FILENAME,
+        NATIVE_QMLDIR_FILENAME,
+    ] {
+        let candidate = path.join(filename);
+        if !candidate.is_file() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!(
+                    "Screenshaver KDE native runtime directory {} is missing {}",
+                    path.display(),
+                    filename,
+                ),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
+    let original = fs::read_to_string(path)?;
+
+    if original.contains(QML_INTEGRATION_MARKER) {
+        if original.contains(NATIVE_IMPORT_LINE) {
+            return Ok(());
+        }
+
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "{} contains a Screenshaver integration marker without the expected import",
+                path.display(),
+            ),
+        ));
+    }
+
+    let wallpaper_start = original
+        .find("WallpaperFader {")
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "Unable to integrate Screenshaver with {} because KDE's WallpaperFader block was not found",
+                    path.display(),
+                ),
+            )
+        })?;
+
+    let opening_brace = original[wallpaper_start..]
+        .find('{')
+        .map(|offset| wallpaper_start + offset)
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "Unable to locate WallpaperFader opening brace in {}",
+                    path.display(),
+                ),
+            )
+        })?;
+
+    let closing_brace = find_matching_qml_brace(&original, opening_brace)
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "Unable to locate WallpaperFader closing brace in {}",
+                    path.display(),
+                ),
+            )
+        })?;
+
+    let mut patched = String::with_capacity(original.len() + 700);
+
+    if !original.contains(NATIVE_IMPORT_LINE) {
+        patched.push_str(NATIVE_IMPORT_LINE);
+        patched.push('\n');
+    }
+
+    let insertion_offset = closing_brace + 1;
+    patched.push_str(&original[..insertion_offset]);
+    patched.push_str(
+        r#"
+
+    // SCREENSHAVER_NATIVE_GL_INTEGRATION
+    //
+    // The native renderer is intentionally placed immediately after KDE's
+    // WallpaperFader so it renders above the wallpaper while KDE's existing
+    // authentication and lock-screen controls remain above Screenshaver.
+    ScreenshaverNativeGL.NativeOpenGLUnderlay {
+        id: screenshaverNativeGl
+        anchors.fill: parent
+
+        NumberAnimation on time {
+            from: 0.0
+            to: 10000.0
+            duration: 10000000
+            loops: Animation.Infinite
+            running: true
+        }
+    }
+"#,
+    );
+    patched.push_str(&original[insertion_offset..]);
+
+    write_text_atomic(path, &patched)
+}
+
+fn find_matching_qml_brace(text: &str, opening_brace: usize) -> Option<usize> {
+    let bytes = text.as_bytes();
+    if bytes.get(opening_brace).copied() != Some(b'{') {
+        return None;
+    }
+
+    let mut depth = 0usize;
+    let mut index = opening_brace;
+    let mut quote: Option<u8> = None;
+    let mut line_comment = false;
+    let mut block_comment = false;
+
+    while index < bytes.len() {
+        let byte = bytes[index];
+        let next = bytes.get(index + 1).copied();
+
+        if line_comment {
+            if byte == b'\n' {
+                line_comment = false;
+            }
+            index += 1;
+            continue;
+        }
+
+        if block_comment {
+            if byte == b'*' && next == Some(b'/') {
+                block_comment = false;
+                index += 2;
+            } else {
+                index += 1;
+            }
+            continue;
+        }
+
+        if let Some(active_quote) = quote {
+            if byte == b'\\' {
+                index += 2;
+                continue;
+            }
+            if byte == active_quote {
+                quote = None;
+            }
+            index += 1;
+            continue;
+        }
+
+        if byte == b'/' && next == Some(b'/') {
+            line_comment = true;
+            index += 2;
+            continue;
+        }
+
+        if byte == b'/' && next == Some(b'*') {
+            block_comment = true;
+            index += 2;
+            continue;
+        }
+
+        if byte == b'"' || byte == b'\'' {
+            quote = Some(byte);
+            index += 1;
+            continue;
+        }
+
+        if byte == b'{' {
+            depth += 1;
+        } else if byte == b'}' {
+            depth -= 1;
+            if depth == 0 {
+                return Some(index);
+            }
+        }
+
+        index += 1;
+    }
+
+    None
+}
+
+fn write_text_atomic(path: &Path, contents: &str) -> io::Result<()> {
+    let parent = path.parent().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("Unable to determine parent directory for {}", path.display()),
+        )
+    })?;
+
+    fs::create_dir_all(parent)?;
+
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "Unable to construct temporary file name for {}",
+                    path.display(),
+                ),
+            )
+        })?;
+
+    let temporary_path = parent.join(format!(
+        ".{}.screenshaver.tmp-{}",
+        file_name,
+        std::process::id(),
+    ));
+
+    fs::write(&temporary_path, contents)?;
+    fs::rename(&temporary_path, path)
 }
 
 fn locate_system_shell_package() -> io::Result<PathBuf> {
