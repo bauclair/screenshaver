@@ -1,2 +1,0 @@
-cargo:rustc-link-search=/nix/store/63vszz1y8lw6xqjipsw6bh56105nw894-clang-21.1.8-lib/lib
-cargo:rustc-link-lib=dylib=clang

@@ -1,2 +1,0 @@
-clang diag: /nix/store/m2v7vwf2fvgylww97i34kc34z2yxv4h1-glibc-2.42-67-dev/include/stdint.h:95:11: warning: '__INT64_C' macro redefined [-Wmacro-redefined]
-clang diag: /nix/store/m2v7vwf2fvgylww97i34kc34z2yxv4h1-glibc-2.42-67-dev/include/stdint.h:96:11: warning: '__UINT64_C' macro redefined [-Wmacro-redefined]

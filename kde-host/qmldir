@@ -1,0 +1,3 @@
+module ScreenshaverNativeGL
+plugin ScreenshaverNativeGLPlugin
+classname ScreenshaverNativeGLPlugin

@@ -127,6 +127,7 @@
               rustfmt
               clippy
               pkg-config
+              cmake
 
               # Required by clang-sys/bindgen when building the KDE renderer
               # secondary crate.
@@ -139,6 +140,10 @@
 
               # Required when building the KDE renderer secondary crate.
               libpulseaudio
+
+              # Required when building the kde-host CMake project.
+              qt6.qtbase
+              qt6.qtdeclarative
             ];
 
             LLVM_CONFIG_PATH = "${pkgs.llvmPackages.llvm}/bin/llvm-config";

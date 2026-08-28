@@ -1,5 +1,6 @@
 # Rust
 /target/
+/kde-renderer/target/
 **/*.rs.bk
 
 # Nix
