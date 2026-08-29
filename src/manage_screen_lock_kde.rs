@@ -690,6 +690,33 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
             running: true
         }
     }
+
+    // SCREENSHAVER_AUTH_CIRCLE_WAKE_TEST
+    //
+    // First production authentication-presentation milestone:
+    // follow KDE's own uiVisible lifecycle without changing its password
+    // field, focus handling, authentication, timers, or input processing.
+    Rectangle {
+        id: screenshaverAuthCircleWakeTest
+
+        width: 260
+        height: width
+        radius: width / 2
+        anchors.centerIn: parent
+
+        visible: opacity > 0.0
+        opacity: lockScreenRoot.uiVisible ? 1.0 : 0.0
+
+        color: Qt.rgba(0.02, 0.02, 0.02, 0.82)
+        border.width: 3
+        border.color: Qt.rgba(1.0, 0.6470588, 0.0, 1.0)
+
+        Behavior on opacity {
+            NumberAnimation {
+                duration: 250
+            }
+        }
+    }
 "#,
     );
     patched.push_str(&original[insertion_offset..]);
