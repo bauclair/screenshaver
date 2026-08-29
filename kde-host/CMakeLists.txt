@@ -10,7 +10,7 @@ set(CMAKE_AUTOMOC ON)
 # $ORIGIN rather than retaining the temporary build directory.
 set(CMAKE_BUILD_RPATH_USE_ORIGIN TRUE)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Qml Quick)
+find_package(Qt6 REQUIRED COMPONENTS Core DBus Gui Qml Quick)
 
 set(
     SCREENSHAVER_RENDERER_LIBRARY
@@ -47,6 +47,7 @@ target_link_libraries(
     ScreenshaverNativeGLPlugin
     PRIVATE
         Qt6::Core
+        Qt6::DBus
         Qt6::Gui
         Qt6::Qml
         Qt6::Quick

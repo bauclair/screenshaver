@@ -2,9 +2,13 @@
 #include "native_opengl_renderer.h"
 
 #include <QCoreApplication>
+#include <QDBusConnection>
+#include <QDBusMessage>
+#include <QDBusPendingCall>
 #include <QEvent>
 #include <QKeyEvent>
 #include <QQuickWindow>
+#include <QTimer>
 
 NativeOpenGLUnderlay::NativeOpenGLUnderlay(QQuickItem *parent)
     : QQuickItem(parent)
@@ -18,6 +22,29 @@ NativeOpenGLUnderlay::NativeOpenGLUnderlay(QQuickItem *parent)
     // can translate it into a DPMS-off request.
     if (QCoreApplication::instance())
         QCoreApplication::instance()->installEventFilter(this);
+
+    // Plasma 6 PowerDevil deliberately ignores ordinary screen-management
+    // inhibitions while the screen locker is active and, by default, registers
+    // a 60-second locked-screen DPMS timeout.  Keep KDE's idle clock alive for
+    // exactly the lifetime of this lock-screen QML item.  This uses KDE's
+    // standard org.freedesktop.ScreenSaver.SimulateUserActivity() entry point;
+    // it does not synthesize a keyboard or pointer event, so it does not reveal
+    // the authentication UI.
+    auto *idleHeartbeat = new QTimer(this);
+    idleHeartbeat->setInterval(30000);
+    idleHeartbeat->setTimerType(Qt::CoarseTimer);
+
+    connect(idleHeartbeat, &QTimer::timeout, this, [] {
+        QDBusMessage message = QDBusMessage::createMethodCall(
+            QStringLiteral("org.freedesktop.ScreenSaver"),
+            QStringLiteral("/ScreenSaver"),
+            QStringLiteral("org.freedesktop.ScreenSaver"),
+            QStringLiteral("SimulateUserActivity"));
+
+        QDBusConnection::sessionBus().asyncCall(message);
+    });
+
+    idleHeartbeat->start();
 }
 
 bool NativeOpenGLUnderlay::eventFilter(QObject *watched, QEvent *event)
