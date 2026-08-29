@@ -629,35 +629,38 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
     // suppresses the stock visual presentation in the user overlay. These are
     // direct source edits rather than runtime Binding objects so the result is
     // deterministic across the copied Plasma component tree.
-    const CLOCK_DECLARATION: &str = "        Clock {\n            id: clock\n";
-    const CLOCK_REPLACEMENT: &str =
-        "        Clock {\n            id: clock\n            opacity: 0.0\n";
+    const CLOCK_VISIBILITY: &str =
+        "            visible: y > 0 && config.alwaysShowClock\n";
 
-    if !original.contains(CLOCK_DECLARATION) {
+    if !original.contains(CLOCK_VISIBILITY) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!(
-                "Unable to suppress KDE clock in {} because the expected Clock declaration was not found",
-                path.display(),
-            ),
-        ));
-    }
-    original = original.replacen(CLOCK_DECLARATION, CLOCK_REPLACEMENT, 1);
-
-    const CLOCK_SHADOW_OPACITY: &str =
-        "            opacity: lockScreenRoot.uiVisible ? 0 : 1\n";
-    if !original.contains(CLOCK_SHADOW_OPACITY) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!(
-                "Unable to suppress KDE clock shadow in {} because the expected opacity expression was not found",
+                "Unable to suppress KDE clock in {} because the expected visibility expression was not found",
                 path.display(),
             ),
         ));
     }
     original = original.replacen(
-        CLOCK_SHADOW_OPACITY,
-        "            opacity: 0.0\n",
+        CLOCK_VISIBILITY,
+        "            visible: false\n",
+        1,
+    );
+
+    const CLOCK_SHADOW_VISIBILITY: &str =
+        "            visible: !lockScreenUi.softwareRendering && config.alwaysShowClock\n";
+    if !original.contains(CLOCK_SHADOW_VISIBILITY) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "Unable to suppress KDE clock shadow in {} because the expected visibility expression was not found",
+                path.display(),
+            ),
+        ));
+    }
+    original = original.replacen(
+        CLOCK_SHADOW_VISIBILITY,
+        "            visible: false\n",
         1,
     );
 
@@ -684,7 +687,7 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
     const FOOTER_DECLARATION: &str =
         "        RowLayout {\n            id: footer\n";
     const FOOTER_REPLACEMENT: &str =
-        "        RowLayout {\n            id: footer\n            opacity: 0.0\n";
+        "        RowLayout {\n            id: footer\n            visible: false\n";
 
     if !original.contains(FOOTER_DECLARATION) {
         return Err(io::Error::new(
@@ -701,22 +704,30 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
         1,
     );
 
-    // Any stock handler that tries to refocus KDE's hidden password box is
-    // redirected to Screenshaver's hidden TextInput. The stock MainBlock stays
-    // instantiated, but it no longer owns keyboard focus.
-    original = original.replace(
-        "mainBlock.mainPasswordBox.forceActiveFocus();",
-        "screenshaverPasswordInput.forceActiveFocus();",
-    );
+    // Hook Screenshaver's failure presentation into KDE's existing,
+    // authoritative authenticator failure handler. This avoids a second
+    // Connections object and guarantees that the red-circle state is driven
+    // by the same signal path that produces KDE's own "Unlocking failed"
+    // behavior.
+    const KDE_REJECT_PASSWORD: &str =
+        "            rejectPasswordAnimation.start();\n";
+    const KDE_REJECT_PASSWORD_WITH_SCREENSHAVER: &str =
+        "            rejectPasswordAnimation.start();\n            screenshaverAuthCircle.beginAuthenticationFailure();\n";
 
-    const MAIN_BLOCK_FOCUS: &str = "                        mainPasswordBox.focus = true;\n";
-    if original.contains(MAIN_BLOCK_FOCUS) {
-        original = original.replacen(
-            MAIN_BLOCK_FOCUS,
-            "                        screenshaverPasswordInput.forceActiveFocus();\n",
-            1,
-        );
+    if !original.contains(KDE_REJECT_PASSWORD) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "Unable to integrate Screenshaver authentication failure feedback into {} because KDE's rejectPasswordAnimation handler was not found",
+                path.display(),
+            ),
+        ));
     }
+    original = original.replacen(
+        KDE_REJECT_PASSWORD,
+        KDE_REJECT_PASSWORD_WITH_SCREENSHAVER,
+        1,
+    );
 
     let wallpaper_start = original
         .find("WallpaperFader {")
@@ -784,18 +795,16 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
         }
     }
 
-    // SCREENSHAVER_AUTH_CIRCLE_DIRECT_PRESENTATION
+    // SCREENSHAVER_AUTH_CIRCLE_KDE_INPUT_PRESENTATION
     //
-    // KDE/KScreenLocker remains authoritative for authentication and session
-    // security. Screenshaver owns only the visible authentication widget and a
-    // hidden TextInput inside the greeter process. The completed password is
-    // submitted directly to KDE's existing authenticator object.
+    // KDE's existing MainBlock password field remains the sole keyboard input
+    // owner and continues to submit passwords through KDE's normal
+    // onPasswordResult -> authenticator.respond() path. Screenshaver observes
+    // only the password length for transient visual feedback.
     Rectangle {
         id: screenshaverAuthCircle
 
-        property int nextSequentialChild: 0
-        property int activeChild: -1
-        property int activeKey: -1
+        property int lastPasswordLength: 0
         property bool authenticationFailed: false
 
         width: 360
@@ -813,9 +822,6 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
         border.color: Qt.rgba(1.0, 0.6470588, 0.0, 1.0)
 
         function resetTransientHighlights() {
-            activeChild = -1
-            activeKey = -1
-
             for (let i = 0; i < childRepeater.count; ++i) {
                 const child = childRepeater.itemAt(i)
                 if (child) {
@@ -825,75 +831,24 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
             }
         }
 
-        function clearPasswordDisplay() {
-            screenshaverPasswordInput.text = ""
-            resetTransientHighlights()
-            nextSequentialChild = 0
-        }
-
-        function revealAuthenticationDisplay() {
-            if (!lockScreenRoot.uiVisible) {
-                lockScreenRoot.uiVisible = true
-            }
-            fadeoutTimer.restart()
-            screenshaverPasswordInput.forceActiveFocus()
-        }
-
-        function dismissAuthenticationDisplay() {
-            clearPasswordDisplay()
-            authenticationFailed = false
-            authenticationFailureTimer.stop()
-            lockScreenRoot.uiVisible = false
-            screenshaverPasswordInput.forceActiveFocus()
-        }
-
-        function acceptPasswordText(text, key) {
-            if (!text || text.length === 0 || authenticationFailed) {
+        function pulseForPasswordLength(length) {
+            if (authenticationFailed || length <= 0 || childRepeater.count <= 0) {
                 return
             }
 
-            screenshaverPasswordInput.text += text
-            activeChild = nextSequentialChild
-            activeKey = key
-            nextSequentialChild = (nextSequentialChild + 1) % childRepeater.count
-
-            const child = childRepeater.itemAt(activeChild)
-            if (child) {
-                child.fadeAnimation.stop()
-                child.highlightAmount = 1.0
-            }
-        }
-
-        function releasePasswordKey(key) {
-            if (authenticationFailed || activeChild < 0 || key !== activeKey) {
+            const index = (length - 1) % childRepeater.count
+            const child = childRepeater.itemAt(index)
+            if (!child) {
                 return
             }
 
-            const child = childRepeater.itemAt(activeChild)
-            if (child) {
-                child.fadeAnimation.restart()
-            }
-
-            activeChild = -1
-            activeKey = -1
-        }
-
-        function removePasswordCharacter() {
-            if (authenticationFailed || screenshaverPasswordInput.text.length === 0) {
-                return
-            }
-
-            screenshaverPasswordInput.text =
-                screenshaverPasswordInput.text.slice(0, -1)
-
-            resetTransientHighlights()
-
-            nextSequentialChild =
-                screenshaverPasswordInput.text.length % childRepeater.count
+            child.fadeAnimation.stop()
+            child.highlightAmount = 1.0
+            child.fadeAnimation.restart()
         }
 
         function beginAuthenticationFailure() {
-            clearPasswordDisplay()
+            resetTransientHighlights()
             authenticationFailed = true
             lockScreenRoot.uiVisible = true
             authenticationFailureTimer.restart()
@@ -958,23 +913,16 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
         }
 
         Connections {
-            target: authenticator
+            target: mainBlock.mainPasswordBox
 
-            function onFailed(kind) {
-                if (kind != 0) {
-                    return
+            function onTextChanged() {
+                const currentLength = mainBlock.mainPasswordBox.text.length
+
+                if (currentLength > screenshaverAuthCircle.lastPasswordLength) {
+                    screenshaverAuthCircle.pulseForPasswordLength(currentLength)
                 }
 
-                screenshaverAuthCircle.beginAuthenticationFailure()
-            }
-
-            function onSucceeded() {
-                screenshaverAuthCircle.authenticationFailed = false
-                authenticationFailureTimer.stop()
-            }
-
-            function onPromptForSecretChanged() {
-                screenshaverPasswordInput.forceActiveFocus()
+                screenshaverAuthCircle.lastPasswordLength = currentLength
             }
         }
 
@@ -985,74 +933,13 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
 
             onTriggered: {
                 screenshaverAuthCircle.authenticationFailed = false
-                screenshaverAuthCircle.clearPasswordDisplay()
-                screenshaverPasswordInput.forceActiveFocus()
+                screenshaverAuthCircle.resetTransientHighlights()
+                screenshaverAuthCircle.lastPasswordLength =
+                    mainBlock.mainPasswordBox.text.length
             }
         }
     }
 
-    // Hidden input keeps password material inside KScreenLocker's process.
-    // It owns key presentation semantics, but KDE's authenticator remains the
-    // only authority that accepts or rejects the submitted password.
-    TextInput {
-        id: screenshaverPasswordInput
-
-        width: 1
-        height: 1
-        opacity: 0.0
-        echoMode: TextInput.Password
-        focus: true
-        z: 11
-
-        Component.onCompleted: {
-            forceActiveFocus()
-        }
-
-        Keys.onPressed: event => {
-            // Consume Escape here so KDE's parent Keys.onEscapePressed handler
-            // cannot perform its stock "turn off the screen" action.
-            if (event.key === Qt.Key_Escape) {
-                screenshaverAuthCircle.dismissAuthenticationDisplay()
-                event.accepted = true
-                return
-            }
-
-            screenshaverAuthCircle.revealAuthenticationDisplay()
-
-            if (screenshaverAuthCircle.authenticationFailed) {
-                event.accepted = true
-                return
-            }
-
-            if (event.key === Qt.Key_Backspace) {
-                screenshaverAuthCircle.removePasswordCharacter()
-                event.accepted = true
-                return
-            }
-
-            if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                if (text.length > 0) {
-                    authenticator.respond(text)
-                }
-                event.accepted = true
-                return
-            }
-
-            if (event.text &&
-                event.text.length > 0 &&
-                event.text.charCodeAt(0) >= 0x20) {
-                screenshaverAuthCircle.acceptPasswordText(
-                    event.text,
-                    event.key
-                )
-                event.accepted = true
-            }
-        }
-
-        Keys.onReleased: event => {
-            screenshaverAuthCircle.releasePasswordKey(event.key)
-        }
-    }
 "#,
     );
     patched.push_str(&original[insertion_offset..]);
