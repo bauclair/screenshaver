@@ -858,10 +858,15 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
                     pulseForLength(length)
                 }
             } else if (passwordLength < previousPasswordLength) {
-                // Backspace, Escape, KDE's rejected-password reset, and other
-                // clears all converge here. Remove any transient animation and
-                // adopt KDE's current length as the new baseline.
-                resetTransientHighlights()
+                // Backspace and other ordinary password shortening must not
+                // disturb the child-circle animation objects. Simply adopt
+                // KDE's new password length as the visual baseline. The next
+                // character entered will pulse the circle corresponding to
+                // that restored position.
+                //
+                // KDE's rejected-password state is handled independently by
+                // authenticationFailed/graceLockTimer and performs its own
+                // explicit visual reset.
             }
 
             previousPasswordLength = passwordLength
