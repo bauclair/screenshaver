@@ -703,6 +703,7 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
 
         property int nextChild: 0
         property int previousPasswordLength: 0
+        property bool authenticationFailed: false
 
         width: 360
         height: width
@@ -717,7 +718,7 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
         visible: opacity > 0.0
         opacity: lockScreenRoot.uiVisible ? 1.0 : 0.0
 
-        color: Qt.rgba(0.02, 0.02, 0.02, 0.96)
+        color: Qt.rgba(0.02, 0.02, 0.02, 1.0)
         border.width: 3
         border.color: Qt.rgba(1.0, 0.6470588, 0.0, 1.0)
 
@@ -763,12 +764,14 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
                 x: (screenshaverAuthCircleWakeTest.width / 2.0) + (Math.cos(angle) * 130.0) - (width / 2.0)
                 y: (screenshaverAuthCircleWakeTest.height / 2.0) + (Math.sin(angle) * 130.0) - (height / 2.0)
 
-                color: Qt.rgba(
-                    0.02 + ((1.0 - 0.02) * highlightAmount),
-                    0.02 + ((0.6470588 - 0.02) * highlightAmount),
-                    0.02,
-                    1.0
-                )
+                color: screenshaverAuthCircleWakeTest.authenticationFailed
+                    ? Qt.rgba(1.0, 0.0, 0.0, 1.0)
+                    : Qt.rgba(
+                        0.02 + ((1.0 - 0.02) * highlightAmount),
+                        0.02 + ((0.6470588 - 0.02) * highlightAmount),
+                        0.02,
+                        1.0
+                    )
 
                 border.width: 1
                 border.color: Qt.rgba(1.0, 0.6470588, 0.0, 0.35)
@@ -788,6 +791,46 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
                     duration: 300
                     easing.type: Easing.Linear
                 }
+            }
+        }
+
+        // SCREENSHAVER_AUTH_CIRCLE_FAILURE_FEEDBACK_TEST
+        //
+        // Observe KDE's authentication result only. KDE remains responsible
+        // for PAM/authenticator state and retry behavior.
+        Connections {
+            target: authenticator
+
+            function onFailed(kind) {
+                // KDE uses kind 0 for the interactive password authenticator.
+                // Ignore failures from noninteractive authenticators.
+                if (kind !== 0) {
+                    return
+                }
+
+                screenshaverAuthCircleWakeTest.resetPasswordFeedback()
+                screenshaverAuthCircleWakeTest.authenticationFailed = true
+                authenticationFailureTimer.restart()
+            }
+
+            function onSucceeded() {
+                screenshaverAuthCircleWakeTest.authenticationFailed = false
+                authenticationFailureTimer.stop()
+            }
+        }
+
+        Timer {
+            id: authenticationFailureTimer
+            interval: 2000
+            repeat: false
+
+            onTriggered: {
+                screenshaverAuthCircleWakeTest.authenticationFailed = false
+                screenshaverAuthCircleWakeTest.resetPasswordFeedback()
+                screenshaverAuthCircleWakeTest.previousPasswordLength =
+                    mainBlock.mainPasswordBox.text.length
+                screenshaverAuthCircleWakeTest.nextChild =
+                    mainBlock.mainPasswordBox.text.length % childRepeater.count
             }
         }
 
