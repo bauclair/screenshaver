@@ -667,7 +667,7 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
     const MAIN_BLOCK_DECLARATION: &str =
         "            initialItem: MainBlock {\n                id: mainBlock\n";
     const MAIN_BLOCK_REPLACEMENT: &str =
-        "            initialItem: MainBlock {\n                id: mainBlock\n                opacity: 0.0\n";
+        "            initialItem: MainBlock {\n                id: mainBlock\n";
 
     if !original.contains(MAIN_BLOCK_DECLARATION) {
         return Err(io::Error::new(
@@ -683,6 +683,29 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
         MAIN_BLOCK_REPLACEMENT,
         1,
     );
+
+    for (stock_visibility, label) in [
+        ("                        visible: sessionManagement.canSuspend\n", "Suspend"),
+        ("                        visible: sessionManagement.canHibernate\n", "Hibernate"),
+        ("                        visible: sessionManagement.canSwitchUser\n", "Switch User"),
+    ] {
+        if !original.contains(stock_visibility) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "Unable to suppress KDE {} action in {} because the expected visibility expression was not found",
+                    label,
+                    path.display(),
+                ),
+            ));
+        }
+
+        original = original.replacen(
+            stock_visibility,
+            "                        visible: false\n",
+            1,
+        );
+    }
 
     const FOOTER_DECLARATION: &str =
         "        RowLayout {\n            id: footer\n";
@@ -701,31 +724,6 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
     original = original.replacen(
         FOOTER_DECLARATION,
         FOOTER_REPLACEMENT,
-        1,
-    );
-
-    // Hook Screenshaver's failure presentation into KDE's existing,
-    // authoritative authenticator failure handler. This avoids a second
-    // Connections object and guarantees that the red-circle state is driven
-    // by the same signal path that produces KDE's own "Unlocking failed"
-    // behavior.
-    const KDE_REJECT_PASSWORD: &str =
-        "            rejectPasswordAnimation.start();\n";
-    const KDE_REJECT_PASSWORD_WITH_SCREENSHAVER: &str =
-        "            rejectPasswordAnimation.start();\n            screenshaverAuthCircle.beginAuthenticationFailure();\n";
-
-    if !original.contains(KDE_REJECT_PASSWORD) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!(
-                "Unable to integrate Screenshaver authentication failure feedback into {} because KDE's rejectPasswordAnimation handler was not found",
-                path.display(),
-            ),
-        ));
-    }
-    original = original.replacen(
-        KDE_REJECT_PASSWORD,
-        KDE_REJECT_PASSWORD_WITH_SCREENSHAVER,
         1,
     );
 
@@ -795,17 +793,23 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
         }
     }
 
-    // SCREENSHAVER_AUTH_CIRCLE_KDE_INPUT_PRESENTATION
+    // SCREENSHAVER_AUTH_CIRCLE_KDE_STATE_PRESENTATION
     //
-    // KDE's existing MainBlock password field remains the sole keyboard input
-    // owner and continues to submit passwords through KDE's normal
-    // onPasswordResult -> authenticator.respond() path. Screenshaver observes
-    // only the password length for transient visual feedback.
+    // KDE's MainBlock remains the sole keyboard/password owner. Screenshaver
+    // derives presentation state only from KDE-owned properties:
+    //
+    //   mainBlock.mainPasswordBox.text.length -> orange keypress feedback
+    //   graceLockTimer.running                -> rejected-password red state
+    //
+    // No duplicate authenticator listener or second password input is used.
     Rectangle {
         id: screenshaverAuthCircle
 
-        property int lastPasswordLength: 0
-        property bool authenticationFailed: false
+        property int previousPasswordLength: 0
+        readonly property int passwordLength:
+            mainBlock.mainPasswordBox.text.length
+        readonly property bool authenticationFailed:
+            graceLockTimer.running
 
         width: 360
         height: width
@@ -831,27 +835,44 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
             }
         }
 
-        function pulseForPasswordLength(length) {
+        function pulseForLength(length) {
             if (authenticationFailed || length <= 0 || childRepeater.count <= 0) {
                 return
             }
 
             const index = (length - 1) % childRepeater.count
             const child = childRepeater.itemAt(index)
-            if (!child) {
-                return
+            if (child) {
+                child.pulse()
             }
-
-            child.fadeAnimation.stop()
-            child.highlightAmount = 1.0
-            child.fadeAnimation.restart()
         }
 
-        function beginAuthenticationFailure() {
-            resetTransientHighlights()
-            authenticationFailed = true
-            lockScreenRoot.uiVisible = true
-            authenticationFailureTimer.restart()
+        onPasswordLengthChanged: {
+            if (passwordLength > previousPasswordLength) {
+                // Normally one character is added per signal. If an input
+                // method adds more than one at once, pulse once for each new
+                // position so visual state still reflects the password length.
+                for (let length = previousPasswordLength + 1;
+                     length <= passwordLength;
+                     ++length) {
+                    pulseForLength(length)
+                }
+            } else if (passwordLength < previousPasswordLength) {
+                // Backspace, Escape, KDE's rejected-password reset, and other
+                // clears all converge here. Remove any transient animation and
+                // adopt KDE's current length as the new baseline.
+                resetTransientHighlights()
+            }
+
+            previousPasswordLength = passwordLength
+        }
+
+        onAuthenticationFailedChanged: {
+            if (authenticationFailed) {
+                resetTransientHighlights()
+            } else {
+                previousPasswordLength = passwordLength
+            }
         }
 
         Behavior on opacity {
@@ -900,6 +921,12 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
                     ? Qt.rgba(1.0, 0.0, 0.0, 1.0)
                     : Qt.rgba(1.0, 0.6470588, 0.0, 0.35)
 
+                function pulse() {
+                    fadeAnimation.stop()
+                    highlightAmount = 1.0
+                    fadeAnimation.restart()
+                }
+
                 NumberAnimation {
                     id: fadeAnimation
                     target: childCircle
@@ -909,33 +936,6 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
                     duration: 300
                     easing.type: Easing.Linear
                 }
-            }
-        }
-
-        Connections {
-            target: mainBlock.mainPasswordBox
-
-            function onTextChanged() {
-                const currentLength = mainBlock.mainPasswordBox.text.length
-
-                if (currentLength > screenshaverAuthCircle.lastPasswordLength) {
-                    screenshaverAuthCircle.pulseForPasswordLength(currentLength)
-                }
-
-                screenshaverAuthCircle.lastPasswordLength = currentLength
-            }
-        }
-
-        Timer {
-            id: authenticationFailureTimer
-            interval: 2000
-            repeat: false
-
-            onTriggered: {
-                screenshaverAuthCircle.authenticationFailed = false
-                screenshaverAuthCircle.resetTransientHighlights()
-                screenshaverAuthCircle.lastPasswordLength =
-                    mainBlock.mainPasswordBox.text.length
             }
         }
     }
