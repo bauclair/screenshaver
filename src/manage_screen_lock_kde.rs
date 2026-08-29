@@ -722,6 +722,33 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
         border.width: 3
         border.color: Qt.rgba(1.0, 0.6470588, 0.0, 1.0)
 
+        // SCREENSHAVER_HIDE_KDE_AUTH_PRESENTATION
+        //
+        // Keep KDE's authentication objects alive, visible in the QML object
+        // tree, enabled, and focusable. Only their pixels are suppressed.
+        // mainPasswordBox therefore continues to receive keyboard input and
+        // MainBlock continues to submit passwords to KDE's authenticator.
+        Binding {
+            target: mainBlock
+            property: "opacity"
+            value: 0.0
+        }
+
+        // KDE's date/time Clock is independent of MainBlock.
+        Binding {
+            target: clock
+            property: "opacity"
+            value: 0.0
+        }
+
+        // Prevent the clock shadow from remaining visible after the Clock
+        // itself has been made transparent.
+        Binding {
+            target: clockShadow
+            property: "opacity"
+            value: 0.0
+        }
+
         function resetPasswordFeedback() {
             nextChild = 0
             for (let i = 0; i < childRepeater.count; ++i) {
@@ -804,7 +831,7 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
             function onFailed(kind) {
                 // KDE uses kind 0 for the interactive password authenticator.
                 // Ignore failures from noninteractive authenticators.
-                if (kind !== 0) {
+                if (kind != 0) {
                     return
                 }
 
