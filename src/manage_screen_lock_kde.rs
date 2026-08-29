@@ -727,6 +727,75 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
         1,
     );
 
+    // Prevent KDE's MainBlock from painting for one frame before WallpaperFader
+    // applies its normal lock-screen transition state. Starting mainStack at
+    // opacity 0 preserves KDE's existing fade-in behavior while eliminating
+    // the username/password flash underneath Screenshaver's auth circle.
+    const MAIN_STACK_DECLARATION: &str =
+        "        StackView {\n            id: mainStack\n";
+    const MAIN_STACK_REPLACEMENT: &str =
+        "        StackView {\n            id: mainStack\n            opacity: 0.0\n";
+
+    if !original.contains(MAIN_STACK_DECLARATION) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "Unable to initialize KDE mainStack opacity in {} because the expected StackView declaration was not found",
+                path.display(),
+            ),
+        ));
+    }
+    original = original.replacen(
+        MAIN_STACK_DECLARATION,
+        MAIN_STACK_REPLACEMENT,
+        1,
+    );
+
+    // KDE's stock Escape handler is designed to cooperate with
+    // kscreenlocker_greet's screen-off behavior. Screenshaver instead wants
+    // Escape to dismiss only the authentication presentation while shader
+    // rendering continues. Consume the event explicitly so it does not
+    // propagate to the greeter's screen-off path.
+    const KDE_ESCAPE_HANDLER: &str = r#"        Keys.onEscapePressed: {
+            // If the escape key is pressed, kscreenlocker will turn off the screen.
+            // We do not want to show the password prompt in this case.
+            if (uiVisible) {
+                uiVisible = false;
+                if (inputPanel.keyboardActive) {
+                    inputPanel.showHide();
+                }
+                root.clearPassword();
+            }
+        }
+"#;
+
+    const SCREENSHAVER_ESCAPE_HANDLER: &str = r#"        Keys.onEscapePressed: event => {
+            if (uiVisible) {
+                uiVisible = false;
+                if (inputPanel.keyboardActive) {
+                    inputPanel.showHide();
+                }
+                root.clearPassword();
+            }
+            event.accepted = true;
+        }
+"#;
+
+    if !original.contains(KDE_ESCAPE_HANDLER) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "Unable to replace KDE Escape handling in {} because the expected handler was not found",
+                path.display(),
+            ),
+        ));
+    }
+    original = original.replacen(
+        KDE_ESCAPE_HANDLER,
+        SCREENSHAVER_ESCAPE_HANDLER,
+        1,
+    );
+
     let wallpaper_start = original
         .find("WallpaperFader {")
         .ok_or_else(|| {
