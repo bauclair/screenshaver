@@ -37,6 +37,8 @@ const NATIVE_IMPORT_LINE: &str =
     "import \"ScreenshaverNativeGL\" as ScreenshaverNativeGL";
 const QML_INTEGRATION_MARKER: &str =
     "// SCREENSHAVER_NATIVE_GL_INTEGRATION";
+const RUNTIME_ACTIVE_MARKER_FILENAME: &str =
+    "screenshaver-kde-lock-active";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KdeIntegrationPaths {
@@ -59,11 +61,12 @@ pub struct KdeIntegrationStatus {
     pub previous_shell_package: Option<String>,
 }
 
-/// Lifetime-owned inhibition of KDE's own idle-triggered screen locking.
+/// Lifetime-owned inhibition of KDE's native idle screen management.
 ///
-/// While this object exists, KDE's native idle timer is suppressed.
-/// Screenshaver can still explicitly request KScreenLocker at its own
-/// configured idle threshold.
+/// While this object exists, KDE's ordinary idle screensaver/lock authority is
+/// suppressed so it cannot race Screenshaver's own idle renderer. Manual KDE
+/// locking remains available, and Screenshaver can still explicitly request
+/// KScreenLocker at its configured idle threshold when locking is enabled.
 ///
 /// The session D-Bus connection is intentionally retained for the full
 /// lifetime of this object. If Screenshaver terminates abnormally, the
@@ -136,6 +139,113 @@ impl Drop for KdeIdleLockInhibitor {
                     "UnInhibit",
                     &(self.cookie,),
                 );
+    }
+}
+
+/// Lifetime guard for Screenshaver's persistent KDE lock-screen overlay.
+///
+/// The runtime marker is written only while the resident Screenshaver process
+/// owns KDE lock-screen integration. The native QML plugin validates the PID
+/// in this marker before enabling GL rendering, auth-circle presentation,
+/// Escape interception, or the locked-screen idle heartbeat.
+///
+/// Normal destruction removes the marker first, then removes only a
+/// Screenshaver-owned overlay. If the process dies abnormally, the stale
+/// marker's PID is no longer live, so the native plugin immediately falls back
+/// to stock KDE behavior. The next successful Screenshaver startup removes the
+/// stale owned overlay before installing a fresh one.
+pub struct KdeLockIntegrationGuard {
+    active: bool,
+}
+
+impl KdeLockIntegrationGuard {
+    pub fn activate(
+        config: &LockScreenWidgetConfig,
+    ) -> io::Result<(Self, KdeIntegrationStatus)> {
+        // Remove any Screenshaver-owned overlay left by an abnormal previous
+        // termination before creating the integration for this process.
+        let _ = restore()?;
+
+        write_runtime_active_marker()?;
+
+        match install(config) {
+            Ok(status) => Ok((Self { active: true }, status)),
+            Err(error) => {
+                let _ = remove_runtime_active_marker();
+                Err(error)
+            }
+        }
+    }
+
+    pub fn deactivate(&mut self) -> io::Result<KdeIntegrationStatus> {
+        if !self.active {
+            return status();
+        }
+
+        // Disable the native/QML behavior before removing the overlay. A
+        // greeter that is already alive will observe runtimeActive=false and
+        // revert to KDE presentation even before filesystem cleanup completes.
+        remove_runtime_active_marker()?;
+        let status = restore()?;
+        self.active = false;
+        Ok(status)
+    }
+}
+
+impl Drop for KdeLockIntegrationGuard {
+    fn drop(&mut self) {
+        if self.active {
+            let _ = remove_runtime_active_marker();
+            let _ = restore();
+            self.active = false;
+        }
+    }
+}
+
+pub fn restore_stale_runtime_state() -> io::Result<KdeIntegrationStatus> {
+    let _ = remove_runtime_active_marker();
+    restore()
+}
+
+fn runtime_active_marker_path() -> io::Result<PathBuf> {
+    let runtime_dir = env::var_os("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                "Unable to manage KDE runtime state because XDG_RUNTIME_DIR is not defined",
+            )
+        })?;
+
+    Ok(runtime_dir.join(RUNTIME_ACTIVE_MARKER_FILENAME))
+}
+
+fn write_runtime_active_marker() -> io::Result<()> {
+    let marker_path = runtime_active_marker_path()?;
+    let temporary_path = marker_path.with_extension(format!(
+        "tmp-{}",
+        std::process::id(),
+    ));
+
+    fs::write(
+        &temporary_path,
+        format!("{}\n", std::process::id()),
+    )?;
+
+    if marker_path.exists() {
+        fs::remove_file(&marker_path)?;
+    }
+
+    fs::rename(temporary_path, marker_path)
+}
+
+fn remove_runtime_active_marker() -> io::Result<()> {
+    let marker_path = runtime_active_marker_path()?;
+
+    match fs::remove_file(marker_path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
     }
 }
 
@@ -643,7 +753,7 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
     }
     original = original.replacen(
         CLOCK_VISIBILITY,
-        "            visible: false\n",
+        "            visible: screenshaverNativeGl.runtimeActive ? false : (y > 0 && config.alwaysShowClock)\n",
         1,
     );
 
@@ -660,7 +770,7 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
     }
     original = original.replacen(
         CLOCK_SHADOW_VISIBILITY,
-        "            visible: false\n",
+        "            visible: screenshaverNativeGl.runtimeActive ? false : (!lockScreenUi.softwareRendering && config.alwaysShowClock)\n",
         1,
     );
 
@@ -700,9 +810,19 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
             ));
         }
 
+        let stock_expression = stock_visibility
+            .trim_start()
+            .trim_start_matches("visible: ")
+            .trim();
+
+        let replacement = format!(
+            "                        visible: screenshaverNativeGl.runtimeActive ? false : ({})\n",
+            stock_expression,
+        );
+
         original = original.replacen(
             stock_visibility,
-            "                        visible: false\n",
+            &replacement,
             1,
         );
     }
@@ -710,7 +830,7 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
     const FOOTER_DECLARATION: &str =
         "        RowLayout {\n            id: footer\n";
     const FOOTER_REPLACEMENT: &str =
-        "        RowLayout {\n            id: footer\n            visible: false\n";
+        "        RowLayout {\n            id: footer\n            visible: !screenshaverNativeGl.runtimeActive\n";
 
     if !original.contains(FOOTER_DECLARATION) {
         return Err(io::Error::new(
@@ -734,7 +854,7 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
     const MAIN_STACK_DECLARATION: &str =
         "        StackView {\n            id: mainStack\n";
     const MAIN_STACK_REPLACEMENT: &str =
-        "        StackView {\n            id: mainStack\n            opacity: 0.0\n";
+        "        StackView {\n            id: mainStack\n            opacity: screenshaverNativeGl.runtimeActive ? 0.0 : 1.0\n";
 
     if !original.contains(MAIN_STACK_DECLARATION) {
         return Err(io::Error::new(
@@ -769,9 +889,19 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
         }
 "#;
 
-    // Remove KDE's specialized Escape handler. Escape is handled in the
-    // general Keys.onPressed block below so only one QML path changes
-    // uiVisible for each physical key press.
+    const SCREENSHAVER_ESCAPE_HANDLER: &str = r#"        Keys.onEscapePressed: {
+            // Preserve KDE's stock Escape behavior whenever a live
+            // Screenshaver process does not own this lock-screen session.
+            if (!screenshaverNativeGl.runtimeActive && uiVisible) {
+                uiVisible = false;
+                if (inputPanel.keyboardActive) {
+                    inputPanel.showHide();
+                }
+                root.clearPassword();
+            }
+        }
+"#;
+
     if !original.contains(KDE_ESCAPE_HANDLER) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
@@ -783,7 +913,7 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
     }
     original = original.replacen(
         KDE_ESCAPE_HANDLER,
-        "",
+        SCREENSHAVER_ESCAPE_HANDLER,
         1,
     );
 
@@ -794,7 +924,7 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
 "#;
 
     const SCREENSHAVER_KEYS_ON_PRESSED: &str = r#"        Keys.onPressed: event => {
-            if (event.key === Qt.Key_Escape) {
+            if (screenshaverNativeGl.runtimeActive && event.key === Qt.Key_Escape) {
                 uiVisible = !uiVisible;
                 if (!uiVisible) {
                     if (inputPanel.keyboardActive) {
@@ -883,6 +1013,7 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
     ScreenshaverNativeGL.NativeOpenGLUnderlay {
         id: screenshaverNativeGl
         anchors.fill: parent
+        visible: runtimeActive
 
         NumberAnimation on time {
             from: 0.0
@@ -918,8 +1049,8 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
 
         z: 10
 
-        visible: opacity > 0.0
-        opacity: lockScreenRoot.uiVisible ? 1.0 : 0.0
+        visible: screenshaverNativeGl.runtimeActive && opacity > 0.0
+        opacity: screenshaverNativeGl.runtimeActive && lockScreenRoot.uiVisible ? 1.0 : 0.0
 
         color: Qt.rgba(0.02, 0.02, 0.02, 1.0)
         border.width: 3

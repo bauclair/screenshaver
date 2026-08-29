@@ -556,94 +556,6 @@ fn main() {
     );
 
 
-    if desktop_environment.is_kde_plasma() {
-
-        let kde_integration_result =
-            if cfg.screen_lock_enabled {
-
-                let lock_widget_config =
-                    crate::define_lock_screen_widget::LockScreenWidgetConfig::default();
-
-
-                crate::manage_screen_lock_kde::install(
-                    &lock_widget_config
-                )
-            } else {
-
-                crate::manage_screen_lock_kde::restore()
-            };
-
-
-        match kde_integration_result {
-
-            Ok(status) => {
-
-                if cfg.screen_lock_enabled {
-
-                    println!(
-                        "[LOCK] KDE Plasma lock-screen integration enabled."
-                    );
-
-
-                    crate::logger::information(
-                        &logfile,
-                        "[LOCK] KDE Plasma lock-screen integration enabled",
-                    );
-
-                } else {
-
-                    println!(
-                        "[LOCK] KDE Plasma lock-screen integration restored to previous shell selection."
-                    );
-
-
-                    crate::logger::information(
-                        &logfile,
-                        "[LOCK] KDE Plasma lock-screen integration restored because screen locking is disabled",
-                    );
-                }
-
-
-                crate::logger::information(
-                    &logfile,
-                    &format!(
-                        "[LOCK] KDE integration status: package_installed={} qml_installed={} screenshaver_selected={} active_shell={} previous_shell={}",
-                        status.shell_package_installed,
-                        status.lockscreen_qml_installed,
-                        status.screenshaver_selected,
-                        status
-                            .active_shell_package
-                            .as_deref()
-                            .unwrap_or("<none>"),
-                        status
-                            .previous_shell_package
-                            .as_deref()
-                            .unwrap_or("<none>"),
-                    ),
-                );
-            }
-
-
-            Err(error) => {
-
-                eprintln!(
-                    "[LOCK] KDE Plasma lock-screen integration error: {}",
-                    error
-                );
-
-
-                crate::logger::error(
-                    &logfile,
-                    &format!(
-                        "[LOCK] KDE Plasma lock-screen integration error: {}",
-                        error,
-                    ),
-                );
-            }
-        }
-    }
-
-
     crate::logger::information(
         &logfile,
         "[MAIN] Screenshaver runtime started",
@@ -880,9 +792,87 @@ fn main() {
         };
 
 
+    // KDE lock-screen integration is runtime-owned. Do not touch KScreenLocker
+    // until the resident Screenshaver singleton has been acquired; this keeps
+    // --control and duplicate invocations from changing the active desktop.
+    //
+    // If locking is disabled, remove only stale Screenshaver-owned state left
+    // by an abnormal previous termination. If locking is enabled, install a
+    // fresh overlay and retain a guard that restores KDE on normal shutdown.
+    let mut kde_lock_integration = None;
+
+    if desktop_environment.is_kde_plasma() {
+        if cfg.screen_lock_enabled {
+            let lock_widget_config =
+                crate::define_lock_screen_widget::LockScreenWidgetConfig::default();
+
+            match crate::manage_screen_lock_kde::KdeLockIntegrationGuard::activate(
+                &lock_widget_config
+            ) {
+                Ok((guard, status)) => {
+                    println!(
+                        "[LOCK] KDE Plasma lock-screen integration enabled for this Screenshaver runtime."
+                    );
+
+                    crate::logger::information(
+                        &logfile,
+                        &format!(
+                            "[LOCK] KDE runtime lock-screen integration enabled: package_installed={} qml_installed={} screenshaver_selected={}",
+                            status.shell_package_installed,
+                            status.lockscreen_qml_installed,
+                            status.screenshaver_selected,
+                        ),
+                    );
+
+                    kde_lock_integration = Some(guard);
+                }
+
+                Err(error) => {
+                    eprintln!(
+                        "[LOCK] Unable to establish KDE Plasma lock-screen integration: {}",
+                        error
+                    );
+
+                    crate::logger::error(
+                        &logfile,
+                        &format!(
+                            "[LOCK] Unable to establish KDE Plasma lock-screen integration: {}",
+                            error,
+                        ),
+                    );
+
+                    drop(database_connection);
+                    return;
+                }
+            }
+        } else {
+            match crate::manage_screen_lock_kde::restore_stale_runtime_state() {
+                Ok(_) => {
+                    crate::logger::information(
+                        &logfile,
+                        "[LOCK] Screenshaver locking disabled; KDE lock-screen integration left inactive",
+                    );
+                }
+
+                Err(error) => {
+                    // A foreign same-ID user overlay is never Screenshaver's
+                    // property to remove. Report it, but do not alter it or
+                    // prevent ordinary non-locking Screenshaver operation.
+                    crate::logger::warning(
+                        &logfile,
+                        &format!(
+                            "[LOCK] Unable to remove stale Screenshaver KDE state; KDE was not modified: {}",
+                            error,
+                        ),
+                    );
+                }
+            }
+        }
+    }
+
     let _kde_idle_lock_inhibitor =
         if desktop_environment.is_kde_plasma()
-            && cfg.screen_lock_enabled
+            && (cfg.screensaver_enabled || cfg.screen_lock_enabled)
         {
 
             match crate::manage_screen_lock_kde::KdeIdleLockInhibitor::acquire() {
@@ -890,14 +880,14 @@ fn main() {
                 Ok(inhibitor) => {
 
                     println!(
-                        "[LOCK] KDE native idle locking inhibited while Screenshaver is running."
+                        "[SESSION] KDE native idle screen management inhibited while Screenshaver is running."
                     );
 
 
                     crate::logger::information(
                         &logfile,
                         &format!(
-                            "[LOCK] KDE native idle locking inhibited; cookie={}",
+                            "[SESSION] KDE native idle screen management inhibited; cookie={}",
                             inhibitor.cookie(),
                         ),
                     );
@@ -912,7 +902,7 @@ fn main() {
                 Err(error) => {
 
                     eprintln!(
-                        "[LOCK] Unable to inhibit KDE native idle locking: {}",
+                        "[SESSION] Unable to inhibit KDE native idle screen management: {}",
                         error
                     );
 
@@ -920,7 +910,7 @@ fn main() {
                     crate::logger::error(
                         &logfile,
                         &format!(
-                            "[LOCK] Unable to inhibit KDE native idle locking: {}",
+                            "[SESSION] Unable to inhibit KDE native idle screen management: {}",
                             error,
                         ),
                     );
@@ -928,7 +918,7 @@ fn main() {
 
                     crate::logger::error(
                         &logfile,
-                        "[LOCK] Refusing to continue with KDE screen locking enabled because two independent idle-lock authorities would remain active",
+                        "[SESSION] Refusing to continue because KDE idle screen management could interrupt Screenshaver rendering",
                     );
 
 
@@ -2004,6 +1994,28 @@ fn main() {
 
 
     wallpaper_manager.stop_and_join();
+
+
+    if let Some(mut integration) = kde_lock_integration.take() {
+        match integration.deactivate() {
+            Ok(_) => {
+                crate::logger::information(
+                    &logfile,
+                    "[LOCK] KDE Plasma lock-screen integration restored on Screenshaver shutdown",
+                );
+            }
+
+            Err(error) => {
+                crate::logger::error(
+                    &logfile,
+                    &format!(
+                        "[LOCK] Unable to restore KDE Plasma lock-screen integration during shutdown: {}",
+                        error,
+                    ),
+                );
+            }
+        }
+    }
 
 
     println!(
