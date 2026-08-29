@@ -17,6 +17,8 @@ signals:
     void timeChanged();
 
 protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
+
     QSGNode *updatePaintNode(QSGNode *oldNode,
                              UpdatePaintNodeData *data) override;
 

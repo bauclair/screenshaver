@@ -751,11 +751,11 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
         1,
     );
 
-    // KDE's stock Escape handler is designed to cooperate with
-    // kscreenlocker_greet's screen-off behavior. Screenshaver instead wants
-    // Escape to dismiss only the authentication presentation while shader
-    // rendering continues. Consume the event explicitly so it does not
-    // propagate to the greeter's screen-off path.
+    // KDE normally handles Escape twice: QML hides the authentication UI on
+    // KeyPress, then kscreenlocker_greet turns DPMS off on KeyRelease. The
+    // native Screenshaver QML plugin consumes that KeyRelease before KDE's
+    // application event filter sees it. Here, make KeyPress a pure
+    // Screenshaver authentication-presentation toggle.
     const KDE_ESCAPE_HANDLER: &str = r#"        Keys.onEscapePressed: {
             // If the escape key is pressed, kscreenlocker will turn off the screen.
             // We do not want to show the password prompt in this case.
@@ -769,18 +769,9 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
         }
 "#;
 
-    const SCREENSHAVER_ESCAPE_HANDLER: &str = r#"        Keys.onEscapePressed: event => {
-            if (uiVisible) {
-                uiVisible = false;
-                if (inputPanel.keyboardActive) {
-                    inputPanel.showHide();
-                }
-                root.clearPassword();
-            }
-            event.accepted = true;
-        }
-"#;
-
+    // Remove KDE's specialized Escape handler. Escape is handled in the
+    // general Keys.onPressed block below so only one QML path changes
+    // uiVisible for each physical key press.
     if !original.contains(KDE_ESCAPE_HANDLER) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
@@ -792,7 +783,47 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
     }
     original = original.replacen(
         KDE_ESCAPE_HANDLER,
-        SCREENSHAVER_ESCAPE_HANDLER,
+        "",
+        1,
+    );
+
+    const KDE_KEYS_ON_PRESSED: &str = r#"        Keys.onPressed: event => {
+            uiVisible = true;
+            event.accepted = false;
+        }
+"#;
+
+    const SCREENSHAVER_KEYS_ON_PRESSED: &str = r#"        Keys.onPressed: event => {
+            if (event.key === Qt.Key_Escape) {
+                uiVisible = !uiVisible;
+                if (!uiVisible) {
+                    if (inputPanel.keyboardActive) {
+                        inputPanel.showHide();
+                    }
+                    root.clearPassword();
+                } else {
+                    mainBlock.mainPasswordBox.forceActiveFocus();
+                }
+                event.accepted = true;
+            } else {
+                uiVisible = true;
+                event.accepted = false;
+            }
+        }
+"#;
+
+    if !original.contains(KDE_KEYS_ON_PRESSED) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "Unable to install Screenshaver Escape toggle in {} because KDE's Keys.onPressed handler was not found",
+                path.display(),
+            ),
+        ));
+    }
+    original = original.replacen(
+        KDE_KEYS_ON_PRESSED,
+        SCREENSHAVER_KEYS_ON_PRESSED,
         1,
     );
 
