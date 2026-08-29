@@ -692,28 +692,122 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
     }
 
     // SCREENSHAVER_AUTH_CIRCLE_WAKE_TEST
+    // SCREENSHAVER_AUTH_CIRCLE_PASSWORD_FEEDBACK_TEST
     //
-    // First production authentication-presentation milestone:
-    // follow KDE's own uiVisible lifecycle without changing its password
-    // field, focus handling, authentication, timers, or input processing.
+    // Screenshaver owns only the presentation. KDE's existing MainBlock and
+    // mainPasswordBox continue to own keyboard focus, password material, and
+    // authentication. This item merely observes password-length changes so a
+    // keystroke can pulse one of the twelve child circles.
     Rectangle {
         id: screenshaverAuthCircleWakeTest
 
-        width: 260
+        property int nextChild: 0
+        property int previousPasswordLength: 0
+
+        width: 360
         height: width
         radius: width / 2
         anchors.centerIn: parent
 
+        // KDE's MainBlock, virtual keyboard, and OSD are later siblings in
+        // LockScreenUi.qml. Keep the Screenshaver presentation above those
+        // visual controls without accepting or redirecting input.
+        z: 10
+
         visible: opacity > 0.0
         opacity: lockScreenRoot.uiVisible ? 1.0 : 0.0
 
-        color: Qt.rgba(0.02, 0.02, 0.02, 0.82)
+        color: Qt.rgba(0.02, 0.02, 0.02, 0.96)
         border.width: 3
         border.color: Qt.rgba(1.0, 0.6470588, 0.0, 1.0)
+
+        function resetPasswordFeedback() {
+            nextChild = 0
+            for (let i = 0; i < childRepeater.count; ++i) {
+                const child = childRepeater.itemAt(i)
+                if (child) {
+                    child.fadeAnimation.stop()
+                    child.highlightAmount = 0.0
+                }
+            }
+        }
+
+        function pulseNextChild() {
+            const child = childRepeater.itemAt(nextChild)
+            if (child) {
+                child.pulse()
+            }
+            nextChild = (nextChild + 1) % childRepeater.count
+        }
 
         Behavior on opacity {
             NumberAnimation {
                 duration: 250
+            }
+        }
+
+        Repeater {
+            id: childRepeater
+            model: 12
+
+            Rectangle {
+                id: childCircle
+                required property int index
+                readonly property real angle: (-Math.PI / 2.0) + (index * ((Math.PI * 2.0) / 12.0))
+                property real highlightAmount: 0.0
+
+                width: 48
+                height: width
+                radius: width / 2
+
+                x: (screenshaverAuthCircleWakeTest.width / 2.0) + (Math.cos(angle) * 130.0) - (width / 2.0)
+                y: (screenshaverAuthCircleWakeTest.height / 2.0) + (Math.sin(angle) * 130.0) - (height / 2.0)
+
+                color: Qt.rgba(
+                    0.02 + ((1.0 - 0.02) * highlightAmount),
+                    0.02 + ((0.6470588 - 0.02) * highlightAmount),
+                    0.02,
+                    1.0
+                )
+
+                border.width: 1
+                border.color: Qt.rgba(1.0, 0.6470588, 0.0, 0.35)
+
+                function pulse() {
+                    fadeAnimation.stop()
+                    highlightAmount = 1.0
+                    fadeAnimation.restart()
+                }
+
+                NumberAnimation {
+                    id: fadeAnimation
+                    target: childCircle
+                    property: "highlightAmount"
+                    from: 1.0
+                    to: 0.0
+                    duration: 300
+                    easing.type: Easing.Linear
+                }
+            }
+        }
+
+        Connections {
+            target: mainBlock.mainPasswordBox
+
+            function onTextChanged() {
+                const currentLength = mainBlock.mainPasswordBox.text.length
+
+                if (currentLength > screenshaverAuthCircleWakeTest.previousPasswordLength) {
+                    const added = currentLength - screenshaverAuthCircleWakeTest.previousPasswordLength
+                    for (let i = 0; i < added; ++i) {
+                        screenshaverAuthCircleWakeTest.pulseNextChild()
+                    }
+                } else if (currentLength < screenshaverAuthCircleWakeTest.previousPasswordLength) {
+                    screenshaverAuthCircleWakeTest.resetPasswordFeedback()
+                    screenshaverAuthCircleWakeTest.nextChild = currentLength % childRepeater.count
+                }
+
+                screenshaverAuthCircleWakeTest.previousPasswordLength = currentLength
             }
         }
     }
