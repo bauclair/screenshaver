@@ -74,7 +74,7 @@ bool NativeOpenGLUnderlay::eventFilter(QObject *watched, QEvent *event)
     if (event && event->type() == QEvent::KeyRelease) {
         auto *keyEvent = static_cast<QKeyEvent *>(event);
 
-        if (m_runtimeActive && keyEvent->key() == Qt::Key_Escape) {
+        if (keyEvent->key() == Qt::Key_Escape) {
             event->accept();
             return true;
         }
