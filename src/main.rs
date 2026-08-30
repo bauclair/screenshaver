@@ -21,6 +21,7 @@ mod analyze_audio;
 mod manage_configuration;
 mod manage_shader;
 mod manage_screen_lock;
+mod manage_screen_lock_gnome;
 mod lock_screen_widget;
 mod define_lock_screen_widget;
 mod construct_lock_screen_kde;
@@ -1711,6 +1712,21 @@ fn main() {
 
 
                                 crate::manage_screen_lock_kde::run(
+                                    &logfile,
+                                    running.as_ref(),
+                                    &wallpaper_control,
+                                )
+
+                            } else if desktop_environment
+                                .is_gnome()
+                            {
+
+                                drop(
+                                    shader_manager
+                                );
+
+
+                                crate::manage_screen_lock_gnome::run(
                                     &logfile,
                                     running.as_ref(),
                                     &wallpaper_control,

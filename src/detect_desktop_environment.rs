@@ -53,6 +53,12 @@ impl DesktopEnvironment {
     ) -> bool {
         self == Self::KdePlasma
     }
+
+    pub fn is_gnome(
+        self,
+    ) -> bool {
+        self == Self::Gnome
+    }
 }
 
 /// Detects the current desktop environment.
