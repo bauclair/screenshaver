@@ -926,9 +926,22 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
 "#;
 
     const SCREENSHAVER_ESCAPE_HANDLER: &str = r#"        Keys.onEscapePressed: {
-            // Preserve KDE's stock Escape behavior whenever a live
-            // Screenshaver process does not own this lock-screen session.
-            if (!screenshaverNativeGl.runtimeActive && uiVisible) {
+            if (screenshaverNativeGl.runtimeActive) {
+                // While Screenshaver owns this lock-screen session, Escape is
+                // exclusively a visibility toggle for the Screenshaver auth
+                // presentation. The native plugin consumes Escape KeyRelease
+                // before KScreenLocker can translate it into DPMS-off.
+                uiVisible = !uiVisible;
+                if (!uiVisible) {
+                    if (inputPanel.keyboardActive) {
+                        inputPanel.showHide();
+                    }
+                    root.clearPassword();
+                } else {
+                    mainBlock.mainPasswordBox.forceActiveFocus();
+                }
+            } else if (uiVisible) {
+                // Stale/inactive overlay: preserve KDE's stock Escape behavior.
                 uiVisible = false;
                 if (inputPanel.keyboardActive) {
                     inputPanel.showHide();
@@ -960,16 +973,8 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
 "#;
 
     const SCREENSHAVER_KEYS_ON_PRESSED: &str = r#"        Keys.onPressed: event => {
-            if (screenshaverNativeGl.runtimeActive && event.key === Qt.Key_Escape) {
-                uiVisible = !uiVisible;
-                if (!uiVisible) {
-                    if (inputPanel.keyboardActive) {
-                        inputPanel.showHide();
-                    }
-                    root.clearPassword();
-                } else {
-                    mainBlock.mainPasswordBox.forceActiveFocus();
-                }
+            if (event.key === Qt.Key_Escape) {
+                // Escape is handled exactly once by Keys.onEscapePressed above.
                 event.accepted = true;
             } else {
                 uiVisible = true;
