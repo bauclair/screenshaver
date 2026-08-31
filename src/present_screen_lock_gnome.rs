@@ -1,6 +1,9 @@
-use std::fs::{self, File};
-use std::io::Write;
+use std::ffi::c_void;
+use std::fs::{self, File, OpenOptions};
+use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
+use std::ptr;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
 use sdl2::video::GLProfile;
@@ -9,20 +12,57 @@ use crate::render_frame::FrameRenderEngine;
 
 const TRANSPORT_WIDTH: u32 = 640;
 const TRANSPORT_HEIGHT: u32 = 360;
+const TRANSPORT_ROWSTRIDE: u32 = TRANSPORT_WIDTH * 4;
 const TRANSPORT_FRAME_INTERVAL: Duration = Duration::from_millis(100);
-const TRANSPORT_FILENAME: &str = "screenshaver-lock-test.rgba";
-const TRANSPORT_TEMP_FILENAME: &str = ".screenshaver-lock-test.rgba.tmp";
+const TRANSPORT_FILENAME: &str = "screenshaver-lock-frame.shm";
 
-/// Temporary GNOME lock-screen presentation host.
+const TRANSPORT_MAGIC: [u8; 8] = *b"SHVRGNM1";
+const TRANSPORT_VERSION: u32 = 1;
+const TRANSPORT_HEADER_BYTES: usize = 64;
+const TRANSPORT_SLOT_COUNT: u32 = 2;
+
+const HEADER_MAGIC_OFFSET: usize = 0;
+const HEADER_VERSION_OFFSET: usize = 8;
+const HEADER_SIZE_OFFSET: usize = 12;
+const HEADER_WIDTH_OFFSET: usize = 16;
+const HEADER_HEIGHT_OFFSET: usize = 20;
+const HEADER_ROWSTRIDE_OFFSET: usize = 24;
+const HEADER_FRAME_BYTES_OFFSET: usize = 28;
+const HEADER_SLOT_COUNT_OFFSET: usize = 32;
+const HEADER_ACTIVE_SLOT_OFFSET: usize = 36;
+const HEADER_FRAME_COUNTER_OFFSET: usize = 40;
+
+#[cfg(unix)]
+const PROT_READ: i32 = 0x1;
+#[cfg(unix)]
+const PROT_WRITE: i32 = 0x2;
+#[cfg(unix)]
+const MAP_SHARED: i32 = 0x01;
+
+#[cfg(unix)]
+unsafe extern "C" {
+    fn mmap(
+        addr: *mut c_void,
+        length: usize,
+        prot: i32,
+        flags: i32,
+        fd: i32,
+        offset: isize,
+    ) -> *mut c_void;
+
+    fn munmap(addr: *mut c_void, length: usize) -> i32;
+}
+
+/// GNOME lock-screen presentation host.
 ///
-/// This proof-of-integration host deliberately keeps SDL and OpenGL ownership
-/// on Screenshaver's main thread. GNOME's blocking secure-lock D-Bus wait runs
-/// on a separate worker thread in `main.rs` while this presenter continuously
-/// renders and publishes frames for the GNOME Shell extension.
+/// SDL and OpenGL ownership remain on Screenshaver's main thread. GNOME's
+/// blocking secure-lock D-Bus wait runs on a worker thread in `main.rs` while
+/// this presenter renders frames continuously.
 ///
-/// Completed RGBA frames are still atomically published in `$XDG_RUNTIME_DIR`.
-/// That file transport is temporary and will be replaced after real
-/// Screenshaver shader output is proven behind GNOME's secure lock UI.
+/// Frame transport is a small versioned, double-buffered shared-memory region
+/// backed by a file in `$XDG_RUNTIME_DIR`. The file is created once for the
+/// lock session and memory-mapped by both Screenshaver and the GNOME Shell
+/// extension. Per-frame create/write/rename I/O is no longer used.
 pub(crate) struct GnomeLockPresenter {
     producer: GnomeLockFrameProducer,
 }
@@ -88,8 +128,7 @@ struct GnomeLockFrameProducer {
     _gl_context: sdl2::video::GLContext,
     window: sdl2::video::Window,
 
-    frame_path: PathBuf,
-    temp_path: PathBuf,
+    transport: SharedFrameTransport,
     readback: Vec<u8>,
     top_down_rgba: Vec<u8>,
     last_publish: Instant,
@@ -124,14 +163,10 @@ impl GnomeLockFrameProducer {
                     .to_string()
             })?;
 
-        let frame_path = runtime_dir.join(TRANSPORT_FILENAME);
-        let temp_path = runtime_dir.join(TRANSPORT_TEMP_FILENAME);
-
-        let _ = fs::remove_file(&frame_path);
-        let _ = fs::remove_file(&temp_path);
+        let transport_path = runtime_dir.join(TRANSPORT_FILENAME);
 
         // Reuse the SDL instance that main.rs already initialized. Creating a
-        // second SDL instance on a render worker thread is rejected by rust-sdl2.
+        // second SDL instance on another thread is rejected by rust-sdl2.
         let video = sdl
             .video()
             .map_err(|error| {
@@ -196,18 +231,19 @@ impl GnomeLockFrameProducer {
             TRANSPORT_HEIGHT,
         )?;
 
-        let frame_bytes = (TRANSPORT_WIDTH as usize)
-            .checked_mul(TRANSPORT_HEIGHT as usize)
-            .and_then(|pixels| pixels.checked_mul(4))
-            .ok_or_else(|| "GNOME lock RGBA frame size overflow".to_string())?;
+        let frame_bytes = frame_bytes()?;
+        let transport = SharedFrameTransport::create(
+            transport_path,
+            frame_bytes,
+        )?;
 
         log_information(
             logfile,
             &format!(
-                "[LOCK] GNOME hidden shader surface ready: {}x{}; transport={}",
+                "[LOCK] GNOME hidden shader surface ready: {}x{}; shared-memory transport={}",
                 TRANSPORT_WIDTH,
                 TRANSPORT_HEIGHT,
-                frame_path.display(),
+                transport.path().display(),
             ),
         );
 
@@ -216,8 +252,7 @@ impl GnomeLockFrameProducer {
             engine,
             _gl_context: gl_context,
             window,
-            frame_path,
-            temp_path,
+            transport,
             readback: vec![0; frame_bytes],
             top_down_rgba: vec![0; frame_bytes],
             last_publish: Instant::now() - TRANSPORT_FRAME_INTERVAL,
@@ -239,7 +274,7 @@ impl GnomeLockFrameProducer {
 
         let render_result = self.render_loop(lock_finished);
 
-        self.cleanup_transport();
+        self.transport.remove_backing_file();
 
         log_information(
             &self.logfile,
@@ -263,7 +298,7 @@ impl GnomeLockFrameProducer {
 
             if self.last_publish.elapsed() >= TRANSPORT_FRAME_INTERVAL {
                 self.capture_frame();
-                self.publish_frame()?;
+                self.transport.publish(&self.top_down_rgba)?;
                 self.last_publish = Instant::now();
                 self.published_frames = self.published_frames.saturating_add(1);
 
@@ -271,7 +306,7 @@ impl GnomeLockFrameProducer {
                     log_information(
                         &self.logfile,
                         &format!(
-                            "[LOCK] GNOME shader frames published: {}",
+                            "[LOCK] GNOME shared-memory shader frames published: {}",
                             self.published_frames,
                         ),
                     );
@@ -303,7 +338,7 @@ impl GnomeLockFrameProducer {
         // OpenGL's framebuffer origin is bottom-left. St.ImageContent expects
         // the first row to represent the top of the image, so reverse the row
         // order before publishing the transport frame.
-        let row_bytes = TRANSPORT_WIDTH as usize * 4;
+        let row_bytes = TRANSPORT_ROWSTRIDE as usize;
 
         for destination_row in 0..TRANSPORT_HEIGHT as usize {
             let source_row = TRANSPORT_HEIGHT as usize - 1 - destination_row;
@@ -318,51 +353,231 @@ impl GnomeLockFrameProducer {
                 );
         }
     }
+}
 
-    fn publish_frame(&self) -> Result<(), String> {
-        let mut file = File::create(&self.temp_path).map_err(|error| {
-            format!(
-                "Unable to create temporary GNOME lock frame '{}': {error}",
-                self.temp_path.display(),
-            )
-        })?;
+struct SharedFrameTransport {
+    path: PathBuf,
+    _file: File,
+    mapping: *mut u8,
+    mapping_len: usize,
+    frame_bytes: usize,
+    active_slot: u32,
+    frame_counter: u32,
+    removed: bool,
+}
 
-        file.write_all(&self.top_down_rgba).map_err(|error| {
-            format!(
-                "Unable to write temporary GNOME lock frame '{}': {error}",
-                self.temp_path.display(),
-            )
-        })?;
+impl SharedFrameTransport {
+    fn create(
+        path: PathBuf,
+        frame_bytes: usize,
+    ) -> Result<Self, String> {
+        #[cfg(not(unix))]
+        {
+            let _ = path;
+            let _ = frame_bytes;
+            return Err(
+                "GNOME shared-memory lock transport requires a Unix platform"
+                    .to_string(),
+            );
+        }
 
-        file.flush().map_err(|error| {
-            format!(
-                "Unable to flush temporary GNOME lock frame '{}': {error}",
-                self.temp_path.display(),
-            )
-        })?;
+        #[cfg(unix)]
+        {
+            let mapping_len = TRANSPORT_HEADER_BYTES
+                .checked_add(
+                    frame_bytes
+                        .checked_mul(TRANSPORT_SLOT_COUNT as usize)
+                        .ok_or_else(|| {
+                            "GNOME lock shared-memory transport size overflow"
+                                .to_string()
+                        })?,
+                )
+                .ok_or_else(|| {
+                    "GNOME lock shared-memory transport size overflow"
+                        .to_string()
+                })?;
 
-        drop(file);
+            let _ = fs::remove_file(&path);
 
-        fs::rename(&self.temp_path, &self.frame_path).map_err(|error| {
-            format!(
-                "Unable to publish GNOME lock frame '{}': {error}",
-                self.frame_path.display(),
-            )
-        })?;
+            let file = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(&path)
+                .map_err(|error| {
+                    format!(
+                        "Unable to create GNOME lock shared-memory backing file '{}': {error}",
+                        path.display(),
+                    )
+                })?;
+
+            file.set_len(mapping_len as u64)
+                .map_err(|error| {
+                    format!(
+                        "Unable to size GNOME lock shared-memory backing file '{}': {error}",
+                        path.display(),
+                    )
+                })?;
+
+            let mapped = unsafe {
+                mmap(
+                    ptr::null_mut(),
+                    mapping_len,
+                    PROT_READ | PROT_WRITE,
+                    MAP_SHARED,
+                    file.as_raw_fd(),
+                    0,
+                )
+            };
+
+            if mapped as isize == -1 {
+                let _ = fs::remove_file(&path);
+                return Err(format!(
+                    "Unable to memory-map GNOME lock transport '{}': {}",
+                    path.display(),
+                    std::io::Error::last_os_error(),
+                ));
+            }
+
+            let mapping = mapped.cast::<u8>();
+
+            unsafe {
+                ptr::write_bytes(mapping, 0, mapping_len);
+            }
+
+            let mut transport = Self {
+                path,
+                _file: file,
+                mapping,
+                mapping_len,
+                frame_bytes,
+                active_slot: 0,
+                frame_counter: 0,
+                removed: false,
+            };
+
+            transport.initialize_header();
+
+            Ok(transport)
+        }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+
+    fn initialize_header(&mut self) {
+        self.write_bytes(HEADER_MAGIC_OFFSET, &TRANSPORT_MAGIC);
+        self.write_u32(HEADER_VERSION_OFFSET, TRANSPORT_VERSION);
+        self.write_u32(
+            HEADER_SIZE_OFFSET,
+            TRANSPORT_HEADER_BYTES as u32,
+        );
+        self.write_u32(HEADER_WIDTH_OFFSET, TRANSPORT_WIDTH);
+        self.write_u32(HEADER_HEIGHT_OFFSET, TRANSPORT_HEIGHT);
+        self.write_u32(HEADER_ROWSTRIDE_OFFSET, TRANSPORT_ROWSTRIDE);
+        self.write_u32(
+            HEADER_FRAME_BYTES_OFFSET,
+            self.frame_bytes as u32,
+        );
+        self.write_u32(HEADER_SLOT_COUNT_OFFSET, TRANSPORT_SLOT_COUNT);
+
+        self.active_slot_atomic()
+            .store(self.active_slot, Ordering::Release);
+        self.frame_counter_atomic()
+            .store(self.frame_counter, Ordering::Release);
+    }
+
+    fn publish(&mut self, rgba: &[u8]) -> Result<(), String> {
+        if rgba.len() != self.frame_bytes {
+            return Err(format!(
+                "GNOME shared-memory frame has {} bytes; expected {}",
+                rgba.len(),
+                self.frame_bytes,
+            ));
+        }
+
+        let next_slot = if self.active_slot == 0 { 1 } else { 0 };
+        let slot_offset = TRANSPORT_HEADER_BYTES
+            + next_slot as usize * self.frame_bytes;
+
+        self.write_bytes(slot_offset, rgba);
+
+        // Publish the completed inactive slot only after its pixel copy is
+        // finished. The extension reads the monotonically increasing frame
+        // counter and uploads only when it observes a new completed frame.
+        self.active_slot = next_slot;
+        self.frame_counter = self.frame_counter.wrapping_add(1);
+
+        self.active_slot_atomic()
+            .store(self.active_slot, Ordering::Release);
+        self.frame_counter_atomic()
+            .store(self.frame_counter, Ordering::Release);
 
         Ok(())
     }
 
-    fn cleanup_transport(&self) {
-        let _ = fs::remove_file(&self.temp_path);
-        let _ = fs::remove_file(&self.frame_path);
+    fn remove_backing_file(&mut self) {
+        if self.removed {
+            return;
+        }
+
+        let _ = fs::remove_file(&self.path);
+        self.removed = true;
+    }
+
+    fn write_u32(&mut self, offset: usize, value: u32) {
+        self.write_bytes(offset, &value.to_le_bytes());
+    }
+
+    fn write_bytes(&mut self, offset: usize, bytes: &[u8]) {
+        debug_assert!(offset + bytes.len() <= self.mapping_len);
+
+        unsafe {
+            ptr::copy_nonoverlapping(
+                bytes.as_ptr(),
+                self.mapping.add(offset),
+                bytes.len(),
+            );
+        }
+    }
+
+    fn active_slot_atomic(&self) -> &AtomicU32 {
+        unsafe {
+            &*(self.mapping.add(HEADER_ACTIVE_SLOT_OFFSET)
+                as *const AtomicU32)
+        }
+    }
+
+    fn frame_counter_atomic(&self) -> &AtomicU32 {
+        unsafe {
+            &*(self.mapping.add(HEADER_FRAME_COUNTER_OFFSET)
+                as *const AtomicU32)
+        }
     }
 }
 
-impl Drop for GnomeLockFrameProducer {
+impl Drop for SharedFrameTransport {
     fn drop(&mut self) {
-        self.cleanup_transport();
+        self.remove_backing_file();
+
+        #[cfg(unix)]
+        unsafe {
+            if !self.mapping.is_null() && self.mapping_len != 0 {
+                let _ = munmap(
+                    self.mapping.cast::<c_void>(),
+                    self.mapping_len,
+                );
+            }
+        }
     }
+}
+
+fn frame_bytes() -> Result<usize, String> {
+    (TRANSPORT_ROWSTRIDE as usize)
+        .checked_mul(TRANSPORT_HEIGHT as usize)
+        .ok_or_else(|| "GNOME lock RGBA frame size overflow".to_string())
 }
 
 fn log_information(logfile: &Path, message: &str) {
