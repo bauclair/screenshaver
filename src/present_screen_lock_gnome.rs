@@ -13,7 +13,7 @@ use crate::render_frame::FrameRenderEngine;
 const TRANSPORT_WIDTH: u32 = 1280;
 const TRANSPORT_HEIGHT: u32 = 720;
 const TRANSPORT_ROWSTRIDE: u32 = TRANSPORT_WIDTH * 4;
-const TRANSPORT_FRAME_INTERVAL: Duration = Duration::from_millis(100);
+const TRANSPORT_FRAME_INTERVAL: Duration = Duration::from_millis(50);
 const TRANSPORT_FILENAME: &str = "screenshaver-lock-frame.shm";
 
 const TRANSPORT_MAGIC: [u8; 8] = *b"SHVRGNM1";
