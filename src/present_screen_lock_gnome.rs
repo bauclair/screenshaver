@@ -10,8 +10,8 @@ use sdl2::video::GLProfile;
 
 use crate::render_frame::FrameRenderEngine;
 
-const TRANSPORT_WIDTH: u32 = 640;
-const TRANSPORT_HEIGHT: u32 = 360;
+const TRANSPORT_WIDTH: u32 = 1280;
+const TRANSPORT_HEIGHT: u32 = 720;
 const TRANSPORT_ROWSTRIDE: u32 = TRANSPORT_WIDTH * 4;
 const TRANSPORT_FRAME_INTERVAL: Duration = Duration::from_millis(100);
 const TRANSPORT_FILENAME: &str = "screenshaver-lock-frame.shm";
