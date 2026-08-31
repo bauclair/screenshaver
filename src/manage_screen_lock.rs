@@ -15,7 +15,10 @@ use std::sync::atomic::{
     AtomicBool,
     Ordering,
 };
-use std::time::Duration;
+use std::time::{
+    Duration,
+    Instant,
+};
 
 use wayland_client::{
     delegate_noop,
@@ -51,6 +54,7 @@ use wayland_protocols::ext::session_lock::v1::client::{
 
 
 const AUTH_POINTER_MOVEMENT_THRESHOLD: f64 = 24.0;
+const AUTHENTICATION_INACTIVITY_TIMEOUT: Duration = Duration::from_secs(10);
 
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -100,6 +104,7 @@ struct ScreenLockState {
     input_events: Vec<String>,
     interaction_state: LockInteractionState,
     pointer_anchor: Option<(f64, f64)>,
+    authentication_deadline: Option<Instant>,
     xkb_state: Option<xkbcommon::xkb::State>,
     authentication:
         crate::display_lock_authentication::LockAuthentication,
@@ -122,6 +127,7 @@ impl ScreenLockState {
             input_events: Vec::new(),
             interaction_state: LockInteractionState::Rendering,
             pointer_anchor: None,
+            authentication_deadline: None,
             xkb_state: None,
             authentication:
                 crate::display_lock_authentication::LockAuthentication::new(),
@@ -142,14 +148,83 @@ impl ScreenLockState {
                     }
                 )
     }
+
+
+    fn begin_authentication(
+        &mut self,
+    ) {
+        self.interaction_state =
+            LockInteractionState::AuthenticationRequested;
+
+        self.authentication.clear();
+
+        self.authentication_deadline =
+            Some(
+                Instant::now()
+                    + AUTHENTICATION_INACTIVITY_TIMEOUT
+            );
+    }
+
+
+    fn note_authentication_activity(
+        &mut self,
+    ) {
+        if self.interaction_state
+            == LockInteractionState::AuthenticationRequested
+        {
+            self.authentication_deadline =
+                Some(
+                    Instant::now()
+                        + AUTHENTICATION_INACTIVITY_TIMEOUT
+                );
+        }
+    }
+
+
+    fn dismiss_authentication_for_timeout(
+        &mut self,
+    ) -> bool {
+        if self.interaction_state
+            != LockInteractionState::AuthenticationRequested
+        {
+            return false;
+        }
+
+        let Some(deadline) =
+            self.authentication_deadline
+        else {
+            return false;
+        };
+
+        if Instant::now()
+            < deadline
+        {
+            return false;
+        }
+
+        self.authentication.clear();
+
+        self.interaction_state =
+            LockInteractionState::Rendering;
+
+        self.authentication_deadline =
+            None;
+
+        self.pointer_anchor =
+            None;
+
+        true
+    }
 }
 
 
 /// Engage the compositor-enforced Wayland session lock and remain locked until
 /// PAM authentication succeeds.
 ///
-/// There is deliberately no timeout, test bypass, force-unlock parameter, or
-/// error-triggered unlock path in this production module.
+/// There is deliberately no secure-lock timeout, test bypass, force-unlock
+/// parameter, or error-triggered unlock path in this production module. The
+/// authentication widget may dismiss itself after input inactivity, but that
+/// never releases the compositor-enforced session lock.
 pub fn run(
     logfile: &Path,
     running: &AtomicBool,
@@ -622,6 +697,14 @@ pub fn run(
             &mut state,
             logfile,
         );
+
+
+        if state.dismiss_authentication_for_timeout() {
+            crate::logger::information(
+                logfile,
+                "[LOCK] Authentication dialog dismissed after 10 seconds of inactivity; entered credential cleared and session remains locked",
+            );
+        }
 
 
         if !running.load(Ordering::SeqCst)
@@ -1459,10 +1542,7 @@ impl Dispatch<
                 {
                     // The wake key requests the dialog but is deliberately not
                     // inserted into the password field.
-                    state.interaction_state =
-                        LockInteractionState::AuthenticationRequested;
-
-                    state.authentication.clear();
+                    state.begin_authentication();
 
                     state.input_events.push(
                         "keyboard activity requested authentication dialog"
@@ -1507,16 +1587,37 @@ impl Dispatch<
                         );
 
 
-                match state.authentication.handle_key(
-                    keysym.raw(),
-                    &utf8,
-                ) {
+                let authentication_revision_before =
+                    state.authentication.revision();
+
+                let authentication_action =
+                    state.authentication.handle_key(
+                        keysym.raw(),
+                        &utf8,
+                    );
+
+                let authentication_revision_changed =
+                    state.authentication.revision()
+                        != authentication_revision_before;
+
+                if authentication_revision_changed
+                    || keysym.raw()
+                        == xkbcommon::xkb::keysyms::KEY_BackSpace
+                {
+                    state.note_authentication_activity();
+                }
+
+
+                match authentication_action {
                     crate::display_lock_authentication::AuthenticationAction::None => {}
 
 
                     crate::display_lock_authentication::AuthenticationAction::Dismiss => {
                         state.interaction_state =
                             LockInteractionState::Rendering;
+
+                        state.authentication_deadline =
+                            None;
 
                         state.pointer_anchor =
                             None;
@@ -1563,6 +1664,9 @@ impl Dispatch<
                                 state.interaction_state =
                                     LockInteractionState::AuthenticationSucceeded;
 
+                                state.authentication_deadline =
+                                    None;
+
                                 state.input_events.push(
                                     "PAM authentication succeeded; authenticated controlled unlock authorized"
                                         .to_string()
@@ -1577,6 +1681,8 @@ impl Dispatch<
 
                                 state.authentication.authentication_failed();
 
+                                state.note_authentication_activity();
+
                                 state.input_events.push(
                                     "PAM authentication rejected credentials; session remains locked"
                                         .to_string()
@@ -1590,6 +1696,8 @@ impl Dispatch<
                                 );
 
                                 state.authentication.authentication_failed();
+
+                                state.note_authentication_activity();
 
                                 state.input_events.push(
                                     format!(
@@ -1714,10 +1822,15 @@ impl Dispatch<
                                 >= AUTH_POINTER_MOVEMENT_THRESHOLD
                                     * AUTH_POINTER_MOVEMENT_THRESHOLD
                             {
-                                state.interaction_state =
-                                    LockInteractionState::AuthenticationRequested;
+                                state.begin_authentication();
 
-                                state.authentication.clear();
+                                state.pointer_anchor =
+                                    Some(
+                                        (
+                                            surface_x,
+                                            surface_y,
+                                        )
+                                    );
 
                                 state.input_events.push(
                                     format!(
@@ -1725,6 +1838,47 @@ impl Dispatch<
                                         AUTH_POINTER_MOVEMENT_THRESHOLD,
                                     )
                                 );
+                            }
+                        }
+
+                        None => {
+                            state.pointer_anchor =
+                                Some(
+                                    (
+                                        surface_x,
+                                        surface_y,
+                                    )
+                                );
+                        }
+                    }
+                } else if state.interaction_state
+                    == LockInteractionState::AuthenticationRequested
+                {
+                    match state.pointer_anchor {
+                        Some((anchor_x, anchor_y)) => {
+                            let delta_x =
+                                surface_x - anchor_x;
+
+                            let delta_y =
+                                surface_y - anchor_y;
+
+                            let distance_squared =
+                                delta_x * delta_x
+                                    + delta_y * delta_y;
+
+                            if distance_squared
+                                >= AUTH_POINTER_MOVEMENT_THRESHOLD
+                                    * AUTH_POINTER_MOVEMENT_THRESHOLD
+                            {
+                                state.pointer_anchor =
+                                    Some(
+                                        (
+                                            surface_x,
+                                            surface_y,
+                                        )
+                                    );
+
+                                state.note_authentication_activity();
                             }
                         }
 
@@ -1765,10 +1919,11 @@ impl Dispatch<
                     if state.interaction_state
                         == LockInteractionState::Rendering
                     {
-                        state.interaction_state =
-                            LockInteractionState::AuthenticationRequested;
-
-                        state.authentication.clear();
+                        state.begin_authentication();
+                    } else if state.interaction_state
+                        == LockInteractionState::AuthenticationRequested
+                    {
+                        state.note_authentication_activity();
                     }
                 }
             }
@@ -1786,6 +1941,14 @@ impl Dispatch<
                         value,
                     )
                 );
+
+
+                if state.interaction_state
+                    == LockInteractionState::AuthenticationRequested
+                    && value.abs() > f64::EPSILON
+                {
+                    state.note_authentication_activity();
+                }
             }
 
 
