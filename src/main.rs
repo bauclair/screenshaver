@@ -22,6 +22,7 @@ mod manage_configuration;
 mod manage_shader;
 mod manage_screen_lock;
 mod manage_screen_lock_gnome;
+mod present_screen_lock_gnome;
 mod lock_screen_widget;
 mod define_lock_screen_widget;
 mod construct_lock_screen_kde;
@@ -1721,16 +1722,76 @@ fn main() {
                                 .is_gnome()
                             {
 
-                                drop(
-                                    shader_manager
-                                );
+                                let gnome_presenter =
+                                    match crate::present_screen_lock_gnome::GnomeLockPresenter::start(
+                                        &logfile,
+                                        shader_manager,
+                                        next_shader_interval,
+                                        cfg.screensaver_speed_policy.clone(),
+                                        cfg.global_rendered_fps,
+                                        cfg.screensaver_fps_policy_entries.clone(),
+                                        cfg.texture_policy.clone(),
+                                        cfg.screensaver_postprocess_policy.clone(),
+                                        audio_backend
+                                            .as_ref()
+                                            .map(
+                                                |backend| {
+                                                    backend.shared_bands()
+                                                }
+                                            ),
+                                        cfg.subtitles,
+                                        cfg.subtitle_placement,
+                                    )
+                                    {
+                                        Ok(presenter) => {
+                                            Some(presenter)
+                                        }
+
+                                        Err(error) => {
+                                            crate::logger::error(
+                                                &logfile,
+                                                &format!(
+                                                    "[LOCK] GNOME shader presentation could not be started: {}",
+                                                    error,
+                                                ),
+                                            );
+
+                                            eprintln!(
+                                                "[LOCK] GNOME shader presentation could not be started: {}",
+                                                error,
+                                            );
+
+                                            None
+                                        }
+                                    };
 
 
-                                crate::manage_screen_lock_gnome::run(
-                                    &logfile,
-                                    running.as_ref(),
-                                    &wallpaper_control,
-                                )
+                                let result =
+                                    crate::manage_screen_lock_gnome::run(
+                                        &logfile,
+                                        running.as_ref(),
+                                        &wallpaper_control,
+                                    );
+
+
+                                if let Some(presenter) =
+                                    gnome_presenter
+                                {
+                                    if let Err(error) =
+                                        presenter.stop_and_join()
+                                    {
+                                        crate::logger::warning(
+                                            &logfile,
+                                            &format!(
+                                                "[LOCK] GNOME shader presentation shutdown reported an error: {}",
+                                                error,
+                                            ),
+                                        );
+                                    }
+                                }
+
+
+                                result
 
                             } else {
 
