@@ -1722,8 +1722,9 @@ fn main() {
                                 .is_gnome()
                             {
 
-                                let gnome_presenter =
-                                    match crate::present_screen_lock_gnome::GnomeLockPresenter::start(
+                                let presenter_result =
+                                    crate::present_screen_lock_gnome::GnomeLockPresenter::start(
+                                        &sdl,
                                         &logfile,
                                         shader_manager,
                                         next_shader_interval,
@@ -1741,57 +1742,131 @@ fn main() {
                                             ),
                                         cfg.subtitles,
                                         cfg.subtitle_placement,
-                                    )
-                                    {
-                                        Ok(presenter) => {
-                                            Some(presenter)
-                                        }
-
-                                        Err(error) => {
-                                            crate::logger::error(
-                                                &logfile,
-                                                &format!(
-                                                    "[LOCK] GNOME shader presentation could not be started: {}",
-                                                    error,
-                                                ),
-                                            );
-
-                                            eprintln!(
-                                                "[LOCK] GNOME shader presentation could not be started: {}",
-                                                error,
-                                            );
-
-                                            None
-                                        }
-                                    };
-
-
-                                let result =
-                                    crate::manage_screen_lock_gnome::run(
-                                        &logfile,
-                                        running.as_ref(),
-                                        &wallpaper_control,
                                     );
 
 
-                                if let Some(presenter) =
-                                    gnome_presenter
-                                {
-                                    if let Err(error) =
-                                        presenter.stop_and_join()
-                                    {
-                                        crate::logger::warning(
+                                match presenter_result {
+                                    Ok(mut presenter) => {
+                                        let lock_logfile =
+                                            logfile.clone();
+
+                                        let lock_running =
+                                            Arc::clone(
+                                                &running
+                                            );
+
+                                        let lock_wallpaper_control =
+                                            wallpaper_control.clone();
+
+
+                                        match std::thread::Builder::new()
+                                            .name(
+                                                "screenshaver-gnome-secure-lock".to_string()
+                                            )
+                                            .spawn(
+                                                move || {
+                                                    crate::manage_screen_lock_gnome::run(
+                                                        &lock_logfile,
+                                                        lock_running.as_ref(),
+                                                        &lock_wallpaper_control,
+                                                    )
+                                                }
+                                            )
+                                        {
+                                            Ok(lock_thread) => {
+                                                let render_result =
+                                                    presenter.run_until(
+                                                        || {
+                                                            lock_thread.is_finished()
+                                                        }
+                                                    );
+
+
+                                                if let Err(error) =
+                                                    render_result
+                                                {
+                                                    crate::logger::warning(
+                                                        &logfile,
+                                                        &format!(
+                                                            "[LOCK] GNOME shader presentation stopped with an error while secure lock remained active: {}",
+                                                            error,
+                                                        ),
+                                                    );
+
+                                                    eprintln!(
+                                                        "[LOCK] GNOME shader presentation stopped with an error: {}",
+                                                        error,
+                                                    );
+                                                }
+
+
+                                                drop(
+                                                    presenter
+                                                );
+
+
+                                                match lock_thread.join() {
+                                                    Ok(result) => {
+                                                        result
+                                                    }
+
+                                                    Err(_) => {
+                                                        Err(
+                                                            "GNOME secure-lock worker thread panicked"
+                                                                .to_string()
+                                                        )
+                                                    }
+                                                }
+                                            }
+
+                                            Err(error) => {
+                                                crate::logger::error(
+                                                    &logfile,
+                                                    &format!(
+                                                        "[LOCK] Unable to start GNOME secure-lock worker thread: {}",
+                                                        error,
+                                                    ),
+                                                );
+
+                                                eprintln!(
+                                                    "[LOCK] Unable to start GNOME secure-lock worker thread: {}",
+                                                    error,
+                                                );
+
+                                                Err(
+                                                    format!(
+                                                        "Unable to start GNOME secure-lock worker thread: {}",
+                                                        error,
+                                                    )
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    Err(error) => {
+                                        crate::logger::error(
                                             &logfile,
                                             &format!(
-                                                "[LOCK] GNOME shader presentation shutdown reported an error: {}",
+                                                "[LOCK] GNOME shader presentation could not be started: {}",
                                                 error,
                                             ),
                                         );
+
+                                        eprintln!(
+                                            "[LOCK] GNOME shader presentation could not be started: {}",
+                                            error,
+                                        );
+
+
+                                        // Preserve the already-proven secure-lock path even
+                                        // when visual presentation initialization fails.
+                                        crate::manage_screen_lock_gnome::run(
+                                            &logfile,
+                                            running.as_ref(),
+                                            &wallpaper_control,
+                                        )
                                     }
                                 }
-
-
-                                result
 
                             } else {
 

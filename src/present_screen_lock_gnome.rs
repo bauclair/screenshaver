@@ -1,10 +1,6 @@
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc;
-use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use sdl2::video::GLProfile;
@@ -16,27 +12,25 @@ const TRANSPORT_HEIGHT: u32 = 360;
 const TRANSPORT_FRAME_INTERVAL: Duration = Duration::from_millis(100);
 const TRANSPORT_FILENAME: &str = "screenshaver-lock-test.rgba";
 const TRANSPORT_TEMP_FILENAME: &str = ".screenshaver-lock-test.rgba.tmp";
-const STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Temporary GNOME lock-screen presentation host.
 ///
-/// This is deliberately a proof-of-integration transport. The renderer remains
-/// Screenshaver's existing `FrameRenderEngine`; completed RGBA frames are read
-/// back from a hidden SDL/OpenGL surface and atomically published in
-/// `$XDG_RUNTIME_DIR` for the GNOME Shell extension that was proven during the
-/// external-frame test.
+/// This proof-of-integration host deliberately keeps SDL and OpenGL ownership
+/// on Screenshaver's main thread. GNOME's blocking secure-lock D-Bus wait runs
+/// on a separate worker thread in `main.rs` while this presenter continuously
+/// renders and publishes frames for the GNOME Shell extension.
 ///
-/// The runtime file transport is not intended to be the final production IPC
-/// mechanism. Once real Screenshaver shader output is proven behind GNOME's
-/// secure lock UI, this transport can be replaced without changing the shared
-/// render engine.
+/// Completed RGBA frames are still atomically published in `$XDG_RUNTIME_DIR`.
+/// That file transport is temporary and will be replaced after real
+/// Screenshaver shader output is proven behind GNOME's secure lock UI.
 pub(crate) struct GnomeLockPresenter {
-    presenter_running: Arc<AtomicBool>,
-    render_thread: Option<JoinHandle<Result<(), String>>>,
+    producer: GnomeLockFrameProducer,
 }
 
 impl GnomeLockPresenter {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn start(
+        sdl: &sdl2::Sdl,
         logfile: &Path,
         shader_manager: crate::manage_shader::ShaderManager,
         shader_interval: u64,
@@ -49,94 +43,39 @@ impl GnomeLockPresenter {
         subtitles: bool,
         subtitle_placement: crate::parse_subtitle_placement::SubtitlePlacement,
     ) -> Result<Self, String> {
-        let presenter_running = Arc::new(AtomicBool::new(true));
-        let thread_running = Arc::clone(&presenter_running);
-        let thread_logfile = logfile.to_path_buf();
-        let (startup_sender, startup_receiver) = mpsc::channel::<Result<(), String>>();
+        let producer = GnomeLockFrameProducer::new(
+            sdl,
+            logfile,
+            shader_manager,
+            shader_interval,
+            animation_speed_policy,
+            global_rendered_fps,
+            fps_policy_entries,
+            texture_policy,
+            postprocess_policy,
+            audio_bands,
+            subtitles,
+            subtitle_placement,
+        )?;
 
-        let render_thread = thread::Builder::new()
-            .name("screenshaver-gnome-lock-renderer".to_string())
-            .spawn(move || {
-                let mut producer = match GnomeLockFrameProducer::new(
-                    &thread_logfile,
-                    shader_manager,
-                    shader_interval,
-                    animation_speed_policy,
-                    global_rendered_fps,
-                    fps_policy_entries,
-                    texture_policy,
-                    postprocess_policy,
-                    audio_bands,
-                    subtitles,
-                    subtitle_placement,
-                ) {
-                    Ok(producer) => producer,
-                    Err(error) => {
-                        let _ = startup_sender.send(Err(error.clone()));
-                        return Err(error);
-                    }
-                };
+        log_information(
+            logfile,
+            "[LOCK] GNOME shader presentation backend initialized on main SDL thread",
+        );
 
-                if startup_sender.send(Ok(())).is_err() {
-                    return Err(
-                        "GNOME lock presenter startup receiver disappeared"
-                            .to_string(),
-                    );
-                }
-
-                producer.run(thread_running.as_ref())
-            })
-            .map_err(|error| {
-                format!("Unable to start GNOME lock render thread: {error}")
-            })?;
-
-        match startup_receiver.recv_timeout(STARTUP_TIMEOUT) {
-            Ok(Ok(())) => {
-                log_information(
-                    logfile,
-                    "[LOCK] GNOME shader presentation backend initialized",
-                );
-
-                Ok(Self {
-                    presenter_running,
-                    render_thread: Some(render_thread),
-                })
-            }
-
-            Ok(Err(error)) => {
-                presenter_running.store(false, Ordering::SeqCst);
-                let _ = render_thread.join();
-                Err(error)
-            }
-
-            Err(error) => {
-                presenter_running.store(false, Ordering::SeqCst);
-                let _ = render_thread.join();
-
-                Err(format!(
-                    "Timed out waiting for GNOME lock presenter startup: {error}"
-                ))
-            }
-        }
+        Ok(Self { producer })
     }
 
-    pub(crate) fn stop_and_join(mut self) -> Result<(), String> {
-        self.presenter_running.store(false, Ordering::SeqCst);
-
-        let Some(render_thread) = self.render_thread.take() else {
-            return Ok(());
-        };
-
-        match render_thread.join() {
-            Ok(result) => result,
-            Err(_) => Err("GNOME lock render thread panicked".to_string()),
-        }
-    }
-}
-
-impl Drop for GnomeLockPresenter {
-    fn drop(&mut self) {
-        self.presenter_running.store(false, Ordering::SeqCst);
+    /// Render until the caller reports that GNOME's secure-lock worker has
+    /// completed. This method must remain on the same thread that owns `sdl`.
+    pub(crate) fn run_until<F>(
+        &mut self,
+        mut lock_finished: F,
+    ) -> Result<(), String>
+    where
+        F: FnMut() -> bool,
+    {
+        self.producer.run_until(&mut lock_finished)
     }
 }
 
@@ -148,7 +87,6 @@ struct GnomeLockFrameProducer {
     engine: FrameRenderEngine,
     _gl_context: sdl2::video::GLContext,
     window: sdl2::video::Window,
-    _sdl: sdl2::Sdl,
 
     frame_path: PathBuf,
     temp_path: PathBuf,
@@ -161,6 +99,7 @@ struct GnomeLockFrameProducer {
 impl GnomeLockFrameProducer {
     #[allow(clippy::too_many_arguments)]
     fn new(
+        sdl: &sdl2::Sdl,
         logfile: &Path,
         shader_manager: crate::manage_shader::ShaderManager,
         shader_interval: u64,
@@ -175,7 +114,7 @@ impl GnomeLockFrameProducer {
     ) -> Result<Self, String> {
         log_information(
             logfile,
-            "[LOCK] Initializing GNOME hidden shader presentation surface",
+            "[LOCK] Initializing GNOME hidden shader presentation surface on main SDL thread",
         );
 
         let runtime_dir = std::env::var_os("XDG_RUNTIME_DIR")
@@ -191,12 +130,15 @@ impl GnomeLockFrameProducer {
         let _ = fs::remove_file(&frame_path);
         let _ = fs::remove_file(&temp_path);
 
-        let sdl = sdl2::init()
-            .map_err(|error| format!("Failed to initialize SDL for GNOME lock presentation: {error}"))?;
-
+        // Reuse the SDL instance that main.rs already initialized. Creating a
+        // second SDL instance on a render worker thread is rejected by rust-sdl2.
         let video = sdl
             .video()
-            .map_err(|error| format!("Failed to initialize SDL video for GNOME lock presentation: {error}"))?;
+            .map_err(|error| {
+                format!(
+                    "Failed to access SDL video for GNOME lock presentation: {error}"
+                )
+            })?;
 
         {
             let gl_attr = video.gl_attr();
@@ -218,7 +160,9 @@ impl GnomeLockFrameProducer {
             .opengl()
             .build()
             .map_err(|error| {
-                format!("Failed to create hidden GNOME lock renderer window: {error}")
+                format!(
+                    "Failed to create hidden GNOME lock renderer window: {error}"
+                )
             })?;
 
         let gl_context = window
@@ -272,7 +216,6 @@ impl GnomeLockFrameProducer {
             engine,
             _gl_context: gl_context,
             window,
-            _sdl: sdl,
             frame_path,
             temp_path,
             readback: vec![0; frame_bytes],
@@ -282,13 +225,38 @@ impl GnomeLockFrameProducer {
         })
     }
 
-    fn run(&mut self, presenter_running: &AtomicBool) -> Result<(), String> {
+    fn run_until<F>(
+        &mut self,
+        lock_finished: &mut F,
+    ) -> Result<(), String>
+    where
+        F: FnMut() -> bool,
+    {
         log_information(
             &self.logfile,
             "[LOCK] GNOME shader presentation render loop started",
         );
 
-        while presenter_running.load(Ordering::SeqCst) {
+        let render_result = self.render_loop(lock_finished);
+
+        self.cleanup_transport();
+
+        log_information(
+            &self.logfile,
+            "[LOCK] GNOME shader presentation render loop stopped",
+        );
+
+        render_result
+    }
+
+    fn render_loop<F>(
+        &mut self,
+        lock_finished: &mut F,
+    ) -> Result<(), String>
+    where
+        F: FnMut() -> bool,
+    {
+        while !lock_finished() {
             let _ = self
                 .engine
                 .render_frame(TRANSPORT_WIDTH, TRANSPORT_HEIGHT);
@@ -313,14 +281,6 @@ impl GnomeLockFrameProducer {
             self.window.gl_swap_window();
             self.engine.limit_fps();
         }
-
-        let _ = fs::remove_file(&self.temp_path);
-        let _ = fs::remove_file(&self.frame_path);
-
-        log_information(
-            &self.logfile,
-            "[LOCK] GNOME shader presentation render loop stopped",
-        );
 
         Ok(())
     }
@@ -391,6 +351,17 @@ impl GnomeLockFrameProducer {
         })?;
 
         Ok(())
+    }
+
+    fn cleanup_transport(&self) {
+        let _ = fs::remove_file(&self.temp_path);
+        let _ = fs::remove_file(&self.frame_path);
+    }
+}
+
+impl Drop for GnomeLockFrameProducer {
+    fn drop(&mut self) {
+        self.cleanup_transport();
     }
 }
 
