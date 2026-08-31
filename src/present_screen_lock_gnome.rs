@@ -4,7 +4,6 @@ use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::ptr;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::time::{Duration, Instant};
 
 use sdl2::video::GLProfile;
 
@@ -13,7 +12,6 @@ use crate::render_frame::FrameRenderEngine;
 const TRANSPORT_WIDTH: u32 = 1920;
 const TRANSPORT_HEIGHT: u32 = 1080;
 const TRANSPORT_ROWSTRIDE: u32 = TRANSPORT_WIDTH * 4;
-const TRANSPORT_FRAME_INTERVAL: Duration = Duration::from_millis(33);
 const TRANSPORT_FILENAME: &str = "screenshaver-lock-frame.shm";
 
 const TRANSPORT_MAGIC: [u8; 8] = *b"SHVRGNM1";
@@ -131,7 +129,6 @@ struct GnomeLockFrameProducer {
     transport: SharedFrameTransport,
     readback: Vec<u8>,
     top_down_rgba: Vec<u8>,
-    last_publish: Instant,
     published_frames: u64,
 }
 
@@ -255,7 +252,6 @@ impl GnomeLockFrameProducer {
             transport,
             readback: vec![0; frame_bytes],
             top_down_rgba: vec![0; frame_bytes],
-            last_publish: Instant::now() - TRANSPORT_FRAME_INTERVAL,
             published_frames: 0,
         })
     }
@@ -296,21 +292,18 @@ impl GnomeLockFrameProducer {
                 .engine
                 .render_frame(TRANSPORT_WIDTH, TRANSPORT_HEIGHT);
 
-            if self.last_publish.elapsed() >= TRANSPORT_FRAME_INTERVAL {
-                self.capture_frame();
-                self.transport.publish(&self.top_down_rgba)?;
-                self.last_publish = Instant::now();
-                self.published_frames = self.published_frames.saturating_add(1);
+            self.capture_frame();
+            self.transport.publish(&self.top_down_rgba)?;
+            self.published_frames = self.published_frames.saturating_add(1);
 
-                if self.published_frames % 50 == 0 {
-                    log_information(
-                        &self.logfile,
-                        &format!(
-                            "[LOCK] GNOME shared-memory shader frames published: {}",
-                            self.published_frames,
-                        ),
-                    );
-                }
+            if self.published_frames % 50 == 0 {
+                log_information(
+                    &self.logfile,
+                    &format!(
+                        "[LOCK] GNOME shared-memory shader frames published: {}",
+                        self.published_frames,
+                    ),
+                );
             }
 
             self.window.gl_swap_window();
