@@ -1,0 +1,12 @@
+{
+  "uuid": "screenshaver@screenshaver",
+  "name": "Screenshaver Lock Screen",
+  "description": "Secure GNOME lock-screen visual integration for Screenshaver.",
+  "shell-version": [
+    "50"
+  ],
+  "session-modes": [
+    "user",
+    "unlock-dialog"
+  ]
+}

@@ -796,12 +796,12 @@ fn main() {
         };
 
 
-    // GNOME lock-screen integration is runtime-owned. Establish a per-process
-    // ownership marker only after the resident Screenshaver singleton has been
-    // acquired. The GNOME Shell extension will later require both this live
-    // ownership record and the matching per-lock shared-memory transport before
-    // it is permitted to create any Screenshaver lock-screen actors.
-    let _gnome_runtime_session =
+    // GNOME lock-screen integration is runtime-owned. Establish the
+    // authorization marker only after the resident Screenshaver singleton has
+    // been acquired, then provision and activate the Shell extension. Any
+    // failure here disables only Screenshaver's custom GNOME presentation:
+    // GNOME's proven native secure-lock path remains available as the fallback.
+    let gnome_runtime_session =
         if desktop_environment.is_gnome()
             && cfg.screen_lock_enabled
         {
@@ -828,25 +828,68 @@ fn main() {
 
                 Err(error) => {
                     eprintln!(
-                        "[LOCK] Unable to establish GNOME runtime ownership: {}",
+                        "[LOCK] Unable to establish GNOME runtime ownership; stock GNOME lock presentation will be used: {}",
                         error
                     );
 
-                    crate::logger::error(
+                    crate::logger::warning(
                         &logfile,
                         &format!(
-                            "[LOCK] Unable to establish GNOME runtime ownership: {}",
+                            "[LOCK] Unable to establish GNOME runtime ownership; stock GNOME lock presentation will be used: {}",
                             error,
                         ),
                     );
 
-                    drop(database_connection);
-                    return;
+                    None
                 }
             }
         } else {
             None
         };
+
+
+    let mut gnome_extension_integration =
+        None;
+
+    if desktop_environment.is_gnome() {
+        if cfg.screen_lock_enabled {
+            if gnome_runtime_session.is_some() {
+                match crate::manage_gnome_extension::GnomeExtensionIntegrationGuard::activate(
+                    &logfile
+                ) {
+                    Ok(integration) => {
+                        println!(
+                            "[LOCK] Screenshaver GNOME Shell extension enabled for this runtime."
+                        );
+
+                        gnome_extension_integration =
+                            Some(
+                                integration
+                            );
+                    }
+
+                    Err(error) => {
+                        eprintln!(
+                            "[LOCK] GNOME extension activation unavailable; stock GNOME lock presentation will be used: {}",
+                            error
+                        );
+
+                        crate::logger::warning(
+                            &logfile,
+                            &format!(
+                                "[LOCK] GNOME extension activation unavailable; stock GNOME lock presentation will be used: {}",
+                                error,
+                            ),
+                        );
+                    }
+                }
+            }
+        } else {
+            crate::manage_gnome_extension::disable_if_present(
+                &logfile
+            );
+        }
+    }
 
 
     // KDE lock-screen integration is runtime-owned. Do not touch KScreenLocker
@@ -1778,8 +1821,8 @@ fn main() {
                             {
 
                                 let presenter_result =
-                                    match _gnome_runtime_session.as_ref() {
-                                        Some(gnome_runtime_session) => {
+                                    match (gnome_runtime_session.as_ref(), gnome_extension_integration.as_ref()) {
+                                        (Some(gnome_runtime_session), Some(_gnome_extension_integration)) => {
                                             crate::present_screen_lock_gnome::GnomeLockPresenter::start(
                                                 &sdl,
                                                 &logfile,
@@ -1803,9 +1846,9 @@ fn main() {
                                             )
                                         }
 
-                                        None => {
+                                        _ => {
                                             Err(
-                                                "GNOME runtime ownership session is unavailable; refusing to start Screenshaver lock presentation"
+                                                "GNOME custom presentation is unavailable because its runtime ownership or extension activation guard is missing"
                                                     .to_string()
                                             )
                                         }
@@ -2213,6 +2256,30 @@ fn main() {
 
 
     wallpaper_manager.stop_and_join();
+
+
+    if let Some(mut integration) =
+        gnome_extension_integration.take()
+    {
+        match integration.deactivate() {
+            Ok(()) => {
+                crate::logger::information(
+                    &logfile,
+                    "[LOCK] GNOME Shell extension deactivated on Screenshaver shutdown",
+                );
+            }
+
+            Err(error) => {
+                crate::logger::warning(
+                    &logfile,
+                    &format!(
+                        "[LOCK] Unable to deactivate GNOME Shell extension during shutdown: {}",
+                        error,
+                    ),
+                );
+            }
+        }
+    }
 
 
     if let Some(mut integration) = kde_lock_integration.take() {
