@@ -311,9 +311,8 @@ impl GnomeLockFrameProducer {
             // that begins after render_frame() returns.
             let presentation_started = Instant::now();
 
-            let prepare_started = Instant::now();
-            self.capture_frame();
-            let prepare_elapsed = prepare_started.elapsed();
+            let (readback_elapsed, row_flip_elapsed) =
+                self.capture_frame();
 
             let transfer_started = Instant::now();
             self.transport.publish(&self.top_down_rgba)?;
@@ -341,7 +340,8 @@ impl GnomeLockFrameProducer {
             self.presentation_monitor.record(
                 LockPresentationSample {
                     configured_fps,
-                    prepare: prepare_elapsed,
+                    readback: readback_elapsed,
+                    row_flip: row_flip_elapsed,
                     transfer: transfer_elapsed,
                     submit: submit_elapsed,
                     total: presentation_started.elapsed(),
@@ -354,7 +354,9 @@ impl GnomeLockFrameProducer {
         Ok(())
     }
 
-    fn capture_frame(&mut self) {
+    fn capture_frame(&mut self) -> (std::time::Duration, std::time::Duration) {
+        let readback_started = Instant::now();
+
         unsafe {
             gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
             gl::ReadBuffer(gl::BACK);
@@ -368,6 +370,9 @@ impl GnomeLockFrameProducer {
                 self.readback.as_mut_ptr() as *mut _,
             );
         }
+
+        let readback_elapsed = readback_started.elapsed();
+        let row_flip_started = Instant::now();
 
         // OpenGL's framebuffer origin is bottom-left. St.ImageContent expects
         // the first row to represent the top of the image, so reverse the row
@@ -386,6 +391,10 @@ impl GnomeLockFrameProducer {
                     &self.readback[source_start..source_start + row_bytes],
                 );
         }
+
+        let row_flip_elapsed = row_flip_started.elapsed();
+
+        (readback_elapsed, row_flip_elapsed)
     }
 }
 

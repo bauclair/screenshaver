@@ -39,19 +39,17 @@ pub(crate) enum LockPresentationHealth {
 
 /// One completed backend-presentation sample.
 ///
-/// The three component durations are deliberately backend-neutral:
+/// Milestone 2 keeps GNOME's two preparation costs separate so GPU readback and
+/// CPU row reversal can be observed independently. Other backends may leave a
+/// component at `Duration::ZERO` when that stage does not exist in their path.
 ///
-/// * `prepare` - work that prepares a completed renderer frame for the host;
-/// * `transfer` - work that moves the prepared frame to the host/backend;
-/// * `submit` - final backend/compositor submission work owned by Screenshaver.
-///
-/// A backend may leave a component at `Duration::ZERO` when that stage does not
-/// exist in its presentation path. `total` spans all Screenshaver-owned work
-/// after FrameRenderEngine returns and before normal frame pacing begins.
+/// `total` spans all Screenshaver-owned presentation work after
+/// FrameRenderEngine returns and before normal frame pacing begins.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct LockPresentationSample {
     pub configured_fps: u32,
-    pub prepare: Duration,
+    pub readback: Duration,
+    pub row_flip: Duration,
     pub transfer: Duration,
     pub submit: Duration,
     pub total: Duration,
@@ -164,21 +162,24 @@ impl LockPresentationMonitor {
         let count = self.samples.len() as u32;
         let count_f64 = count as f64;
 
-        let mut prepare_total = Duration::ZERO;
+        let mut readback_total = Duration::ZERO;
+        let mut row_flip_total = Duration::ZERO;
         let mut transfer_total = Duration::ZERO;
         let mut submit_total = Duration::ZERO;
         let mut presentation_total = Duration::ZERO;
         let mut maximum_total = Duration::ZERO;
 
         for timed in &self.samples {
-            prepare_total += timed.sample.prepare;
+            readback_total += timed.sample.readback;
+            row_flip_total += timed.sample.row_flip;
             transfer_total += timed.sample.transfer;
             submit_total += timed.sample.submit;
             presentation_total += timed.sample.total;
             maximum_total = maximum_total.max(timed.sample.total);
         }
 
-        let average_prepare_ms = prepare_total.as_secs_f64() * 1000.0 / count_f64;
+        let average_readback_ms = readback_total.as_secs_f64() * 1000.0 / count_f64;
+        let average_row_flip_ms = row_flip_total.as_secs_f64() * 1000.0 / count_f64;
         let average_transfer_ms = transfer_total.as_secs_f64() * 1000.0 / count_f64;
         let average_submit_ms = submit_total.as_secs_f64() * 1000.0 / count_f64;
         let average_total_ms = presentation_total.as_secs_f64() * 1000.0 / count_f64;
@@ -194,12 +195,13 @@ impl LockPresentationMonitor {
         crate::logger::information(
             &self.logfile,
             &format!(
-                "[LOCK] {} lock-presentation observation: samples={} configured_fps={} frame_budget_ms={:.3} avg_prepare_ms={:.3} avg_transfer_ms={:.3} avg_submit_ms={:.3} avg_total_ms={:.3} max_total_ms={:.3} avg_budget_usage={:.1}% health=OBSERVATION_ONLY",
+                "[LOCK] {} lock-presentation observation: samples={} configured_fps={} frame_budget_ms={:.3} avg_readback_ms={:.3} avg_row_flip_ms={:.3} avg_transfer_ms={:.3} avg_submit_ms={:.3} avg_total_ms={:.3} max_total_ms={:.3} avg_budget_usage={:.1}% health=OBSERVATION_ONLY",
                 self.backend.name(),
                 count,
                 self.configured_fps,
                 frame_budget_ms,
-                average_prepare_ms,
+                average_readback_ms,
+                average_row_flip_ms,
                 average_transfer_ms,
                 average_submit_ms,
                 average_total_ms,
