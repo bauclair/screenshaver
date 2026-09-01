@@ -1778,26 +1778,38 @@ fn main() {
                             {
 
                                 let presenter_result =
-                                    crate::present_screen_lock_gnome::GnomeLockPresenter::start(
-                                        &sdl,
-                                        &logfile,
-                                        shader_manager,
-                                        next_shader_interval,
-                                        cfg.screensaver_speed_policy.clone(),
-                                        cfg.global_rendered_fps,
-                                        cfg.screensaver_fps_policy_entries.clone(),
-                                        cfg.texture_policy.clone(),
-                                        cfg.screensaver_postprocess_policy.clone(),
-                                        audio_backend
-                                            .as_ref()
-                                            .map(
-                                                |backend| {
-                                                    backend.shared_bands()
-                                                }
-                                            ),
-                                        cfg.subtitles,
-                                        cfg.subtitle_placement,
-                                    );
+                                    match _gnome_runtime_session.as_ref() {
+                                        Some(gnome_runtime_session) => {
+                                            crate::present_screen_lock_gnome::GnomeLockPresenter::start(
+                                                &sdl,
+                                                &logfile,
+                                                gnome_runtime_session.session_id(),
+                                                shader_manager,
+                                                next_shader_interval,
+                                                cfg.screensaver_speed_policy.clone(),
+                                                cfg.global_rendered_fps,
+                                                cfg.screensaver_fps_policy_entries.clone(),
+                                                cfg.texture_policy.clone(),
+                                                cfg.screensaver_postprocess_policy.clone(),
+                                                audio_backend
+                                                    .as_ref()
+                                                    .map(
+                                                        |backend| {
+                                                            backend.shared_bands()
+                                                        }
+                                                    ),
+                                                cfg.subtitles,
+                                                cfg.subtitle_placement,
+                                            )
+                                        }
+
+                                        None => {
+                                            Err(
+                                                "GNOME runtime ownership session is unavailable; refusing to start Screenshaver lock presentation"
+                                                    .to_string()
+                                            )
+                                        }
+                                    };
 
 
                                 match presenter_result {

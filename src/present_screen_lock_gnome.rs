@@ -21,9 +21,10 @@ const TRANSPORT_ROWSTRIDE: u32 = TRANSPORT_WIDTH * 4;
 const TRANSPORT_FILENAME: &str = "screenshaver-lock-frame.shm";
 
 const TRANSPORT_MAGIC: [u8; 8] = *b"SHVRGNM1";
-const TRANSPORT_VERSION: u32 = 1;
+const TRANSPORT_VERSION: u32 = 2;
 const TRANSPORT_HEADER_BYTES: usize = 64;
 const TRANSPORT_SLOT_COUNT: u32 = 2;
+const TRANSPORT_SESSION_ID_BYTES: usize = 16;
 
 const HEADER_MAGIC_OFFSET: usize = 0;
 const HEADER_VERSION_OFFSET: usize = 8;
@@ -35,6 +36,7 @@ const HEADER_FRAME_BYTES_OFFSET: usize = 28;
 const HEADER_SLOT_COUNT_OFFSET: usize = 32;
 const HEADER_ACTIVE_SLOT_OFFSET: usize = 36;
 const HEADER_FRAME_COUNTER_OFFSET: usize = 40;
+const HEADER_SESSION_ID_OFFSET: usize = 44;
 
 #[cfg(unix)]
 const PROT_READ: i32 = 0x1;
@@ -76,6 +78,7 @@ impl GnomeLockPresenter {
     pub(crate) fn start(
         sdl: &sdl2::Sdl,
         logfile: &Path,
+        session_id: &str,
         shader_manager: crate::manage_shader::ShaderManager,
         shader_interval: u64,
         animation_speed_policy: crate::load_config::AnimationSpeedPolicy,
@@ -90,6 +93,7 @@ impl GnomeLockPresenter {
         let producer = GnomeLockFrameProducer::new(
             sdl,
             logfile,
+            session_id,
             shader_manager,
             shader_interval,
             animation_speed_policy,
@@ -144,6 +148,7 @@ impl GnomeLockFrameProducer {
     fn new(
         sdl: &sdl2::Sdl,
         logfile: &Path,
+        session_id: &str,
         shader_manager: crate::manage_shader::ShaderManager,
         shader_interval: u64,
         animation_speed_policy: crate::load_config::AnimationSpeedPolicy,
@@ -235,10 +240,16 @@ impl GnomeLockFrameProducer {
             TRANSPORT_HEIGHT,
         )?;
 
+        let session_id_bytes =
+            decode_session_id(
+                session_id
+            )?;
+
         let frame_bytes = frame_bytes()?;
         let transport = SharedFrameTransport::create(
             transport_path,
             frame_bytes,
+            session_id_bytes,
         )?;
 
         log_information(
@@ -404,6 +415,7 @@ struct SharedFrameTransport {
     mapping: *mut u8,
     mapping_len: usize,
     frame_bytes: usize,
+    session_id: [u8; TRANSPORT_SESSION_ID_BYTES],
     active_slot: u32,
     frame_counter: u32,
     removed: bool,
@@ -413,11 +425,13 @@ impl SharedFrameTransport {
     fn create(
         path: PathBuf,
         frame_bytes: usize,
+        session_id: [u8; TRANSPORT_SESSION_ID_BYTES],
     ) -> Result<Self, String> {
         #[cfg(not(unix))]
         {
             let _ = path;
             let _ = frame_bytes;
+            let _ = session_id;
             return Err(
                 "GNOME shared-memory lock transport requires a Unix platform"
                     .to_string(),
@@ -495,6 +509,7 @@ impl SharedFrameTransport {
                 mapping,
                 mapping_len,
                 frame_bytes,
+                session_id,
                 active_slot: 0,
                 frame_counter: 0,
                 removed: false,
@@ -530,6 +545,14 @@ impl SharedFrameTransport {
             .store(self.active_slot, Ordering::Release);
         self.frame_counter_atomic()
             .store(self.frame_counter, Ordering::Release);
+
+        let session_id =
+            self.session_id;
+
+        self.write_bytes(
+            HEADER_SESSION_ID_OFFSET,
+            &session_id,
+        );
     }
 
     fn publish(&mut self, rgba: &[u8]) -> Result<(), String> {
@@ -616,6 +639,95 @@ impl Drop for SharedFrameTransport {
         }
     }
 }
+
+
+fn decode_session_id(
+    session_id: &str,
+) -> Result<[u8; TRANSPORT_SESSION_ID_BYTES], String> {
+
+    if session_id.len()
+        != TRANSPORT_SESSION_ID_BYTES * 2
+    {
+        return Err(
+            format!(
+                "GNOME runtime session identity has {} hexadecimal characters; expected {}",
+                session_id.len(),
+                TRANSPORT_SESSION_ID_BYTES * 2,
+            )
+        );
+    }
+
+
+    let mut decoded =
+        [0u8; TRANSPORT_SESSION_ID_BYTES];
+
+    let bytes =
+        session_id.as_bytes();
+
+
+    for index in 0..TRANSPORT_SESSION_ID_BYTES {
+        let high =
+            decode_hex_nibble(
+                bytes[index * 2]
+            )
+            .ok_or_else(
+                || {
+                    "GNOME runtime session identity contains a non-hexadecimal character"
+                        .to_string()
+                }
+            )?;
+
+        let low =
+            decode_hex_nibble(
+                bytes[index * 2 + 1]
+            )
+            .ok_or_else(
+                || {
+                    "GNOME runtime session identity contains a non-hexadecimal character"
+                        .to_string()
+                }
+            )?;
+
+        decoded[index] =
+            (high << 4) | low;
+    }
+
+
+    Ok(
+        decoded
+    )
+}
+
+
+fn decode_hex_nibble(
+    byte: u8,
+) -> Option<u8> {
+
+    match byte {
+        b'0'..=b'9' => {
+            Some(
+                byte - b'0'
+            )
+        }
+
+        b'a'..=b'f' => {
+            Some(
+                byte - b'a' + 10
+            )
+        }
+
+        b'A'..=b'F' => {
+            Some(
+                byte - b'A' + 10
+            )
+        }
+
+        _ => {
+            None
+        }
+    }
+}
+
 
 fn frame_bytes() -> Result<usize, String> {
     (TRANSPORT_ROWSTRIDE as usize)
