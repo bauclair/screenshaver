@@ -84,6 +84,7 @@ mod x11_connection;
 mod x11_wallpaper;
 mod glx_context;
 mod fps_monitor;
+mod monitor_lock_presentation;
 
 mod postprocess_shader;
 mod render_passthrough;

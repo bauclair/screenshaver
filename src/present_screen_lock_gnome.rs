@@ -4,9 +4,15 @@ use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::ptr;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::Instant;
 
 use sdl2::video::GLProfile;
 
+use crate::monitor_lock_presentation::{
+    LockPresentationBackend,
+    LockPresentationMonitor,
+    LockPresentationSample,
+};
 use crate::render_frame::FrameRenderEngine;
 
 const TRANSPORT_WIDTH: u32 = 1920;
@@ -130,6 +136,7 @@ struct GnomeLockFrameProducer {
     readback: Vec<u8>,
     top_down_rgba: Vec<u8>,
     published_frames: u64,
+    presentation_monitor: LockPresentationMonitor,
 }
 
 impl GnomeLockFrameProducer {
@@ -244,6 +251,12 @@ impl GnomeLockFrameProducer {
             ),
         );
 
+        let presentation_monitor = LockPresentationMonitor::new(
+            LockPresentationBackend::Gnome,
+            logfile,
+            engine.current_metadata().configured_fps,
+        );
+
         Ok(Self {
             logfile: logfile.to_path_buf(),
             engine,
@@ -253,6 +266,7 @@ impl GnomeLockFrameProducer {
             readback: vec![0; frame_bytes],
             top_down_rgba: vec![0; frame_bytes],
             published_frames: 0,
+            presentation_monitor,
         })
     }
 
@@ -292,8 +306,19 @@ impl GnomeLockFrameProducer {
                 .engine
                 .render_frame(TRANSPORT_WIDTH, TRANSPORT_HEIGHT);
 
+            // FrameRenderEngine owns the existing shader/render performance
+            // accounting. Measure only the GNOME-specific presentation work
+            // that begins after render_frame() returns.
+            let presentation_started = Instant::now();
+
+            let prepare_started = Instant::now();
             self.capture_frame();
+            let prepare_elapsed = prepare_started.elapsed();
+
+            let transfer_started = Instant::now();
             self.transport.publish(&self.top_down_rgba)?;
+            let transfer_elapsed = transfer_started.elapsed();
+
             self.published_frames = self.published_frames.saturating_add(1);
 
             if self.published_frames % 50 == 0 {
@@ -306,7 +331,23 @@ impl GnomeLockFrameProducer {
                 );
             }
 
+            let submit_started = Instant::now();
             self.window.gl_swap_window();
+            let submit_elapsed = submit_started.elapsed();
+
+            let configured_fps =
+                self.engine.current_metadata().configured_fps;
+
+            self.presentation_monitor.record(
+                LockPresentationSample {
+                    configured_fps,
+                    prepare: prepare_elapsed,
+                    transfer: transfer_elapsed,
+                    submit: submit_elapsed,
+                    total: presentation_started.elapsed(),
+                },
+            );
+
             self.engine.limit_fps();
         }
 
