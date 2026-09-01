@@ -796,6 +796,59 @@ fn main() {
         };
 
 
+    // GNOME lock-screen integration is runtime-owned. Establish a per-process
+    // ownership marker only after the resident Screenshaver singleton has been
+    // acquired. The GNOME Shell extension will later require both this live
+    // ownership record and the matching per-lock shared-memory transport before
+    // it is permitted to create any Screenshaver lock-screen actors.
+    let _gnome_runtime_session =
+        if desktop_environment.is_gnome()
+            && cfg.screen_lock_enabled
+        {
+            match crate::manage_gnome_extension::GnomeRuntimeSession::acquire(
+                &logfile
+            ) {
+                Ok(session) => {
+                    println!(
+                        "[LOCK] GNOME runtime ownership established for this Screenshaver process."
+                    );
+
+                    crate::logger::information(
+                        &logfile,
+                        &format!(
+                            "[LOCK] GNOME runtime ownership guard active: pid={} marker={} session={}",
+                            session.pid(),
+                            session.marker_path().display(),
+                            session.session_id(),
+                        ),
+                    );
+
+                    Some(session)
+                }
+
+                Err(error) => {
+                    eprintln!(
+                        "[LOCK] Unable to establish GNOME runtime ownership: {}",
+                        error
+                    );
+
+                    crate::logger::error(
+                        &logfile,
+                        &format!(
+                            "[LOCK] Unable to establish GNOME runtime ownership: {}",
+                            error,
+                        ),
+                    );
+
+                    drop(database_connection);
+                    return;
+                }
+            }
+        } else {
+            None
+        };
+
+
     // KDE lock-screen integration is runtime-owned. Do not touch KScreenLocker
     // until the resident Screenshaver singleton has been acquired; this keeps
     // --control and duplicate invocations from changing the active desktop.
