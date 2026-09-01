@@ -22,6 +22,7 @@ mod manage_configuration;
 mod manage_shader;
 mod manage_screen_lock;
 mod manage_screen_lock_gnome;
+mod manage_gnome_extension;
 mod present_screen_lock_gnome;
 mod lock_screen_widget;
 mod define_lock_screen_widget;
