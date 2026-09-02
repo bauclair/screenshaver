@@ -287,6 +287,101 @@ fn main() {
             return;
         }
 
+
+        crate::parse_arguments::Command::ConstructLockScreenXfce => {
+
+            let desktop_environment =
+                crate::detect_desktop_environment::detect();
+
+
+            println!(
+                "Detected desktop environment: {}",
+                desktop_environment.name()
+            );
+
+
+            if !desktop_environment.is_xfce() {
+
+                eprintln!(
+                    "Screenshaver Xfce lock-screen integration was not modified because Xfce is not the detected desktop environment."
+                );
+
+                return;
+            }
+
+
+            match crate::construct_lock_screen_xfce::configure_user() {
+
+                Ok(status) => {
+
+                    println!(
+                        "Screenshaver Xfce lock-screen integration configured."
+                    );
+
+                    println!(
+                        "xfce4-screensaver available: {}",
+                        status.xfce_screensaver_available
+                    );
+
+                    println!(
+                        "xfconf-query available: {}",
+                        status.xfconf_query_available
+                    );
+
+                    println!(
+                        "Trusted Screenshaver presenter installed: {}",
+                        status.trusted_presenter_installed
+                    );
+
+                    println!(
+                        "Screenshaver saver desktop registered: {}",
+                        status.saver_desktop_registered
+                    );
+
+                    println!(
+                        "Screenshaver selected as Xfce saver theme: {}",
+                        status.screenshaver_selected
+                    );
+
+                    println!(
+                        "Light Locker autostart disabled: {}",
+                        status.light_locker_autostart_disabled
+                    );
+
+                    if status.ready_for_runtime() {
+                        println!(
+                            "Xfce lock-screen integration is ready for runtime use."
+                        );
+                    } else {
+                        eprintln!(
+                            "Xfce lock-screen integration is not yet ready for runtime use."
+                        );
+
+                        std::process::exit(
+                            1
+                        );
+                    }
+                }
+
+
+                Err(error) => {
+
+                    eprintln!(
+                        "Unable to construct and configure Screenshaver Xfce lock-screen integration: {}",
+                        error
+                    );
+
+                    std::process::exit(
+                        1
+                    );
+                }
+            }
+
+
+            return;
+        }
+
+
         crate::parse_arguments::Command::Run
         | crate::parse_arguments::Command::Start
         | crate::parse_arguments::Command::Control { .. } => {}
@@ -698,7 +793,8 @@ fn main() {
         crate::parse_arguments::Command::Stop
         | crate::parse_arguments::Command::Help
         | crate::parse_arguments::Command::Version
-        | crate::parse_arguments::Command::ConstructLockScreenKde => {
+        | crate::parse_arguments::Command::ConstructLockScreenKde
+        | crate::parse_arguments::Command::ConstructLockScreenXfce => {
 
             unreachable!(
                 "Database-independent command reached runtime startup"

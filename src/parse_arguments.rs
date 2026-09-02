@@ -15,6 +15,8 @@ pub enum Command {
     },
 
     ConstructLockScreenKde,
+
+    ConstructLockScreenXfce,
 }
 
 
@@ -108,6 +110,20 @@ pub fn parse() -> Result<Command, String> {
 
             parse_construct_lock_screen_kde(
                 &args[1..]
+            )
+        }
+
+
+        "--construct-lock-screen-xfce" => {
+
+            require_no_extra_arguments(
+                &args,
+                "--construct-lock-screen-xfce",
+            )?;
+
+
+            Ok(
+                Command::ConstructLockScreenXfce
             )
         }
 
@@ -209,7 +225,6 @@ fn parse_construct_lock_screen_kde(
     )
 }
 
-
 fn require_no_extra_arguments(
     args: &[String],
     option: &str,
@@ -269,6 +284,16 @@ pub fn print_help() {
              --control [PATH]\n\
                  Open the Screenshaver Control Center.\n\
                  If PATH is supplied, preload that shader for policy editing.\n\
+         \n\
+         Temporary development/setup options:\n\
+         \n\
+             --construct-lock-screen-kde OUTPUT_PATH\n\
+                 Construct/install the KDE lock-screen integration.\n\
+                 Temporary development/setup command.\n\
+         \n\
+             --construct-lock-screen-xfce\n\
+                 Construct/configure the Xfce lock-screen integration.\n\
+                 Temporary development/setup command.\n\
          \n\
          Examples:\n\
              screenshaver --start\n\
