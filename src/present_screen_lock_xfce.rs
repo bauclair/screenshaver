@@ -104,7 +104,7 @@ fn verify_presentation_window(
 ) -> Result<(), String> {
     crate::logger::information(
         logfile,
-        "[LOCK] XFCE OpenGL presentation test: opening X11 display",
+        "[LOCK] XFCE OpenGL presentation: opening X11 display",
     );
 
     let connection =
@@ -190,7 +190,7 @@ fn run_opengl_clear_test(
 
     crate::logger::information(
         logfile,
-        "[LOCK] XFCE shader presentation test: loading Screenshaver configuration",
+        "[LOCK] XFCE shader presentation: loading Screenshaver configuration",
     );
 
     let config_path =
@@ -286,7 +286,7 @@ fn run_opengl_clear_test(
 
     crate::logger::information(
         logfile,
-        "[LOCK] XFCE shader presentation test: choosing GLX framebuffer configuration",
+        "[LOCK] XFCE shader presentation: choosing GLX framebuffer configuration",
     );
 
     let framebuffer_config =
@@ -304,7 +304,7 @@ fn run_opengl_clear_test(
     crate::logger::information(
         logfile,
         &format!(
-            "[LOCK] XFCE shader presentation test: selected GLX visual 0x{:X}",
+            "[LOCK] XFCE shader presentation: selected GLX visual 0x{:X}",
             framebuffer_config.visual_info().visualid,
         ),
     );
@@ -323,7 +323,7 @@ fn run_opengl_clear_test(
 
     crate::logger::information(
         logfile,
-        "[LOCK] XFCE shader presentation test: making context current on supplied window",
+        "[LOCK] XFCE shader presentation: making context current on supplied window",
     );
 
     if let Err(error) =
@@ -347,7 +347,7 @@ fn run_opengl_clear_test(
 
     crate::logger::information(
         logfile,
-        "[LOCK] XFCE shader presentation test: GLX context is current",
+        "[LOCK] XFCE shader presentation: GLX context is current",
     );
 
     gl::load_with(
@@ -372,7 +372,7 @@ fn run_opengl_clear_test(
 
     crate::logger::information(
         logfile,
-        "[LOCK] XFCE shader presentation test: constructing FrameRenderEngine",
+        "[LOCK] XFCE shader presentation: constructing FrameRenderEngine",
     );
 
     let mut engine =
@@ -414,7 +414,7 @@ fn run_opengl_clear_test(
     crate::logger::information(
         logfile,
         &format!(
-            "[LOCK] XFCE shader presentation test started: window=0x{:X}, geometry={}x{}",
+            "[LOCK] XFCE shader presentation initialized: window=0x{:X}, geometry={}x{}",
             window,
             width,
             height,

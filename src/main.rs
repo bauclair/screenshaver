@@ -365,14 +365,24 @@ fn main() {
         crate::locate_paths::runtime_log_path();
 
 
-    crate::logger::reset_log(
-        &logfile
-    );
+    let xfce_presentation_child =
+        std::env::var_os(
+            "XSCREENSAVER_WINDOW"
+        ).is_some();
 
 
-    if std::env::var_os(
-        "XSCREENSAVER_WINDOW"
-    ).is_some() {
+    if xfce_presentation_child {
+        crate::logger::ensure_log_exists(
+            &logfile
+        );
+    } else {
+        crate::logger::reset_log(
+            &logfile
+        );
+    }
+
+
+    if xfce_presentation_child {
         match crate::present_screen_lock_xfce::detect_presentation_window(
             &logfile
         ) {
