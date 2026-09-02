@@ -287,7 +287,7 @@ pub fn print_help() {
          \n\
          Temporary development/setup options:\n\
          \n\
-             --construct-lock-screen-kde OUTPUT_PATH\n\
+             --construct-lock-screen-kde\n\
                  Construct/install the KDE lock-screen integration.\n\
                  Temporary development/setup command.\n\
          \n\
