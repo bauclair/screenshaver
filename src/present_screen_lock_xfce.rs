@@ -100,6 +100,11 @@ fn verify_presentation_window(
     logfile: &Path,
     window: u64,
 ) -> Result<(), String> {
+    crate::logger::information(
+        logfile,
+        "[LOCK] XFCE presentation-window verification: opening X11 display",
+    );
+
     let connection =
         crate::x11_connection::X11Connection::connect()
             .map_err(|error| {
@@ -110,11 +115,24 @@ fn verify_presentation_window(
                 )
             })?;
 
+    crate::logger::information(
+        logfile,
+        "[LOCK] XFCE presentation-window verification: X11 display opened",
+    );
+
     let x11_window =
         window as xlib::Window;
 
     let mut attributes =
         MaybeUninit::<xlib::XWindowAttributes>::uninit();
+
+    crate::logger::information(
+        logfile,
+        &format!(
+            "[LOCK] XFCE presentation-window verification: querying attributes for 0x{:X}",
+            window,
+        ),
+    );
 
     let status =
         unsafe {
@@ -124,6 +142,14 @@ fn verify_presentation_window(
                 attributes.as_mut_ptr(),
             )
         };
+
+    crate::logger::information(
+        logfile,
+        &format!(
+            "[LOCK] XFCE presentation-window verification: XGetWindowAttributes returned status={}",
+            status,
+        ),
+    );
 
     if status == 0 {
         return Err(
