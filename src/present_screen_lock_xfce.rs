@@ -1,10 +1,10 @@
 use std::env;
-use std::ffi::CString;
 use std::mem::MaybeUninit;
 use std::path::Path;
 use std::thread;
 use std::time::Duration;
 
+use x11::glx;
 use x11::xlib;
 
 const XSCREENSAVER_WINDOW_ENV: &str = "XSCREENSAVER_WINDOW";
@@ -105,7 +105,7 @@ fn verify_presentation_window(
 ) -> Result<(), String> {
     crate::logger::information(
         logfile,
-        "[LOCK] XFCE presentation-window verification: opening X11 display",
+        "[LOCK] XFCE OpenGL presentation test: opening X11 display",
     );
 
     let connection =
@@ -118,41 +118,19 @@ fn verify_presentation_window(
                 )
             })?;
 
-    crate::logger::information(
-        logfile,
-        "[LOCK] XFCE presentation-window verification: X11 display opened",
-    );
-
-    let x11_window =
-        window as xlib::Window;
-
+    let display = connection.display();
+    let x11_window = window as xlib::Window;
     let mut attributes =
         MaybeUninit::<xlib::XWindowAttributes>::uninit();
-
-    crate::logger::information(
-        logfile,
-        &format!(
-            "[LOCK] XFCE presentation-window verification: querying attributes for 0x{:X}",
-            window,
-        ),
-    );
 
     let status =
         unsafe {
             xlib::XGetWindowAttributes(
-                connection.display(),
+                display,
                 x11_window,
                 attributes.as_mut_ptr(),
             )
         };
-
-    crate::logger::information(
-        logfile,
-        &format!(
-            "[LOCK] XFCE presentation-window verification: XGetWindowAttributes returned status={}",
-            status,
-        ),
-    );
 
     if status == 0 {
         return Err(
@@ -168,9 +146,7 @@ fn verify_presentation_window(
             attributes.assume_init()
         };
 
-    if attributes.width <= 0
-        || attributes.height <= 0
-    {
+    if attributes.width <= 0 || attributes.height <= 0 {
         return Err(
             format!(
                 "XFCE presentation window 0x{:X} has invalid geometry {}x{}",
@@ -193,152 +169,138 @@ fn verify_presentation_window(
         ),
     );
 
-    println!(
-        "XFCE presentation window verified: 0x{:X}, {}x{}, depth={}, map_state={}",
-        window,
-        attributes.width,
-        attributes.height,
-        attributes.depth,
-        attributes.map_state,
-    );
-
-    draw_solid_test_color(
+    run_opengl_clear_test(
         logfile,
         &connection,
         x11_window,
-        attributes.width as u32,
-        attributes.height as u32,
-    )?;
-
-    Ok(())
+        attributes.width,
+        attributes.height,
+    )
 }
 
 
-fn draw_solid_test_color(
+fn run_opengl_clear_test(
     logfile: &Path,
     connection: &crate::x11_connection::X11Connection,
     window: xlib::Window,
-    width: u32,
-    height: u32,
+    width: i32,
+    height: i32,
 ) -> Result<(), String> {
-    let display =
-        connection.display();
+    let display = connection.display();
+    let screen = connection.screen();
 
-    let screen =
-        connection.screen();
+    crate::logger::information(
+        logfile,
+        "[LOCK] XFCE OpenGL presentation test: choosing GLX framebuffer configuration",
+    );
 
-    let colormap =
-        unsafe {
-            xlib::XDefaultColormap(
-                display,
-                screen,
+    let framebuffer_config =
+        crate::glx_context::GlxFramebufferConfig::choose(
+            display,
+            screen,
+        )
+        .map_err(|error| {
+            format!(
+                "Unable to choose GLX framebuffer configuration for XFCE lock presentation: {}",
+                error,
             )
-        };
+        })?;
 
-    let color_name =
-        CString::new("magenta")
-            .map_err(|error| {
-                format!(
-                    "Unable to construct XFCE test color name: {}",
-                    error,
-                )
-            })?;
+    crate::logger::information(
+        logfile,
+        &format!(
+            "[LOCK] XFCE OpenGL presentation test: selected GLX visual 0x{:X}",
+            framebuffer_config.visual_info().visualid,
+        ),
+    );
 
-    let mut screen_color =
-        MaybeUninit::<xlib::XColor>::uninit();
-
-    let mut exact_color =
-        MaybeUninit::<xlib::XColor>::uninit();
-
-    let color_status =
-        unsafe {
-            xlib::XAllocNamedColor(
-                display,
-                colormap,
-                color_name.as_ptr(),
-                screen_color.as_mut_ptr(),
-                exact_color.as_mut_ptr(),
+    let context =
+        crate::glx_context::GlxContext::create(
+            display,
+            &framebuffer_config,
+        )
+        .map_err(|error| {
+            format!(
+                "Unable to create GLX context for XFCE lock presentation: {}",
+                error,
             )
-        };
+        })?;
 
-    if color_status == 0 {
+    crate::logger::information(
+        logfile,
+        "[LOCK] XFCE OpenGL presentation test: making context current on supplied window",
+    );
+
+    if let Err(error) = context.make_current(display, window) {
+        context.destroy(display);
+
         return Err(
-            "Unable to allocate XFCE lock presentation test color"
-                .to_string()
-        );
-    }
-
-    let screen_color =
-        unsafe {
-            screen_color.assume_init()
-        };
-
-    let gc =
-        unsafe {
-            xlib::XCreateGC(
-                display,
+            format!(
+                "Unable to make GLX context current on XFCE presentation window 0x{:X}: {}",
                 window,
-                0,
-                std::ptr::null_mut(),
+                error,
             )
-        };
-
-    if gc.is_null() {
-        return Err(
-            "Unable to create X11 graphics context for XFCE lock presentation test"
-                .to_string()
-        );
-    }
-
-    unsafe {
-        xlib::XSetForeground(
-            display,
-            gc,
-            screen_color.pixel,
-        );
-
-        xlib::XFillRectangle(
-            display,
-            window,
-            gc,
-            0,
-            0,
-            width,
-            height,
-        );
-
-        xlib::XFlush(
-            display
         );
     }
 
     crate::logger::information(
         logfile,
+        "[LOCK] XFCE OpenGL presentation test: GLX context is current",
+    );
+
+    gl::load_with(
+        |symbol| {
+            let symbol =
+                std::ffi::CString::new(symbol)
+                    .expect("OpenGL symbol name contained an interior NUL");
+
+            unsafe {
+                glx::glXGetProcAddress(
+                    symbol.as_ptr() as *const u8
+                )
+                .map_or(
+                    std::ptr::null(),
+                    |function| {
+                        function as *const () as *const std::ffi::c_void
+                    },
+                )
+            }
+        }
+    );
+
+    unsafe {
+        gl::Viewport(0, 0, width, height);
+        gl::ClearColor(0.0, 1.0, 1.0, 1.0);
+        gl::Clear(gl::COLOR_BUFFER_BIT);
+        glx::glXSwapBuffers(display, window);
+    }
+
+    crate::logger::information(
+        logfile,
         &format!(
-            "[LOCK] XFCE solid-color presentation test drawn: window=0x{:X}, geometry={}x{}, color=magenta",
+            "[LOCK] XFCE OpenGL presentation test drawn: window=0x{:X}, geometry={}x{}, color=cyan",
             window,
             width,
             height,
         ),
     );
 
-    println!(
-        "XFCE solid-color presentation test drawn: 0x{:X}, {}x{}, magenta",
-        window,
-        width,
-        height,
-    );
+    thread::sleep(Duration::from_secs(10));
 
-    thread::sleep(
-        Duration::from_secs(10)
-    );
+    crate::glx_context::GlxContext::release_current(display)
+        .map_err(|error| {
+            format!(
+                "Unable to release XFCE lock presentation GLX context: {}",
+                error,
+            )
+        })?;
 
-    unsafe {
-        xlib::XFreeGC(
-            display,
-            gc,
-        );
-    }
+    context.destroy(display);
+
+    crate::logger::information(
+        logfile,
+        "[LOCK] XFCE OpenGL presentation test completed",
+    );
 
     Ok(())
 }
