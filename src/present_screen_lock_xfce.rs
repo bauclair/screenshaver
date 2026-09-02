@@ -1,5 +1,8 @@
 use std::env;
+use std::mem::MaybeUninit;
 use std::path::Path;
+
+use x11::xlib;
 
 const XSCREENSAVER_WINDOW_ENV: &str = "XSCREENSAVER_WINDOW";
 
@@ -82,7 +85,93 @@ pub(crate) fn detect_presentation_window(
         ),
     );
 
+    verify_presentation_window(
+        logfile,
+        window,
+    )?;
+
     Ok(
         window
     )
+}
+
+
+fn verify_presentation_window(
+    logfile: &Path,
+    window: u64,
+) -> Result<(), String> {
+    let connection =
+        crate::x11_connection::X11Connection::connect()
+            .map_err(|error| {
+                format!(
+                    "Unable to connect to the X11 display while verifying XFCE presentation window 0x{:X}: {}",
+                    window,
+                    error,
+                )
+            })?;
+
+    let x11_window =
+        window as xlib::Window;
+
+    let mut attributes =
+        MaybeUninit::<xlib::XWindowAttributes>::uninit();
+
+    let status =
+        unsafe {
+            xlib::XGetWindowAttributes(
+                connection.display(),
+                x11_window,
+                attributes.as_mut_ptr(),
+            )
+        };
+
+    if status == 0 {
+        return Err(
+            format!(
+                "XGetWindowAttributes failed for XFCE presentation window 0x{:X}",
+                window,
+            )
+        );
+    }
+
+    let attributes =
+        unsafe {
+            attributes.assume_init()
+        };
+
+    if attributes.width <= 0
+        || attributes.height <= 0
+    {
+        return Err(
+            format!(
+                "XFCE presentation window 0x{:X} has invalid geometry {}x{}",
+                window,
+                attributes.width,
+                attributes.height,
+            )
+        );
+    }
+
+    crate::logger::information(
+        logfile,
+        &format!(
+            "[LOCK] XFCE lock presentation window verified: 0x{:X}, geometry={}x{}, depth={}, map_state={}",
+            window,
+            attributes.width,
+            attributes.height,
+            attributes.depth,
+            attributes.map_state,
+        ),
+    );
+
+    println!(
+        "XFCE presentation window verified: 0x{:X}, {}x{}, depth={}, map_state={}",
+        window,
+        attributes.width,
+        attributes.height,
+        attributes.depth,
+        attributes.map_state,
+    );
+
+    Ok(())
 }
