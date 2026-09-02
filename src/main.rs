@@ -22,6 +22,7 @@ mod manage_configuration;
 mod manage_shader;
 mod manage_screen_lock;
 mod manage_screen_lock_gnome;
+mod manage_screen_lock_xfce;
 mod manage_gnome_extension;
 mod present_screen_lock_gnome;
 mod present_screen_lock_xfce;
@@ -1845,6 +1846,21 @@ fn main() {
 
 
                                 crate::manage_screen_lock_kde::run(
+                                    &logfile,
+                                    running.as_ref(),
+                                    &wallpaper_control,
+                                )
+
+                            } else if desktop_environment
+                                .is_xfce()
+                            {
+
+                                drop(
+                                    shader_manager
+                                );
+
+
+                                crate::manage_screen_lock_xfce::run(
                                     &logfile,
                                     running.as_ref(),
                                     &wallpaper_control,

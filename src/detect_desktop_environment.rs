@@ -21,6 +21,7 @@ use std::env;
 pub enum DesktopEnvironment {
     KdePlasma,
     Gnome,
+    Xfce,
     Other,
     Unknown,
 }
@@ -36,6 +37,10 @@ impl DesktopEnvironment {
 
             Self::Gnome => {
                 "GNOME"
+            }
+
+            Self::Xfce => {
+                "XFCE"
             }
 
             Self::Other => {
@@ -58,6 +63,12 @@ impl DesktopEnvironment {
         self,
     ) -> bool {
         self == Self::Gnome
+    }
+
+    pub fn is_xfce(
+        self,
+    ) -> bool {
+        self == Self::Xfce
     }
 }
 
@@ -133,6 +144,27 @@ pub fn detect(
     .is_some()
     {
         return DesktopEnvironment::Gnome;
+    }
+
+    if environment_variable_contains_desktop(
+        "XDG_CURRENT_DESKTOP",
+        is_xfce_identifier,
+    ) {
+        return DesktopEnvironment::Xfce;
+    }
+
+    if environment_variable_contains_desktop(
+        "XDG_SESSION_DESKTOP",
+        is_xfce_identifier,
+    ) {
+        return DesktopEnvironment::Xfce;
+    }
+
+    if environment_variable_contains_desktop(
+        "DESKTOP_SESSION",
+        is_xfce_identifier,
+    ) {
+        return DesktopEnvironment::Xfce;
     }
 
     if has_any_desktop_marker() {
@@ -233,6 +265,22 @@ fn is_gnome_identifier(
         )
 }
 
+fn is_xfce_identifier(
+    value: &str,
+) -> bool {
+    let normalized =
+        normalize_identifier(value);
+
+    normalized == "xfce"
+        || normalized == "xfce4"
+        || normalized.starts_with(
+            "xfce-"
+        )
+        || normalized.starts_with(
+            "xfce_"
+        )
+}
+
 fn normalize_identifier(
     value: &str,
 ) -> String {
@@ -264,6 +312,7 @@ mod tests {
     use super::{
         is_gnome_identifier,
         is_kde_identifier,
+        is_xfce_identifier,
     };
 
     #[test]
@@ -347,4 +396,43 @@ mod tests {
             )
         );
     }
+
+    #[test]
+    fn recognizes_xfce_identifiers(
+    ) {
+        assert!(
+            is_xfce_identifier(
+                "XFCE"
+            )
+        );
+
+        assert!(
+            is_xfce_identifier(
+                "xfce4"
+            )
+        );
+
+        assert!(
+            is_xfce_identifier(
+                "xfce-session"
+            )
+        );
+    }
+
+    #[test]
+    fn rejects_non_xfce_identifiers(
+    ) {
+        assert!(
+            !is_xfce_identifier(
+                "GNOME"
+            )
+        );
+
+        assert!(
+            !is_xfce_identifier(
+                "KDE"
+            )
+        );
+    }
+
 }
