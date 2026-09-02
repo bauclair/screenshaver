@@ -191,7 +191,103 @@ fn run_opengl_clear_test(
 
     crate::logger::information(
         logfile,
-        "[LOCK] XFCE OpenGL presentation test: choosing GLX framebuffer configuration",
+        "[LOCK] XFCE shader presentation test: loading Screenshaver configuration",
+    );
+
+    let config_path =
+        crate::locate_paths::config_path();
+
+    let config_result =
+        crate::load_config::load_config(
+            &config_path
+        )
+        .map_err(|error| {
+            format!(
+                "Unable to load Screenshaver configuration for XFCE lock presentation: {}",
+                error,
+            )
+        })?;
+
+    let cfg =
+        config_result.config;
+
+    let parsed_mode =
+        crate::parse_mode::parse_mode(
+            &cfg.mode
+        );
+
+    let shader_mode =
+        match cfg.mode
+            .split(':')
+            .next()
+            .unwrap_or("single")
+        {
+            "single" => {
+                crate::manage_shader::ShaderMode::Single(
+                    parsed_mode.argument.clone()
+                )
+            }
+
+            "random" => {
+                crate::manage_shader::ShaderMode::Random
+            }
+
+            "ordered" => {
+                crate::manage_shader::ShaderMode::Ordered
+            }
+
+            _ => {
+                crate::manage_shader::ShaderMode::Single(
+                    parsed_mode.argument.clone()
+                )
+            }
+        };
+
+    let shader_interval =
+        match cfg.mode
+            .split(':')
+            .next()
+            .unwrap_or("single")
+        {
+            "single" => 0,
+
+            "random" | "ordered" => {
+                let interval_source =
+                    cfg.mode
+                        .split(':')
+                        .nth(1)
+                        .unwrap_or("60");
+
+                crate::parse_interval::parse_interval(
+                    interval_source
+                )
+                .seconds
+            }
+
+            _ => 0,
+        };
+
+    let shader_manager =
+        crate::manage_shader::ShaderManager::new(
+            shader_mode
+        );
+
+    let audio_backend =
+        crate::audio_backend::create_backend()
+            .ok();
+
+    let audio_bands =
+        audio_backend
+            .as_ref()
+            .map(
+                |backend| {
+                    backend.shared_bands()
+                }
+            );
+
+    crate::logger::information(
+        logfile,
+        "[LOCK] XFCE shader presentation test: choosing GLX framebuffer configuration",
     );
 
     let framebuffer_config =
@@ -209,7 +305,7 @@ fn run_opengl_clear_test(
     crate::logger::information(
         logfile,
         &format!(
-            "[LOCK] XFCE OpenGL presentation test: selected GLX visual 0x{:X}",
+            "[LOCK] XFCE shader presentation test: selected GLX visual 0x{:X}",
             framebuffer_config.visual_info().visualid,
         ),
     );
@@ -228,11 +324,18 @@ fn run_opengl_clear_test(
 
     crate::logger::information(
         logfile,
-        "[LOCK] XFCE OpenGL presentation test: making context current on supplied window",
+        "[LOCK] XFCE shader presentation test: making context current on supplied window",
     );
 
-    if let Err(error) = context.make_current(display, window) {
-        context.destroy(display);
+    if let Err(error) =
+        context.make_current(
+            display,
+            window,
+        )
+    {
+        context.destroy(
+            display
+        );
 
         return Err(
             format!(
@@ -245,7 +348,7 @@ fn run_opengl_clear_test(
 
     crate::logger::information(
         logfile,
-        "[LOCK] XFCE OpenGL presentation test: GLX context is current",
+        "[LOCK] XFCE shader presentation test: GLX context is current",
     );
 
     gl::load_with(
@@ -268,38 +371,111 @@ fn run_opengl_clear_test(
         }
     );
 
-    unsafe {
-        gl::Viewport(0, 0, width, height);
-        gl::ClearColor(0.0, 1.0, 1.0, 1.0);
-        gl::Clear(gl::COLOR_BUFFER_BIT);
-        glx::glXSwapBuffers(display, window);
-    }
+    crate::logger::information(
+        logfile,
+        "[LOCK] XFCE shader presentation test: constructing FrameRenderEngine",
+    );
+
+    let mut engine =
+        match crate::render_frame::FrameRenderEngine::new(
+            shader_manager,
+            shader_interval,
+            cfg.screensaver_speed_policy.clone(),
+            cfg.global_rendered_fps,
+            cfg.screensaver_fps_policy_entries.clone(),
+            cfg.texture_policy.clone(),
+            cfg.screensaver_postprocess_policy.clone(),
+            audio_bands,
+            cfg.subtitles,
+            cfg.subtitle_placement,
+            width as u32,
+            height as u32,
+        ) {
+            Ok(engine) => engine,
+
+            Err(error) => {
+                let _ =
+                    crate::glx_context::GlxContext::release_current(
+                        display
+                    );
+
+                context.destroy(
+                    display
+                );
+
+                return Err(
+                    format!(
+                        "Unable to construct FrameRenderEngine for XFCE lock presentation: {}",
+                        error,
+                    )
+                );
+            }
+        };
 
     crate::logger::information(
         logfile,
         &format!(
-            "[LOCK] XFCE OpenGL presentation test drawn: window=0x{:X}, geometry={}x{}, color=cyan",
+            "[LOCK] XFCE shader presentation test started: window=0x{:X}, geometry={}x{}",
             window,
             width,
             height,
         ),
     );
 
-    thread::sleep(Duration::from_secs(10));
+    let test_started =
+        std::time::Instant::now();
 
-    crate::glx_context::GlxContext::release_current(display)
-        .map_err(|error| {
-            format!(
-                "Unable to release XFCE lock presentation GLX context: {}",
-                error,
-            )
-        })?;
+    let mut rendered_frames =
+        0u64;
 
-    context.destroy(display);
+    while test_started.elapsed()
+        < Duration::from_secs(10)
+    {
+        let _ =
+            engine.render_frame(
+                width as u32,
+                height as u32,
+            );
+
+        unsafe {
+            glx::glXSwapBuffers(
+                display,
+                window,
+            );
+        }
+
+        rendered_frames =
+            rendered_frames.saturating_add(
+                1
+            );
+
+        engine.limit_fps();
+    }
 
     crate::logger::information(
         logfile,
-        "[LOCK] XFCE OpenGL presentation test completed",
+        &format!(
+            "[LOCK] XFCE shader presentation test completed: rendered_frames={}",
+            rendered_frames,
+        ),
+    );
+
+    drop(
+        engine
+    );
+
+    crate::glx_context::GlxContext::release_current(
+        display
+    )
+    .map_err(|error| {
+        format!(
+            "Unable to release XFCE lock presentation GLX context: {}",
+            error,
+        )
+    })?;
+
+    context.destroy(
+        display
     );
 
     Ok(())
