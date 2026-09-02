@@ -14,7 +14,7 @@
 #
 #   3. Run this script:
 #
-#        ./package-linux.sh
+#        ./test-package-linux.sh
 #
 # Generated files are placed under:
 #
@@ -314,7 +314,7 @@ rm -rf -- "$STAGING_DIR"
 
 mkdir -p "$STAGING_DIR/bin"
 mkdir -p "$STAGING_DIR/share/applications"
-mkdir -p "$STAGING_DIR/share/icons/hicolor"
+mkdir -p "$STAGING_DIR/share/icons"
 mkdir -p "$STAGING_DIR/docs"
 mkdir -p "$STAGING_DIR/examples"
 
@@ -423,7 +423,7 @@ copy_optional_file \
     "$PROJECT_ROOT/assets/screenshaver.desktop" \
     "$STAGING_DIR/share/applications/screenshaver.desktop"
 
-# Preserve the conventional hicolor icon hierarchy used by install-linux.sh.
+# Preserve the complete packaged icon hierarchy beneath share/icons.
 #
 # For example:
 #
@@ -432,8 +432,8 @@ copy_optional_file \
 #   assets/icons/hicolor/scalable/apps/screenshaver.svg
 #
 copy_optional_directory \
-    "$PROJECT_ROOT/assets/icons/hicolor" \
-    "$STAGING_DIR/share/icons/hicolor"
+    "$PROJECT_ROOT/assets/icons" \
+    "$STAGING_DIR/share/icons/screenshaver"
 
 
 # -----------------------------------------------------------------------------
