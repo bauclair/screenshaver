@@ -1,5 +1,4 @@
 use std::env;
-use std::ffi::CString;
 use std::mem::MaybeUninit;
 use std::path::Path;
 use std::thread;
@@ -202,143 +201,116 @@ fn verify_presentation_window(
         attributes.map_state,
     );
 
-    draw_solid_test_color(
+    trace_presentation_window_geometry(
         logfile,
         &connection,
         x11_window,
-        attributes.width as u32,
-        attributes.height as u32,
+        attributes.width,
+        attributes.height,
     )?;
 
     Ok(())
 }
 
 
-fn draw_solid_test_color(
+fn trace_presentation_window_geometry(
     logfile: &Path,
     connection: &crate::x11_connection::X11Connection,
     window: xlib::Window,
-    width: u32,
-    height: u32,
+    initial_width: i32,
+    initial_height: i32,
 ) -> Result<(), String> {
-    let display =
-        connection.display();
+    crate::logger::information(
+        logfile,
+        &format!(
+            "[LOCK] XFCE presentation-window geometry trace started: initial={}x{}",
+            initial_width,
+            initial_height,
+        ),
+    );
 
-    let screen =
-        connection.screen();
+    let mut previous_width =
+        initial_width;
 
-    let colormap =
-        unsafe {
-            xlib::XDefaultColormap(
-                display,
-                screen,
-            )
-        };
+    let mut previous_height =
+        initial_height;
 
-    let color_name =
-        CString::new("magenta")
-            .map_err(|error| {
-                format!(
-                    "Unable to construct XFCE test color name: {}",
-                    error,
+    let mut previous_map_state =
+        xlib::IsViewable;
+
+    for sample in 1..=30 {
+        thread::sleep(
+            Duration::from_millis(100)
+        );
+
+        let mut attributes =
+            MaybeUninit::<xlib::XWindowAttributes>::uninit();
+
+        let status =
+            unsafe {
+                xlib::XGetWindowAttributes(
+                    connection.display(),
+                    window,
+                    attributes.as_mut_ptr(),
                 )
-            })?;
+            };
 
-    let mut screen_color =
-        MaybeUninit::<xlib::XColor>::uninit();
+        if status == 0 {
+            return Err(
+                format!(
+                    "XGetWindowAttributes failed while tracing XFCE presentation window 0x{:X}",
+                    window,
+                )
+            );
+        }
 
-    let mut exact_color =
-        MaybeUninit::<xlib::XColor>::uninit();
+        let attributes =
+            unsafe {
+                attributes.assume_init()
+            };
 
-    let color_status =
-        unsafe {
-            xlib::XAllocNamedColor(
-                display,
-                colormap,
-                color_name.as_ptr(),
-                screen_color.as_mut_ptr(),
-                exact_color.as_mut_ptr(),
-            )
-        };
+        if attributes.width != previous_width
+            || attributes.height != previous_height
+            || attributes.map_state != previous_map_state
+        {
+            crate::logger::information(
+                logfile,
+                &format!(
+                    "[LOCK] XFCE presentation-window geometry changed: sample={}, geometry={}x{}, depth={}, map_state={}",
+                    sample,
+                    attributes.width,
+                    attributes.height,
+                    attributes.depth,
+                    attributes.map_state,
+                ),
+            );
 
-    if color_status == 0 {
-        return Err(
-            "Unable to allocate XFCE lock presentation test color"
-                .to_string()
-        );
-    }
+            previous_width =
+                attributes.width;
 
-    let screen_color =
-        unsafe {
-            screen_color.assume_init()
-        };
+            previous_height =
+                attributes.height;
 
-    let gc =
-        unsafe {
-            xlib::XCreateGC(
-                display,
-                window,
-                0,
-                std::ptr::null_mut(),
-            )
-        };
-
-    if gc.is_null() {
-        return Err(
-            "Unable to create X11 graphics context for XFCE lock presentation test"
-                .to_string()
-        );
-    }
-
-    unsafe {
-        xlib::XSetForeground(
-            display,
-            gc,
-            screen_color.pixel,
-        );
-
-        xlib::XFillRectangle(
-            display,
-            window,
-            gc,
-            0,
-            0,
-            width,
-            height,
-        );
-
-        xlib::XFlush(
-            display
-        );
+            previous_map_state =
+                attributes.map_state;
+        }
     }
 
     crate::logger::information(
         logfile,
         &format!(
-            "[LOCK] XFCE solid-color presentation test drawn: window=0x{:X}, geometry={}x{}, color=magenta",
-            window,
-            width,
-            height,
+            "[LOCK] XFCE presentation-window geometry trace completed: final={}x{}",
+            previous_width,
+            previous_height,
         ),
     );
 
     println!(
-        "XFCE solid-color presentation test drawn: 0x{:X}, {}x{}, magenta",
+        "XFCE presentation-window geometry trace completed: 0x{:X}, final={}x{}",
         window,
-        width,
-        height,
+        previous_width,
+        previous_height,
     );
-
-    thread::sleep(
-        Duration::from_secs(10)
-    );
-
-    unsafe {
-        xlib::XFreeGC(
-            display,
-            gc,
-        );
-    }
 
     Ok(())
 }
