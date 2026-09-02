@@ -2,7 +2,6 @@ use std::env;
 use std::mem::MaybeUninit;
 use std::path::Path;
 use std::thread;
-use std::time::Duration;
 
 use x11::glx;
 use x11::xlib;
@@ -422,15 +421,20 @@ fn run_opengl_clear_test(
         ),
     );
 
-    let test_started =
-        std::time::Instant::now();
+    crate::logger::information(
+        logfile,
+        &format!(
+            "[LOCK] XFCE shader presentation started: window=0x{:X}, geometry={}x{}",
+            window,
+            width,
+            height,
+        ),
+    );
 
     let mut rendered_frames =
         0u64;
 
-    while test_started.elapsed()
-        < Duration::from_secs(10)
-    {
+    loop {
         let _ =
             engine.render_frame(
                 width as u32,
@@ -449,34 +453,16 @@ fn run_opengl_clear_test(
                 1
             );
 
+        if rendered_frames % 300 == 0 {
+            crate::logger::information(
+                logfile,
+                &format!(
+                    "[LOCK] XFCE shader presentation frames displayed: {}",
+                    rendered_frames,
+                ),
+            );
+        }
+
         engine.limit_fps();
     }
-
-    crate::logger::information(
-        logfile,
-        &format!(
-            "[LOCK] XFCE shader presentation test completed: rendered_frames={}",
-            rendered_frames,
-        ),
-    );
-
-    drop(
-        engine
-    );
-
-    crate::glx_context::GlxContext::release_current(
-        display
-    )
-    .map_err(|error| {
-        format!(
-            "Unable to release XFCE lock presentation GLX context: {}",
-            error,
-        )
-    })?;
-
-    context.destroy(
-        display
-    );
-
-    Ok(())
 }
