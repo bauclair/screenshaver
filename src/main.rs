@@ -24,6 +24,7 @@ mod manage_screen_lock;
 mod manage_screen_lock_gnome;
 mod manage_gnome_extension;
 mod present_screen_lock_gnome;
+mod present_screen_lock_xfce;
 mod lock_screen_widget;
 mod define_lock_screen_widget;
 mod construct_lock_screen_kde;
@@ -366,6 +367,39 @@ fn main() {
     crate::logger::reset_log(
         &logfile
     );
+
+
+    if std::env::var_os(
+        "XSCREENSAVER_WINDOW"
+    ).is_some() {
+        match crate::present_screen_lock_xfce::detect_presentation_window(
+            &logfile
+        ) {
+            Ok(window) => {
+                println!(
+                    "XFCE presentation window detected: 0x{:X}",
+                    window
+                );
+            }
+
+            Err(error) => {
+                crate::logger::error(
+                    &logfile,
+                    &format!(
+                        "[LOCK] XFCE presentation-window detection failed: {}",
+                        error,
+                    ),
+                );
+
+                eprintln!(
+                    "XFCE presentation-window detection failed: {}",
+                    error
+                );
+            }
+        }
+
+        return;
+    }
 
 
     println!(
