@@ -1,17 +1,20 @@
 //! present_authentication_xfce.rs
 //!
-//! Presentation-only helper for the Xfce authentication screen.
+//! Minimal Xfce authentication-child diagnostic.
 //!
-//! Xfce remains the security boundary. xfce4-screensaver and
-//! xfce4-screensaver-dialog retain all input handling, PAM authentication,
-//! retry behavior, and unlock authority. This module only creates a passive,
-//! input-transparent X11 child surface above the native authentication dialog
-//! and draws the existing Screenshaver lock-screen widget into that surface.
+//! This diagnostic intentionally does NOT:
+//! - create a GLX/OpenGL context,
+//! - render the Screenshaver lock widget,
+//! - read keyboard or pointer input,
+//! - grab input,
+//! - authenticate,
+//! - repeatedly raise its X11 child window.
 //!
-//! The normal Screenshaver saver child cannot perform this work because
-//! xfce4-screensaver deliberately stops that child while authentication is
-//! visible. The saver child therefore launches a detached copy of Screenshaver
-//! in this helper mode before entering its render loop.
+//! Its only purpose is to determine whether the mere presence of a passive,
+//! input-transparent X11 child window inside Xfce's authentication container
+//! interferes with xfce4-screensaver-dialog authentication.
+//!
+//! Xfce remains the complete security boundary.
 
 use std::env;
 use std::ffi::{
@@ -33,14 +36,14 @@ use std::ptr;
 use std::thread;
 use std::time::Duration;
 
-use x11::glx;
 use x11::xlib;
 
+
 const HELPER_ENVIRONMENT_VARIABLE: &str =
-    "SCREENSHAVER_XFCE_AUTH_PRESENTATION_HELPER";
+    "SCREENSHAVER_XFCE_AUTH_CHILD_TEST_HELPER";
 
 const PARENT_PID_ENVIRONMENT_VARIABLE: &str =
-    "SCREENSHAVER_XFCE_AUTH_PRESENTATION_PARENT_PID";
+    "SCREENSHAVER_XFCE_AUTH_CHILD_TEST_PARENT_PID";
 
 const XSCREENSAVER_WINDOW_ENVIRONMENT_VARIABLE: &str =
     "XSCREENSAVER_WINDOW";
@@ -54,11 +57,17 @@ const AUTH_DIALOG_CLASS: &[u8] =
 const POLL_INTERVAL: Duration =
     Duration::from_millis(100);
 
-const OVERLAY_SIZE: u32 =
-    420;
+const TEST_WINDOW_WIDTH: u32 =
+    16;
 
-const SHAPE_BOUNDING: c_int =
-    0;
+const TEST_WINDOW_HEIGHT: u32 =
+    16;
+
+const TEST_WINDOW_X: i32 =
+    20;
+
+const TEST_WINDOW_Y: i32 =
+    20;
 
 const SHAPE_INPUT: c_int =
     2;
@@ -134,21 +143,18 @@ impl ShapeApi {
 
         if library.is_null() {
             return Err(
-                "Unable to load libXext.so.6; passive X11 input shaping is unavailable."
+                "Unable to load libXext.so.6; refusing to create the diagnostic child without X11 Shape input transparency."
                     .to_string()
             );
         }
 
         let query_extension =
-            unsafe {
+            match unsafe {
                 load_symbol::<XShapeQueryExtension>(
                     library,
                     "XShapeQueryExtension",
                 )
-            };
-
-        let query_extension =
-            match query_extension {
+            } {
                 Ok(function) =>
                     function,
 
@@ -166,15 +172,12 @@ impl ShapeApi {
             };
 
         let combine_rectangles =
-            unsafe {
+            match unsafe {
                 load_symbol::<XShapeCombineRectangles>(
                     library,
                     "XShapeCombineRectangles",
                 )
-            };
-
-        let combine_rectangles =
-            match combine_rectangles {
+            } {
                 Ok(function) =>
                     function,
 
@@ -224,7 +227,7 @@ impl ShapeApi {
 
         if available == 0 {
             Err(
-                "The X11 Shape extension is unavailable; refusing to create an authentication overlay that could intercept input."
+                "The X11 Shape extension is unavailable; refusing to create the diagnostic child because it could intercept pointer input."
                     .to_string()
             )
         } else {
@@ -249,115 +252,6 @@ impl ShapeApi {
                 0,
                 ptr::null_mut(),
                 0,
-                SHAPE_SET,
-                SHAPE_UNSORTED,
-            );
-        }
-    }
-
-
-    fn apply_circular_bounding_shape(
-        &self,
-        display: *mut xlib::Display,
-        window: xlib::Window,
-    ) {
-        let radius =
-            (
-                OVERLAY_SIZE as f32
-                    * 0.5
-            )
-                - 4.0;
-
-        let center =
-            OVERLAY_SIZE as f32
-                * 0.5;
-
-        let mut rectangles =
-            Vec::<ShapeRectangle>::with_capacity(
-                OVERLAY_SIZE as usize
-            );
-
-        for y in
-            0..OVERLAY_SIZE
-        {
-            let dy =
-                y as f32
-                    + 0.5
-                    - center;
-
-            let squared =
-                radius * radius
-                    - dy * dy;
-
-            if squared <= 0.0 {
-                continue;
-            }
-
-            let half_width =
-                squared.sqrt();
-
-            let left =
-                (
-                    center
-                        - half_width
-                )
-                    .floor()
-                    .max(
-                        0.0
-                    )
-                    as i32;
-
-            let right =
-                (
-                    center
-                        + half_width
-                )
-                    .ceil()
-                    .min(
-                        OVERLAY_SIZE as f32
-                    )
-                    as i32;
-
-            let width =
-                (
-                    right
-                        - left
-                )
-                    .max(
-                        0
-                    ) as u16;
-
-            if width == 0 {
-                continue;
-            }
-
-            rectangles.push(
-                ShapeRectangle {
-                    x:
-                        left as i16,
-
-                    y:
-                        y as i16,
-
-                    width,
-
-                    height:
-                        1,
-                }
-            );
-        }
-
-        unsafe {
-            (
-                self.combine_rectangles
-            )(
-                display,
-                window,
-                SHAPE_BOUNDING,
-                0,
-                0,
-                rectangles.as_mut_ptr(),
-                rectangles.len() as c_int,
                 SHAPE_SET,
                 SHAPE_UNSORTED,
             );
@@ -434,7 +328,7 @@ where
 }
 
 
-/// Return true only in the detached Xfce authentication-presentation helper.
+/// True only inside the detached diagnostic helper process.
 pub(crate) fn is_helper_process(
 ) -> bool {
     env::var_os(
@@ -444,10 +338,8 @@ pub(crate) fn is_helper_process(
 }
 
 
-/// Launch the detached authentication-presentation helper.
-///
-/// The helper is placed in its own session so a stop signal directed at the
-/// normal saver child's process group cannot suspend presentation with it.
+/// Launch a detached diagnostic helper before Xfce suspends the normal saver
+/// presentation child.
 pub(crate) fn launch_helper(
     logfile: &Path,
 ) -> Result<(), String> {
@@ -456,7 +348,7 @@ pub(crate) fn launch_helper(
             .map_err(
                 |error| {
                     format!(
-                        "Unable to locate the Screenshaver executable for the XFCE authentication-presentation helper: {}",
+                        "Unable to locate the Screenshaver executable for the XFCE authentication-child diagnostic: {}",
                         error,
                     )
                 }
@@ -512,7 +404,7 @@ pub(crate) fn launch_helper(
             .map_err(
                 |error| {
                     format!(
-                        "Unable to launch the XFCE authentication-presentation helper: {}",
+                        "Unable to launch the XFCE authentication-child diagnostic helper: {}",
                         error,
                     )
                 }
@@ -521,7 +413,7 @@ pub(crate) fn launch_helper(
     crate::logger::information(
         logfile,
         &format!(
-            "[LOCK] XFCE authentication-presentation helper launched: pid={}",
+            "[LOCK] XFCE minimal authentication-child diagnostic helper launched: pid={}",
             child.id(),
         ),
     );
@@ -530,11 +422,11 @@ pub(crate) fn launch_helper(
 }
 
 
-/// Run the detached Xfce authentication-presentation helper.
+/// Run the detached minimal diagnostic.
 ///
-/// This function never reads keyboard or pointer input and never participates
-/// in authentication. It only tracks Xfce's native authentication dialog and
-/// maintains a passive visual child surface while that dialog is viewable.
+/// A 16x16 child is created once when the native authentication dialog appears.
+/// The child has no selected events and an empty ShapeInput region. It is mapped
+/// once and is never raised again. No OpenGL context is created.
 pub(crate) fn run_helper(
     logfile: &Path,
 ) -> Result<(), String> {
@@ -544,7 +436,7 @@ pub(crate) fn run_helper(
         )
         .map_err(
             |_| {
-                "XFCE authentication-presentation helper parent PID is missing."
+                "XFCE authentication-child diagnostic parent PID is missing."
                     .to_string()
             }
         )?
@@ -552,7 +444,7 @@ pub(crate) fn run_helper(
         .map_err(
             |error| {
                 format!(
-                    "Invalid XFCE authentication-presentation helper parent PID: {}",
+                    "Invalid XFCE authentication-child diagnostic parent PID: {}",
                     error,
                 )
             }
@@ -567,7 +459,7 @@ pub(crate) fn run_helper(
 
     if display.is_null() {
         return Err(
-            "Unable to open the X11 display for XFCE authentication presentation."
+            "Unable to open the X11 display for the XFCE authentication-child diagnostic."
                 .to_string()
         );
     }
@@ -629,7 +521,7 @@ pub(crate) fn run_helper(
             crate::logger::information(
                 logfile,
                 &format!(
-                    "[LOCK] XFCE authentication-presentation helper started: parent_pid={}, geometry={}x{}",
+                    "[LOCK] XFCE minimal authentication-child diagnostic helper started: parent_pid={}, geometry={}x{}",
                     parent_pid,
                     root_width,
                     root_height,
@@ -644,9 +536,9 @@ pub(crate) fn run_helper(
                 xlib::Window =
                 0;
 
-            let mut overlay:
-                Option<AuthOverlay> =
-                None;
+            let mut test_window:
+                xlib::Window =
+                0;
 
             while process_exists(
                 parent_pid
@@ -670,117 +562,87 @@ pub(crate) fn run_helper(
                         if let Some(dialog_parent) =
                             dialog_parent
                         {
-                            let overlay_missing =
-                                overlay
-                                    .as_ref()
-                                    .map(
-                                        |overlay| {
-                                            !window_exists(
-                                                display,
-                                                overlay.window
-                                            )
-                                        }
-                                    )
-                                    .unwrap_or(
-                                        true
-                                    );
-
-                            if active_dialog
-                                != dialog_window
+                            let relationship_changed =
+                                active_dialog
+                                    != dialog_window
                                 || active_parent
-                                    != dialog_parent
-                                || overlay_missing
+                                    != dialog_parent;
+
+                            let child_missing =
+                                test_window == 0
+                                || !window_exists(
+                                    display,
+                                    test_window,
+                                );
+
+                            if relationship_changed
+                                || child_missing
                             {
-                                if let Some(existing) =
-                                    overlay.take()
-                                {
-                                    existing.destroy(
-                                        display
+                                if test_window != 0 {
+                                    destroy_test_window(
+                                        display,
+                                        test_window,
                                     );
+
+                                    crate::logger::information(
+                                        logfile,
+                                        &format!(
+                                            "[LOCK] XFCE minimal authentication-child diagnostic window destroyed before recreation: window=0x{:X}",
+                                            test_window,
+                                        ),
+                                    );
+
+                                    test_window =
+                                        0;
                                 }
 
-                                match AuthOverlay::create(
-                                    display,
-                                    screen,
-                                    root,
-                                    dialog_parent,
-                                    &shape_api,
-                                ) {
-                                    Ok(new_overlay) => {
-                                        crate::logger::information(
-                                            logfile,
-                                            &format!(
-                                                "[LOCK] XFCE static authentication widget mapped: dialog=0x{:X}, parent=0x{:X}, overlay=0x{:X}",
-                                                dialog_window,
-                                                dialog_parent,
-                                                new_overlay.window,
-                                            ),
-                                        );
+                                test_window =
+                                    create_test_window(
+                                        display,
+                                        dialog_parent,
+                                        &shape_api,
+                                    )?;
 
-                                        overlay =
-                                            Some(
-                                                new_overlay
-                                            );
+                                active_dialog =
+                                    dialog_window;
 
-                                        active_dialog =
-                                            dialog_window;
+                                active_parent =
+                                    dialog_parent;
 
-                                        active_parent =
-                                            dialog_parent;
-                                    }
-
-                                    Err(error) => {
-                                        crate::logger::warning(
-                                            logfile,
-                                            &format!(
-                                                "[LOCK] Unable to create XFCE static authentication widget: {}",
-                                                error,
-                                            ),
-                                        );
-
-                                        active_dialog =
-                                            dialog_window;
-
-                                        active_parent =
-                                            dialog_parent;
-                                    }
-                                }
-                            }
-
-                            if let Some(current_overlay) =
-                                overlay.as_ref()
-                            {
-                                if window_exists(
-                                    display,
-                                    current_overlay.window,
-                                ) {
-                                    unsafe {
-                                        xlib::XRaiseWindow(
-                                            display,
-                                            current_overlay.window,
-                                        );
-
-                                        xlib::XFlush(
-                                            display
-                                        );
-                                    }
-                                }
+                                crate::logger::information(
+                                    logfile,
+                                    &format!(
+                                        "[LOCK] XFCE minimal authentication-child diagnostic window mapped once: dialog=0x{:X}, parent=0x{:X}, window=0x{:X}, geometry={}x{}+{}+{}, input_shape=empty, event_mask=0",
+                                        dialog_window,
+                                        dialog_parent,
+                                        test_window,
+                                        TEST_WINDOW_WIDTH,
+                                        TEST_WINDOW_HEIGHT,
+                                        TEST_WINDOW_X,
+                                        TEST_WINDOW_Y,
+                                    ),
+                                );
                             }
                         }
                     }
 
                     None => {
-                        if let Some(existing) =
-                            overlay.take()
-                        {
-                            existing.destroy(
-                                display
+                        if test_window != 0 {
+                            destroy_test_window(
+                                display,
+                                test_window,
                             );
 
                             crate::logger::information(
                                 logfile,
-                                "[LOCK] XFCE authentication dialog hidden; static authentication widget removed.",
+                                &format!(
+                                    "[LOCK] XFCE authentication dialog not viewable; minimal diagnostic window destroyed: window=0x{:X}",
+                                    test_window,
+                                ),
                             );
+
+                            test_window =
+                                0;
                         }
 
                         active_dialog =
@@ -796,17 +658,16 @@ pub(crate) fn run_helper(
                 );
             }
 
-            if let Some(existing) =
-                overlay.take()
-            {
-                existing.destroy(
-                    display
+            if test_window != 0 {
+                destroy_test_window(
+                    display,
+                    test_window,
                 );
             }
 
             crate::logger::information(
                 logfile,
-                "[LOCK] XFCE authentication-presentation helper stopped because the saver child exited.",
+                "[LOCK] XFCE minimal authentication-child diagnostic helper stopped because the saver presentation child exited.",
             );
 
             Ok(())
@@ -822,430 +683,111 @@ pub(crate) fn run_helper(
 }
 
 
-struct AuthOverlay {
-    window: xlib::Window,
-    colormap: xlib::Colormap,
+fn create_test_window(
+    display: *mut xlib::Display,
+    parent: xlib::Window,
+    shape_api: &ShapeApi,
+) -> Result<xlib::Window, String> {
+    let parent_attributes =
+        window_attributes(
+            display,
+            parent,
+        )
+        .ok_or_else(
+            || {
+                format!(
+                    "Unable to query XFCE authentication container 0x{:X}.",
+                    parent,
+                )
+            }
+        )?;
 
-    context:
-        Option<crate::glx_context::GlxContext>,
+    if parent_attributes.width <= 0
+        || parent_attributes.height <= 0
+    {
+        return Err(
+            format!(
+                "XFCE authentication container 0x{:X} has invalid geometry {}x{}.",
+                parent,
+                parent_attributes.width,
+                parent_attributes.height,
+            )
+        );
+    }
 
-    renderer:
-        Option<crate::lock_screen_widget::LockScreenWidgetRenderer>,
-
-    widget:
-        crate::lock_screen_widget::LockScreenWidget,
-}
-
-
-impl AuthOverlay {
-    fn create(
-        display: *mut xlib::Display,
-        screen: c_int,
-        root: xlib::Window,
-        parent: xlib::Window,
-        shape_api: &ShapeApi,
-    ) -> Result<Self, String> {
-        let parent_attributes =
-            window_attributes(
+    // Plain X11 child; no GLX visual, no colormap management, no OpenGL.
+    // A neutral gray background makes the tiny diagnostic window visible.
+    let window =
+        unsafe {
+            xlib::XCreateSimpleWindow(
                 display,
                 parent,
+                TEST_WINDOW_X,
+                TEST_WINDOW_Y,
+                TEST_WINDOW_WIDTH,
+                TEST_WINDOW_HEIGHT,
+                0,
+                0,
+                0x007f7f7f,
             )
-            .ok_or_else(
-                || {
-                    format!(
-                        "Unable to query XFCE authentication container 0x{:X}.",
-                        parent,
-                    )
-                }
-            )?;
+        };
 
-        if parent_attributes.width <= 0
-            || parent_attributes.height <= 0
-        {
-            return Err(
-                format!(
-                    "XFCE authentication container 0x{:X} has invalid geometry {}x{}.",
-                    parent,
-                    parent_attributes.width,
-                    parent_attributes.height,
-                )
-            );
-        }
+    if window == 0 {
+        return Err(
+            "XCreateSimpleWindow() failed for the XFCE authentication-child diagnostic."
+                .to_string()
+        );
+    }
 
-        let framebuffer_config =
-            crate::glx_context::GlxFramebufferConfig::choose(
-                display,
-                screen,
-            )?;
+    unsafe {
+        xlib::XSelectInput(
+            display,
+            window,
+            0,
+        );
+    }
 
-        let visual_info =
-            framebuffer_config
-                .visual_info();
+    shape_api.make_input_transparent(
+        display,
+        window,
+    );
 
-        let colormap =
-            unsafe {
-                xlib::XCreateColormap(
-                    display,
-                    root,
-                    visual_info.visual,
-                    xlib::AllocNone,
-                )
-            };
-
-        if colormap == 0 {
-            return Err(
-                "Unable to create a colormap for the XFCE authentication widget."
-                    .to_string()
-            );
-        }
-
-        let overlay_width =
-            OVERLAY_SIZE.min(
-                parent_attributes.width as u32
-            );
-
-        let overlay_height =
-            OVERLAY_SIZE.min(
-                parent_attributes.height as u32
-            );
-
-        let overlay_x =
-            (
-                parent_attributes.width
-                    - overlay_width as i32
-            )
-                / 2;
-
-        let overlay_y =
-            (
-                parent_attributes.height
-                    - overlay_height as i32
-            )
-                / 2;
-
-        let mut attributes:
-            xlib::XSetWindowAttributes =
-            unsafe {
-                std::mem::zeroed()
-            };
-
-        attributes.background_pixel =
-            0;
-
-        attributes.border_pixel =
-            0;
-
-        attributes.colormap =
-            colormap;
-
-        attributes.override_redirect =
-            xlib::True;
-
-        attributes.event_mask =
-            0;
-
-        let attribute_mask =
-            xlib::CWBackPixel
-                | xlib::CWBorderPixel
-                | xlib::CWColormap
-                | xlib::CWOverrideRedirect
-                | xlib::CWEventMask;
-
-        let window =
-            unsafe {
-                xlib::XCreateWindow(
-                    display,
-                    parent,
-                    overlay_x,
-                    overlay_y,
-                    overlay_width,
-                    overlay_height,
-                    0,
-                    visual_info.depth,
-                    xlib::InputOutput as u32,
-                    visual_info.visual,
-                    attribute_mask,
-                    &mut attributes,
-                )
-            };
-
-        if window == 0 {
-            unsafe {
-                xlib::XFreeColormap(
-                    display,
-                    colormap,
-                );
-            }
-
-            return Err(
-                "Unable to create the XFCE authentication widget X11 window."
-                    .to_string()
-            );
-        }
-
-        shape_api.make_input_transparent(
+    // Map exactly once. Do not XRaiseWindow() and do not repeatedly restack.
+    unsafe {
+        xlib::XMapWindow(
             display,
             window,
         );
 
-        shape_api.apply_circular_bounding_shape(
-            display,
-            window,
+        xlib::XFlush(
+            display
         );
-
-        unsafe {
-            xlib::XMapRaised(
-                display,
-                window,
-            );
-
-            xlib::XSync(
-                display,
-                xlib::False,
-            );
-        }
-
-        let context =
-            match crate::glx_context::GlxContext::create(
-                display,
-                &framebuffer_config,
-            ) {
-                Ok(context) =>
-                    context,
-
-                Err(error) => {
-                    unsafe {
-                        xlib::XDestroyWindow(
-                            display,
-                            window,
-                        );
-
-                        xlib::XFreeColormap(
-                            display,
-                            colormap,
-                        );
-                    }
-
-                    return Err(
-                        error
-                    );
-                }
-            };
-
-        if let Err(error) =
-            context.make_current(
-                display,
-                window,
-            )
-        {
-            context.destroy(
-                display
-            );
-
-            unsafe {
-                xlib::XDestroyWindow(
-                    display,
-                    window,
-                );
-
-                xlib::XFreeColormap(
-                    display,
-                    colormap,
-                );
-            }
-
-            return Err(
-                error
-            );
-        }
-
-        load_opengl_functions();
-
-        let renderer =
-            match crate::lock_screen_widget::LockScreenWidgetRenderer::new() {
-                Ok(renderer) =>
-                    renderer,
-
-                Err(error) => {
-                    let _ =
-                        crate::glx_context::GlxContext::release_current(
-                            display
-                        );
-
-                    context.destroy(
-                        display
-                    );
-
-                    unsafe {
-                        xlib::XDestroyWindow(
-                            display,
-                            window,
-                        );
-
-                        xlib::XFreeColormap(
-                            display,
-                            colormap,
-                        );
-                    }
-
-                    return Err(
-                        error
-                    );
-                }
-            };
-
-        let widget =
-            crate::lock_screen_widget::LockScreenWidget::new();
-
-        unsafe {
-            gl::Viewport(
-                0,
-                0,
-                overlay_width as i32,
-                overlay_height as i32,
-            );
-
-            gl::ClearColor(
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-            );
-
-            gl::Clear(
-                gl::COLOR_BUFFER_BIT
-            );
-        }
-
-        renderer.display_centered(
-            &widget,
-            overlay_width,
-            overlay_height,
-        );
-
-        unsafe {
-            glx::glXSwapBuffers(
-                display,
-                window,
-            );
-
-            xlib::XRaiseWindow(
-                display,
-                window,
-            );
-
-            xlib::XFlush(
-                display
-            );
-        }
-
-        Ok(
-            Self {
-                window,
-                colormap,
-
-                context:
-                    Some(
-                        context
-                    ),
-
-                renderer:
-                    Some(
-                        renderer
-                    ),
-
-                widget,
-            }
-        )
     }
 
-
-    fn destroy(
-        mut self,
-        display: *mut xlib::Display,
-    ) {
-        let _ =
-            &self.widget;
-
-        if let Some(renderer) =
-            self.renderer.take()
-        {
-            drop(
-                renderer
-            );
-        }
-
-        let _ =
-            crate::glx_context::GlxContext::release_current(
-                display
-            );
-
-        if let Some(context) =
-            self.context.take()
-        {
-            context.destroy(
-                display
-            );
-        }
-
-        unsafe {
-            if self.window != 0 {
-                xlib::XDestroyWindow(
-                    display,
-                    self.window,
-                );
-            }
-
-            if self.colormap != 0 {
-                xlib::XFreeColormap(
-                    display,
-                    self.colormap,
-                );
-            }
-
-            xlib::XSync(
-                display,
-                xlib::False,
-            );
-        }
-
-        self.window =
-            0;
-
-        self.colormap =
-            0;
-    }
+    Ok(
+        window
+    )
 }
 
 
-fn load_opengl_functions(
+fn destroy_test_window(
+    display: *mut xlib::Display,
+    window: xlib::Window,
 ) {
-    gl::load_with(
-        |symbol| {
-            let symbol =
-                CString::new(
-                    symbol
-                )
-                .expect(
-                    "OpenGL symbol name contained an interior NUL"
-                );
+    if window == 0 {
+        return;
+    }
 
-            unsafe {
-                glx::glXGetProcAddress(
-                    symbol.as_ptr()
-                        as *const u8
-                )
-                .map_or(
-                    ptr::null(),
-                    |function| {
-                        function
-                            as *const ()
-                            as *const c_void
-                    },
-                )
-            }
-        }
-    );
+    unsafe {
+        xlib::XDestroyWindow(
+            display,
+            window,
+        );
+
+        xlib::XFlush(
+            display
+        );
+    }
 }
 
 
