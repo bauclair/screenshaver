@@ -1,15 +1,13 @@
 //! present_authentication_xfce.rs
 //!
-//! Minimal Xfce GLX 100ms-raise / 500ms-render authentication-child diagnostic.
+//! Xfce GLX 160x100 geometry authentication-child diagnostic.
 //!
-//! This diagnostic keeps the previously-proven 16x16 passive GLX child and its
-//! 500 ms cyan render cadence, while adding exactly one new variable:
-//! XRaiseWindow() is called every 100 ms while the native Xfce authentication
-//! dialog remains visible.
+//! This diagnostic keeps the previously-proven GLX/input-transparent behavior,
+//! 100 ms XRaiseWindow() cadence, and 500 ms cyan rendering cadence, while
+//! changing exactly one variable: the diagnostic child geometry now matches the
+//! previously-visible standalone X11 overlay test at 160x100+50+50.
 //!
-//! This matches the aggressive restacking cadence used by the earlier visible
-//! full authentication-overlay experiment, without adding the lock widget or
-//! changing the tiny diagnostic geometry.
+//! No lock widget or authentication input handling is introduced.
 //!
 //! This diagnostic intentionally does NOT:
 //! - render the Screenshaver lock widget,
@@ -78,16 +76,16 @@ const RAISE_INTERVAL: Duration =
     Duration::from_millis(100);
 
 const TEST_WINDOW_WIDTH: u32 =
-    16;
+    160;
 
 const TEST_WINDOW_HEIGHT: u32 =
-    16;
+    100;
 
 const TEST_WINDOW_X: i32 =
-    20;
+    50;
 
 const TEST_WINDOW_Y: i32 =
-    20;
+    50;
 
 const SHAPE_INPUT: c_int =
     2;
@@ -433,7 +431,7 @@ pub(crate) fn launch_helper(
     crate::logger::information(
         logfile,
         &format!(
-            "[LOCK] XFCE minimal GLX 100ms-raise 500ms-render authentication-child diagnostic helper launched: pid={}",
+            "[LOCK] XFCE GLX 160x100 authentication-child diagnostic helper launched: pid={}",
             child.id(),
         ),
     );
@@ -542,7 +540,7 @@ pub(crate) fn run_helper(
             crate::logger::information(
                 logfile,
                 &format!(
-                    "[LOCK] XFCE minimal GLX 100ms-raise 500ms-render authentication-child diagnostic helper started: parent_pid={}, geometry={}x{}",
+                    "[LOCK] XFCE GLX 160x100 authentication-child diagnostic helper started: parent_pid={}, geometry={}x{}",
                     parent_pid,
                     root_width,
                     root_height,
@@ -628,7 +626,7 @@ pub(crate) fn run_helper(
                                     crate::logger::information(
                                         logfile,
                                         &format!(
-                                            "[LOCK] XFCE minimal GLX 100ms-raise 500ms-render authentication-child diagnostic window destroyed before recreation: window=0x{:X}",
+                                            "[LOCK] XFCE GLX 160x100 authentication-child diagnostic window destroyed before recreation: window=0x{:X}",
                                             old_window,
                                         ),
                                     );
@@ -666,7 +664,7 @@ pub(crate) fn run_helper(
                                 crate::logger::information(
                                     logfile,
                                     &format!(
-                                        "[LOCK] XFCE minimal GLX 100ms-raise 500ms-render authentication-child diagnostic window mapped once: dialog=0x{:X}, parent=0x{:X}, window=0x{:X}, geometry={}x{}+{}+{}, input_shape=empty, event_mask=0, raise=every-100ms, glx_clear=cyan-every-500ms",
+                                        "[LOCK] XFCE GLX 160x100 authentication-child diagnostic window mapped once: dialog=0x{:X}, parent=0x{:X}, window=0x{:X}, geometry={}x{}+{}+{}, input_shape=empty, event_mask=0, raise=every-100ms, glx_clear=cyan-every-500ms",
                                         dialog_window,
                                         dialog_parent,
                                         new_window,
@@ -786,7 +784,7 @@ pub(crate) fn run_helper(
 
             crate::logger::information(
                 logfile,
-                "[LOCK] XFCE minimal GLX 100ms-raise 500ms-render authentication-child diagnostic helper stopped because the saver presentation child exited.",
+                "[LOCK] XFCE GLX 160x100 authentication-child diagnostic helper stopped because the saver presentation child exited.",
             );
 
             Ok(())
