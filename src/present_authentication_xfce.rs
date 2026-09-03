@@ -1,18 +1,20 @@
 //! present_authentication_xfce.rs
 //!
-//! Minimal Xfce authentication-child diagnostic.
+//! Minimal Xfce GLX authentication-child diagnostic.
+//!
+//! This diagnostic adds exactly one rendering step to the previously-proven
+//! passive-child test: the 16x16 child uses a GLX-compatible visual, receives
+//! one OpenGL clear, and swaps buffers once.
 //!
 //! This diagnostic intentionally does NOT:
-//! - create a GLX/OpenGL context,
 //! - render the Screenshaver lock widget,
 //! - read keyboard or pointer input,
 //! - grab input,
 //! - authenticate,
-//! - repeatedly raise its X11 child window.
+//! - repeatedly raise or restack its X11 child window.
 //!
-//! Its only purpose is to determine whether the mere presence of a passive,
-//! input-transparent X11 child window inside Xfce's authentication container
-//! interferes with xfce4-screensaver-dialog authentication.
+//! Its purpose is to determine whether introducing GLX/OpenGL on the otherwise
+//! passive authentication child interferes with xfce4-screensaver-dialog.
 //!
 //! Xfce remains the complete security boundary.
 
@@ -36,6 +38,7 @@ use std::ptr;
 use std::thread;
 use std::time::Duration;
 
+use x11::glx;
 use x11::xlib;
 
 
@@ -413,7 +416,7 @@ pub(crate) fn launch_helper(
     crate::logger::information(
         logfile,
         &format!(
-            "[LOCK] XFCE minimal authentication-child diagnostic helper launched: pid={}",
+            "[LOCK] XFCE minimal GLX authentication-child diagnostic helper launched: pid={}",
             child.id(),
         ),
     );
@@ -422,11 +425,12 @@ pub(crate) fn launch_helper(
 }
 
 
-/// Run the detached minimal diagnostic.
+/// Run the detached minimal GLX diagnostic.
 ///
 /// A 16x16 child is created once when the native authentication dialog appears.
 /// The child has no selected events and an empty ShapeInput region. It is mapped
-/// once and is never raised again. No OpenGL context is created.
+/// once and is never raised again. A GLX context is made current only long
+/// enough to clear the child once and swap buffers once.
 pub(crate) fn run_helper(
     logfile: &Path,
 ) -> Result<(), String> {
@@ -521,7 +525,7 @@ pub(crate) fn run_helper(
             crate::logger::information(
                 logfile,
                 &format!(
-                    "[LOCK] XFCE minimal authentication-child diagnostic helper started: parent_pid={}, geometry={}x{}",
+                    "[LOCK] XFCE minimal GLX authentication-child diagnostic helper started: parent_pid={}, geometry={}x{}",
                     parent_pid,
                     root_width,
                     root_height,
@@ -587,7 +591,7 @@ pub(crate) fn run_helper(
                                     crate::logger::information(
                                         logfile,
                                         &format!(
-                                            "[LOCK] XFCE minimal authentication-child diagnostic window destroyed before recreation: window=0x{:X}",
+                                            "[LOCK] XFCE minimal GLX authentication-child diagnostic window destroyed before recreation: window=0x{:X}",
                                             test_window,
                                         ),
                                     );
@@ -612,7 +616,7 @@ pub(crate) fn run_helper(
                                 crate::logger::information(
                                     logfile,
                                     &format!(
-                                        "[LOCK] XFCE minimal authentication-child diagnostic window mapped once: dialog=0x{:X}, parent=0x{:X}, window=0x{:X}, geometry={}x{}+{}+{}, input_shape=empty, event_mask=0",
+                                        "[LOCK] XFCE minimal GLX authentication-child diagnostic window mapped once: dialog=0x{:X}, parent=0x{:X}, window=0x{:X}, geometry={}x{}+{}+{}, input_shape=empty, event_mask=0, glx_clear=cyan-once",
                                         dialog_window,
                                         dialog_parent,
                                         test_window,
@@ -667,7 +671,7 @@ pub(crate) fn run_helper(
 
             crate::logger::information(
                 logfile,
-                "[LOCK] XFCE minimal authentication-child diagnostic helper stopped because the saver presentation child exited.",
+                "[LOCK] XFCE minimal GLX authentication-child diagnostic helper stopped because the saver presentation child exited.",
             );
 
             Ok(())
@@ -715,11 +719,75 @@ fn create_test_window(
         );
     }
 
-    // Plain X11 child; no GLX visual, no colormap management, no OpenGL.
-    // A neutral gray background makes the tiny diagnostic window visible.
+    let screen =
+        unsafe {
+            xlib::XDefaultScreen(
+                display
+            )
+        };
+
+    let framebuffer_config =
+        crate::glx_context::GlxFramebufferConfig::choose(
+            display,
+            screen,
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to choose a GLX framebuffer configuration for the XFCE authentication-child diagnostic: {}",
+                    error,
+                )
+            }
+        )?;
+
+    let visual_info =
+        framebuffer_config
+            .visual_info();
+
+    let colormap =
+        unsafe {
+            xlib::XCreateColormap(
+                display,
+                parent,
+                visual_info.visual,
+                xlib::AllocNone,
+            )
+        };
+
+    if colormap == 0 {
+        return Err(
+            "Unable to create a colormap for the XFCE GLX authentication-child diagnostic."
+                .to_string()
+        );
+    }
+
+    let mut attributes:
+        xlib::XSetWindowAttributes =
+        unsafe {
+            std::mem::zeroed()
+        };
+
+    attributes.background_pixel =
+        0;
+
+    attributes.border_pixel =
+        0;
+
+    attributes.colormap =
+        colormap;
+
+    attributes.event_mask =
+        0;
+
+    let attribute_mask =
+        xlib::CWBackPixel
+            | xlib::CWBorderPixel
+            | xlib::CWColormap
+            | xlib::CWEventMask;
+
     let window =
         unsafe {
-            xlib::XCreateSimpleWindow(
+            xlib::XCreateWindow(
                 display,
                 parent,
                 TEST_WINDOW_X,
@@ -727,23 +795,25 @@ fn create_test_window(
                 TEST_WINDOW_WIDTH,
                 TEST_WINDOW_HEIGHT,
                 0,
-                0,
-                0x007f7f7f,
+                visual_info.depth,
+                xlib::InputOutput as u32,
+                visual_info.visual,
+                attribute_mask,
+                &mut attributes,
             )
         };
 
     if window == 0 {
-        return Err(
-            "XCreateSimpleWindow() failed for the XFCE authentication-child diagnostic."
-                .to_string()
-        );
-    }
+        unsafe {
+            xlib::XFreeColormap(
+                display,
+                colormap,
+            );
+        }
 
-    unsafe {
-        xlib::XSelectInput(
-            display,
-            window,
-            0,
+        return Err(
+            "XCreateWindow() failed for the XFCE GLX authentication-child diagnostic."
+                .to_string()
         );
     }
 
@@ -759,16 +829,171 @@ fn create_test_window(
             window,
         );
 
+        xlib::XSync(
+            display,
+            xlib::False,
+        );
+    }
+
+    let context =
+        match crate::glx_context::GlxContext::create(
+            display,
+            &framebuffer_config,
+        ) {
+            Ok(context) =>
+                context,
+
+            Err(error) => {
+                unsafe {
+                    xlib::XDestroyWindow(
+                        display,
+                        window,
+                    );
+
+                    xlib::XFreeColormap(
+                        display,
+                        colormap,
+                    );
+                }
+
+                return Err(
+                    format!(
+                        "Unable to create the GLX context for the XFCE authentication-child diagnostic: {}",
+                        error,
+                    )
+                );
+            }
+        };
+
+    if let Err(error) =
+        context.make_current(
+            display,
+            window,
+        )
+    {
+        context.destroy(
+            display
+        );
+
+        unsafe {
+            xlib::XDestroyWindow(
+                display,
+                window,
+            );
+
+            xlib::XFreeColormap(
+                display,
+                colormap,
+            );
+        }
+
+        return Err(
+            format!(
+                "Unable to make the XFCE authentication-child diagnostic GLX context current: {}",
+                error,
+            )
+        );
+    }
+
+    gl::load_with(
+        |symbol| {
+            let symbol =
+                CString::new(
+                    symbol
+                )
+                .expect(
+                    "OpenGL symbol name contained an interior NUL"
+                );
+
+            unsafe {
+                glx::glXGetProcAddress(
+                    symbol.as_ptr()
+                        as *const u8
+                )
+                .map_or(
+                    ptr::null(),
+                    |function| {
+                        function
+                            as *const ()
+                            as *const c_void
+                    },
+                )
+            }
+        }
+    );
+
+    unsafe {
+        gl::Viewport(
+            0,
+            0,
+            TEST_WINDOW_WIDTH as i32,
+            TEST_WINDOW_HEIGHT as i32,
+        );
+
+        // Cyan is intentionally unmistakable and is rendered exactly once.
+        gl::ClearColor(
+            0.0,
+            1.0,
+            1.0,
+            1.0,
+        );
+
+        gl::Clear(
+            gl::COLOR_BUFFER_BIT
+        );
+
+        glx::glXSwapBuffers(
+            display,
+            window,
+        );
+
         xlib::XFlush(
             display
         );
     }
 
+    let release_result =
+        crate::glx_context::GlxContext::release_current(
+            display
+        );
+
+    context.destroy(
+        display
+    );
+
+    // The GLX test is complete. The tiny mapped child remains, but no GLX
+    // context stays current and no further drawing or restacking occurs.
+    if let Err(error) =
+        release_result
+    {
+        unsafe {
+            xlib::XDestroyWindow(
+                display,
+                window,
+            );
+
+            xlib::XFreeColormap(
+                display,
+                colormap,
+            );
+        }
+
+        return Err(
+            format!(
+                "Unable to release the XFCE authentication-child diagnostic GLX context: {}",
+                error,
+            )
+        );
+    }
+
+    // The server owns the colormap reference needed by the live window.
+    // Freeing the client-side colormap resource here would invalidate it, so
+    // retain it until the window is destroyed by the server when its parent
+    // disappears. This diagnostic intentionally has no long-lived GL objects.
     Ok(
         window
     )
 }
-
 
 fn destroy_test_window(
     display: *mut xlib::Display,
