@@ -329,18 +329,40 @@ fn marker_path(
 ) -> Result<PathBuf, String> {
 
     let runtime_directory =
-        std::env::var_os(
+        match std::env::var_os(
             "XDG_RUNTIME_DIR"
-        )
-        .map(
-            PathBuf::from
-        )
-        .ok_or_else(
-            || {
-                "XDG_RUNTIME_DIR is unavailable for XFCE runtime ownership"
-                    .to_string()
+        ) {
+            Some(runtime_directory) => {
+                PathBuf::from(
+                    runtime_directory
+                )
             }
-        )?;
+
+
+            None => {
+                // xfce4-screensaver launches the trusted saver child with a
+                // deliberately small environment.  On the tested Xfce path,
+                // XDG_RUNTIME_DIR is not inherited even though the child runs
+                // as the same logged-in user.
+                //
+                // Recover the standard Linux per-user runtime directory from
+                // this process's effective UID.  The resident Screenshaver
+                // process creates the marker under XDG_RUNTIME_DIR, which on
+                // Linux is /run/user/<uid>; deriving the same path here lets
+                // the separately launched Xfce child validate that marker
+                // without weakening the runtime-ownership check.
+                let effective_uid =
+                    effective_uid_from_proc()?;
+
+
+                PathBuf::from(
+                    "/run/user"
+                )
+                .join(
+                    effective_uid.to_string()
+                )
+            }
+        };
 
 
     Ok(
@@ -352,6 +374,86 @@ fn marker_path(
                 MARKER_FILE_NAME
             )
     )
+}
+
+
+fn effective_uid_from_proc(
+) -> Result<u32, String> {
+
+    let status =
+        fs::read_to_string(
+            "/proc/self/status"
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to read /proc/self/status while deriving XFCE runtime directory: {}",
+                    error,
+                )
+            }
+        )?;
+
+
+    let uid_line =
+        status
+            .lines()
+            .find(
+                |line| {
+                    line.starts_with(
+                        "Uid:"
+                    )
+                }
+            )
+            .ok_or_else(
+                || {
+                    "Unable to locate Uid field in /proc/self/status"
+                        .to_string()
+                }
+            )?;
+
+
+    let mut fields =
+        uid_line
+            .split_whitespace();
+
+
+    let _ =
+        fields.next();
+
+
+    let _real_uid =
+        fields
+            .next()
+            .ok_or_else(
+                || {
+                    "Uid field in /proc/self/status is missing real UID"
+                        .to_string()
+                }
+            )?;
+
+
+    let effective_uid =
+        fields
+            .next()
+            .ok_or_else(
+                || {
+                    "Uid field in /proc/self/status is missing effective UID"
+                        .to_string()
+                }
+            )?;
+
+
+    effective_uid
+        .parse::<u32>()
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to parse effective UID '{}' from /proc/self/status: {}",
+                    effective_uid,
+                    error,
+                )
+            }
+        )
 }
 
 
