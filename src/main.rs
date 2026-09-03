@@ -23,6 +23,7 @@ mod manage_shader;
 mod manage_screen_lock;
 mod manage_screen_lock_gnome;
 mod manage_screen_lock_xfce;
+mod manage_runtime_xfce;
 mod manage_gnome_extension;
 mod present_screen_lock_gnome;
 mod present_screen_lock_xfce;
@@ -511,6 +512,40 @@ fn main() {
 
     if xfce_presentation_child {
 
+        match crate::manage_runtime_xfce::resident_runtime_active() {
+
+            Ok(true) => {
+                crate::logger::information(
+                    &logfile,
+                    "[LOCK] XFCE trusted saver child verified an active resident Screenshaver runtime.",
+                );
+            }
+
+
+            Ok(false) => {
+                crate::logger::information(
+                    &logfile,
+                    "[LOCK] XFCE trusted saver child found no active resident Screenshaver runtime; shader presentation will not start.",
+                );
+
+                return;
+            }
+
+
+            Err(error) => {
+                crate::logger::warning(
+                    &logfile,
+                    &format!(
+                        "[LOCK] Unable to verify XFCE resident runtime ownership; shader presentation will not start: {}",
+                        error,
+                    ),
+                );
+
+                return;
+            }
+        }
+
+
         if let Err(error) =
             crate::present_authentication_xfce::launch_helper(
                 &logfile
@@ -983,6 +1018,42 @@ fn main() {
 
                 return;
             }
+        };
+
+
+    // Xfce may launch the trusted Screenshaver saver executable independently
+    // of the resident application.  Establish an explicit runtime-ownership
+    // marker only after the real Screenshaver singleton has been acquired.
+    // The separately launched Xfce saver child requires this marker before it
+    // is allowed to render shaders.
+    let _xfce_runtime_session =
+        if desktop_environment.is_xfce()
+            && cfg.screen_lock_enabled
+        {
+            match crate::manage_runtime_xfce::XfceRuntimeSession::acquire(
+                &logfile
+            ) {
+                Ok(session) => {
+                    Some(
+                        session
+                    )
+                }
+
+
+                Err(error) => {
+                    crate::logger::warning(
+                        &logfile,
+                        &format!(
+                            "[LOCK] Unable to establish XFCE runtime ownership; XFCE shader lock presentation will remain unavailable: {}",
+                            error,
+                        ),
+                    );
+
+                    None
+                }
+            }
+        } else {
+            None
         };
 
 
