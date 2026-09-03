@@ -511,53 +511,6 @@ fn main() {
 
     if xfce_presentation_child {
 
-        let resident_screenshaver_running =
-            match crate::singleton::is_running() {
-
-                Ok(is_running) => {
-                    is_running
-                }
-
-                Err(error) => {
-
-                    crate::logger::error(
-                        &logfile,
-                        &format!(
-                            "[LOCK] Unable to verify resident Screenshaver runtime ownership for XFCE presentation; refusing shader presentation: {}",
-                            error,
-                        ),
-                    );
-
-
-                    eprintln!(
-                        "XFCE shader presentation refused because resident Screenshaver runtime ownership could not be verified: {}",
-                        error
-                    );
-
-
-                    return;
-                }
-            };
-
-
-        if !resident_screenshaver_running {
-
-            crate::logger::information(
-                &logfile,
-                "[LOCK] XFCE launched the trusted Screenshaver saver child, but no resident Screenshaver process owns the runtime singleton; shader presentation will not start.",
-            );
-
-
-            return;
-        }
-
-
-        crate::logger::information(
-            &logfile,
-            "[LOCK] Resident Screenshaver runtime ownership verified for XFCE shader presentation.",
-        );
-
-
         if let Err(error) =
             crate::present_authentication_xfce::launch_helper(
                 &logfile
