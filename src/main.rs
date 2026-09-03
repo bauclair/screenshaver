@@ -26,6 +26,7 @@ mod manage_screen_lock_xfce;
 mod manage_gnome_extension;
 mod present_screen_lock_gnome;
 mod present_screen_lock_xfce;
+mod present_authentication_xfce;
 mod lock_screen_widget;
 mod define_lock_screen_widget;
 mod construct_lock_screen_kde;
@@ -122,6 +123,36 @@ use std::time::Duration;
 
 
 fn main() {
+
+    if crate::present_authentication_xfce::is_helper_process() {
+
+        let logfile =
+            crate::locate_paths::runtime_log_path();
+
+
+        crate::logger::ensure_log_exists(
+            &logfile
+        );
+
+
+        if let Err(error) =
+            crate::present_authentication_xfce::run_helper(
+                &logfile
+            )
+        {
+
+            crate::logger::error(
+                &logfile,
+                &format!(
+                    "[LOCK] XFCE authentication-presentation helper failed: {}",
+                    error,
+                ),
+            );
+        }
+
+
+        return;
+    }
 
     let command =
         match crate::parse_arguments::parse() {
@@ -479,6 +510,23 @@ fn main() {
 
 
     if xfce_presentation_child {
+
+        if let Err(error) =
+            crate::present_authentication_xfce::launch_helper(
+                &logfile
+            )
+        {
+
+            crate::logger::warning(
+                &logfile,
+                &format!(
+                    "[LOCK] Unable to launch XFCE authentication-presentation helper; shader presentation will continue without the Screenshaver authentication widget: {}",
+                    error,
+                ),
+            );
+        }
+
+
         match crate::present_screen_lock_xfce::detect_presentation_window(
             &logfile
         ) {
