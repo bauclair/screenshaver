@@ -29,6 +29,7 @@ use std::path::{
     Path,
     PathBuf,
 };
+use std::process::Command;
 
 #[cfg(unix)]
 use std::os::unix::fs::{
@@ -46,6 +47,18 @@ const MARKER_FILE_NAME: &str =
 const MARKER_VERSION: u32 =
     1;
 
+const XFCONF_QUERY_BINARY: &str =
+    "/usr/bin/xfconf-query";
+
+const XFCE_SCREENSAVER_CHANNEL: &str =
+    "xfce4-screensaver";
+
+const SAVER_THEME_LIST_PATH: &str =
+    "/saver/themes/list";
+
+const SCREENSHAVER_THEME_ID: &str =
+    "screensavers-screenshaver";
+
 
 #[derive(Debug)]
 pub(crate) struct XfceRuntimeSession {
@@ -53,6 +66,7 @@ pub(crate) struct XfceRuntimeSession {
     logfile: PathBuf,
     pid: u32,
     process_start_ticks: u64,
+    previous_saver_themes: Vec<String>,
     active: bool,
 }
 
@@ -152,11 +166,59 @@ impl XfceRuntimeSession {
             )?;
 
 
-        write_marker(
-            &marker_path,
-            pid,
-            process_start_ticks,
+        let previous_saver_themes =
+            read_xfce_saver_themes()?;
+
+
+        select_xfce_saver_themes(
+            &[
+                SCREENSHAVER_THEME_ID.to_string()
+            ]
         )?;
+
+
+        crate::logger::information(
+            logfile,
+            &format!(
+                "[LOCK] XFCE saver theme selected for Screenshaver runtime; previous themes: {}",
+                describe_theme_list(
+                    &previous_saver_themes
+                ),
+            ),
+        );
+
+
+        if let Err(error) =
+            write_marker(
+                &marker_path,
+                pid,
+                process_start_ticks,
+            )
+        {
+            let restore_result =
+                select_xfce_saver_themes(
+                    &previous_saver_themes
+                );
+
+            return Err(
+                match restore_result {
+                    Ok(()) => {
+                        format!(
+                            "{}; previous XFCE saver themes were restored",
+                            error,
+                        )
+                    }
+
+                    Err(restore_error) => {
+                        format!(
+                            "{}; additionally unable to restore previous XFCE saver themes: {}",
+                            error,
+                            restore_error,
+                        )
+                    }
+                }
+            );
+        }
 
 
         crate::logger::information(
@@ -176,6 +238,7 @@ impl XfceRuntimeSession {
                     logfile.to_path_buf(),
                 pid,
                 process_start_ticks,
+                previous_saver_themes,
                 active:
                     true,
             }
@@ -260,6 +323,33 @@ impl XfceRuntimeSession {
         }
 
 
+        match select_xfce_saver_themes(
+            &self.previous_saver_themes
+        ) {
+            Ok(()) => {
+                crate::logger::information(
+                    &self.logfile,
+                    &format!(
+                        "[LOCK] XFCE saver themes restored after Screenshaver runtime: {}",
+                        describe_theme_list(
+                            &self.previous_saver_themes
+                        ),
+                    ),
+                );
+            }
+
+            Err(error) => {
+                crate::logger::warning(
+                    &self.logfile,
+                    &format!(
+                        "[LOCK] Unable to restore previous XFCE saver themes after Screenshaver runtime: {}",
+                        error,
+                    ),
+                );
+            }
+        }
+
+
         self.active =
             false;
     }
@@ -321,6 +411,179 @@ pub(crate) fn resident_runtime_active(
 
     marker_is_live(
         &marker
+    )
+}
+
+
+fn read_xfce_saver_themes(
+) -> Result<Vec<String>, String> {
+
+    let output =
+        Command::new(
+            XFCONF_QUERY_BINARY
+        )
+        .args(
+            [
+                "-c",
+                XFCE_SCREENSAVER_CHANNEL,
+                "-p",
+                SAVER_THEME_LIST_PATH,
+            ]
+        )
+        .output()
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to query XFCE saver themes: {}",
+                    error,
+                )
+            }
+        )?;
+
+
+    if !output.status.success() {
+        return Err(
+            format!(
+                "Unable to query XFCE saver themes: {}",
+                String::from_utf8_lossy(
+                    &output.stderr
+                )
+                .trim(),
+            )
+        );
+    }
+
+
+    let stdout =
+        String::from_utf8_lossy(
+            &output.stdout
+        );
+
+
+    let themes =
+        stdout
+            .lines()
+            .map(
+                |line| {
+                    line.trim()
+                }
+            )
+            .filter(
+                |line| {
+                    !line.is_empty()
+                        && !line.starts_with(
+                            "Value is an array with "
+                        )
+                }
+            )
+            .map(
+                |line| {
+                    line.to_string()
+                }
+            )
+            .collect::<Vec<_>>();
+
+
+    if themes.is_empty() {
+        return Err(
+            "XFCE saver theme list is empty; refusing to replace an unknown configuration"
+                .to_string()
+        );
+    }
+
+
+    Ok(
+        themes
+    )
+}
+
+
+fn select_xfce_saver_themes(
+    themes: &[String],
+) -> Result<(), String> {
+
+    if themes.is_empty() {
+        return Err(
+            "XFCE saver theme list cannot be empty"
+                .to_string()
+        );
+    }
+
+
+    let mut command =
+        Command::new(
+            XFCONF_QUERY_BINARY
+        );
+
+    command.args(
+        [
+            "-c",
+            XFCE_SCREENSAVER_CHANNEL,
+            "-p",
+            SAVER_THEME_LIST_PATH,
+        ]
+    );
+
+
+    for theme in themes {
+        command.args(
+            [
+                "-t",
+                "string",
+                "-s",
+                theme.as_str(),
+            ]
+        );
+    }
+
+
+    command.arg(
+        "--force-array"
+    );
+
+
+    let output =
+        command
+            .output()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to configure XFCE saver themes: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    if !output.status.success() {
+        return Err(
+            format!(
+                "Unable to configure XFCE saver themes: {}",
+                String::from_utf8_lossy(
+                    &output.stderr
+                )
+                .trim(),
+            )
+        );
+    }
+
+
+    Ok(())
+}
+
+
+fn describe_theme_list(
+    themes: &[String],
+) -> String {
+
+    if themes.is_empty() {
+        return "<none>"
+            .to_string();
+    }
+
+
+    themes.join(
+        ", "
     )
 }
 
