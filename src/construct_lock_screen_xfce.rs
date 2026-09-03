@@ -20,14 +20,11 @@ const TRUSTED_PRESENTER_PATH: &str =
 const SAVER_THEME_ID: &str =
     "screensavers-screenshaver";
 
-const SAVER_MODE_PATH: &str =
-    "/saver/mode";
-
 const SAVER_THEME_LIST_PATH: &str =
     "/saver/themes/list";
 
-const SAVER_MODE_SINGLE: &str =
-    "2";
+const LEGACY_NATIVE_FALLBACK_THEME_ID: &str =
+    "screensavers-xfce-floaters";
 
 const SAVER_DESKTOP_ENTRY: &str =
     "[Desktop Entry]\n\
@@ -54,7 +51,6 @@ pub struct XfceLockConfigurationStatus {
     pub xfconf_query_available: bool,
     pub trusted_presenter_installed: bool,
     pub saver_desktop_registered: bool,
-    pub screenshaver_selected: bool,
     pub light_locker_autostart_disabled: bool,
 }
 
@@ -69,7 +65,6 @@ impl XfceLockConfigurationStatus {
             && self.xfconf_query_available
             && self.trusted_presenter_installed
             && self.saver_desktop_registered
-            && self.screenshaver_selected
             && self.light_locker_autostart_disabled
     }
 }
@@ -119,9 +114,6 @@ pub fn inspect(
                     &saver_desktop_path
                 ),
 
-            screenshaver_selected:
-                selected_theme_is_screenshaver(),
-
             light_locker_autostart_disabled:
                 light_locker_override_is_current(
                     &light_locker_override_path
@@ -140,8 +132,13 @@ pub fn inspect(
 /// This function:
 ///
 ///   * registers Screenshaver as an Xfce screensaver theme;
-///   * selects the Screenshaver theme in xfce4-screensaver;
+///   * leaves the user's native Xfce saver selection under Xfce ownership;
+///   * repairs the legacy permanent Screenshaver selection from older builds;
 ///   * disables Light Locker autostart for the current user.
+///
+/// Runtime theme selection is deliberately handled by manage_runtime_xfce.rs.
+/// Screenshaver temporarily selects its theme only while the resident process
+/// owns the Xfce runtime integration, then restores the user's prior settings.
 ///
 /// The Light Locker override takes effect on the next Xfce login. The caller
 /// should therefore report that a logout/login may be required if Light Locker
@@ -174,9 +171,7 @@ pub fn configure_user(
         LIGHT_LOCKER_AUTOSTART_OVERRIDE,
     )?;
 
-    set_xfce_saver_mode()?;
-
-    select_screenshaver_theme()?;
+    repair_legacy_permanent_theme_selection()?;
 
     let status =
         inspect()?;
@@ -336,8 +331,8 @@ fn light_locker_override_is_current(
 }
 
 
-fn selected_theme_is_screenshaver(
-) -> bool {
+fn read_selected_themes(
+) -> Result<Vec<String>, String> {
 
     let output =
         Command::new(
@@ -351,111 +346,71 @@ fn selected_theme_is_screenshaver(
                 SAVER_THEME_LIST_PATH,
             ]
         )
-        .output();
-
-    let Ok(output) =
-        output
-    else {
-        return false;
-    };
-
-    if !output.status.success() {
-        return false;
-    }
-
-    let stdout =
-        String::from_utf8_lossy(
-            &output.stdout
-        );
-
-    stdout
-        .lines()
-        .any(
-            |line| {
-                line.trim()
-                    == SAVER_THEME_ID
-            }
-        )
-}
-
-
-fn set_xfce_saver_mode(
-) -> Result<(), String> {
-
-    let query =
-        Command::new(
-            XFCONF_QUERY_BINARY
-        )
-        .args(
-            [
-                "-c",
-                "xfce4-screensaver",
-                "-p",
-                SAVER_MODE_PATH,
-            ]
-        )
         .output()
         .map_err(
             |error| {
                 format!(
-                    "Unable to query XFCE screensaver mode: {}",
+                    "Unable to query XFCE screensaver themes: {}",
                     error,
                 )
             }
         )?;
 
-    let mut command =
-        Command::new(
-            XFCONF_QUERY_BINARY
-        );
-
-    command.args(
-        [
-            "-c",
-            "xfce4-screensaver",
-            "-p",
-            SAVER_MODE_PATH,
-        ]
-    );
-
-    if !query.status.success() {
-        command.args(
-            [
-                "--create",
-                "-t",
-                "int",
-            ]
-        );
-    }
-
-    command.args(
-        [
-            "-s",
-            SAVER_MODE_SINGLE,
-        ]
-    );
-
-    let output =
-        command
-            .output()
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to configure XFCE screensaver mode: {}",
-                        error,
-                    )
-                }
-            )?;
 
     require_command_success(
         output,
-        "Unable to configure XFCE screensaver mode",
+        "Unable to query XFCE screensaver themes",
+    )
+    .and_then(
+        |output_text| {
+            let themes =
+                output_text
+                    .lines()
+                    .map(
+                        |line| line.trim()
+                    )
+                    .filter(
+                        |line| {
+                            !line.is_empty()
+                                && !line.starts_with(
+                                    "Value is an array with "
+                                )
+                        }
+                    )
+                    .map(
+                        str::to_string
+                    )
+                    .collect::<Vec<_>>();
+
+            Ok(
+                themes
+            )
+        }
     )
 }
 
 
-fn select_screenshaver_theme(
+fn repair_legacy_permanent_theme_selection(
 ) -> Result<(), String> {
+
+    let themes =
+        read_selected_themes()?;
+
+
+    // Older Screenshaver builds permanently selected the Screenshaver Xfce
+    // theme during construction.  That leaves a black saver surface whenever
+    // the resident Screenshaver process is not running.  The user's original
+    // pre-Screenshaver choice cannot be reconstructed after that old setting
+    // has already overwritten it, so migrate only the exact legacy state to a
+    // stock Xfce saver.  Any other current user selection is preserved.
+    if themes.len() != 1
+        || themes[0] != SAVER_THEME_ID
+    {
+        return Ok(
+            ()
+        );
+    }
+
 
     let output =
         Command::new(
@@ -470,7 +425,7 @@ fn select_screenshaver_theme(
                 "-t",
                 "string",
                 "-s",
-                SAVER_THEME_ID,
+                LEGACY_NATIVE_FALLBACK_THEME_ID,
                 "--force-array",
             ]
         )
@@ -478,15 +433,19 @@ fn select_screenshaver_theme(
         .map_err(
             |error| {
                 format!(
-                    "Unable to select Screenshaver as the XFCE screensaver theme: {}",
+                    "Unable to migrate the legacy permanent Screenshaver XFCE theme selection: {}",
                     error,
                 )
             }
         )?;
 
+
     require_command_success(
         output,
-        "Unable to select Screenshaver as the XFCE screensaver theme",
+        "Unable to migrate the legacy permanent Screenshaver XFCE theme selection",
+    )
+    .map(
+        |_| ()
     )
 }
 
@@ -494,11 +453,14 @@ fn select_screenshaver_theme(
 fn require_command_success(
     output: std::process::Output,
     context: &str,
-) -> Result<(), String> {
+) -> Result<String, String> {
 
     if output.status.success() {
         return Ok(
-            ()
+            String::from_utf8_lossy(
+                &output.stdout
+            )
+            .to_string()
         );
     }
 

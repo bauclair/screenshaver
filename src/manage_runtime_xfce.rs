@@ -1,20 +1,21 @@
 //! manage_runtime_xfce.rs
 //!
-//! Runtime-ownership handshake for the Xfce lock-screen presenter.
+//! Runtime ownership and temporary Xfce saver selection for Screenshaver.
 //!
-//! xfce4-screensaver may launch Screenshaver's trusted saver executable at any
-//! time because Screenshaver is registered as an Xfce saver theme.  That launch
-//! alone does not authorize shader rendering.  Shader presentation is permitted
-//! only while the normal resident Screenshaver process is active.
+//! xfce4-screensaver remains the secure screen locker. Screenshaver registers a
+//! trusted saver child, but that child is authorized to render shaders only
+//! while the normal resident Screenshaver process owns this runtime session.
 //!
-//! The resident process creates a small ownership marker in XDG_RUNTIME_DIR
-//! after it has acquired Screenshaver's singleton.  The Xfce saver child checks
-//! that marker before rendering.  The marker records both PID and Linux process
-//! start time so a stale marker cannot become valid merely because the kernel
-//! later reuses the same PID.
+//! The resident process:
+//!   * preserves the user's current Xfce saver mode and theme list;
+//!   * writes a persistent recovery snapshot;
+//!   * establishes the existing PID/start-time ownership marker;
+//!   * temporarily selects Screenshaver as the Xfce saver;
+//!   * restores the prior native Xfce saver configuration on normal shutdown.
 //!
-//! This module does not participate in authentication, input handling, PAM, or
-//! unlock authority.  Those remain entirely owned by xfce4-screensaver.
+//! A later Screenshaver start also repairs a stale recovery snapshot left by a
+//! crashed/killed resident process. Authentication, input isolation, PAM, and
+//! unlock authority remain entirely owned by xfce4-screensaver.
 
 use std::fs::{
     self,
@@ -47,26 +48,46 @@ const MARKER_FILE_NAME: &str =
 const MARKER_VERSION: u32 =
     1;
 
+const RECOVERY_FILE_NAME: &str =
+    "xfce-saver-runtime.restore";
+
+const RECOVERY_VERSION: u32 =
+    1;
+
 const XFCONF_QUERY_BINARY: &str =
     "/usr/bin/xfconf-query";
 
 const XFCE_SCREENSAVER_CHANNEL: &str =
     "xfce4-screensaver";
 
+const SAVER_MODE_PATH: &str =
+    "/saver/mode";
+
 const SAVER_THEME_LIST_PATH: &str =
     "/saver/themes/list";
+
+const SAVER_MODE_SINGLE: i32 =
+    2;
 
 const SCREENSHAVER_THEME_ID: &str =
     "screensavers-screenshaver";
 
 
+#[derive(Debug, Clone)]
+struct XfceSaverConfiguration {
+    mode: i32,
+    themes: Vec<String>,
+}
+
+
 #[derive(Debug)]
 pub(crate) struct XfceRuntimeSession {
     marker_path: PathBuf,
+    recovery_path: PathBuf,
     logfile: PathBuf,
     pid: u32,
     process_start_ticks: u64,
-    previous_saver_themes: Vec<String>,
+    previous_configuration: XfceSaverConfiguration,
     active: bool,
 }
 
@@ -82,15 +103,14 @@ impl XfceRuntimeSession {
 
     /// Establish runtime ownership for the resident Screenshaver process.
     ///
-    /// This should be called only after the normal resident process has
-    /// successfully acquired Screenshaver's singleton.
+    /// Call only after the normal resident process has acquired Screenshaver's
+    /// singleton.
     pub(crate) fn acquire(
         logfile: &Path,
     ) -> Result<Self, String> {
 
         let marker_path =
             marker_path()?;
-
 
         ensure_runtime_directory(
             marker_path
@@ -104,57 +124,80 @@ impl XfceRuntimeSession {
         )?;
 
 
-        // Remove only demonstrably stale state.  A live marker is never
-        // overwritten.
-        match read_marker(
-            &marker_path
-        ) {
-            Ok(marker) => {
+        let marker_was_stale =
+            match read_marker(
+                &marker_path
+            ) {
+                Ok(marker) => {
+                    if marker_is_live(
+                        &marker
+                    )? {
+                        return Err(
+                            format!(
+                                "XFCE runtime ownership marker '{}' already belongs to a live process (pid={})",
+                                marker_path.display(),
+                                marker.pid,
+                            )
+                        );
+                    }
 
-                if marker_is_live(
-                    &marker
-                )? {
-                    return Err(
-                        format!(
-                            "XFCE runtime ownership marker '{}' already belongs to a live process (pid={})",
-                            marker_path.display(),
-                            marker.pid,
-                        )
-                    );
+                    fs::remove_file(
+                        &marker_path
+                    )
+                    .map_err(
+                        |error| {
+                            format!(
+                                "Unable to remove stale XFCE runtime ownership marker '{}': {}",
+                                marker_path.display(),
+                                error,
+                            )
+                        }
+                    )?;
+
+                    true
                 }
 
+                Err(error)
+                    if error.kind()
+                        == std::io::ErrorKind::NotFound =>
+                {
+                    false
+                }
 
-                fs::remove_file(
-                    &marker_path
-                )
-                .map_err(
-                    |error| {
+                Err(error) => {
+                    return Err(
                         format!(
-                            "Unable to remove stale XFCE runtime ownership marker '{}': {}",
+                            "Unable to inspect existing XFCE runtime ownership marker '{}': {}",
                             marker_path.display(),
                             error,
                         )
-                    }
-                )?;
-            }
+                    );
+                }
+            };
 
 
-            Err(error)
-                if error.kind()
-                    == std::io::ErrorKind::NotFound =>
-            {}
+        let recovery_path =
+            recovery_path()?;
 
 
-            Err(error) => {
-                return Err(
-                    format!(
-                        "Unable to inspect existing XFCE runtime ownership marker '{}': {}",
-                        marker_path.display(),
-                        error,
-                    )
-                );
-            }
+        if marker_was_stale
+            || recovery_path.exists()
+        {
+            recover_stale_configuration(
+                logfile,
+                &recovery_path,
+            )?;
         }
+
+
+        let previous_configuration =
+            read_xfce_saver_configuration()?;
+
+
+        write_recovery_snapshot(
+            &recovery_path,
+            &previous_configuration,
+        )?;
 
 
         let pid =
@@ -166,28 +209,6 @@ impl XfceRuntimeSession {
             )?;
 
 
-        let previous_saver_themes =
-            read_xfce_saver_themes()?;
-
-
-        select_xfce_saver_themes(
-            &[
-                SCREENSHAVER_THEME_ID.to_string()
-            ]
-        )?;
-
-
-        crate::logger::information(
-            logfile,
-            &format!(
-                "[LOCK] XFCE saver theme selected for Screenshaver runtime; previous themes: {}",
-                describe_theme_list(
-                    &previous_saver_themes
-                ),
-            ),
-        );
-
-
         if let Err(error) =
             write_marker(
                 &marker_path,
@@ -195,28 +216,62 @@ impl XfceRuntimeSession {
                 process_start_ticks,
             )
         {
-            let restore_result =
-                select_xfce_saver_themes(
-                    &previous_saver_themes
+            let _ =
+                fs::remove_file(
+                    &recovery_path
                 );
 
             return Err(
-                match restore_result {
-                    Ok(()) => {
-                        format!(
-                            "{}; previous XFCE saver themes were restored",
-                            error,
-                        )
-                    }
+                error
+            );
+        }
 
-                    Err(restore_error) => {
-                        format!(
-                            "{}; additionally unable to restore previous XFCE saver themes: {}",
-                            error,
-                            restore_error,
-                        )
-                    }
-                }
+
+        // Authorization exists before Xfce is pointed at Screenshaver. If a
+        // lock happens in the tiny interval before the theme switch, Xfce still
+        // uses its native saver rather than an unauthorized Screenshaver child.
+        if let Err(error) =
+            select_xfce_saver_themes(
+                &[
+                    SCREENSHAVER_THEME_ID.to_string()
+                ]
+            )
+        {
+            cleanup_failed_activation(
+                logfile,
+                &marker_path,
+                &recovery_path,
+                &previous_configuration,
+                &format!(
+                    "Unable to select Screenshaver as the XFCE saver theme: {}",
+                    error,
+                ),
+            );
+
+            return Err(
+                error
+            );
+        }
+
+
+        if let Err(error) =
+            set_xfce_saver_mode(
+                SAVER_MODE_SINGLE
+            )
+        {
+            cleanup_failed_activation(
+                logfile,
+                &marker_path,
+                &recovery_path,
+                &previous_configuration,
+                &format!(
+                    "Unable to select XFCE single-saver mode for Screenshaver: {}",
+                    error,
+                ),
+            );
+
+            return Err(
+                error
             );
         }
 
@@ -230,15 +285,27 @@ impl XfceRuntimeSession {
             ),
         );
 
+        crate::logger::information(
+            logfile,
+            &format!(
+                "[LOCK] XFCE saver temporarily assigned to Screenshaver; previous mode={} themes={}",
+                previous_configuration.mode,
+                describe_theme_list(
+                    &previous_configuration.themes
+                ),
+            ),
+        );
+
 
         Ok(
             Self {
                 marker_path,
+                recovery_path,
                 logfile:
                     logfile.to_path_buf(),
                 pid,
                 process_start_ticks,
-                previous_saver_themes,
+                previous_configuration,
                 active:
                     true,
             }
@@ -255,97 +322,132 @@ impl XfceRuntimeSession {
         }
 
 
-        match read_marker(
-            &self.marker_path
-        ) {
-            Ok(marker)
-                if marker.pid == self.pid
-                    && marker.process_start_ticks
-                        == self.process_start_ticks =>
-            {
-                match fs::remove_file(
-                    &self.marker_path
+        let marker_still_ours =
+            match read_marker(
+                &self.marker_path
+            ) {
+                Ok(marker) => {
+                    marker.pid == self.pid
+                        && marker.process_start_ticks
+                            == self.process_start_ticks
+                }
+
+                Err(error)
+                    if error.kind()
+                        == std::io::ErrorKind::NotFound =>
+                {
+                    true
+                }
+
+                Err(error) => {
+                    crate::logger::warning(
+                        &self.logfile,
+                        &format!(
+                            "[LOCK] Unable to inspect XFCE runtime ownership marker during cleanup: {}",
+                            error,
+                        ),
+                    );
+
+                    false
+                }
+            };
+
+
+        let restored =
+            if marker_still_ours {
+                match restore_xfce_saver_configuration(
+                    &self.previous_configuration
                 ) {
                     Ok(()) => {
                         crate::logger::information(
                             &self.logfile,
-                            "[LOCK] XFCE runtime ownership released",
+                            &format!(
+                                "[LOCK] XFCE saver configuration restored after Screenshaver runtime: mode={} themes={}",
+                                self.previous_configuration.mode,
+                                describe_theme_list(
+                                    &self.previous_configuration.themes
+                                ),
+                            ),
                         );
+
+                        true
                     }
-
-
-                    Err(error)
-                        if error.kind()
-                            == std::io::ErrorKind::NotFound =>
-                    {}
-
 
                     Err(error) => {
                         crate::logger::warning(
                             &self.logfile,
                             &format!(
-                                "[LOCK] Unable to remove XFCE runtime ownership marker '{}': {}",
-                                self.marker_path.display(),
+                                "[LOCK] Unable to restore previous XFCE saver configuration after Screenshaver runtime: {}",
                                 error,
                             ),
                         );
+
+                        false
                     }
                 }
-            }
-
-
-            Ok(_) => {
+            } else {
                 crate::logger::warning(
                     &self.logfile,
-                    &format!(
-                        "[LOCK] XFCE runtime ownership marker '{}' no longer belongs to this Screenshaver runtime; it was not removed",
-                        self.marker_path.display(),
-                    ),
+                    "[LOCK] XFCE runtime ownership marker no longer belongs to this runtime; saver configuration was not changed during cleanup",
                 );
-            }
+
+                false
+            };
 
 
-            Err(error)
-                if error.kind()
-                    == std::io::ErrorKind::NotFound =>
-            {}
+        // Restore native Xfce behavior before revoking authorization. This
+        // avoids a normal-shutdown interval where Xfce still points at
+        // Screenshaver but the trusted child is no longer authorized.
+        if marker_still_ours {
+            match fs::remove_file(
+                &self.marker_path
+            ) {
+                Ok(()) => {
+                    crate::logger::information(
+                        &self.logfile,
+                        "[LOCK] XFCE runtime ownership released",
+                    );
+                }
 
+                Err(error)
+                    if error.kind()
+                        == std::io::ErrorKind::NotFound =>
+                {}
 
-            Err(error) => {
-                crate::logger::warning(
-                    &self.logfile,
-                    &format!(
-                        "[LOCK] Unable to inspect XFCE runtime ownership marker during cleanup: {}",
-                        error,
-                    ),
-                );
+                Err(error) => {
+                    crate::logger::warning(
+                        &self.logfile,
+                        &format!(
+                            "[LOCK] Unable to remove XFCE runtime ownership marker '{}': {}",
+                            self.marker_path.display(),
+                            error,
+                        ),
+                    );
+                }
             }
         }
 
 
-        match select_xfce_saver_themes(
-            &self.previous_saver_themes
-        ) {
-            Ok(()) => {
-                crate::logger::information(
-                    &self.logfile,
-                    &format!(
-                        "[LOCK] XFCE saver themes restored after Screenshaver runtime: {}",
-                        describe_theme_list(
-                            &self.previous_saver_themes
-                        ),
-                    ),
-                );
-            }
+        if restored {
+            match fs::remove_file(
+                &self.recovery_path
+            ) {
+                Ok(()) => {}
 
-            Err(error) => {
-                crate::logger::warning(
-                    &self.logfile,
-                    &format!(
-                        "[LOCK] Unable to restore previous XFCE saver themes after Screenshaver runtime: {}",
-                        error,
-                    ),
-                );
+                Err(error)
+                    if error.kind()
+                        == std::io::ErrorKind::NotFound =>
+                {}
+
+                Err(error) => {
+                    crate::logger::warning(
+                        &self.logfile,
+                        &format!(
+                            "[LOCK] XFCE saver recovery snapshot could not be removed after successful restoration: {}",
+                            error,
+                        ),
+                    );
+                }
             }
         }
 
@@ -386,7 +488,6 @@ pub(crate) fn resident_runtime_active(
                 marker
             }
 
-
             Err(error)
                 if error.kind()
                     == std::io::ErrorKind::NotFound =>
@@ -395,7 +496,6 @@ pub(crate) fn resident_runtime_active(
                     false
                 );
             }
-
 
             Err(error) => {
                 return Err(
@@ -412,6 +512,142 @@ pub(crate) fn resident_runtime_active(
     marker_is_live(
         &marker
     )
+}
+
+
+fn read_xfce_saver_configuration(
+) -> Result<XfceSaverConfiguration, String> {
+
+    Ok(
+        XfceSaverConfiguration {
+            mode:
+                read_xfce_saver_mode()?,
+
+            themes:
+                read_xfce_saver_themes()?,
+        }
+    )
+}
+
+
+fn restore_xfce_saver_configuration(
+    configuration: &XfceSaverConfiguration,
+) -> Result<(), String> {
+
+    // Restore themes first while runtime authorization is still present. Then
+    // restore the user's original mode.
+    select_xfce_saver_themes(
+        &configuration.themes
+    )?;
+
+    set_xfce_saver_mode(
+        configuration.mode
+    )
+}
+
+
+fn read_xfce_saver_mode(
+) -> Result<i32, String> {
+
+    let output =
+        Command::new(
+            XFCONF_QUERY_BINARY
+        )
+        .args(
+            [
+                "-c",
+                XFCE_SCREENSAVER_CHANNEL,
+                "-p",
+                SAVER_MODE_PATH,
+            ]
+        )
+        .output()
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to query XFCE saver mode: {}",
+                    error,
+                )
+            }
+        )?;
+
+
+    if !output.status.success() {
+        return Err(
+            command_failure(
+                "Unable to query XFCE saver mode",
+                &output,
+            )
+        );
+    }
+
+
+    let value =
+        String::from_utf8_lossy(
+            &output.stdout
+        )
+        .trim()
+        .to_string();
+
+
+    value
+        .parse::<i32>()
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to parse XFCE saver mode '{}': {}",
+                    value,
+                    error,
+                )
+            }
+        )
+}
+
+
+fn set_xfce_saver_mode(
+    mode: i32,
+) -> Result<(), String> {
+
+    let mode =
+        mode.to_string();
+
+
+    let output =
+        Command::new(
+            XFCONF_QUERY_BINARY
+        )
+        .args(
+            [
+                "-c",
+                XFCE_SCREENSAVER_CHANNEL,
+                "-p",
+                SAVER_MODE_PATH,
+                "-s",
+                mode.as_str(),
+            ]
+        )
+        .output()
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to configure XFCE saver mode: {}",
+                    error,
+                )
+            }
+        )?;
+
+
+    if !output.status.success() {
+        return Err(
+            command_failure(
+                "Unable to configure XFCE saver mode",
+                &output,
+            )
+        );
+    }
+
+
+    Ok(())
 }
 
 
@@ -443,12 +679,9 @@ fn read_xfce_saver_themes(
 
     if !output.status.success() {
         return Err(
-            format!(
-                "Unable to query XFCE saver themes: {}",
-                String::from_utf8_lossy(
-                    &output.stderr
-                )
-                .trim(),
+            command_failure(
+                "Unable to query XFCE saver themes",
+                &output,
             )
         );
     }
@@ -477,9 +710,7 @@ fn read_xfce_saver_themes(
                 }
             )
             .map(
-                |line| {
-                    line.to_string()
-                }
+                str::to_string
             )
             .collect::<Vec<_>>();
 
@@ -557,12 +788,9 @@ fn select_xfce_saver_themes(
 
     if !output.status.success() {
         return Err(
-            format!(
-                "Unable to configure XFCE saver themes: {}",
-                String::from_utf8_lossy(
-                    &output.stderr
-                )
-                .trim(),
+            command_failure(
+                "Unable to configure XFCE saver themes",
+                &output,
             )
         );
     }
@@ -572,19 +800,497 @@ fn select_xfce_saver_themes(
 }
 
 
+fn command_failure(
+    context: &str,
+    output: &std::process::Output,
+) -> String {
+
+    let stderr =
+        String::from_utf8_lossy(
+            &output.stderr
+        );
+
+    let stderr =
+        stderr.trim();
+
+
+    if stderr.is_empty() {
+        format!(
+            "{}; command exited with status {}",
+            context,
+            output.status,
+        )
+    } else {
+        format!(
+            "{}: {}",
+            context,
+            stderr,
+        )
+    }
+}
+
+
 fn describe_theme_list(
     themes: &[String],
 ) -> String {
 
-    if themes.is_empty() {
-        return "<none>"
-            .to_string();
-    }
-
-
     themes.join(
         ", "
     )
+}
+
+
+fn recovery_path(
+) -> Result<PathBuf, String> {
+
+    let config_root =
+        match std::env::var_os(
+            "XDG_CONFIG_HOME"
+        ) {
+            Some(path)
+                if PathBuf::from(
+                    &path
+                )
+                .is_absolute() =>
+            {
+                PathBuf::from(
+                    path
+                )
+            }
+
+            _ => {
+                let home =
+                    std::env::var_os(
+                        "HOME"
+                    )
+                    .ok_or_else(
+                        || {
+                            "HOME is unavailable while locating the XFCE saver recovery snapshot"
+                                .to_string()
+                        }
+                    )?;
+
+                PathBuf::from(
+                    home
+                )
+                .join(
+                    ".config"
+                )
+            }
+        };
+
+
+    Ok(
+        config_root
+            .join(
+                RUNTIME_DIRECTORY_NAME
+            )
+            .join(
+                RECOVERY_FILE_NAME
+            )
+    )
+}
+
+
+fn write_recovery_snapshot(
+    path: &Path,
+    configuration: &XfceSaverConfiguration,
+) -> Result<(), String> {
+
+    let parent =
+        path.parent()
+            .ok_or_else(
+                || {
+                    "XFCE saver recovery snapshot has no parent directory"
+                        .to_string()
+                }
+            )?;
+
+
+    fs::create_dir_all(
+        parent
+    )
+    .map_err(
+        |error| {
+            format!(
+                "Unable to create XFCE saver recovery directory '{}': {}",
+                parent.display(),
+                error,
+            )
+        }
+    )?;
+
+
+    #[cfg(unix)]
+    fs::set_permissions(
+        parent,
+        fs::Permissions::from_mode(
+            0o700
+        ),
+    )
+    .map_err(
+        |error| {
+            format!(
+                "Unable to set XFCE saver recovery directory permissions on '{}': {}",
+                parent.display(),
+                error,
+            )
+        }
+    )?;
+
+
+    let temporary_path =
+        path.with_extension(
+            "restore.tmp"
+        );
+
+
+    let mut options =
+        OpenOptions::new();
+
+    options
+        .write(
+            true
+        )
+        .create(
+            true
+        )
+        .truncate(
+            true
+        );
+
+
+    #[cfg(unix)]
+    options.mode(
+        0o600
+    );
+
+
+    let mut file =
+        options
+            .open(
+                &temporary_path
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to create XFCE saver recovery snapshot '{}': {}",
+                        temporary_path.display(),
+                        error,
+                    )
+                }
+            )?;
+
+
+    writeln!(
+        file,
+        "version={}",
+        RECOVERY_VERSION
+    )
+    .map_err(
+        |error| error.to_string()
+    )?;
+
+    writeln!(
+        file,
+        "mode={}",
+        configuration.mode
+    )
+    .map_err(
+        |error| error.to_string()
+    )?;
+
+
+    for theme in &configuration.themes {
+        if theme.contains(
+            '\n'
+        ) || theme.contains(
+            '\r'
+        ) {
+            let _ =
+                fs::remove_file(
+                    &temporary_path
+                );
+
+            return Err(
+                "XFCE saver theme contains an invalid line break"
+                    .to_string()
+            );
+        }
+
+        writeln!(
+            file,
+            "theme={}",
+            theme
+        )
+        .map_err(
+            |error| error.to_string()
+        )?;
+    }
+
+
+    file.sync_all()
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to synchronize XFCE saver recovery snapshot '{}': {}",
+                    temporary_path.display(),
+                    error,
+                )
+            }
+        )?;
+
+
+    fs::rename(
+        &temporary_path,
+        path,
+    )
+    .map_err(
+        |error| {
+            let _ =
+                fs::remove_file(
+                    &temporary_path
+                );
+
+            format!(
+                "Unable to install XFCE saver recovery snapshot '{}': {}",
+                path.display(),
+                error,
+            )
+        }
+    )
+}
+
+
+fn read_recovery_snapshot(
+    path: &Path,
+) -> Result<XfceSaverConfiguration, String> {
+
+    let contents =
+        fs::read_to_string(
+            path
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to read XFCE saver recovery snapshot '{}': {}",
+                    path.display(),
+                    error,
+                )
+            }
+        )?;
+
+
+    let mut version =
+        None;
+
+    let mut mode =
+        None;
+
+    let mut themes =
+        Vec::new();
+
+
+    for line in contents.lines() {
+        if let Some(value) =
+            line.strip_prefix(
+                "version="
+            )
+        {
+            version =
+                Some(
+                    value
+                        .parse::<u32>()
+                        .map_err(
+                            |error| {
+                                format!(
+                                    "Invalid XFCE saver recovery version '{}': {}",
+                                    value,
+                                    error,
+                                )
+                            }
+                        )?
+                );
+        } else if let Some(value) =
+            line.strip_prefix(
+                "mode="
+            )
+        {
+            mode =
+                Some(
+                    value
+                        .parse::<i32>()
+                        .map_err(
+                            |error| {
+                                format!(
+                                    "Invalid XFCE saver recovery mode '{}': {}",
+                                    value,
+                                    error,
+                                )
+                            }
+                        )?
+                );
+        } else if let Some(value) =
+            line.strip_prefix(
+                "theme="
+            )
+        {
+            if !value.is_empty() {
+                themes.push(
+                    value.to_string()
+                );
+            }
+        }
+    }
+
+
+    if version != Some(
+        RECOVERY_VERSION
+    ) {
+        return Err(
+            format!(
+                "Unsupported or missing XFCE saver recovery snapshot version: {:?}",
+                version,
+            )
+        );
+    }
+
+
+    let mode =
+        mode
+            .ok_or_else(
+                || {
+                    "XFCE saver recovery snapshot is missing its saver mode"
+                        .to_string()
+                }
+            )?;
+
+
+    if themes.is_empty() {
+        return Err(
+            "XFCE saver recovery snapshot contains no saver themes"
+                .to_string()
+        );
+    }
+
+
+    Ok(
+        XfceSaverConfiguration {
+            mode,
+            themes,
+        }
+    )
+}
+
+
+fn recover_stale_configuration(
+    logfile: &Path,
+    recovery_path: &Path,
+) -> Result<(), String> {
+
+    if !recovery_path.exists() {
+        return Ok(
+            ()
+        );
+    }
+
+
+    let saved =
+        read_recovery_snapshot(
+            recovery_path
+        )?;
+
+    let current =
+        read_xfce_saver_configuration()?;
+
+
+    let screenshaver_still_selected =
+        current.themes.len() == 1
+            && current.themes[0]
+                == SCREENSHAVER_THEME_ID;
+
+
+    if screenshaver_still_selected {
+        restore_xfce_saver_configuration(
+            &saved
+        )?;
+
+        crate::logger::information(
+            logfile,
+            &format!(
+                "[LOCK] Recovered stale XFCE saver configuration from a previous Screenshaver runtime: mode={} themes={}",
+                saved.mode,
+                describe_theme_list(
+                    &saved.themes
+                ),
+            ),
+        );
+    } else {
+        crate::logger::information(
+            logfile,
+            "[LOCK] Discarding stale XFCE saver recovery snapshot because Xfce is no longer assigned to Screenshaver",
+        );
+    }
+
+
+    fs::remove_file(
+        recovery_path
+    )
+    .map_err(
+        |error| {
+            format!(
+                "Unable to remove stale XFCE saver recovery snapshot '{}': {}",
+                recovery_path.display(),
+                error,
+            )
+        }
+    )
+}
+
+
+fn cleanup_failed_activation(
+    logfile: &Path,
+    marker_path: &Path,
+    recovery_path: &Path,
+    previous_configuration: &XfceSaverConfiguration,
+    context: &str,
+) {
+
+    crate::logger::warning(
+        logfile,
+        &format!(
+            "[LOCK] {}",
+            context,
+        ),
+    );
+
+
+    match restore_xfce_saver_configuration(
+        previous_configuration
+    ) {
+        Ok(()) => {
+            let _ =
+                fs::remove_file(
+                    recovery_path
+                );
+        }
+
+        Err(error) => {
+            crate::logger::warning(
+                logfile,
+                &format!(
+                    "[LOCK] Unable to roll back XFCE saver configuration after activation failure: {}",
+                    error,
+                ),
+            );
+        }
+    }
+
+
+    let _ =
+        fs::remove_file(
+            marker_path
+        );
 }
 
 

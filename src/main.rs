@@ -340,8 +340,7 @@ fn main() {
                     );
 
                     println!(
-                        "Screenshaver selected as Xfce saver theme: {}",
-                        status.screenshaver_selected
+                        "Xfce saver selection remains native until the resident Screenshaver runtime starts."
                     );
 
                     println!(
