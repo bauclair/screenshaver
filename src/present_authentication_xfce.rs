@@ -1,10 +1,10 @@
 //! present_authentication_xfce.rs
 //!
-//! Minimal Xfce GLX authentication-child diagnostic.
+//! Minimal Xfce GLX raise-once authentication-child diagnostic.
 //!
-//! This diagnostic adds exactly one rendering step to the previously-proven
-//! passive-child test: the 16x16 child uses a GLX-compatible visual, receives
-//! one OpenGL clear, and swaps buffers once.
+//! This diagnostic adds exactly one stacking operation to the previously-proven
+//! GLX passive-child test: after the 16x16 child is mapped, it is raised exactly
+//! once. The child still receives one OpenGL clear and one buffer swap.
 //!
 //! This diagnostic intentionally does NOT:
 //! - render the Screenshaver lock widget,
@@ -12,6 +12,8 @@
 //! - grab input,
 //! - authenticate,
 //! - repeatedly raise or restack its X11 child window.
+//!
+//! XRaiseWindow() is called exactly once immediately after XMapWindow().
 //!
 //! Its purpose is to determine whether introducing GLX/OpenGL on the otherwise
 //! passive authentication child interferes with xfce4-screensaver-dialog.
@@ -416,7 +418,7 @@ pub(crate) fn launch_helper(
     crate::logger::information(
         logfile,
         &format!(
-            "[LOCK] XFCE minimal GLX authentication-child diagnostic helper launched: pid={}",
+            "[LOCK] XFCE minimal GLX raise-once authentication-child diagnostic helper launched: pid={}",
             child.id(),
         ),
     );
@@ -525,7 +527,7 @@ pub(crate) fn run_helper(
             crate::logger::information(
                 logfile,
                 &format!(
-                    "[LOCK] XFCE minimal GLX authentication-child diagnostic helper started: parent_pid={}, geometry={}x{}",
+                    "[LOCK] XFCE minimal GLX raise-once authentication-child diagnostic helper started: parent_pid={}, geometry={}x{}",
                     parent_pid,
                     root_width,
                     root_height,
@@ -591,7 +593,7 @@ pub(crate) fn run_helper(
                                     crate::logger::information(
                                         logfile,
                                         &format!(
-                                            "[LOCK] XFCE minimal GLX authentication-child diagnostic window destroyed before recreation: window=0x{:X}",
+                                            "[LOCK] XFCE minimal GLX raise-once authentication-child diagnostic window destroyed before recreation: window=0x{:X}",
                                             test_window,
                                         ),
                                     );
@@ -616,7 +618,7 @@ pub(crate) fn run_helper(
                                 crate::logger::information(
                                     logfile,
                                     &format!(
-                                        "[LOCK] XFCE minimal GLX authentication-child diagnostic window mapped once: dialog=0x{:X}, parent=0x{:X}, window=0x{:X}, geometry={}x{}+{}+{}, input_shape=empty, event_mask=0, glx_clear=cyan-once",
+                                        "[LOCK] XFCE minimal GLX raise-once authentication-child diagnostic window mapped once: dialog=0x{:X}, parent=0x{:X}, window=0x{:X}, geometry={}x{}+{}+{}, input_shape=empty, event_mask=0, raise=once, glx_clear=cyan-once",
                                         dialog_window,
                                         dialog_parent,
                                         test_window,
@@ -671,7 +673,7 @@ pub(crate) fn run_helper(
 
             crate::logger::information(
                 logfile,
-                "[LOCK] XFCE minimal GLX authentication-child diagnostic helper stopped because the saver presentation child exited.",
+                "[LOCK] XFCE minimal GLX raise-once authentication-child diagnostic helper stopped because the saver presentation child exited.",
             );
 
             Ok(())
@@ -822,9 +824,17 @@ fn create_test_window(
         window,
     );
 
-    // Map exactly once. Do not XRaiseWindow() and do not repeatedly restack.
+    // Map exactly once, then raise exactly once.
+    //
+    // This diagnostic intentionally isolates a single stacking operation.
+    // There is no repeated XRaiseWindow() loop and no subsequent restacking.
     unsafe {
         xlib::XMapWindow(
+            display,
+            window,
+        );
+
+        xlib::XRaiseWindow(
             display,
             window,
         );
