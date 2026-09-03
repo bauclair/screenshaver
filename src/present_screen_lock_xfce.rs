@@ -2,7 +2,7 @@ use std::env;
 use std::fs;
 use std::mem::MaybeUninit;
 use std::path::Path;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use x11::glx;
 use x11::xlib;
@@ -424,24 +424,9 @@ fn run_opengl_clear_test(
         ),
     );
 
-    let mut authentication_dialog_state =
-        match XfceAuthenticationDialogState::new(
-            logfile,
-        ) {
-            Ok(state) => Some(state),
-
-            Err(error) => {
-                crate::logger::warning(
-                    logfile,
-                    &format!(
-                        "[LOCK] XFCE authentication-dialog process reconnaissance unavailable; shader presentation will continue: {}",
-                        error,
-                    ),
-                );
-
-                None
-            }
-        };
+    start_authentication_dialog_monitor(
+        logfile,
+    );
 
     crate::logger::information(
         logfile,
@@ -470,14 +455,6 @@ fn run_opengl_clear_test(
             );
         }
 
-        if let Some(state) =
-            authentication_dialog_state.as_mut()
-        {
-            state.poll_if_due(
-                logfile,
-            );
-        }
-
         rendered_frames =
             rendered_frames.saturating_add(
                 1
@@ -499,77 +476,66 @@ fn run_opengl_clear_test(
 
 
 
-struct XfceAuthenticationDialogState {
-    visible: bool,
-    next_poll: Instant,
-}
+fn start_authentication_dialog_monitor(
+    logfile: &Path,
+) {
+    let logfile =
+        logfile.to_path_buf();
+    let monitor_logfile =
+        logfile.clone();
 
+    let _ =
+        std::thread::Builder::new()
+            .name(
+                "screenshaver-xfce-auth-monitor".to_string()
+            )
+            .spawn(
+                move || {
+                    let mut previous_state: Option<bool> =
+                        None;
 
-impl XfceAuthenticationDialogState {
-    fn new(
-        logfile: &Path,
-    ) -> Result<Self, String> {
-        let visible =
-            xfce_authentication_dialog_running()?;
+                    loop {
+                        match xfce_authentication_dialog_running() {
+                            Ok(visible) => {
+                                if previous_state != Some(visible) {
+                                    log_authentication_dialog_state(
+                                        &monitor_logfile,
+                                        visible,
+                                    );
 
-        log_authentication_dialog_state(
-            logfile,
-            visible,
-        );
+                                    previous_state =
+                                        Some(visible);
+                                }
+                            }
 
-        Ok(
-            Self {
-                visible,
-                next_poll: Instant::now()
-                    + XFCE_AUTH_DIALOG_POLL_INTERVAL,
-            }
-        )
-    }
+                            Err(error) => {
+                                crate::logger::warning(
+                                    &monitor_logfile,
+                                    &format!(
+                                        "[LOCK] XFCE authentication-dialog process poll failed: {}",
+                                        error,
+                                    ),
+                                );
+                            }
+                        }
 
-
-    fn poll_if_due(
-        &mut self,
-        logfile: &Path,
-    ) {
-        let now =
-            Instant::now();
-
-        if now < self.next_poll {
-            return;
-        }
-
-        self.next_poll =
-            now + XFCE_AUTH_DIALOG_POLL_INTERVAL;
-
-        let visible =
-            match xfce_authentication_dialog_running() {
-                Ok(visible) => visible,
-
-                Err(error) => {
+                        std::thread::sleep(
+                            XFCE_AUTH_DIALOG_POLL_INTERVAL,
+                        );
+                    }
+                },
+            )
+            .map_err(
+                |error| {
                     crate::logger::warning(
-                        logfile,
+                        logfile.as_path(),
                         &format!(
-                            "[LOCK] XFCE authentication-dialog process poll failed: {}",
+                            "[LOCK] Unable to start XFCE authentication-dialog monitor thread; shader presentation will continue: {}",
                             error,
                         ),
                     );
-
-                    return;
                 }
-            };
-
-        if visible == self.visible {
-            return;
-        }
-
-        self.visible =
-            visible;
-
-        log_authentication_dialog_state(
-            logfile,
-            visible,
-        );
-    }
+            );
 }
 
 
