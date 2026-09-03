@@ -1,7 +1,6 @@
 use std::env;
-use std::ffi::{c_void, CStr};
+use std::fs;
 use std::mem::MaybeUninit;
-use std::os::raw::{c_int, c_long, c_uchar, c_ulong};
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -9,35 +8,8 @@ use x11::glx;
 use x11::xlib;
 
 const XSCREENSAVER_WINDOW_ENV: &str = "XSCREENSAVER_WINDOW";
-const XFCE_DIAGNOSTIC_POLL_INTERVAL: Duration = Duration::from_millis(250);
-const XFCE_DIAGNOSTIC_PROPERTY_LENGTH: c_long = 1024;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct X11PropertySnapshot {
-    atom: xlib::Atom,
-    name: String,
-    actual_type: xlib::Atom,
-    format: c_int,
-    item_count: c_ulong,
-    bytes_after: c_ulong,
-    value_hash: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct XfceWindowSnapshot {
-    parent_window: xlib::Window,
-    root_window: xlib::Window,
-    parent_x: c_int,
-    parent_y: c_int,
-    parent_width: c_int,
-    parent_height: c_int,
-    parent_depth: c_int,
-    parent_map_state: c_int,
-    parent_child_count: u32,
-    input_focus: xlib::Window,
-    input_focus_revert_to: c_int,
-    properties: Vec<X11PropertySnapshot>,
-}
+const XFCE_AUTH_DIALOG_EXECUTABLE: &str = "/usr/libexec/xfce4-screensaver-dialog";
+const XFCE_AUTH_DIALOG_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Returns the X11 window supplied by xfce4-screensaver for an external
 /// screensaver child.
@@ -452,11 +424,9 @@ fn run_opengl_clear_test(
         ),
     );
 
-    let mut diagnostic_state =
-        match XfceLockDiagnosticState::new(
+    let mut authentication_dialog_state =
+        match XfceAuthenticationDialogState::new(
             logfile,
-            display,
-            window,
         ) {
             Ok(state) => Some(state),
 
@@ -464,7 +434,7 @@ fn run_opengl_clear_test(
                 crate::logger::warning(
                     logfile,
                     &format!(
-                        "[LOCK] XFCE authentication-state reconnaissance unavailable; shader presentation will continue: {}",
+                        "[LOCK] XFCE authentication-dialog process reconnaissance unavailable; shader presentation will continue: {}",
                         error,
                     ),
                 );
@@ -501,11 +471,10 @@ fn run_opengl_clear_test(
         }
 
         if let Some(state) =
-            diagnostic_state.as_mut()
+            authentication_dialog_state.as_mut()
         {
             state.poll_if_due(
                 logfile,
-                display,
             );
         }
 
@@ -529,57 +498,30 @@ fn run_opengl_clear_test(
 }
 
 
-struct XfceLockDiagnosticState {
-    presentation_window: xlib::Window,
-    last_snapshot: XfceWindowSnapshot,
+
+struct XfceAuthenticationDialogState {
+    visible: bool,
     next_poll: Instant,
 }
 
 
-impl XfceLockDiagnosticState {
+impl XfceAuthenticationDialogState {
     fn new(
         logfile: &Path,
-        display: *mut xlib::Display,
-        presentation_window: xlib::Window,
     ) -> Result<Self, String> {
-        let snapshot =
-            capture_xfce_window_snapshot(
-                display,
-                presentation_window,
-            )?;
+        let visible =
+            xfce_authentication_dialog_running()?;
 
-        crate::logger::information(
+        log_authentication_dialog_state(
             logfile,
-            &format!(
-                "[LOCK] XFCE auth reconnaissance baseline: presentation=0x{:X}, parent=0x{:X}, root=0x{:X}, parent_geometry={}x{}+{}+{}, depth={}, map_state={}, child_count={}, input_focus=0x{:X}, revert_to={}, property_count={}",
-                presentation_window,
-                snapshot.parent_window,
-                snapshot.root_window,
-                snapshot.parent_width,
-                snapshot.parent_height,
-                snapshot.parent_x,
-                snapshot.parent_y,
-                snapshot.parent_depth,
-                snapshot.parent_map_state,
-                snapshot.parent_child_count,
-                snapshot.input_focus,
-                snapshot.input_focus_revert_to,
-                snapshot.properties.len(),
-            ),
-        );
-
-        log_property_snapshot(
-            logfile,
-            "baseline",
-            &snapshot.properties,
+            visible,
         );
 
         Ok(
             Self {
-                presentation_window,
-                last_snapshot: snapshot,
+                visible,
                 next_poll: Instant::now()
-                    + XFCE_DIAGNOSTIC_POLL_INTERVAL,
+                    + XFCE_AUTH_DIALOG_POLL_INTERVAL,
             }
         )
     }
@@ -588,7 +530,6 @@ impl XfceLockDiagnosticState {
     fn poll_if_due(
         &mut self,
         logfile: &Path,
-        display: *mut xlib::Display,
     ) {
         let now =
             Instant::now();
@@ -598,20 +539,17 @@ impl XfceLockDiagnosticState {
         }
 
         self.next_poll =
-            now + XFCE_DIAGNOSTIC_POLL_INTERVAL;
+            now + XFCE_AUTH_DIALOG_POLL_INTERVAL;
 
-        let current =
-            match capture_xfce_window_snapshot(
-                display,
-                self.presentation_window,
-            ) {
-                Ok(snapshot) => snapshot,
+        let visible =
+            match xfce_authentication_dialog_running() {
+                Ok(visible) => visible,
 
                 Err(error) => {
                     crate::logger::warning(
                         logfile,
                         &format!(
-                            "[LOCK] XFCE auth reconnaissance poll failed: {}",
+                            "[LOCK] XFCE authentication-dialog process poll failed: {}",
                             error,
                         ),
                     );
@@ -620,613 +558,105 @@ impl XfceLockDiagnosticState {
                 }
             };
 
-        if current == self.last_snapshot {
+        if visible == self.visible {
             return;
         }
 
-        log_snapshot_changes(
+        self.visible =
+            visible;
+
+        log_authentication_dialog_state(
             logfile,
-            &self.last_snapshot,
-            &current,
+            visible,
         );
-
-        self.last_snapshot =
-            current;
     }
 }
 
 
-fn capture_xfce_window_snapshot(
-    display: *mut xlib::Display,
-    presentation_window: xlib::Window,
-) -> Result<XfceWindowSnapshot, String> {
-    let (
-        root_window,
-        parent_window,
-        _,
-    ) =
-        query_window_tree(
-            display,
-            presentation_window,
-        )?;
-
-    if parent_window == 0 {
-        return Err(
-            format!(
-                "XFCE presentation window 0x{:X} has no parent window",
-                presentation_window,
-            )
-        );
-    }
-
-    let mut parent_attributes =
-        MaybeUninit::<xlib::XWindowAttributes>::uninit();
-
-    let status =
-        unsafe {
-            xlib::XGetWindowAttributes(
-                display,
-                parent_window,
-                parent_attributes.as_mut_ptr(),
-            )
-        };
-
-    if status == 0 {
-        return Err(
-            format!(
-                "XGetWindowAttributes failed for XFCE parent window 0x{:X}",
-                parent_window,
-            )
-        );
-    }
-
-    let parent_attributes =
-        unsafe {
-            parent_attributes.assume_init()
-        };
-
-    let (
-        _,
-        _,
-        parent_child_count,
-    ) =
-        query_window_tree(
-            display,
-            parent_window,
-        )?;
-
-    let mut input_focus =
-        0 as xlib::Window;
-
-    let mut input_focus_revert_to =
-        0 as c_int;
-
-    unsafe {
-        xlib::XGetInputFocus(
-            display,
-            &mut input_focus,
-            &mut input_focus_revert_to,
-        );
-    }
-
-    let properties =
-        capture_window_properties(
-            display,
-            parent_window,
-        )?;
-
-    Ok(
-        XfceWindowSnapshot {
-            parent_window,
-            root_window,
-            parent_x: parent_attributes.x,
-            parent_y: parent_attributes.y,
-            parent_width: parent_attributes.width,
-            parent_height: parent_attributes.height,
-            parent_depth: parent_attributes.depth,
-            parent_map_state: parent_attributes.map_state,
-            parent_child_count,
-            input_focus,
-            input_focus_revert_to,
-            properties,
-        }
-    )
-}
-
-
-fn query_window_tree(
-    display: *mut xlib::Display,
-    window: xlib::Window,
-) -> Result<(xlib::Window, xlib::Window, u32), String> {
-    let mut root_return =
-        0 as xlib::Window;
-
-    let mut parent_return =
-        0 as xlib::Window;
-
-    let mut children_return: *mut xlib::Window =
-        std::ptr::null_mut();
-
-    let mut child_count =
-        0u32;
-
-    let status =
-        unsafe {
-            xlib::XQueryTree(
-                display,
-                window,
-                &mut root_return,
-                &mut parent_return,
-                &mut children_return,
-                &mut child_count,
-            )
-        };
-
-    if !children_return.is_null() {
-        unsafe {
-            xlib::XFree(
-                children_return as *mut c_void
-            );
-        }
-    }
-
-    if status == 0 {
-        return Err(
-            format!(
-                "XQueryTree failed for X11 window 0x{:X}",
-                window,
-            )
-        );
-    }
-
-    Ok(
-        (
-            root_return,
-            parent_return,
-            child_count,
-        )
-    )
-}
-
-
-fn capture_window_properties(
-    display: *mut xlib::Display,
-    window: xlib::Window,
-) -> Result<Vec<X11PropertySnapshot>, String> {
-    let mut property_count =
-        0 as c_int;
-
-    let property_atoms =
-        unsafe {
-            xlib::XListProperties(
-                display,
-                window,
-                &mut property_count,
-            )
-        };
-
-    if property_count < 0 {
-        return Err(
-            format!(
-                "XListProperties returned an invalid property count for XFCE parent window 0x{:X}",
-                window,
-            )
-        );
-    }
-
-    if property_atoms.is_null() {
-        return Ok(
-            Vec::new()
-        );
-    }
-
-    let atoms =
-        unsafe {
-            std::slice::from_raw_parts(
-                property_atoms,
-                property_count as usize,
-            )
-        };
-
-    let mut properties =
-        Vec::with_capacity(
-            atoms.len()
-        );
-
-    for atom in atoms {
-        properties.push(
-            capture_property_snapshot(
-                display,
-                window,
-                *atom,
-            )
-        );
-    }
-
-    unsafe {
-        xlib::XFree(
-            property_atoms as *mut c_void
-        );
-    }
-
-    properties.sort_by(
-        |left, right| {
-            left.atom.cmp(
-                &right.atom
-            )
-        }
-    );
-
-    Ok(
-        properties
-    )
-}
-
-
-fn capture_property_snapshot(
-    display: *mut xlib::Display,
-    window: xlib::Window,
-    property_atom: xlib::Atom,
-) -> X11PropertySnapshot {
-    let name =
-        atom_name(
-            display,
-            property_atom,
-        );
-
-    let mut actual_type =
-        0 as xlib::Atom;
-
-    let mut actual_format =
-        0 as c_int;
-
-    let mut item_count =
-        0 as c_ulong;
-
-    let mut bytes_after =
-        0 as c_ulong;
-
-    let mut property_data: *mut c_uchar =
-        std::ptr::null_mut();
-
-    let status =
-        unsafe {
-            xlib::XGetWindowProperty(
-                display,
-                window,
-                property_atom,
-                0,
-                XFCE_DIAGNOSTIC_PROPERTY_LENGTH,
-                xlib::False,
-                0,
-                &mut actual_type,
-                &mut actual_format,
-                &mut item_count,
-                &mut bytes_after,
-                &mut property_data,
-            )
-        };
-
-    let value_hash =
-        if status == 0 && !property_data.is_null() {
-            let byte_length =
-                property_data_byte_length(
-                    actual_format,
-                    item_count,
-                );
-
-            let bytes =
-                unsafe {
-                    std::slice::from_raw_parts(
-                        property_data as *const u8,
-                        byte_length,
-                    )
-                };
-
-            hash_bytes(
-                bytes
-            )
+fn log_authentication_dialog_state(
+    logfile: &Path,
+    visible: bool,
+) {
+    let state =
+        if visible {
+            "visible"
         } else {
-            0
+            "hidden"
         };
 
-    if !property_data.is_null() {
-        unsafe {
-            xlib::XFree(
-                property_data as *mut c_void
-            );
-        }
-    }
-
-    X11PropertySnapshot {
-        atom: property_atom,
-        name,
-        actual_type,
-        format: actual_format,
-        item_count,
-        bytes_after,
-        value_hash,
-    }
-}
-
-
-fn property_data_byte_length(
-    format: c_int,
-    item_count: c_ulong,
-) -> usize {
-    let item_size =
-        match format {
-            8 => 1,
-            16 => std::mem::size_of::<u16>(),
-            32 => std::mem::size_of::<c_long>(),
-            _ => 0,
-        };
-
-    (item_count as usize)
-        .saturating_mul(
-            item_size
-        )
-}
-
-
-fn atom_name(
-    display: *mut xlib::Display,
-    atom: xlib::Atom,
-) -> String {
-    let raw_name =
-        unsafe {
-            xlib::XGetAtomName(
-                display,
-                atom,
-            )
-        };
-
-    if raw_name.is_null() {
-        return format!(
-            "ATOM_{}",
-            atom,
-        );
-    }
-
-    let name =
-        unsafe {
-            CStr::from_ptr(
-                raw_name
-            )
-        }
-        .to_string_lossy()
-        .into_owned();
-
-    unsafe {
-        xlib::XFree(
-            raw_name as *mut c_void
-        );
-    }
-
-    name
-}
-
-
-fn hash_bytes(
-    bytes: &[u8],
-) -> u64 {
-    let mut hash =
-        0xcbf29ce484222325u64;
-
-    for byte in bytes {
-        hash ^=
-            *byte as u64;
-
-        hash =
-            hash.wrapping_mul(
-                0x100000001b3
-            );
-    }
-
-    hash
-}
-
-
-fn log_property_snapshot(
-    logfile: &Path,
-    label: &str,
-    properties: &[X11PropertySnapshot],
-) {
-    for property in properties {
-        crate::logger::information(
-            logfile,
-            &format!(
-                "[LOCK] XFCE auth reconnaissance {} property: name='{}', atom={}, type={}, format={}, items={}, bytes_after={}, hash=0x{:016X}",
-                label,
-                property.name,
-                property.atom,
-                property.actual_type,
-                property.format,
-                property.item_count,
-                property.bytes_after,
-                property.value_hash,
-            ),
-        );
-    }
-}
-
-
-fn log_snapshot_changes(
-    logfile: &Path,
-    previous: &XfceWindowSnapshot,
-    current: &XfceWindowSnapshot,
-) {
-    if previous.parent_window != current.parent_window {
-        crate::logger::information(
-            logfile,
-            &format!(
-                "[LOCK] XFCE auth reconnaissance change: parent_window 0x{:X} -> 0x{:X}",
-                previous.parent_window,
-                current.parent_window,
-            ),
-        );
-    }
-
-    if previous.root_window != current.root_window {
-        crate::logger::information(
-            logfile,
-            &format!(
-                "[LOCK] XFCE auth reconnaissance change: root_window 0x{:X} -> 0x{:X}",
-                previous.root_window,
-                current.root_window,
-            ),
-        );
-    }
-
-    if previous.parent_x != current.parent_x
-        || previous.parent_y != current.parent_y
-        || previous.parent_width != current.parent_width
-        || previous.parent_height != current.parent_height
-    {
-        crate::logger::information(
-            logfile,
-            &format!(
-                "[LOCK] XFCE auth reconnaissance change: parent_geometry {}x{}+{}+{} -> {}x{}+{}+{}",
-                previous.parent_width,
-                previous.parent_height,
-                previous.parent_x,
-                previous.parent_y,
-                current.parent_width,
-                current.parent_height,
-                current.parent_x,
-                current.parent_y,
-            ),
-        );
-    }
-
-    if previous.parent_depth != current.parent_depth {
-        crate::logger::information(
-            logfile,
-            &format!(
-                "[LOCK] XFCE auth reconnaissance change: parent_depth {} -> {}",
-                previous.parent_depth,
-                current.parent_depth,
-            ),
-        );
-    }
-
-    if previous.parent_map_state != current.parent_map_state {
-        crate::logger::information(
-            logfile,
-            &format!(
-                "[LOCK] XFCE auth reconnaissance change: parent_map_state {} -> {}",
-                previous.parent_map_state,
-                current.parent_map_state,
-            ),
-        );
-    }
-
-    if previous.parent_child_count != current.parent_child_count {
-        crate::logger::information(
-            logfile,
-            &format!(
-                "[LOCK] XFCE auth reconnaissance change: parent_child_count {} -> {}",
-                previous.parent_child_count,
-                current.parent_child_count,
-            ),
-        );
-    }
-
-    if previous.input_focus != current.input_focus
-        || previous.input_focus_revert_to != current.input_focus_revert_to
-    {
-        crate::logger::information(
-            logfile,
-            &format!(
-                "[LOCK] XFCE auth reconnaissance change: input_focus 0x{:X}/{} -> 0x{:X}/{}",
-                previous.input_focus,
-                previous.input_focus_revert_to,
-                current.input_focus,
-                current.input_focus_revert_to,
-            ),
-        );
-    }
-
-    log_property_changes(
+    crate::logger::information(
         logfile,
-        &previous.properties,
-        &current.properties,
+        &format!(
+            "[LOCK] XFCE authentication dialog state: {}",
+            state,
+        ),
     );
 }
 
 
-fn log_property_changes(
-    logfile: &Path,
-    previous: &[X11PropertySnapshot],
-    current: &[X11PropertySnapshot],
-) {
-    for old_property in previous {
-        match current
-            .iter()
-            .find(
-                |new_property| {
-                    new_property.atom == old_property.atom
-                }
+fn xfce_authentication_dialog_running() -> Result<bool, String> {
+    let entries =
+        fs::read_dir(
+            "/proc"
+        )
+        .map_err(|error| {
+            format!(
+                "Unable to read /proc while checking for {}: {}",
+                XFCE_AUTH_DIALOG_EXECUTABLE,
+                error,
             )
-        {
-            Some(new_property) => {
-                if new_property != old_property {
-                    crate::logger::information(
-                        logfile,
-                        &format!(
-                            "[LOCK] XFCE auth reconnaissance property changed: name='{}', atom={}, type {}->{}, format {}->{}, items {}->{}, bytes_after {}->{}, hash 0x{:016X}->0x{:016X}",
-                            old_property.name,
-                            old_property.atom,
-                            old_property.actual_type,
-                            new_property.actual_type,
-                            old_property.format,
-                            new_property.format,
-                            old_property.item_count,
-                            new_property.item_count,
-                            old_property.bytes_after,
-                            new_property.bytes_after,
-                            old_property.value_hash,
-                            new_property.value_hash,
-                        ),
-                    );
-                }
-            }
+        })?;
 
-            None => {
-                crate::logger::information(
-                    logfile,
-                    &format!(
-                        "[LOCK] XFCE auth reconnaissance property removed: name='{}', atom={}",
-                        old_property.name,
-                        old_property.atom,
-                    ),
-                );
-            }
-        }
-    }
+    for entry in entries {
+        let entry =
+            match entry {
+                Ok(entry) => entry,
+                Err(_) => continue,
+            };
 
-    for new_property in current {
-        if previous
-            .iter()
-            .all(
-                |old_property| {
-                    old_property.atom != new_property.atom
-                }
-            )
+        let file_name =
+            entry.file_name();
+
+        let Some(pid) =
+            file_name
+                .to_str()
+                .filter(|name| {
+                    !name.is_empty()
+                        && name.bytes().all(|byte| byte.is_ascii_digit())
+                })
+        else {
+            continue;
+        };
+
+        let cmdline_path =
+            Path::new("/proc")
+                .join(pid)
+                .join("cmdline");
+
+        let cmdline =
+            match fs::read(
+                &cmdline_path
+            ) {
+                Ok(cmdline) => cmdline,
+                Err(_) => continue,
+            };
+
+        let executable =
+            cmdline
+                .split(|byte| *byte == 0)
+                .next()
+                .unwrap_or(&[]);
+
+        if executable
+            == XFCE_AUTH_DIALOG_EXECUTABLE.as_bytes()
         {
-            crate::logger::information(
-                logfile,
-                &format!(
-                    "[LOCK] XFCE auth reconnaissance property added: name='{}', atom={}, type={}, format={}, items={}, bytes_after={}, hash=0x{:016X}",
-                    new_property.name,
-                    new_property.atom,
-                    new_property.actual_type,
-                    new_property.format,
-                    new_property.item_count,
-                    new_property.bytes_after,
-                    new_property.value_hash,
-                ),
+            return Ok(
+                true
             );
         }
     }
+
+    Ok(
+        false
+    )
 }
