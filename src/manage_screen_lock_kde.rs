@@ -22,8 +22,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use crate::define_lock_screen_widget::LockScreenWidgetConfig;
-
 const KDE_SHELL_PACKAGE: &str = "org.kde.plasma.desktop";
 const OWNERSHIP_MARKER_FILENAME: &str = ".screenshaver-overlay";
 const OWNERSHIP_MARKER_MAGIC: &str = "screenshaver-kde-overlay-v1";
@@ -146,8 +144,8 @@ impl Drop for KdeIdleLockInhibitor {
 ///
 /// The runtime marker is written only while the resident Screenshaver process
 /// owns KDE lock-screen integration. The native QML plugin validates the PID
-/// in this marker before enabling GL rendering, auth-circle presentation,
-/// Escape interception, or the locked-screen idle heartbeat.
+/// in this marker before enabling GL rendering or the locked-screen idle
+/// heartbeat. KDE retains its native authentication and input behavior.
 ///
 /// Normal destruction removes the marker first, then removes only a
 /// Screenshaver-owned overlay. If the process dies abnormally, the stale
@@ -159,16 +157,14 @@ pub struct KdeLockIntegrationGuard {
 }
 
 impl KdeLockIntegrationGuard {
-    pub fn activate(
-        config: &LockScreenWidgetConfig,
-    ) -> io::Result<(Self, KdeIntegrationStatus)> {
+    pub fn activate() -> io::Result<(Self, KdeIntegrationStatus)> {
         // Remove any Screenshaver-owned overlay left by an abnormal previous
         // termination before creating the integration for this process.
         let _ = restore()?;
 
         write_runtime_active_marker()?;
 
-        match install(config) {
+        match install() {
             Ok(status) => Ok((Self { active: true }, status)),
             Err(error) => {
                 let _ = remove_runtime_active_marker();
@@ -288,9 +284,7 @@ pub fn integration_paths() -> io::Result<KdeIntegrationPaths> {
 /// XDG_DATA_HOME, then augmented with Screenshaver's packaged native QML
 /// renderer. If a user overlay already exists and is not marked as
 /// Screenshaver-owned, installation refuses to alter it.
-pub fn install(
-    _config: &LockScreenWidgetConfig,
-) -> io::Result<KdeIntegrationStatus> {
+pub fn install() -> io::Result<KdeIntegrationStatus> {
     let paths = integration_paths()?;
 
     if paths.shell_package_dir.exists()
@@ -315,9 +309,7 @@ pub fn install(
 /// Refresh deliberately rebuilds from the current system package rather than
 /// preserving an old copied KDE tree across Plasma upgrades. A foreign user
 /// overlay is never overwritten.
-pub fn refresh(
-    _config: &LockScreenWidgetConfig,
-) -> io::Result<KdeIntegrationStatus> {
+pub fn refresh() -> io::Result<KdeIntegrationStatus> {
     let paths = integration_paths()?;
 
     if paths.shell_package_dir.exists()
@@ -755,7 +747,7 @@ fn validate_native_runtime_directory(path: &Path) -> io::Result<()> {
 }
 
 fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
-    let mut original = fs::read_to_string(path)?;
+    let original = fs::read_to_string(path)?;
 
     if original.contains(QML_INTEGRATION_MARKER) {
         if original.contains(NATIVE_IMPORT_LINE) {
@@ -771,233 +763,10 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
         ));
     }
 
-    // Screenshaver keeps KDE's authentication/session machinery intact but
-    // suppresses the stock visual presentation in the user overlay. These are
-    // direct source edits rather than runtime Binding objects so the result is
-    // deterministic across the copied Plasma component tree.
-    const CLOCK_VISIBILITY: &str =
-        "            visible: y > 0 && config.alwaysShowClock\n";
-
-    if !original.contains(CLOCK_VISIBILITY) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!(
-                "Unable to suppress KDE clock in {} because the expected visibility expression was not found",
-                path.display(),
-            ),
-        ));
-    }
-    original = original.replacen(
-        CLOCK_VISIBILITY,
-        "            visible: screenshaverNativeGl.runtimeActive ? false : (y > 0 && config.alwaysShowClock)\n",
-        1,
-    );
-
-    const CLOCK_SHADOW_VISIBILITY: &str =
-        "            visible: !lockScreenUi.softwareRendering && config.alwaysShowClock\n";
-    if !original.contains(CLOCK_SHADOW_VISIBILITY) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!(
-                "Unable to suppress KDE clock shadow in {} because the expected visibility expression was not found",
-                path.display(),
-            ),
-        ));
-    }
-    original = original.replacen(
-        CLOCK_SHADOW_VISIBILITY,
-        "            visible: screenshaverNativeGl.runtimeActive ? false : (!lockScreenUi.softwareRendering && config.alwaysShowClock)\n",
-        1,
-    );
-
-    const MAIN_BLOCK_DECLARATION: &str =
-        "            initialItem: MainBlock {\n                id: mainBlock\n";
-    const MAIN_BLOCK_REPLACEMENT: &str =
-        "            initialItem: MainBlock {\n                id: mainBlock\n";
-
-    if !original.contains(MAIN_BLOCK_DECLARATION) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!(
-                "Unable to suppress KDE MainBlock in {} because the expected declaration was not found",
-                path.display(),
-            ),
-        ));
-    }
-    original = original.replacen(
-        MAIN_BLOCK_DECLARATION,
-        MAIN_BLOCK_REPLACEMENT,
-        1,
-    );
-
-    for (stock_visibility, label) in [
-        ("                        visible: sessionManagement.canSuspend\n", "Suspend"),
-        ("                        visible: sessionManagement.canHibernate\n", "Hibernate"),
-        ("                        visible: sessionManagement.canSwitchUser\n", "Switch User"),
-    ] {
-        if !original.contains(stock_visibility) {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "Unable to suppress KDE {} action in {} because the expected visibility expression was not found",
-                    label,
-                    path.display(),
-                ),
-            ));
-        }
-
-        let stock_expression = stock_visibility
-            .trim_start()
-            .trim_start_matches("visible: ")
-            .trim();
-
-        let replacement = format!(
-            "                        visible: screenshaverNativeGl.runtimeActive ? false : ({})\n",
-            stock_expression,
-        );
-
-        original = original.replacen(
-            stock_visibility,
-            &replacement,
-            1,
-        );
-    }
-
-    const FOOTER_DECLARATION: &str =
-        "        RowLayout {\n            id: footer\n";
-    const FOOTER_REPLACEMENT: &str =
-        "        RowLayout {\n            id: footer\n            visible: !screenshaverNativeGl.runtimeActive\n";
-
-    if !original.contains(FOOTER_DECLARATION) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!(
-                "Unable to suppress KDE footer in {} because the expected declaration was not found",
-                path.display(),
-            ),
-        ));
-    }
-    original = original.replacen(
-        FOOTER_DECLARATION,
-        FOOTER_REPLACEMENT,
-        1,
-    );
-
-    // Prevent KDE's MainBlock from painting for one frame before WallpaperFader
-    // applies its normal lock-screen transition state. Starting mainStack at
-    // opacity 0 preserves KDE's existing fade-in behavior while eliminating
-    // the username/password flash underneath Screenshaver's auth circle.
-    const MAIN_STACK_DECLARATION: &str =
-        "        StackView {\n            id: mainStack\n";
-    const MAIN_STACK_REPLACEMENT: &str =
-        "        StackView {\n            id: mainStack\n            opacity: screenshaverNativeGl.runtimeActive ? 0.0 : 1.0\n";
-
-    if !original.contains(MAIN_STACK_DECLARATION) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!(
-                "Unable to initialize KDE mainStack opacity in {} because the expected StackView declaration was not found",
-                path.display(),
-            ),
-        ));
-    }
-    original = original.replacen(
-        MAIN_STACK_DECLARATION,
-        MAIN_STACK_REPLACEMENT,
-        1,
-    );
-
-    // KDE normally handles Escape twice: QML hides the authentication UI on
-    // KeyPress, then kscreenlocker_greet turns DPMS off on KeyRelease. The
-    // native Screenshaver QML plugin consumes that KeyRelease before KDE's
-    // application event filter sees it. Here, make KeyPress a pure
-    // Screenshaver authentication-presentation toggle.
-    const KDE_ESCAPE_HANDLER: &str = r#"        Keys.onEscapePressed: {
-            // If the escape key is pressed, kscreenlocker will turn off the screen.
-            // We do not want to show the password prompt in this case.
-            if (uiVisible) {
-                uiVisible = false;
-                if (inputPanel.keyboardActive) {
-                    inputPanel.showHide();
-                }
-                root.clearPassword();
-            }
-        }
-"#;
-
-    const SCREENSHAVER_ESCAPE_HANDLER: &str = r#"        Keys.onEscapePressed: {
-            if (screenshaverNativeGl.runtimeActive) {
-                // While Screenshaver owns this lock-screen session, Escape is
-                // exclusively a visibility toggle for the Screenshaver auth
-                // presentation. The native plugin consumes Escape KeyRelease
-                // before KScreenLocker can translate it into DPMS-off.
-                uiVisible = !uiVisible;
-                if (!uiVisible) {
-                    if (inputPanel.keyboardActive) {
-                        inputPanel.showHide();
-                    }
-                    root.clearPassword();
-                } else {
-                    mainBlock.mainPasswordBox.forceActiveFocus();
-                }
-            } else if (uiVisible) {
-                // Stale/inactive overlay: preserve KDE's stock Escape behavior.
-                uiVisible = false;
-                if (inputPanel.keyboardActive) {
-                    inputPanel.showHide();
-                }
-                root.clearPassword();
-            }
-        }
-"#;
-
-    if !original.contains(KDE_ESCAPE_HANDLER) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!(
-                "Unable to replace KDE Escape handling in {} because the expected handler was not found",
-                path.display(),
-            ),
-        ));
-    }
-    original = original.replacen(
-        KDE_ESCAPE_HANDLER,
-        SCREENSHAVER_ESCAPE_HANDLER,
-        1,
-    );
-
-    const KDE_KEYS_ON_PRESSED: &str = r#"        Keys.onPressed: event => {
-            uiVisible = true;
-            event.accepted = false;
-        }
-"#;
-
-    const SCREENSHAVER_KEYS_ON_PRESSED: &str = r#"        Keys.onPressed: event => {
-            if (event.key === Qt.Key_Escape) {
-                // Escape is handled exactly once by Keys.onEscapePressed above.
-                event.accepted = true;
-            } else {
-                uiVisible = true;
-                event.accepted = false;
-            }
-        }
-"#;
-
-    if !original.contains(KDE_KEYS_ON_PRESSED) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!(
-                "Unable to install Screenshaver Escape toggle in {} because KDE's Keys.onPressed handler was not found",
-                path.display(),
-            ),
-        ));
-    }
-    original = original.replacen(
-        KDE_KEYS_ON_PRESSED,
-        SCREENSHAVER_KEYS_ON_PRESSED,
-        1,
-    );
-
+    // Screenshaver modifies KDE's stock lock-screen QML only enough to insert
+    // the native GL presentation layer. KDE's clock, MainBlock, footer,
+    // authentication controls, key handling, Escape behavior, PAM interaction,
+    // and unlock lifecycle remain completely native and unmodified.
     let wallpaper_start = original
         .find("WallpaperFader {")
         .ok_or_else(|| {
@@ -1049,8 +818,8 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
     // SCREENSHAVER_NATIVE_GL_INTEGRATION
     //
     // The native renderer is intentionally placed immediately after KDE's
-    // WallpaperFader so it renders above the wallpaper while KDE's existing
-    // authentication and lock-screen controls remain above Screenshaver.
+    // WallpaperFader so it renders above the wallpaper while KDE's stock
+    // lock-screen and authentication UI remain above Screenshaver.
     ScreenshaverNativeGL.NativeOpenGLUnderlay {
         id: screenshaverNativeGl
         anchors.fill: parent
@@ -1062,158 +831,6 @@ fn patch_lock_screen_ui(path: &Path) -> io::Result<()> {
             duration: 10000000
             loops: Animation.Infinite
             running: true
-        }
-    }
-
-    // SCREENSHAVER_AUTH_CIRCLE_KDE_STATE_PRESENTATION
-    //
-    // KDE's MainBlock remains the sole keyboard/password owner. Screenshaver
-    // derives presentation state only from KDE-owned properties:
-    //
-    //   mainBlock.mainPasswordBox.text.length -> orange keypress feedback
-    //   graceLockTimer.running                -> rejected-password red state
-    //
-    // No duplicate authenticator listener or second password input is used.
-    Rectangle {
-        id: screenshaverAuthCircle
-
-        property int previousPasswordLength: 0
-        readonly property int passwordLength:
-            mainBlock.mainPasswordBox.text.length
-        readonly property bool authenticationFailed:
-            graceLockTimer.running
-
-        width: 360
-        height: width
-        radius: width / 2
-        anchors.centerIn: parent
-
-        z: 10
-
-        visible: screenshaverNativeGl.runtimeActive && opacity > 0.0
-        opacity: screenshaverNativeGl.runtimeActive && lockScreenRoot.uiVisible ? 1.0 : 0.0
-
-        color: Qt.rgba(0.02, 0.02, 0.02, 1.0)
-        border.width: 3
-        border.color: Qt.rgba(1.0, 0.6470588, 0.0, 1.0)
-
-        function resetTransientHighlights() {
-            for (let i = 0; i < childRepeater.count; ++i) {
-                const child = childRepeater.itemAt(i)
-                if (child) {
-                    child.fadeAnimation.stop()
-                    child.highlightAmount = 0.0
-                }
-            }
-        }
-
-        function pulseForLength(length) {
-            if (authenticationFailed || length <= 0 || childRepeater.count <= 0) {
-                return
-            }
-
-            const index = (length - 1) % childRepeater.count
-            const child = childRepeater.itemAt(index)
-            if (child) {
-                child.pulse()
-            }
-        }
-
-        onPasswordLengthChanged: {
-            if (passwordLength > previousPasswordLength) {
-                // Normally one character is added per signal. If an input
-                // method adds more than one at once, pulse once for each new
-                // position so visual state still reflects the password length.
-                for (let length = previousPasswordLength + 1;
-                     length <= passwordLength;
-                     ++length) {
-                    pulseForLength(length)
-                }
-            } else if (passwordLength < previousPasswordLength) {
-                // Backspace and other ordinary password shortening must not
-                // disturb the child-circle animation objects. Simply adopt
-                // KDE's new password length as the visual baseline. The next
-                // character entered will pulse the circle corresponding to
-                // that restored position.
-                //
-                // KDE's rejected-password state is handled independently by
-                // authenticationFailed/graceLockTimer and performs its own
-                // explicit visual reset.
-            }
-
-            previousPasswordLength = passwordLength
-        }
-
-        onAuthenticationFailedChanged: {
-            if (authenticationFailed) {
-                resetTransientHighlights()
-            } else {
-                previousPasswordLength = passwordLength
-            }
-        }
-
-        Behavior on opacity {
-            NumberAnimation {
-                duration: 250
-            }
-        }
-
-        Repeater {
-            id: childRepeater
-            model: 12
-
-            Rectangle {
-                id: childCircle
-                required property int index
-
-                readonly property real angle:
-                    (-Math.PI / 2.0) +
-                    (index * ((Math.PI * 2.0) / 12.0))
-
-                property real highlightAmount: 0.0
-
-                width: 48
-                height: width
-                radius: width / 2
-
-                x: (screenshaverAuthCircle.width / 2.0) +
-                   (Math.cos(angle) * 130.0) -
-                   (width / 2.0)
-
-                y: (screenshaverAuthCircle.height / 2.0) +
-                   (Math.sin(angle) * 130.0) -
-                   (height / 2.0)
-
-                color: screenshaverAuthCircle.authenticationFailed
-                    ? Qt.rgba(1.0, 0.0, 0.0, 1.0)
-                    : Qt.rgba(
-                        0.02 + ((1.0 - 0.02) * highlightAmount),
-                        0.02 + ((0.6470588 - 0.02) * highlightAmount),
-                        0.02,
-                        1.0
-                    )
-
-                border.width: 1
-                border.color: screenshaverAuthCircle.authenticationFailed
-                    ? Qt.rgba(1.0, 0.0, 0.0, 1.0)
-                    : Qt.rgba(1.0, 0.6470588, 0.0, 0.35)
-
-                function pulse() {
-                    fadeAnimation.stop()
-                    highlightAmount = 1.0
-                    fadeAnimation.restart()
-                }
-
-                NumberAnimation {
-                    id: fadeAnimation
-                    target: childCircle
-                    property: "highlightAmount"
-                    from: 1.0
-                    to: 0.0
-                    duration: 300
-                    easing.type: Easing.Linear
-                }
-            }
         }
     }
 

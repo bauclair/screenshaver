@@ -29,7 +29,6 @@ mod present_screen_lock_gnome;
 mod present_screen_lock_xfce;
 mod lock_screen_widget;
 mod define_lock_screen_widget;
-mod construct_lock_screen_kde;
 mod construct_lock_screen_xfce;
 mod manage_screen_lock_kde;
 mod detect_desktop_environment;
@@ -220,13 +219,7 @@ fn main() {
             }
 
 
-            let config =
-                crate::define_lock_screen_widget::LockScreenWidgetConfig::default();
-
-
-            match crate::manage_screen_lock_kde::install(
-                &config
-            ) {
+            match crate::manage_screen_lock_kde::install() {
 
                 Ok(status) => {
 
@@ -1116,12 +1109,7 @@ fn main() {
 
     if desktop_environment.is_kde_plasma() {
         if cfg.screen_lock_enabled {
-            let lock_widget_config =
-                crate::define_lock_screen_widget::LockScreenWidgetConfig::default();
-
-            match crate::manage_screen_lock_kde::KdeLockIntegrationGuard::activate(
-                &lock_widget_config
-            ) {
+            match crate::manage_screen_lock_kde::KdeLockIntegrationGuard::activate() {
                 Ok((guard, status)) => {
                     println!(
                         "[LOCK] KDE Plasma lock-screen integration enabled for this Screenshaver runtime."

@@ -23,8 +23,6 @@ signals:
     void runtimeActiveChanged();
 
 protected:
-    bool eventFilter(QObject *watched, QEvent *event) override;
-
     QSGNode *updatePaintNode(QSGNode *oldNode,
                              UpdatePaintNodeData *data) override;
 

@@ -1,14 +1,11 @@
 #include "native_opengl_underlay.h"
 #include "native_opengl_renderer.h"
 
-#include <QCoreApplication>
 #include <QDBusConnection>
 #include <QDBusMessage>
 #include <QDBusPendingCall>
-#include <QEvent>
 #include <QFile>
 #include <QFileInfo>
-#include <QKeyEvent>
 #include <QQuickWindow>
 #include <QTimer>
 
@@ -20,18 +17,10 @@ NativeOpenGLUnderlay::NativeOpenGLUnderlay(QQuickItem *parent)
 {
     setFlag(ItemHasContents, true);
 
-    // KScreenLocker's UnlockApp installs an application event filter during
-    // greeter initialization. Qt invokes application event filters in reverse
-    // installation order, so installing Screenshaver's filter when this QML
-    // item is constructed lets us consume Escape KeyRelease before UnlockApp
-    // can translate it into a DPMS-off request.
-    if (QCoreApplication::instance())
-        QCoreApplication::instance()->installEventFilter(this);
-
     // The overlay is persistent filesystem state, but its behavior is not.
     // A live Screenshaver process writes a PID marker into XDG_RUNTIME_DIR.
     // Poll that marker so a crash, SIGKILL, or other abnormal termination
-    // disables the native renderer and auth presentation without waiting for
+    // disables the native renderer without waiting for
     // Screenshaver to run again.
     refreshRuntimeActive();
 
@@ -65,22 +54,6 @@ NativeOpenGLUnderlay::NativeOpenGLUnderlay(QQuickItem *parent)
 
     if (m_runtimeActive)
         m_idleHeartbeat->start();
-}
-
-bool NativeOpenGLUnderlay::eventFilter(QObject *watched, QEvent *event)
-{
-    Q_UNUSED(watched);
-
-    if (event && event->type() == QEvent::KeyRelease) {
-        auto *keyEvent = static_cast<QKeyEvent *>(event);
-
-        if (keyEvent->key() == Qt::Key_Escape) {
-            event->accept();
-            return true;
-        }
-    }
-
-    return false;
 }
 
 void NativeOpenGLUnderlay::refreshRuntimeActive()
