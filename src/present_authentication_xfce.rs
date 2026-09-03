@@ -1,13 +1,16 @@
 //! present_authentication_xfce.rs
 //!
-//! Xfce plain-X11 160x100 authentication-child diagnostic.
+//! Xfce plain-X11 override-redirect authentication-child diagnostic.
 //!
-//! This diagnostic removes GLX/OpenGL entirely while keeping the proven
-//! detached-helper lifecycle, the 160x100+50+50 geometry, the empty ShapeInput
-//! region, and the 100 ms XRaiseWindow() cadence.
+//! This diagnostic keeps the proven detached-helper lifecycle, the
+//! 160x100+50+50 geometry, the empty ShapeInput region, the cyan X11
+//! background, and the 100 ms XRaiseWindow() cadence.
 //!
-//! The child is created with XCreateSimpleWindow() and uses a cyan X11
-//! background pixel. No lock widget or authentication input handling is used.
+//! Exactly one new variable is introduced: the authentication child window is
+//! created with override_redirect = True, matching the previously-visible
+//! standalone X11 overlay test.
+//!
+//! No GLX/OpenGL, lock widget, or authentication input handling is used.
 //!
 //! This diagnostic intentionally does NOT:
 //! - render the Screenshaver lock widget,
@@ -424,7 +427,7 @@ pub(crate) fn launch_helper(
     crate::logger::information(
         logfile,
         &format!(
-            "[LOCK] XFCE plain-X11 160x100 authentication-child diagnostic helper launched: pid={}",
+            "[LOCK] XFCE plain-X11 override-redirect authentication-child diagnostic helper launched: pid={}",
             child.id(),
         ),
     );
@@ -533,7 +536,7 @@ pub(crate) fn run_helper(
             crate::logger::information(
                 logfile,
                 &format!(
-                    "[LOCK] XFCE plain-X11 160x100 authentication-child diagnostic helper started: parent_pid={}, geometry={}x{}",
+                    "[LOCK] XFCE plain-X11 override-redirect authentication-child diagnostic helper started: parent_pid={}, geometry={}x{}",
                     parent_pid,
                     root_width,
                     root_height,
@@ -603,7 +606,7 @@ pub(crate) fn run_helper(
                                     crate::logger::information(
                                         logfile,
                                         &format!(
-                                            "[LOCK] XFCE plain-X11 160x100 authentication-child diagnostic window destroyed before recreation: window=0x{:X}",
+                                            "[LOCK] XFCE plain-X11 override-redirect authentication-child diagnostic window destroyed before recreation: window=0x{:X}",
                                             test_window,
                                         ),
                                     );
@@ -631,7 +634,7 @@ pub(crate) fn run_helper(
                                 crate::logger::information(
                                     logfile,
                                     &format!(
-                                        "[LOCK] XFCE plain-X11 160x100 authentication-child diagnostic window mapped: dialog=0x{:X}, parent=0x{:X}, window=0x{:X}, geometry={}x{}+{}+{}, input_shape=empty, event_mask=0, raise=every-100ms, x11_background=cyan",
+                                        "[LOCK] XFCE plain-X11 override-redirect authentication-child diagnostic window mapped: dialog=0x{:X}, parent=0x{:X}, window=0x{:X}, geometry={}x{}+{}+{}, input_shape=empty, event_mask=0, raise=every-100ms, x11_background=cyan, override_redirect=true",
                                         dialog_window,
                                         dialog_parent,
                                         test_window,
@@ -710,7 +713,7 @@ pub(crate) fn run_helper(
 
             crate::logger::information(
                 logfile,
-                "[LOCK] XFCE plain-X11 160x100 authentication-child diagnostic helper stopped because the saver presentation child exited.",
+                "[LOCK] XFCE plain-X11 override-redirect authentication-child diagnostic helper stopped because the saver presentation child exited.",
             );
 
             Ok(())
@@ -758,12 +761,39 @@ fn create_test_window(
         );
     }
 
-    // Plain X11 child using the parent's normal visual/depth behavior.
+    // Plain X11 child using the authentication container's visual/depth.
     // Pixel value 0x0000FFFF is cyan for the standard TrueColor visual used
     // by the Xfce authentication container on the current test system.
+    //
+    // override_redirect = True is the only behavioral change from the prior
+    // plain-X11 diagnostic and matches the successful standalone overlay test.
+    let mut attributes:
+        xlib::XSetWindowAttributes =
+        unsafe {
+            std::mem::zeroed()
+        };
+
+    attributes.background_pixel =
+        0x0000FFFF;
+
+    attributes.border_pixel =
+        0;
+
+    attributes.override_redirect =
+        xlib::True;
+
+    attributes.event_mask =
+        0;
+
+    let attribute_mask =
+        xlib::CWBackPixel
+            | xlib::CWBorderPixel
+            | xlib::CWOverrideRedirect
+            | xlib::CWEventMask;
+
     let window =
         unsafe {
-            xlib::XCreateSimpleWindow(
+            xlib::XCreateWindow(
                 display,
                 parent,
                 TEST_WINDOW_X,
@@ -771,23 +801,18 @@ fn create_test_window(
                 TEST_WINDOW_WIDTH,
                 TEST_WINDOW_HEIGHT,
                 0,
-                0,
-                0x0000FFFF,
+                parent_attributes.depth,
+                xlib::InputOutput as u32,
+                parent_attributes.visual,
+                attribute_mask,
+                &mut attributes,
             )
         };
 
     if window == 0 {
         return Err(
-            "XCreateSimpleWindow() failed for the XFCE plain-X11 160x100 authentication-child diagnostic."
+            "XCreateWindow() failed for the XFCE plain-X11 override-redirect authentication-child diagnostic."
                 .to_string()
-        );
-    }
-
-    unsafe {
-        xlib::XSelectInput(
-            display,
-            window,
-            0,
         );
     }
 
