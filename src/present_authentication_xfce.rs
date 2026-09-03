@@ -1,13 +1,15 @@
 //! present_authentication_xfce.rs
 //!
-//! Minimal Xfce GLX repeated-render authentication-child diagnostic.
+//! Minimal Xfce GLX 100ms-raise / 500ms-render authentication-child diagnostic.
 //!
-//! This diagnostic keeps the previously-proven 16x16 passive GLX child and adds
-//! one controlled variable: the GLX context remains alive while the native Xfce
-//! authentication dialog is visible, and the child is cleared cyan and swapped
-//! once every 500 ms.
+//! This diagnostic keeps the previously-proven 16x16 passive GLX child and its
+//! 500 ms cyan render cadence, while adding exactly one new variable:
+//! XRaiseWindow() is called every 100 ms while the native Xfce authentication
+//! dialog remains visible.
 //!
-//! The child is raised only once immediately after mapping.
+//! This matches the aggressive restacking cadence used by the earlier visible
+//! full authentication-overlay experiment, without adding the lock widget or
+//! changing the tiny diagnostic geometry.
 //!
 //! This diagnostic intentionally does NOT:
 //! - render the Screenshaver lock widget,
@@ -16,7 +18,7 @@
 //! - authenticate,
 //! - repeatedly raise or restack its X11 child window.
 //!
-//! XRaiseWindow() is called exactly once immediately after XMapWindow().
+//! XRaiseWindow() is called every 100 ms while the dialog is visible.
 //! OpenGL rendering repeats at most once every 500 ms.
 //!
 //! Its purpose is to determine whether introducing GLX/OpenGL on the otherwise
@@ -71,6 +73,9 @@ const POLL_INTERVAL: Duration =
 
 const RENDER_INTERVAL: Duration =
     Duration::from_millis(500);
+
+const RAISE_INTERVAL: Duration =
+    Duration::from_millis(100);
 
 const TEST_WINDOW_WIDTH: u32 =
     16;
@@ -428,7 +433,7 @@ pub(crate) fn launch_helper(
     crate::logger::information(
         logfile,
         &format!(
-            "[LOCK] XFCE minimal GLX 500ms-render authentication-child diagnostic helper launched: pid={}",
+            "[LOCK] XFCE minimal GLX 100ms-raise 500ms-render authentication-child diagnostic helper launched: pid={}",
             child.id(),
         ),
     );
@@ -537,7 +542,7 @@ pub(crate) fn run_helper(
             crate::logger::information(
                 logfile,
                 &format!(
-                    "[LOCK] XFCE minimal GLX 500ms-render authentication-child diagnostic helper started: parent_pid={}, geometry={}x{}",
+                    "[LOCK] XFCE minimal GLX 100ms-raise 500ms-render authentication-child diagnostic helper started: parent_pid={}, geometry={}x{}",
                     parent_pid,
                     root_width,
                     root_height,
@@ -557,6 +562,10 @@ pub(crate) fn run_helper(
                 None;
 
             let mut last_render:
+                Option<Instant> =
+                None;
+
+            let mut last_raise:
                 Option<Instant> =
                 None;
 
@@ -619,7 +628,7 @@ pub(crate) fn run_helper(
                                     crate::logger::information(
                                         logfile,
                                         &format!(
-                                            "[LOCK] XFCE minimal GLX 500ms-render authentication-child diagnostic window destroyed before recreation: window=0x{:X}",
+                                            "[LOCK] XFCE minimal GLX 100ms-raise 500ms-render authentication-child diagnostic window destroyed before recreation: window=0x{:X}",
                                             old_window,
                                         ),
                                     );
@@ -649,10 +658,15 @@ pub(crate) fn run_helper(
                                 last_render =
                                     None;
 
+                                last_raise =
+                                    Some(
+                                        Instant::now()
+                                    );
+
                                 crate::logger::information(
                                     logfile,
                                     &format!(
-                                        "[LOCK] XFCE minimal GLX 500ms-render authentication-child diagnostic window mapped once: dialog=0x{:X}, parent=0x{:X}, window=0x{:X}, geometry={}x{}+{}+{}, input_shape=empty, event_mask=0, raise=once, glx_clear=cyan-every-500ms",
+                                        "[LOCK] XFCE minimal GLX 100ms-raise 500ms-render authentication-child diagnostic window mapped once: dialog=0x{:X}, parent=0x{:X}, window=0x{:X}, geometry={}x{}+{}+{}, input_shape=empty, event_mask=0, raise=every-100ms, glx_clear=cyan-every-500ms",
                                         dialog_window,
                                         dialog_parent,
                                         new_window,
@@ -667,6 +681,36 @@ pub(crate) fn run_helper(
                             if let Some(current_overlay) =
                                 overlay.as_ref()
                             {
+                                let should_raise =
+                                    last_raise
+                                        .map(
+                                            |instant| {
+                                                instant.elapsed()
+                                                    >= RAISE_INTERVAL
+                                            }
+                                        )
+                                        .unwrap_or(
+                                            true
+                                        );
+
+                                if should_raise {
+                                    unsafe {
+                                        xlib::XRaiseWindow(
+                                            display,
+                                            current_overlay.window,
+                                        );
+
+                                        xlib::XFlush(
+                                            display
+                                        );
+                                    }
+
+                                    last_raise =
+                                        Some(
+                                            Instant::now()
+                                        );
+                                }
+
                                 let should_render =
                                     last_render
                                         .map(
@@ -721,6 +765,9 @@ pub(crate) fn run_helper(
 
                         last_render =
                             None;
+
+                        last_raise =
+                            None;
                     }
                 }
 
@@ -739,7 +786,7 @@ pub(crate) fn run_helper(
 
             crate::logger::information(
                 logfile,
-                "[LOCK] XFCE minimal GLX 500ms-render authentication-child diagnostic helper stopped because the saver presentation child exited.",
+                "[LOCK] XFCE minimal GLX 100ms-raise 500ms-render authentication-child diagnostic helper stopped because the saver presentation child exited.",
             );
 
             Ok(())
