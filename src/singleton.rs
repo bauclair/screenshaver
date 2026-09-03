@@ -264,6 +264,93 @@ pub fn acquire() -> Result<Singleton, SingletonError> {
 }
 
 
+/// Returns true only when another process currently owns Screenshaver's
+/// exclusive runtime-instance lock.
+///
+/// This is a non-owning probe. If the lock is free, the temporary probe lock is
+/// released immediately; this function never becomes the resident Screenshaver
+/// instance and never writes a PID to the lock file.
+///
+/// Xfce's trusted saver child uses this to distinguish "Xfce launched the
+/// Screenshaver presenter" from "the resident Screenshaver application is
+/// actually running".
+pub fn is_running() -> Result<bool, SingletonError> {
+
+    let lock_path =
+        lock_path()
+            .map_err(
+                |error| {
+                    match error {
+                        PathError::RuntimeDirectoryUnavailable => {
+                            SingletonError::RuntimeDirectoryUnavailable
+                        }
+                    }
+                }
+            )?;
+
+
+    let file =
+        match OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&lock_path)
+        {
+            Ok(file) => file,
+
+            Err(error)
+                if error.kind()
+                    == std::io::ErrorKind::NotFound =>
+            {
+                return Ok(
+                    false
+                );
+            }
+
+            Err(error) => {
+                return Err(
+                    SingletonError::OpenFailed(
+                        error
+                    )
+                );
+            }
+        };
+
+
+    match file.try_lock_exclusive() {
+
+        Ok(()) => {
+
+            file.unlock()
+                .map_err(
+                    SingletonError::LockFailed
+                )?;
+
+
+            Ok(
+                false
+            )
+        }
+
+        Err(error)
+            if error.kind()
+                == std::io::ErrorKind::WouldBlock =>
+        {
+            Ok(
+                true
+            )
+        }
+
+        Err(error) => {
+            Err(
+                SingletonError::LockFailed(
+                    error
+                )
+            )
+        }
+    }
+}
+
+
 pub fn stop() -> Result<StopOutcome, StopError> {
 
     let lock_path =
