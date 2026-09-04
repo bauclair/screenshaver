@@ -6,29 +6,28 @@ import St from 'gi://St';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
-const TRANSPORT_FILENAME = 'screenshaver-lock-frame.shm';
-const TRANSPORT_MAGIC = [0x53, 0x48, 0x56, 0x52, 0x47, 0x4e, 0x4d, 0x31]; // SHVRGNM1
-const TRANSPORT_VERSION = 2;
-const TRANSPORT_HEADER_BYTES = 64;
-const TRANSPORT_SLOT_COUNT = 2;
-const POLL_INTERVAL_MS = 8;
+const CONTROL_FILENAME = 'screenshaver-lock-control.bin';
+const FRAME_FILENAME_PREFIX = 'screenshaver-lock-frame-';
+const FRAME_FILENAME_SUFFIX = '.rgba';
+const CONTROL_MAGIC = [0x53, 0x48, 0x56, 0x52, 0x47, 0x4e, 0x46, 0x31]; // SHVRGNF1
+const CONTROL_VERSION = 1;
+const CONTROL_BYTES = 64;
+const CONTROL_CONTROL_SESSION_ID_BYTES = 16;
+const POLL_INTERVAL_MS = 33;
 const POWER_SAVE_FALLBACK_INTERVAL_MS = 1000;
 const RUNTIME_MARKER_FILENAME = 'screenshaver-gnome-lock.active';
 const RUNTIME_MARKER_VERSION = 1;
-const SESSION_ID_BYTES = 16;
 const SESSION_VALIDATION_INTERVAL_MS = 1000;
 
-const HEADER_MAGIC_OFFSET = 0;
-const HEADER_VERSION_OFFSET = 8;
-const HEADER_SIZE_OFFSET = 12;
-const HEADER_WIDTH_OFFSET = 16;
-const HEADER_HEIGHT_OFFSET = 20;
-const HEADER_ROWSTRIDE_OFFSET = 24;
-const HEADER_FRAME_BYTES_OFFSET = 28;
-const HEADER_SLOT_COUNT_OFFSET = 32;
-const HEADER_ACTIVE_SLOT_OFFSET = 36;
-const HEADER_FRAME_COUNTER_OFFSET = 40;
-const HEADER_SESSION_ID_OFFSET = 44;
+const CONTROL_MAGIC_OFFSET = 0;
+const CONTROL_VERSION_OFFSET = 8;
+const CONTROL_SIZE_OFFSET = 12;
+const CONTROL_WIDTH_OFFSET = 16;
+const CONTROL_HEIGHT_OFFSET = 20;
+const CONTROL_ROWSTRIDE_OFFSET = 24;
+const CONTROL_FRAME_BYTES_OFFSET = 28;
+const CONTROL_FRAME_COUNTER_OFFSET = 32;
+const CONTROL_SESSION_ID_OFFSET = 36;
 
 export default class ScreenshaverExtension extends Extension {
     enable() {
@@ -37,7 +36,10 @@ export default class ScreenshaverExtension extends Extension {
         this._lockActor = null;
         this._imageContent = null;
         this._pollSource = null;
-        this._mappedFile = null;
+        this._frameReadInFlight = false;
+        this._pendingFrameCounter = 0;
+        this._frameReadCancellable = null;
+        this._transportGeneration = 0;
         this._lastFrameCounter = 0;
         this._displayedFrames = 0;
         this._refreshCalls = 0;
@@ -201,32 +203,14 @@ export default class ScreenshaverExtension extends Extension {
         if (!GLib.file_test(`/proc/${marker.pid}`, GLib.FileTest.EXISTS))
             return null;
 
-        const framePath = GLib.build_filenamev([
-            GLib.get_user_runtime_dir(),
-            TRANSPORT_FILENAME,
-        ]);
-
-        let mappedFile = null;
-
-        try {
-            mappedFile = GLib.MappedFile.new(framePath, false);
-            const data = mappedFile.get_bytes().get_data();
-
-            if (!this._validateHeader(data, false))
-                return null;
-
-            const transportSessionId =
-                readSessionIdHex(data, HEADER_SESSION_ID_OFFSET);
-
-            if (transportSessionId !== marker.sessionId)
-                return null;
-
-            return marker;
-        } catch (_) {
+        const control = this._readControlRecord(false);
+        if (!control)
             return null;
-        } finally {
-            mappedFile = null;
-        }
+
+        if (control.sessionId !== marker.sessionId)
+            return null;
+
+        return marker;
     }
 
     _readRuntimeMarker() {
@@ -304,7 +288,7 @@ export default class ScreenshaverExtension extends Extension {
         }
 
         // The final preferred image size is replaced with the dimensions from
-        // the shared-memory header as soon as the producer mapping is opened.
+        // the file-transport control record as soon as the producer mapping is opened.
         this._imageContent = St.ImageContent.new_with_preferred_size(640, 360);
 
         this._lockActor = new St.Widget({
@@ -318,7 +302,7 @@ export default class ScreenshaverExtension extends Extension {
 
         backgroundGroup.add_child(this._lockActor);
 
-        console.log('[Screenshaver] Shared-memory lock actor added above GNOME lock background');
+        console.log('[Screenshaver] File-transport lock actor added above GNOME lock background');
 
         // Start the proven rendering and PowerSave recovery paths.
         // GNOME retains its native lock/authentication UI above this actor.
@@ -339,128 +323,185 @@ export default class ScreenshaverExtension extends Extension {
     }
 
     _refreshFrame() {
-        if (!this._imageContent)
+        if (!this._imageContent || !this._lockActor)
             return;
 
-        if (!this._mappedFile && !this._openTransport())
+        const control = this._readControlRecord(true);
+        if (!control)
             return;
 
-        // GJS converts GLib.Bytes data to a JavaScript Uint8Array snapshot.
-        // Do not retain that snapshot across polls: reacquire it from the live
-        // GLib.MappedFile each time so changes published by Screenshaver are
-        // visible to this process.
-        let data;
-
-        try {
-            data = this._mappedFile.get_bytes().get_data();
-        } catch (error) {
-            console.log(`[Screenshaver] Unable to refresh shared-memory view: ${error}`);
-            this._closeTransport();
+        if (!this._activeSessionId || control.sessionId !== this._activeSessionId) {
+            if (!this._transportErrorLogged) {
+                console.log('[Screenshaver] File transport session identity mismatch');
+                this._transportErrorLogged = true;
+            }
             return;
         }
 
-        if (!this._validateHeader(data)) {
-            this._closeTransport();
-            return;
-        }
-
-        const width = readU32LE(data, HEADER_WIDTH_OFFSET);
-        const height = readU32LE(data, HEADER_HEIGHT_OFFSET);
-        const rowstride = readU32LE(data, HEADER_ROWSTRIDE_OFFSET);
-        const frameBytes = readU32LE(data, HEADER_FRAME_BYTES_OFFSET);
-        const activeSlot = readU32LE(data, HEADER_ACTIVE_SLOT_OFFSET);
-        const frameCounter = readU32LE(data, HEADER_FRAME_COUNTER_OFFSET);
-
+        this._transportErrorLogged = false;
         this._refreshCalls++;
 
-        if (this._refreshCalls <= 5 || this._refreshCalls % 300 === 0) {
-            console.log(
-                `[Screenshaver] Frame refresh callback: calls=${this._refreshCalls} ` +
-                `counter=${frameCounter} last=${this._lastFrameCounter} slot=${activeSlot}`
-            );
-        }
-
-        if (frameCounter === 0 || frameCounter === this._lastFrameCounter)
-            return;
-
-        if (this._lastFrameCounter === 0) {
-            console.log(
-                `[Screenshaver] First shared-memory frame observed: counter=${frameCounter}, slot=${activeSlot}`
-            );
-        }
-
-        if (activeSlot >= TRANSPORT_SLOT_COUNT)
-            return;
-
-        const frameOffset = TRANSPORT_HEADER_BYTES + activeSlot * frameBytes;
-        const frameEnd = frameOffset + frameBytes;
-
-        if (frameEnd > data.length) {
-            console.log('[Screenshaver] Shared-memory frame extends beyond mapped transport');
-            this._closeTransport();
+        if (control.frameCounter === 0 ||
+            control.frameCounter === this._lastFrameCounter) {
             return;
         }
 
-        // Copy only the completed active slot into immutable GLib.Bytes for
-        // St.ImageContent. The expensive per-frame whole-file read/replace path
-        // is gone; the source pixels now come directly from the mmap region.
-        const frameView = data.subarray(frameOffset, frameEnd);
+        if (this._frameReadInFlight) {
+            this._pendingFrameCounter = control.frameCounter;
+            return;
+        }
 
+        this._startFrameRead(control);
+    }
+
+    _startFrameRead(control) {
+        if (!this._lockActor || this._frameReadInFlight)
+            return;
+
+        const framePath = GLib.build_filenamev([
+            GLib.get_user_runtime_dir(),
+            `${FRAME_FILENAME_PREFIX}${control.frameCounter.toString().padStart(10, '0')}${FRAME_FILENAME_SUFFIX}`,
+        ]);
+
+        const file = Gio.File.new_for_path(framePath);
+        const generation = this._transportGeneration;
+        const cancellable = new Gio.Cancellable();
+        this._frameReadCancellable = cancellable;
+        this._frameReadInFlight = true;
         this._uploadAttempts++;
 
-        if (this._uploadAttempts <= 5 || this._uploadAttempts % 300 === 0) {
-            console.log(
-                `[Screenshaver] Frame upload attempt: attempts=${this._uploadAttempts} ` +
-                `counter=${frameCounter} slot=${activeSlot}`
-            );
-        }
+        file.load_bytes_async(cancellable, (source, result) => {
+            if (generation !== this._transportGeneration)
+                return;
+
+            this._frameReadInFlight = false;
+            this._frameReadCancellable = null;
+
+            try {
+                const [bytes] = source.load_bytes_finish(result);
+                const data = bytes.get_data();
+
+                if (!this._lockActor || !this._imageContent)
+                    return;
+
+                if (!data || data.length !== control.frameBytes) {
+                    console.log(
+                        `[Screenshaver] GNOME frame ${control.frameCounter} has ` +
+                        `${data?.length ?? 0} bytes; expected ${control.frameBytes}`
+                    );
+                } else {
+                    const coglContext = global.stage.context
+                        .get_backend()
+                        .get_cogl_context();
+
+                    this._imageContent.set_bytes(
+                        coglContext,
+                        bytes,
+                        Cogl.PixelFormat.RGBA_8888,
+                        control.width,
+                        control.height,
+                        control.rowstride
+                    );
+
+                    this._lockActor.queue_redraw();
+                    this._lastFrameCounter = control.frameCounter;
+                    this._displayedFrames++;
+                    this._uploadSuccesses++;
+
+                    if (this._displayedFrames === 1) {
+                        console.log(
+                            `[Screenshaver] First file-transport frame displayed: ` +
+                            `counter=${control.frameCounter}`
+                        );
+                    } else if (this._displayedFrames % 300 === 0) {
+                        console.log(
+                            `[Screenshaver] File-transport frames displayed: ${this._displayedFrames}`
+                        );
+                    }
+                }
+            } catch (error) {
+                if (!cancellable.is_cancelled()) {
+                    console.log(
+                        `[Screenshaver] Unable to asynchronously read GNOME frame ` +
+                        `${control.frameCounter}: ${error}`
+                    );
+                }
+            }
+
+            if (!this._lockActor || generation !== this._transportGeneration)
+                return;
+
+            // Backpressure: while one immutable frame was being read, remember
+            // only the newest counter. Intermediate frames are intentionally
+            // dropped so GNOME Shell never accumulates asynchronous reads.
+            const pending = this._pendingFrameCounter;
+            this._pendingFrameCounter = 0;
+
+            if (pending !== 0 && pending !== this._lastFrameCounter) {
+                const latest = this._readControlRecord(false);
+                if (latest && latest.frameCounter !== this._lastFrameCounter)
+                    this._startFrameRead(latest);
+            }
+        });
+    }
+
+    _readControlRecord(logErrors = true) {
+        const controlPath = GLib.build_filenamev([
+            GLib.get_user_runtime_dir(),
+            CONTROL_FILENAME,
+        ]);
 
         try {
-            const coglContext = global.stage.context
-                .get_backend()
-                .get_cogl_context();
+            const file = Gio.File.new_for_path(controlPath);
+            const [ok, data] = file.load_contents(null);
 
-            this._imageContent.set_bytes(
-                coglContext,
-                GLib.Bytes.new(frameView),
-                Cogl.PixelFormat.RGBA_8888,
-                width,
-                height,
-                rowstride
-            );
+            if (!ok || !this._validateControlRecord(data, logErrors))
+                return null;
 
-            // St.ImageContent has new pixels, but GNOME Shell can leave the
-            // lock-screen background actor visually unchanged while the
-            // session is idle. Explicitly queue a redraw so every published
-            // frame can become visible without keyboard or pointer activity.
-            if (this._lockActor)
-                this._lockActor.queue_redraw();
-
-            this._uploadSuccesses++;
-
-            if (this._uploadSuccesses <= 5 || this._uploadSuccesses % 300 === 0) {
-                console.log(
-                    `[Screenshaver] Frame upload successful: successes=${this._uploadSuccesses} ` +
-                    `counter=${frameCounter} slot=${activeSlot}`
-                );
-            }
-
-            // Diagnostic build: deliberately do not force ScreenShield wake.
-            // We need to observe the native transition caused by real input.
-
-            this._lastFrameCounter = frameCounter;
-            this._displayedFrames++;
-
-            if (this._displayedFrames % 300 === 0) {
-                console.log(
-                    `[Screenshaver] Shared-memory frames displayed: ${this._displayedFrames}`
-                );
-            }
+            return {
+                width: readU32LE(data, CONTROL_WIDTH_OFFSET),
+                height: readU32LE(data, CONTROL_HEIGHT_OFFSET),
+                rowstride: readU32LE(data, CONTROL_ROWSTRIDE_OFFSET),
+                frameBytes: readU32LE(data, CONTROL_FRAME_BYTES_OFFSET),
+                frameCounter: readU32LE(data, CONTROL_FRAME_COUNTER_OFFSET),
+                sessionId: readSessionIdHex(data, CONTROL_SESSION_ID_OFFSET),
+            };
         } catch (error) {
-            console.log(`[Screenshaver] Shared-memory frame upload failed: ${error}`);
+            if (logErrors && !this._transportErrorLogged) {
+                console.log(`[Screenshaver] Waiting for GNOME file transport: ${error}`);
+                this._transportErrorLogged = true;
+            }
+            return null;
         }
     }
 
+    _validateControlRecord(data, logErrors = true) {
+        if (!data || data.length < CONTROL_BYTES)
+            return false;
+
+        for (let i = 0; i < CONTROL_MAGIC.length; i++) {
+            if (data[CONTROL_MAGIC_OFFSET + i] !== CONTROL_MAGIC[i]) {
+                if (logErrors)
+                    console.log('[Screenshaver] GNOME file-transport magic mismatch');
+                return false;
+            }
+        }
+
+        const version = readU32LE(data, CONTROL_VERSION_OFFSET);
+        const controlBytes = readU32LE(data, CONTROL_SIZE_OFFSET);
+
+        if (version !== CONTROL_VERSION || controlBytes !== CONTROL_BYTES) {
+            if (logErrors) {
+                console.log(
+                    `[Screenshaver] Unsupported GNOME file-transport control record: ` +
+                    `version=${version} size=${controlBytes}`
+                );
+            }
+            return false;
+        }
+
+        return true;
+    }
 
     _startPowerSaveRecovery() {
         this._subscribePowerSaveModeChanges();
@@ -768,119 +809,6 @@ export default class ScreenshaverExtension extends Extension {
         }
     }
 
-    _openTransport() {
-        const framePath = GLib.build_filenamev([
-            GLib.get_user_runtime_dir(),
-            TRANSPORT_FILENAME,
-        ]);
-
-        try {
-            this._mappedFile = GLib.MappedFile.new(framePath, false);
-            const mappedData = this._mappedFile.get_bytes().get_data();
-
-            if (!mappedData || mappedData.length < TRANSPORT_HEADER_BYTES) {
-                this._closeTransport();
-                return false;
-            }
-
-            if (!this._validateHeader(mappedData)) {
-                this._closeTransport();
-                return false;
-            }
-
-            if (
-                !this._activeSessionId
-                || readSessionIdHex(mappedData, HEADER_SESSION_ID_OFFSET)
-                    !== this._activeSessionId
-            ) {
-                console.log(
-                    '[Screenshaver] Shared-memory transport session identity mismatch'
-                );
-                this._closeTransport();
-                return false;
-            }
-
-            const width = readU32LE(mappedData, HEADER_WIDTH_OFFSET);
-            const height = readU32LE(mappedData, HEADER_HEIGHT_OFFSET);
-            const frameBytes = readU32LE(mappedData, HEADER_FRAME_BYTES_OFFSET);
-            const requiredBytes = TRANSPORT_HEADER_BYTES
-                + frameBytes * TRANSPORT_SLOT_COUNT;
-
-            if (mappedData.length < requiredBytes) {
-                console.log(
-                    `[Screenshaver] Shared-memory transport is ${mappedData.length} bytes; ` +
-                    `${requiredBytes} bytes are required`
-                );
-                this._closeTransport();
-                return false;
-            }
-
-            this._imageContent = St.ImageContent.new_with_preferred_size(
-                width,
-                height
-            );
-            this._lockActor.content = this._imageContent;
-
-            this._transportErrorLogged = false;
-
-            console.log(
-                `[Screenshaver] Shared-memory transport mapped: ` +
-                `${width}x${height}, ${mappedData.length} bytes`
-            );
-
-            return true;
-        } catch (error) {
-            if (!this._transportErrorLogged) {
-                console.log(
-                    `[Screenshaver] Waiting for shared-memory transport: ${error}`
-                );
-                this._transportErrorLogged = true;
-            }
-
-            this._closeTransport();
-            return false;
-        }
-    }
-
-    _validateHeader(data, logErrors = true) {
-        if (!data || data.length < TRANSPORT_HEADER_BYTES)
-            return false;
-
-        for (let i = 0; i < TRANSPORT_MAGIC.length; i++) {
-            if (data[HEADER_MAGIC_OFFSET + i] !== TRANSPORT_MAGIC[i]) {
-                if (logErrors)
-                    console.log('[Screenshaver] Shared-memory transport magic mismatch');
-                return false;
-            }
-        }
-
-        const version = readU32LE(data, HEADER_VERSION_OFFSET);
-        const headerBytes = readU32LE(data, HEADER_SIZE_OFFSET);
-        const slotCount = readU32LE(data, HEADER_SLOT_COUNT_OFFSET);
-
-        if (version !== TRANSPORT_VERSION) {
-            if (logErrors) {
-                console.log(
-                    `[Screenshaver] Unsupported shared-memory transport version: ${version}`
-                );
-            }
-            return false;
-        }
-
-        if (headerBytes !== TRANSPORT_HEADER_BYTES || slotCount !== TRANSPORT_SLOT_COUNT) {
-            if (logErrors)
-                console.log('[Screenshaver] Shared-memory transport layout mismatch');
-            return false;
-        }
-
-        return true;
-    }
-
-    _closeTransport() {
-        this._mappedFile = null;
-        this._lastFrameCounter = 0;
-    }
-
     _removeLockActor() {
         this._stopSessionValidation();
         this._stopPowerSaveRecovery();
@@ -891,7 +819,7 @@ export default class ScreenshaverExtension extends Extension {
         }
 
         if (this._lockActor) {
-            console.log('[Screenshaver] Removing shared-memory lock actor');
+            console.log('[Screenshaver] Removing file-transport lock actor');
             this._lockActor.destroy();
             this._lockActor = null;
         }
@@ -909,18 +837,25 @@ export default class ScreenshaverExtension extends Extension {
         this._lastPowerWakeAttemptUs = 0;
         this._powerSaveFallbackQueryInFlight = false;
         this._activeSessionId = null;
-        this._closeTransport();
+        this._transportGeneration++;
+        this._pendingFrameCounter = 0;
+        this._frameReadInFlight = false;
+        if (this._frameReadCancellable) {
+            this._frameReadCancellable.cancel();
+            this._frameReadCancellable = null;
+        }
+        this._lastFrameCounter = 0;
     }
 }
 
 
 function readSessionIdHex(data, offset) {
-    if (!data || data.length < offset + SESSION_ID_BYTES)
+    if (!data || data.length < offset + CONTROL_SESSION_ID_BYTES)
         return null;
 
     let result = '';
 
-    for (let i = 0; i < SESSION_ID_BYTES; i++)
+    for (let i = 0; i < CONTROL_SESSION_ID_BYTES; i++)
         result += data[offset + i].toString(16).padStart(2, '0');
 
     return result;
