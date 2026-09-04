@@ -1002,11 +1002,12 @@ fn main() {
         };
 
 
-    // GNOME lock-screen integration is runtime-owned. Establish the
+    // GNOME shader lock presentation is runtime-owned. Establish the
     // authorization marker only after the resident Screenshaver singleton has
-    // been acquired, then provision and activate the Shell extension. Any
-    // failure here disables only Screenshaver's custom GNOME presentation:
-    // GNOME's proven native secure-lock path remains available as the fallback.
+    // been acquired, then provision and activate the Shell extension. GNOME
+    // remains responsible for secure locking, input, authentication, and
+    // authenticated unlock. Failure here disables only Screenshaver's shader
+    // presentation; GNOME's native lock screen remains available.
     let gnome_runtime_session =
         if desktop_environment.is_gnome()
             && cfg.screen_lock_enabled
@@ -1098,13 +1099,16 @@ fn main() {
     }
 
 
-    // KDE lock-screen integration is runtime-owned. Do not touch KScreenLocker
+    // KDE shader lock presentation is runtime-owned. Do not touch KScreenLocker
     // until the resident Screenshaver singleton has been acquired; this keeps
     // --control and duplicate invocations from changing the active desktop.
+    // KScreenLocker remains responsible for secure locking, input,
+    // authentication, and authenticated unlock.
     //
     // If locking is disabled, remove only stale Screenshaver-owned state left
-    // by an abnormal previous termination. If locking is enabled, install a
-    // fresh overlay and retain a guard that restores KDE on normal shutdown.
+    // by an abnormal previous termination. If locking is enabled, install the
+    // Screenshaver presentation underlay and retain a guard that restores KDE
+    // on normal shutdown.
     let mut kde_lock_integration = None;
 
     if desktop_environment.is_kde_plasma() {
@@ -2001,6 +2005,14 @@ fn main() {
                         );
 
 
+                        // Prefer supported desktop-native lockers whenever
+                        // one is available. KDE, Xfce, and GNOME retain ownership
+                        // of secure locking and authentication; Screenshaver supplies
+                        // shader presentation only. Other/unknown desktops fall
+                        // through to the generic Wayland backend, which validates
+                        // its required Wayland/ext-session-lock capabilities before
+                        // acquiring a compositor-enforced lock and, by design, owns
+                        // its own PAM authentication and authenticated unlock path.
                         let lock_result =
                             if desktop_environment
                                 .is_kde_plasma()
@@ -2064,7 +2076,7 @@ fn main() {
 
                                         _ => {
                                             Err(
-                                                "GNOME custom presentation is unavailable because its runtime ownership or extension activation guard is missing"
+                                                "GNOME shader lock presentation is unavailable because its runtime ownership or extension activation guard is missing"
                                                     .to_string()
                                             )
                                         }
@@ -2224,7 +2236,7 @@ fn main() {
                             Ok(()) => {
                                 crate::logger::information(
                                     &logfile,
-                                    "[LOCK] Authenticated secure-lock session completed",
+                                    "[LOCK] Secure-lock session completed",
                                 );
                             }
 

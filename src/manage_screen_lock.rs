@@ -1,3 +1,18 @@
+//! Generic Wayland secure-lock fallback for Screenshaver.
+//!
+//! Desktop integrations with a supported native locker (currently KDE Plasma,
+//! GNOME, and Xfce) keep security and authentication in that desktop's locker
+//! and use Screenshaver only for shader presentation. This module is different
+//! by design: it is the fallback for Wayland environments where no supported
+//! desktop-native locker has been selected.
+//!
+//! The fallback validates the required Wayland capabilities, acquires
+//! `ext-session-lock-v1`, owns the compositor-enforced lock surfaces and input,
+//! performs PAM credential verification through `authenticate_user`, and is the
+//! only code in this path authorized to request authenticated unlock. The
+//! Screenshaver authentication circle is therefore a legitimate part of this
+//! fallback backend rather than a desktop-native lock-screen replacement.
+
 use std::ffi::CString;
 use std::fs::File;
 use std::io::{
@@ -218,8 +233,15 @@ impl ScreenLockState {
 }
 
 
-/// Engage the compositor-enforced Wayland session lock and remain locked until
-/// PAM authentication succeeds.
+/// Engage the generic compositor-enforced Wayland fallback lock and remain
+/// locked until Screenshaver PAM authentication succeeds.
+///
+/// This function is reached only after the desktop-specific KDE, Xfce, and
+/// GNOME lock backends have not been selected. It verifies its own Wayland
+/// prerequisites, including `ext-session-lock-v1`, before acquiring the secure
+/// lock. Unlike the desktop-native integrations, this fallback intentionally
+/// owns authentication and authenticated unlock because no supported native
+/// locker owns those responsibilities on this path.
 ///
 /// There is deliberately no secure-lock timeout, test bypass, force-unlock
 /// parameter, or error-triggered unlock path in this production module. The
