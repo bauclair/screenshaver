@@ -37,7 +37,7 @@ export default class ScreenshaverExtension extends Extension {
         this._lockActor = null;
         this._imageContent = null;
         this._pollSource = null;
-        this._mappedFile = null;
+        this._transportReady = false;
         this._lastFrameCounter = 0;
         this._displayedFrames = 0;
         this._transportErrorLogged = false;
@@ -339,17 +339,26 @@ export default class ScreenshaverExtension extends Extension {
         if (!this._imageContent)
             return;
 
-        if (!this._mappedFile && !this._openTransport())
+        if (!this._transportReady && !this._openTransport())
             return;
 
-        // GJS converts GLib.Bytes data to a JavaScript Uint8Array snapshot.
-        // Do not retain that snapshot across polls: reacquire it from the live
-        // GLib.MappedFile each time so changes published by Screenshaver are
-        // visible to this process.
+        // GMappedFile.get_bytes() exposes the mapping through immutable GBytes.
+        // Keeping that object alive while another process mutates the backing
+        // file can leave GJS observing the original frame indefinitely on newer
+        // GLib/GJS stacks. Create a fresh mapping for every poll, copy the
+        // completed slot into an independent GBytes, and release the mapping
+        // before returning.
+        const framePath = GLib.build_filenamev([
+            GLib.get_user_runtime_dir(),
+            TRANSPORT_FILENAME,
+        ]);
+
+        let mappedFile = null;
         let data;
 
         try {
-            data = this._mappedFile.get_bytes().get_data();
+            mappedFile = GLib.MappedFile.new(framePath, false);
+            data = mappedFile.get_bytes().get_data();
         } catch (error) {
             console.log(`[Screenshaver] Unable to refresh shared-memory view: ${error}`);
             this._closeTransport();
@@ -389,10 +398,10 @@ export default class ScreenshaverExtension extends Extension {
             return;
         }
 
-        // Copy only the completed active slot into immutable GLib.Bytes for
-        // St.ImageContent. The expensive per-frame whole-file read/replace path
-        // is gone; the source pixels now come directly from the mmap region.
-        const frameView = data.subarray(frameOffset, frameEnd);
+        // GLib.Bytes.new() copies the completed frame, so St.ImageContent never
+        // retains storage that Screenshaver may overwrite on a later publish.
+        const frameBytesCopy = GLib.Bytes.new(data.subarray(frameOffset, frameEnd));
+        mappedFile = null;
 
         try {
             const coglContext = global.stage.context
@@ -401,22 +410,15 @@ export default class ScreenshaverExtension extends Extension {
 
             this._imageContent.set_bytes(
                 coglContext,
-                GLib.Bytes.new(frameView),
+                frameBytesCopy,
                 Cogl.PixelFormat.RGBA_8888,
                 width,
                 height,
                 rowstride
             );
 
-            // St.ImageContent has new pixels, but GNOME Shell can leave the
-            // lock-screen background actor visually unchanged while the
-            // session is idle. Explicitly queue a redraw so every published
-            // frame can become visible without keyboard or pointer activity.
             if (this._lockActor)
                 this._lockActor.queue_redraw();
-
-            // Diagnostic build: deliberately do not force ScreenShield wake.
-            // We need to observe the native transition caused by real input.
 
             this._lastFrameCounter = frameCounter;
             this._displayedFrames++;
@@ -745,8 +747,8 @@ export default class ScreenshaverExtension extends Extension {
         ]);
 
         try {
-            this._mappedFile = GLib.MappedFile.new(framePath, false);
-            const mappedData = this._mappedFile.get_bytes().get_data();
+            const mappedFile = GLib.MappedFile.new(framePath, false);
+            const mappedData = mappedFile.get_bytes().get_data();
 
             if (!mappedData || mappedData.length < TRANSPORT_HEADER_BYTES) {
                 this._closeTransport();
@@ -791,6 +793,7 @@ export default class ScreenshaverExtension extends Extension {
             );
             this._lockActor.content = this._imageContent;
 
+            this._transportReady = true;
             this._transportErrorLogged = false;
 
             console.log(
@@ -847,7 +850,7 @@ export default class ScreenshaverExtension extends Extension {
     }
 
     _closeTransport() {
-        this._mappedFile = null;
+        this._transportReady = false;
         this._lastFrameCounter = 0;
     }
 
