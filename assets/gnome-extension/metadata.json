@@ -3,6 +3,7 @@
   "name": "Screenshaver Lock Screen",
   "description": "Secure GNOME lock-screen visual integration for Screenshaver.",
   "shell-version": [
+    "49",
     "50"
   ],
   "session-modes": [
