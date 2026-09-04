@@ -40,6 +40,9 @@ export default class ScreenshaverExtension extends Extension {
         this._mappedFile = null;
         this._lastFrameCounter = 0;
         this._displayedFrames = 0;
+        this._refreshCalls = 0;
+        this._uploadAttempts = 0;
+        this._uploadSuccesses = 0;
         this._transportErrorLogged = false;
         this._sessionValidationSource = null;
         this._sessionWaitSource = null;
@@ -368,6 +371,15 @@ export default class ScreenshaverExtension extends Extension {
         const activeSlot = readU32LE(data, HEADER_ACTIVE_SLOT_OFFSET);
         const frameCounter = readU32LE(data, HEADER_FRAME_COUNTER_OFFSET);
 
+        this._refreshCalls++;
+
+        if (this._refreshCalls <= 5 || this._refreshCalls % 300 === 0) {
+            console.log(
+                `[Screenshaver] Frame refresh callback: calls=${this._refreshCalls} ` +
+                `counter=${frameCounter} last=${this._lastFrameCounter} slot=${activeSlot}`
+            );
+        }
+
         if (frameCounter === 0 || frameCounter === this._lastFrameCounter)
             return;
 
@@ -394,6 +406,15 @@ export default class ScreenshaverExtension extends Extension {
         // is gone; the source pixels now come directly from the mmap region.
         const frameView = data.subarray(frameOffset, frameEnd);
 
+        this._uploadAttempts++;
+
+        if (this._uploadAttempts <= 5 || this._uploadAttempts % 300 === 0) {
+            console.log(
+                `[Screenshaver] Frame upload attempt: attempts=${this._uploadAttempts} ` +
+                `counter=${frameCounter} slot=${activeSlot}`
+            );
+        }
+
         try {
             const coglContext = global.stage.context
                 .get_backend()
@@ -414,6 +435,15 @@ export default class ScreenshaverExtension extends Extension {
             // frame can become visible without keyboard or pointer activity.
             if (this._lockActor)
                 this._lockActor.queue_redraw();
+
+            this._uploadSuccesses++;
+
+            if (this._uploadSuccesses <= 5 || this._uploadSuccesses % 300 === 0) {
+                console.log(
+                    `[Screenshaver] Frame upload successful: successes=${this._uploadSuccesses} ` +
+                    `counter=${frameCounter} slot=${activeSlot}`
+                );
+            }
 
             // Diagnostic build: deliberately do not force ScreenShield wake.
             // We need to observe the native transition caused by real input.
@@ -868,6 +898,9 @@ export default class ScreenshaverExtension extends Extension {
 
         this._imageContent = null;
         this._displayedFrames = 0;
+        this._refreshCalls = 0;
+        this._uploadAttempts = 0;
+        this._uploadSuccesses = 0;
         this._transportErrorLogged = false;
         this._lastObservedPowerSaveMode = null;
         this._powerSaveResetInFlight = false;
