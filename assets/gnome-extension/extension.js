@@ -21,6 +21,8 @@ const POWER_SAVE_STARTUP_WINDOW_MS = 6000;
 const RUNTIME_MARKER_FILENAME = 'screenshaver-gnome-lock.active';
 const RUNTIME_MARKER_VERSION = 1;
 const SESSION_VALIDATION_INTERVAL_MS = 1000;
+const STARTUP_DIAGNOSTIC_INTERVAL_MS = 200;
+const STARTUP_DIAGNOSTIC_WINDOW_MS = 20000;
 
 const CONTROL_MAGIC_OFFSET = 0;
 const CONTROL_VERSION_OFFSET = 8;
@@ -63,6 +65,10 @@ export default class ScreenshaverExtension extends Extension {
         this._powerSaveSignalId = 0;
         this._powerSaveFallbackSource = null;
         this._powerSaveFallbackQueryInFlight = false;
+        this._startupDiagnosticSource = null;
+        this._startupDiagnosticDeadlineUs = 0;
+        this._startupDiagnosticLastState = '';
+        this._startupDiagnosticLastLogUs = 0;
 
         this._sessionModeSignal = Main.sessionMode.connect(
             'updated',
@@ -311,9 +317,13 @@ export default class ScreenshaverExtension extends Extension {
 
         console.log('[Screenshaver] File-transport lock actor added above GNOME lock background');
 
-        // Start the proven rendering and PowerSave recovery paths.
         // GNOME retains its native lock/authentication UI above this actor.
+        // For this diagnostic build, PowerSave observation is strictly read-only:
+        // no D-Bus Set(PowerSaveMode) calls are issued.  Capture the lock actor,
+        // ScreenShield/dialog, focus, and observed power state before and after
+        // the first real keyboard/mouse activity.
         this._startPowerSaveRecovery();
+        this._startStartupDiagnostic();
         this._refreshFrame();
 
         this._pollSource = GLib.timeout_add(
@@ -421,12 +431,10 @@ export default class ScreenshaverExtension extends Extension {
                             `counter=${control.frameCounter}`
                         );
 
-                        // Do not manipulate display power while GNOME is still
-                        // establishing the secure lock.  Once a real shader frame
-                        // exists, open a short bounded recovery window.  During
-                        // that window we sample Mutter and recover only when it
-                        // actually reports PowerSaveMode=3.
-                        this._startPowerSaveStartupRecovery();
+                        // Diagnostic only: record the exact GNOME/actor state
+                        // when the first real shader frame becomes available.
+                        // No display-power mutation occurs in this build.
+                        this._logStartupDiagnosticState('first-frame', true);
                     } else if (this._displayedFrames % 300 === 0) {
                         console.log(
                             `[Screenshaver] File-transport frames displayed: ${this._displayedFrames}`
@@ -517,11 +525,122 @@ export default class ScreenshaverExtension extends Extension {
         return true;
     }
 
+    _startStartupDiagnostic() {
+        if (!this._lockActor || this._startupDiagnosticSource)
+            return;
+
+        this._startupDiagnosticDeadlineUs =
+            GLib.get_monotonic_time() + STARTUP_DIAGNOSTIC_WINDOW_MS * 1000;
+        this._startupDiagnosticLastState = '';
+        this._startupDiagnosticLastLogUs = 0;
+
+        console.log('[Screenshaver] Startup-state diagnostic window opened (read-only)');
+        this._logStartupDiagnosticState('start', true);
+
+        this._startupDiagnosticSource = GLib.timeout_add(
+            GLib.PRIORITY_DEFAULT,
+            STARTUP_DIAGNOSTIC_INTERVAL_MS,
+            () => {
+                if (!this._lockActor ||
+                    GLib.get_monotonic_time() >= this._startupDiagnosticDeadlineUs) {
+                    this._startupDiagnosticSource = null;
+                    console.log('[Screenshaver] Startup-state diagnostic window closed');
+                    return GLib.SOURCE_REMOVE;
+                }
+
+                this._logStartupDiagnosticState('sample', false);
+                return GLib.SOURCE_CONTINUE;
+            }
+        );
+    }
+
+    _stopStartupDiagnostic() {
+        if (this._startupDiagnosticSource) {
+            GLib.source_remove(this._startupDiagnosticSource);
+            this._startupDiagnosticSource = null;
+        }
+
+        this._startupDiagnosticDeadlineUs = 0;
+        this._startupDiagnosticLastState = '';
+        this._startupDiagnosticLastLogUs = 0;
+    }
+
+    _logStartupDiagnosticState(reason, force = false) {
+        if (!this._lockActor)
+            return;
+
+        try {
+            const actor = this._lockActor;
+            const parent = actor.get_parent();
+            const dialog = Main.screenShield?._dialog ?? null;
+            const shield = Main.screenShield ?? null;
+            const focus = global.stage.get_key_focus?.() ?? null;
+            const siblings = parent?.get_children?.() ?? [];
+            const siblingIndex = siblings.indexOf(actor);
+
+            const transitionNames = [
+                'opacity', 'x', 'y', 'width', 'height',
+                'translation-x', 'translation-y', 'scale-x', 'scale-y',
+            ];
+            const actorTransitions = transitionNames.filter(
+                name => actor.get_transition(name) !== null
+            );
+            const dialogTransitions = dialog
+                ? transitionNames.filter(name => dialog.get_transition(name) !== null)
+                : [];
+
+            let focusDescription = 'none';
+            if (focus) {
+                const focusName = focus.get_name?.() ?? '';
+                const focusType = focus.constructor?.name ?? 'actor';
+                focusDescription = `${focusType}${focusName ? ':' + focusName : ''}`;
+            }
+
+            const state = [
+                `mode=${Main.sessionMode.currentMode}`,
+                `power=${this._lastObservedPowerSaveMode ?? 'unknown'}`,
+                `frame=${this._lastFrameCounter}`,
+                `displayed=${this._displayedFrames}`,
+                `actorVisible=${actor.visible}`,
+                `actorMapped=${actor.mapped}`,
+                `actorRealized=${actor.realized}`,
+                `actorPaintVisible=${actor.get_paint_visibility()}`,
+                `actorOpacity=${actor.opacity}`,
+                `actorPaintOpacity=${actor.get_paint_opacity()}`,
+                `actorSibling=${siblingIndex}/${siblings.length}`,
+                `actorTransitions=${actorTransitions.length ? actorTransitions.join(',') : 'none'}`,
+                `parentVisible=${parent?.visible ?? 'none'}`,
+                `parentMapped=${parent?.mapped ?? 'none'}`,
+                `parentOpacity=${parent?.opacity ?? 'none'}`,
+                `dialogVisible=${dialog?.visible ?? 'none'}`,
+                `dialogMapped=${dialog?.mapped ?? 'none'}`,
+                `dialogOpacity=${dialog?.opacity ?? 'none'}`,
+                `dialogTransitions=${dialogTransitions.length ? dialogTransitions.join(',') : 'none'}`,
+                `shieldActive=${shield?._isActive ?? 'unknown'}`,
+                `shieldLocked=${shield?._isLocked ?? 'unknown'}`,
+                `focus=${focusDescription}`,
+            ].join(' ');
+
+            const nowUs = GLib.get_monotonic_time();
+            const changed = state !== this._startupDiagnosticLastState;
+            const heartbeat = nowUs - this._startupDiagnosticLastLogUs >= 2000000;
+
+            if (force || changed || heartbeat) {
+                console.log(`[Screenshaver] Startup state (${reason}): ${state}`);
+                this._startupDiagnosticLastState = state;
+                this._startupDiagnosticLastLogUs = nowUs;
+            }
+        } catch (error) {
+            console.log(`[Screenshaver] Startup-state diagnostic failed: ${error}`);
+        }
+    }
+
     _startPowerSaveRecovery() {
         this._subscribePowerSaveModeChanges();
 
-        // PropertiesChanged is the normal path. Keep a slow read-only poll as
-        // a safety net in case Mutter misses or suppresses a property signal.
+        // Diagnostic build: PropertiesChanged is the normal read-only path.
+        // Keep a slow read-only poll as a safety net. No PowerSaveMode writes
+        // are issued anywhere from the observation path.
         if (!this._powerSaveFallbackSource) {
             this._powerSaveFallbackSource = GLib.timeout_add(
                 GLib.PRIORITY_DEFAULT,
@@ -678,30 +797,13 @@ export default class ScreenshaverExtension extends Extension {
         if (!this._lockActor)
             return;
 
-        if (value === 3) {
-            const startupRecoveryActive =
-                this._powerSaveStartupSource !== null &&
-                GLib.get_monotonic_time() < this._powerSaveStartupDeadlineUs &&
-                this._powerSaveStartupResetAttempts <
-                    POWER_SAVE_STARTUP_MAX_RESET_ATTEMPTS;
-
-            // During the short post-first-frame startup window, every confirmed
-            // observation of mode 3 is actionable because Mutter may reblank the
-            // display several times while the lock transition settles.  Outside
-            // that bounded window, preserve the proven edge-triggered behavior.
-            if (startupRecoveryActive || previousPowerSaveMode !== 3)
-                this._maybePowerSaveThenWake(startupRecoveryActive);
-
-            return;
+        if (previousPowerSaveMode !== value) {
+            console.log(
+                `[Screenshaver] Diagnostic PowerSaveMode: ${previousPowerSaveMode ?? 'unknown'} -> ${value} ` +
+                `source=${fromSignal ? 'signal' : 'poll'}`
+            );
+            this._logStartupDiagnosticState('power-change', true);
         }
-
-        // A successful Set(PowerSaveMode=0) normally produces this signal.
-        // Clearing the pending recovery cycle is sufficient: Mutter restoring
-        // display power must not be followed by ScreenShield._wakeUpScreen(),
-        // because that private wake path performs GNOME's fade-out/fade-in
-        // transition. GNOME remains fully responsible for its native lock UI.
-        if (value === 0 && fromSignal && this._pendingPowerWakeCycle !== 0)
-            this._pendingPowerWakeCycle = 0;
     }
 
     _samplePowerSaveModeFallback() {
@@ -753,99 +855,10 @@ export default class ScreenshaverExtension extends Extension {
         }
     }
 
-    _maybePowerSaveThenWake(startupRecovery = false) {
-        if (this._powerSaveResetInFlight)
-            return;
-
-        // Guard against an accidental D-Bus feedback loop. The observed Mutter
-        // reblank interval is much longer than this cooldown.
-        const nowUs = GLib.get_monotonic_time();
-        const cooldownUs = startupRecovery ? 1000000 : 3000000;
-        if (this._lastPowerWakeAttemptUs !== 0 &&
-            nowUs - this._lastPowerWakeAttemptUs < cooldownUs) {
-            return;
-        }
-
-        if (startupRecovery &&
-            this._powerSaveStartupResetAttempts >=
-                POWER_SAVE_STARTUP_MAX_RESET_ATTEMPTS) {
-            return;
-        }
-
-        const screenShield = Main.screenShield;
-
-        if (Main.sessionMode.currentMode !== 'unlock-dialog' ||
-            !screenShield?._isActive ||
-            !this._lockActor ||
-            this._displayedFrames === 0) {
-            return;
-        }
-
-        this._lastPowerWakeAttemptUs = nowUs;
-        if (startupRecovery)
-            this._powerSaveStartupResetAttempts++;
-
-        this._powerWakeCycleCount++;
-        const cycle = this._powerWakeCycleCount;
-        this._pendingPowerWakeCycle = cycle;
-        this._powerSaveResetInFlight = true;
-
-        try {
-            Gio.DBus.session.call(
-                'org.gnome.Mutter.DisplayConfig',
-                '/org/gnome/Mutter/DisplayConfig',
-                'org.freedesktop.DBus.Properties',
-                'Set',
-                new GLib.Variant(
-                    '(ssv)',
-                    [
-                        'org.gnome.Mutter.DisplayConfig',
-                        'PowerSaveMode',
-                        new GLib.Variant('i', 0),
-                    ]
-                ),
-                null,
-                Gio.DBusCallFlags.NONE,
-                2000,
-                null,
-                (connection, result) => {
-                    this._powerSaveResetInFlight = false;
-
-                    try {
-                        connection.call_finish(result);
-                    } catch (error) {
-                        if (this._pendingPowerWakeCycle === cycle)
-                            this._pendingPowerWakeCycle = 0;
-
-                        console.log(
-                            `[Screenshaver] Unable to restore Mutter PowerSaveMode: ${error}`
-                        );
-                        return;
-                    }
-
-                    // Normal path: PropertiesChanged(0) confirms the display
-                    // power restoration. If that signal never arrives, verify
-                    // after 500 ms. No ScreenShield wake animation is requested.
-                    GLib.timeout_add(
-                        GLib.PRIORITY_DEFAULT,
-                        500,
-                        () => {
-                            if (this._pendingPowerWakeCycle === cycle)
-                                this._verifyPowerSaveThenWake(cycle);
-                            return GLib.SOURCE_REMOVE;
-                        }
-                    );
-                }
-            );
-        } catch (error) {
-            this._powerSaveResetInFlight = false;
-            if (this._pendingPowerWakeCycle === cycle)
-                this._pendingPowerWakeCycle = 0;
-
-            console.log(
-                `[Screenshaver] Unable to dispatch Mutter PowerSaveMode recovery: ${error}`
-            );
-        }
+    _maybePowerSaveThenWake(_startupRecovery = false) {
+        // Intentionally disabled in this diagnostic build.  We are observing
+        // what genuine user activity changes, not attempting to reproduce it.
+        return;
     }
 
     _verifyPowerSaveThenWake(cycle) {
@@ -898,6 +911,7 @@ export default class ScreenshaverExtension extends Extension {
 
     _removeLockActor() {
         this._stopSessionValidation();
+        this._stopStartupDiagnostic();
         this._stopPowerSaveRecovery();
 
         if (this._pollSource) {
