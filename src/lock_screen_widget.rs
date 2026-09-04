@@ -689,7 +689,7 @@ impl LockScreenWidgetRenderer {
         self.draw_halo(
             center_x,
             center_y,
-            &widget.config,
+            widget,
         );
 
 
@@ -756,8 +756,23 @@ impl LockScreenWidgetRenderer {
         &self,
         center_x: f32,
         center_y: f32,
-        config: &LockScreenWidgetConfig,
+        widget: &LockScreenWidget,
     ) {
+        let config =
+            &widget.config;
+
+        // Keep the halo synchronized with the authentication-failure
+        // indication. While the twelve child circles are red, the halo
+        // uses the same error color; when the failure interval expires,
+        // the halo automatically returns to its configured normal color.
+        let halo_color =
+            if widget.error_is_active() {
+                config.child_error_color
+            } else {
+                config.halo_color
+            };
+
+
         let halo_strength =
             config.halo_strength.clamp(
                 0.0,
@@ -808,10 +823,10 @@ impl LockScreenWidgetRenderer {
 
             gl::Uniform4f(
                 self.color_location,
-                config.halo_color[0],
-                config.halo_color[1],
-                config.halo_color[2],
-                config.halo_color[3],
+                halo_color[0],
+                halo_color[1],
+                halo_color[2],
+                halo_color[3],
             );
 
             gl::DrawArrays(
