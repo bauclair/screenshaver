@@ -11,7 +11,7 @@ const TRANSPORT_MAGIC = [0x53, 0x48, 0x56, 0x52, 0x47, 0x4e, 0x4d, 0x31]; // SHV
 const TRANSPORT_VERSION = 2;
 const TRANSPORT_HEADER_BYTES = 64;
 const TRANSPORT_SLOT_COUNT = 2;
-const POLL_INTERVAL_MS = 8;
+const POLL_INTERVAL_MS = 33;
 const POWER_SAVE_FALLBACK_INTERVAL_MS = 1000;
 const RUNTIME_MARKER_FILENAME = 'screenshaver-gnome-lock.active';
 const RUNTIME_MARKER_VERSION = 1;
@@ -203,13 +203,11 @@ export default class ScreenshaverExtension extends Extension {
             TRANSPORT_FILENAME,
         ]);
 
-        let mappedFile = null;
-
         try {
-            mappedFile = GLib.MappedFile.new(framePath, false);
-            const data = mappedFile.get_bytes().get_data();
+            const file = Gio.File.new_for_path(framePath);
+            const [ok, data] = file.load_contents(null);
 
-            if (!this._validateHeader(data, false))
+            if (!ok || !data || !this._validateHeader(data, false))
                 return null;
 
             const transportSessionId =
@@ -221,8 +219,6 @@ export default class ScreenshaverExtension extends Extension {
             return marker;
         } catch (_) {
             return null;
-        } finally {
-            mappedFile = null;
         }
     }
 
@@ -342,25 +338,27 @@ export default class ScreenshaverExtension extends Extension {
         if (!this._transportReady && !this._openTransport())
             return;
 
-        // GMappedFile.get_bytes() exposes the mapping through immutable GBytes.
-        // Keeping that object alive while another process mutates the backing
-        // file can leave GJS observing the original frame indefinitely on newer
-        // GLib/GJS stacks. Create a fresh mapping for every poll, copy the
-        // completed slot into an independent GBytes, and release the mapping
-        // before returning.
+        // Diagnostic compatibility path for GNOME/GLib stacks that do not
+        // expose externally modified GMappedFile contents reliably through GJS.
+        // Read the transport file afresh on each 33 ms poll so header counters
+        // and the selected completed frame come from one coherent file snapshot.
         const framePath = GLib.build_filenamev([
             GLib.get_user_runtime_dir(),
             TRANSPORT_FILENAME,
         ]);
 
-        let mappedFile = null;
         let data;
 
         try {
-            mappedFile = GLib.MappedFile.new(framePath, false);
-            data = mappedFile.get_bytes().get_data();
+            const file = Gio.File.new_for_path(framePath);
+            const [ok, contents] = file.load_contents(null);
+
+            if (!ok || !contents)
+                throw new Error('transport read returned no data');
+
+            data = contents;
         } catch (error) {
-            console.log(`[Screenshaver] Unable to refresh shared-memory view: ${error}`);
+            console.log(`[Screenshaver] Unable to refresh shared-memory transport: ${error}`);
             this._closeTransport();
             return;
         }
@@ -393,15 +391,14 @@ export default class ScreenshaverExtension extends Extension {
         const frameEnd = frameOffset + frameBytes;
 
         if (frameEnd > data.length) {
-            console.log('[Screenshaver] Shared-memory frame extends beyond mapped transport');
+            console.log('[Screenshaver] Shared-memory frame extends beyond transport file');
             this._closeTransport();
             return;
         }
 
         // GLib.Bytes.new() copies the completed frame, so St.ImageContent never
-        // retains storage that Screenshaver may overwrite on a later publish.
+        // retains the temporary Gio.File contents buffer after this refresh.
         const frameBytesCopy = GLib.Bytes.new(data.subarray(frameOffset, frameEnd));
-        mappedFile = null;
 
         try {
             const coglContext = global.stage.context
@@ -747,22 +744,22 @@ export default class ScreenshaverExtension extends Extension {
         ]);
 
         try {
-            const mappedFile = GLib.MappedFile.new(framePath, false);
-            const mappedData = mappedFile.get_bytes().get_data();
+            const file = Gio.File.new_for_path(framePath);
+            const [ok, data] = file.load_contents(null);
 
-            if (!mappedData || mappedData.length < TRANSPORT_HEADER_BYTES) {
+            if (!ok || !data || data.length < TRANSPORT_HEADER_BYTES) {
                 this._closeTransport();
                 return false;
             }
 
-            if (!this._validateHeader(mappedData)) {
+            if (!this._validateHeader(data)) {
                 this._closeTransport();
                 return false;
             }
 
             if (
                 !this._activeSessionId
-                || readSessionIdHex(mappedData, HEADER_SESSION_ID_OFFSET)
+                || readSessionIdHex(data, HEADER_SESSION_ID_OFFSET)
                     !== this._activeSessionId
             ) {
                 console.log(
@@ -772,15 +769,15 @@ export default class ScreenshaverExtension extends Extension {
                 return false;
             }
 
-            const width = readU32LE(mappedData, HEADER_WIDTH_OFFSET);
-            const height = readU32LE(mappedData, HEADER_HEIGHT_OFFSET);
-            const frameBytes = readU32LE(mappedData, HEADER_FRAME_BYTES_OFFSET);
+            const width = readU32LE(data, HEADER_WIDTH_OFFSET);
+            const height = readU32LE(data, HEADER_HEIGHT_OFFSET);
+            const frameBytes = readU32LE(data, HEADER_FRAME_BYTES_OFFSET);
             const requiredBytes = TRANSPORT_HEADER_BYTES
                 + frameBytes * TRANSPORT_SLOT_COUNT;
 
-            if (mappedData.length < requiredBytes) {
+            if (data.length < requiredBytes) {
                 console.log(
-                    `[Screenshaver] Shared-memory transport is ${mappedData.length} bytes; ` +
+                    `[Screenshaver] Shared-memory transport is ${data.length} bytes; ` +
                     `${requiredBytes} bytes are required`
                 );
                 this._closeTransport();
@@ -797,8 +794,8 @@ export default class ScreenshaverExtension extends Extension {
             this._transportErrorLogged = false;
 
             console.log(
-                `[Screenshaver] Shared-memory transport mapped: ` +
-                `${width}x${height}, ${mappedData.length} bytes`
+                `[Screenshaver] Shared-memory transport loaded: ` +
+                `${width}x${height}, ${data.length} bytes`
             );
 
             return true;
