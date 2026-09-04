@@ -47,6 +47,7 @@ export default class ScreenshaverExtension extends Extension {
         this._transportGeneration = 0;
         this._lastFrameCounter = 0;
         this._displayedFrames = 0;
+        this._screenShieldWakeIssued = false;
         this._refreshCalls = 0;
         this._uploadAttempts = 0;
         this._uploadSuccesses = 0;
@@ -318,12 +319,9 @@ export default class ScreenshaverExtension extends Extension {
         console.log('[Screenshaver] File-transport lock actor added above GNOME lock background');
 
         // GNOME retains its native lock/authentication UI above this actor.
-        // For this diagnostic build, PowerSave observation is strictly read-only:
-        // no D-Bus Set(PowerSaveMode) calls are issued.  Capture the lock actor,
-        // ScreenShield/dialog, focus, and observed power state before and after
-        // the first real keyboard/mouse activity.
-        this._startPowerSaveRecovery();
-        this._startStartupDiagnostic();
+        // Do not manipulate Mutter PowerSaveMode directly. Once a real shader
+        // frame is available and ScreenShield reports that the secure lock is
+        // both locked and active, request GNOME's own one-shot wake transition.
         this._refreshFrame();
 
         this._pollSource = GLib.timeout_add(
@@ -431,15 +429,20 @@ export default class ScreenshaverExtension extends Extension {
                             `counter=${control.frameCounter}`
                         );
 
-                        // Diagnostic only: record the exact GNOME/actor state
-                        // when the first real shader frame becomes available.
-                        // No display-power mutation occurs in this build.
-                        this._logStartupDiagnosticState('first-frame', true);
-                    } else if (this._displayedFrames % 300 === 0) {
-                        console.log(
-                            `[Screenshaver] File-transport frames displayed: ${this._displayedFrames}`
-                        );
+                        this._maybeWakeScreenShieldForShader();
+                    } else {
+                        // The first frame can arrive before ScreenShield becomes
+                        // active. Re-check on subsequent completed frames until
+                        // GNOME's secure lock state is ready, then wake exactly once.
+                        this._maybeWakeScreenShieldForShader();
+
+                        if (this._displayedFrames % 300 === 0) {
+                            console.log(
+                                `[Screenshaver] File-transport frames displayed: ${this._displayedFrames}`
+                            );
+                        }
                     }
+
                 }
             } catch (error) {
                 if (!cancellable.is_cancelled()) {
@@ -533,6 +536,7 @@ export default class ScreenshaverExtension extends Extension {
             GLib.get_monotonic_time() + STARTUP_DIAGNOSTIC_WINDOW_MS * 1000;
         this._startupDiagnosticLastState = '';
         this._startupDiagnosticLastLogUs = 0;
+        this._screenShieldWakeIssued = false;
 
         console.log('[Screenshaver] Startup-state diagnostic window opened (read-only)');
         this._logStartupDiagnosticState('start', true);
@@ -563,6 +567,7 @@ export default class ScreenshaverExtension extends Extension {
         this._startupDiagnosticDeadlineUs = 0;
         this._startupDiagnosticLastState = '';
         this._startupDiagnosticLastLogUs = 0;
+        this._screenShieldWakeIssued = false;
     }
 
     _logStartupDiagnosticState(reason, force = false) {
@@ -632,6 +637,44 @@ export default class ScreenshaverExtension extends Extension {
             }
         } catch (error) {
             console.log(`[Screenshaver] Startup-state diagnostic failed: ${error}`);
+        }
+    }
+
+    _maybeWakeScreenShieldForShader() {
+        if (this._screenShieldWakeIssued ||
+            !this._lockActor ||
+            this._displayedFrames === 0 ||
+            Main.sessionMode.currentMode !== 'unlock-dialog') {
+            return;
+        }
+
+        const screenShield = Main.screenShield;
+
+        // A shader frame may arrive while GNOME is still completing the lock
+        // transition. Do nothing until ScreenShield itself says the session is
+        // securely locked and active. This mirrors the state in which genuine
+        // user activity is routed through ScreenShield._wakeUpScreen().
+        if (!screenShield?.locked || !screenShield?.active)
+            return;
+
+        if (typeof screenShield._wakeUpScreen !== 'function') {
+            console.log(
+                '[Screenshaver] GNOME ScreenShield wake method unavailable; leaving native lock state unchanged'
+            );
+            this._screenShieldWakeIssued = true;
+            return;
+        }
+
+        this._screenShieldWakeIssued = true;
+        console.log(
+            `[Screenshaver] Requesting one-shot native ScreenShield wake after shader frame ${this._lastFrameCounter}`
+        );
+
+        try {
+            screenShield._wakeUpScreen();
+            console.log('[Screenshaver] One-shot native ScreenShield wake completed');
+        } catch (error) {
+            console.log(`[Screenshaver] One-shot native ScreenShield wake failed: ${error}`);
         }
     }
 
