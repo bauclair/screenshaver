@@ -15,7 +15,9 @@ const CONTROL_BYTES = 64;
 const CONTROL_SESSION_ID_BYTES = 16;
 const POLL_INTERVAL_MS = 33;
 const POWER_SAVE_FALLBACK_INTERVAL_MS = 1000;
-const POWER_SAVE_RECOVERY_COOLDOWN_US = 1000000;
+const POWER_SAVE_STARTUP_SAMPLE_INTERVAL_MS = 500;
+const POWER_SAVE_STARTUP_MAX_RESET_ATTEMPTS = 4;
+const POWER_SAVE_STARTUP_WINDOW_MS = 6000;
 const RUNTIME_MARKER_FILENAME = 'screenshaver-gnome-lock.active';
 const RUNTIME_MARKER_VERSION = 1;
 const SESSION_VALIDATION_INTERVAL_MS = 1000;
@@ -51,6 +53,9 @@ export default class ScreenshaverExtension extends Extension {
         this._sessionWaitSource = null;
         this._activeSessionId = null;
         this._lastObservedPowerSaveMode = null;
+        this._powerSaveStartupSource = null;
+        this._powerSaveStartupDeadlineUs = 0;
+        this._powerSaveStartupResetAttempts = 0;
         this._powerSaveResetInFlight = false;
         this._powerWakeCycleCount = 0;
         this._pendingPowerWakeCycle = 0;
@@ -415,6 +420,13 @@ export default class ScreenshaverExtension extends Extension {
                             `[Screenshaver] First file-transport frame displayed: ` +
                             `counter=${control.frameCounter}`
                         );
+
+                        // Do not manipulate display power while GNOME is still
+                        // establishing the secure lock.  Once a real shader frame
+                        // exists, open a short bounded recovery window.  During
+                        // that window we sample Mutter and recover only when it
+                        // actually reports PowerSaveMode=3.
+                        this._startPowerSaveStartupRecovery();
                     } else if (this._displayedFrames % 300 === 0) {
                         console.log(
                             `[Screenshaver] File-transport frames displayed: ${this._displayedFrames}`
@@ -524,16 +536,61 @@ export default class ScreenshaverExtension extends Extension {
             );
         }
 
-        // Do not wait for a PowerSaveMode transition before making the lock
-        // presentation visible.  Mutter may already have blanked the display
-        // by the time the Screenshaver actor is created, so proactively request
-        // display power here.  The signal subscription and fallback sampler
-        // below keep enforcing the useful state if Mutter later returns to 3.
-        this._maybePowerSaveThenWake(true);
         this._samplePowerSaveModeFallback();
     }
 
+    _startPowerSaveStartupRecovery() {
+        if (!this._lockActor || this._displayedFrames === 0)
+            return;
+
+        if (this._powerSaveStartupSource)
+            return;
+
+        this._powerSaveStartupResetAttempts = 0;
+        this._powerSaveStartupDeadlineUs =
+            GLib.get_monotonic_time() + POWER_SAVE_STARTUP_WINDOW_MS * 1000;
+
+        console.log(
+            '[Screenshaver] GNOME startup PowerSave recovery window opened'
+        );
+
+        // Sample once immediately now that the actor contains a real frame.
+        this._samplePowerSaveModeFallback();
+
+        this._powerSaveStartupSource = GLib.timeout_add(
+            GLib.PRIORITY_DEFAULT,
+            POWER_SAVE_STARTUP_SAMPLE_INTERVAL_MS,
+            () => {
+                if (!this._lockActor ||
+                    GLib.get_monotonic_time() >= this._powerSaveStartupDeadlineUs ||
+                    this._powerSaveStartupResetAttempts >=
+                        POWER_SAVE_STARTUP_MAX_RESET_ATTEMPTS) {
+                    this._powerSaveStartupSource = null;
+                    console.log(
+                        `[Screenshaver] GNOME startup PowerSave recovery window closed; ` +
+                        `reset-attempts=${this._powerSaveStartupResetAttempts}`
+                    );
+                    return GLib.SOURCE_REMOVE;
+                }
+
+                this._samplePowerSaveModeFallback();
+                return GLib.SOURCE_CONTINUE;
+            }
+        );
+    }
+
+    _stopPowerSaveStartupRecovery() {
+        if (this._powerSaveStartupSource) {
+            GLib.source_remove(this._powerSaveStartupSource);
+            this._powerSaveStartupSource = null;
+        }
+
+        this._powerSaveStartupDeadlineUs = 0;
+        this._powerSaveStartupResetAttempts = 0;
+    }
+
     _stopPowerSaveRecovery() {
+        this._stopPowerSaveStartupRecovery();
         this._unsubscribePowerSaveModeChanges();
 
         if (this._powerSaveFallbackSource) {
@@ -615,17 +672,26 @@ export default class ScreenshaverExtension extends Extension {
     }
 
     _handlePowerSaveModeValue(value, fromSignal) {
+        const previousPowerSaveMode = this._lastObservedPowerSaveMode;
         this._lastObservedPowerSaveMode = value;
 
         if (!this._lockActor)
             return;
 
-        // Treat every observation of PowerSaveMode=3 as actionable rather than
-        // only the 0->3 transition.  Mutter can leave or return the display in
-        // mode 3 without producing a useful new transition for us; the bounded
-        // cooldown in _maybePowerSaveThenWake() prevents a D-Bus feedback loop.
         if (value === 3) {
-            this._maybePowerSaveThenWake();
+            const startupRecoveryActive =
+                this._powerSaveStartupSource !== null &&
+                GLib.get_monotonic_time() < this._powerSaveStartupDeadlineUs &&
+                this._powerSaveStartupResetAttempts <
+                    POWER_SAVE_STARTUP_MAX_RESET_ATTEMPTS;
+
+            // During the short post-first-frame startup window, every confirmed
+            // observation of mode 3 is actionable because Mutter may reblank the
+            // display several times while the lock transition settles.  Outside
+            // that bounded window, preserve the proven edge-triggered behavior.
+            if (startupRecoveryActive || previousPowerSaveMode !== 3)
+                this._maybePowerSaveThenWake(startupRecoveryActive);
+
             return;
         }
 
@@ -687,17 +753,22 @@ export default class ScreenshaverExtension extends Extension {
         }
     }
 
-    _maybePowerSaveThenWake(force = false) {
+    _maybePowerSaveThenWake(startupRecovery = false) {
         if (this._powerSaveResetInFlight)
             return;
 
-        // Guard against an accidental D-Bus feedback loop while still allowing
-        // the fallback sampler to recover promptly if Mutter repeatedly returns
-        // the lock display to PowerSaveMode=3.
+        // Guard against an accidental D-Bus feedback loop. The observed Mutter
+        // reblank interval is much longer than this cooldown.
         const nowUs = GLib.get_monotonic_time();
-        if (!force &&
-            this._lastPowerWakeAttemptUs !== 0 &&
-            nowUs - this._lastPowerWakeAttemptUs < POWER_SAVE_RECOVERY_COOLDOWN_US) {
+        const cooldownUs = startupRecovery ? 1000000 : 3000000;
+        if (this._lastPowerWakeAttemptUs !== 0 &&
+            nowUs - this._lastPowerWakeAttemptUs < cooldownUs) {
+            return;
+        }
+
+        if (startupRecovery &&
+            this._powerSaveStartupResetAttempts >=
+                POWER_SAVE_STARTUP_MAX_RESET_ATTEMPTS) {
             return;
         }
 
@@ -705,11 +776,15 @@ export default class ScreenshaverExtension extends Extension {
 
         if (Main.sessionMode.currentMode !== 'unlock-dialog' ||
             !screenShield?._isActive ||
-            !this._lockActor) {
+            !this._lockActor ||
+            this._displayedFrames === 0) {
             return;
         }
 
         this._lastPowerWakeAttemptUs = nowUs;
+        if (startupRecovery)
+            this._powerSaveStartupResetAttempts++;
+
         this._powerWakeCycleCount++;
         const cycle = this._powerWakeCycleCount;
         this._pendingPowerWakeCycle = cycle;
