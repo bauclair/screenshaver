@@ -414,6 +414,16 @@ export default class ScreenshaverExtension extends Extension {
                             `[Screenshaver] First file-transport frame displayed: ` +
                             `counter=${control.frameCounter}`
                         );
+
+                        // The initial PowerSaveMode sample can report mode 3
+                        // before the first shader frame is ready.  In that case
+                        // _maybePowerSaveThenWake() correctly refuses to wake an
+                        // empty actor, but the mode remains 3 and no later edge
+                        // is guaranteed.  Retry immediately now that a real frame
+                        // is present so shader presentation does not depend on
+                        // keyboard or pointer activity.
+                        if (this._lastObservedPowerSaveMode === 3)
+                            this._maybePowerSaveThenWake();
                     } else if (this._displayedFrames % 300 === 0) {
                         console.log(
                             `[Screenshaver] File-transport frames displayed: ${this._displayedFrames}`

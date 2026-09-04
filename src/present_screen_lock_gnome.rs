@@ -1,7 +1,7 @@
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use sdl2::video::GLProfile;
 
@@ -23,6 +23,9 @@ const CONTROL_VERSION: u32 = 1;
 const CONTROL_BYTES: usize = 64;
 const CONTROL_SESSION_ID_BYTES: usize = 16;
 const RETAINED_FRAME_COUNT: u32 = 32;
+const TRANSPORT_PUBLISH_FPS: u32 = 10;
+const TRANSPORT_PUBLISH_INTERVAL: Duration =
+    Duration::from_millis(1000 / TRANSPORT_PUBLISH_FPS as u64);
 
 const CONTROL_MAGIC_OFFSET: usize = 0;
 const CONTROL_VERSION_OFFSET: usize = 8;
@@ -115,6 +118,7 @@ struct GnomeLockFrameProducer {
     readback: Vec<u8>,
     top_down_rgba: Vec<u8>,
     published_frames: u64,
+    last_transport_publish: Option<Instant>,
     presentation_monitor: LockPresentationMonitor,
 }
 
@@ -253,6 +257,7 @@ impl GnomeLockFrameProducer {
             readback: vec![0; frame_bytes],
             top_down_rgba: vec![0; frame_bytes],
             published_frames: 0,
+            last_transport_publish: None,
             presentation_monitor,
         })
     }
@@ -293,47 +298,59 @@ impl GnomeLockFrameProducer {
                 .engine
                 .render_frame(TRANSPORT_WIDTH, TRANSPORT_HEIGHT);
 
-            // FrameRenderEngine owns the existing shader/render performance
-            // accounting. Measure only the GNOME-specific presentation work
-            // that begins after render_frame() returns.
-            let presentation_started = Instant::now();
+            // Render at the policy-configured rate, but publish completed RGBA
+            // frames to GNOME at a deliberately lower transport cadence.  This
+            // diagnostic keeps shader timing unchanged while reducing file I/O,
+            // memory copies, async reads, and texture uploads to about 10 FPS.
+            let should_publish = self
+                .last_transport_publish
+                .map(|last| last.elapsed() >= TRANSPORT_PUBLISH_INTERVAL)
+                .unwrap_or(true);
 
-            let (readback_elapsed, row_flip_elapsed) =
-                self.capture_frame();
+            if should_publish {
+                // FrameRenderEngine owns the existing shader/render performance
+                // accounting. Measure only the GNOME-specific presentation work
+                // that begins after render_frame() returns.
+                let presentation_started = Instant::now();
 
-            let transfer_started = Instant::now();
-            self.transport.publish(&self.top_down_rgba)?;
-            let transfer_elapsed = transfer_started.elapsed();
+                let (readback_elapsed, row_flip_elapsed) =
+                    self.capture_frame();
 
-            self.published_frames = self.published_frames.saturating_add(1);
+                let transfer_started = Instant::now();
+                self.transport.publish(&self.top_down_rgba)?;
+                let transfer_elapsed = transfer_started.elapsed();
 
-            if self.published_frames % 50 == 0 {
-                log_information(
-                    &self.logfile,
-                    &format!(
-                        "[LOCK] GNOME file-transport shader frames published: {}",
-                        self.published_frames,
-                    ),
+                self.last_transport_publish = Some(Instant::now());
+                self.published_frames = self.published_frames.saturating_add(1);
+
+                if self.published_frames % 50 == 0 {
+                    log_information(
+                        &self.logfile,
+                        &format!(
+                            "[LOCK] GNOME file-transport shader frames published: {}",
+                            self.published_frames,
+                        ),
+                    );
+                }
+
+                let submit_started = Instant::now();
+                self.window.gl_swap_window();
+                let submit_elapsed = submit_started.elapsed();
+
+                let configured_fps =
+                    self.engine.current_metadata().configured_fps;
+
+                self.presentation_monitor.record(
+                    LockPresentationSample {
+                        configured_fps,
+                        readback: readback_elapsed,
+                        row_flip: row_flip_elapsed,
+                        transfer: transfer_elapsed,
+                        submit: submit_elapsed,
+                        total: presentation_started.elapsed(),
+                    },
                 );
             }
-
-            let submit_started = Instant::now();
-            self.window.gl_swap_window();
-            let submit_elapsed = submit_started.elapsed();
-
-            let configured_fps =
-                self.engine.current_metadata().configured_fps;
-
-            self.presentation_monitor.record(
-                LockPresentationSample {
-                    configured_fps,
-                    readback: readback_elapsed,
-                    row_flip: row_flip_elapsed,
-                    transfer: transfer_elapsed,
-                    submit: submit_elapsed,
-                    total: presentation_started.elapsed(),
-                },
-            );
 
             self.engine.limit_fps();
         }
