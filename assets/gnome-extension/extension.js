@@ -44,7 +44,6 @@ export default class ScreenshaverExtension extends Extension {
         this._sessionValidationSource = null;
         this._sessionWaitSource = null;
         this._activeSessionId = null;
-        this._wakeRequestCount = 0;
         this._lastObservedPowerSaveMode = null;
         this._powerSaveResetInFlight = false;
         this._powerWakeCycleCount = 0;
@@ -548,20 +547,13 @@ export default class ScreenshaverExtension extends Extension {
             return;
         }
 
-        // The successful Set(PowerSaveMode=0) normally produces this signal.
-        // Treat it as the synchronization point and wake ScreenShield
-        // immediately; the fallback readback below is only for missing signals.
-        if (value === 0 && fromSignal && this._pendingPowerWakeCycle !== 0) {
-            const cycle = this._pendingPowerWakeCycle;
+        // A successful Set(PowerSaveMode=0) normally produces this signal.
+        // Clearing the pending recovery cycle is sufficient: Mutter restoring
+        // display power must not be followed by ScreenShield._wakeUpScreen(),
+        // because that private wake path performs GNOME's fade-out/fade-in
+        // transition. GNOME remains fully responsible for its native lock UI.
+        if (value === 0 && fromSignal && this._pendingPowerWakeCycle !== 0)
             this._pendingPowerWakeCycle = 0;
-
-            const screenShield = Main.screenShield;
-            if (screenShield?._isActive &&
-                Main.sessionMode.currentMode === 'unlock-dialog' &&
-                this._lockActor) {
-                this._requestLockScreenWake(cycle);
-            }
-        }
     }
 
     _samplePowerSaveModeFallback() {
@@ -673,8 +665,9 @@ export default class ScreenshaverExtension extends Extension {
                         return;
                     }
 
-                    // Normal path: PropertiesChanged(0) already requested the
-                    // wake. If that signal never arrives, verify after 500 ms.
+                    // Normal path: PropertiesChanged(0) confirms the display
+                    // power restoration. If that signal never arrives, verify
+                    // after 500 ms. No ScreenShield wake animation is requested.
                     GLib.timeout_add(
                         GLib.PRIORITY_DEFAULT,
                         500,
@@ -726,12 +719,10 @@ export default class ScreenshaverExtension extends Extension {
 
                         this._lastObservedPowerSaveMode = value;
 
-                        const screenShield = Main.screenShield;
-                        if (value === 0 && screenShield?._isActive &&
+                        if (value === 0 &&
                             Main.sessionMode.currentMode === 'unlock-dialog' &&
                             this._pendingPowerWakeCycle === cycle) {
                             this._pendingPowerWakeCycle = 0;
-                            this._requestLockScreenWake(cycle);
                         }
                     } catch (error) {
                         console.log(
@@ -744,26 +735,6 @@ export default class ScreenshaverExtension extends Extension {
             console.log(
                 `[Screenshaver] Unable to dispatch Mutter PowerSaveMode recovery verification: ${error}`
             );
-        }
-    }
-
-    _requestLockScreenWake(_cycle) {
-        const screenShield = Main.screenShield;
-
-        if (!screenShield) {
-            console.log('[Screenshaver] GNOME ScreenShield unavailable for wake request');
-            return;
-        }
-
-        try {
-            if (typeof screenShield._wakeUpScreen === 'function') {
-                screenShield._wakeUpScreen();
-                this._wakeRequestCount++;
-            } else {
-                console.log('[Screenshaver] GNOME ScreenShield wake method unavailable');
-            }
-        } catch (error) {
-            console.log(`[Screenshaver] GNOME lock-screen wake request failed: ${error}`);
         }
     }
 
@@ -898,7 +869,6 @@ export default class ScreenshaverExtension extends Extension {
         this._imageContent = null;
         this._displayedFrames = 0;
         this._transportErrorLogged = false;
-        this._wakeRequestCount = 0;
         this._lastObservedPowerSaveMode = null;
         this._powerSaveResetInFlight = false;
         this._powerWakeCycleCount = 0;
