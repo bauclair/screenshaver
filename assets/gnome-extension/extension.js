@@ -12,7 +12,7 @@ const FRAME_FILENAME_SUFFIX = '.rgba';
 const CONTROL_MAGIC = [0x53, 0x48, 0x56, 0x52, 0x47, 0x4e, 0x46, 0x31]; // SHVRGNF1
 const CONTROL_VERSION = 1;
 const CONTROL_BYTES = 64;
-const CONTROL_CONTROL_SESSION_ID_BYTES = 16;
+const CONTROL_SESSION_ID_BYTES = 16;
 const POLL_INTERVAL_MS = 33;
 const POWER_SAVE_FALLBACK_INTERVAL_MS = 1000;
 const RUNTIME_MARKER_FILENAME = 'screenshaver-gnome-lock.active';
@@ -203,13 +203,14 @@ export default class ScreenshaverExtension extends Extension {
         if (!GLib.file_test(`/proc/${marker.pid}`, GLib.FileTest.EXISTS))
             return null;
 
-        const control = this._readControlRecord(false);
-        if (!control)
-            return null;
-
-        if (control.sessionId !== marker.sessionId)
-            return null;
-
+        // Runtime ownership and frame-transport readiness are intentionally
+        // separate.  The marker proves that a live Screenshaver process owns
+        // this lock session.  The control record is presentation state and may
+        // be absent briefly while the producer initializes or atomically
+        // replaces it; that must not invalidate the runtime handshake or tear
+        // down the GNOME lock actor.  _refreshFrame() independently validates
+        // the control record and requires its session ID to match this marker
+        // before displaying any frame.
         return marker;
     }
 
