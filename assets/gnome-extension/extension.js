@@ -15,6 +15,7 @@ const CONTROL_BYTES = 64;
 const CONTROL_SESSION_ID_BYTES = 16;
 const POLL_INTERVAL_MS = 33;
 const POWER_SAVE_FALLBACK_INTERVAL_MS = 1000;
+const POWER_SAVE_RECOVERY_COOLDOWN_US = 1000000;
 const RUNTIME_MARKER_FILENAME = 'screenshaver-gnome-lock.active';
 const RUNTIME_MARKER_VERSION = 1;
 const SESSION_VALIDATION_INTERVAL_MS = 1000;
@@ -414,16 +415,6 @@ export default class ScreenshaverExtension extends Extension {
                             `[Screenshaver] First file-transport frame displayed: ` +
                             `counter=${control.frameCounter}`
                         );
-
-                        // The initial PowerSaveMode sample can report mode 3
-                        // before the first shader frame is ready.  In that case
-                        // _maybePowerSaveThenWake() correctly refuses to wake an
-                        // empty actor, but the mode remains 3 and no later edge
-                        // is guaranteed.  Retry immediately now that a real frame
-                        // is present so shader presentation does not depend on
-                        // keyboard or pointer activity.
-                        if (this._lastObservedPowerSaveMode === 3)
-                            this._maybePowerSaveThenWake();
                     } else if (this._displayedFrames % 300 === 0) {
                         console.log(
                             `[Screenshaver] File-transport frames displayed: ${this._displayedFrames}`
@@ -533,6 +524,12 @@ export default class ScreenshaverExtension extends Extension {
             );
         }
 
+        // Do not wait for a PowerSaveMode transition before making the lock
+        // presentation visible.  Mutter may already have blanked the display
+        // by the time the Screenshaver actor is created, so proactively request
+        // display power here.  The signal subscription and fallback sampler
+        // below keep enforcing the useful state if Mutter later returns to 3.
+        this._maybePowerSaveThenWake(true);
         this._samplePowerSaveModeFallback();
     }
 
@@ -618,13 +615,16 @@ export default class ScreenshaverExtension extends Extension {
     }
 
     _handlePowerSaveModeValue(value, fromSignal) {
-        const previousPowerSaveMode = this._lastObservedPowerSaveMode;
         this._lastObservedPowerSaveMode = value;
 
         if (!this._lockActor)
             return;
 
-        if (value === 3 && previousPowerSaveMode !== 3) {
+        // Treat every observation of PowerSaveMode=3 as actionable rather than
+        // only the 0->3 transition.  Mutter can leave or return the display in
+        // mode 3 without producing a useful new transition for us; the bounded
+        // cooldown in _maybePowerSaveThenWake() prevents a D-Bus feedback loop.
+        if (value === 3) {
             this._maybePowerSaveThenWake();
             return;
         }
@@ -687,15 +687,17 @@ export default class ScreenshaverExtension extends Extension {
         }
     }
 
-    _maybePowerSaveThenWake() {
+    _maybePowerSaveThenWake(force = false) {
         if (this._powerSaveResetInFlight)
             return;
 
-        // Guard against an accidental D-Bus feedback loop. The observed Mutter
-        // reblank interval is much longer than this cooldown.
+        // Guard against an accidental D-Bus feedback loop while still allowing
+        // the fallback sampler to recover promptly if Mutter repeatedly returns
+        // the lock display to PowerSaveMode=3.
         const nowUs = GLib.get_monotonic_time();
-        if (this._lastPowerWakeAttemptUs !== 0 &&
-            nowUs - this._lastPowerWakeAttemptUs < 3000000) {
+        if (!force &&
+            this._lastPowerWakeAttemptUs !== 0 &&
+            nowUs - this._lastPowerWakeAttemptUs < POWER_SAVE_RECOVERY_COOLDOWN_US) {
             return;
         }
 
@@ -703,8 +705,7 @@ export default class ScreenshaverExtension extends Extension {
 
         if (Main.sessionMode.currentMode !== 'unlock-dialog' ||
             !screenShield?._isActive ||
-            !this._lockActor ||
-            this._displayedFrames === 0) {
+            !this._lockActor) {
             return;
         }
 
