@@ -1,3 +1,4 @@
+import Clutter from 'gi://Clutter';
 import Cogl from 'gi://Cogl';
 import GLib from 'gi://GLib';
 import Gio from 'gi://Gio';
@@ -14,6 +15,7 @@ const CONTROL_VERSION = 1;
 const CONTROL_BYTES = 64;
 const CONTROL_SESSION_ID_BYTES = 16;
 const POLL_INTERVAL_MS = 33;
+const SHADER_TICK_INTERVAL_MS = 33;
 const POWER_SAVE_FALLBACK_INTERVAL_MS = 1000;
 const POST_WAKE_POWER_SAVE_MIN_DELAY_MS = 10000;
 const RUNTIME_MARKER_FILENAME = 'screenshaver-gnome-lock.active';
@@ -36,6 +38,10 @@ export default class ScreenshaverExtension extends Extension {
 
         this._lockActor = null;
         this._imageContent = null;
+        this._shaderEffect = null;
+        this._shaderTickSource = null;
+        this._shaderStartedUs = 0;
+        this._shaderTicks = 0;
         this._pollSource = null;
         this._transportGeneration = 0;
         this._lastFrameCounter = 0;
@@ -203,14 +209,10 @@ export default class ScreenshaverExtension extends Extension {
         if (!GLib.file_test(`/proc/${marker.pid}`, GLib.FileTest.EXISTS))
             return null;
 
-        // Runtime ownership and frame-transport readiness are intentionally
-        // separate.  The marker proves that a live Screenshaver process owns
-        // this lock session.  The control record is presentation state and may
-        // be absent briefly while the producer initializes or atomically
-        // replaces it; that must not invalidate the runtime handshake or tear
-        // down the GNOME lock actor.  _refreshFrame() independently validates
-        // the control record and requires its session ID to match this marker
-        // before displaying any frame.
+        // Runtime ownership and presentation readiness are intentionally
+        // separate. The marker proves that a live Screenshaver process owns
+        // this lock session. During the Clutter.ShaderEffect diagnostic, the
+        // external frame-transport control record is deliberately ignored.
         return marker;
     }
 
@@ -288,152 +290,131 @@ export default class ScreenshaverExtension extends Extension {
             return;
         }
 
-        // The final preferred image size is replaced with the dimensions from
-        // the file-transport control record as soon as the producer mapping is opened.
-        this._imageContent = St.ImageContent.new_with_preferred_size(640, 360);
-
+        // GNOME-only diagnostic: paint a simple solid actor, then let
+        // Clutter.ShaderEffect/Cogl replace its fragment output.  No
+        // Screenshaver shader source or shared Rust rendering code is involved
+        // in this experiment.
         this._lockActor = new St.Widget({
             reactive: false,
             can_focus: false,
-            content: this._imageContent,
+            style: 'background-color: black;',
         });
 
         this._lockActor.set_position(0, 0);
         this._lockActor.set_size(dialog.width, dialog.height);
 
+        try {
+            const snippet = new Cogl.Snippet(
+                Cogl.SnippetHook.FRAGMENT,
+                'uniform float u_time;',
+                null
+            );
+
+            snippet.set_replace(`
+                vec2 uv = cogl_tex_coord0_in.st;
+                float moving = fract(uv.x * 6.0 + u_time * 0.20);
+                vec3 color;
+
+                if (moving < 0.1666667)
+                    color = vec3(1.0, 0.0, 0.0);
+                else if (moving < 0.3333333)
+                    color = vec3(1.0, 1.0, 0.0);
+                else if (moving < 0.5000000)
+                    color = vec3(0.0, 1.0, 0.0);
+                else if (moving < 0.6666667)
+                    color = vec3(0.0, 1.0, 1.0);
+                else if (moving < 0.8333333)
+                    color = vec3(0.0, 0.0, 1.0);
+                else
+                    color = vec3(1.0, 0.0, 1.0);
+
+                cogl_color_out = vec4(color, 1.0);
+            `);
+
+            this._shaderEffect = Clutter.ShaderEffect.new_with_snippet(snippet);
+            this._shaderEffect.set_uniform_float('u_time', 1, 1, [0.0]);
+            this._lockActor.add_effect_with_name(
+                'screenshaver-diagnostic-shader',
+                this._shaderEffect
+            );
+        } catch (error) {
+            console.log(
+                `[Screenshaver] ERROR: Unable to create Clutter.ShaderEffect diagnostic: ${error}`
+            );
+            this._lockActor.destroy();
+            this._lockActor = null;
+            this._shaderEffect = null;
+            return;
+        }
+
         backgroundGroup.add_child(this._lockActor);
 
-        console.log('[Screenshaver] File-transport lock actor added above GNOME lock background');
+        console.log(
+            '[Screenshaver] Clutter.ShaderEffect diagnostic actor added above GNOME lock background'
+        );
 
-
-        // Observe Mutter PowerSaveMode before the one-shot ScreenShield wake so
-        // the later, source-proven 15-second NORMAL -> BLANK transition can be
-        // identified and corrected exactly once for this lock session.
+        // Preserve the already-proven GNOME lock/power-management handling.
         this._startPowerSaveRecovery();
 
-        // GNOME retains its native lock/authentication UI above this actor.
-        // Do not manipulate Mutter PowerSaveMode directly. Once a real shader
-        // frame is available and ScreenShield reports that the secure lock is
-        // both locked and active, request GNOME's own one-shot wake transition.
-        this._refreshFrame();
+        this._shaderStartedUs = GLib.get_monotonic_time();
+        this._shaderTicks = 0;
 
-        this._pollSource = GLib.timeout_add(
+        this._shaderTickSource = GLib.timeout_add(
             GLib.PRIORITY_DEFAULT,
-            POLL_INTERVAL_MS,
+            SHADER_TICK_INTERVAL_MS,
             () => {
-                if (!this._lockActor) {
-                    this._pollSource = null;
+                if (!this._lockActor || !this._shaderEffect) {
+                    this._shaderTickSource = null;
                     return GLib.SOURCE_REMOVE;
                 }
 
-                this._refreshFrame();
+                const elapsedSeconds =
+                    (GLib.get_monotonic_time() - this._shaderStartedUs) / 1000000.0;
+
+                try {
+                    this._shaderEffect.set_uniform_float(
+                        'u_time',
+                        1,
+                        1,
+                        [elapsedSeconds]
+                    );
+                    this._shaderEffect.queue_repaint();
+                    this._lockActor.queue_redraw();
+                } catch (error) {
+                    console.log(
+                        `[Screenshaver] Clutter.ShaderEffect animation update failed: ${error}`
+                    );
+                    this._shaderTickSource = null;
+                    return GLib.SOURCE_REMOVE;
+                }
+
+                this._shaderTicks++;
+
+                // Keep the established ScreenShield wake behavior, but gate it
+                // on successful shader-effect animation ticks rather than on
+                // receipt of external RGBA frames.
+                this._maybeWakeScreenShieldForShader();
+
+                if (this._shaderTicks === 1) {
+                    console.log(
+                        '[Screenshaver] First Clutter.ShaderEffect diagnostic frame requested'
+                    );
+                } else if (this._shaderTicks % 300 === 0) {
+                    console.log(
+                        `[Screenshaver] Clutter.ShaderEffect diagnostic ticks: ${this._shaderTicks}`
+                    );
+                }
+
                 return GLib.SOURCE_CONTINUE;
             }
         );
     }
 
+    // Retained only for the current diagnostic branch.  The Rust producer may
+    // continue publishing its known-good external frames, but this extension
+    // deliberately does not consume them while Clutter.ShaderEffect is under
+    // test.  This isolates GNOME-native shader execution from transport issues.
     _refreshFrame() {
-        if (!this._imageContent || !this._lockActor)
-            return;
-
-        const control = this._readControlRecord(true);
-        if (!control)
-            return;
-
-        if (!this._activeSessionId || control.sessionId !== this._activeSessionId) {
-            if (!this._transportErrorLogged) {
-                console.log('[Screenshaver] File transport session identity mismatch');
-                this._transportErrorLogged = true;
-            }
-            return;
-        }
-
-        this._transportErrorLogged = false;
-        this._refreshCalls++;
-
-        if (control.frameCounter === 0 ||
-            control.frameCounter === this._lastFrameCounter) {
-            return;
-        }
-
-        this._readFrameSynchronously(control);
-    }
-
-    _readFrameSynchronously(control) {
-        if (!this._lockActor || !this._imageContent)
-            return;
-
-        const framePath = GLib.build_filenamev([
-            GLib.get_user_runtime_dir(),
-            `${FRAME_FILENAME_PREFIX}${control.frameCounter.toString().padStart(10, '0')}${FRAME_FILENAME_SUFFIX}`,
-        ]);
-
-        this._uploadAttempts++;
-
-        try {
-            // Diagnostic transport path: the producer publishes immutable frames
-            // into /run/user/$UID before updating the control record. Read the
-            // already-complete tmpfs file synchronously so no per-frame
-            // GAsyncReadyCallback, Gio.Cancellable, or completion closure can
-            // arrive while GJS is in garbage collection/sweeping.
-            const file = Gio.File.new_for_path(framePath);
-            const [bytes] = file.load_bytes(null);
-            const data = bytes.get_data();
-
-            if (!data || data.length !== control.frameBytes) {
-                console.log(
-                    `[Screenshaver] GNOME frame ${control.frameCounter} has ` +
-                    `${data?.length ?? 0} bytes; expected ${control.frameBytes}`
-                );
-                return;
-            }
-
-            if (!this._lockActor || !this._imageContent)
-                return;
-
-            const coglContext = global.stage.context
-                .get_backend()
-                .get_cogl_context();
-
-            this._imageContent.set_bytes(
-                coglContext,
-                bytes,
-                Cogl.PixelFormat.RGBA_8888,
-                control.width,
-                control.height,
-                control.rowstride
-            );
-
-            this._lockActor.queue_redraw();
-            this._lastFrameCounter = control.frameCounter;
-            this._displayedFrames++;
-            this._uploadSuccesses++;
-
-            if (this._displayedFrames === 1) {
-                console.log(
-                    `[Screenshaver] First file-transport frame displayed: ` +
-                    `counter=${control.frameCounter}`
-                );
-
-                this._maybeWakeScreenShieldForShader();
-            } else {
-                // The first frame can arrive before ScreenShield becomes active.
-                // Re-check completed frames until GNOME's secure lock is ready,
-                // then perform the native wake exactly once.
-                this._maybeWakeScreenShieldForShader();
-
-                if (this._displayedFrames % 300 === 0) {
-                    console.log(
-                        `[Screenshaver] File-transport frames displayed: ${this._displayedFrames}`
-                    );
-                }
-            }
-        } catch (error) {
-            console.log(
-                `[Screenshaver] Unable to synchronously read GNOME frame ` +
-                `${control.frameCounter}: ${error}`
-            );
-        }
     }
 
     _readControlRecord(logErrors = true) {
@@ -497,7 +478,7 @@ export default class ScreenshaverExtension extends Extension {
     _maybeWakeScreenShieldForShader() {
         if (this._screenShieldWakeIssued ||
             !this._lockActor ||
-            this._displayedFrames === 0 ||
+            this._shaderTicks === 0 ||
             Main.sessionMode.currentMode !== 'unlock-dialog') {
             return;
         }
@@ -521,7 +502,7 @@ export default class ScreenshaverExtension extends Extension {
 
         this._screenShieldWakeIssued = true;
         console.log(
-            `[Screenshaver] Requesting one-shot native ScreenShield wake after shader frame ${this._lastFrameCounter}`
+            '[Screenshaver] Requesting one-shot native ScreenShield wake after Clutter.ShaderEffect activation'
         );
 
         // Arm before invoking _wakeUpScreen(): Mutter's 3 -> 0 notification can
@@ -807,18 +788,26 @@ export default class ScreenshaverExtension extends Extension {
         this._stopSessionValidation();
         this._stopPowerSaveRecovery();
 
+        if (this._shaderTickSource) {
+            GLib.source_remove(this._shaderTickSource);
+            this._shaderTickSource = null;
+        }
+
         if (this._pollSource) {
             GLib.source_remove(this._pollSource);
             this._pollSource = null;
         }
 
         if (this._lockActor) {
-            console.log('[Screenshaver] Removing file-transport lock actor');
+            console.log('[Screenshaver] Removing Clutter.ShaderEffect diagnostic lock actor');
             this._lockActor.destroy();
             this._lockActor = null;
         }
 
         this._imageContent = null;
+        this._shaderEffect = null;
+        this._shaderStartedUs = 0;
+        this._shaderTicks = 0;
         this._displayedFrames = 0;
         this._refreshCalls = 0;
         this._uploadAttempts = 0;
