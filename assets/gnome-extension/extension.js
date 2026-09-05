@@ -47,9 +47,6 @@ export default class ScreenshaverExtension extends Extension {
         this._lockActor = null;
         this._imageContent = null;
         this._pollSource = null;
-        this._frameReadInFlight = false;
-        this._pendingFrameCounter = 0;
-        this._frameReadCancellable = null;
         this._transportGeneration = 0;
         this._lastFrameCounter = 0;
         this._displayedFrames = 0;
@@ -394,16 +391,11 @@ export default class ScreenshaverExtension extends Extension {
             return;
         }
 
-        if (this._frameReadInFlight) {
-            this._pendingFrameCounter = control.frameCounter;
-            return;
-        }
-
-        this._startFrameRead(control);
+        this._readFrameSynchronously(control);
     }
 
-    _startFrameRead(control) {
-        if (!this._lockActor || this._frameReadInFlight)
+    _readFrameSynchronously(control) {
+        if (!this._lockActor || !this._imageContent)
             return;
 
         const framePath = GLib.build_filenamev([
@@ -411,98 +403,74 @@ export default class ScreenshaverExtension extends Extension {
             `${FRAME_FILENAME_PREFIX}${control.frameCounter.toString().padStart(10, '0')}${FRAME_FILENAME_SUFFIX}`,
         ]);
 
-        const file = Gio.File.new_for_path(framePath);
-        const generation = this._transportGeneration;
-        const cancellable = new Gio.Cancellable();
-        this._frameReadCancellable = cancellable;
-        this._frameReadInFlight = true;
         this._uploadAttempts++;
 
-        file.load_bytes_async(cancellable, (source, result) => {
-            if (generation !== this._transportGeneration)
+        try {
+            // Diagnostic transport path: the producer publishes immutable frames
+            // into /run/user/$UID before updating the control record. Read the
+            // already-complete tmpfs file synchronously so no per-frame
+            // GAsyncReadyCallback, Gio.Cancellable, or completion closure can
+            // arrive while GJS is in garbage collection/sweeping.
+            const file = Gio.File.new_for_path(framePath);
+            const [bytes] = file.load_bytes(null);
+            const data = bytes.get_data();
+
+            if (!data || data.length !== control.frameBytes) {
+                console.log(
+                    `[Screenshaver] GNOME frame ${control.frameCounter} has ` +
+                    `${data?.length ?? 0} bytes; expected ${control.frameBytes}`
+                );
+                return;
+            }
+
+            if (!this._lockActor || !this._imageContent)
                 return;
 
-            this._frameReadInFlight = false;
-            this._frameReadCancellable = null;
+            const coglContext = global.stage.context
+                .get_backend()
+                .get_cogl_context();
 
-            try {
-                const [bytes] = source.load_bytes_finish(result);
-                const data = bytes.get_data();
+            this._imageContent.set_bytes(
+                coglContext,
+                bytes,
+                Cogl.PixelFormat.RGBA_8888,
+                control.width,
+                control.height,
+                control.rowstride
+            );
 
-                if (!this._lockActor || !this._imageContent)
-                    return;
+            this._lockActor.queue_redraw();
+            this._queuedRedrawCount++;
+            this._lastFrameCounter = control.frameCounter;
+            this._displayedFrames++;
+            this._uploadSuccesses++;
+            this._lastUploadSuccessUs = GLib.get_monotonic_time();
 
-                if (!data || data.length !== control.frameBytes) {
+            if (this._displayedFrames === 1) {
+                console.log(
+                    `[Screenshaver] First file-transport frame displayed: ` +
+                    `counter=${control.frameCounter}`
+                );
+
+                this._maybeWakeScreenShieldForShader();
+            } else {
+                // The first frame can arrive before ScreenShield becomes active.
+                // Re-check completed frames until GNOME's secure lock is ready,
+                // then perform the native wake exactly once.
+                this._maybeWakeScreenShieldForShader();
+
+                if (this._displayedFrames % 300 === 0) {
                     console.log(
-                        `[Screenshaver] GNOME frame ${control.frameCounter} has ` +
-                        `${data?.length ?? 0} bytes; expected ${control.frameBytes}`
-                    );
-                } else {
-                    const coglContext = global.stage.context
-                        .get_backend()
-                        .get_cogl_context();
-
-                    this._imageContent.set_bytes(
-                        coglContext,
-                        bytes,
-                        Cogl.PixelFormat.RGBA_8888,
-                        control.width,
-                        control.height,
-                        control.rowstride
-                    );
-
-                    this._lockActor.queue_redraw();
-                    this._queuedRedrawCount++;
-                    this._lastFrameCounter = control.frameCounter;
-                    this._displayedFrames++;
-                    this._uploadSuccesses++;
-                    this._lastUploadSuccessUs = GLib.get_monotonic_time();
-
-                    if (this._displayedFrames === 1) {
-                        console.log(
-                            `[Screenshaver] First file-transport frame displayed: ` +
-                            `counter=${control.frameCounter}`
-                        );
-
-                        this._maybeWakeScreenShieldForShader();
-                    } else {
-                        // The first frame can arrive before ScreenShield becomes
-                        // active. Re-check on subsequent completed frames until
-                        // GNOME's secure lock state is ready, then wake exactly once.
-                        this._maybeWakeScreenShieldForShader();
-
-                        if (this._displayedFrames % 300 === 0) {
-                            console.log(
-                                `[Screenshaver] File-transport frames displayed: ${this._displayedFrames}`
-                            );
-                        }
-                    }
-
-                }
-            } catch (error) {
-                if (!cancellable.is_cancelled()) {
-                    console.log(
-                        `[Screenshaver] Unable to asynchronously read GNOME frame ` +
-                        `${control.frameCounter}: ${error}`
+                        `[Screenshaver] File-transport frames displayed: ${this._displayedFrames}`
                     );
                 }
             }
-
-            if (!this._lockActor || generation !== this._transportGeneration)
-                return;
-
-            // Backpressure: while one immutable frame was being read, remember
-            // only the newest counter. Intermediate frames are intentionally
-            // dropped so GNOME Shell never accumulates asynchronous reads.
-            const pending = this._pendingFrameCounter;
-            this._pendingFrameCounter = 0;
-
-            if (pending !== 0 && pending !== this._lastFrameCounter) {
-                const latest = this._readControlRecord(false);
-                if (latest && latest.frameCounter !== this._lastFrameCounter)
-                    this._startFrameRead(latest);
-            }
-        });
+        } catch (error) {
+            console.log(
+                `[Screenshaver] Unable to synchronously read GNOME frame ` +
+                `${control.frameCounter}: ${error}`
+            );
+        }
     }
 
     _readControlRecord(logErrors = true) {
@@ -1380,12 +1348,6 @@ export default class ScreenshaverExtension extends Extension {
         this._powerSaveFallbackQueryInFlight = false;
         this._activeSessionId = null;
         this._transportGeneration++;
-        this._pendingFrameCounter = 0;
-        this._frameReadInFlight = false;
-        if (this._frameReadCancellable) {
-            this._frameReadCancellable.cancel();
-            this._frameReadCancellable = null;
-        }
         this._lastFrameCounter = 0;
     }
 }
