@@ -15,6 +15,7 @@ const CONTROL_BYTES = 64;
 const CONTROL_SESSION_ID_BYTES = 16;
 const POLL_INTERVAL_MS = 33;
 const POWER_SAVE_FALLBACK_INTERVAL_MS = 1000;
+const POST_WAKE_POWER_SAVE_MIN_DELAY_MS = 10000;
 const POWER_SAVE_STARTUP_SAMPLE_INTERVAL_MS = 500;
 const POWER_SAVE_STARTUP_MAX_RESET_ATTEMPTS = 4;
 const POWER_SAVE_STARTUP_WINDOW_MS = 6000;
@@ -23,12 +24,6 @@ const RUNTIME_MARKER_VERSION = 1;
 const SESSION_VALIDATION_INTERVAL_MS = 1000;
 const STARTUP_DIAGNOSTIC_INTERVAL_MS = 200;
 const STARTUP_DIAGNOSTIC_WINDOW_MS = 20000;
-const FREEZE_DIAGNOSTIC_INTERVAL_MS = 2000;
-const FREEZE_DIAGNOSTIC_WINDOW_MS = 45000;
-const GNOME_SESSION_MANAGER_NAME = 'org.gnome.SessionManager';
-const GNOME_SESSION_MANAGER_PATH = '/org/gnome/SessionManager';
-const GNOME_SESSION_MANAGER_INTERFACE = 'org.gnome.SessionManager';
-const GNOME_SESSION_INHIBIT_IDLE = 8;
 
 const CONTROL_MAGIC_OFFSET = 0;
 const CONTROL_VERSION_OFFSET = 8;
@@ -54,6 +49,11 @@ export default class ScreenshaverExtension extends Extension {
         this._lastFrameCounter = 0;
         this._displayedFrames = 0;
         this._screenShieldWakeIssued = false;
+        this._postWakePowerSaveCorrectionArmed = false;
+        this._postWakeNormalObserved = false;
+        this._postWakeNormalObservedUs = 0;
+        this._postWakePowerSaveCorrectionIssued = false;
+        this._postWakePowerSaveCorrectionInFlight = false;
         this._refreshCalls = 0;
         this._uploadAttempts = 0;
         this._uploadSuccesses = 0;
@@ -76,11 +76,6 @@ export default class ScreenshaverExtension extends Extension {
         this._startupDiagnosticDeadlineUs = 0;
         this._startupDiagnosticLastState = '';
         this._startupDiagnosticLastLogUs = 0;
-        this._freezeDiagnosticSource = null;
-        this._freezeDiagnosticDeadlineUs = 0;
-        this._idleInhibitCookie = 0;
-        this._idleInhibitRequestInFlight = false;
-        this._idleInhibitGeneration = 0;
 
         this._sessionModeSignal = Main.sessionMode.connect(
             'updated',
@@ -333,9 +328,6 @@ export default class ScreenshaverExtension extends Extension {
         // Do not manipulate Mutter PowerSaveMode directly. Once a real shader
         // frame is available and ScreenShield reports that the secure lock is
         // both locked and active, request GNOME's own one-shot wake transition.
-        // PowerSave observation is read-only and is included only so the
-        // freeze diagnostic can correlate compositor/transport state.
-        this._startPowerSaveRecovery();
         this._refreshFrame();
 
         this._pollSource = GLib.timeout_add(
@@ -444,7 +436,6 @@ export default class ScreenshaverExtension extends Extension {
                         );
 
                         this._maybeWakeScreenShieldForShader();
-                        this._startFreezeDiagnostic();
                     } else {
                         // The first frame can arrive before ScreenShield becomes
                         // active. Re-check on subsequent completed frames until
@@ -655,77 +646,6 @@ export default class ScreenshaverExtension extends Extension {
         }
     }
 
-
-    _startFreezeDiagnostic() {
-        if (!this._lockActor || this._freezeDiagnosticSource)
-            return;
-
-        this._freezeDiagnosticDeadlineUs =
-            GLib.get_monotonic_time() + FREEZE_DIAGNOSTIC_WINDOW_MS * 1000;
-
-        console.log('[Screenshaver] Freeze diagnostic window opened (read-only)');
-        this._logFreezeDiagnosticHeartbeat();
-
-        this._freezeDiagnosticSource = GLib.timeout_add(
-            GLib.PRIORITY_DEFAULT,
-            FREEZE_DIAGNOSTIC_INTERVAL_MS,
-            () => {
-                if (!this._lockActor ||
-                    GLib.get_monotonic_time() >= this._freezeDiagnosticDeadlineUs) {
-                    this._freezeDiagnosticSource = null;
-                    console.log('[Screenshaver] Freeze diagnostic window closed');
-                    return GLib.SOURCE_REMOVE;
-                }
-
-                this._logFreezeDiagnosticHeartbeat();
-                return GLib.SOURCE_CONTINUE;
-            }
-        );
-    }
-
-    _stopFreezeDiagnostic() {
-        if (this._freezeDiagnosticSource) {
-            GLib.source_remove(this._freezeDiagnosticSource);
-            this._freezeDiagnosticSource = null;
-        }
-
-        this._freezeDiagnosticDeadlineUs = 0;
-        this._idleInhibitCookie = 0;
-        this._idleInhibitRequestInFlight = false;
-        this._idleInhibitGeneration = 0;
-    }
-
-    _logFreezeDiagnosticHeartbeat() {
-        if (!this._lockActor)
-            return;
-
-        try {
-            const control = this._readControlRecord(false);
-            const shield = Main.screenShield ?? null;
-            const actor = this._lockActor;
-
-            console.log(
-                '[Screenshaver] Freeze diagnostic: ' +
-                `producer=${control?.frameCounter ?? 'unavailable'} ` +
-                `uploaded=${this._lastFrameCounter} ` +
-                `displayed=${this._displayedFrames} ` +
-                `refresh=${this._refreshCalls} ` +
-                `reads=${this._uploadAttempts}/${this._uploadSuccesses} ` +
-                `readInFlight=${this._frameReadInFlight} ` +
-                `pending=${this._pendingFrameCounter} ` +
-                `power=${this._lastObservedPowerSaveMode ?? 'unknown'} ` +
-                `shieldActive=${shield?.active ?? 'unknown'} ` +
-                `shieldLocked=${shield?.locked ?? 'unknown'} ` +
-                `actorVisible=${actor.visible} ` +
-                `actorMapped=${actor.mapped} ` +
-                `actorPaintVisible=${actor.get_paint_visibility()} ` +
-                `actorOpacity=${actor.opacity}`
-            );
-        } catch (error) {
-            console.log(`[Screenshaver] Freeze diagnostic failed: ${error}`);
-        }
-    }
-
     _maybeWakeScreenShieldForShader() {
         if (this._screenShieldWakeIssued ||
             !this._lockActor ||
@@ -756,115 +676,28 @@ export default class ScreenshaverExtension extends Extension {
             `[Screenshaver] Requesting one-shot native ScreenShield wake after shader frame ${this._lastFrameCounter}`
         );
 
+        // Arm before invoking _wakeUpScreen(): Mutter's 3 -> 0 notification can
+        // arrive synchronously while GNOME handles the wake signal.  A failed
+        // wake immediately disarms the correction again.
+        this._postWakePowerSaveCorrectionArmed = true;
+        this._postWakeNormalObserved = false;
+        this._postWakeNormalObservedUs = 0;
+        this._postWakePowerSaveCorrectionIssued = false;
+
         try {
             screenShield._wakeUpScreen();
             console.log('[Screenshaver] One-shot native ScreenShield wake completed');
-            this._acquireIdleInhibitor();
+
+            if (this._lastObservedPowerSaveMode === 0 && !this._postWakeNormalObserved) {
+                this._postWakeNormalObserved = true;
+                this._postWakeNormalObservedUs = GLib.get_monotonic_time();
+                console.log('[Screenshaver] Post-wake PowerSave correction armed after NORMAL mode observed');
+            }
         } catch (error) {
+            this._postWakePowerSaveCorrectionArmed = false;
+            this._postWakeNormalObserved = false;
+            this._postWakeNormalObservedUs = 0;
             console.log(`[Screenshaver] One-shot native ScreenShield wake failed: ${error}`);
-        }
-    }
-
-
-    _acquireIdleInhibitor() {
-        if (!this._lockActor ||
-            this._idleInhibitCookie !== 0 ||
-            this._idleInhibitRequestInFlight) {
-            return;
-        }
-
-        this._idleInhibitRequestInFlight = true;
-        const generation = ++this._idleInhibitGeneration;
-
-        console.log('[Screenshaver] Requesting GNOME idle-only inhibitor for lock presentation');
-
-        try {
-            Gio.DBus.session.call(
-                GNOME_SESSION_MANAGER_NAME,
-                GNOME_SESSION_MANAGER_PATH,
-                GNOME_SESSION_MANAGER_INTERFACE,
-                'Inhibit',
-                new GLib.Variant('(susu)', [
-                    'screenshaver',
-                    0,
-                    'Keep Screenshaver lock presentation active',
-                    GNOME_SESSION_INHIBIT_IDLE,
-                ]),
-                new GLib.VariantType('(u)'),
-                Gio.DBusCallFlags.NONE,
-                -1,
-                null,
-                (connection, result) => {
-                    let cookie = 0;
-                    try {
-                        const reply = connection.call_finish(result);
-                        [cookie] = reply.deepUnpack();
-                    } catch (error) {
-                        if (generation === this._idleInhibitGeneration)
-                            this._idleInhibitRequestInFlight = false;
-                        console.log(`[Screenshaver] GNOME idle-only inhibitor request failed: ${error}`);
-                        return;
-                    }
-
-                    if (generation !== this._idleInhibitGeneration || !this._lockActor) {
-                        // The lock presentation ended while the asynchronous request
-                        // was in flight. Release the cookie immediately rather than
-                        // allowing an inhibitor to escape the lock session.
-                        this._releaseIdleInhibitorCookie(cookie);
-                        return;
-                    }
-
-                    this._idleInhibitRequestInFlight = false;
-                    this._idleInhibitCookie = cookie;
-                    console.log(`[Screenshaver] GNOME idle-only inhibitor acquired: cookie=${cookie}`);
-                }
-            );
-        } catch (error) {
-            if (generation === this._idleInhibitGeneration)
-                this._idleInhibitRequestInFlight = false;
-            console.log(`[Screenshaver] Unable to dispatch GNOME idle-only inhibitor request: ${error}`);
-        }
-    }
-
-    _releaseIdleInhibitor() {
-        this._idleInhibitGeneration++;
-        this._idleInhibitRequestInFlight = false;
-
-        const cookie = this._idleInhibitCookie;
-        this._idleInhibitCookie = 0;
-
-        if (cookie !== 0) {
-            console.log(`[Screenshaver] Releasing GNOME idle-only inhibitor: cookie=${cookie}`);
-            this._releaseIdleInhibitorCookie(cookie);
-        }
-    }
-
-    _releaseIdleInhibitorCookie(cookie) {
-        if (!cookie)
-            return;
-
-        try {
-            Gio.DBus.session.call(
-                GNOME_SESSION_MANAGER_NAME,
-                GNOME_SESSION_MANAGER_PATH,
-                GNOME_SESSION_MANAGER_INTERFACE,
-                'Uninhibit',
-                new GLib.Variant('(u)', [cookie]),
-                null,
-                Gio.DBusCallFlags.NONE,
-                -1,
-                null,
-                (connection, result) => {
-                    try {
-                        connection.call_finish(result);
-                        console.log(`[Screenshaver] GNOME idle-only inhibitor released: cookie=${cookie}`);
-                    } catch (error) {
-                        console.log(`[Screenshaver] GNOME idle-only inhibitor release failed for cookie=${cookie}: ${error}`);
-                    }
-                }
-            );
-        } catch (error) {
-            console.log(`[Screenshaver] Unable to dispatch GNOME idle-only inhibitor release for cookie=${cookie}: ${error}`);
         }
     }
 
@@ -1037,6 +870,93 @@ export default class ScreenshaverExtension extends Extension {
             );
             this._logStartupDiagnosticState('power-change', true);
         }
+
+        if (!this._postWakePowerSaveCorrectionArmed ||
+            this._postWakePowerSaveCorrectionIssued ||
+            Main.sessionMode.currentMode !== 'unlock-dialog' ||
+            !Main.screenShield?.locked ||
+            !Main.screenShield?.active) {
+            return;
+        }
+
+        // GNOME Settings Daemon temporarily returns the display to NORMAL for
+        // POWER_UP_TIME_ON_AC (15 seconds) after ScreenShield's WakeUpScreen.
+        // Only after that NORMAL state has actually been observed do we accept
+        // one subsequent NORMAL -> BLANK (PowerSaveMode 0 -> 3) transition as
+        // the known temporary-unidle expiry that freezes Screenshaver output.
+        if (value === 0) {
+            if (!this._postWakeNormalObserved) {
+                this._postWakeNormalObserved = true;
+                this._postWakeNormalObservedUs = GLib.get_monotonic_time();
+                console.log('[Screenshaver] Post-wake PowerSave correction armed after NORMAL mode observed');
+            }
+            return;
+        }
+
+        if (previousPowerSaveMode === 0 && value === 3 && this._postWakeNormalObserved) {
+            const elapsedUs = GLib.get_monotonic_time() - this._postWakeNormalObservedUs;
+            const minimumDelayUs = POST_WAKE_POWER_SAVE_MIN_DELAY_MS * 1000;
+
+            // Never interfere with GNOME's lock-establishment blanking.  The
+            // GSD transition we are targeting is the 15-second expiry of
+            // POWER_UP_TIME_ON_AC, so an earlier 0 -> 3 transition is observed
+            // and logged but deliberately left untouched.
+            if (elapsedUs < minimumDelayUs) {
+                console.log(
+                    `[Screenshaver] Ignoring early post-wake PowerSaveMode 0 -> 3 transition after ${Math.floor(elapsedUs / 1000)}ms`
+                );
+                return;
+            }
+
+            this._postWakePowerSaveCorrectionIssued = true;
+            this._postWakePowerSaveCorrectionArmed = false;
+            console.log(
+                `[Screenshaver] Correcting one post-wake PowerSaveMode 0 -> 3 transition after ${Math.floor(elapsedUs / 1000)}ms`
+            );
+            this._setPostWakePowerSaveModeNormal();
+        }
+    }
+
+    _setPostWakePowerSaveModeNormal() {
+        if (this._postWakePowerSaveCorrectionInFlight || !this._lockActor)
+            return;
+
+        this._postWakePowerSaveCorrectionInFlight = true;
+
+        try {
+            Gio.DBus.session.call(
+                'org.gnome.Mutter.DisplayConfig',
+                '/org/gnome/Mutter/DisplayConfig',
+                'org.freedesktop.DBus.Properties',
+                'Set',
+                new GLib.Variant(
+                    '(ssv)',
+                    [
+                        'org.gnome.Mutter.DisplayConfig',
+                        'PowerSaveMode',
+                        new GLib.Variant('i', 0),
+                    ]
+                ),
+                null,
+                Gio.DBusCallFlags.NONE,
+                2000,
+                null,
+                (connection, result) => {
+                    this._postWakePowerSaveCorrectionInFlight = false;
+
+                    try {
+                        connection.call_finish(result);
+                        console.log('[Screenshaver] One-shot post-wake PowerSaveMode correction completed');
+                    } catch (error) {
+                        if (this._lockActor)
+                            console.log(`[Screenshaver] One-shot post-wake PowerSaveMode correction failed: ${error}`);
+                    }
+                }
+            );
+        } catch (error) {
+            this._postWakePowerSaveCorrectionInFlight = false;
+            console.log(`[Screenshaver] Unable to dispatch one-shot post-wake PowerSaveMode correction: ${error}`);
+        }
     }
 
     _samplePowerSaveModeFallback() {
@@ -1143,10 +1063,8 @@ export default class ScreenshaverExtension extends Extension {
     }
 
     _removeLockActor() {
-        this._releaseIdleInhibitor();
         this._stopSessionValidation();
         this._stopStartupDiagnostic();
-        this._stopFreezeDiagnostic();
         this._stopPowerSaveRecovery();
 
         if (this._pollSource) {
@@ -1167,6 +1085,11 @@ export default class ScreenshaverExtension extends Extension {
         this._uploadSuccesses = 0;
         this._transportErrorLogged = false;
         this._lastObservedPowerSaveMode = null;
+        this._postWakePowerSaveCorrectionArmed = false;
+        this._postWakeNormalObserved = false;
+        this._postWakeNormalObservedUs = 0;
+        this._postWakePowerSaveCorrectionIssued = false;
+        this._postWakePowerSaveCorrectionInFlight = false;
         this._powerSaveResetInFlight = false;
         this._powerWakeCycleCount = 0;
         this._pendingPowerWakeCycle = 0;
