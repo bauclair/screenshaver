@@ -23,6 +23,8 @@ const RUNTIME_MARKER_VERSION = 1;
 const SESSION_VALIDATION_INTERVAL_MS = 1000;
 const STARTUP_DIAGNOSTIC_INTERVAL_MS = 200;
 const STARTUP_DIAGNOSTIC_WINDOW_MS = 20000;
+const FREEZE_DIAGNOSTIC_INTERVAL_MS = 2000;
+const FREEZE_DIAGNOSTIC_WINDOW_MS = 45000;
 
 const CONTROL_MAGIC_OFFSET = 0;
 const CONTROL_VERSION_OFFSET = 8;
@@ -70,6 +72,8 @@ export default class ScreenshaverExtension extends Extension {
         this._startupDiagnosticDeadlineUs = 0;
         this._startupDiagnosticLastState = '';
         this._startupDiagnosticLastLogUs = 0;
+        this._freezeDiagnosticSource = null;
+        this._freezeDiagnosticDeadlineUs = 0;
 
         this._sessionModeSignal = Main.sessionMode.connect(
             'updated',
@@ -322,6 +326,9 @@ export default class ScreenshaverExtension extends Extension {
         // Do not manipulate Mutter PowerSaveMode directly. Once a real shader
         // frame is available and ScreenShield reports that the secure lock is
         // both locked and active, request GNOME's own one-shot wake transition.
+        // PowerSave observation is read-only and is included only so the
+        // freeze diagnostic can correlate compositor/transport state.
+        this._startPowerSaveRecovery();
         this._refreshFrame();
 
         this._pollSource = GLib.timeout_add(
@@ -430,6 +437,7 @@ export default class ScreenshaverExtension extends Extension {
                         );
 
                         this._maybeWakeScreenShieldForShader();
+                        this._startFreezeDiagnostic();
                     } else {
                         // The first frame can arrive before ScreenShield becomes
                         // active. Re-check on subsequent completed frames until
@@ -637,6 +645,74 @@ export default class ScreenshaverExtension extends Extension {
             }
         } catch (error) {
             console.log(`[Screenshaver] Startup-state diagnostic failed: ${error}`);
+        }
+    }
+
+
+    _startFreezeDiagnostic() {
+        if (!this._lockActor || this._freezeDiagnosticSource)
+            return;
+
+        this._freezeDiagnosticDeadlineUs =
+            GLib.get_monotonic_time() + FREEZE_DIAGNOSTIC_WINDOW_MS * 1000;
+
+        console.log('[Screenshaver] Freeze diagnostic window opened (read-only)');
+        this._logFreezeDiagnosticHeartbeat();
+
+        this._freezeDiagnosticSource = GLib.timeout_add(
+            GLib.PRIORITY_DEFAULT,
+            FREEZE_DIAGNOSTIC_INTERVAL_MS,
+            () => {
+                if (!this._lockActor ||
+                    GLib.get_monotonic_time() >= this._freezeDiagnosticDeadlineUs) {
+                    this._freezeDiagnosticSource = null;
+                    console.log('[Screenshaver] Freeze diagnostic window closed');
+                    return GLib.SOURCE_REMOVE;
+                }
+
+                this._logFreezeDiagnosticHeartbeat();
+                return GLib.SOURCE_CONTINUE;
+            }
+        );
+    }
+
+    _stopFreezeDiagnostic() {
+        if (this._freezeDiagnosticSource) {
+            GLib.source_remove(this._freezeDiagnosticSource);
+            this._freezeDiagnosticSource = null;
+        }
+
+        this._freezeDiagnosticDeadlineUs = 0;
+    }
+
+    _logFreezeDiagnosticHeartbeat() {
+        if (!this._lockActor)
+            return;
+
+        try {
+            const control = this._readControlRecord(false);
+            const shield = Main.screenShield ?? null;
+            const actor = this._lockActor;
+
+            console.log(
+                '[Screenshaver] Freeze diagnostic: ' +
+                `producer=${control?.frameCounter ?? 'unavailable'} ` +
+                `uploaded=${this._lastFrameCounter} ` +
+                `displayed=${this._displayedFrames} ` +
+                `refresh=${this._refreshCalls} ` +
+                `reads=${this._uploadAttempts}/${this._uploadSuccesses} ` +
+                `readInFlight=${this._frameReadInFlight} ` +
+                `pending=${this._pendingFrameCounter} ` +
+                `power=${this._lastObservedPowerSaveMode ?? 'unknown'} ` +
+                `shieldActive=${shield?.active ?? 'unknown'} ` +
+                `shieldLocked=${shield?.locked ?? 'unknown'} ` +
+                `actorVisible=${actor.visible} ` +
+                `actorMapped=${actor.mapped} ` +
+                `actorPaintVisible=${actor.get_paint_visibility()} ` +
+                `actorOpacity=${actor.opacity}`
+            );
+        } catch (error) {
+            console.log(`[Screenshaver] Freeze diagnostic failed: ${error}`);
         }
     }
 
@@ -955,6 +1031,7 @@ export default class ScreenshaverExtension extends Extension {
     _removeLockActor() {
         this._stopSessionValidation();
         this._stopStartupDiagnostic();
+        this._stopFreezeDiagnostic();
         this._stopPowerSaveRecovery();
 
         if (this._pollSource) {
