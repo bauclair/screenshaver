@@ -16,6 +16,9 @@ const CONTROL_SESSION_ID_BYTES = 16;
 const POLL_INTERVAL_MS = 33;
 const POWER_SAVE_FALLBACK_INTERVAL_MS = 1000;
 const POST_WAKE_POWER_SAVE_MIN_DELAY_MS = 10000;
+const POST_WAKE_OPACITY_PROBE_INTERVAL_MS = 1000;
+const POST_WAKE_OPACITY_PROBE_STEPS = 8;
+const POST_WAKE_OPACITY_PROBE_DIM_OPACITY = 80;
 const POWER_SAVE_STARTUP_SAMPLE_INTERVAL_MS = 500;
 const POWER_SAVE_STARTUP_MAX_RESET_ATTEMPTS = 4;
 const POWER_SAVE_STARTUP_WINDOW_MS = 6000;
@@ -54,6 +57,8 @@ export default class ScreenshaverExtension extends Extension {
         this._postWakeNormalObservedUs = 0;
         this._postWakePowerSaveCorrectionIssued = false;
         this._postWakePowerSaveCorrectionInFlight = false;
+        this._postWakeOpacityProbeSource = null;
+        this._postWakeOpacityProbeStep = 0;
         this._refreshCalls = 0;
         this._uploadAttempts = 0;
         this._uploadSuccesses = 0;
@@ -952,6 +957,7 @@ export default class ScreenshaverExtension extends Extension {
                     try {
                         connection.call_finish(result);
                         console.log('[Screenshaver] One-shot post-wake PowerSaveMode correction completed');
+                        this._startPostWakeOpacityProbe();
                     } catch (error) {
                         if (this._lockActor)
                             console.log(`[Screenshaver] One-shot post-wake PowerSaveMode correction failed: ${error}`);
@@ -962,6 +968,78 @@ export default class ScreenshaverExtension extends Extension {
             this._postWakePowerSaveCorrectionInFlight = false;
             console.log(`[Screenshaver] Unable to dispatch one-shot post-wake PowerSaveMode correction: ${error}`);
         }
+    }
+
+    _startPostWakeOpacityProbe() {
+        if (!this._lockActor || this._postWakeOpacityProbeSource)
+            return;
+
+        this._postWakeOpacityProbeStep = 0;
+        console.log(
+            '[Screenshaver] Starting post-wake compositor opacity probe: ' +
+            `${POST_WAKE_OPACITY_PROBE_STEPS} one-second steps, opacity 80/255`
+        );
+
+        const applyProbeStep = () => {
+            if (!this._lockActor) {
+                this._postWakeOpacityProbeSource = null;
+                return GLib.SOURCE_REMOVE;
+            }
+
+            if (this._postWakeOpacityProbeStep >= POST_WAKE_OPACITY_PROBE_STEPS) {
+                this._lockActor.opacity = 255;
+                this._lockActor.queue_redraw();
+                this._postWakeOpacityProbeSource = null;
+                console.log(
+                    '[Screenshaver] Post-wake compositor opacity probe completed; opacity restored to 255'
+                );
+                return GLib.SOURCE_REMOVE;
+            }
+
+            const opacity =
+                this._postWakeOpacityProbeStep % 2 === 0
+                    ? POST_WAKE_OPACITY_PROBE_DIM_OPACITY
+                    : 255;
+
+            this._lockActor.opacity = opacity;
+            this._lockActor.queue_redraw();
+            this._postWakeOpacityProbeStep++;
+
+            console.log(
+                `[Screenshaver] Post-wake compositor opacity probe step ` +
+                `${this._postWakeOpacityProbeStep}/${POST_WAKE_OPACITY_PROBE_STEPS}: ` +
+                `actor opacity=${opacity}, frame=${this._lastFrameCounter}, ` +
+                `displayed=${this._displayedFrames}`
+            );
+
+            return GLib.SOURCE_CONTINUE;
+        };
+
+        // Make the first visual change immediately after Mutter acknowledges
+        // PowerSaveMode=ON, then continue once per second. This changes only
+        // the Screenshaver presentation actor; GNOME's lock/authentication
+        // actors, idle clock, and input handling are untouched.
+        applyProbeStep();
+
+        this._postWakeOpacityProbeSource = GLib.timeout_add(
+            GLib.PRIORITY_DEFAULT,
+            POST_WAKE_OPACITY_PROBE_INTERVAL_MS,
+            applyProbeStep
+        );
+    }
+
+    _stopPostWakeOpacityProbe() {
+        if (this._postWakeOpacityProbeSource) {
+            GLib.source_remove(this._postWakeOpacityProbeSource);
+            this._postWakeOpacityProbeSource = null;
+        }
+
+        if (this._lockActor) {
+            this._lockActor.opacity = 255;
+            this._lockActor.queue_redraw();
+        }
+
+        this._postWakeOpacityProbeStep = 0;
     }
 
     _samplePowerSaveModeFallback() {
@@ -1071,6 +1149,7 @@ export default class ScreenshaverExtension extends Extension {
         this._stopSessionValidation();
         this._stopStartupDiagnostic();
         this._stopPowerSaveRecovery();
+        this._stopPostWakeOpacityProbe();
 
         if (this._pollSource) {
             GLib.source_remove(this._pollSource);
@@ -1095,6 +1174,7 @@ export default class ScreenshaverExtension extends Extension {
         this._postWakeNormalObservedUs = 0;
         this._postWakePowerSaveCorrectionIssued = false;
         this._postWakePowerSaveCorrectionInFlight = false;
+        this._postWakeOpacityProbeStep = 0;
         this._powerSaveResetInFlight = false;
         this._powerWakeCycleCount = 0;
         this._pendingPowerWakeCycle = 0;
