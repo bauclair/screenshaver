@@ -324,6 +324,11 @@ export default class ScreenshaverExtension extends Extension {
 
         console.log('[Screenshaver] File-transport lock actor added above GNOME lock background');
 
+        // Observe Mutter PowerSaveMode before the one-shot ScreenShield wake so
+        // the later, source-proven 15-second NORMAL -> BLANK transition can be
+        // identified and corrected exactly once for this lock session.
+        this._startPowerSaveRecovery();
+
         // GNOME retains its native lock/authentication UI above this actor.
         // Do not manipulate Mutter PowerSaveMode directly. Once a real shader
         // frame is available and ScreenShield reports that the secure lock is
