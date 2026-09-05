@@ -14,7 +14,7 @@ const ScreenshaverDiagnosticGLSLEffect = GObject.registerClass(
 class ScreenshaverDiagnosticGLSLEffect extends Shell.GLSLEffect {
     vfunc_build_pipeline() {
         this.add_glsl_snippet(
-            Shell.SnippetHook.FRAGMENT,
+            Cogl.SnippetHook.FRAGMENT,
             'uniform float u_time;',
             `
                 vec2 uv = cogl_tex_coord0_in.st;
