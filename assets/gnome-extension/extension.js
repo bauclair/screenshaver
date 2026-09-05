@@ -17,7 +17,6 @@ const POLL_INTERVAL_MS = 33;
 const POWER_SAVE_FALLBACK_INTERVAL_MS = 1000;
 const POST_WAKE_POWER_SAVE_MIN_DELAY_MS = 10000;
 const POST_WAKE_COMPOSITOR_KICK_DELAY_MS = 100;
-const SECOND_COMPOSITOR_KICK_DELAY_MS = 60000;
 const POST_WAKE_COMPOSITOR_KICK_OPACITY = 254;
 const POWER_SAVE_STARTUP_SAMPLE_INTERVAL_MS = 500;
 const POWER_SAVE_STARTUP_MAX_RESET_ATTEMPTS = 4;
@@ -57,7 +56,6 @@ export default class ScreenshaverExtension extends Extension {
         this._postWakePowerSaveCorrectionIssued = false;
         this._postWakePowerSaveCorrectionInFlight = false;
         this._postWakeCompositorKickSource = null;
-        this._secondCompositorKickSource = null;
         this._refreshCalls = 0;
         this._uploadAttempts = 0;
         this._uploadSuccesses = 0;
@@ -81,18 +79,14 @@ export default class ScreenshaverExtension extends Extension {
         this._startupDiagnosticLastState = '';
         this._startupDiagnosticLastLogUs = 0;
         this._stageAfterPaintSignalId = 0;
-        this._stagePresentedSignalId = 0;
         this._presentationDiagnosticSource = null;
         this._stageAfterPaintCount = 0;
-        this._stagePresentedCount = 0;
         this._queuedRedrawCount = 0;
         this._lastUploadSuccessUs = 0;
         this._lastAfterPaintUs = 0;
-        this._lastPresentedUs = 0;
         this._presentationDiagnosticLastUploads = 0;
         this._presentationDiagnosticLastQueuedRedraws = 0;
         this._presentationDiagnosticLastAfterPaint = 0;
-        this._presentationDiagnosticLastPresented = 0;
 
         this._sessionModeSignal = Main.sessionMode.connect(
             'updated',
@@ -358,8 +352,10 @@ export default class ScreenshaverExtension extends Extension {
             GLib.PRIORITY_DEFAULT,
             POLL_INTERVAL_MS,
             () => {
-                if (!this._lockActor)
+                if (!this._lockActor) {
+                    this._pollSource = null;
                     return GLib.SOURCE_REMOVE;
+                }
 
                 this._refreshFrame();
                 return GLib.SOURCE_CONTINUE;
@@ -540,18 +536,14 @@ export default class ScreenshaverExtension extends Extension {
         this._startupDiagnosticLastState = '';
         this._startupDiagnosticLastLogUs = 0;
         this._stageAfterPaintSignalId = 0;
-        this._stagePresentedSignalId = 0;
         this._presentationDiagnosticSource = null;
         this._stageAfterPaintCount = 0;
-        this._stagePresentedCount = 0;
         this._queuedRedrawCount = 0;
         this._lastUploadSuccessUs = 0;
         this._lastAfterPaintUs = 0;
-        this._lastPresentedUs = 0;
         this._presentationDiagnosticLastUploads = 0;
         this._presentationDiagnosticLastQueuedRedraws = 0;
         this._presentationDiagnosticLastAfterPaint = 0;
-        this._presentationDiagnosticLastPresented = 0;
         this._screenShieldWakeIssued = false;
 
         console.log('[Screenshaver] Startup-state diagnostic window opened (read-only)');
@@ -584,18 +576,14 @@ export default class ScreenshaverExtension extends Extension {
         this._startupDiagnosticLastState = '';
         this._startupDiagnosticLastLogUs = 0;
         this._stageAfterPaintSignalId = 0;
-        this._stagePresentedSignalId = 0;
         this._presentationDiagnosticSource = null;
         this._stageAfterPaintCount = 0;
-        this._stagePresentedCount = 0;
         this._queuedRedrawCount = 0;
         this._lastUploadSuccessUs = 0;
         this._lastAfterPaintUs = 0;
-        this._lastPresentedUs = 0;
         this._presentationDiagnosticLastUploads = 0;
         this._presentationDiagnosticLastQueuedRedraws = 0;
         this._presentationDiagnosticLastAfterPaint = 0;
-        this._presentationDiagnosticLastPresented = 0;
         this._screenShieldWakeIssued = false;
     }
 
@@ -729,15 +717,12 @@ export default class ScreenshaverExtension extends Extension {
         this._stopPresentationDiagnostics();
 
         this._stageAfterPaintCount = 0;
-        this._stagePresentedCount = 0;
         this._queuedRedrawCount = 0;
         this._lastUploadSuccessUs = 0;
         this._lastAfterPaintUs = 0;
-        this._lastPresentedUs = 0;
         this._presentationDiagnosticLastUploads = this._uploadSuccesses;
         this._presentationDiagnosticLastQueuedRedraws = 0;
         this._presentationDiagnosticLastAfterPaint = 0;
-        this._presentationDiagnosticLastPresented = 0;
 
         try {
             this._stageAfterPaintSignalId = global.stage.connect(
@@ -747,20 +732,11 @@ export default class ScreenshaverExtension extends Extension {
                     this._lastAfterPaintUs = GLib.get_monotonic_time();
                 }
             );
-
-            this._stagePresentedSignalId = global.stage.connect(
-                'presented',
-                () => {
-                    this._stagePresentedCount++;
-                    this._lastPresentedUs = GLib.get_monotonic_time();
-                }
-            );
         } catch (error) {
             console.log(
-                `[Screenshaver] Unable to attach stage presentation diagnostics: ${error}`
+                `[Screenshaver] Unable to attach stage after-paint diagnostic: ${error}`
             );
             this._stageAfterPaintSignalId = 0;
-            this._stagePresentedSignalId = 0;
         }
 
         this._presentationDiagnosticSource = GLib.timeout_add(
@@ -779,7 +755,7 @@ export default class ScreenshaverExtension extends Extension {
 
         console.log(
             '[Screenshaver] Stage presentation diagnostics enabled: ' +
-            'tracking shader uploads, queue_redraw calls, after-paint, and presented signals'
+            'tracking shader uploads, queue_redraw calls, and after-paint only'
         );
     }
 
@@ -796,14 +772,6 @@ export default class ScreenshaverExtension extends Extension {
             }
             this._stageAfterPaintSignalId = 0;
         }
-
-        if (this._stagePresentedSignalId) {
-            try {
-                global.stage.disconnect(this._stagePresentedSignalId);
-            } catch (_) {
-            }
-            this._stagePresentedSignalId = 0;
-        }
     }
 
     _diagnosticAgeMs(timestampUs, nowUs) {
@@ -818,24 +786,18 @@ export default class ScreenshaverExtension extends Extension {
         const uploadDelta = this._uploadSuccesses - this._presentationDiagnosticLastUploads;
         const redrawDelta = this._queuedRedrawCount - this._presentationDiagnosticLastQueuedRedraws;
         const afterPaintDelta = this._stageAfterPaintCount - this._presentationDiagnosticLastAfterPaint;
-        const presentedDelta = this._stagePresentedCount - this._presentationDiagnosticLastPresented;
 
         const uploadAgeMs = this._diagnosticAgeMs(this._lastUploadSuccessUs, nowUs);
         const afterPaintAgeMs = this._diagnosticAgeMs(this._lastAfterPaintUs, nowUs);
-        const presentedAgeMs = this._diagnosticAgeMs(this._lastPresentedUs, nowUs);
 
         const uploadIsCurrent =
             uploadAgeMs >= 0 && uploadAgeMs <= PRESENTATION_STALL_THRESHOLD_MS;
         const stagePaintIsStale =
             afterPaintAgeMs < 0 || afterPaintAgeMs > PRESENTATION_STALL_THRESHOLD_MS;
-        const stagePresentIsStale =
-            presentedAgeMs < 0 || presentedAgeMs > PRESENTATION_STALL_THRESHOLD_MS;
 
         let state = 'healthy';
         if (uploadIsCurrent && stagePaintIsStale)
             state = 'STALL-SUSPECT: uploads continue but stage after-paint is stale';
-        else if (uploadIsCurrent && stagePresentIsStale)
-            state = 'STALL-SUSPECT: uploads/paint continue but stage presented is stale';
 
         console.log(
             `[Screenshaver] Presentation heartbeat: ` +
@@ -844,8 +806,7 @@ export default class ScreenshaverExtension extends Extension {
             `uploads=+${uploadDelta}/${this._uploadSuccesses} ` +
             `redraws=+${redrawDelta}/${this._queuedRedrawCount} ` +
             `afterPaint=+${afterPaintDelta}/${this._stageAfterPaintCount} ` +
-            `presented=+${presentedDelta}/${this._stagePresentedCount} ` +
-            `ages_ms(upload=${uploadAgeMs},afterPaint=${afterPaintAgeMs},presented=${presentedAgeMs}) ` +
+            `ages_ms(upload=${uploadAgeMs},afterPaint=${afterPaintAgeMs}) ` +
             `power=${this._lastObservedPowerSaveMode ?? 'unknown'} ` +
             `actorVisible=${this._lockActor?.visible ?? false} ` +
             `actorMapped=${this._lockActor?.mapped ?? false} ` +
@@ -855,7 +816,6 @@ export default class ScreenshaverExtension extends Extension {
         this._presentationDiagnosticLastUploads = this._uploadSuccesses;
         this._presentationDiagnosticLastQueuedRedraws = this._queuedRedrawCount;
         this._presentationDiagnosticLastAfterPaint = this._stageAfterPaintCount;
-        this._presentationDiagnosticLastPresented = this._stagePresentedCount;
     }
 
     _startPowerSaveRecovery() {
@@ -869,8 +829,10 @@ export default class ScreenshaverExtension extends Extension {
                 GLib.PRIORITY_DEFAULT,
                 POWER_SAVE_FALLBACK_INTERVAL_MS,
                 () => {
-                    if (!this._lockActor)
+                    if (!this._lockActor) {
+                        this._powerSaveFallbackSource = null;
                         return GLib.SOURCE_REMOVE;
+                    }
 
                     this._samplePowerSaveModeFallback();
                     return GLib.SOURCE_CONTINUE;
@@ -1122,28 +1084,6 @@ export default class ScreenshaverExtension extends Extension {
             return;
 
         this._applyCompositorKick('post-wake');
-
-        // Diagnostic only: repeat the exact same one-unit compositor kick once,
-        // 60 seconds after the successful post-wake kick. This deliberately
-        // does not touch PowerSaveMode, ScreenShield wake state, or idle state.
-        if (!this._secondCompositorKickSource) {
-            this._secondCompositorKickSource = GLib.timeout_add(
-                GLib.PRIORITY_DEFAULT,
-                SECOND_COMPOSITOR_KICK_DELAY_MS,
-                () => {
-                    this._secondCompositorKickSource = null;
-
-                    if (!this._lockActor)
-                        return GLib.SOURCE_REMOVE;
-
-                    console.log(
-                        '[Screenshaver] Applying scheduled second compositor kick 60 seconds after post-wake kick'
-                    );
-                    this._applyCompositorKick('60-second diagnostic');
-                    return GLib.SOURCE_REMOVE;
-                }
-            );
-        }
     }
 
     _applyCompositorKick(label) {
@@ -1185,11 +1125,6 @@ export default class ScreenshaverExtension extends Extension {
         if (this._postWakeCompositorKickSource) {
             GLib.source_remove(this._postWakeCompositorKickSource);
             this._postWakeCompositorKickSource = null;
-        }
-
-        if (this._secondCompositorKickSource) {
-            GLib.source_remove(this._secondCompositorKickSource);
-            this._secondCompositorKickSource = null;
         }
 
         if (this._lockActor) {
@@ -1326,15 +1261,12 @@ export default class ScreenshaverExtension extends Extension {
         this._uploadSuccesses = 0;
         this._transportErrorLogged = false;
         this._stageAfterPaintCount = 0;
-        this._stagePresentedCount = 0;
         this._queuedRedrawCount = 0;
         this._lastUploadSuccessUs = 0;
         this._lastAfterPaintUs = 0;
-        this._lastPresentedUs = 0;
         this._presentationDiagnosticLastUploads = 0;
         this._presentationDiagnosticLastQueuedRedraws = 0;
         this._presentationDiagnosticLastAfterPaint = 0;
-        this._presentationDiagnosticLastPresented = 0;
         this._lastObservedPowerSaveMode = null;
         this._postWakePowerSaveCorrectionArmed = false;
         this._postWakeNormalObserved = false;
