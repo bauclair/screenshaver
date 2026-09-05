@@ -304,10 +304,11 @@ export default class ScreenshaverExtension extends Extension {
         this._lockActor.set_size(dialog.width, dialog.height);
 
         try {
-            const snippet = new Cogl.Snippet({
-                hook: Cogl.SnippetHook.FRAGMENT,
-                declarations: 'uniform float u_time;',
-            });
+            const snippet = Cogl.Snippet.new(
+                Cogl.SnippetHook.FRAGMENT,
+                'uniform float u_time;',
+                null
+            );
 
             snippet.set_replace(`
                 vec2 uv = cogl_tex_coord0_in.st;
