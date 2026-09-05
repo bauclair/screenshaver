@@ -17,6 +17,7 @@ const POLL_INTERVAL_MS = 33;
 const POWER_SAVE_FALLBACK_INTERVAL_MS = 1000;
 const POST_WAKE_POWER_SAVE_MIN_DELAY_MS = 10000;
 const POST_WAKE_COMPOSITOR_KICK_DELAY_MS = 100;
+const SECOND_COMPOSITOR_KICK_DELAY_MS = 60000;
 const POST_WAKE_COMPOSITOR_KICK_OPACITY = 254;
 const POWER_SAVE_STARTUP_SAMPLE_INTERVAL_MS = 500;
 const POWER_SAVE_STARTUP_MAX_RESET_ATTEMPTS = 4;
@@ -57,6 +58,7 @@ export default class ScreenshaverExtension extends Extension {
         this._postWakePowerSaveCorrectionIssued = false;
         this._postWakePowerSaveCorrectionInFlight = false;
         this._postWakeCompositorKickSource = null;
+        this._secondCompositorKickSource = null;
         this._refreshCalls = 0;
         this._uploadAttempts = 0;
         this._uploadSuccesses = 0;
@@ -972,15 +974,40 @@ export default class ScreenshaverExtension extends Extension {
         if (!this._lockActor || this._postWakeCompositorKickSource)
             return;
 
+        this._applyCompositorKick('post-wake');
+
+        // Diagnostic only: repeat the exact same one-unit compositor kick once,
+        // 60 seconds after the successful post-wake kick. This deliberately
+        // does not touch PowerSaveMode, ScreenShield wake state, or idle state.
+        if (!this._secondCompositorKickSource) {
+            this._secondCompositorKickSource = GLib.timeout_add(
+                GLib.PRIORITY_DEFAULT,
+                SECOND_COMPOSITOR_KICK_DELAY_MS,
+                () => {
+                    this._secondCompositorKickSource = null;
+
+                    if (!this._lockActor)
+                        return GLib.SOURCE_REMOVE;
+
+                    console.log(
+                        '[Screenshaver] Applying scheduled second compositor kick 60 seconds after post-wake kick'
+                    );
+                    this._applyCompositorKick('60-second diagnostic');
+                    return GLib.SOURCE_REMOVE;
+                }
+            );
+        }
+    }
+
+    _applyCompositorKick(label) {
+        if (!this._lockActor || this._postWakeCompositorKickSource)
+            return;
+
         console.log(
-            '[Screenshaver] Applying one-shot post-wake compositor kick: ' +
+            `[Screenshaver] Applying ${label} compositor kick: ` +
             `actor opacity 255 -> ${POST_WAKE_COMPOSITOR_KICK_OPACITY} -> 255`
         );
 
-        // Dirty the Screenshaver presentation actor immediately after Mutter
-        // acknowledges PowerSaveMode=ON. The one-unit opacity change is intended
-        // to force the first compositor/stage-view frame needed to complete the
-        // pending native modeset without visibly dimming the lock screen.
         this._lockActor.opacity = POST_WAKE_COMPOSITOR_KICK_OPACITY;
         this._lockActor.queue_redraw();
 
@@ -997,7 +1024,7 @@ export default class ScreenshaverExtension extends Extension {
                 this._lockActor.queue_redraw();
 
                 console.log(
-                    `[Screenshaver] One-shot post-wake compositor kick completed: ` +
+                    `[Screenshaver] ${label} compositor kick completed: ` +
                     `opacity restored to 255, frame=${this._lastFrameCounter}, ` +
                     `displayed=${this._displayedFrames}`
                 );
@@ -1011,6 +1038,11 @@ export default class ScreenshaverExtension extends Extension {
         if (this._postWakeCompositorKickSource) {
             GLib.source_remove(this._postWakeCompositorKickSource);
             this._postWakeCompositorKickSource = null;
+        }
+
+        if (this._secondCompositorKickSource) {
+            GLib.source_remove(this._secondCompositorKickSource);
+            this._secondCompositorKickSource = null;
         }
 
         if (this._lockActor) {
