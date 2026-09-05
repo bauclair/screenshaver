@@ -25,6 +25,10 @@ const STARTUP_DIAGNOSTIC_INTERVAL_MS = 200;
 const STARTUP_DIAGNOSTIC_WINDOW_MS = 20000;
 const FREEZE_DIAGNOSTIC_INTERVAL_MS = 2000;
 const FREEZE_DIAGNOSTIC_WINDOW_MS = 45000;
+const GNOME_SESSION_MANAGER_NAME = 'org.gnome.SessionManager';
+const GNOME_SESSION_MANAGER_PATH = '/org/gnome/SessionManager';
+const GNOME_SESSION_MANAGER_INTERFACE = 'org.gnome.SessionManager';
+const GNOME_SESSION_INHIBIT_IDLE = 8;
 
 const CONTROL_MAGIC_OFFSET = 0;
 const CONTROL_VERSION_OFFSET = 8;
@@ -74,6 +78,9 @@ export default class ScreenshaverExtension extends Extension {
         this._startupDiagnosticLastLogUs = 0;
         this._freezeDiagnosticSource = null;
         this._freezeDiagnosticDeadlineUs = 0;
+        this._idleInhibitCookie = 0;
+        this._idleInhibitRequestInFlight = false;
+        this._idleInhibitGeneration = 0;
 
         this._sessionModeSignal = Main.sessionMode.connect(
             'updated',
@@ -683,6 +690,9 @@ export default class ScreenshaverExtension extends Extension {
         }
 
         this._freezeDiagnosticDeadlineUs = 0;
+        this._idleInhibitCookie = 0;
+        this._idleInhibitRequestInFlight = false;
+        this._idleInhibitGeneration = 0;
     }
 
     _logFreezeDiagnosticHeartbeat() {
@@ -749,8 +759,112 @@ export default class ScreenshaverExtension extends Extension {
         try {
             screenShield._wakeUpScreen();
             console.log('[Screenshaver] One-shot native ScreenShield wake completed');
+            this._acquireIdleInhibitor();
         } catch (error) {
             console.log(`[Screenshaver] One-shot native ScreenShield wake failed: ${error}`);
+        }
+    }
+
+
+    _acquireIdleInhibitor() {
+        if (!this._lockActor ||
+            this._idleInhibitCookie !== 0 ||
+            this._idleInhibitRequestInFlight) {
+            return;
+        }
+
+        this._idleInhibitRequestInFlight = true;
+        const generation = ++this._idleInhibitGeneration;
+
+        console.log('[Screenshaver] Requesting GNOME idle-only inhibitor for lock presentation');
+
+        try {
+            Gio.DBus.session.call(
+                GNOME_SESSION_MANAGER_NAME,
+                GNOME_SESSION_MANAGER_PATH,
+                GNOME_SESSION_MANAGER_INTERFACE,
+                'Inhibit',
+                new GLib.Variant('(susu)', [
+                    'screenshaver',
+                    0,
+                    'Keep Screenshaver lock presentation active',
+                    GNOME_SESSION_INHIBIT_IDLE,
+                ]),
+                new GLib.VariantType('(u)'),
+                Gio.DBusCallFlags.NONE,
+                -1,
+                null,
+                (connection, result) => {
+                    let cookie = 0;
+                    try {
+                        const reply = connection.call_finish(result);
+                        [cookie] = reply.deepUnpack();
+                    } catch (error) {
+                        if (generation === this._idleInhibitGeneration)
+                            this._idleInhibitRequestInFlight = false;
+                        console.log(`[Screenshaver] GNOME idle-only inhibitor request failed: ${error}`);
+                        return;
+                    }
+
+                    if (generation !== this._idleInhibitGeneration || !this._lockActor) {
+                        // The lock presentation ended while the asynchronous request
+                        // was in flight. Release the cookie immediately rather than
+                        // allowing an inhibitor to escape the lock session.
+                        this._releaseIdleInhibitorCookie(cookie);
+                        return;
+                    }
+
+                    this._idleInhibitRequestInFlight = false;
+                    this._idleInhibitCookie = cookie;
+                    console.log(`[Screenshaver] GNOME idle-only inhibitor acquired: cookie=${cookie}`);
+                }
+            );
+        } catch (error) {
+            if (generation === this._idleInhibitGeneration)
+                this._idleInhibitRequestInFlight = false;
+            console.log(`[Screenshaver] Unable to dispatch GNOME idle-only inhibitor request: ${error}`);
+        }
+    }
+
+    _releaseIdleInhibitor() {
+        this._idleInhibitGeneration++;
+        this._idleInhibitRequestInFlight = false;
+
+        const cookie = this._idleInhibitCookie;
+        this._idleInhibitCookie = 0;
+
+        if (cookie !== 0) {
+            console.log(`[Screenshaver] Releasing GNOME idle-only inhibitor: cookie=${cookie}`);
+            this._releaseIdleInhibitorCookie(cookie);
+        }
+    }
+
+    _releaseIdleInhibitorCookie(cookie) {
+        if (!cookie)
+            return;
+
+        try {
+            Gio.DBus.session.call(
+                GNOME_SESSION_MANAGER_NAME,
+                GNOME_SESSION_MANAGER_PATH,
+                GNOME_SESSION_MANAGER_INTERFACE,
+                'Uninhibit',
+                new GLib.Variant('(u)', [cookie]),
+                null,
+                Gio.DBusCallFlags.NONE,
+                -1,
+                null,
+                (connection, result) => {
+                    try {
+                        connection.call_finish(result);
+                        console.log(`[Screenshaver] GNOME idle-only inhibitor released: cookie=${cookie}`);
+                    } catch (error) {
+                        console.log(`[Screenshaver] GNOME idle-only inhibitor release failed for cookie=${cookie}: ${error}`);
+                    }
+                }
+            );
+        } catch (error) {
+            console.log(`[Screenshaver] Unable to dispatch GNOME idle-only inhibitor release for cookie=${cookie}: ${error}`);
         }
     }
 
@@ -1029,6 +1143,7 @@ export default class ScreenshaverExtension extends Extension {
     }
 
     _removeLockActor() {
+        this._releaseIdleInhibitor();
         this._stopSessionValidation();
         this._stopStartupDiagnostic();
         this._stopFreezeDiagnostic();
