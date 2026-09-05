@@ -18,7 +18,6 @@ const POWER_SAVE_FALLBACK_INTERVAL_MS = 1000;
 const POST_WAKE_POWER_SAVE_MIN_DELAY_MS = 10000;
 const POST_WAKE_COMPOSITOR_KICK_DELAY_MS = 100;
 const SECOND_COMPOSITOR_KICK_DELAY_MS = 60000;
-const THIRD_COMPOSITOR_KICK_DELAY_MS = 20 * 60 * 1000;
 const POST_WAKE_COMPOSITOR_KICK_OPACITY = 254;
 const POWER_SAVE_STARTUP_SAMPLE_INTERVAL_MS = 500;
 const POWER_SAVE_STARTUP_MAX_RESET_ATTEMPTS = 4;
@@ -28,6 +27,8 @@ const RUNTIME_MARKER_VERSION = 1;
 const SESSION_VALIDATION_INTERVAL_MS = 1000;
 const STARTUP_DIAGNOSTIC_INTERVAL_MS = 200;
 const STARTUP_DIAGNOSTIC_WINDOW_MS = 20000;
+const PRESENTATION_DIAGNOSTIC_INTERVAL_MS = 5000;
+const PRESENTATION_STALL_THRESHOLD_MS = 2000;
 
 const CONTROL_MAGIC_OFFSET = 0;
 const CONTROL_VERSION_OFFSET = 8;
@@ -60,8 +61,6 @@ export default class ScreenshaverExtension extends Extension {
         this._postWakePowerSaveCorrectionInFlight = false;
         this._postWakeCompositorKickSource = null;
         this._secondCompositorKickSource = null;
-        this._thirdCompositorKickSource = null;
-        this._initialCompositorKickUs = 0;
         this._refreshCalls = 0;
         this._uploadAttempts = 0;
         this._uploadSuccesses = 0;
@@ -84,6 +83,19 @@ export default class ScreenshaverExtension extends Extension {
         this._startupDiagnosticDeadlineUs = 0;
         this._startupDiagnosticLastState = '';
         this._startupDiagnosticLastLogUs = 0;
+        this._stageAfterPaintSignalId = 0;
+        this._stagePresentedSignalId = 0;
+        this._presentationDiagnosticSource = null;
+        this._stageAfterPaintCount = 0;
+        this._stagePresentedCount = 0;
+        this._queuedRedrawCount = 0;
+        this._lastUploadSuccessUs = 0;
+        this._lastAfterPaintUs = 0;
+        this._lastPresentedUs = 0;
+        this._presentationDiagnosticLastUploads = 0;
+        this._presentationDiagnosticLastQueuedRedraws = 0;
+        this._presentationDiagnosticLastAfterPaint = 0;
+        this._presentationDiagnosticLastPresented = 0;
 
         this._sessionModeSignal = Main.sessionMode.connect(
             'updated',
@@ -332,6 +344,8 @@ export default class ScreenshaverExtension extends Extension {
 
         console.log('[Screenshaver] File-transport lock actor added above GNOME lock background');
 
+        this._startPresentationDiagnostics();
+
         // Observe Mutter PowerSaveMode before the one-shot ScreenShield wake so
         // the later, source-proven 15-second NORMAL -> BLANK transition can be
         // identified and corrected exactly once for this lock session.
@@ -438,9 +452,11 @@ export default class ScreenshaverExtension extends Extension {
                     );
 
                     this._lockActor.queue_redraw();
+                    this._queuedRedrawCount++;
                     this._lastFrameCounter = control.frameCounter;
                     this._displayedFrames++;
                     this._uploadSuccesses++;
+                    this._lastUploadSuccessUs = GLib.get_monotonic_time();
 
                     if (this._displayedFrames === 1) {
                         console.log(
@@ -555,6 +571,19 @@ export default class ScreenshaverExtension extends Extension {
             GLib.get_monotonic_time() + STARTUP_DIAGNOSTIC_WINDOW_MS * 1000;
         this._startupDiagnosticLastState = '';
         this._startupDiagnosticLastLogUs = 0;
+        this._stageAfterPaintSignalId = 0;
+        this._stagePresentedSignalId = 0;
+        this._presentationDiagnosticSource = null;
+        this._stageAfterPaintCount = 0;
+        this._stagePresentedCount = 0;
+        this._queuedRedrawCount = 0;
+        this._lastUploadSuccessUs = 0;
+        this._lastAfterPaintUs = 0;
+        this._lastPresentedUs = 0;
+        this._presentationDiagnosticLastUploads = 0;
+        this._presentationDiagnosticLastQueuedRedraws = 0;
+        this._presentationDiagnosticLastAfterPaint = 0;
+        this._presentationDiagnosticLastPresented = 0;
         this._screenShieldWakeIssued = false;
 
         console.log('[Screenshaver] Startup-state diagnostic window opened (read-only)');
@@ -586,6 +615,19 @@ export default class ScreenshaverExtension extends Extension {
         this._startupDiagnosticDeadlineUs = 0;
         this._startupDiagnosticLastState = '';
         this._startupDiagnosticLastLogUs = 0;
+        this._stageAfterPaintSignalId = 0;
+        this._stagePresentedSignalId = 0;
+        this._presentationDiagnosticSource = null;
+        this._stageAfterPaintCount = 0;
+        this._stagePresentedCount = 0;
+        this._queuedRedrawCount = 0;
+        this._lastUploadSuccessUs = 0;
+        this._lastAfterPaintUs = 0;
+        this._lastPresentedUs = 0;
+        this._presentationDiagnosticLastUploads = 0;
+        this._presentationDiagnosticLastQueuedRedraws = 0;
+        this._presentationDiagnosticLastAfterPaint = 0;
+        this._presentationDiagnosticLastPresented = 0;
         this._screenShieldWakeIssued = false;
     }
 
@@ -712,6 +754,140 @@ export default class ScreenshaverExtension extends Extension {
             this._postWakeNormalObservedUs = 0;
             console.log(`[Screenshaver] One-shot native ScreenShield wake failed: ${error}`);
         }
+    }
+
+
+    _startPresentationDiagnostics() {
+        this._stopPresentationDiagnostics();
+
+        this._stageAfterPaintCount = 0;
+        this._stagePresentedCount = 0;
+        this._queuedRedrawCount = 0;
+        this._lastUploadSuccessUs = 0;
+        this._lastAfterPaintUs = 0;
+        this._lastPresentedUs = 0;
+        this._presentationDiagnosticLastUploads = this._uploadSuccesses;
+        this._presentationDiagnosticLastQueuedRedraws = 0;
+        this._presentationDiagnosticLastAfterPaint = 0;
+        this._presentationDiagnosticLastPresented = 0;
+
+        try {
+            this._stageAfterPaintSignalId = global.stage.connect(
+                'after-paint',
+                () => {
+                    this._stageAfterPaintCount++;
+                    this._lastAfterPaintUs = GLib.get_monotonic_time();
+                }
+            );
+
+            this._stagePresentedSignalId = global.stage.connect(
+                'presented',
+                () => {
+                    this._stagePresentedCount++;
+                    this._lastPresentedUs = GLib.get_monotonic_time();
+                }
+            );
+        } catch (error) {
+            console.log(
+                `[Screenshaver] Unable to attach stage presentation diagnostics: ${error}`
+            );
+            this._stageAfterPaintSignalId = 0;
+            this._stagePresentedSignalId = 0;
+        }
+
+        this._presentationDiagnosticSource = GLib.timeout_add(
+            GLib.PRIORITY_DEFAULT,
+            PRESENTATION_DIAGNOSTIC_INTERVAL_MS,
+            () => {
+                if (!this._lockActor) {
+                    this._presentationDiagnosticSource = null;
+                    return GLib.SOURCE_REMOVE;
+                }
+
+                this._logPresentationDiagnosticHeartbeat();
+                return GLib.SOURCE_CONTINUE;
+            }
+        );
+
+        console.log(
+            '[Screenshaver] Stage presentation diagnostics enabled: ' +
+            'tracking shader uploads, queue_redraw calls, after-paint, and presented signals'
+        );
+    }
+
+    _stopPresentationDiagnostics() {
+        if (this._presentationDiagnosticSource) {
+            GLib.source_remove(this._presentationDiagnosticSource);
+            this._presentationDiagnosticSource = null;
+        }
+
+        if (this._stageAfterPaintSignalId) {
+            try {
+                global.stage.disconnect(this._stageAfterPaintSignalId);
+            } catch (_) {
+            }
+            this._stageAfterPaintSignalId = 0;
+        }
+
+        if (this._stagePresentedSignalId) {
+            try {
+                global.stage.disconnect(this._stagePresentedSignalId);
+            } catch (_) {
+            }
+            this._stagePresentedSignalId = 0;
+        }
+    }
+
+    _diagnosticAgeMs(timestampUs, nowUs) {
+        if (!timestampUs)
+            return -1;
+
+        return Math.max(0, Math.floor((nowUs - timestampUs) / 1000));
+    }
+
+    _logPresentationDiagnosticHeartbeat() {
+        const nowUs = GLib.get_monotonic_time();
+        const uploadDelta = this._uploadSuccesses - this._presentationDiagnosticLastUploads;
+        const redrawDelta = this._queuedRedrawCount - this._presentationDiagnosticLastQueuedRedraws;
+        const afterPaintDelta = this._stageAfterPaintCount - this._presentationDiagnosticLastAfterPaint;
+        const presentedDelta = this._stagePresentedCount - this._presentationDiagnosticLastPresented;
+
+        const uploadAgeMs = this._diagnosticAgeMs(this._lastUploadSuccessUs, nowUs);
+        const afterPaintAgeMs = this._diagnosticAgeMs(this._lastAfterPaintUs, nowUs);
+        const presentedAgeMs = this._diagnosticAgeMs(this._lastPresentedUs, nowUs);
+
+        const uploadIsCurrent =
+            uploadAgeMs >= 0 && uploadAgeMs <= PRESENTATION_STALL_THRESHOLD_MS;
+        const stagePaintIsStale =
+            afterPaintAgeMs < 0 || afterPaintAgeMs > PRESENTATION_STALL_THRESHOLD_MS;
+        const stagePresentIsStale =
+            presentedAgeMs < 0 || presentedAgeMs > PRESENTATION_STALL_THRESHOLD_MS;
+
+        let state = 'healthy';
+        if (uploadIsCurrent && stagePaintIsStale)
+            state = 'STALL-SUSPECT: uploads continue but stage after-paint is stale';
+        else if (uploadIsCurrent && stagePresentIsStale)
+            state = 'STALL-SUSPECT: uploads/paint continue but stage presented is stale';
+
+        console.log(
+            `[Screenshaver] Presentation heartbeat: ` +
+            `state=${state} ` +
+            `frame=${this._lastFrameCounter} ` +
+            `uploads=+${uploadDelta}/${this._uploadSuccesses} ` +
+            `redraws=+${redrawDelta}/${this._queuedRedrawCount} ` +
+            `afterPaint=+${afterPaintDelta}/${this._stageAfterPaintCount} ` +
+            `presented=+${presentedDelta}/${this._stagePresentedCount} ` +
+            `ages_ms(upload=${uploadAgeMs},afterPaint=${afterPaintAgeMs},presented=${presentedAgeMs}) ` +
+            `power=${this._lastObservedPowerSaveMode ?? 'unknown'} ` +
+            `actorVisible=${this._lockActor?.visible ?? false} ` +
+            `actorMapped=${this._lockActor?.mapped ?? false} ` +
+            `opacity=${this._lockActor?.opacity ?? -1}`
+        );
+
+        this._presentationDiagnosticLastUploads = this._uploadSuccesses;
+        this._presentationDiagnosticLastQueuedRedraws = this._queuedRedrawCount;
+        this._presentationDiagnosticLastAfterPaint = this._stageAfterPaintCount;
+        this._presentationDiagnosticLastPresented = this._stagePresentedCount;
     }
 
     _startPowerSaveRecovery() {
@@ -977,13 +1153,11 @@ export default class ScreenshaverExtension extends Extension {
         if (!this._lockActor || this._postWakeCompositorKickSource)
             return;
 
-        this._initialCompositorKickUs = GLib.get_monotonic_time();
         this._applyCompositorKick('post-wake');
 
-        // Diagnostic only: apply two sparse follow-up one-unit compositor kicks:
-        // one at +60 seconds and one at +20 minutes, both measured from the
-        // successful post-wake kick. These deliberately do not touch
-        // PowerSaveMode, ScreenShield wake state, or idle state.
+        // Diagnostic only: repeat the exact same one-unit compositor kick once,
+        // 60 seconds after the successful post-wake kick. This deliberately
+        // does not touch PowerSaveMode, ScreenShield wake state, or idle state.
         if (!this._secondCompositorKickSource) {
             this._secondCompositorKickSource = GLib.timeout_add(
                 GLib.PRIORITY_DEFAULT,
@@ -998,30 +1172,6 @@ export default class ScreenshaverExtension extends Extension {
                         '[Screenshaver] Applying scheduled second compositor kick 60 seconds after post-wake kick'
                     );
                     this._applyCompositorKick('60-second diagnostic');
-                    return GLib.SOURCE_REMOVE;
-                }
-            );
-        }
-
-        if (!this._thirdCompositorKickSource) {
-            this._thirdCompositorKickSource = GLib.timeout_add(
-                GLib.PRIORITY_DEFAULT,
-                THIRD_COMPOSITOR_KICK_DELAY_MS,
-                () => {
-                    this._thirdCompositorKickSource = null;
-
-                    if (!this._lockActor)
-                        return GLib.SOURCE_REMOVE;
-
-                    const elapsedSeconds = this._initialCompositorKickUs > 0
-                        ? Math.round((GLib.get_monotonic_time() - this._initialCompositorKickUs) / 1000000)
-                        : 0;
-
-                    console.log(
-                        `[Screenshaver] Applying scheduled third compositor kick at +${elapsedSeconds}s ` +
-                        '(target +1200s / 20 minutes)'
-                    );
-                    this._applyCompositorKick('20-minute diagnostic');
                     return GLib.SOURCE_REMOVE;
                 }
             );
@@ -1073,13 +1223,6 @@ export default class ScreenshaverExtension extends Extension {
             GLib.source_remove(this._secondCompositorKickSource);
             this._secondCompositorKickSource = null;
         }
-
-        if (this._thirdCompositorKickSource) {
-            GLib.source_remove(this._thirdCompositorKickSource);
-            this._thirdCompositorKickSource = null;
-        }
-
-        this._initialCompositorKickUs = 0;
 
         if (this._lockActor) {
             this._lockActor.opacity = 255;
@@ -1193,6 +1336,7 @@ export default class ScreenshaverExtension extends Extension {
     _removeLockActor() {
         this._stopSessionValidation();
         this._stopStartupDiagnostic();
+        this._stopPresentationDiagnostics();
         this._stopPowerSaveRecovery();
         this._stopPostWakeCompositorKick();
 
@@ -1213,6 +1357,16 @@ export default class ScreenshaverExtension extends Extension {
         this._uploadAttempts = 0;
         this._uploadSuccesses = 0;
         this._transportErrorLogged = false;
+        this._stageAfterPaintCount = 0;
+        this._stagePresentedCount = 0;
+        this._queuedRedrawCount = 0;
+        this._lastUploadSuccessUs = 0;
+        this._lastAfterPaintUs = 0;
+        this._lastPresentedUs = 0;
+        this._presentationDiagnosticLastUploads = 0;
+        this._presentationDiagnosticLastQueuedRedraws = 0;
+        this._presentationDiagnosticLastAfterPaint = 0;
+        this._presentationDiagnosticLastPresented = 0;
         this._lastObservedPowerSaveMode = null;
         this._postWakePowerSaveCorrectionArmed = false;
         this._postWakeNormalObserved = false;
