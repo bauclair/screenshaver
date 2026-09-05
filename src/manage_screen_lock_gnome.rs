@@ -154,6 +154,9 @@ pub fn run(
     let mut shutdown_deferred_logged =
         false;
 
+    let mut consecutive_query_errors: u64 =
+        0;
+
 
     loop {
         if !running.load(
@@ -170,10 +173,56 @@ pub fn run(
         }
 
 
-        if !get_active(
+        match get_active(
             &proxy
-        )? {
-            break;
+        ) {
+            Ok(true) => {
+                if consecutive_query_errors > 0 {
+                    crate::logger::information(
+                        logfile,
+                        &format!(
+                            "[LOCK] GNOME screen-lock state query recovered after {} consecutive error(s); lock remains active",
+                            consecutive_query_errors,
+                        ),
+                    );
+
+                    consecutive_query_errors =
+                        0;
+                }
+            }
+
+            Ok(false) => {
+                if consecutive_query_errors > 0 {
+                    crate::logger::information(
+                        logfile,
+                        &format!(
+                            "[LOCK] GNOME screen-lock state query recovered after {} consecutive error(s); GNOME now reports the lock released",
+                            consecutive_query_errors,
+                        ),
+                    );
+                }
+
+                break;
+            }
+
+            Err(error) => {
+                consecutive_query_errors =
+                    consecutive_query_errors
+                        .saturating_add(1);
+
+                if consecutive_query_errors == 1
+                    || consecutive_query_errors % 50 == 0
+                {
+                    crate::logger::warning(
+                        logfile,
+                        &format!(
+                            "[LOCK] GNOME screen-lock state query failed while lock was previously confirmed active; preserving secure lock presentation and retrying (consecutive_errors={}): {}",
+                            consecutive_query_errors,
+                            error,
+                        ),
+                    );
+                }
+            }
         }
 
 
