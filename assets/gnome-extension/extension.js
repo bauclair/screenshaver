@@ -2,10 +2,44 @@ import Clutter from 'gi://Clutter';
 import Cogl from 'gi://Cogl';
 import GLib from 'gi://GLib';
 import Gio from 'gi://Gio';
+import GObject from 'gi://GObject';
+import Shell from 'gi://Shell';
 import St from 'gi://St';
 
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+
+
+const ScreenshaverDiagnosticGLSLEffect = GObject.registerClass(
+class ScreenshaverDiagnosticGLSLEffect extends Shell.GLSLEffect {
+    vfunc_build_pipeline() {
+        this.add_glsl_snippet(
+            Shell.SnippetHook.FRAGMENT,
+            'uniform float u_time;',
+            `
+                vec2 uv = cogl_tex_coord0_in.st;
+                float moving = fract(uv.x * 6.0 + u_time * 0.20);
+                vec3 color;
+
+                if (moving < 0.1666667)
+                    color = vec3(1.0, 0.0, 0.0);
+                else if (moving < 0.3333333)
+                    color = vec3(1.0, 1.0, 0.0);
+                else if (moving < 0.5000000)
+                    color = vec3(0.0, 1.0, 0.0);
+                else if (moving < 0.6666667)
+                    color = vec3(0.0, 1.0, 1.0);
+                else if (moving < 0.8333333)
+                    color = vec3(0.0, 0.0, 1.0);
+                else
+                    color = vec3(1.0, 0.0, 1.0);
+
+                cogl_color_out = vec4(color, 1.0);
+            `,
+            true
+        );
+    }
+});
 
 const CONTROL_FILENAME = 'screenshaver-lock-control.bin';
 const FRAME_FILENAME_PREFIX = 'screenshaver-lock-frame-';
@@ -39,6 +73,7 @@ export default class ScreenshaverExtension extends Extension {
         this._lockActor = null;
         this._imageContent = null;
         this._shaderEffect = null;
+        this._shaderUniformTime = -1;
         this._shaderTickSource = null;
         this._shaderStartedUs = 0;
         this._shaderTicks = 0;
@@ -211,7 +246,7 @@ export default class ScreenshaverExtension extends Extension {
 
         // Runtime ownership and presentation readiness are intentionally
         // separate. The marker proves that a live Screenshaver process owns
-        // this lock session. During the Clutter.ShaderEffect diagnostic, the
+        // this lock session. During the Shell.GLSLEffect diagnostic, the
         // external frame-transport control record is deliberately ignored.
         return marker;
     }
@@ -291,7 +326,7 @@ export default class ScreenshaverExtension extends Extension {
         }
 
         // GNOME-only diagnostic: paint a simple solid actor, then let
-        // Clutter.ShaderEffect/Cogl replace its fragment output.  No
+        // Shell.GLSLEffect/Cogl replace its fragment output.  No
         // Screenshaver shader source or shared Rust rendering code is involved
         // in this experiment.
         this._lockActor = new St.Widget({
@@ -304,42 +339,20 @@ export default class ScreenshaverExtension extends Extension {
         this._lockActor.set_size(dialog.width, dialog.height);
 
         try {
-            const snippet = Cogl.Snippet.new(
-                Cogl.SnippetHook.FRAGMENT,
-                'uniform float u_time;',
-                null
+            this._shaderEffect = new ScreenshaverDiagnosticGLSLEffect();
+            this._shaderUniformTime = this._shaderEffect.get_uniform_location('u_time');
+            this._shaderEffect.set_uniform_float(
+                this._shaderUniformTime,
+                1,
+                [0.0]
             );
-
-            snippet.set_replace(`
-                vec2 uv = cogl_tex_coord0_in.st;
-                float moving = fract(uv.x * 6.0 + u_time * 0.20);
-                vec3 color;
-
-                if (moving < 0.1666667)
-                    color = vec3(1.0, 0.0, 0.0);
-                else if (moving < 0.3333333)
-                    color = vec3(1.0, 1.0, 0.0);
-                else if (moving < 0.5000000)
-                    color = vec3(0.0, 1.0, 0.0);
-                else if (moving < 0.6666667)
-                    color = vec3(0.0, 1.0, 1.0);
-                else if (moving < 0.8333333)
-                    color = vec3(0.0, 0.0, 1.0);
-                else
-                    color = vec3(1.0, 0.0, 1.0);
-
-                cogl_color_out = vec4(color, 1.0);
-            `);
-
-            this._shaderEffect = Clutter.ShaderEffect.new_with_snippet(snippet);
-            this._shaderEffect.set_uniform_float('u_time', 1, 1, [0.0]);
             this._lockActor.add_effect_with_name(
                 'screenshaver-diagnostic-shader',
                 this._shaderEffect
             );
         } catch (error) {
             console.log(
-                `[Screenshaver] ERROR: Unable to create Clutter.ShaderEffect diagnostic: ${error}`
+                `[Screenshaver] ERROR: Unable to create Shell.GLSLEffect diagnostic: ${error}`
             );
             this._lockActor.destroy();
             this._lockActor = null;
@@ -350,7 +363,7 @@ export default class ScreenshaverExtension extends Extension {
         backgroundGroup.add_child(this._lockActor);
 
         console.log(
-            '[Screenshaver] Clutter.ShaderEffect diagnostic actor added above GNOME lock background'
+            '[Screenshaver] Shell.GLSLEffect diagnostic actor added above GNOME lock background'
         );
 
         // Preserve the already-proven GNOME lock/power-management handling.
@@ -373,8 +386,7 @@ export default class ScreenshaverExtension extends Extension {
 
                 try {
                     this._shaderEffect.set_uniform_float(
-                        'u_time',
-                        1,
+                        this._shaderUniformTime,
                         1,
                         [elapsedSeconds]
                     );
@@ -382,7 +394,7 @@ export default class ScreenshaverExtension extends Extension {
                     this._lockActor.queue_redraw();
                 } catch (error) {
                     console.log(
-                        `[Screenshaver] Clutter.ShaderEffect animation update failed: ${error}`
+                        `[Screenshaver] Shell.GLSLEffect animation update failed: ${error}`
                     );
                     this._shaderTickSource = null;
                     return GLib.SOURCE_REMOVE;
@@ -397,11 +409,11 @@ export default class ScreenshaverExtension extends Extension {
 
                 if (this._shaderTicks === 1) {
                     console.log(
-                        '[Screenshaver] First Clutter.ShaderEffect diagnostic frame requested'
+                        '[Screenshaver] First Shell.GLSLEffect diagnostic frame requested'
                     );
                 } else if (this._shaderTicks % 300 === 0) {
                     console.log(
-                        `[Screenshaver] Clutter.ShaderEffect diagnostic ticks: ${this._shaderTicks}`
+                        `[Screenshaver] Shell.GLSLEffect diagnostic ticks: ${this._shaderTicks}`
                     );
                 }
 
@@ -412,7 +424,7 @@ export default class ScreenshaverExtension extends Extension {
 
     // Retained only for the current diagnostic branch.  The Rust producer may
     // continue publishing its known-good external frames, but this extension
-    // deliberately does not consume them while Clutter.ShaderEffect is under
+    // deliberately does not consume them while Shell.GLSLEffect is under
     // test.  This isolates GNOME-native shader execution from transport issues.
     _refreshFrame() {
     }
@@ -502,7 +514,7 @@ export default class ScreenshaverExtension extends Extension {
 
         this._screenShieldWakeIssued = true;
         console.log(
-            '[Screenshaver] Requesting one-shot native ScreenShield wake after Clutter.ShaderEffect activation'
+            '[Screenshaver] Requesting one-shot native ScreenShield wake after Shell.GLSLEffect activation'
         );
 
         // Arm before invoking _wakeUpScreen(): Mutter's 3 -> 0 notification can
@@ -799,13 +811,14 @@ export default class ScreenshaverExtension extends Extension {
         }
 
         if (this._lockActor) {
-            console.log('[Screenshaver] Removing Clutter.ShaderEffect diagnostic lock actor');
+            console.log('[Screenshaver] Removing Shell.GLSLEffect diagnostic lock actor');
             this._lockActor.destroy();
             this._lockActor = null;
         }
 
         this._imageContent = null;
         this._shaderEffect = null;
+        this._shaderUniformTime = -1;
         this._shaderStartedUs = 0;
         this._shaderTicks = 0;
         this._displayedFrames = 0;
