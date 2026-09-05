@@ -17,7 +17,7 @@ const POLL_INTERVAL_MS = 33;
 const POWER_SAVE_FALLBACK_INTERVAL_MS = 1000;
 const POST_WAKE_POWER_SAVE_MIN_DELAY_MS = 10000;
 const POST_WAKE_COMPOSITOR_KICK_DELAY_MS = 100;
-const SECOND_COMPOSITOR_KICK_DELAY_MS = 60000;
+const PERIODIC_COMPOSITOR_KICK_INTERVAL_MS = 300000;
 const POST_WAKE_COMPOSITOR_KICK_OPACITY = 254;
 const POWER_SAVE_STARTUP_SAMPLE_INTERVAL_MS = 500;
 const POWER_SAVE_STARTUP_MAX_RESET_ATTEMPTS = 4;
@@ -58,7 +58,8 @@ export default class ScreenshaverExtension extends Extension {
         this._postWakePowerSaveCorrectionIssued = false;
         this._postWakePowerSaveCorrectionInFlight = false;
         this._postWakeCompositorKickSource = null;
-        this._secondCompositorKickSource = null;
+        this._periodicCompositorKickSource = null;
+        this._compositorKickEpochUs = 0;
         this._refreshCalls = 0;
         this._uploadAttempts = 0;
         this._uploadSuccesses = 0;
@@ -976,24 +977,32 @@ export default class ScreenshaverExtension extends Extension {
 
         this._applyCompositorKick('post-wake');
 
-        // Diagnostic only: repeat the exact same one-unit compositor kick once,
-        // 60 seconds after the successful post-wake kick. This deliberately
-        // does not touch PowerSaveMode, ScreenShield wake state, or idle state.
-        if (!this._secondCompositorKickSource) {
-            this._secondCompositorKickSource = GLib.timeout_add(
-                GLib.PRIORITY_DEFAULT,
-                SECOND_COMPOSITOR_KICK_DELAY_MS,
-                () => {
-                    this._secondCompositorKickSource = null;
+        this._compositorKickEpochUs = GLib.get_monotonic_time();
 
-                    if (!this._lockActor)
+        // Diagnostic only: repeat the exact same one-unit compositor kick every
+        // five minutes while the Screenshaver lock actor remains active. This
+        // deliberately does not touch PowerSaveMode, ScreenShield wake state,
+        // GNOME idle state, or input state.
+        if (!this._periodicCompositorKickSource) {
+            this._periodicCompositorKickSource = GLib.timeout_add(
+                GLib.PRIORITY_DEFAULT,
+                PERIODIC_COMPOSITOR_KICK_INTERVAL_MS,
+                () => {
+                    if (!this._lockActor) {
+                        this._periodicCompositorKickSource = null;
                         return GLib.SOURCE_REMOVE;
+                    }
+
+                    const elapsedSeconds = Math.round(
+                        (GLib.get_monotonic_time() - this._compositorKickEpochUs) / 1000000
+                    );
 
                     console.log(
-                        '[Screenshaver] Applying scheduled second compositor kick 60 seconds after post-wake kick'
+                        `[Screenshaver] Applying periodic compositor kick at +${elapsedSeconds}s ` +
+                        `from initial post-wake kick`
                     );
-                    this._applyCompositorKick('60-second diagnostic');
-                    return GLib.SOURCE_REMOVE;
+                    this._applyCompositorKick(`periodic +${elapsedSeconds}s`);
+                    return GLib.SOURCE_CONTINUE;
                 }
             );
         }
@@ -1040,10 +1049,12 @@ export default class ScreenshaverExtension extends Extension {
             this._postWakeCompositorKickSource = null;
         }
 
-        if (this._secondCompositorKickSource) {
-            GLib.source_remove(this._secondCompositorKickSource);
-            this._secondCompositorKickSource = null;
+        if (this._periodicCompositorKickSource) {
+            GLib.source_remove(this._periodicCompositorKickSource);
+            this._periodicCompositorKickSource = null;
         }
+
+        this._compositorKickEpochUs = 0;
 
         if (this._lockActor) {
             this._lockActor.opacity = 255;
