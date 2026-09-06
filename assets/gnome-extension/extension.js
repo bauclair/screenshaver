@@ -96,6 +96,12 @@ export default class ScreenshaverExtension extends Extension {
         this._powerSaveFallbackSource = null;
         this._powerSaveFallbackQueryInFlight = false;
 
+        // Test #13: count actual Clutter stage paint/presentation events.
+        this._stageAfterPaintSignalId = 0;
+        this._stagePresentedSignalId = 0;
+        this._stageAfterPaintCount = 0;
+        this._stagePresentedCount = 0;
+
         this._sessionModeSignal = Main.sessionMode.connect(
             'updated',
             () => this._onSessionModeChanged()
@@ -351,7 +357,7 @@ export default class ScreenshaverExtension extends Extension {
                 );
 
             console.log(
-                `[Screenshaver] Test #12 loaded GLSL source: ${shaderPath} (${shaderBytes.length} bytes)`
+                `[Screenshaver] Test #13 loaded GLSL source: ${shaderPath} (${shaderBytes.length} bytes)`
             );
 
             this._shaderEffect = new ScreenshaverTest12GLSLEffect();
@@ -378,8 +384,13 @@ export default class ScreenshaverExtension extends Extension {
         backgroundGroup.add_child(this._lockActor);
 
         console.log(
-            '[Screenshaver] Test #12 shader actor added above GNOME lock background'
+            '[Screenshaver] Test #13 shader actor added above GNOME lock background'
         );
+
+        // Test #13 instrumentation only: observe the compositor stage.
+        // Clutter::after-paint occurs after the stage has been painted;
+        // Clutter::presented occurs when that stage has been presented.
+        this._startStageTimingInstrumentation();
 
         // Preserve the already-proven GNOME lock/power-management handling.
         this._startPowerSaveRecovery();
@@ -387,7 +398,7 @@ export default class ScreenshaverExtension extends Extension {
         this._shaderStartedUs = GLib.get_monotonic_time();
         this._shaderTicks = 0;
 
-        // Test #12 instrumentation only: measure how often the 8 ms GLib
+        // Test #13 instrumentation: measure how often the 8 ms GLib
         // timeout is actually serviced by GNOME Shell's main loop.
         this._shaderMetricsWindowStartedUs = this._shaderStartedUs;
         this._shaderMetricsWindowTicks = 0;
@@ -396,7 +407,7 @@ export default class ScreenshaverExtension extends Extension {
         this._shaderMetricsMaxDeltaUs = 0;
 
         console.log(
-            `[Screenshaver] Test #12 requested shader tick interval: ${SHADER_TICK_INTERVAL_MS}ms (~${Math.round(1000 / SHADER_TICK_INTERVAL_MS)} Hz maximum)`
+            `[Screenshaver] Test #13 requested shader tick interval: ${SHADER_TICK_INTERVAL_MS}ms (~${Math.round(1000 / SHADER_TICK_INTERVAL_MS)} Hz maximum)`
         );
 
         this._shaderTickSource = GLib.timeout_add(
@@ -461,12 +472,19 @@ export default class ScreenshaverExtension extends Extension {
                         : 0.0;
                     const maxIntervalMs = this._shaderMetricsMaxDeltaUs / 1000.0;
 
+                    const stageAfterPaintHz =
+                        this._stageAfterPaintCount / metricsElapsedSeconds;
+                    const stagePresentedHz =
+                        this._stagePresentedCount / metricsElapsedSeconds;
+
                     console.log(
-                        `[Screenshaver] Test #12 shader timing: requested=${SHADER_TICK_INTERVAL_MS}ms callbacks=${this._shaderMetricsWindowTicks} elapsed=${metricsElapsedSeconds.toFixed(3)}s effective=${effectiveHz.toFixed(2)}Hz avg=${averageIntervalMs.toFixed(2)}ms min=${minIntervalMs.toFixed(2)}ms max=${maxIntervalMs.toFixed(2)}ms total_ticks=${this._shaderTicks}`
+                        `[Screenshaver] Test #13 shader timing: requested=${SHADER_TICK_INTERVAL_MS}ms callbacks=${this._shaderMetricsWindowTicks} elapsed=${metricsElapsedSeconds.toFixed(3)}s effective=${effectiveHz.toFixed(2)}Hz avg=${averageIntervalMs.toFixed(2)}ms min=${minIntervalMs.toFixed(2)}ms max=${maxIntervalMs.toFixed(2)}ms total_ticks=${this._shaderTicks} stage_after_paint=${this._stageAfterPaintCount} (${stageAfterPaintHz.toFixed(2)}Hz) stage_presented=${this._stagePresentedCount} (${stagePresentedHz.toFixed(2)}Hz)`
                     );
 
                     this._shaderMetricsWindowStartedUs = tickNowUs;
                     this._shaderMetricsWindowTicks = 0;
+                    this._stageAfterPaintCount = 0;
+                    this._stagePresentedCount = 0;
                     this._shaderMetricsMinDeltaUs = Number.POSITIVE_INFINITY;
                     this._shaderMetricsMaxDeltaUs = 0;
                 }
@@ -478,13 +496,70 @@ export default class ScreenshaverExtension extends Extension {
 
                 if (this._shaderTicks === 1) {
                     console.log(
-                        '[Screenshaver] First Test #12 shader frame requested'
+                        '[Screenshaver] First Test #13 shader frame requested'
                     );
                 }
 
                 return GLib.SOURCE_CONTINUE;
             }
         );
+    }
+
+    _startStageTimingInstrumentation() {
+        this._stopStageTimingInstrumentation();
+        this._stageAfterPaintCount = 0;
+        this._stagePresentedCount = 0;
+
+        try {
+            this._stageAfterPaintSignalId = global.stage.connect(
+                'after-paint',
+                () => {
+                    if (this._lockActor)
+                        this._stageAfterPaintCount++;
+                }
+            );
+            console.log('[Screenshaver] Test #13 connected Clutter stage after-paint instrumentation');
+        } catch (error) {
+            this._stageAfterPaintSignalId = 0;
+            console.log(`[Screenshaver] Test #13 unable to connect Clutter after-paint signal: ${error}`);
+        }
+
+        try {
+            this._stagePresentedSignalId = global.stage.connect(
+                'presented',
+                () => {
+                    if (this._lockActor)
+                        this._stagePresentedCount++;
+                }
+            );
+            console.log('[Screenshaver] Test #13 connected Clutter stage presented instrumentation');
+        } catch (error) {
+            this._stagePresentedSignalId = 0;
+            console.log(`[Screenshaver] Test #13 unable to connect Clutter presented signal: ${error}`);
+        }
+    }
+
+    _stopStageTimingInstrumentation() {
+        if (this._stageAfterPaintSignalId) {
+            try {
+                global.stage.disconnect(this._stageAfterPaintSignalId);
+            } catch (error) {
+                console.log(`[Screenshaver] Test #13 unable to disconnect Clutter after-paint signal: ${error}`);
+            }
+            this._stageAfterPaintSignalId = 0;
+        }
+
+        if (this._stagePresentedSignalId) {
+            try {
+                global.stage.disconnect(this._stagePresentedSignalId);
+            } catch (error) {
+                console.log(`[Screenshaver] Test #13 unable to disconnect Clutter presented signal: ${error}`);
+            }
+            this._stagePresentedSignalId = 0;
+        }
+
+        this._stageAfterPaintCount = 0;
+        this._stagePresentedCount = 0;
     }
 
     // Retained only for the current diagnostic branch.  The Rust producer may
@@ -999,6 +1074,7 @@ export default class ScreenshaverExtension extends Extension {
     _removeLockActor() {
         this._stopSessionValidation();
         this._stopPowerSaveRecovery();
+        this._stopStageTimingInstrumentation();
 
         if (this._postBlankScreenShieldWakeSource) {
             GLib.source_remove(this._postBlankScreenShieldWakeSource);
