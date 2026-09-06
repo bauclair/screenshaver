@@ -10,13 +10,15 @@ import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 
-let shaderToySource = null;
+const ScreenshaverTest21GLSLEffect = GObject.registerClass(
+class ScreenshaverTest21GLSLEffect extends Shell.GLSLEffect {
+    set_shader_source(source) {
+        this._screenshaverShaderSource = source;
+    }
 
-const ScreenshaverTest20GLSLEffect = GObject.registerClass(
-class ScreenshaverTest20GLSLEffect extends Shell.GLSLEffect {
     vfunc_build_pipeline() {
-        if (!shaderToySource)
-            throw new Error('Test #20 ShaderToy source was not loaded');
+        if (!this._screenshaverShaderSource)
+            throw new Error('Test #21 ShaderToy source was not loaded');
 
         this.add_glsl_snippet(
             Cogl.SnippetHook.FRAGMENT,
@@ -24,7 +26,7 @@ class ScreenshaverTest20GLSLEffect extends Shell.GLSLEffect {
                 uniform float iTime;
                 uniform vec3 iResolution;
 
-                ${shaderToySource}
+                ${this._screenshaverShaderSource}
             `,
             `
                 vec2 uv = cogl_tex_coord0_in.st;
@@ -51,6 +53,7 @@ const CONTROL_BYTES = 64;
 const CONTROL_SESSION_ID_BYTES = 16;
 const POLL_INTERVAL_MS = 33;
 const SHADER_TICK_INTERVAL_MS = 8;
+const SHADER_SOURCE_POLL_INTERVAL_MS = 250;
 const SHADER_METRICS_REPORT_INTERVAL_US = 5 * 1000000;
 const POWER_SAVE_FALLBACK_INTERVAL_MS = 1000;
 const POST_WAKE_POWER_SAVE_MIN_DELAY_MS = 10000;
@@ -79,6 +82,9 @@ export default class ScreenshaverExtension extends Extension {
         this._shaderUniformTime = -1;
         this._shaderUniformResolution = -1;
         this._shaderTickSource = null;
+        this._shaderSourcePoll = null;
+        this._activeProductionSource = null;
+        this._shaderGeneration = 0;
         this._shaderStartedUs = 0;
         this._shaderTicks = 0;
         this._pollSource = null;
@@ -321,6 +327,208 @@ export default class ScreenshaverExtension extends Extension {
         }
     }
 
+    _runtimeShaderPath() {
+        return GLib.build_filenamev([
+            GLib.get_user_runtime_dir(),
+            RUNTIME_SHADER_FILENAME,
+        ]);
+    }
+
+    _readProductionShaderSource() {
+        const shaderPath = this._runtimeShaderPath();
+        const shaderFile = Gio.File.new_for_path(shaderPath);
+        const [shaderOk, shaderBytes] = shaderFile.load_contents(null);
+
+        if (!shaderOk)
+            throw new Error(`Unable to read production shader handoff ${shaderPath}`);
+
+        return {
+            shaderPath,
+            shaderBytes,
+            productionSource: new TextDecoder().decode(shaderBytes),
+        };
+    }
+
+    _buildShaderEffect(productionSource, width, height, elapsedSeconds) {
+        const shaderBody =
+            this._extractShaderToyBodyFromProductionSource(productionSource);
+
+        if (!/\bvoid\s+mainImage\s*\(/.test(shaderBody)) {
+            throw new Error(
+                `${RUNTIME_SHADER_FILENAME} does not contain a usable preprocessed ShaderToy mainImage()`
+            );
+        }
+
+        const effect = new ScreenshaverTest21GLSLEffect();
+        effect.set_shader_source(shaderBody);
+
+        const uniformTime = effect.get_uniform_location('iTime');
+        const uniformResolution = effect.get_uniform_location('iResolution');
+
+        effect.set_uniform_float(
+            uniformTime,
+            1,
+            [elapsedSeconds]
+        );
+        effect.set_uniform_float(
+            uniformResolution,
+            3,
+            [width, height, 1.0]
+        );
+
+        return {
+            effect,
+            uniformTime,
+            uniformResolution,
+        };
+    }
+
+    _installInitialShaderEffect(dialog) {
+        const {
+            shaderPath,
+            shaderBytes,
+            productionSource,
+        } = this._readProductionShaderSource();
+
+        const built = this._buildShaderEffect(
+            productionSource,
+            dialog.width,
+            dialog.height,
+            0.0
+        );
+
+        this._shaderEffect = built.effect;
+        this._shaderUniformTime = built.uniformTime;
+        this._shaderUniformResolution = built.uniformResolution;
+        this._activeProductionSource = productionSource;
+        this._shaderGeneration = 1;
+
+        this._lockActor.add_effect_with_name(
+            'screenshaver-production-shader-bridge',
+            this._shaderEffect
+        );
+
+        console.log(
+            `[Screenshaver] Test #21 loaded production-preprocessed shader handoff: ${shaderPath} (${shaderBytes.length} bytes) generation=${this._shaderGeneration}`
+        );
+    }
+
+    _startShaderSourcePolling() {
+        if (this._shaderSourcePoll)
+            return;
+
+        this._shaderSourcePoll = GLib.timeout_add(
+            GLib.PRIORITY_DEFAULT,
+            SHADER_SOURCE_POLL_INTERVAL_MS,
+            () => {
+                if (!this._lockActor || !this._shaderEffect) {
+                    this._shaderSourcePoll = null;
+                    return GLib.SOURCE_REMOVE;
+                }
+
+                this._checkForShaderReplacement();
+                return GLib.SOURCE_CONTINUE;
+            }
+        );
+
+        console.log(
+            `[Screenshaver] Test #21 production shader handoff polling started: ${SHADER_SOURCE_POLL_INTERVAL_MS}ms`
+        );
+    }
+
+    _stopShaderSourcePolling() {
+        if (this._shaderSourcePoll) {
+            GLib.source_remove(this._shaderSourcePoll);
+            this._shaderSourcePoll = null;
+        }
+
+        this._activeProductionSource = null;
+    }
+
+    _checkForShaderReplacement() {
+        let handoff;
+
+        try {
+            handoff = this._readProductionShaderSource();
+        } catch (_) {
+            // Atomic replacement creates only a very short rename boundary.
+            // A missing file during teardown or publication is retried on the
+            // next poll without disturbing the currently rendering effect.
+            return;
+        }
+
+        if (handoff.productionSource === this._activeProductionSource)
+            return;
+
+        const elapsedSeconds = this._shaderStartedUs > 0
+            ? (GLib.get_monotonic_time() - this._shaderStartedUs) / 1000000.0
+            : 0.0;
+
+        let built;
+
+        try {
+            built = this._buildShaderEffect(
+                handoff.productionSource,
+                this._lockActor.width,
+                this._lockActor.height,
+                elapsedSeconds
+            );
+        } catch (error) {
+            console.log(
+                `[Screenshaver] Test #21 replacement shader preparation failed; retaining active shader: ${error}`
+            );
+            return;
+        }
+
+        const previousEffect = this._shaderEffect;
+
+        try {
+            // Keep the lock actor itself in place. Only the shader effect is
+            // replaced, preserving GNOME's lock/session/power-management state.
+            this._lockActor.remove_effect(previousEffect);
+
+            this._shaderEffect = built.effect;
+            this._shaderUniformTime = built.uniformTime;
+            this._shaderUniformResolution = built.uniformResolution;
+
+            this._lockActor.add_effect_with_name(
+                'screenshaver-production-shader-bridge',
+                this._shaderEffect
+            );
+
+            this._activeProductionSource = handoff.productionSource;
+            this._shaderGeneration++;
+
+            this._shaderEffect.queue_repaint();
+            this._lockActor.queue_redraw();
+
+            console.log(
+                `[Screenshaver] Test #21 hot-swapped production shader generation=${this._shaderGeneration} bytes=${handoff.shaderBytes.length}`
+            );
+        } catch (error) {
+            console.log(
+                `[Screenshaver] Test #21 replacement effect swap failed: ${error}`
+            );
+
+            // Best-effort rollback to the previously proven effect.
+            try {
+                if (this._shaderEffect !== previousEffect)
+                    this._lockActor.remove_effect(this._shaderEffect);
+            } catch (_) {
+            }
+
+            this._shaderEffect = previousEffect;
+
+            try {
+                this._lockActor.add_effect_with_name(
+                    'screenshaver-production-shader-bridge',
+                    previousEffect
+                );
+            } catch (_) {
+            }
+        }
+    }
+
     _extractShaderToyBodyFromProductionSource(source) {
         // Screenshaver's production ShaderToy preprocessor emits a complete
         // OpenGL 3.3 fragment shader. Shell.GLSLEffect instead needs the body
@@ -344,7 +552,7 @@ export default class ScreenshaverExtension extends Extension {
             body = body.replace(pattern, '');
 
         // The production preprocessor appends this wrapper after mainImage().
-        // Test #20 currently supports the ShaderToy path only, so the first
+        // Test #21 currently supports the ShaderToy path only, so the first
         // top-level generated main() marks the end of the body we hand to Cogl.
         const generatedMain = body.search(/\n\s*void\s+main\s*\(\s*\)\s*\{/m);
 
@@ -373,7 +581,7 @@ export default class ScreenshaverExtension extends Extension {
             return;
         }
 
-        // Test #20: execute an external ShaderToy-style mainImage() shader through
+        // Test #21: execute an external ShaderToy-style mainImage() shader through
         // Shell.GLSLEffect/Cogl.  GNOME supplies only the ShaderToy compatibility
         // uniforms/wrapper; shader source comes from Screenshaver's production Rust preprocessing path.
         this._lockActor = new St.Widget({
@@ -386,48 +594,10 @@ export default class ScreenshaverExtension extends Extension {
         this._lockActor.set_size(dialog.width, dialog.height);
 
         try {
-            const shaderPath = GLib.build_filenamev([
-                GLib.get_user_runtime_dir(),
-                RUNTIME_SHADER_FILENAME,
-            ]);
-            const shaderFile = Gio.File.new_for_path(shaderPath);
-            const [shaderOk, shaderBytes] = shaderFile.load_contents(null);
-
-            if (!shaderOk)
-                throw new Error(`Unable to read production shader handoff ${shaderPath}`);
-
-            const productionSource = new TextDecoder().decode(shaderBytes);
-            shaderToySource = this._extractShaderToyBodyFromProductionSource(productionSource);
-
-            if (!/\bvoid\s+mainImage\s*\(/.test(shaderToySource))
-                throw new Error(
-                    `${RUNTIME_SHADER_FILENAME} does not contain a usable preprocessed ShaderToy mainImage()`
-                );
-
-            console.log(
-                `[Screenshaver] Test #20 loaded production-preprocessed shader handoff: ${shaderPath} (${shaderBytes.length} bytes)`
-            );
-
-            this._shaderEffect = new ScreenshaverTest20GLSLEffect();
-            this._shaderUniformTime = this._shaderEffect.get_uniform_location('iTime');
-            this._shaderUniformResolution = this._shaderEffect.get_uniform_location('iResolution');
-            this._shaderEffect.set_uniform_float(
-                this._shaderUniformTime,
-                1,
-                [0.0]
-            );
-            this._shaderEffect.set_uniform_float(
-                this._shaderUniformResolution,
-                3,
-                [dialog.width, dialog.height, 1.0]
-            );
-            this._lockActor.add_effect_with_name(
-                'screenshaver-production-shader-bridge',
-                this._shaderEffect
-            );
+            this._installInitialShaderEffect(dialog);
         } catch (error) {
             console.log(
-                `[Screenshaver] ERROR: Unable to create Test #20 ShaderToy Shell.GLSLEffect: ${error}`
+                `[Screenshaver] ERROR: Unable to create Test #21 ShaderToy Shell.GLSLEffect: ${error}`
             );
             this._lockActor.destroy();
             this._lockActor = null;
@@ -438,16 +608,17 @@ export default class ScreenshaverExtension extends Extension {
         backgroundGroup.add_child(this._lockActor);
 
         console.log(
-            '[Screenshaver] Test #20 shader actor added above GNOME lock background'
+            '[Screenshaver] Test #21 shader actor added above GNOME lock background'
         );
 
         // Preserve the already-proven GNOME lock/power-management handling.
         this._startPowerSaveRecovery();
+        this._startShaderSourcePolling();
 
         this._shaderStartedUs = GLib.get_monotonic_time();
         this._shaderTicks = 0;
 
-        // Test #20 keeps the proven GLib callback-rate instrumentation so we can
+        // Test #21 keeps the proven GLib callback-rate instrumentation so we can
         // distinguish visible compositor presentation from a blanked output.
         this._shaderMetricsWindowStartedUs = this._shaderStartedUs;
         this._shaderMetricsWindowTicks = 0;
@@ -456,7 +627,7 @@ export default class ScreenshaverExtension extends Extension {
         this._shaderMetricsMaxDeltaUs = 0;
 
         console.log(
-            `[Screenshaver] Test #20 requested shader tick interval: ${SHADER_TICK_INTERVAL_MS}ms (~${Math.round(1000 / SHADER_TICK_INTERVAL_MS)} Hz maximum)`
+            `[Screenshaver] Test #21 requested shader tick interval: ${SHADER_TICK_INTERVAL_MS}ms (~${Math.round(1000 / SHADER_TICK_INTERVAL_MS)} Hz maximum)`
         );
 
         this._shaderTickSource = GLib.timeout_add(
@@ -527,7 +698,7 @@ export default class ScreenshaverExtension extends Extension {
                     const maxIntervalMs = this._shaderMetricsMaxDeltaUs / 1000.0;
 
                     console.log(
-                        `[Screenshaver] Test #20 timing: requested=${SHADER_TICK_INTERVAL_MS}ms callbacks=${this._shaderMetricsWindowTicks} elapsed=${metricsElapsedSeconds.toFixed(3)}s effective=${effectiveHz.toFixed(2)}Hz avg=${averageIntervalMs.toFixed(2)}ms min=${minIntervalMs.toFixed(2)}ms max=${maxIntervalMs.toFixed(2)}ms total_ticks=${this._shaderTicks}`
+                        `[Screenshaver] Test #21 timing: requested=${SHADER_TICK_INTERVAL_MS}ms callbacks=${this._shaderMetricsWindowTicks} elapsed=${metricsElapsedSeconds.toFixed(3)}s effective=${effectiveHz.toFixed(2)}Hz avg=${averageIntervalMs.toFixed(2)}ms min=${minIntervalMs.toFixed(2)}ms max=${maxIntervalMs.toFixed(2)}ms total_ticks=${this._shaderTicks}`
                     );
 
                     this._shaderMetricsWindowStartedUs = tickNowUs;
@@ -543,7 +714,7 @@ export default class ScreenshaverExtension extends Extension {
 
                 if (this._shaderTicks === 1) {
                     console.log(
-                        '[Screenshaver] First Test #20 shader frame requested'
+                        '[Screenshaver] First Test #21 shader frame requested'
                     );
                 }
 
@@ -552,10 +723,8 @@ export default class ScreenshaverExtension extends Extension {
         );
     }
 
-    // Retained only for the current diagnostic branch.  The Rust producer may
-    // continue publishing its known-good external frames, but this extension
-    // deliberately does not consume them while Shell.GLSLEffect is under
-    // test.  This isolates GNOME-native shader execution from transport issues.
+    // Legacy external-frame diagnostic stub retained temporarily. Test #21
+    // consumes only the production GLSL source handoff.
     _refreshFrame() {
     }
 
@@ -686,7 +855,7 @@ export default class ScreenshaverExtension extends Extension {
             if (waitState !== this._idleInhibitWaitState) {
                 this._idleInhibitWaitState = waitState;
                 console.log(
-                    `[Screenshaver] Test #20 idle inhibitor waiting: ${waitState}`
+                    `[Screenshaver] Test #21 idle inhibitor waiting: ${waitState}`
                 );
             }
             return;
@@ -709,7 +878,7 @@ export default class ScreenshaverExtension extends Extension {
         const requestGeneration = ++this._idleInhibitRequestGeneration;
         this._idleInhibitRequestPending = true;
 
-        console.log('[Screenshaver] Test #20 requesting GNOME session idle inhibitor (flag=8)');
+        console.log('[Screenshaver] Test #21 requesting GNOME session idle inhibitor (flag=8)');
 
         try {
             Gio.DBus.session.call(
@@ -741,7 +910,7 @@ export default class ScreenshaverExtension extends Extension {
                             this._idleInhibitRequestPending = false;
 
                         console.log(
-                            `[Screenshaver] Test #20 GNOME session idle inhibitor request failed: ${error}`
+                            `[Screenshaver] Test #21 GNOME session idle inhibitor request failed: ${error}`
                         );
                         return;
                     }
@@ -757,7 +926,7 @@ export default class ScreenshaverExtension extends Extension {
                     this._idleInhibitRequestPending = false;
                     this._idleInhibitCookie = cookie;
                     console.log(
-                        `[Screenshaver] Test #20 GNOME session idle inhibitor acquired cookie=${cookie} flag=8`
+                        `[Screenshaver] Test #21 GNOME session idle inhibitor acquired cookie=${cookie} flag=8`
                     );
                 }
             );
@@ -766,7 +935,7 @@ export default class ScreenshaverExtension extends Extension {
                 this._idleInhibitRequestPending = false;
 
             console.log(
-                `[Screenshaver] Test #20 unable to dispatch GNOME session idle inhibitor request: ${error}`
+                `[Screenshaver] Test #21 unable to dispatch GNOME session idle inhibitor request: ${error}`
             );
         }
     }
@@ -806,18 +975,18 @@ export default class ScreenshaverExtension extends Extension {
                     try {
                         Gio.DBus.session.call_finish(result);
                         console.log(
-                            `[Screenshaver] Test #20 GNOME session idle inhibitor released cookie=${cookie} (${reason})`
+                            `[Screenshaver] Test #21 GNOME session idle inhibitor released cookie=${cookie} (${reason})`
                         );
                     } catch (error) {
                         console.log(
-                            `[Screenshaver] Test #20 GNOME session idle inhibitor release failed cookie=${cookie}: ${error}`
+                            `[Screenshaver] Test #21 GNOME session idle inhibitor release failed cookie=${cookie}: ${error}`
                         );
                     }
                 }
             );
         } catch (error) {
             console.log(
-                `[Screenshaver] Test #20 unable to dispatch GNOME session idle inhibitor release cookie=${cookie}: ${error}`
+                `[Screenshaver] Test #21 unable to dispatch GNOME session idle inhibitor release cookie=${cookie}: ${error}`
             );
         }
     }
@@ -825,7 +994,7 @@ export default class ScreenshaverExtension extends Extension {
     _startPowerSaveRecovery() {
         this._subscribePowerSaveModeChanges();
 
-        // Test #20: PropertiesChanged is the primary observation path.
+        // Test #21: PropertiesChanged is the primary observation path.
         // Keep a slow poll as a safety net; during a validated GNOME lock
         // presentation, a delayed BLANK state is corrected directly to NORMAL.
         if (!this._powerSaveFallbackSource) {
@@ -946,7 +1115,7 @@ export default class ScreenshaverExtension extends Extension {
         if (!securePresentationActive)
             return;
 
-        // Test #20 keeps the startup wake sequence from the previous tests,
+        // Test #21 keeps the startup wake sequence from the previous tests,
         // but once that sequence has completed it treats any delayed BLANK
         // state as a display-power event rather than simulated user-idle.
         // Directly restore Mutter PowerSaveMode to NORMAL without calling
@@ -958,7 +1127,7 @@ export default class ScreenshaverExtension extends Extension {
             if (elapsedSincePostBlankWakeUs >= POST_WAKE_POWER_SAVE_MIN_DELAY_MS * 1000) {
                 if (previousPowerSaveMode !== 3) {
                     console.log(
-                        `[Screenshaver] Test #20 rejecting delayed PowerSaveMode 0 -> 3 after ${Math.floor(elapsedSincePostBlankWakeUs / 1000)}ms; restoring NORMAL without ScreenShield wake`
+                        `[Screenshaver] Test #21 rejecting delayed PowerSaveMode 0 -> 3 after ${Math.floor(elapsedSincePostBlankWakeUs / 1000)}ms; restoring NORMAL without ScreenShield wake`
                     );
                 }
                 this._setPostWakePowerSaveModeNormal();
@@ -988,7 +1157,7 @@ export default class ScreenshaverExtension extends Extension {
             const minimumDelayUs = POST_WAKE_POWER_SAVE_MIN_DELAY_MS * 1000;
 
             // Preserve the known startup recovery only.  This one early wake
-            // handles GNOME's initial lock transition; Test #20 never uses a
+            // handles GNOME's initial lock transition; Test #21 never uses a
             // ScreenShield wake for the later ~15-second blank attempt.
             if (elapsedUs < minimumDelayUs) {
                 this._postWakePowerSaveCorrectionIssued = true;
@@ -1003,7 +1172,7 @@ export default class ScreenshaverExtension extends Extension {
             this._postWakePowerSaveCorrectionIssued = true;
             this._postWakePowerSaveCorrectionArmed = false;
             console.log(
-                `[Screenshaver] Test #20 rejecting delayed PowerSaveMode 0 -> 3 after ${Math.floor(elapsedUs / 1000)}ms; restoring NORMAL without ScreenShield wake`
+                `[Screenshaver] Test #21 rejecting delayed PowerSaveMode 0 -> 3 after ${Math.floor(elapsedUs / 1000)}ms; restoring NORMAL without ScreenShield wake`
             );
             this._setPostWakePowerSaveModeNormal();
         }
@@ -1089,16 +1258,16 @@ export default class ScreenshaverExtension extends Extension {
 
                     try {
                         connection.call_finish(result);
-                        console.log('[Screenshaver] Test #20 PowerSaveMode NORMAL correction completed');
+                        console.log('[Screenshaver] Test #21 PowerSaveMode NORMAL correction completed');
                     } catch (error) {
                         if (this._lockActor)
-                            console.log(`[Screenshaver] Test #20 PowerSaveMode NORMAL correction failed: ${error}`);
+                            console.log(`[Screenshaver] Test #21 PowerSaveMode NORMAL correction failed: ${error}`);
                     }
                 }
             );
         } catch (error) {
             this._postWakePowerSaveCorrectionInFlight = false;
-            console.log(`[Screenshaver] Test #20 unable to dispatch PowerSaveMode NORMAL correction: ${error}`);
+            console.log(`[Screenshaver] Test #21 unable to dispatch PowerSaveMode NORMAL correction: ${error}`);
         }
     }
 
@@ -1153,6 +1322,7 @@ export default class ScreenshaverExtension extends Extension {
 
     _removeLockActor() {
         this._stopSessionValidation();
+        this._stopShaderSourcePolling();
         this._stopPowerSaveRecovery();
         this._releaseIdleInhibitor();
 
