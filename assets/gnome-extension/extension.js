@@ -10,37 +10,27 @@ import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 
-const ScreenshaverDiagnosticGLSLEffect = GObject.registerClass(
-class ScreenshaverDiagnosticGLSLEffect extends Shell.GLSLEffect {
+let test11ShaderDeclarations = null;
+
+const ScreenshaverTest11GLSLEffect = GObject.registerClass(
+class ScreenshaverTest11GLSLEffect extends Shell.GLSLEffect {
     vfunc_build_pipeline() {
+        if (!test11ShaderDeclarations)
+            throw new Error('Test #11 shader source was not loaded');
+
         this.add_glsl_snippet(
             Cogl.SnippetHook.FRAGMENT,
-            'uniform float u_time;',
+            test11ShaderDeclarations,
             `
                 vec2 uv = cogl_tex_coord0_in.st;
-                float moving = fract(uv.x * 6.0 + u_time * 0.20);
-                vec3 color;
-
-                if (moving < 0.1666667)
-                    color = vec3(1.0, 0.0, 0.0);
-                else if (moving < 0.3333333)
-                    color = vec3(1.0, 1.0, 0.0);
-                else if (moving < 0.5000000)
-                    color = vec3(0.0, 1.0, 0.0);
-                else if (moving < 0.6666667)
-                    color = vec3(0.0, 1.0, 1.0);
-                else if (moving < 0.8333333)
-                    color = vec3(0.0, 0.0, 1.0);
-                else
-                    color = vec3(1.0, 0.0, 1.0);
-
-                cogl_color_out = vec4(color, 1.0);
+                cogl_color_out = screenshaver_test11_fragment(uv, u_time);
             `,
             true
         );
     }
 });
 
+const TEST11_SHADER_FILENAME = 'test11_shader.glsl';
 const CONTROL_FILENAME = 'screenshaver-lock-control.bin';
 const FRAME_FILENAME_PREFIX = 'screenshaver-lock-frame-';
 const FRAME_FILENAME_SUFFIX = '.rgba';
@@ -331,10 +321,10 @@ export default class ScreenshaverExtension extends Extension {
             return;
         }
 
-        // GNOME-only diagnostic: paint a simple solid actor, then let
-        // Shell.GLSLEffect/Cogl replace its fragment output.  No
-        // Screenshaver shader source or shared Rust rendering code is involved
-        // in this experiment.
+        // Test #11: paint a simple solid actor and execute GLSL loaded from a
+        // separate extension-side shader file through Shell.GLSLEffect/Cogl.
+        // This is the first source-ingestion bridge; it intentionally leaves
+        // shared Rust rendering/preprocessing code untouched.
         this._lockActor = new St.Widget({
             reactive: false,
             can_focus: false,
@@ -345,7 +335,25 @@ export default class ScreenshaverExtension extends Extension {
         this._lockActor.set_size(dialog.width, dialog.height);
 
         try {
-            this._shaderEffect = new ScreenshaverDiagnosticGLSLEffect();
+            const shaderPath = GLib.build_filenamev([this.path, TEST11_SHADER_FILENAME]);
+            const shaderFile = Gio.File.new_for_path(shaderPath);
+            const [shaderOk, shaderBytes] = shaderFile.load_contents(null);
+
+            if (!shaderOk)
+                throw new Error(`Unable to read ${shaderPath}`);
+
+            test11ShaderDeclarations = new TextDecoder().decode(shaderBytes);
+
+            if (!test11ShaderDeclarations.includes('screenshaver_test11_fragment'))
+                throw new Error(
+                    `${TEST11_SHADER_FILENAME} does not define screenshaver_test11_fragment()`
+                );
+
+            console.log(
+                `[Screenshaver] Test #11 loaded GLSL source: ${shaderPath} (${shaderBytes.length} bytes)`
+            );
+
+            this._shaderEffect = new ScreenshaverTest11GLSLEffect();
             this._shaderUniformTime = this._shaderEffect.get_uniform_location('u_time');
             this._shaderEffect.set_uniform_float(
                 this._shaderUniformTime,
@@ -358,7 +366,7 @@ export default class ScreenshaverExtension extends Extension {
             );
         } catch (error) {
             console.log(
-                `[Screenshaver] ERROR: Unable to create Shell.GLSLEffect diagnostic: ${error}`
+                `[Screenshaver] ERROR: Unable to create Test #11 Shell.GLSLEffect: ${error}`
             );
             this._lockActor.destroy();
             this._lockActor = null;
@@ -369,7 +377,7 @@ export default class ScreenshaverExtension extends Extension {
         backgroundGroup.add_child(this._lockActor);
 
         console.log(
-            '[Screenshaver] Shell.GLSLEffect diagnostic actor added above GNOME lock background'
+            '[Screenshaver] Test #11 shader actor added above GNOME lock background'
         );
 
         // Preserve the already-proven GNOME lock/power-management handling.
@@ -415,11 +423,11 @@ export default class ScreenshaverExtension extends Extension {
 
                 if (this._shaderTicks === 1) {
                     console.log(
-                        '[Screenshaver] First Shell.GLSLEffect diagnostic frame requested'
+                        '[Screenshaver] First Test #11 shader frame requested'
                     );
                 } else if (this._shaderTicks % 300 === 0) {
                     console.log(
-                        `[Screenshaver] Shell.GLSLEffect diagnostic ticks: ${this._shaderTicks}`
+                        `[Screenshaver] Test #11 shader ticks: ${this._shaderTicks}`
                     );
                 }
 
