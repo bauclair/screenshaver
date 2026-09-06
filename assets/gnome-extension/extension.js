@@ -10,27 +10,27 @@ import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 
-let test11ShaderDeclarations = null;
+let test12ShaderDeclarations = null;
 
-const ScreenshaverTest11GLSLEffect = GObject.registerClass(
-class ScreenshaverTest11GLSLEffect extends Shell.GLSLEffect {
+const ScreenshaverTest12GLSLEffect = GObject.registerClass(
+class ScreenshaverTest12GLSLEffect extends Shell.GLSLEffect {
     vfunc_build_pipeline() {
-        if (!test11ShaderDeclarations)
-            throw new Error('Test #11 shader source was not loaded');
+        if (!test12ShaderDeclarations)
+            throw new Error('Test #12 shader source was not loaded');
 
         this.add_glsl_snippet(
             Cogl.SnippetHook.FRAGMENT,
-            test11ShaderDeclarations,
+            test12ShaderDeclarations,
             `
                 vec2 uv = cogl_tex_coord0_in.st;
-                cogl_color_out = screenshaver_test11_fragment(uv, u_time);
+                cogl_color_out = screenshaver_test12_fragment(uv, u_time);
             `,
             true
         );
     }
 });
 
-const TEST11_SHADER_FILENAME = 'test11_shader.glsl';
+const TEST12_SHADER_FILENAME = 'test12_shader.glsl';
 const CONTROL_FILENAME = 'screenshaver-lock-control.bin';
 const FRAME_FILENAME_PREFIX = 'screenshaver-lock-frame-';
 const FRAME_FILENAME_SUFFIX = '.rgba';
@@ -40,6 +40,7 @@ const CONTROL_BYTES = 64;
 const CONTROL_SESSION_ID_BYTES = 16;
 const POLL_INTERVAL_MS = 33;
 const SHADER_TICK_INTERVAL_MS = 8;
+const SHADER_METRICS_REPORT_INTERVAL_US = 5 * 1000000;
 const POWER_SAVE_FALLBACK_INTERVAL_MS = 1000;
 const POST_WAKE_POWER_SAVE_MIN_DELAY_MS = 10000;
 const POST_BLANK_SCREENSHIELD_WAKE_DELAY_MS = 250;
@@ -321,7 +322,7 @@ export default class ScreenshaverExtension extends Extension {
             return;
         }
 
-        // Test #11: paint a simple solid actor and execute GLSL loaded from a
+        // Test #12: paint a simple solid actor and execute GLSL loaded from a
         // separate extension-side shader file through Shell.GLSLEffect/Cogl.
         // This is the first source-ingestion bridge; it intentionally leaves
         // shared Rust rendering/preprocessing code untouched.
@@ -335,25 +336,25 @@ export default class ScreenshaverExtension extends Extension {
         this._lockActor.set_size(dialog.width, dialog.height);
 
         try {
-            const shaderPath = GLib.build_filenamev([this.path, TEST11_SHADER_FILENAME]);
+            const shaderPath = GLib.build_filenamev([this.path, TEST12_SHADER_FILENAME]);
             const shaderFile = Gio.File.new_for_path(shaderPath);
             const [shaderOk, shaderBytes] = shaderFile.load_contents(null);
 
             if (!shaderOk)
                 throw new Error(`Unable to read ${shaderPath}`);
 
-            test11ShaderDeclarations = new TextDecoder().decode(shaderBytes);
+            test12ShaderDeclarations = new TextDecoder().decode(shaderBytes);
 
-            if (!test11ShaderDeclarations.includes('screenshaver_test11_fragment'))
+            if (!test12ShaderDeclarations.includes('screenshaver_test12_fragment'))
                 throw new Error(
-                    `${TEST11_SHADER_FILENAME} does not define screenshaver_test11_fragment()`
+                    `${TEST12_SHADER_FILENAME} does not define screenshaver_test12_fragment()`
                 );
 
             console.log(
-                `[Screenshaver] Test #11 loaded GLSL source: ${shaderPath} (${shaderBytes.length} bytes)`
+                `[Screenshaver] Test #12 loaded GLSL source: ${shaderPath} (${shaderBytes.length} bytes)`
             );
 
-            this._shaderEffect = new ScreenshaverTest11GLSLEffect();
+            this._shaderEffect = new ScreenshaverTest12GLSLEffect();
             this._shaderUniformTime = this._shaderEffect.get_uniform_location('u_time');
             this._shaderEffect.set_uniform_float(
                 this._shaderUniformTime,
@@ -366,7 +367,7 @@ export default class ScreenshaverExtension extends Extension {
             );
         } catch (error) {
             console.log(
-                `[Screenshaver] ERROR: Unable to create Test #11 Shell.GLSLEffect: ${error}`
+                `[Screenshaver] ERROR: Unable to create Test #12 Shell.GLSLEffect: ${error}`
             );
             this._lockActor.destroy();
             this._lockActor = null;
@@ -377,7 +378,7 @@ export default class ScreenshaverExtension extends Extension {
         backgroundGroup.add_child(this._lockActor);
 
         console.log(
-            '[Screenshaver] Test #11 shader actor added above GNOME lock background'
+            '[Screenshaver] Test #12 shader actor added above GNOME lock background'
         );
 
         // Preserve the already-proven GNOME lock/power-management handling.
@@ -385,6 +386,18 @@ export default class ScreenshaverExtension extends Extension {
 
         this._shaderStartedUs = GLib.get_monotonic_time();
         this._shaderTicks = 0;
+
+        // Test #12 instrumentation only: measure how often the 8 ms GLib
+        // timeout is actually serviced by GNOME Shell's main loop.
+        this._shaderMetricsWindowStartedUs = this._shaderStartedUs;
+        this._shaderMetricsWindowTicks = 0;
+        this._shaderMetricsPreviousTickUs = null;
+        this._shaderMetricsMinDeltaUs = Number.POSITIVE_INFINITY;
+        this._shaderMetricsMaxDeltaUs = 0;
+
+        console.log(
+            `[Screenshaver] Test #12 requested shader tick interval: ${SHADER_TICK_INTERVAL_MS}ms (~${Math.round(1000 / SHADER_TICK_INTERVAL_MS)} Hz maximum)`
+        );
 
         this._shaderTickSource = GLib.timeout_add(
             GLib.PRIORITY_DEFAULT,
@@ -416,6 +429,48 @@ export default class ScreenshaverExtension extends Extension {
 
                 this._shaderTicks++;
 
+                const tickNowUs = GLib.get_monotonic_time();
+                this._shaderMetricsWindowTicks++;
+
+                if (this._shaderMetricsPreviousTickUs !== null) {
+                    const deltaUs = tickNowUs - this._shaderMetricsPreviousTickUs;
+                    this._shaderMetricsMinDeltaUs = Math.min(
+                        this._shaderMetricsMinDeltaUs,
+                        deltaUs
+                    );
+                    this._shaderMetricsMaxDeltaUs = Math.max(
+                        this._shaderMetricsMaxDeltaUs,
+                        deltaUs
+                    );
+                }
+
+                this._shaderMetricsPreviousTickUs = tickNowUs;
+
+                const metricsElapsedUs =
+                    tickNowUs - this._shaderMetricsWindowStartedUs;
+
+                if (metricsElapsedUs >= SHADER_METRICS_REPORT_INTERVAL_US) {
+                    const metricsElapsedSeconds = metricsElapsedUs / 1000000.0;
+                    const effectiveHz =
+                        this._shaderMetricsWindowTicks / metricsElapsedSeconds;
+                    const averageIntervalMs = effectiveHz > 0
+                        ? 1000.0 / effectiveHz
+                        : 0.0;
+                    const minIntervalMs = Number.isFinite(this._shaderMetricsMinDeltaUs)
+                        ? this._shaderMetricsMinDeltaUs / 1000.0
+                        : 0.0;
+                    const maxIntervalMs = this._shaderMetricsMaxDeltaUs / 1000.0;
+
+                    console.log(
+                        `[Screenshaver] Test #12 shader timing: requested=${SHADER_TICK_INTERVAL_MS}ms callbacks=${this._shaderMetricsWindowTicks} elapsed=${metricsElapsedSeconds.toFixed(3)}s effective=${effectiveHz.toFixed(2)}Hz avg=${averageIntervalMs.toFixed(2)}ms min=${minIntervalMs.toFixed(2)}ms max=${maxIntervalMs.toFixed(2)}ms total_ticks=${this._shaderTicks}`
+                    );
+
+                    this._shaderMetricsWindowStartedUs = tickNowUs;
+                    this._shaderMetricsWindowTicks = 0;
+                    this._shaderMetricsMinDeltaUs = Number.POSITIVE_INFINITY;
+                    this._shaderMetricsMaxDeltaUs = 0;
+                }
+
                 // Keep the established ScreenShield wake behavior, but gate it
                 // on successful shader-effect animation ticks rather than on
                 // receipt of external RGBA frames.
@@ -423,11 +478,7 @@ export default class ScreenshaverExtension extends Extension {
 
                 if (this._shaderTicks === 1) {
                     console.log(
-                        '[Screenshaver] First Test #11 shader frame requested'
-                    );
-                } else if (this._shaderTicks % 300 === 0) {
-                    console.log(
-                        `[Screenshaver] Test #11 shader ticks: ${this._shaderTicks}`
+                        '[Screenshaver] First Test #12 shader frame requested'
                     );
                 }
 
