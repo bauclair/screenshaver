@@ -47,6 +47,9 @@ const POST_BLANK_SCREENSHIELD_WAKE_DELAY_MS = 250;
 const RUNTIME_MARKER_FILENAME = 'screenshaver-gnome-lock.active';
 const RUNTIME_MARKER_VERSION = 1;
 const SESSION_VALIDATION_INTERVAL_MS = 1000;
+const SCREENSHIELD_DIAGNOSTIC_INTERVAL_MS = 1000;
+const SCREENSHIELD_DIAGNOSTIC_MAX_DEPTH = 5;
+const SCREENSHIELD_DIAGNOSTIC_MAX_ACTORS = 120;
 
 const CONTROL_MAGIC_OFFSET = 0;
 const CONTROL_VERSION_OFFSET = 8;
@@ -99,6 +102,9 @@ export default class ScreenshaverExtension extends Extension {
         this._idleInhibitRequestGeneration = 0;
         this._idleInhibitRequestPending = false;
         this._idleInhibitWaitState = null;
+        this._screenShieldDiagnosticSource = null;
+        this._screenShieldDiagnosticPrevious = new Map();
+        this._screenShieldDiagnosticStartedUs = 0;
 
         this._sessionModeSignal = Main.sessionMode.connect(
             'updated',
@@ -330,7 +336,7 @@ export default class ScreenshaverExtension extends Extension {
             return;
         }
 
-        // Test #15: paint a simple solid actor and execute GLSL loaded from a
+        // Test #16: paint a simple solid actor and execute GLSL loaded from a
         // separate extension-side shader file through Shell.GLSLEffect/Cogl.
         // This is the first source-ingestion bridge; it intentionally leaves
         // shared Rust rendering/preprocessing code untouched.
@@ -359,7 +365,7 @@ export default class ScreenshaverExtension extends Extension {
                 );
 
             console.log(
-                `[Screenshaver] Test #15B loaded GLSL source: ${shaderPath} (${shaderBytes.length} bytes)`
+                `[Screenshaver] Test #16 loaded GLSL source: ${shaderPath} (${shaderBytes.length} bytes)`
             );
 
             this._shaderEffect = new ScreenshaverTest12GLSLEffect();
@@ -386,8 +392,13 @@ export default class ScreenshaverExtension extends Extension {
         backgroundGroup.add_child(this._lockActor);
 
         console.log(
-            '[Screenshaver] Test #15B shader actor added above GNOME lock background'
+            '[Screenshaver] Test #16 shader actor added above GNOME lock background'
         );
+
+        // Test #16: observe GNOME's native ScreenShield/UnlockDialog actor
+        // hierarchy without mutating it.  This diagnostic records only safe
+        // scalar actor state and logs subsequent changes once per second.
+        this._startScreenShieldHierarchyDiagnostic();
 
         // Preserve the already-proven GNOME lock/power-management handling.
         this._startPowerSaveRecovery();
@@ -395,8 +406,8 @@ export default class ScreenshaverExtension extends Extension {
         this._shaderStartedUs = GLib.get_monotonic_time();
         this._shaderTicks = 0;
 
-        // Test #15 instrumentation: keep the proven Test #12 GLib timeout
-        // measurements only. The Test #15 Clutter.Timeline probe has been
+        // Test #16 instrumentation: keep the proven Test #12 GLib timeout
+        // measurements only. The Test #14 Clutter.Timeline probe has been
         // removed so this run isolates the GNOME session idle inhibitor.
         this._shaderMetricsWindowStartedUs = this._shaderStartedUs;
         this._shaderMetricsWindowTicks = 0;
@@ -405,7 +416,7 @@ export default class ScreenshaverExtension extends Extension {
         this._shaderMetricsMaxDeltaUs = 0;
 
         console.log(
-            `[Screenshaver] Test #15B requested shader tick interval: ${SHADER_TICK_INTERVAL_MS}ms (~${Math.round(1000 / SHADER_TICK_INTERVAL_MS)} Hz maximum)`
+            `[Screenshaver] Test #16 requested shader tick interval: ${SHADER_TICK_INTERVAL_MS}ms (~${Math.round(1000 / SHADER_TICK_INTERVAL_MS)} Hz maximum)`
         );
 
         this._shaderTickSource = GLib.timeout_add(
@@ -471,7 +482,7 @@ export default class ScreenshaverExtension extends Extension {
                     const maxIntervalMs = this._shaderMetricsMaxDeltaUs / 1000.0;
 
                     console.log(
-                        `[Screenshaver] Test #15B timing: requested=${SHADER_TICK_INTERVAL_MS}ms callbacks=${this._shaderMetricsWindowTicks} elapsed=${metricsElapsedSeconds.toFixed(3)}s effective=${effectiveHz.toFixed(2)}Hz avg=${averageIntervalMs.toFixed(2)}ms min=${minIntervalMs.toFixed(2)}ms max=${maxIntervalMs.toFixed(2)}ms total_ticks=${this._shaderTicks}`
+                        `[Screenshaver] Test #16 timing: requested=${SHADER_TICK_INTERVAL_MS}ms callbacks=${this._shaderMetricsWindowTicks} elapsed=${metricsElapsedSeconds.toFixed(3)}s effective=${effectiveHz.toFixed(2)}Hz avg=${averageIntervalMs.toFixed(2)}ms min=${minIntervalMs.toFixed(2)}ms max=${maxIntervalMs.toFixed(2)}ms total_ticks=${this._shaderTicks}`
                     );
 
                     this._shaderMetricsWindowStartedUs = tickNowUs;
@@ -487,7 +498,7 @@ export default class ScreenshaverExtension extends Extension {
 
                 if (this._shaderTicks === 1) {
                     console.log(
-                        '[Screenshaver] First Test #15B shader frame requested'
+                        '[Screenshaver] First Test #16 shader frame requested'
                     );
                 }
 
@@ -617,6 +628,132 @@ export default class ScreenshaverExtension extends Extension {
     }
 
 
+    _startScreenShieldHierarchyDiagnostic() {
+        this._stopScreenShieldHierarchyDiagnostic();
+
+        this._screenShieldDiagnosticPrevious = new Map();
+        this._screenShieldDiagnosticStartedUs = GLib.get_monotonic_time();
+
+        console.log('[Screenshaver] Test #16 ScreenShield hierarchy diagnostic started');
+        this._sampleScreenShieldHierarchy(true);
+
+        this._screenShieldDiagnosticSource = GLib.timeout_add(
+            GLib.PRIORITY_DEFAULT,
+            SCREENSHIELD_DIAGNOSTIC_INTERVAL_MS,
+            () => {
+                if (!this._lockActor || Main.sessionMode.currentMode !== 'unlock-dialog') {
+                    this._screenShieldDiagnosticSource = null;
+                    return GLib.SOURCE_REMOVE;
+                }
+
+                this._sampleScreenShieldHierarchy(false);
+                return GLib.SOURCE_CONTINUE;
+            }
+        );
+    }
+
+    _stopScreenShieldHierarchyDiagnostic() {
+        if (this._screenShieldDiagnosticSource) {
+            GLib.source_remove(this._screenShieldDiagnosticSource);
+            this._screenShieldDiagnosticSource = null;
+        }
+
+        this._screenShieldDiagnosticPrevious = new Map();
+        this._screenShieldDiagnosticStartedUs = 0;
+    }
+
+    _sampleScreenShieldHierarchy(initial) {
+        const dialog = Main.screenShield?._dialog;
+        if (!dialog)
+            return;
+
+        const current = new Map();
+        let actorCount = 0;
+
+        const visit = (actor, path, depth) => {
+            if (!actor || depth > SCREENSHIELD_DIAGNOSTIC_MAX_DEPTH ||
+                actorCount >= SCREENSHIELD_DIAGNOSTIC_MAX_ACTORS)
+                return;
+
+            actorCount++;
+
+            let name = '';
+            let typeName = 'unknown';
+            let visible = false;
+            let opacity = 0;
+            let width = 0;
+            let height = 0;
+
+            try {
+                name = actor.get_name?.() ?? '';
+            } catch (_) {
+                name = '';
+            }
+
+            try {
+                const gtype = actor.constructor?.$gtype;
+                if (gtype)
+                    typeName = GObject.type_name(gtype) ?? 'unknown';
+                else if (actor.constructor?.name)
+                    typeName = actor.constructor.name;
+            } catch (_) {
+                typeName = 'unknown';
+            }
+
+            try { visible = Boolean(actor.visible); } catch (_) {}
+            try { opacity = Number(actor.opacity); } catch (_) {}
+            try { width = Math.round(Number(actor.width)); } catch (_) {}
+            try { height = Math.round(Number(actor.height)); } catch (_) {}
+
+            const isShader = actor === this._lockActor;
+            const state = `type=${typeName} name=${JSON.stringify(name)} visible=${visible} opacity=${opacity} size=${width}x${height} shader=${isShader}`;
+            current.set(path, state);
+
+            let children = [];
+            try {
+                children = actor.get_children?.() ?? [];
+            } catch (_) {
+                children = [];
+            }
+
+            for (let i = 0; i < children.length; i++)
+                visit(children[i], `${path}/${i}`, depth + 1);
+        };
+
+        visit(dialog, 'dialog', 0);
+
+        const elapsedMs = this._screenShieldDiagnosticStartedUs > 0
+            ? Math.floor((GLib.get_monotonic_time() - this._screenShieldDiagnosticStartedUs) / 1000)
+            : 0;
+
+        if (initial) {
+            console.log(
+                `[Screenshaver] Test #16 ScreenShield snapshot t=${elapsedMs}ms actors=${current.size}`
+            );
+            for (const [path, state] of current)
+                console.log(`[Screenshaver] Test #16 actor ${path} ${state}`);
+        } else {
+            for (const [path, state] of current) {
+                const previous = this._screenShieldDiagnosticPrevious.get(path);
+                if (previous !== state) {
+                    console.log(
+                        `[Screenshaver] Test #16 actor-change t=${elapsedMs}ms ${path} ${previous === undefined ? 'NEW ' : ''}${state}`
+                    );
+                }
+            }
+
+            for (const path of this._screenShieldDiagnosticPrevious.keys()) {
+                if (!current.has(path)) {
+                    console.log(
+                        `[Screenshaver] Test #16 actor-change t=${elapsedMs}ms ${path} REMOVED`
+                    );
+                }
+            }
+        }
+
+        this._screenShieldDiagnosticPrevious = current;
+    }
+
     _ensureIdleInhibitor() {
         if (this._idleInhibitCookie || this._idleInhibitRequestPending)
             return;
@@ -630,7 +767,7 @@ export default class ScreenshaverExtension extends Extension {
             if (waitState !== this._idleInhibitWaitState) {
                 this._idleInhibitWaitState = waitState;
                 console.log(
-                    `[Screenshaver] Test #15B idle inhibitor waiting: ${waitState}`
+                    `[Screenshaver] Test #16 idle inhibitor waiting: ${waitState}`
                 );
             }
             return;
@@ -653,7 +790,7 @@ export default class ScreenshaverExtension extends Extension {
         const requestGeneration = ++this._idleInhibitRequestGeneration;
         this._idleInhibitRequestPending = true;
 
-        console.log('[Screenshaver] Test #15B requesting GNOME session idle inhibitor (flag=8)');
+        console.log('[Screenshaver] Test #16 requesting GNOME session idle inhibitor (flag=8)');
 
         try {
             Gio.DBus.session.call(
@@ -685,7 +822,7 @@ export default class ScreenshaverExtension extends Extension {
                             this._idleInhibitRequestPending = false;
 
                         console.log(
-                            `[Screenshaver] Test #15B GNOME session idle inhibitor request failed: ${error}`
+                            `[Screenshaver] Test #16 GNOME session idle inhibitor request failed: ${error}`
                         );
                         return;
                     }
@@ -701,7 +838,7 @@ export default class ScreenshaverExtension extends Extension {
                     this._idleInhibitRequestPending = false;
                     this._idleInhibitCookie = cookie;
                     console.log(
-                        `[Screenshaver] Test #15B GNOME session idle inhibitor acquired cookie=${cookie} flag=8`
+                        `[Screenshaver] Test #16 GNOME session idle inhibitor acquired cookie=${cookie} flag=8`
                     );
                 }
             );
@@ -710,7 +847,7 @@ export default class ScreenshaverExtension extends Extension {
                 this._idleInhibitRequestPending = false;
 
             console.log(
-                `[Screenshaver] Test #15B unable to dispatch GNOME session idle inhibitor request: ${error}`
+                `[Screenshaver] Test #16 unable to dispatch GNOME session idle inhibitor request: ${error}`
             );
         }
     }
@@ -750,18 +887,18 @@ export default class ScreenshaverExtension extends Extension {
                     try {
                         Gio.DBus.session.call_finish(result);
                         console.log(
-                            `[Screenshaver] Test #15B GNOME session idle inhibitor released cookie=${cookie} (${reason})`
+                            `[Screenshaver] Test #16 GNOME session idle inhibitor released cookie=${cookie} (${reason})`
                         );
                     } catch (error) {
                         console.log(
-                            `[Screenshaver] Test #15B GNOME session idle inhibitor release failed cookie=${cookie}: ${error}`
+                            `[Screenshaver] Test #16 GNOME session idle inhibitor release failed cookie=${cookie}: ${error}`
                         );
                     }
                 }
             );
         } catch (error) {
             console.log(
-                `[Screenshaver] Test #15B unable to dispatch GNOME session idle inhibitor release cookie=${cookie}: ${error}`
+                `[Screenshaver] Test #16 unable to dispatch GNOME session idle inhibitor release cookie=${cookie}: ${error}`
             );
         }
     }
@@ -1157,6 +1294,7 @@ export default class ScreenshaverExtension extends Extension {
     _removeLockActor() {
         this._stopSessionValidation();
         this._stopPowerSaveRecovery();
+        this._stopScreenShieldHierarchyDiagnostic();
         this._releaseIdleInhibitor();
 
         if (this._postBlankScreenShieldWakeSource) {
