@@ -98,6 +98,7 @@ export default class ScreenshaverExtension extends Extension {
         this._idleInhibitCookie = 0;
         this._idleInhibitRequestGeneration = 0;
         this._idleInhibitRequestPending = false;
+        this._idleInhibitWaitState = null;
 
         this._sessionModeSignal = Main.sessionMode.connect(
             'updated',
@@ -159,6 +160,7 @@ export default class ScreenshaverExtension extends Extension {
                     return GLib.SOURCE_REMOVE;
                 }
 
+                this._ensureIdleInhibitor();
                 return GLib.SOURCE_CONTINUE;
             }
         );
@@ -179,11 +181,12 @@ export default class ScreenshaverExtension extends Extension {
         }
 
         this._startSessionValidation();
-        this._acquireIdleInhibitor();
 
         console.log(
             `[Screenshaver] GNOME runtime handshake accepted for pid=${session.pid}`
         );
+
+        this._ensureIdleInhibitor();
 
         return true;
     }
@@ -355,7 +358,7 @@ export default class ScreenshaverExtension extends Extension {
                 );
 
             console.log(
-                `[Screenshaver] Test #15 loaded GLSL source: ${shaderPath} (${shaderBytes.length} bytes)`
+                `[Screenshaver] Test #15A loaded GLSL source: ${shaderPath} (${shaderBytes.length} bytes)`
             );
 
             this._shaderEffect = new ScreenshaverTest12GLSLEffect();
@@ -382,7 +385,7 @@ export default class ScreenshaverExtension extends Extension {
         backgroundGroup.add_child(this._lockActor);
 
         console.log(
-            '[Screenshaver] Test #15 shader actor added above GNOME lock background'
+            '[Screenshaver] Test #15A shader actor added above GNOME lock background'
         );
 
         // Preserve the already-proven GNOME lock/power-management handling.
@@ -401,7 +404,7 @@ export default class ScreenshaverExtension extends Extension {
         this._shaderMetricsMaxDeltaUs = 0;
 
         console.log(
-            `[Screenshaver] Test #15 requested shader tick interval: ${SHADER_TICK_INTERVAL_MS}ms (~${Math.round(1000 / SHADER_TICK_INTERVAL_MS)} Hz maximum)`
+            `[Screenshaver] Test #15A requested shader tick interval: ${SHADER_TICK_INTERVAL_MS}ms (~${Math.round(1000 / SHADER_TICK_INTERVAL_MS)} Hz maximum)`
         );
 
         this._shaderTickSource = GLib.timeout_add(
@@ -467,7 +470,7 @@ export default class ScreenshaverExtension extends Extension {
                     const maxIntervalMs = this._shaderMetricsMaxDeltaUs / 1000.0;
 
                     console.log(
-                        `[Screenshaver] Test #15 timing: requested=${SHADER_TICK_INTERVAL_MS}ms callbacks=${this._shaderMetricsWindowTicks} elapsed=${metricsElapsedSeconds.toFixed(3)}s effective=${effectiveHz.toFixed(2)}Hz avg=${averageIntervalMs.toFixed(2)}ms min=${minIntervalMs.toFixed(2)}ms max=${maxIntervalMs.toFixed(2)}ms total_ticks=${this._shaderTicks}`
+                        `[Screenshaver] Test #15A timing: requested=${SHADER_TICK_INTERVAL_MS}ms callbacks=${this._shaderMetricsWindowTicks} elapsed=${metricsElapsedSeconds.toFixed(3)}s effective=${effectiveHz.toFixed(2)}Hz avg=${averageIntervalMs.toFixed(2)}ms min=${minIntervalMs.toFixed(2)}ms max=${maxIntervalMs.toFixed(2)}ms total_ticks=${this._shaderTicks}`
                     );
 
                     this._shaderMetricsWindowStartedUs = tickNowUs;
@@ -483,7 +486,7 @@ export default class ScreenshaverExtension extends Extension {
 
                 if (this._shaderTicks === 1) {
                     console.log(
-                        '[Screenshaver] First Test #15 shader frame requested'
+                        '[Screenshaver] First Test #15A shader frame requested'
                     );
                 }
 
@@ -613,6 +616,30 @@ export default class ScreenshaverExtension extends Extension {
     }
 
 
+    _ensureIdleInhibitor() {
+        if (this._idleInhibitCookie || this._idleInhibitRequestPending)
+            return;
+
+        const unlockDialog = Main.sessionMode.currentMode === 'unlock-dialog';
+        const locked = Boolean(Main.screenShield?.locked);
+        const active = Boolean(Main.screenShield?.active);
+        const hasActor = Boolean(this._lockActor);
+
+        if (!hasActor || !unlockDialog || !locked || !active) {
+            const waitState = `actor=${hasActor} unlock-dialog=${unlockDialog} locked=${locked} active=${active}`;
+            if (waitState !== this._idleInhibitWaitState) {
+                this._idleInhibitWaitState = waitState;
+                console.log(
+                    `[Screenshaver] Test #15A idle inhibitor waiting: ${waitState}`
+                );
+            }
+            return;
+        }
+
+        this._idleInhibitWaitState = null;
+        this._acquireIdleInhibitor();
+    }
+
     _acquireIdleInhibitor() {
         if (this._idleInhibitCookie || this._idleInhibitRequestPending)
             return;
@@ -627,7 +654,7 @@ export default class ScreenshaverExtension extends Extension {
         const requestGeneration = ++this._idleInhibitRequestGeneration;
         this._idleInhibitRequestPending = true;
 
-        console.log('[Screenshaver] Test #15 requesting GNOME session idle inhibitor (flag=8)');
+        console.log('[Screenshaver] Test #15A requesting GNOME session idle inhibitor (flag=8)');
 
         try {
             Gio.DBus.session.call(
@@ -659,7 +686,7 @@ export default class ScreenshaverExtension extends Extension {
                             this._idleInhibitRequestPending = false;
 
                         console.log(
-                            `[Screenshaver] Test #15 GNOME session idle inhibitor request failed: ${error}`
+                            `[Screenshaver] Test #15A GNOME session idle inhibitor request failed: ${error}`
                         );
                         return;
                     }
@@ -676,7 +703,7 @@ export default class ScreenshaverExtension extends Extension {
                     this._idleInhibitRequestPending = false;
                     this._idleInhibitCookie = cookie;
                     console.log(
-                        `[Screenshaver] Test #15 GNOME session idle inhibitor acquired cookie=${cookie} flag=8`
+                        `[Screenshaver] Test #15A GNOME session idle inhibitor acquired cookie=${cookie} flag=8`
                     );
                 }
             );
@@ -685,7 +712,7 @@ export default class ScreenshaverExtension extends Extension {
                 this._idleInhibitRequestPending = false;
 
             console.log(
-                `[Screenshaver] Test #15 unable to dispatch GNOME session idle inhibitor request: ${error}`
+                `[Screenshaver] Test #15A unable to dispatch GNOME session idle inhibitor request: ${error}`
             );
         }
     }
@@ -695,6 +722,7 @@ export default class ScreenshaverExtension extends Extension {
         // its callback immediately Uninhibit()s the returned cookie.
         this._idleInhibitRequestGeneration++;
         this._idleInhibitRequestPending = false;
+        this._idleInhibitWaitState = null;
 
         const cookie = this._idleInhibitCookie;
         this._idleInhibitCookie = 0;
@@ -724,18 +752,18 @@ export default class ScreenshaverExtension extends Extension {
                     try {
                         Gio.DBus.session.call_finish(result);
                         console.log(
-                            `[Screenshaver] Test #15 GNOME session idle inhibitor released cookie=${cookie} (${reason})`
+                            `[Screenshaver] Test #15A GNOME session idle inhibitor released cookie=${cookie} (${reason})`
                         );
                     } catch (error) {
                         console.log(
-                            `[Screenshaver] Test #15 GNOME session idle inhibitor release failed cookie=${cookie}: ${error}`
+                            `[Screenshaver] Test #15A GNOME session idle inhibitor release failed cookie=${cookie}: ${error}`
                         );
                     }
                 }
             );
         } catch (error) {
             console.log(
-                `[Screenshaver] Test #15 unable to dispatch GNOME session idle inhibitor release cookie=${cookie}: ${error}`
+                `[Screenshaver] Test #15A unable to dispatch GNOME session idle inhibitor release cookie=${cookie}: ${error}`
             );
         }
     }
