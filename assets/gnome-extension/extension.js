@@ -91,8 +91,8 @@ export default class ScreenshaverExtension extends Extension {
         this._postBlankScreenShieldWakeIssued = false;
         this._postBlankScreenShieldWakeSource = null;
         this._postBlankScreenShieldWakeCompletedUs = 0;
-        this._delayedBlankScreenShieldWakeIssued = false;
-        this._delayedBlankScreenShieldWakeSource = null;
+        this._delayedBlankOpacityNudgeIssued = false;
+        this._delayedBlankOpacityNudgeSource = null;
         this._refreshCalls = 0;
         this._uploadAttempts = 0;
         this._uploadSuccesses = 0;
@@ -665,15 +665,15 @@ export default class ScreenshaverExtension extends Extension {
             );
         }
 
-        // Test #7: Test #6 proved that GNOME performs a second NORMAL -> BLANK
-        // transition roughly 15 seconds after the first post-blank wake.  The
-        // shader effect remains alive during that transition, but presentation
-        // freezes until ScreenShield is woken again.  Recover from that one
-        // delayed transition exactly once, then leave all later power-management
-        // behavior to GNOME.
+        // Test #8: Test #7 proved that another ScreenShield wake merely restarts
+        // GNOME's roughly 15-second blank countdown.  Re-test the earlier
+        // presentation-invalidation technique instead: on the first delayed
+        // NORMAL -> BLANK transition, momentarily change the lock actor opacity
+        // from 255 to 254 and immediately restore it to 255, forcing a Clutter
+        // paint-state change without waking ScreenShield or writing PowerSaveMode.
         if (this._postBlankScreenShieldWakeCompletedUs > 0 &&
-            !this._delayedBlankScreenShieldWakeIssued &&
-            !this._delayedBlankScreenShieldWakeSource &&
+            !this._delayedBlankOpacityNudgeIssued &&
+            !this._delayedBlankOpacityNudgeSource &&
             previousPowerSaveMode === 0 && value === 3 &&
             Main.sessionMode.currentMode === 'unlock-dialog' &&
             Main.screenShield?.locked && Main.screenShield?.active) {
@@ -684,7 +684,7 @@ export default class ScreenshaverExtension extends Extension {
                 console.log(
                     `[Screenshaver] Observed delayed post-lock blank transition 0 -> 3 after ${Math.floor(elapsedSincePostBlankWakeUs / 1000)}ms`
                 );
-                this._scheduleDelayedBlankScreenShieldWake();
+                this._scheduleDelayedBlankOpacityNudge();
                 return;
             }
         }
@@ -792,48 +792,53 @@ export default class ScreenshaverExtension extends Extension {
         );
     }
 
-    _scheduleDelayedBlankScreenShieldWake() {
-        if (this._delayedBlankScreenShieldWakeIssued ||
-            this._delayedBlankScreenShieldWakeSource ||
+    _scheduleDelayedBlankOpacityNudge() {
+        if (this._delayedBlankOpacityNudgeIssued ||
+            this._delayedBlankOpacityNudgeSource ||
             !this._lockActor) {
             return;
         }
 
-        this._delayedBlankScreenShieldWakeIssued = true;
+        this._delayedBlankOpacityNudgeIssued = true;
         console.log(
-            `[Screenshaver] Scheduling final one-shot ScreenShield wake in ${POST_BLANK_SCREENSHIELD_WAKE_DELAY_MS}ms`
+            `[Screenshaver] Scheduling delayed lock-screen opacity nudge in ${POST_BLANK_SCREENSHIELD_WAKE_DELAY_MS}ms`
         );
 
-        this._delayedBlankScreenShieldWakeSource = GLib.timeout_add(
+        this._delayedBlankOpacityNudgeSource = GLib.timeout_add(
             GLib.PRIORITY_DEFAULT,
             POST_BLANK_SCREENSHIELD_WAKE_DELAY_MS,
             () => {
-                this._delayedBlankScreenShieldWakeSource = null;
+                this._delayedBlankOpacityNudgeSource = null;
 
                 if (!this._lockActor ||
                     Main.sessionMode.currentMode !== 'unlock-dialog' ||
                     !Main.screenShield?.locked ||
                     !Main.screenShield?.active) {
                     console.log(
-                        '[Screenshaver] Final one-shot ScreenShield wake skipped because secure lock state is no longer active'
-                    );
-                    return GLib.SOURCE_REMOVE;
-                }
-
-                const screenShield = Main.screenShield;
-                if (typeof screenShield._wakeUpScreen !== 'function') {
-                    console.log(
-                        '[Screenshaver] Final ScreenShield wake method unavailable; leaving native lock state unchanged'
+                        '[Screenshaver] Delayed opacity nudge skipped because secure lock state is no longer active'
                     );
                     return GLib.SOURCE_REMOVE;
                 }
 
                 try {
-                    console.log('[Screenshaver] Requesting final one-shot native ScreenShield wake');
-                    screenShield._wakeUpScreen();
-                    console.log('[Screenshaver] Final one-shot native ScreenShield wake completed');
+                    console.log('[Screenshaver] Applying lock-screen opacity nudge 255 -> 254');
+                    this._lockActor.opacity = 254;
+                    this._lockActor.queue_redraw();
+
+                    GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+                        if (this._lockActor &&
+                            Main.sessionMode.currentMode === 'unlock-dialog' &&
+                            Main.screenShield?.locked &&
+                            Main.screenShield?.active) {
+                            this._lockActor.opacity = 255;
+                            this._lockActor.queue_redraw();
+                            console.log('[Screenshaver] Restored lock-screen opacity 254 -> 255');
+                        }
+
+                        return GLib.SOURCE_REMOVE;
+                    });
                 } catch (error) {
-                    console.log(`[Screenshaver] Final one-shot native ScreenShield wake failed: ${error}`);
+                    console.log(`[Screenshaver] Lock-screen opacity nudge failed: ${error}`);
                 }
 
                 return GLib.SOURCE_REMOVE;
@@ -941,9 +946,9 @@ export default class ScreenshaverExtension extends Extension {
             this._postBlankScreenShieldWakeSource = null;
         }
 
-        if (this._delayedBlankScreenShieldWakeSource) {
-            GLib.source_remove(this._delayedBlankScreenShieldWakeSource);
-            this._delayedBlankScreenShieldWakeSource = null;
+        if (this._delayedBlankOpacityNudgeSource) {
+            GLib.source_remove(this._delayedBlankOpacityNudgeSource);
+            this._delayedBlankOpacityNudgeSource = null;
         }
 
         if (this._shaderTickSource) {
@@ -981,8 +986,8 @@ export default class ScreenshaverExtension extends Extension {
         this._postBlankScreenShieldWakeIssued = false;
         this._postBlankScreenShieldWakeSource = null;
         this._postBlankScreenShieldWakeCompletedUs = 0;
-        this._delayedBlankScreenShieldWakeIssued = false;
-        this._delayedBlankScreenShieldWakeSource = null;
+        this._delayedBlankOpacityNudgeIssued = false;
+        this._delayedBlankOpacityNudgeSource = null;
         this._powerSaveFallbackQueryInFlight = false;
         this._activeSessionId = null;
         this._transportGeneration++;
