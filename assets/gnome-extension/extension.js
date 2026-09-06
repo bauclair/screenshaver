@@ -52,6 +52,7 @@ const POLL_INTERVAL_MS = 33;
 const SHADER_TICK_INTERVAL_MS = 33;
 const POWER_SAVE_FALLBACK_INTERVAL_MS = 1000;
 const POST_WAKE_POWER_SAVE_MIN_DELAY_MS = 10000;
+const POST_BLANK_SCREENSHIELD_WAKE_DELAY_MS = 250;
 const RUNTIME_MARKER_FILENAME = 'screenshaver-gnome-lock.active';
 const RUNTIME_MARKER_VERSION = 1;
 const SESSION_VALIDATION_INTERVAL_MS = 1000;
@@ -87,6 +88,8 @@ export default class ScreenshaverExtension extends Extension {
         this._postWakeNormalObservedUs = 0;
         this._postWakePowerSaveCorrectionIssued = false;
         this._postWakePowerSaveCorrectionInFlight = false;
+        this._postBlankScreenShieldWakeIssued = false;
+        this._postBlankScreenShieldWakeSource = null;
         this._refreshCalls = 0;
         this._uploadAttempts = 0;
         this._uploadSuccesses = 0;
@@ -685,14 +688,20 @@ export default class ScreenshaverExtension extends Extension {
             const elapsedUs = GLib.get_monotonic_time() - this._postWakeNormalObservedUs;
             const minimumDelayUs = POST_WAKE_POWER_SAVE_MIN_DELAY_MS * 1000;
 
-            // Never interfere with GNOME's lock-establishment blanking.  The
-            // GSD transition we are targeting is the 15-second expiry of
-            // POWER_UP_TIME_ON_AC, so an earlier 0 -> 3 transition is observed
-            // and logged but deliberately left untouched.
+            // Test #6: the previous diagnostic proved that this early 0 -> 3
+            // transition is the one that visually blanks the shader even
+            // though the Shell.GLSLEffect itself remains alive.  Do not fight
+            // Mutter by continuously forcing PowerSaveMode.  Instead, let the
+            // blank transition settle, disarm the older PowerSave correction,
+            // then issue exactly one deferred ScreenShield wake -- the same
+            // native operation that user activity invokes.
             if (elapsedUs < minimumDelayUs) {
+                this._postWakePowerSaveCorrectionIssued = true;
+                this._postWakePowerSaveCorrectionArmed = false;
                 console.log(
-                    `[Screenshaver] Ignoring early post-wake PowerSaveMode 0 -> 3 transition after ${Math.floor(elapsedUs / 1000)}ms`
+                    `[Screenshaver] Observed initial lock blank transition 0 -> 3 after ${Math.floor(elapsedUs / 1000)}ms`
                 );
+                this._schedulePostBlankScreenShieldWake();
                 return;
             }
 
@@ -703,6 +712,56 @@ export default class ScreenshaverExtension extends Extension {
             );
             this._setPostWakePowerSaveModeNormal();
         }
+    }
+
+
+    _schedulePostBlankScreenShieldWake() {
+        if (this._postBlankScreenShieldWakeIssued ||
+            this._postBlankScreenShieldWakeSource ||
+            !this._lockActor) {
+            return;
+        }
+
+        this._postBlankScreenShieldWakeIssued = true;
+        console.log(
+            `[Screenshaver] Scheduling one-shot post-blank ScreenShield wake in ${POST_BLANK_SCREENSHIELD_WAKE_DELAY_MS}ms`
+        );
+
+        this._postBlankScreenShieldWakeSource = GLib.timeout_add(
+            GLib.PRIORITY_DEFAULT,
+            POST_BLANK_SCREENSHIELD_WAKE_DELAY_MS,
+            () => {
+                this._postBlankScreenShieldWakeSource = null;
+
+                if (!this._lockActor ||
+                    Main.sessionMode.currentMode !== 'unlock-dialog' ||
+                    !Main.screenShield?.locked ||
+                    !Main.screenShield?.active) {
+                    console.log(
+                        '[Screenshaver] One-shot post-blank ScreenShield wake skipped because secure lock state is no longer active'
+                    );
+                    return GLib.SOURCE_REMOVE;
+                }
+
+                const screenShield = Main.screenShield;
+                if (typeof screenShield._wakeUpScreen !== 'function') {
+                    console.log(
+                        '[Screenshaver] Post-blank ScreenShield wake method unavailable; leaving native lock state unchanged'
+                    );
+                    return GLib.SOURCE_REMOVE;
+                }
+
+                try {
+                    console.log('[Screenshaver] Requesting one-shot post-blank native ScreenShield wake');
+                    screenShield._wakeUpScreen();
+                    console.log('[Screenshaver] One-shot post-blank native ScreenShield wake completed');
+                } catch (error) {
+                    console.log(`[Screenshaver] One-shot post-blank native ScreenShield wake failed: ${error}`);
+                }
+
+                return GLib.SOURCE_REMOVE;
+            }
+        );
     }
 
     _setPostWakePowerSaveModeNormal() {
@@ -800,6 +859,11 @@ export default class ScreenshaverExtension extends Extension {
         this._stopSessionValidation();
         this._stopPowerSaveRecovery();
 
+        if (this._postBlankScreenShieldWakeSource) {
+            GLib.source_remove(this._postBlankScreenShieldWakeSource);
+            this._postBlankScreenShieldWakeSource = null;
+        }
+
         if (this._shaderTickSource) {
             GLib.source_remove(this._shaderTickSource);
             this._shaderTickSource = null;
@@ -832,6 +896,8 @@ export default class ScreenshaverExtension extends Extension {
         this._postWakeNormalObservedUs = 0;
         this._postWakePowerSaveCorrectionIssued = false;
         this._postWakePowerSaveCorrectionInFlight = false;
+        this._postBlankScreenShieldWakeIssued = false;
+        this._postBlankScreenShieldWakeSource = null;
         this._powerSaveFallbackQueryInFlight = false;
         this._activeSessionId = null;
         this._transportGeneration++;
