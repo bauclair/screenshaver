@@ -14,7 +14,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 let shaderEffectTypeSerial = 0;
 
-function createShaderEffectClass(shaderBody, generation, renderScale) {
+function createShaderEffectClass(shaderBody, generation, renderScale, colorPrecision) {
     // GObject type registrations survive effect destruction and can also survive
     // extension disable/enable cycles inside the same GNOME Shell process.
     // Include monotonic time plus a module-local serial so every construction
@@ -107,7 +107,7 @@ function createShaderEffectClass(shaderBody, generation, renderScale) {
             );
         }
 
-        // Test #29C: keep Shell.GLSLEffect's own target at native size. For
+        // Test #30: keep Shell.GLSLEffect's own target at native size. For
         // Render Scale < 1.0, execute the shader pipeline into a separate
         // reduced-resolution Cogl.Offscreen framebuffer, then present that
         // resulting texture fullscreen with a plain Cogl pipeline. This is the
@@ -149,17 +149,12 @@ function createShaderEffectClass(shaderBody, generation, renderScale) {
 
                 if (!this._screenshaverOffscreenProbeLogged) {
                     console.log(
-                        `[Screenshaver] Test #29C native Shell.GLSLEffect target: ` +
+                        `[Screenshaver] Test #30 native Shell.GLSLEffect target: ` +
                         `valid=${targetValid} target=${targetWidth}x${targetHeight} ` +
                         `texture=${sourceTextureWidth}x${sourceTextureHeight} ` +
                         `generation=${generation}`
                     );
                     this._screenshaverOffscreenProbeLogged = true;
-                }
-
-                if (Math.abs(scale - 1.0) <= 0.0001) {
-                    super.vfunc_paint_target(node, paintContext);
-                    return;
                 }
 
                 if (!targetValid || !(targetWidth > 0.0) || !(targetHeight > 0.0))
@@ -171,28 +166,68 @@ function createShaderEffectClass(shaderBody, generation, renderScale) {
                 if (!coglContext)
                     throw new Error('Cogl context unavailable from Shell.GLSLEffect texture');
 
+                const requestedPrecision = ['standard', 'high', 'auto'].includes(colorPrecision)
+                    ? colorPrecision
+                    : 'auto';
+
                 const needsRenderTarget =
                     !this._screenshaverRenderTexture ||
                     !this._screenshaverRenderOffscreen ||
                     this._screenshaverRenderWidth !== renderWidth ||
-                    this._screenshaverRenderHeight !== renderHeight;
+                    this._screenshaverRenderHeight !== renderHeight ||
+                    this._screenshaverRequestedPrecision !== requestedPrecision;
 
                 if (needsRenderTarget) {
-                    const renderTexture = Cogl.Texture2D.new_with_size(
-                        coglContext,
-                        renderWidth,
-                        renderHeight
-                    );
-                    renderTexture.allocate();
+                    const allocateTarget = format => {
+                        const renderTexture = Cogl.Texture2D.new_with_format(
+                            coglContext,
+                            renderWidth,
+                            renderHeight,
+                            format
+                        );
+                        renderTexture.set_premultiplied(false);
+                        renderTexture.allocate();
 
-                    const renderOffscreen = Cogl.Offscreen.new_with_texture(renderTexture);
-                    renderOffscreen.allocate();
-                    renderOffscreen.set_viewport(
-                        0.0,
-                        0.0,
-                        renderWidth,
-                        renderHeight
-                    );
+                        const renderOffscreen = Cogl.Offscreen.new_with_texture(renderTexture);
+                        renderOffscreen.allocate();
+                        renderOffscreen.set_viewport(
+                            0.0,
+                            0.0,
+                            renderWidth,
+                            renderHeight
+                        );
+
+                        return [renderTexture, renderOffscreen];
+                    };
+
+                    let selectedPrecision;
+                    let selectedFormat;
+                    let renderTexture;
+                    let renderOffscreen;
+                    let fellBack = false;
+                    let fallbackReason = '';
+
+                    if (requestedPrecision === 'standard') {
+                        selectedPrecision = 'standard';
+                        selectedFormat = Cogl.PixelFormat.RGBA_8888;
+                        [renderTexture, renderOffscreen] = allocateTarget(selectedFormat);
+                    } else if (requestedPrecision === 'high') {
+                        selectedPrecision = 'high';
+                        selectedFormat = Cogl.PixelFormat.RGBA_FP_16161616;
+                        [renderTexture, renderOffscreen] = allocateTarget(selectedFormat);
+                    } else {
+                        try {
+                            selectedPrecision = 'high';
+                            selectedFormat = Cogl.PixelFormat.RGBA_FP_16161616;
+                            [renderTexture, renderOffscreen] = allocateTarget(selectedFormat);
+                        } catch (highError) {
+                            fellBack = true;
+                            fallbackReason = String(highError);
+                            selectedPrecision = 'standard';
+                            selectedFormat = Cogl.PixelFormat.RGBA_8888;
+                            [renderTexture, renderOffscreen] = allocateTarget(selectedFormat);
+                        }
+                    }
 
                     const presentationPipeline = Cogl.Pipeline.new(coglContext);
                     presentationPipeline.set_layer_texture(0, renderTexture);
@@ -207,12 +242,32 @@ function createShaderEffectClass(shaderBody, generation, renderScale) {
                     this._screenshaverPresentationPipeline = presentationPipeline;
                     this._screenshaverRenderWidth = renderWidth;
                     this._screenshaverRenderHeight = renderHeight;
+                    this._screenshaverRequestedPrecision = requestedPrecision;
+                    this._screenshaverSelectedPrecision = selectedPrecision;
+
+                    const textureFormat = renderTexture.get_format();
+                    const framebufferFormat = renderOffscreen.get_internal_format();
+                    const redBits = renderOffscreen.get_red_bits();
+                    const greenBits = renderOffscreen.get_green_bits();
+                    const blueBits = renderOffscreen.get_blue_bits();
+                    const alphaBits = renderOffscreen.get_alpha_bits();
 
                     console.log(
-                        `[Screenshaver] Test #29C reduced shader framebuffer allocated: ` +
+                        `[Screenshaver] Test #30 Color Precision framebuffer allocated: ` +
+                        `requested=${requestedPrecision} selected=${selectedPrecision} ` +
+                        `fallback=${fellBack ? 'yes' : 'no'} ` +
+                        `texture_format=${textureFormat} framebuffer_format=${framebufferFormat} ` +
+                        `bits=${redBits}/${greenBits}/${blueBits}/${alphaBits} ` +
                         `native=${nativeWidth}x${nativeHeight} scale=${scale.toFixed(3)} ` +
                         `render=${renderWidth}x${renderHeight} generation=${generation}`
                     );
+
+                    if (fellBack) {
+                        console.log(
+                            `[Screenshaver] Test #30 Color Precision Auto high-precision allocation failed; ` +
+                            `using standard: ${fallbackReason}`
+                        );
+                    }
                 }
 
                 const shaderPipeline = this.get_pipeline();
@@ -267,17 +322,17 @@ function createShaderEffectClass(shaderBody, generation, renderScale) {
                     const viewportWidth = this._screenshaverRenderOffscreen.get_viewport_width();
                     const viewportHeight = this._screenshaverRenderOffscreen.get_viewport_height();
                     console.log(
-                        `[Screenshaver] Test #29C shader rasterization: ` +
+                        `[Screenshaver] Test #30 shader rasterization: ` +
                         `framebuffer=${fbWidth}x${fbHeight} ` +
                         `viewport=${viewportWidth}x${viewportHeight} -> ` +
                         `presentation=${nativeWidth}x${nativeHeight} ` +
-                        `scale=${scale.toFixed(3)} generation=${generation}`
+                        `scale=${scale.toFixed(3)} precision=${this._screenshaverSelectedPrecision ?? requestedPrecision} generation=${generation}`
                     );
                     this._screenshaverPresentationProbeLogged = true;
                 }
             } catch (error) {
                 console.log(
-                    `[Screenshaver] Test #29C reduced shader pass failed; ` +
+                    `[Screenshaver] Test #30 precision/render-scale shader pass failed; ` +
                     `falling back to Shell.GLSLEffect native paint ` +
                     `generation=${generation}: ${error}`
                 );
@@ -650,6 +705,7 @@ export default class ScreenshaverExtension extends Extension {
             flipVertical: values.get('flip_vertical') === '1',
             hueRotation: Number.parseFloat(values.get('hue_rotation') ?? '0') || 0.0,
             renderScale: Math.max(0.01, Number.parseFloat(values.get('render_scale') ?? '1') || 1.0),
+            colorPrecision: (values.get('color_precision') ?? 'auto').toLowerCase(),
             subtitles: values.get('subtitles') === '1',
             placement: values.get('placement') ?? 'bottom:left',
         };
@@ -671,6 +727,7 @@ export default class ScreenshaverExtension extends Extension {
             metadata.flipVertical ? 1 : 0,
             metadata.hueRotation,
             metadata.renderScale,
+            metadata.colorPrecision,
             metadata.subtitles ? 1 : 0,
             metadata.placement,
         ].join('\u001f');
@@ -1063,7 +1120,7 @@ export default class ScreenshaverExtension extends Extension {
         };
     }
 
-    _buildShaderEffect(productionSource, width, height, elapsedSeconds, renderScale) {
+    _buildShaderEffect(productionSource, width, height, elapsedSeconds, renderScale, colorPrecision) {
         const shaderBody =
             this._extractShaderToyBodyFromProductionSource(productionSource);
 
@@ -1077,7 +1134,8 @@ export default class ScreenshaverExtension extends Extension {
         const EffectClass = createShaderEffectClass(
             shaderBody,
             nextGeneration,
-            renderScale
+            renderScale,
+            colorPrecision
         );
         const effect = new EffectClass();
 
@@ -1137,12 +1195,14 @@ export default class ScreenshaverExtension extends Extension {
         }
 
         const initialRenderScale = initialMetadata?.renderScale ?? 1.0;
+        const initialColorPrecision = initialMetadata?.colorPrecision ?? 'auto';
         const built = this._buildShaderEffect(
             productionSource,
             dialog.width,
             dialog.height,
             0.0,
-            initialRenderScale
+            initialRenderScale,
+            initialColorPrecision
         );
 
         this._shaderEffect = built.effect;
@@ -1233,9 +1293,11 @@ export default class ScreenshaverExtension extends Extension {
 
         if (handoff.productionSource === this._activeProductionSource) {
             const activeScale = this._descriptionMetadata?.renderScale ?? 1.0;
+            const activePrecision = this._descriptionMetadata?.colorPrecision ?? 'auto';
             const scaleChanged = Math.abs(observedMetadata.renderScale - activeScale) > 0.0001;
+            const precisionChanged = observedMetadata.colorPrecision !== activePrecision;
 
-            if (!scaleChanged) {
+            if (!scaleChanged && !precisionChanged) {
                 if (observedMetadataSignature !== this._activeMetadataSignature) {
                     this._descriptionMetadata = observedMetadata;
                     this._activeMetadataSignature = observedMetadataSignature;
@@ -1248,11 +1310,21 @@ export default class ScreenshaverExtension extends Extension {
                 return;
             }
 
-            console.log(
-                `[Screenshaver] Test #29 Render Scale metadata changed ` +
-                `${activeScale.toFixed(3)} -> ${observedMetadata.renderScale.toFixed(3)}; ` +
-                `rebuilding native effect target`
-            );
+            if (scaleChanged) {
+                console.log(
+                    `[Screenshaver] Test #29 Render Scale metadata changed ` +
+                    `${activeScale.toFixed(3)} -> ${observedMetadata.renderScale.toFixed(3)}; ` +
+                    `rebuilding native effect target`
+                );
+            }
+
+            if (precisionChanged) {
+                console.log(
+                    `[Screenshaver] Test #30 Color Precision metadata changed ` +
+                    `${activePrecision} -> ${observedMetadata.colorPrecision}; ` +
+                    `rebuilding native effect target`
+                );
+            }
         }
 
         const elapsedSeconds = this._shaderStartedUs > 0
@@ -1267,7 +1339,8 @@ export default class ScreenshaverExtension extends Extension {
                 this._lockActor.width,
                 this._lockActor.height,
                 elapsedSeconds,
-                observedMetadata.renderScale
+                observedMetadata.renderScale,
+                observedMetadata.colorPrecision
             );
         } catch (error) {
             console.log(
