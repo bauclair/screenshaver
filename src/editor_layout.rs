@@ -10158,17 +10158,46 @@ fn draw_post_processing_tab(
                             )
                             .inner;
 
-                        ui.label(
-                            format!(
-                                "{:.1}°",
-                                *hue_rotation,
-                            )
-                        );
+                        let hue_value_response =
+                            if bulk_edit_baseline.is_some() {
+                                ui.add_sized(
+                                    egui::vec2(
+                                        54.0 * metrics.scale,
+                                        ui.spacing().interact_size.y,
+                                    ),
+                                    egui::Button::new(
+                                        format!(
+                                            "{:.1}°",
+                                            *hue_rotation,
+                                        )
+                                    ),
+                                )
+                                .on_hover_cursor(
+                                    egui::CursorIcon::PointingHand
+                                )
+                                .on_hover_text(
+                                    if *bulk_hue_rotation_selected {
+                                        "Click to exclude Hue Rotation from Bulk Edit"
+                                    } else {
+                                        "Click to include Hue Rotation in Bulk Edit"
+                                    }
+                                )
+                            } else {
+                                ui.label(
+                                    format!(
+                                        "{:.1}°",
+                                        *hue_rotation,
+                                    )
+                                )
+                            };
 
-                        response
+                        (response, hue_value_response)
                     },
                 )
                 .inner;
+
+            let (hue_response, hue_value_response) =
+                hue_response;
 
             update_hover_help(
                 &hue_response,
@@ -10177,7 +10206,7 @@ fn draw_post_processing_tab(
             );
 
             if bulk_edit_baseline.is_some()
-                && (hue_response.clicked() || hue_response.drag_started())
+                && hue_value_response.clicked()
             {
                 *bulk_hue_rotation_selected =
                     !*bulk_hue_rotation_selected;
@@ -10188,7 +10217,7 @@ fn draw_post_processing_tab(
             {
                 editor_theme::paint_bulk_edit_border(
                     ui,
-                    hue_response.rect,
+                    hue_value_response.rect,
                     metrics.scale,
                 );
             }
