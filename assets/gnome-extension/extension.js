@@ -28,7 +28,7 @@ function createShaderEffectClass(shaderBody, generation, renderScale) {
         GTypeName: gtypeName,
     },
     class extends Shell.GLSLEffect {
-        vfunc_create_texture(width, height) {
+        vfunc_create_texture(coglContext, width, height) {
             const requestedWidth = Math.max(1, Math.round(Number(width)));
             const requestedHeight = Math.max(1, Math.round(Number(height)));
             const scale = Number.isFinite(renderScale) && renderScale > 0.0
@@ -38,11 +38,9 @@ function createShaderEffectClass(shaderBody, generation, renderScale) {
             const scaledHeight = Math.max(1, Math.round(requestedHeight * scale));
 
             try {
-                const actor = this.get_actor();
-                if (!actor)
-                    throw new Error('effect actor unavailable during create_texture');
+                if (!coglContext)
+                    throw new Error('Cogl context unavailable during create_texture');
 
-                const coglContext = actor.get_context().get_backend().get_cogl_context();
                 const texture = Cogl.Texture2D.new_with_size(
                     coglContext,
                     scaledWidth,
@@ -79,7 +77,7 @@ function createShaderEffectClass(shaderBody, generation, renderScale) {
                 this._screenshaverRenderHeight = requestedHeight;
                 this._screenshaverRenderScale = 1.0;
 
-                return super.vfunc_create_texture(width, height);
+                return super.vfunc_create_texture(coglContext, width, height);
             }
         }
 
