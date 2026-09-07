@@ -10145,15 +10145,25 @@ fn draw_post_processing_tab(
                                 |ui| {
                                     ui.set_width(slider_width);
 
-                                    draw_fine_slider(
-                                        ui,
-                                        hue_rotation,
-                                        crate::postprocess_shader::HUE_ROTATION_MIN,
-                                        crate::postprocess_shader::HUE_ROTATION_MAX,
-                                        shift_held,
-                                        metrics.scale,
-                                        hue_rotation_drag_state,
+                                    let slider_enabled =
+                                        bulk_edit_baseline.is_none()
+                                            || *bulk_hue_rotation_selected;
+
+                                    ui.add_enabled_ui(
+                                        slider_enabled,
+                                        |ui| {
+                                            draw_fine_slider(
+                                                ui,
+                                                hue_rotation,
+                                                crate::postprocess_shader::HUE_ROTATION_MIN,
+                                                crate::postprocess_shader::HUE_ROTATION_MAX,
+                                                shift_held,
+                                                metrics.scale,
+                                                hue_rotation_drag_state,
+                                            )
+                                        },
                                     )
+                                    .inner
                                 },
                             )
                             .inner;
@@ -10202,7 +10212,11 @@ fn draw_post_processing_tab(
             update_hover_help(
                 &hue_response,
                 hover_help_message,
-                "Rotate shader hue from -180° through +180°. Hold Shift while dragging for 10x finer adjustment.",
+                if bulk_edit_baseline.is_some() && !*bulk_hue_rotation_selected {
+                    "Click the numeric Hue Rotation value to enable this slider for Bulk Edit."
+                } else {
+                    "Rotate shader hue from -180° through +180°. Hold Shift while dragging for 10x finer adjustment."
+                },
             );
 
             if bulk_edit_baseline.is_some()
