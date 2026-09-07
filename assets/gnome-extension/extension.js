@@ -95,6 +95,57 @@ function createShaderEffectClass(shaderBody, generation) {
                 true
             );
         }
+
+        // Test #28: Shell.GLSLEffect is itself a Clutter.OffscreenEffect.
+        // Inspect the actual offscreen target from inside paint_target(), where
+        // Clutter documents the target texture/size as valid, then chain directly
+        // to Shell.GLSLEffect so rendering behavior remains unchanged.
+        vfunc_paint_target(node, paintContext) {
+            if (!this._screenshaverOffscreenProbeLogged) {
+                try {
+                    const targetSize = this.get_target_size();
+                    const texture = this.get_texture();
+
+                    let valid = false;
+                    let targetWidth = 0.0;
+                    let targetHeight = 0.0;
+
+                    if (Array.isArray(targetSize)) {
+                        if (targetSize.length >= 3) {
+                            valid = Boolean(targetSize[0]);
+                            targetWidth = Number(targetSize[1]);
+                            targetHeight = Number(targetSize[2]);
+                        } else if (targetSize.length >= 2) {
+                            // Some GI versions omit the gboolean success return.
+                            valid = true;
+                            targetWidth = Number(targetSize[0]);
+                            targetHeight = Number(targetSize[1]);
+                        }
+                    }
+
+                    const textureWidth = texture?.get_width?.() ?? 0;
+                    const textureHeight = texture?.get_height?.() ?? 0;
+
+                    console.log(
+                        `[Screenshaver] Test #28 Shell.GLSLEffect offscreen target: ` +
+                        `valid=${valid} target=${targetWidth}x${targetHeight} ` +
+                        `texture=${textureWidth}x${textureHeight} generation=${generation}`
+                    );
+
+                    this._screenshaverOffscreenProbeLogged = true;
+                } catch (error) {
+                    console.log(
+                        `[Screenshaver] Test #28 Shell.GLSLEffect offscreen probe failed ` +
+                        `generation=${generation}: ${error}`
+                    );
+                    // Log only once per generation. A probe failure must not
+                    // interfere with the already-proven shader presentation path.
+                    this._screenshaverOffscreenProbeLogged = true;
+                }
+            }
+
+            super.vfunc_paint_target(node, paintContext);
+        }
     });
 }
 
