@@ -191,7 +191,7 @@ function createShaderEffectClass(shaderBody, generation, renderScale) {
 
                 if (!this._screenshaverOffscreenProbeLogged) {
                     console.log(
-                        `[Screenshaver] Test #29B Shell.GLSLEffect offscreen target: ` +
+                        `[Screenshaver] Test #29B1 Shell.GLSLEffect offscreen target: ` +
                         `valid=${targetValid} target=${targetWidth}x${targetHeight} ` +
                         `texture=${textureWidth}x${textureHeight} generation=${generation}`
                     );
@@ -215,8 +215,15 @@ function createShaderEffectClass(shaderBody, generation, renderScale) {
                 if (!(nativeWidth > 0.0) || !(nativeHeight > 0.0))
                     throw new Error(`invalid native target ${nativeWidth}x${nativeHeight}`);
 
-                const rect = new Graphene.Rect();
-                rect.init(0.0, 0.0, nativeWidth, nativeHeight);
+                // Clutter.PaintNode.add_texture_rectangle() requires a
+                // Clutter.ActorBox. Test #29B incorrectly supplied a
+                // Graphene.Rect, so the custom fullscreen path never ran.
+                const rect = new Clutter.ActorBox({
+                    x1: 0.0,
+                    y1: 0.0,
+                    x2: nativeWidth,
+                    y2: nativeHeight,
+                });
 
                 const pipelineNode = Clutter.PipelineNode.new(pipeline);
                 pipelineNode.add_texture_rectangle(rect, 0.0, 0.0, 1.0, 1.0);
@@ -224,7 +231,7 @@ function createShaderEffectClass(shaderBody, generation, renderScale) {
 
                 if (!this._screenshaverPresentationProbeLogged) {
                     console.log(
-                        `[Screenshaver] Test #29B fullscreen presentation: ` +
+                        `[Screenshaver] Test #29B1 fullscreen presentation: ` +
                         `texture=${textureWidth}x${textureHeight} -> ` +
                         `native=${nativeWidth}x${nativeHeight} scale=${scale.toFixed(3)} ` +
                         `generation=${generation}`
@@ -233,7 +240,7 @@ function createShaderEffectClass(shaderBody, generation, renderScale) {
                 }
             } catch (error) {
                 console.log(
-                    `[Screenshaver] Test #29B fullscreen presentation failed; ` +
+                    `[Screenshaver] Test #29B1 fullscreen presentation failed; ` +
                     `falling back to Shell.GLSLEffect native paint ` +
                     `generation=${generation}: ${error}`
                 );
