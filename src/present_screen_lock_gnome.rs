@@ -7,9 +7,10 @@ const RUNTIME_SHADER_FILENAME: &str = "screenshaver-gnome-lock-shader.glsl";
 const RUNTIME_SHADER_TEMP_FILENAME: &str = "screenshaver-gnome-lock-shader.glsl.tmp";
 const RUNTIME_METADATA_FILENAME: &str = "screenshaver-gnome-lock-metadata.txt";
 const RUNTIME_METADATA_TEMP_FILENAME: &str = "screenshaver-gnome-lock-metadata.txt.tmp";
+const RUNTIME_ADVANCE_FILENAME: &str = "screenshaver-gnome-lock-advance.txt";
 const IDLE_POLL_INTERVAL: Duration = Duration::from_millis(25);
 
-/// GNOME Test #20 presentation host.
+/// GNOME Test #25 presentation host.
 ///
 /// GNOME owns authentication, input isolation, and unlock authority. Screenshaver
 /// owns shader policy selection and preprocessing. The resulting production
@@ -52,7 +53,7 @@ impl GnomeLockPresenter {
 
         log_information(
             logfile,
-            "[LOCK] GNOME Test #20 production shader-source backend initialized",
+            "[LOCK] GNOME Test #25 production shader-source backend initialized",
         );
 
         Ok(Self { producer })
@@ -84,6 +85,7 @@ struct GnomeShaderSourceProducer {
     runtime_shader_temp_path: PathBuf,
     runtime_metadata_path: PathBuf,
     runtime_metadata_temp_path: PathBuf,
+    runtime_advance_path: PathBuf,
     active_shader_name: String,
     active_policy_id: i64,
 }
@@ -112,10 +114,12 @@ impl GnomeShaderSourceProducer {
         let runtime_shader_temp_path = runtime_dir.join(RUNTIME_SHADER_TEMP_FILENAME);
         let runtime_metadata_path = runtime_dir.join(RUNTIME_METADATA_FILENAME);
         let runtime_metadata_temp_path = runtime_dir.join(RUNTIME_METADATA_TEMP_FILENAME);
+        let runtime_advance_path = runtime_dir.join(RUNTIME_ADVANCE_FILENAME);
         let _ = fs::remove_file(&runtime_shader_path);
         let _ = fs::remove_file(&runtime_shader_temp_path);
         let _ = fs::remove_file(&runtime_metadata_path);
         let _ = fs::remove_file(&runtime_metadata_temp_path);
+        let _ = fs::remove_file(&runtime_advance_path);
 
         let selected = select_production_shader(&mut shader_manager)?;
 
@@ -177,7 +181,7 @@ impl GnomeShaderSourceProducer {
         log_information(
             logfile,
             &format!(
-                "[LOCK] Test #20 published production-preprocessed shader '{}' (policy_id={}, policy='{}', {} bytes, animation_speed={:.3}x, session={})",
+                "[LOCK] Test #25 published production-preprocessed shader '{}' (policy_id={}, policy='{}', {} bytes, animation_speed={:.3}x, session={})",
                 selected.entry.name,
                 selected.entry.policy_id,
                 selected.entry.policy_name,
@@ -202,6 +206,7 @@ impl GnomeShaderSourceProducer {
             runtime_shader_temp_path,
             runtime_metadata_path,
             runtime_metadata_temp_path,
+            runtime_advance_path,
             active_shader_name: selected.entry.name,
             active_policy_id: selected.entry.policy_id,
         })
@@ -213,18 +218,29 @@ impl GnomeShaderSourceProducer {
     {
         log_information(
             &self.logfile,
-            "[LOCK] GNOME Test #20 native shader presentation loop started",
+            "[LOCK] GNOME Test #25 native shader presentation loop started",
         );
 
         while !lock_finished() {
-            // Test #20 reconnects production selection/preprocessing without
-            // starting a second renderer. Rotation publication is retained on
-            // the Rust side; the Test #20 extension intentionally consumes the
-            // initial handoff only. Dynamic in-place effect replacement is the
-            // next production step after this compatibility test succeeds.
-            if self.shader_interval > 0
-                && self.last_shader_switch.elapsed().as_secs() >= self.shader_interval
-            {
+            // GNOME keeps a single native Shell.GLSLEffect renderer. Rust owns
+            // production policy selection/preprocessing and publishes each
+            // rotation; the extension polls the handoff and hot-swaps the effect.
+            let early_advance_requested = self.take_early_advance_request();
+            let normal_interval_elapsed = self.shader_interval > 0
+                && self.last_shader_switch.elapsed().as_secs() >= self.shader_interval;
+
+            if early_advance_requested || normal_interval_elapsed {
+                if early_advance_requested {
+                    log_warning(
+                        &self.logfile,
+                        &format!(
+                            "[LOCK] Test #25 GNOME could not apply shader '{}' (policy_id={}); truncating its rotation interval and advancing",
+                            self.active_shader_name,
+                            self.active_policy_id,
+                        ),
+                    );
+                }
+
                 match select_production_shader(&mut self.shader_manager) {
                     Ok(selected) => {
                         let animation_speed =
@@ -287,7 +303,7 @@ impl GnomeShaderSourceProducer {
                         log_information(
                             &self.logfile,
                             &format!(
-                                "[LOCK] Test #20 published replacement production shader '{}' (policy_id={}, {} bytes, animation_speed={:.3}x); extension reload intentionally deferred",
+                                "[LOCK] Test #25 published replacement production shader '{}' (policy_id={}, {} bytes, animation_speed={:.3}x); extension will apply through the native GNOME effect",
                                 selected.entry.name,
                                 selected.entry.policy_id,
                                 selected.source.len(),
@@ -299,7 +315,7 @@ impl GnomeShaderSourceProducer {
                         log_warning(
                             &self.logfile,
                             &format!(
-                                "[LOCK] Test #20 could not select replacement shader: {error}"
+                                "[LOCK] Test #25 could not select replacement shader: {error}"
                             ),
                         );
                         self.last_shader_switch = Instant::now();
@@ -315,7 +331,7 @@ impl GnomeShaderSourceProducer {
         log_information(
             &self.logfile,
             &format!(
-                "[LOCK] GNOME Test #20 native shader presentation loop stopped (last shader='{}', policy_id={})",
+                "[LOCK] GNOME Test #25 native shader presentation loop stopped (last shader='{}', policy_id={})",
                 self.active_shader_name,
                 self.active_policy_id,
             ),
@@ -324,11 +340,33 @@ impl GnomeShaderSourceProducer {
         Ok(())
     }
 
+    fn take_early_advance_request(&self) -> bool {
+        if !self.runtime_advance_path.exists() {
+            return false;
+        }
+
+        match fs::remove_file(&self.runtime_advance_path) {
+            Ok(()) => true,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+            Err(error) => {
+                log_warning(
+                    &self.logfile,
+                    &format!(
+                        "[LOCK] Test #25 could not consume GNOME early-advance request '{}': {error}",
+                        self.runtime_advance_path.display(),
+                    ),
+                );
+                false
+            }
+        }
+    }
+
     fn cleanup(&mut self) {
         let _ = fs::remove_file(&self.runtime_shader_path);
         let _ = fs::remove_file(&self.runtime_shader_temp_path);
         let _ = fs::remove_file(&self.runtime_metadata_path);
         let _ = fs::remove_file(&self.runtime_metadata_temp_path);
+        let _ = fs::remove_file(&self.runtime_advance_path);
     }
 }
 
@@ -379,7 +417,7 @@ fn select_production_shader(
             } => {
                 if channel_usage.channels.iter().any(|used| *used) {
                     log_warning_global(&format!(
-                        "[LOCK] Test #20 skipping '{}' because GNOME native texture-channel binding is not connected yet",
+                        "[LOCK] Test #25 skipping '{}' because GNOME native texture-channel binding is not connected yet",
                         entry.name,
                     ));
                     shader_manager.remove_entry(&entry);
@@ -388,7 +426,7 @@ fn select_production_shader(
 
                 if !shader_inputs.is_empty() {
                     log_warning_global(&format!(
-                        "[LOCK] Test #20 skipping '{}' because GNOME native ISF input binding is not connected yet",
+                        "[LOCK] Test #25 skipping '{}' because GNOME native ISF input binding is not connected yet",
                         entry.name,
                     ));
                     shader_manager.remove_entry(&entry);
@@ -397,7 +435,7 @@ fn select_production_shader(
 
                 if !source.contains("mainImage") {
                     log_warning_global(&format!(
-                        "[LOCK] Test #20 skipping '{}' because this diagnostic bridge currently requires the production ShaderToy mainImage path",
+                        "[LOCK] Test #25 skipping '{}' because this diagnostic bridge currently requires the production ShaderToy mainImage path",
                         entry.name,
                     ));
                     shader_manager.remove_entry(&entry);
@@ -414,7 +452,7 @@ fn select_production_shader(
 
             crate::load_shader::ShaderLoadResult::Rejected { reasons, .. } => {
                 log_warning_global(&format!(
-                    "[LOCK] Test #20 production shader rejected '{}': {}",
+                    "[LOCK] Test #25 production shader rejected '{}': {}",
                     entry.name,
                     reasons.join("; "),
                 ));
@@ -423,7 +461,7 @@ fn select_production_shader(
 
             crate::load_shader::ShaderLoadResult::Unavailable { error, .. } => {
                 log_warning_global(&format!(
-                    "[LOCK] Test #20 production shader unavailable '{}': {}",
+                    "[LOCK] Test #25 production shader unavailable '{}': {}",
                     entry.name,
                     error,
                 ));
@@ -432,7 +470,7 @@ fn select_production_shader(
         }
     }
 
-    Err("No Test #20-compatible production ShaderToy shader is available".to_string())
+    Err("No Test #25-compatible production ShaderToy shader is available".to_string())
 }
 
 fn build_presentation_metadata(
