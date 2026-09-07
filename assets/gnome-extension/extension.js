@@ -246,18 +246,15 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     this._screenshaverSelectedPrecision = selectedPrecision;
 
                     const textureFormat = renderTexture.get_format();
-                    const framebufferFormat = renderOffscreen.get_internal_format();
-                    const redBits = renderOffscreen.get_red_bits();
-                    const greenBits = renderOffscreen.get_green_bits();
-                    const blueBits = renderOffscreen.get_blue_bits();
-                    const alphaBits = renderOffscreen.get_alpha_bits();
+                    const expectedFormat = selectedPrecision === 'high'
+                        ? 'RGBA16F-equivalent'
+                        : 'RGBA8-equivalent';
 
                     console.log(
-                        `[Screenshaver] Test #30 Color Precision framebuffer allocated: ` +
+                        `[Screenshaver] Test #30A Color Precision texture allocated: ` +
                         `requested=${requestedPrecision} selected=${selectedPrecision} ` +
                         `fallback=${fellBack ? 'yes' : 'no'} ` +
-                        `texture_format=${textureFormat} framebuffer_format=${framebufferFormat} ` +
-                        `bits=${redBits}/${greenBits}/${blueBits}/${alphaBits} ` +
+                        `texture_format=${textureFormat} expected=${expectedFormat} ` +
                         `native=${nativeWidth}x${nativeHeight} scale=${scale.toFixed(3)} ` +
                         `render=${renderWidth}x${renderHeight} generation=${generation}`
                     );
