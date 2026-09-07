@@ -15,7 +15,7 @@ const IDLE_POLL_INTERVAL: Duration = Duration::from_millis(25);
 const JOURNAL_FAILURE_ARM_WINDOW: Duration = Duration::from_secs(2);
 const JOURNAL_FAILURE_ADVANCE_DELAY: Duration = Duration::from_millis(500);
 
-/// GNOME Test #26 presentation host.
+/// GNOME Test #27 presentation host.
 ///
 /// GNOME owns authentication, input isolation, and unlock authority. Screenshaver
 /// owns shader policy selection and preprocessing. The resulting production
@@ -38,7 +38,7 @@ impl GnomeLockPresenter {
         global_rendered_fps: u32,
         fps_policy_entries: Vec<crate::load_config::FpsPolicyEntry>,
         texture_policy: crate::load_config::TexturePolicy,
-        _postprocess_policy: crate::load_config::PostprocessPolicy,
+        postprocess_policy: crate::load_config::PostprocessPolicy,
         _audio_bands: Option<crate::audio_backend::SharedAudioBands>,
         subtitles: bool,
         subtitle_placement: crate::parse_subtitle_placement::SubtitlePlacement,
@@ -52,13 +52,14 @@ impl GnomeLockPresenter {
             global_rendered_fps,
             fps_policy_entries,
             texture_policy,
+            postprocess_policy,
             subtitles,
             subtitle_placement,
         )?;
 
         log_information(
             logfile,
-            "[LOCK] GNOME Test #26 production shader-source backend initialized",
+            "[LOCK] GNOME Test #27 production shader-source backend initialized",
         );
 
         Ok(Self { producer })
@@ -83,6 +84,7 @@ struct GnomeShaderSourceProducer {
     global_rendered_fps: u32,
     fps_policy_entries: Vec<crate::load_config::FpsPolicyEntry>,
     texture_manager: crate::manage_textures::TextureManager,
+    postprocess_policy: crate::load_config::PostprocessPolicy,
     subtitles: bool,
     subtitle_placement: crate::parse_subtitle_placement::SubtitlePlacement,
     last_shader_switch: Instant,
@@ -109,6 +111,7 @@ impl GnomeShaderSourceProducer {
         global_rendered_fps: u32,
         fps_policy_entries: Vec<crate::load_config::FpsPolicyEntry>,
         texture_policy: crate::load_config::TexturePolicy,
+        postprocess_policy: crate::load_config::PostprocessPolicy,
         subtitles: bool,
         subtitle_placement: crate::parse_subtitle_placement::SubtitlePlacement,
     ) -> Result<Self, String> {
@@ -134,7 +137,7 @@ impl GnomeShaderSourceProducer {
             Ok(watcher) => {
                 log_information(
                     logfile,
-                    "[LOCK] Test #26 GNOME Shell shader-failure journal watcher started",
+                    "[LOCK] Test #27 GNOME Shell shader-failure journal watcher started",
                 );
                 Some(watcher)
             }
@@ -142,7 +145,7 @@ impl GnomeShaderSourceProducer {
                 log_warning(
                     logfile,
                     &format!(
-                        "[LOCK] Test #26 GNOME Shell journal watcher unavailable; Cogl-only shader failures will not be fast-skipped: {error}"
+                        "[LOCK] Test #27 GNOME Shell journal watcher unavailable; Cogl-only shader failures will not be fast-skipped: {error}"
                     ),
                 );
                 None
@@ -182,11 +185,18 @@ impl GnomeShaderSourceProducer {
             );
         }
 
+        let postprocess_profile = postprocess_policy.profile_for_policy(
+            selected.entry.policy_id,
+            &selected.entry.name,
+            selected.entry.source_path.as_deref(),
+        );
+
         let metadata = build_presentation_metadata(
             &selected,
             &texture_manager,
             animation_speed,
             configured_fps,
+            postprocess_profile,
             subtitles,
             subtitle_placement,
         );
@@ -209,7 +219,7 @@ impl GnomeShaderSourceProducer {
         log_information(
             logfile,
             &format!(
-                "[LOCK] Test #26 published production-preprocessed shader '{}' (policy_id={}, policy='{}', {} bytes, animation_speed={:.3}x, session={})",
+                "[LOCK] Test #27 published production-preprocessed shader '{}' (policy_id={}, policy='{}', {} bytes, animation_speed={:.3}x, session={})",
                 selected.entry.name,
                 selected.entry.policy_id,
                 selected.entry.policy_name,
@@ -227,6 +237,7 @@ impl GnomeShaderSourceProducer {
             global_rendered_fps: global_rendered_fps.max(1),
             fps_policy_entries,
             texture_manager,
+            postprocess_policy,
             subtitles,
             subtitle_placement,
             last_shader_switch: Instant::now(),
@@ -250,7 +261,7 @@ impl GnomeShaderSourceProducer {
     {
         log_information(
             &self.logfile,
-            "[LOCK] GNOME Test #26 native shader presentation loop started",
+            "[LOCK] GNOME Test #27 native shader presentation loop started",
         );
 
         while !lock_finished() {
@@ -271,7 +282,7 @@ impl GnomeShaderSourceProducer {
                     log_warning(
                         &self.logfile,
                         &format!(
-                            "[LOCK] Test #26 GNOME could not apply shader '{}' (policy_id={}); truncating its rotation interval and advancing",
+                            "[LOCK] Test #27 GNOME could not apply shader '{}' (policy_id={}); truncating its rotation interval and advancing",
                             self.active_shader_name,
                             self.active_policy_id,
                         ),
@@ -282,7 +293,7 @@ impl GnomeShaderSourceProducer {
                     log_warning(
                         &self.logfile,
                         &format!(
-                            "[LOCK] Test #26 GNOME/Cogl shader compilation or link failure confirmed for '{}' (policy_id={}); advancing to the next shader",
+                            "[LOCK] Test #27 GNOME/Cogl shader compilation or link failure confirmed for '{}' (policy_id={}); advancing to the next shader",
                             self.active_shader_name,
                             self.active_policy_id,
                         ),
@@ -322,11 +333,18 @@ impl GnomeShaderSourceProducer {
                             );
                         }
 
+                        let postprocess_profile = self.postprocess_policy.profile_for_policy(
+                            selected.entry.policy_id,
+                            &selected.entry.name,
+                            selected.entry.source_path.as_deref(),
+                        );
+
                         let metadata = build_presentation_metadata(
                             &selected,
                             &self.texture_manager,
                             animation_speed,
                             configured_fps,
+                            postprocess_profile,
                             self.subtitles,
                             self.subtitle_placement,
                         );
@@ -353,7 +371,7 @@ impl GnomeShaderSourceProducer {
                         log_information(
                             &self.logfile,
                             &format!(
-                                "[LOCK] Test #26 published replacement production shader '{}' (policy_id={}, {} bytes, animation_speed={:.3}x); extension will apply through the native GNOME effect",
+                                "[LOCK] Test #27 published replacement production shader '{}' (policy_id={}, {} bytes, animation_speed={:.3}x); extension will apply through the native GNOME effect",
                                 selected.entry.name,
                                 selected.entry.policy_id,
                                 selected.source.len(),
@@ -365,7 +383,7 @@ impl GnomeShaderSourceProducer {
                         log_warning(
                             &self.logfile,
                             &format!(
-                                "[LOCK] Test #26 could not select replacement shader: {error}"
+                                "[LOCK] Test #27 could not select replacement shader: {error}"
                             ),
                         );
                         self.last_shader_switch = Instant::now();
@@ -381,7 +399,7 @@ impl GnomeShaderSourceProducer {
         log_information(
             &self.logfile,
             &format!(
-                "[LOCK] GNOME Test #26 native shader presentation loop stopped (last shader='{}', policy_id={})",
+                "[LOCK] GNOME Test #27 native shader presentation loop stopped (last shader='{}', policy_id={})",
                 self.active_shader_name,
                 self.active_policy_id,
             ),
@@ -402,7 +420,7 @@ impl GnomeShaderSourceProducer {
                 log_warning(
                     &self.logfile,
                     &format!(
-                        "[LOCK] Test #26 could not consume GNOME early-advance request '{}': {error}",
+                        "[LOCK] Test #27 could not consume GNOME early-advance request '{}': {error}",
                         self.runtime_advance_path.display(),
                     ),
                 );
@@ -453,7 +471,7 @@ impl GnomeShaderSourceProducer {
         log_warning(
             &self.logfile,
             &format!(
-                "[LOCK] Test #26 observed GNOME/Cogl shader failure for '{}' (policy_id={}); truncating interval to {}ms",
+                "[LOCK] Test #27 observed GNOME/Cogl shader failure for '{}' (policy_id={}); truncating interval to {}ms",
                 self.active_shader_name,
                 self.active_policy_id,
                 JOURNAL_FAILURE_ADVANCE_DELAY.as_millis(),
@@ -601,7 +619,7 @@ fn select_production_shader(
             } => {
                 if channel_usage.channels.iter().any(|used| *used) {
                     log_warning_global(&format!(
-                        "[LOCK] Test #26 skipping '{}' because GNOME native texture-channel binding is not connected yet",
+                        "[LOCK] Test #27 skipping '{}' because GNOME native texture-channel binding is not connected yet",
                         entry.name,
                     ));
                     shader_manager.remove_entry(&entry);
@@ -610,7 +628,7 @@ fn select_production_shader(
 
                 if !shader_inputs.is_empty() {
                     log_warning_global(&format!(
-                        "[LOCK] Test #26 skipping '{}' because GNOME native ISF input binding is not connected yet",
+                        "[LOCK] Test #27 skipping '{}' because GNOME native ISF input binding is not connected yet",
                         entry.name,
                     ));
                     shader_manager.remove_entry(&entry);
@@ -619,7 +637,7 @@ fn select_production_shader(
 
                 if !source.contains("mainImage") {
                     log_warning_global(&format!(
-                        "[LOCK] Test #26 skipping '{}' because this diagnostic bridge currently requires the production ShaderToy mainImage path",
+                        "[LOCK] Test #27 skipping '{}' because this diagnostic bridge currently requires the production ShaderToy mainImage path",
                         entry.name,
                     ));
                     shader_manager.remove_entry(&entry);
@@ -636,7 +654,7 @@ fn select_production_shader(
 
             crate::load_shader::ShaderLoadResult::Rejected { reasons, .. } => {
                 log_warning_global(&format!(
-                    "[LOCK] Test #26 production shader rejected '{}': {}",
+                    "[LOCK] Test #27 production shader rejected '{}': {}",
                     entry.name,
                     reasons.join("; "),
                 ));
@@ -645,7 +663,7 @@ fn select_production_shader(
 
             crate::load_shader::ShaderLoadResult::Unavailable { error, .. } => {
                 log_warning_global(&format!(
-                    "[LOCK] Test #26 production shader unavailable '{}': {}",
+                    "[LOCK] Test #27 production shader unavailable '{}': {}",
                     entry.name,
                     error,
                 ));
@@ -654,7 +672,7 @@ fn select_production_shader(
         }
     }
 
-    Err("No Test #26-compatible production ShaderToy shader is available".to_string())
+    Err("No Test #27-compatible production ShaderToy shader is available".to_string())
 }
 
 fn build_presentation_metadata(
@@ -662,6 +680,7 @@ fn build_presentation_metadata(
     texture_manager: &crate::manage_textures::TextureManager,
     animation_speed: f32,
     configured_fps: u32,
+    postprocess_profile: crate::load_config::PostprocessProfile,
     subtitles: bool,
     subtitle_placement: crate::parse_subtitle_placement::SubtitlePlacement,
 ) -> String {
@@ -714,6 +733,19 @@ fn build_presentation_metadata(
         sanitize_metadata_value(palette.as_deref().unwrap_or(""))
     ));
     lines.push(format!("configured_fps={}", configured_fps.max(1)));
+    lines.push(format!(
+        "invert_colors={}",
+        if postprocess_profile.invert_colors { 1 } else { 0 }
+    ));
+    lines.push(format!(
+        "flip_horizontal={}",
+        if postprocess_profile.flip_horizontal { 1 } else { 0 }
+    ));
+    lines.push(format!(
+        "flip_vertical={}",
+        if postprocess_profile.flip_vertical { 1 } else { 0 }
+    ));
+    lines.push(format!("hue_rotation={}", postprocess_profile.hue_rotation));
     lines.push(format!("subtitles={}", if subtitles { 1 } else { 0 }));
     lines.push(format!("placement={}", subtitle_placement.name()));
     lines.push(String::new());

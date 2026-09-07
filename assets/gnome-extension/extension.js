@@ -34,6 +34,34 @@ function createShaderEffectClass(shaderBody, generation) {
                 `
                     uniform float iTime;
                     uniform vec3 iResolution;
+                    uniform float screenshaverInvertColors;
+                    uniform float screenshaverFlipHorizontal;
+                    uniform float screenshaverFlipVertical;
+                    uniform float screenshaverHueRotation;
+
+                    vec3 screenshaverRotateHue(vec3 color, float degrees)
+                    {
+                        float angle = radians(degrees);
+                        float cosine = cos(angle);
+                        float sine = sin(angle);
+
+                        float y = dot(color, vec3(0.299, 0.587, 0.114));
+                        float i = dot(color, vec3(0.596, -0.274, -0.322));
+                        float q = dot(color, vec3(0.211, -0.523, 0.312));
+
+                        float rotatedI = i * cosine - q * sine;
+                        float rotatedQ = i * sine + q * cosine;
+
+                        return clamp(
+                            vec3(
+                                y + 0.956 * rotatedI + 0.621 * rotatedQ,
+                                y - 0.272 * rotatedI - 0.647 * rotatedQ,
+                                y - 1.106 * rotatedI + 1.703 * rotatedQ
+                            ),
+                            0.0,
+                            1.0
+                        );
+                    }
 
                     ${shaderBody}
                 `,
@@ -43,8 +71,25 @@ function createShaderEffectClass(shaderBody, generation) {
                         uv.x * iResolution.x,
                         (1.0 - uv.y) * iResolution.y
                     );
+
+                    if (screenshaverFlipHorizontal > 0.5)
+                        fragCoord.x = iResolution.x - fragCoord.x;
+
+                    if (screenshaverFlipVertical > 0.5)
+                        fragCoord.y = iResolution.y - fragCoord.y;
+
                     vec4 fragColor = vec4(0.0);
                     mainImage(fragColor, fragCoord);
+
+                    if (screenshaverInvertColors > 0.5)
+                        fragColor.rgb = vec3(1.0) - fragColor.rgb;
+
+                    if (abs(screenshaverHueRotation) > 0.0001)
+                        fragColor.rgb = screenshaverRotateHue(
+                            fragColor.rgb,
+                            screenshaverHueRotation
+                        );
+
                     cogl_color_out = fragColor;
                 `,
                 true
@@ -97,6 +142,10 @@ export default class ScreenshaverExtension extends Extension {
         this._shaderEffect = null;
         this._shaderUniformTime = -1;
         this._shaderUniformResolution = -1;
+        this._shaderUniformInvertColors = -1;
+        this._shaderUniformFlipHorizontal = -1;
+        this._shaderUniformFlipVertical = -1;
+        this._shaderUniformHueRotation = -1;
         this._shaderTickSource = null;
         this._shaderSourcePoll = null;
         this._activeProductionSource = null;
@@ -407,6 +456,10 @@ export default class ScreenshaverExtension extends Extension {
             texture: values.get('texture') ?? '',
             palette: values.get('palette') ?? '',
             configuredFps: Math.max(1, Number.parseInt(values.get('configured_fps') ?? '1', 10) || 1),
+            invertColors: values.get('invert_colors') === '1',
+            flipHorizontal: values.get('flip_horizontal') === '1',
+            flipVertical: values.get('flip_vertical') === '1',
+            hueRotation: Number.parseFloat(values.get('hue_rotation') ?? '0') || 0.0,
             subtitles: values.get('subtitles') === '1',
             placement: values.get('placement') ?? 'bottom:left',
         };
@@ -423,9 +476,41 @@ export default class ScreenshaverExtension extends Extension {
             metadata.texture,
             metadata.palette,
             metadata.configuredFps,
+            metadata.invertColors ? 1 : 0,
+            metadata.flipHorizontal ? 1 : 0,
+            metadata.flipVertical ? 1 : 0,
+            metadata.hueRotation,
             metadata.subtitles ? 1 : 0,
             metadata.placement,
         ].join('\u001f');
+    }
+
+    _applyPostprocessTransformMetadata(metadata) {
+        if (!this._shaderEffect || !metadata)
+            return;
+
+        this._shaderEffect.set_uniform_float(
+            this._shaderUniformInvertColors,
+            1,
+            [metadata.invertColors ? 1.0 : 0.0]
+        );
+        this._shaderEffect.set_uniform_float(
+            this._shaderUniformFlipHorizontal,
+            1,
+            [metadata.flipHorizontal ? 1.0 : 0.0]
+        );
+        this._shaderEffect.set_uniform_float(
+            this._shaderUniformFlipVertical,
+            1,
+            [metadata.flipVertical ? 1.0 : 0.0]
+        );
+        this._shaderEffect.set_uniform_float(
+            this._shaderUniformHueRotation,
+            1,
+            [metadata.hueRotation]
+        );
+
+        this._shaderEffect.queue_repaint();
     }
 
     _createDescriptionPill(parent) {
@@ -731,7 +816,7 @@ export default class ScreenshaverExtension extends Extension {
             return;
 
         console.log(
-            `[Screenshaver] Test #25 GNOME shader application failed; requesting next shader in ${SHADER_FAILURE_ADVANCE_DELAY_MS}ms: ${reason}`
+            `[Screenshaver] Test #27 GNOME shader application failed; requesting next shader in ${SHADER_FAILURE_ADVANCE_DELAY_MS}ms: ${reason}`
         );
 
         this._failureAdvanceSource = GLib.timeout_add(
@@ -759,11 +844,11 @@ export default class ScreenshaverExtension extends Extension {
                 try {
                     GLib.file_set_contents(advancePath, text);
                     console.log(
-                        `[Screenshaver] Test #25 requested early GNOME shader rotation for policy_id=${policyId}`
+                        `[Screenshaver] Test #27 requested early GNOME shader rotation for policy_id=${policyId}`
                     );
                 } catch (error) {
                     console.log(
-                        `[Screenshaver] Test #25 unable to request early GNOME shader rotation: ${error}`
+                        `[Screenshaver] Test #27 unable to request early GNOME shader rotation: ${error}`
                     );
                 }
 
@@ -805,11 +890,15 @@ export default class ScreenshaverExtension extends Extension {
         const effect = new EffectClass();
 
         console.log(
-            `[Screenshaver] Test #25 registered unique shader effect GType generation=${nextGeneration}`
+            `[Screenshaver] Test #27 registered unique shader effect GType generation=${nextGeneration}`
         );
 
         const uniformTime = effect.get_uniform_location('iTime');
         const uniformResolution = effect.get_uniform_location('iResolution');
+        const uniformInvertColors = effect.get_uniform_location('screenshaverInvertColors');
+        const uniformFlipHorizontal = effect.get_uniform_location('screenshaverFlipHorizontal');
+        const uniformFlipVertical = effect.get_uniform_location('screenshaverFlipVertical');
+        const uniformHueRotation = effect.get_uniform_location('screenshaverHueRotation');
 
         effect.set_uniform_float(
             uniformTime,
@@ -821,11 +910,19 @@ export default class ScreenshaverExtension extends Extension {
             3,
             [width, height, 1.0]
         );
+        effect.set_uniform_float(uniformInvertColors, 1, [0.0]);
+        effect.set_uniform_float(uniformFlipHorizontal, 1, [0.0]);
+        effect.set_uniform_float(uniformFlipVertical, 1, [0.0]);
+        effect.set_uniform_float(uniformHueRotation, 1, [0.0]);
 
         return {
             effect,
             uniformTime,
             uniformResolution,
+            uniformInvertColors,
+            uniformFlipHorizontal,
+            uniformFlipVertical,
+            uniformHueRotation,
         };
     }
 
@@ -846,6 +943,10 @@ export default class ScreenshaverExtension extends Extension {
         this._shaderEffect = built.effect;
         this._shaderUniformTime = built.uniformTime;
         this._shaderUniformResolution = built.uniformResolution;
+        this._shaderUniformInvertColors = built.uniformInvertColors;
+        this._shaderUniformFlipHorizontal = built.uniformFlipHorizontal;
+        this._shaderUniformFlipVertical = built.uniformFlipVertical;
+        this._shaderUniformHueRotation = built.uniformHueRotation;
         this._activeProductionSource = productionSource;
         this._shaderGeneration = 1;
 
@@ -854,6 +955,7 @@ export default class ScreenshaverExtension extends Extension {
             if (!metadata.sourceBytes || metadata.sourceBytes === shaderBytes.length) {
                 this._descriptionMetadata = metadata;
                 this._activeMetadataSignature = this._metadataSignature(metadata);
+                this._applyPostprocessTransformMetadata(metadata);
             }
         } catch (error) {
             console.log(`[Screenshaver] GNOME description metadata unavailable: ${error}`);
@@ -865,7 +967,7 @@ export default class ScreenshaverExtension extends Extension {
         );
 
         console.log(
-            `[Screenshaver] Test #25 loaded production-preprocessed shader handoff: ${shaderPath} (${shaderBytes.length} bytes) generation=${this._shaderGeneration}`
+            `[Screenshaver] Test #27 loaded production-preprocessed shader handoff: ${shaderPath} (${shaderBytes.length} bytes) generation=${this._shaderGeneration}`
         );
     }
 
@@ -888,7 +990,7 @@ export default class ScreenshaverExtension extends Extension {
         );
 
         console.log(
-            `[Screenshaver] Test #25 production shader handoff polling started: ${SHADER_SOURCE_POLL_INTERVAL_MS}ms`
+            `[Screenshaver] Test #27 production shader handoff polling started: ${SHADER_SOURCE_POLL_INTERVAL_MS}ms`
         );
     }
 
@@ -933,6 +1035,7 @@ export default class ScreenshaverExtension extends Extension {
             if (observedMetadataSignature !== this._activeMetadataSignature) {
                 this._descriptionMetadata = observedMetadata;
                 this._activeMetadataSignature = observedMetadataSignature;
+                this._applyPostprocessTransformMetadata(observedMetadata);
                 this._resetFpsWarningMonitor();
                 console.log(
                     `[Screenshaver] GNOME description metadata updated for policy_id=${observedMetadata.policyId}`
@@ -956,7 +1059,7 @@ export default class ScreenshaverExtension extends Extension {
             );
         } catch (error) {
             console.log(
-                `[Screenshaver] Test #25 replacement shader preparation failed; retaining active shader: ${error}`
+                `[Screenshaver] Test #27 replacement shader preparation failed; retaining active shader: ${error}`
             );
             this._requestShaderAdvance(
                 `replacement preparation failed: ${error}`,
@@ -968,6 +1071,13 @@ export default class ScreenshaverExtension extends Extension {
         const replacementMetadata = observedMetadata;
 
         const previousEffect = this._shaderEffect;
+        const previousUniformTime = this._shaderUniformTime;
+        const previousUniformResolution = this._shaderUniformResolution;
+        const previousUniformInvertColors = this._shaderUniformInvertColors;
+        const previousUniformFlipHorizontal = this._shaderUniformFlipHorizontal;
+        const previousUniformFlipVertical = this._shaderUniformFlipVertical;
+        const previousUniformHueRotation = this._shaderUniformHueRotation;
+        const previousDescriptionMetadata = this._descriptionMetadata;
 
         try {
             // Keep the lock actor itself in place. Only the shader effect is
@@ -977,6 +1087,13 @@ export default class ScreenshaverExtension extends Extension {
             this._shaderEffect = built.effect;
             this._shaderUniformTime = built.uniformTime;
             this._shaderUniformResolution = built.uniformResolution;
+            this._shaderUniformInvertColors = built.uniformInvertColors;
+            this._shaderUniformFlipHorizontal = built.uniformFlipHorizontal;
+            this._shaderUniformFlipVertical = built.uniformFlipVertical;
+            this._shaderUniformHueRotation = built.uniformHueRotation;
+
+            this._descriptionMetadata = replacementMetadata;
+            this._applyPostprocessTransformMetadata(replacementMetadata);
 
             this._lockActor.add_effect_with_name(
                 'screenshaver-production-shader-bridge',
@@ -986,7 +1103,6 @@ export default class ScreenshaverExtension extends Extension {
             this._activeProductionSource = handoff.productionSource;
             this._failedProductionSource = null;
             this._shaderGeneration++;
-            this._descriptionMetadata = replacementMetadata;
             this._activeMetadataSignature = observedMetadataSignature;
             this._resetFpsWarningMonitor();
 
@@ -994,11 +1110,11 @@ export default class ScreenshaverExtension extends Extension {
             this._lockActor.queue_redraw();
 
             console.log(
-                `[Screenshaver] Test #25 hot-swapped production shader generation=${this._shaderGeneration} bytes=${handoff.shaderBytes.length} unique-gtype=true`
+                `[Screenshaver] Test #27 hot-swapped production shader generation=${this._shaderGeneration} bytes=${handoff.shaderBytes.length} unique-gtype=true`
             );
         } catch (error) {
             console.log(
-                `[Screenshaver] Test #25 replacement effect swap failed: ${error}`
+                `[Screenshaver] Test #27 replacement effect swap failed: ${error}`
             );
             this._requestShaderAdvance(
                 `replacement effect swap failed: ${error}`,
@@ -1013,6 +1129,13 @@ export default class ScreenshaverExtension extends Extension {
             }
 
             this._shaderEffect = previousEffect;
+            this._shaderUniformTime = previousUniformTime;
+            this._shaderUniformResolution = previousUniformResolution;
+            this._shaderUniformInvertColors = previousUniformInvertColors;
+            this._shaderUniformFlipHorizontal = previousUniformFlipHorizontal;
+            this._shaderUniformFlipVertical = previousUniformFlipVertical;
+            this._shaderUniformHueRotation = previousUniformHueRotation;
+            this._descriptionMetadata = previousDescriptionMetadata;
 
             try {
                 this._lockActor.add_effect_with_name(
@@ -1047,7 +1170,7 @@ export default class ScreenshaverExtension extends Extension {
             body = body.replace(pattern, '');
 
         // The production preprocessor appends this wrapper after mainImage().
-        // Test #25 currently supports the ShaderToy path only, so the first
+        // Test #27 currently supports the ShaderToy path only, so the first
         // top-level generated main() marks the end of the body we hand to Cogl.
         const generatedMain = body.search(/\n\s*void\s+main\s*\(\s*\)\s*\{/m);
 
@@ -1076,7 +1199,7 @@ export default class ScreenshaverExtension extends Extension {
             return;
         }
 
-        // Test #21: execute an external ShaderToy-style mainImage() shader through
+        // Test #27: execute production-preprocessed ShaderToy mainImage() through
         // Shell.GLSLEffect/Cogl.  GNOME supplies only the ShaderToy compatibility
         // uniforms/wrapper; shader source comes from Screenshaver's production Rust preprocessing path.
         this._lockActor = new St.Widget({
@@ -1092,7 +1215,7 @@ export default class ScreenshaverExtension extends Extension {
             this._installInitialShaderEffect(dialog);
         } catch (error) {
             console.log(
-                `[Screenshaver] ERROR: Unable to create Test #25 ShaderToy Shell.GLSLEffect: ${error}`
+                `[Screenshaver] ERROR: Unable to create Test #27 ShaderToy Shell.GLSLEffect: ${error}`
             );
             this._requestShaderAdvance(
                 `initial effect creation failed: ${error}`,
@@ -1109,7 +1232,7 @@ export default class ScreenshaverExtension extends Extension {
         this._resetFpsWarningMonitor();
 
         console.log(
-            '[Screenshaver] Test #25 shader actor added above GNOME lock background'
+            '[Screenshaver] Test #27 shader actor added above GNOME lock background'
         );
 
         // Preserve the already-proven GNOME lock/power-management handling.
@@ -1119,7 +1242,7 @@ export default class ScreenshaverExtension extends Extension {
         this._shaderStartedUs = GLib.get_monotonic_time();
         this._shaderTicks = 0;
 
-        // Test #25 keeps the proven GLib callback-rate instrumentation so we can
+        // Test #27 keeps the proven GLib callback-rate instrumentation so we can
         // distinguish visible compositor presentation from a blanked output.
         this._shaderMetricsWindowStartedUs = this._shaderStartedUs;
         this._shaderMetricsWindowTicks = 0;
@@ -1128,7 +1251,7 @@ export default class ScreenshaverExtension extends Extension {
         this._shaderMetricsMaxDeltaUs = 0;
 
         console.log(
-            `[Screenshaver] Test #25 requested shader tick interval: ${SHADER_TICK_INTERVAL_MS}ms (~${Math.round(1000 / SHADER_TICK_INTERVAL_MS)} Hz maximum)`
+            `[Screenshaver] Test #27 requested shader tick interval: ${SHADER_TICK_INTERVAL_MS}ms (~${Math.round(1000 / SHADER_TICK_INTERVAL_MS)} Hz maximum)`
         );
 
         this._shaderTickSource = GLib.timeout_add(
@@ -1207,7 +1330,7 @@ export default class ScreenshaverExtension extends Extension {
                     const maxIntervalMs = this._shaderMetricsMaxDeltaUs / 1000.0;
 
                     console.log(
-                        `[Screenshaver] Test #25 timing: requested=${SHADER_TICK_INTERVAL_MS}ms callbacks=${this._shaderMetricsWindowTicks} elapsed=${metricsElapsedSeconds.toFixed(3)}s effective=${effectiveHz.toFixed(2)}Hz avg=${averageIntervalMs.toFixed(2)}ms min=${minIntervalMs.toFixed(2)}ms max=${maxIntervalMs.toFixed(2)}ms total_ticks=${this._shaderTicks}`
+                        `[Screenshaver] Test #27 timing: requested=${SHADER_TICK_INTERVAL_MS}ms callbacks=${this._shaderMetricsWindowTicks} elapsed=${metricsElapsedSeconds.toFixed(3)}s effective=${effectiveHz.toFixed(2)}Hz avg=${averageIntervalMs.toFixed(2)}ms min=${minIntervalMs.toFixed(2)}ms max=${maxIntervalMs.toFixed(2)}ms total_ticks=${this._shaderTicks}`
                     );
 
                     this._shaderMetricsWindowStartedUs = tickNowUs;
@@ -1223,7 +1346,7 @@ export default class ScreenshaverExtension extends Extension {
 
                 if (this._shaderTicks === 1) {
                     console.log(
-                        '[Screenshaver] First Test #25 shader frame requested'
+                        '[Screenshaver] First Test #27 shader frame requested'
                     );
                 }
 
@@ -1364,7 +1487,7 @@ export default class ScreenshaverExtension extends Extension {
             if (waitState !== this._idleInhibitWaitState) {
                 this._idleInhibitWaitState = waitState;
                 console.log(
-                    `[Screenshaver] Test #25 idle inhibitor waiting: ${waitState}`
+                    `[Screenshaver] Test #27 idle inhibitor waiting: ${waitState}`
                 );
             }
             return;
@@ -1387,7 +1510,7 @@ export default class ScreenshaverExtension extends Extension {
         const requestGeneration = ++this._idleInhibitRequestGeneration;
         this._idleInhibitRequestPending = true;
 
-        console.log('[Screenshaver] Test #25 requesting GNOME session idle inhibitor (flag=8)');
+        console.log('[Screenshaver] Test #27 requesting GNOME session idle inhibitor (flag=8)');
 
         try {
             Gio.DBus.session.call(
@@ -1419,7 +1542,7 @@ export default class ScreenshaverExtension extends Extension {
                             this._idleInhibitRequestPending = false;
 
                         console.log(
-                            `[Screenshaver] Test #25 GNOME session idle inhibitor request failed: ${error}`
+                            `[Screenshaver] Test #27 GNOME session idle inhibitor request failed: ${error}`
                         );
                         return;
                     }
@@ -1435,7 +1558,7 @@ export default class ScreenshaverExtension extends Extension {
                     this._idleInhibitRequestPending = false;
                     this._idleInhibitCookie = cookie;
                     console.log(
-                        `[Screenshaver] Test #25 GNOME session idle inhibitor acquired cookie=${cookie} flag=8`
+                        `[Screenshaver] Test #27 GNOME session idle inhibitor acquired cookie=${cookie} flag=8`
                     );
                 }
             );
@@ -1444,7 +1567,7 @@ export default class ScreenshaverExtension extends Extension {
                 this._idleInhibitRequestPending = false;
 
             console.log(
-                `[Screenshaver] Test #25 unable to dispatch GNOME session idle inhibitor request: ${error}`
+                `[Screenshaver] Test #27 unable to dispatch GNOME session idle inhibitor request: ${error}`
             );
         }
     }
@@ -1484,18 +1607,18 @@ export default class ScreenshaverExtension extends Extension {
                     try {
                         Gio.DBus.session.call_finish(result);
                         console.log(
-                            `[Screenshaver] Test #25 GNOME session idle inhibitor released cookie=${cookie} (${reason})`
+                            `[Screenshaver] Test #27 GNOME session idle inhibitor released cookie=${cookie} (${reason})`
                         );
                     } catch (error) {
                         console.log(
-                            `[Screenshaver] Test #25 GNOME session idle inhibitor release failed cookie=${cookie}: ${error}`
+                            `[Screenshaver] Test #27 GNOME session idle inhibitor release failed cookie=${cookie}: ${error}`
                         );
                     }
                 }
             );
         } catch (error) {
             console.log(
-                `[Screenshaver] Test #25 unable to dispatch GNOME session idle inhibitor release cookie=${cookie}: ${error}`
+                `[Screenshaver] Test #27 unable to dispatch GNOME session idle inhibitor release cookie=${cookie}: ${error}`
             );
         }
     }
@@ -1624,7 +1747,7 @@ export default class ScreenshaverExtension extends Extension {
         if (!securePresentationActive)
             return;
 
-        // Test #25 keeps the startup wake sequence from the previous tests,
+        // Test #27 keeps the startup wake sequence from the previous tests,
         // but once that sequence has completed it treats any delayed BLANK
         // state as a display-power event rather than simulated user-idle.
         // Directly restore Mutter PowerSaveMode to NORMAL without calling
@@ -1636,7 +1759,7 @@ export default class ScreenshaverExtension extends Extension {
             if (elapsedSincePostBlankWakeUs >= POST_WAKE_POWER_SAVE_MIN_DELAY_MS * 1000) {
                 if (previousPowerSaveMode !== 3) {
                     console.log(
-                        `[Screenshaver] Test #25 rejecting delayed PowerSaveMode 0 -> 3 after ${Math.floor(elapsedSincePostBlankWakeUs / 1000)}ms; restoring NORMAL without ScreenShield wake`
+                        `[Screenshaver] Test #27 rejecting delayed PowerSaveMode 0 -> 3 after ${Math.floor(elapsedSincePostBlankWakeUs / 1000)}ms; restoring NORMAL without ScreenShield wake`
                     );
                 }
                 this._setPostWakePowerSaveModeNormal();
@@ -1666,7 +1789,7 @@ export default class ScreenshaverExtension extends Extension {
             const minimumDelayUs = POST_WAKE_POWER_SAVE_MIN_DELAY_MS * 1000;
 
             // Preserve the known startup recovery only.  This one early wake
-            // handles GNOME's initial lock transition; Test #25 never uses a
+            // handles GNOME's initial lock transition; Test #27 never uses a
             // ScreenShield wake for the later ~15-second blank attempt.
             if (elapsedUs < minimumDelayUs) {
                 this._postWakePowerSaveCorrectionIssued = true;
@@ -1681,7 +1804,7 @@ export default class ScreenshaverExtension extends Extension {
             this._postWakePowerSaveCorrectionIssued = true;
             this._postWakePowerSaveCorrectionArmed = false;
             console.log(
-                `[Screenshaver] Test #25 rejecting delayed PowerSaveMode 0 -> 3 after ${Math.floor(elapsedUs / 1000)}ms; restoring NORMAL without ScreenShield wake`
+                `[Screenshaver] Test #27 rejecting delayed PowerSaveMode 0 -> 3 after ${Math.floor(elapsedUs / 1000)}ms; restoring NORMAL without ScreenShield wake`
             );
             this._setPostWakePowerSaveModeNormal();
         }
@@ -1767,16 +1890,16 @@ export default class ScreenshaverExtension extends Extension {
 
                     try {
                         connection.call_finish(result);
-                        console.log('[Screenshaver] Test #25 PowerSaveMode NORMAL correction completed');
+                        console.log('[Screenshaver] Test #27 PowerSaveMode NORMAL correction completed');
                     } catch (error) {
                         if (this._lockActor)
-                            console.log(`[Screenshaver] Test #25 PowerSaveMode NORMAL correction failed: ${error}`);
+                            console.log(`[Screenshaver] Test #27 PowerSaveMode NORMAL correction failed: ${error}`);
                     }
                 }
             );
         } catch (error) {
             this._postWakePowerSaveCorrectionInFlight = false;
-            console.log(`[Screenshaver] Test #25 unable to dispatch PowerSaveMode NORMAL correction: ${error}`);
+            console.log(`[Screenshaver] Test #27 unable to dispatch PowerSaveMode NORMAL correction: ${error}`);
         }
     }
 
@@ -1877,6 +2000,10 @@ export default class ScreenshaverExtension extends Extension {
         this._shaderEffect = null;
         this._shaderUniformTime = -1;
         this._shaderUniformResolution = -1;
+        this._shaderUniformInvertColors = -1;
+        this._shaderUniformFlipHorizontal = -1;
+        this._shaderUniformFlipVertical = -1;
+        this._shaderUniformHueRotation = -1;
         this._shaderStartedUs = 0;
         this._shaderTicks = 0;
         this._descriptionPrefix = null;
