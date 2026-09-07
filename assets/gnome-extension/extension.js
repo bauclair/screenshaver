@@ -66,7 +66,6 @@ const POLL_INTERVAL_MS = 33;
 const SHADER_TICK_INTERVAL_MS = 8;
 const SHADER_SOURCE_POLL_INTERVAL_MS = 250;
 const FPS_AVERAGE_WINDOW_US = 5 * 1000000;
-const FPS_CRITICAL_BLINK_INTERVAL_US = 500 * 1000;
 
 const SHADER_METRICS_REPORT_INTERVAL_US = 5 * 1000000;
 const POWER_SAVE_FALLBACK_INTERVAL_MS = 1000;
@@ -105,8 +104,6 @@ export default class ScreenshaverExtension extends Extension {
         this._descriptionMetadata = null;
         this._activeMetadataSignature = null;
         this._fpsWarningState = 'normal';
-        this._fpsBlinkVisible = true;
-        this._lastFpsBlinkUs = 0;
         this._fpsWindowStartedUs = 0;
         this._fpsWindowTicks = 0;
         this._pollSource = null;
@@ -447,8 +444,6 @@ export default class ScreenshaverExtension extends Extension {
     _resetFpsWarningMonitor() {
         const nowUs = GLib.get_monotonic_time();
         this._fpsWarningState = 'normal';
-        this._fpsBlinkVisible = true;
-        this._lastFpsBlinkUs = nowUs;
         this._fpsWindowStartedUs = nowUs;
         this._fpsWindowTicks = 0;
         this._updateDescriptionPill();
@@ -478,8 +473,6 @@ export default class ScreenshaverExtension extends Extension {
 
             if (nextState !== this._fpsWarningState) {
                 this._fpsWarningState = nextState;
-                this._fpsBlinkVisible = true;
-                this._lastFpsBlinkUs = nowUs;
                 this._updateDescriptionPill();
 
                 console.log(
@@ -491,15 +484,6 @@ export default class ScreenshaverExtension extends Extension {
             this._fpsWindowTicks = 0;
         }
 
-        if (this._fpsWarningState === 'critical'
-            && nowUs - this._lastFpsBlinkUs >= FPS_CRITICAL_BLINK_INTERVAL_US) {
-            this._fpsBlinkVisible = !this._fpsBlinkVisible;
-            this._lastFpsBlinkUs = nowUs;
-            // Preserve the capsule allocation during a CRITICAL blink.
-            // The hidden phase keeps identical text metrics and changes only
-            // the FPS glyph alpha, matching the production overlay behavior.
-            this._updateDescriptionPill(false);
-        }
     }
 
     _escapeMarkup(value) {
@@ -535,15 +519,10 @@ export default class ScreenshaverExtension extends Extension {
         if (this._fpsWarningState === 'warning') {
             fields.push(`<span foreground="#ffdd40">${fpsText}</span>`);
         } else if (this._fpsWarningState === 'critical') {
-            // Do not remove the FPS segment during the hidden blink phase.
-            // Keeping it in the Pango layout preserves the exact capsule width.
-            // Only the glyph alpha changes, so the red FPS text blinks while the
-            // black capsule and any descriptive text remain completely stationary.
-            if (this._fpsBlinkVisible) {
-                fields.push(`<span foreground="#ff4848" weight="bold">${fpsText}</span>`);
-            } else {
-                fields.push(`<span foreground="#ff4848" alpha="0%" weight="bold">${fpsText}</span>`);
-            }
+            // GNOME lock-screen CRITICAL state is intentionally steady rather
+            // than blinking. This avoids geometry and markup instability in
+            // St/Pango while preserving the production severity cue.
+            fields.push(`<span foreground="#ff4848" weight="bold">${fpsText}</span>`);
         } else if (metadata.subtitles) {
             fields.push(fpsText);
         }
@@ -1714,8 +1693,6 @@ export default class ScreenshaverExtension extends Extension {
         this._descriptionMetadata = null;
         this._activeMetadataSignature = null;
         this._fpsWarningState = 'normal';
-        this._fpsBlinkVisible = true;
-        this._lastFpsBlinkUs = 0;
         this._fpsWindowStartedUs = 0;
         this._fpsWindowTicks = 0;
         this._displayedFrames = 0;
