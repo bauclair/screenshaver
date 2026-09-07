@@ -1119,10 +1119,25 @@ pub struct EditWindowOverlay {
     bulk_flip_vertical:
         BulkBooleanSelection,
 
-    // Bulk Edit intent for Hue Rotation is independent of its numeric value.
-    // This allows an explicit 0-degree bulk assignment even when 0 is the
-    // suspended single-policy baseline.  Clicking/engaging the slider toggles
-    // this intent on/off.
+    // Bulk Edit intent for numeric slider controls is independent of the
+    // displayed numeric value.  The value cell explicitly opts each field
+    // into or out of the bulk operation; its slider remains disabled until
+    // that intent is active.
+    bulk_fps_selected:
+        bool,
+
+    bulk_animation_speed_selected:
+        bool,
+
+    bulk_render_scale_selected:
+        bool,
+
+    bulk_bloom_intensity_selected:
+        bool,
+
+    bulk_bloom_threshold_selected:
+        bool,
+
     bulk_hue_rotation_selected:
         bool,
 
@@ -1459,6 +1474,21 @@ impl EditWindowOverlay {
 
                 bulk_flip_vertical:
                     BulkBooleanSelection::Unchanged,
+
+                bulk_fps_selected:
+                    false,
+
+                bulk_animation_speed_selected:
+                    false,
+
+                bulk_render_scale_selected:
+                    false,
+
+                bulk_bloom_intensity_selected:
+                    false,
+
+                bulk_bloom_threshold_selected:
+                    false,
 
                 bulk_hue_rotation_selected:
                     false,
@@ -2197,6 +2227,21 @@ impl EditWindowOverlay {
         let mut bulk_flip_vertical =
             self.bulk_flip_vertical;
 
+        let mut bulk_fps_selected =
+            self.bulk_fps_selected;
+
+        let mut bulk_animation_speed_selected =
+            self.bulk_animation_speed_selected;
+
+        let mut bulk_render_scale_selected =
+            self.bulk_render_scale_selected;
+
+        let mut bulk_bloom_intensity_selected =
+            self.bulk_bloom_intensity_selected;
+
+        let mut bulk_bloom_threshold_selected =
+            self.bulk_bloom_threshold_selected;
+
         let mut bulk_hue_rotation_selected =
             self.bulk_hue_rotation_selected;
 
@@ -2539,10 +2584,14 @@ impl EditWindowOverlay {
                 policy_target_change_requested =
                     None;
 
-                // Bulk Edit begins with no Hue Rotation apply intent, even
-                // though the slider displays a legitimate numeric value.
-                bulk_hue_rotation_selected =
-                    false;
+                // Bulk Edit begins with no numeric-slider apply intent,
+                // even though each control displays a legitimate value.
+                bulk_fps_selected = false;
+                bulk_animation_speed_selected = false;
+                bulk_render_scale_selected = false;
+                bulk_bloom_intensity_selected = false;
+                bulk_bloom_threshold_selected = false;
+                bulk_hue_rotation_selected = false;
 
                 status_message =
                     "Bulk Edit Mode active-- click Cancel to return to Single Edit mode."
@@ -2644,8 +2693,12 @@ impl EditWindowOverlay {
                 hue_rotation_drag_state =
                     None;
 
-                bulk_hue_rotation_selected =
-                    false;
+                bulk_fps_selected = false;
+                bulk_animation_speed_selected = false;
+                bulk_render_scale_selected = false;
+                bulk_bloom_intensity_selected = false;
+                bulk_bloom_threshold_selected = false;
+                bulk_hue_rotation_selected = false;
             }
 
             bulk_invert_colors =
@@ -2825,12 +2878,21 @@ impl EditWindowOverlay {
                                 bulk_edit_mode
                                     && bulk_flip_vertical.applies();
 
-                            // Hue Rotation uses explicit Bulk Edit intent
-                            // rather than a comparison with the suspended
+                            // Numeric slider fields use explicit Bulk Edit
+                            // intent rather than comparison with the suspended
                             // single-policy baseline.
+                            pending_bulk_changes.fps =
+                                bulk_edit_mode && bulk_fps_selected;
+                            pending_bulk_changes.animation_speed =
+                                bulk_edit_mode && bulk_animation_speed_selected;
+                            pending_bulk_changes.render_scale =
+                                bulk_edit_mode && bulk_render_scale_selected;
+                            pending_bulk_changes.bloom_intensity =
+                                bulk_edit_mode && bulk_bloom_intensity_selected;
+                            pending_bulk_changes.bloom_threshold =
+                                bulk_edit_mode && bulk_bloom_threshold_selected;
                             pending_bulk_changes.hue_rotation =
-                                bulk_edit_mode
-                                    && bulk_hue_rotation_selected;
+                                bulk_edit_mode && bulk_hue_rotation_selected;
 
 
                             let policy_dirty =
@@ -2951,6 +3013,9 @@ impl EditWindowOverlay {
                                                         &mut fps_drag_state,
                                                         &mut animation_speed_drag_state,
                                                         &mut render_scale_drag_state,
+                                                        &mut bulk_fps_selected,
+                                                        &mut bulk_animation_speed_selected,
+                                                        &mut bulk_render_scale_selected,
                                                         bulk_edit_baseline,
                                                         &mut hover_help_message,
                                                     );
@@ -3056,6 +3121,8 @@ impl EditWindowOverlay {
                                                         &mut bulk_invert_colors,
                                                         &mut bulk_flip_horizontal,
                                                         &mut bulk_flip_vertical,
+                                                        &mut bulk_bloom_intensity_selected,
+                                                        &mut bulk_bloom_threshold_selected,
                                                         &mut hue_rotation,
                                                         &mut hue_rotation_drag_state,
                                                         &mut bulk_hue_rotation_selected,
@@ -3495,9 +3562,18 @@ impl EditWindowOverlay {
             bulk_edit_mode
                 && bulk_flip_vertical.applies();
 
+        bulk_edit_changes.fps =
+            bulk_edit_mode && bulk_fps_selected;
+        bulk_edit_changes.animation_speed =
+            bulk_edit_mode && bulk_animation_speed_selected;
+        bulk_edit_changes.render_scale =
+            bulk_edit_mode && bulk_render_scale_selected;
+        bulk_edit_changes.bloom_intensity =
+            bulk_edit_mode && bulk_bloom_intensity_selected;
+        bulk_edit_changes.bloom_threshold =
+            bulk_edit_mode && bulk_bloom_threshold_selected;
         bulk_edit_changes.hue_rotation =
-            bulk_edit_mode
-                && bulk_hue_rotation_selected;
+            bulk_edit_mode && bulk_hue_rotation_selected;
 
 
         self.bulk_selected_policy_rows =
@@ -3613,6 +3689,16 @@ impl EditWindowOverlay {
         self.hue_rotation_drag_state =
             hue_rotation_drag_state;
 
+        self.bulk_fps_selected =
+            bulk_fps_selected;
+        self.bulk_animation_speed_selected =
+            bulk_animation_speed_selected;
+        self.bulk_render_scale_selected =
+            bulk_render_scale_selected;
+        self.bulk_bloom_intensity_selected =
+            bulk_bloom_intensity_selected;
+        self.bulk_bloom_threshold_selected =
+            bulk_bloom_threshold_selected;
         self.bulk_hue_rotation_selected =
             bulk_hue_rotation_selected;
 
@@ -4239,9 +4325,12 @@ impl EditWindowOverlay {
         let suspended_editor_state =
             self.bulk_edit_baseline;
 
-        self.bulk_hue_rotation_selected =
-            false;
-
+        self.bulk_fps_selected = false;
+        self.bulk_animation_speed_selected = false;
+        self.bulk_render_scale_selected = false;
+        self.bulk_bloom_intensity_selected = false;
+        self.bulk_bloom_threshold_selected = false;
+        self.bulk_hue_rotation_selected = false;
 
         self.bulk_selected_policy_rows.clear();
 
@@ -4369,8 +4458,12 @@ impl EditWindowOverlay {
         self.hue_rotation_drag_state =
             None;
 
-        self.bulk_hue_rotation_selected =
-            false;
+        self.bulk_fps_selected = false;
+        self.bulk_animation_speed_selected = false;
+        self.bulk_render_scale_selected = false;
+        self.bulk_bloom_intensity_selected = false;
+        self.bulk_bloom_threshold_selected = false;
+        self.bulk_hue_rotation_selected = false;
     }
 
 
@@ -7645,6 +7738,9 @@ fn draw_render_panel(
     fps_drag_state: &mut Option<SliderDragState>,
     animation_speed_drag_state: &mut Option<SliderDragState>,
     render_scale_drag_state: &mut Option<SliderDragState>,
+    bulk_fps_selected: &mut bool,
+    bulk_animation_speed_selected: &mut bool,
+    bulk_render_scale_selected: &mut bool,
     bulk_edit_baseline: Option<EditorConfiguration>,
     hover_help_message: &mut Option<&'static str>,
 ) {
@@ -7680,6 +7776,9 @@ fn draw_render_panel(
             180.0 * metrics.scale
         );
 
+    let bulk_edit_mode =
+        bulk_edit_baseline.is_some();
+
     egui::Grid::new(
         "editor_render_controls_grid"
     )
@@ -7697,7 +7796,7 @@ fn draw_render_panel(
             let mut fps_value =
                 *displayed_fps as f32;
 
-            let fps_response =
+            let (fps_response, fps_value_response) =
                 draw_aligned_slider_grid_row(
                     ui,
                     "FPS (Max)",
@@ -7714,12 +7813,20 @@ fn draw_render_panel(
                     slider_width,
                     value_width,
                     fps_drag_state,
+                    bulk_edit_mode,
+                    *bulk_fps_selected,
+                    "Click to include FPS in Bulk Edit",
+                    "Click to exclude FPS from Bulk Edit",
                 );
 
             update_hover_help(
                 &fps_response,
                 hover_help_message,
-                "Set the maximum rendering frame rate. Hold Shift for fine adjustment.",
+                if bulk_edit_mode && !*bulk_fps_selected {
+                    "Click the numeric FPS value to enable this slider for Bulk Edit."
+                } else {
+                    "Set the maximum rendering frame rate. Hold Shift for fine adjustment."
+                },
             );
 
             *displayed_fps =
@@ -7729,11 +7836,20 @@ fn draw_render_panel(
                         crate::define_constants::MAX_RENDER_FPS as f32,
                     ) as u32;
 
-            if bulk_edit_baseline.is_some_and(|baseline| *displayed_fps != baseline.fps) {
-                editor_theme::paint_bulk_edit_border(ui, fps_response.rect, metrics.scale);
+            if bulk_edit_mode && fps_value_response.clicked() {
+                *bulk_fps_selected =
+                    !*bulk_fps_selected;
             }
 
-            let speed_response =
+            if bulk_edit_mode && *bulk_fps_selected {
+                editor_theme::paint_bulk_edit_border(
+                    ui,
+                    fps_value_response.rect,
+                    metrics.scale,
+                );
+            }
+
+            let (speed_response, speed_value_response) =
                 draw_aligned_log_speed_grid_row(
                     ui,
                     "Animation Speed",
@@ -7750,21 +7866,36 @@ fn draw_render_panel(
                     slider_width,
                     value_width,
                     animation_speed_drag_state,
+                    bulk_edit_mode,
+                    *bulk_animation_speed_selected,
+                    "Click to include Animation Speed in Bulk Edit",
+                    "Click to exclude Animation Speed from Bulk Edit",
                 );
 
             update_hover_help(
                 &speed_response,
                 hover_help_message,
-                "Adjust animation speed on a logarithmic scale. The slider midpoint is 1.0x. Hold Shift for fine adjustment.",
+                if bulk_edit_mode && !*bulk_animation_speed_selected {
+                    "Click the numeric Animation Speed value to enable this slider for Bulk Edit."
+                } else {
+                    "Adjust animation speed on a logarithmic scale. The slider midpoint is 1.0x. Hold Shift for fine adjustment."
+                },
             );
 
-            if bulk_edit_baseline.is_some_and(
-                |baseline| (*displayed_animation_speed - baseline.animation_speed).abs() > 0.0001
-            ) {
-                editor_theme::paint_bulk_edit_border(ui, speed_response.rect, metrics.scale);
+            if bulk_edit_mode && speed_value_response.clicked() {
+                *bulk_animation_speed_selected =
+                    !*bulk_animation_speed_selected;
             }
 
-            let scale_response =
+            if bulk_edit_mode && *bulk_animation_speed_selected {
+                editor_theme::paint_bulk_edit_border(
+                    ui,
+                    speed_value_response.rect,
+                    metrics.scale,
+                );
+            }
+
+            let (scale_response, scale_value_response) =
                 draw_aligned_slider_grid_row(
                     ui,
                     "Render Scale",
@@ -7781,18 +7912,33 @@ fn draw_render_panel(
                     slider_width,
                     value_width,
                     render_scale_drag_state,
+                    bulk_edit_mode,
+                    *bulk_render_scale_selected,
+                    "Click to include Render Scale in Bulk Edit",
+                    "Click to exclude Render Scale from Bulk Edit",
                 );
 
             update_hover_help(
                 &scale_response,
                 hover_help_message,
-                "Change internal rendering resolution. Lower values improve performance; higher values improve quality.",
+                if bulk_edit_mode && !*bulk_render_scale_selected {
+                    "Click the numeric Render Scale value to enable this slider for Bulk Edit."
+                } else {
+                    "Change internal rendering resolution. Lower values improve performance; higher values improve quality."
+                },
             );
 
-            if bulk_edit_baseline.is_some_and(
-                |baseline| (*displayed_render_scale - baseline.render_scale).abs() > 0.0001
-            ) {
-                editor_theme::paint_bulk_edit_border(ui, scale_response.rect, metrics.scale);
+            if bulk_edit_mode && scale_value_response.clicked() {
+                *bulk_render_scale_selected =
+                    !*bulk_render_scale_selected;
+            }
+
+            if bulk_edit_mode && *bulk_render_scale_selected {
+                editor_theme::paint_bulk_edit_border(
+                    ui,
+                    scale_value_response.rect,
+                    metrics.scale,
+                );
             }
         },
     );
@@ -7812,7 +7958,11 @@ fn draw_aligned_slider_grid_row(
     slider_width: f32,
     value_width: f32,
     drag_state: &mut Option<SliderDragState>,
-) -> egui::Response {
+    bulk_edit_mode: bool,
+    bulk_selected: bool,
+    bulk_include_help: &'static str,
+    bulk_exclude_help: &'static str,
+) -> (egui::Response, egui::Response) {
     draw_slider_label_cell(
         ui,
         label,
@@ -7833,28 +7983,39 @@ fn draw_aligned_slider_grid_row(
                     slider_width
                 );
 
-                draw_fine_slider(
-                    ui,
-                    value,
-                    minimum,
-                    maximum,
-                    shift_held,
-                    metrics.scale,
-                    drag_state,
+                ui.add_enabled_ui(
+                    !bulk_edit_mode || bulk_selected,
+                    |ui| {
+                        draw_fine_slider(
+                            ui,
+                            value,
+                            minimum,
+                            maximum,
+                            shift_held,
+                            metrics.scale,
+                            drag_state,
+                        )
+                    },
                 )
+                .inner
             },
         )
         .inner;
 
-    draw_slider_value_cell(
-        ui,
-        displayed_value,
-        value_width,
-    );
+    let value_response =
+        draw_slider_value_cell(
+            ui,
+            displayed_value,
+            value_width,
+            bulk_edit_mode,
+            bulk_selected,
+            bulk_include_help,
+            bulk_exclude_help,
+        );
 
     ui.end_row();
 
-    response
+    (response, value_response)
 }
 
 
@@ -7871,7 +8032,11 @@ fn draw_aligned_log_speed_grid_row(
     slider_width: f32,
     value_width: f32,
     drag_state: &mut Option<SliderDragState>,
-) -> egui::Response {
+    bulk_edit_mode: bool,
+    bulk_selected: bool,
+    bulk_include_help: &'static str,
+    bulk_exclude_help: &'static str,
+) -> (egui::Response, egui::Response) {
     draw_slider_label_cell(
         ui,
         label,
@@ -7892,28 +8057,39 @@ fn draw_aligned_log_speed_grid_row(
                     slider_width
                 );
 
-                draw_log_animation_speed_slider(
-                    ui,
-                    value,
-                    minimum,
-                    maximum,
-                    shift_held,
-                    metrics.scale,
-                    drag_state,
+                ui.add_enabled_ui(
+                    !bulk_edit_mode || bulk_selected,
+                    |ui| {
+                        draw_log_animation_speed_slider(
+                            ui,
+                            value,
+                            minimum,
+                            maximum,
+                            shift_held,
+                            metrics.scale,
+                            drag_state,
+                        )
+                    },
                 )
+                .inner
             },
         )
         .inner;
 
-    draw_slider_value_cell(
-        ui,
-        displayed_value,
-        value_width,
-    );
+    let value_response =
+        draw_slider_value_cell(
+            ui,
+            displayed_value,
+            value_width,
+            bulk_edit_mode,
+            bulk_selected,
+            bulk_include_help,
+            bulk_exclude_help,
+        );
 
     ui.end_row();
 
-    response
+    (response, value_response)
 }
 
 
@@ -7941,7 +8117,11 @@ fn draw_slider_value_cell(
     ui: &mut egui::Ui,
     displayed_value: &str,
     width: f32,
-) {
+    bulk_edit_mode: bool,
+    bulk_selected: bool,
+    bulk_include_help: &'static str,
+    bulk_exclude_help: &'static str,
+) -> egui::Response {
     ui.allocate_ui_with_layout(
         egui::vec2(
             width,
@@ -7951,11 +8131,30 @@ fn draw_slider_value_cell(
             egui::Align::Center
         ),
         |ui| {
-            ui.label(
-                displayed_value
-            );
+            if bulk_edit_mode {
+                ui.add_sized(
+                    egui::vec2(
+                        width,
+                        ui.spacing().interact_size.y,
+                    ),
+                    egui::Button::new(displayed_value),
+                )
+                .on_hover_cursor(
+                    egui::CursorIcon::PointingHand
+                )
+                .on_hover_text(
+                    if bulk_selected {
+                        bulk_exclude_help
+                    } else {
+                        bulk_include_help
+                    }
+                )
+            } else {
+                ui.label(displayed_value)
+            }
         },
-    );
+    )
+    .inner
 }
 
 
@@ -9832,6 +10031,8 @@ fn draw_post_processing_tab(
     bulk_invert_colors: &mut BulkBooleanSelection,
     bulk_flip_horizontal: &mut BulkBooleanSelection,
     bulk_flip_vertical: &mut BulkBooleanSelection,
+    bulk_bloom_intensity_selected: &mut bool,
+    bulk_bloom_threshold_selected: &mut bool,
     hue_rotation: &mut f32,
     hue_rotation_drag_state: &mut Option<SliderDragState>,
     bulk_hue_rotation_selected: &mut bool,
@@ -9915,37 +10116,47 @@ fn draw_post_processing_tab(
 
             ui.label("Bloom Intensity");
 
-            let intensity_response =
-                ui.add_enabled_ui(
-                    *bloom != BloomSelection::Off,
+            let intensity_control_available =
+                *bloom != BloomSelection::Off;
+
+            let (intensity_response, intensity_value_response) =
+                ui.horizontal(
                     |ui| {
-                        ui.horizontal(
-                            |ui| {
-                                ui.set_width(
-                                    metrics.dropdown_width
+                        ui.set_width(
+                            metrics.dropdown_width
+                        );
+
+                        let slider_width =
+                            (metrics.dropdown_width
+                                - 52.0 * metrics.scale)
+                                .max(
+                                    80.0 * metrics.scale
                                 );
 
-                                let slider_width =
-                                    (metrics.dropdown_width
-                                        - 52.0 * metrics.scale)
-                                        .max(
-                                            80.0 * metrics.scale
-                                        );
+                        let response =
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(
+                                    slider_width,
+                                    ui.spacing().interact_size.y,
+                                ),
+                                egui::Layout::left_to_right(
+                                    egui::Align::Center
+                                ),
+                                |ui| {
+                                    ui.set_width(
+                                        slider_width
+                                    );
 
-                                let response =
-                                    ui.allocate_ui_with_layout(
-                                        egui::vec2(
-                                            slider_width,
-                                            ui.spacing().interact_size.y,
-                                        ),
-                                        egui::Layout::left_to_right(
-                                            egui::Align::Center
-                                        ),
-                                        |ui| {
-                                            ui.set_width(
-                                                slider_width
+                                    let slider_enabled =
+                                        intensity_control_available
+                                            && (
+                                                bulk_edit_baseline.is_none()
+                                                    || *bulk_bloom_intensity_selected
                                             );
 
+                                    ui.add_enabled_ui(
+                                        slider_enabled,
+                                        |ui| {
                                             draw_fine_slider(
                                                 ui,
                                                 bloom_intensity,
@@ -9957,19 +10168,42 @@ fn draw_post_processing_tab(
                                             )
                                         },
                                     )
-                                    .inner;
+                                    .inner
+                                },
+                            )
+                            .inner;
 
+                        let value_response =
+                            if bulk_edit_baseline.is_some() {
+                                ui.add_enabled(
+                                    intensity_control_available,
+                                    egui::Button::new(
+                                        format!(
+                                            "{:.2}",
+                                            *bloom_intensity,
+                                        )
+                                    ),
+                                )
+                                .on_hover_cursor(
+                                    egui::CursorIcon::PointingHand
+                                )
+                                .on_hover_text(
+                                    if *bulk_bloom_intensity_selected {
+                                        "Click to exclude Bloom Intensity from Bulk Edit"
+                                    } else {
+                                        "Click to include Bloom Intensity in Bulk Edit"
+                                    }
+                                )
+                            } else {
                                 ui.label(
                                     format!(
                                         "{:.2}",
                                         *bloom_intensity,
                                     )
-                                );
+                                )
+                            };
 
-                                response
-                            },
-                        )
-                        .inner
+                        (response, value_response)
                     },
                 )
                 .inner;
@@ -9977,47 +10211,77 @@ fn draw_post_processing_tab(
             update_hover_help(
                 &intensity_response,
                 hover_help_message,
-                "Set the strength of the bloom effect. Hold Shift while dragging for fine adjustment. Lower values are suitable for subtle wallpaper bloom; higher values produce a stronger effect.",
-            ); if bulk_edit_baseline.is_some_and(
-                |baseline| (*bloom_intensity - baseline.bloom_intensity).abs() > 0.0001
-            ) {
-                editor_theme::paint_bulk_edit_border(ui, intensity_response.rect, metrics.scale);
+                if bulk_edit_baseline.is_some()
+                    && !*bulk_bloom_intensity_selected
+                {
+                    "Click the numeric Bloom Intensity value to enable this slider for Bulk Edit."
+                } else {
+                    "Set the strength of the bloom effect. Hold Shift while dragging for fine adjustment. Lower values are suitable for subtle wallpaper bloom; higher values produce a stronger effect."
+                },
+            );
+
+            if bulk_edit_baseline.is_some()
+                && intensity_control_available
+                && intensity_value_response.clicked()
+            {
+                *bulk_bloom_intensity_selected =
+                    !*bulk_bloom_intensity_selected;
+            }
+
+            if bulk_edit_baseline.is_some()
+                && *bulk_bloom_intensity_selected
+            {
+                editor_theme::paint_bulk_edit_border(
+                    ui,
+                    intensity_value_response.rect,
+                    metrics.scale,
+                );
             }
             ui.end_row();
 
             ui.label("Bloom Threshold");
 
-            let threshold_response =
-                ui.add_enabled_ui(
-                    *bloom != BloomSelection::Off,
+            let threshold_control_available =
+                *bloom != BloomSelection::Off;
+
+            let (threshold_response, threshold_value_response) =
+                ui.horizontal(
                     |ui| {
-                        ui.horizontal(
-                            |ui| {
-                                ui.set_width(
-                                    metrics.dropdown_width
+                        ui.set_width(
+                            metrics.dropdown_width
+                        );
+
+                        let slider_width =
+                            (metrics.dropdown_width
+                                - 52.0 * metrics.scale)
+                                .max(
+                                    80.0 * metrics.scale
                                 );
 
-                                let slider_width =
-                                    (metrics.dropdown_width
-                                        - 52.0 * metrics.scale)
-                                        .max(
-                                            80.0 * metrics.scale
-                                        );
+                        let response =
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(
+                                    slider_width,
+                                    ui.spacing().interact_size.y,
+                                ),
+                                egui::Layout::left_to_right(
+                                    egui::Align::Center
+                                ),
+                                |ui| {
+                                    ui.set_width(
+                                        slider_width
+                                    );
 
-                                let response =
-                                    ui.allocate_ui_with_layout(
-                                        egui::vec2(
-                                            slider_width,
-                                            ui.spacing().interact_size.y,
-                                        ),
-                                        egui::Layout::left_to_right(
-                                            egui::Align::Center
-                                        ),
-                                        |ui| {
-                                            ui.set_width(
-                                                slider_width
+                                    let slider_enabled =
+                                        threshold_control_available
+                                            && (
+                                                bulk_edit_baseline.is_none()
+                                                    || *bulk_bloom_threshold_selected
                                             );
 
+                                    ui.add_enabled_ui(
+                                        slider_enabled,
+                                        |ui| {
                                             draw_fine_slider(
                                                 ui,
                                                 bloom_threshold,
@@ -10029,19 +10293,42 @@ fn draw_post_processing_tab(
                                             )
                                         },
                                     )
-                                    .inner;
+                                    .inner
+                                },
+                            )
+                            .inner;
 
+                        let value_response =
+                            if bulk_edit_baseline.is_some() {
+                                ui.add_enabled(
+                                    threshold_control_available,
+                                    egui::Button::new(
+                                        format!(
+                                            "{:.2}",
+                                            *bloom_threshold,
+                                        )
+                                    ),
+                                )
+                                .on_hover_cursor(
+                                    egui::CursorIcon::PointingHand
+                                )
+                                .on_hover_text(
+                                    if *bulk_bloom_threshold_selected {
+                                        "Click to exclude Bloom Threshold from Bulk Edit"
+                                    } else {
+                                        "Click to include Bloom Threshold in Bulk Edit"
+                                    }
+                                )
+                            } else {
                                 ui.label(
                                     format!(
                                         "{:.2}",
                                         *bloom_threshold,
                                     )
-                                );
+                                )
+                            };
 
-                                response
-                            },
-                        )
-                        .inner
+                        (response, value_response)
                     },
                 )
                 .inner;
@@ -10049,11 +10336,31 @@ fn draw_post_processing_tab(
             update_hover_help(
                 &threshold_response,
                 hover_help_message,
-                "Set the minimum luminance that contributes to Highlight Bloom. Lower values include more of the image; higher values restrict bloom to brighter regions. Hold Shift while dragging for fine adjustment.",
-            ); if bulk_edit_baseline.is_some_and(
-                |baseline| (*bloom_threshold - baseline.bloom_threshold).abs() > 0.0001
-            ) {
-                editor_theme::paint_bulk_edit_border(ui, threshold_response.rect, metrics.scale);
+                if bulk_edit_baseline.is_some()
+                    && !*bulk_bloom_threshold_selected
+                {
+                    "Click the numeric Bloom Threshold value to enable this slider for Bulk Edit."
+                } else {
+                    "Set the minimum luminance that contributes to Highlight Bloom. Lower values include more of the image; higher values restrict bloom to brighter regions. Hold Shift while dragging for fine adjustment."
+                },
+            );
+
+            if bulk_edit_baseline.is_some()
+                && threshold_control_available
+                && threshold_value_response.clicked()
+            {
+                *bulk_bloom_threshold_selected =
+                    !*bulk_bloom_threshold_selected;
+            }
+
+            if bulk_edit_baseline.is_some()
+                && *bulk_bloom_threshold_selected
+            {
+                editor_theme::paint_bulk_edit_border(
+                    ui,
+                    threshold_value_response.rect,
+                    metrics.scale,
+                );
             }
             ui.end_row();
             ui.label("Invert Colors");
