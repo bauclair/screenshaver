@@ -3,6 +3,7 @@ import Cogl from 'gi://Cogl';
 import GLib from 'gi://GLib';
 import Gio from 'gi://Gio';
 import GObject from 'gi://GObject';
+import Pango from 'gi://Pango';
 import Shell from 'gi://Shell';
 import St from 'gi://St';
 
@@ -59,6 +60,7 @@ function createShaderEffectClass(shaderBody, generation) {
 }
 
 const RUNTIME_SHADER_FILENAME = 'screenshaver-gnome-lock-shader.glsl';
+const RUNTIME_METADATA_FILENAME = 'screenshaver-gnome-lock-metadata.txt';
 const CONTROL_FILENAME = 'screenshaver-lock-control.bin';
 const FRAME_FILENAME_PREFIX = 'screenshaver-lock-frame-';
 const FRAME_FILENAME_SUFFIX = '.rgba';
@@ -69,6 +71,8 @@ const CONTROL_SESSION_ID_BYTES = 16;
 const POLL_INTERVAL_MS = 33;
 const SHADER_TICK_INTERVAL_MS = 8;
 const SHADER_SOURCE_POLL_INTERVAL_MS = 250;
+const FPS_AVERAGE_WINDOW_US = 5 * 1000000;
+const FPS_CRITICAL_BLINK_INTERVAL_US = 500 * 1000;
 
 const SHADER_METRICS_REPORT_INTERVAL_US = 5 * 1000000;
 const POWER_SAVE_FALLBACK_INTERVAL_MS = 1000;
@@ -103,6 +107,14 @@ export default class ScreenshaverExtension extends Extension {
         this._shaderGeneration = 0;
         this._shaderStartedUs = 0;
         this._shaderTicks = 0;
+        this._descriptionPill = null;
+        this._descriptionMetadata = null;
+        this._activeMetadataSignature = null;
+        this._fpsWarningState = 'normal';
+        this._fpsBlinkVisible = true;
+        this._lastFpsBlinkUs = 0;
+        this._fpsWindowStartedUs = 0;
+        this._fpsWindowTicks = 0;
         this._pollSource = null;
         this._transportGeneration = 0;
         this._lastFrameCounter = 0;
@@ -350,6 +362,243 @@ export default class ScreenshaverExtension extends Extension {
         ]);
     }
 
+
+    _runtimeMetadataPath() {
+        return GLib.build_filenamev([
+            GLib.get_user_runtime_dir(),
+            RUNTIME_METADATA_FILENAME,
+        ]);
+    }
+
+    _readPresentationMetadata() {
+        const metadataPath = this._runtimeMetadataPath();
+        const metadataFile = Gio.File.new_for_path(metadataPath);
+        const [ok, contents] = metadataFile.load_contents(null);
+
+        if (!ok)
+            throw new Error(`Unable to read GNOME lock metadata handoff ${metadataPath}`);
+
+        const values = new Map();
+        const text = new TextDecoder().decode(contents);
+
+        for (const rawLine of text.split('\n')) {
+            const line = rawLine.trimEnd();
+
+            if (!line)
+                continue;
+
+            const separator = line.indexOf('=');
+
+            if (separator <= 0)
+                continue;
+
+            values.set(line.slice(0, separator), line.slice(separator + 1));
+        }
+
+        const version = Number.parseInt(values.get('version') ?? '', 10);
+
+        if (version !== 1)
+            throw new Error(`Unsupported GNOME lock metadata version: ${version}`);
+
+        return {
+            sourceBytes: Number.parseInt(values.get('source_bytes') ?? '0', 10),
+            policyId: Number.parseInt(values.get('policy_id') ?? '0', 10),
+            shader: values.get('shader') ?? '',
+            texture: values.get('texture') ?? '',
+            palette: values.get('palette') ?? '',
+            configuredFps: Math.max(1, Number.parseInt(values.get('configured_fps') ?? '1', 10) || 1),
+            subtitles: values.get('subtitles') === '1',
+            placement: values.get('placement') ?? 'bottom:left',
+        };
+    }
+
+    _metadataSignature(metadata) {
+        if (!metadata)
+            return null;
+
+        return [
+            metadata.sourceBytes,
+            metadata.policyId,
+            metadata.shader,
+            metadata.texture,
+            metadata.palette,
+            metadata.configuredFps,
+            metadata.subtitles ? 1 : 0,
+            metadata.placement,
+        ].join('\u001f');
+    }
+
+    _createDescriptionPill(parent) {
+        if (this._descriptionPill)
+            return;
+
+        this._descriptionPill = new St.Label({
+            reactive: false,
+            can_focus: false,
+            style: [
+                'background-color: rgba(0, 0, 0, 0.588);',
+                'border-radius: 999px;',
+                'color: rgb(245, 245, 245);',
+                'font-size: 18px;',
+                'padding: 9px 16px;',
+            ].join(' '),
+        });
+
+        this._descriptionPill.clutter_text.single_line_mode = true;
+        this._descriptionPill.clutter_text.ellipsize = Pango.EllipsizeMode.END;
+        this._descriptionPill.hide();
+        parent.add_child(this._descriptionPill);
+    }
+
+    _resetFpsWarningMonitor() {
+        const nowUs = GLib.get_monotonic_time();
+        this._fpsWarningState = 'normal';
+        this._fpsBlinkVisible = true;
+        this._lastFpsBlinkUs = nowUs;
+        this._fpsWindowStartedUs = nowUs;
+        this._fpsWindowTicks = 0;
+        this._updateDescriptionPill();
+    }
+
+    _recordGnomePresentationTick(nowUs) {
+        if (!this._descriptionMetadata)
+            return;
+
+        if (this._fpsWindowStartedUs <= 0)
+            this._fpsWindowStartedUs = nowUs;
+
+        this._fpsWindowTicks++;
+
+        const elapsedUs = nowUs - this._fpsWindowStartedUs;
+
+        if (elapsedUs >= FPS_AVERAGE_WINDOW_US) {
+            const elapsedSeconds = elapsedUs / 1000000.0;
+            const effectiveFps = this._fpsWindowTicks / elapsedSeconds;
+            const configuredFps = Math.max(1, this._descriptionMetadata.configuredFps);
+            let nextState = 'normal';
+
+            if (effectiveFps < configuredFps / 2.0)
+                nextState = 'critical';
+            else if (effectiveFps < configuredFps / 1.5)
+                nextState = 'warning';
+
+            if (nextState !== this._fpsWarningState) {
+                this._fpsWarningState = nextState;
+                this._fpsBlinkVisible = true;
+                this._lastFpsBlinkUs = nowUs;
+                this._updateDescriptionPill();
+
+                console.log(
+                    `[Screenshaver] GNOME lock FPS state=${nextState} measured=${effectiveFps.toFixed(2)} configured=${configuredFps}`
+                );
+            }
+
+            this._fpsWindowStartedUs = nowUs;
+            this._fpsWindowTicks = 0;
+        }
+
+        if (this._fpsWarningState === 'critical'
+            && nowUs - this._lastFpsBlinkUs >= FPS_CRITICAL_BLINK_INTERVAL_US) {
+            this._fpsBlinkVisible = !this._fpsBlinkVisible;
+            this._lastFpsBlinkUs = nowUs;
+            this._updateDescriptionPill();
+        }
+    }
+
+    _escapeMarkup(value) {
+        return GLib.markup_escape_text(value ?? '', -1);
+    }
+
+    _updateDescriptionPill() {
+        if (!this._descriptionPill || !this._descriptionMetadata)
+            return;
+
+        const metadata = this._descriptionMetadata;
+        const warningActive = this._fpsWarningState !== 'normal';
+        const shouldDisplay = metadata.subtitles || warningActive;
+
+        if (!shouldDisplay) {
+            this._descriptionPill.hide();
+            return;
+        }
+
+        const fields = [];
+
+        if (metadata.subtitles) {
+            if (metadata.shader)
+                fields.push(`P: ${this._escapeMarkup(metadata.shader)}`);
+            if (metadata.texture)
+                fields.push(`T: ${this._escapeMarkup(metadata.texture)}`);
+            if (metadata.palette)
+                fields.push(`P: ${this._escapeMarkup(metadata.palette)}`);
+        }
+
+        const showFps = this._fpsWarningState !== 'critical' || this._fpsBlinkVisible;
+
+        if (showFps) {
+            const fpsText = `FPS: ${metadata.configuredFps}`;
+
+            if (this._fpsWarningState === 'warning') {
+                fields.push(`<span foreground="#ffdd40">${fpsText}</span>`);
+            } else if (this._fpsWarningState === 'critical') {
+                fields.push(`<span foreground="#ff4848" weight="bold">${fpsText}</span>`);
+            } else if (metadata.subtitles) {
+                fields.push(fpsText);
+            }
+        }
+
+        if (fields.length === 0) {
+            this._descriptionPill.hide();
+            return;
+        }
+
+        this._descriptionPill.clutter_text.set_markup(fields.join(' | '));
+        this._positionDescriptionPill();
+        this._descriptionPill.show();
+    }
+
+    _positionDescriptionPill() {
+        if (!this._descriptionPill || !this._descriptionMetadata || !this._lockActor)
+            return;
+
+        const outputWidth = Math.max(1, this._lockActor.width);
+        const outputHeight = Math.max(1, this._lockActor.height);
+        const scale = Math.max(0.75, Math.min(2.0, outputHeight / 1080.0));
+        const fontSize = Math.max(10, Math.min(72, Math.round(18 * scale)));
+        const paddingX = Math.max(8, Math.round(16 * scale));
+        const paddingY = Math.max(5, Math.round(9 * scale));
+        const margin = Math.max(12, Math.round(24 * scale));
+        const maximumWidth = Math.max(1, Math.round(outputWidth * 0.80));
+
+        this._descriptionPill.set_style([
+            'background-color: rgba(0, 0, 0, 0.588);',
+            'border-radius: 999px;',
+            'color: rgb(245, 245, 245);',
+            `font-size: ${fontSize}px;`,
+            `padding: ${paddingY}px ${paddingX}px;`,
+        ].join(' '));
+
+        const [, naturalWidth] = this._descriptionPill.get_preferred_width(-1);
+        const width = Math.min(maximumWidth, Math.max(1, Math.ceil(naturalWidth)));
+        const [, naturalHeight] = this._descriptionPill.get_preferred_height(width);
+        const height = Math.max(1, Math.ceil(naturalHeight));
+        this._descriptionPill.set_size(width, height);
+
+        const [vertical, horizontal] = metadataPlacement(this._descriptionMetadata.placement);
+        let x = margin;
+        let y = margin;
+
+        if (horizontal === 'center')
+            x = Math.max(0, Math.floor((outputWidth - width) / 2));
+        else if (horizontal === 'right')
+            x = Math.max(0, outputWidth - width - margin);
+
+        if (vertical === 'bottom')
+            y = Math.max(0, outputHeight - height - margin);
+
+        this._descriptionPill.set_position(x, y);
+    }
+
     _readProductionShaderSource() {
         const shaderPath = this._runtimeShaderPath();
         const shaderFile = Gio.File.new_for_path(shaderPath);
@@ -427,6 +676,16 @@ export default class ScreenshaverExtension extends Extension {
         this._activeProductionSource = productionSource;
         this._shaderGeneration = 1;
 
+        try {
+            const metadata = this._readPresentationMetadata();
+            if (!metadata.sourceBytes || metadata.sourceBytes === shaderBytes.length) {
+                this._descriptionMetadata = metadata;
+                this._activeMetadataSignature = this._metadataSignature(metadata);
+            }
+        } catch (error) {
+            console.log(`[Screenshaver] GNOME description metadata unavailable: ${error}`);
+        }
+
         this._lockActor.add_effect_with_name(
             'screenshaver-production-shader-bridge',
             this._shaderEffect
@@ -481,8 +740,32 @@ export default class ScreenshaverExtension extends Extension {
             return;
         }
 
-        if (handoff.productionSource === this._activeProductionSource)
+        let observedMetadata = null;
+
+        try {
+            observedMetadata = this._readPresentationMetadata();
+        } catch (_) {
             return;
+        }
+
+        if (observedMetadata.sourceBytes
+            && observedMetadata.sourceBytes !== handoff.shaderBytes.length) {
+            return;
+        }
+
+        const observedMetadataSignature = this._metadataSignature(observedMetadata);
+
+        if (handoff.productionSource === this._activeProductionSource) {
+            if (observedMetadataSignature !== this._activeMetadataSignature) {
+                this._descriptionMetadata = observedMetadata;
+                this._activeMetadataSignature = observedMetadataSignature;
+                this._resetFpsWarningMonitor();
+                console.log(
+                    `[Screenshaver] GNOME description metadata updated for policy_id=${observedMetadata.policyId}`
+                );
+            }
+            return;
+        }
 
         const elapsedSeconds = this._shaderStartedUs > 0
             ? (GLib.get_monotonic_time() - this._shaderStartedUs) / 1000000.0
@@ -504,6 +787,8 @@ export default class ScreenshaverExtension extends Extension {
             return;
         }
 
+        const replacementMetadata = observedMetadata;
+
         const previousEffect = this._shaderEffect;
 
         try {
@@ -522,6 +807,9 @@ export default class ScreenshaverExtension extends Extension {
 
             this._activeProductionSource = handoff.productionSource;
             this._shaderGeneration++;
+            this._descriptionMetadata = replacementMetadata;
+            this._activeMetadataSignature = observedMetadataSignature;
+            this._resetFpsWarningMonitor();
 
             this._shaderEffect.queue_repaint();
             this._lockActor.queue_redraw();
@@ -630,6 +918,8 @@ export default class ScreenshaverExtension extends Extension {
         }
 
         backgroundGroup.add_child(this._lockActor);
+        this._createDescriptionPill(backgroundGroup);
+        this._resetFpsWarningMonitor();
 
         console.log(
             '[Screenshaver] Test #23 shader actor added above GNOME lock background'
@@ -679,6 +969,7 @@ export default class ScreenshaverExtension extends Extension {
                     );
                     this._shaderEffect.queue_repaint();
                     this._lockActor.queue_redraw();
+                    this._positionDescriptionPill();
                 } catch (error) {
                     console.log(
                         `[Screenshaver] Shell.GLSLEffect animation update failed: ${error}`
@@ -690,6 +981,7 @@ export default class ScreenshaverExtension extends Extension {
                 this._shaderTicks++;
 
                 const tickNowUs = GLib.get_monotonic_time();
+                this._recordGnomePresentationTick(tickNowUs);
                 this._shaderMetricsWindowTicks++;
 
                 if (this._shaderMetricsPreviousTickUs !== null) {
@@ -1370,6 +1662,11 @@ export default class ScreenshaverExtension extends Extension {
             this._pollSource = null;
         }
 
+        if (this._descriptionPill) {
+            this._descriptionPill.destroy();
+            this._descriptionPill = null;
+        }
+
         if (this._lockActor) {
             console.log('[Screenshaver] Removing Shell.GLSLEffect diagnostic lock actor');
             this._lockActor.destroy();
@@ -1382,6 +1679,13 @@ export default class ScreenshaverExtension extends Extension {
         this._shaderUniformResolution = -1;
         this._shaderStartedUs = 0;
         this._shaderTicks = 0;
+        this._descriptionMetadata = null;
+        this._activeMetadataSignature = null;
+        this._fpsWarningState = 'normal';
+        this._fpsBlinkVisible = true;
+        this._lastFpsBlinkUs = 0;
+        this._fpsWindowStartedUs = 0;
+        this._fpsWindowTicks = 0;
         this._displayedFrames = 0;
         this._refreshCalls = 0;
         this._uploadAttempts = 0;
@@ -1403,6 +1707,16 @@ export default class ScreenshaverExtension extends Extension {
     }
 }
 
+
+function metadataPlacement(value) {
+    const normalized = (value ?? 'bottom:left').toLowerCase();
+    const [vertical, horizontal] = normalized.split(':');
+
+    return [
+        vertical === 'top' ? 'top' : 'bottom',
+        ['left', 'center', 'right'].includes(horizontal) ? horizontal : 'left',
+    ];
+}
 
 function readSessionIdHex(data, offset) {
     if (!data || data.length < offset + CONTROL_SESSION_ID_BYTES)

@@ -5,6 +5,8 @@ use std::time::{Duration, Instant};
 
 const RUNTIME_SHADER_FILENAME: &str = "screenshaver-gnome-lock-shader.glsl";
 const RUNTIME_SHADER_TEMP_FILENAME: &str = "screenshaver-gnome-lock-shader.glsl.tmp";
+const RUNTIME_METADATA_FILENAME: &str = "screenshaver-gnome-lock-metadata.txt";
+const RUNTIME_METADATA_TEMP_FILENAME: &str = "screenshaver-gnome-lock-metadata.txt.tmp";
 const IDLE_POLL_INTERVAL: Duration = Duration::from_millis(25);
 
 /// GNOME Test #20 presentation host.
@@ -27,13 +29,13 @@ impl GnomeLockPresenter {
         shader_manager: crate::manage_shader::ShaderManager,
         shader_interval: u64,
         animation_speed_policy: crate::load_config::AnimationSpeedPolicy,
-        _global_rendered_fps: u32,
-        _fps_policy_entries: Vec<crate::load_config::FpsPolicyEntry>,
-        _texture_policy: crate::load_config::TexturePolicy,
+        global_rendered_fps: u32,
+        fps_policy_entries: Vec<crate::load_config::FpsPolicyEntry>,
+        texture_policy: crate::load_config::TexturePolicy,
         _postprocess_policy: crate::load_config::PostprocessPolicy,
         _audio_bands: Option<crate::audio_backend::SharedAudioBands>,
-        _subtitles: bool,
-        _subtitle_placement: crate::parse_subtitle_placement::SubtitlePlacement,
+        subtitles: bool,
+        subtitle_placement: crate::parse_subtitle_placement::SubtitlePlacement,
     ) -> Result<Self, String> {
         let producer = GnomeShaderSourceProducer::new(
             logfile,
@@ -41,6 +43,11 @@ impl GnomeLockPresenter {
             shader_manager,
             shader_interval,
             animation_speed_policy,
+            global_rendered_fps,
+            fps_policy_entries,
+            texture_policy,
+            subtitles,
+            subtitle_placement,
         )?;
 
         log_information(
@@ -67,9 +74,16 @@ struct GnomeShaderSourceProducer {
     shader_manager: crate::manage_shader::ShaderManager,
     shader_interval: u64,
     animation_speed_policy: crate::load_config::AnimationSpeedPolicy,
+    global_rendered_fps: u32,
+    fps_policy_entries: Vec<crate::load_config::FpsPolicyEntry>,
+    texture_manager: crate::manage_textures::TextureManager,
+    subtitles: bool,
+    subtitle_placement: crate::parse_subtitle_placement::SubtitlePlacement,
     last_shader_switch: Instant,
     runtime_shader_path: PathBuf,
     runtime_shader_temp_path: PathBuf,
+    runtime_metadata_path: PathBuf,
+    runtime_metadata_temp_path: PathBuf,
     active_shader_name: String,
     active_policy_id: i64,
 }
@@ -81,6 +95,11 @@ impl GnomeShaderSourceProducer {
         mut shader_manager: crate::manage_shader::ShaderManager,
         shader_interval: u64,
         animation_speed_policy: crate::load_config::AnimationSpeedPolicy,
+        global_rendered_fps: u32,
+        fps_policy_entries: Vec<crate::load_config::FpsPolicyEntry>,
+        texture_policy: crate::load_config::TexturePolicy,
+        subtitles: bool,
+        subtitle_placement: crate::parse_subtitle_placement::SubtitlePlacement,
     ) -> Result<Self, String> {
         let runtime_dir = std::env::var_os("XDG_RUNTIME_DIR")
             .map(PathBuf::from)
@@ -91,15 +110,14 @@ impl GnomeShaderSourceProducer {
 
         let runtime_shader_path = runtime_dir.join(RUNTIME_SHADER_FILENAME);
         let runtime_shader_temp_path = runtime_dir.join(RUNTIME_SHADER_TEMP_FILENAME);
+        let runtime_metadata_path = runtime_dir.join(RUNTIME_METADATA_FILENAME);
+        let runtime_metadata_temp_path = runtime_dir.join(RUNTIME_METADATA_TEMP_FILENAME);
         let _ = fs::remove_file(&runtime_shader_path);
         let _ = fs::remove_file(&runtime_shader_temp_path);
+        let _ = fs::remove_file(&runtime_metadata_path);
+        let _ = fs::remove_file(&runtime_metadata_temp_path);
 
         let selected = select_production_shader(&mut shader_manager)?;
-        publish_shader_source(
-            &runtime_shader_path,
-            &runtime_shader_temp_path,
-            &selected.source,
-        )?;
 
         let animation_speed = animation_speed_policy.animation_speed_for_policy(
             selected.entry.policy_id,
@@ -107,6 +125,54 @@ impl GnomeShaderSourceProducer {
             selected.entry.source_path.as_deref(),
             None,
         );
+
+        let configured_fps = resolve_shader_fps(
+            global_rendered_fps.max(1),
+            &fps_policy_entries,
+            selected.entry.policy_id,
+            &selected.entry.name,
+            selected.entry.source_path.as_deref(),
+        );
+
+        let mut texture_manager = crate::manage_textures::TextureManager::new(texture_policy);
+        if let Err(error) = texture_manager.prepare_for_policy_with_path(
+            selected.entry.policy_id,
+            &selected.entry.name,
+            selected.entry.source_path.as_deref(),
+            selected.channel_usage,
+        ) {
+            log_warning(
+                logfile,
+                &format!(
+                    "[LOCK] GNOME description metadata texture preparation failed for '{}': {error}",
+                    selected.entry.name,
+                ),
+            );
+        }
+
+        let metadata = build_presentation_metadata(
+            &selected,
+            &texture_manager,
+            animation_speed,
+            configured_fps,
+            subtitles,
+            subtitle_placement,
+        );
+
+        // Publish metadata first. The shader file is the extension's generation
+        // trigger, so a newly observed shader always has matching metadata ready.
+        publish_text_atomically(
+            &runtime_metadata_path,
+            &runtime_metadata_temp_path,
+            &metadata,
+            "GNOME lock metadata handoff",
+        )?;
+        publish_text_atomically(
+            &runtime_shader_path,
+            &runtime_shader_temp_path,
+            &selected.source,
+            "GNOME production shader handoff",
+        )?;
 
         log_information(
             logfile,
@@ -126,9 +192,16 @@ impl GnomeShaderSourceProducer {
             shader_manager,
             shader_interval,
             animation_speed_policy,
+            global_rendered_fps: global_rendered_fps.max(1),
+            fps_policy_entries,
+            texture_manager,
+            subtitles,
+            subtitle_placement,
             last_shader_switch: Instant::now(),
             runtime_shader_path,
             runtime_shader_temp_path,
+            runtime_metadata_path,
+            runtime_metadata_temp_path,
             active_shader_name: selected.entry.name,
             active_policy_id: selected.entry.policy_id,
         })
@@ -154,12 +227,6 @@ impl GnomeShaderSourceProducer {
             {
                 match select_production_shader(&mut self.shader_manager) {
                     Ok(selected) => {
-                        publish_shader_source(
-                            &self.runtime_shader_path,
-                            &self.runtime_shader_temp_path,
-                            &selected.source,
-                        )?;
-
                         let animation_speed =
                             self.animation_speed_policy.animation_speed_for_policy(
                                 selected.entry.policy_id,
@@ -167,6 +234,51 @@ impl GnomeShaderSourceProducer {
                                 selected.entry.source_path.as_deref(),
                                 None,
                             );
+
+                        let configured_fps = resolve_shader_fps(
+                            self.global_rendered_fps,
+                            &self.fps_policy_entries,
+                            selected.entry.policy_id,
+                            &selected.entry.name,
+                            selected.entry.source_path.as_deref(),
+                        );
+
+                        if let Err(error) = self.texture_manager.prepare_for_policy_with_path(
+                            selected.entry.policy_id,
+                            &selected.entry.name,
+                            selected.entry.source_path.as_deref(),
+                            selected.channel_usage,
+                        ) {
+                            log_warning(
+                                &self.logfile,
+                                &format!(
+                                    "[LOCK] GNOME description metadata texture preparation failed for '{}': {error}",
+                                    selected.entry.name,
+                                ),
+                            );
+                        }
+
+                        let metadata = build_presentation_metadata(
+                            &selected,
+                            &self.texture_manager,
+                            animation_speed,
+                            configured_fps,
+                            self.subtitles,
+                            self.subtitle_placement,
+                        );
+
+                        publish_text_atomically(
+                            &self.runtime_metadata_path,
+                            &self.runtime_metadata_temp_path,
+                            &metadata,
+                            "GNOME lock metadata handoff",
+                        )?;
+                        publish_text_atomically(
+                            &self.runtime_shader_path,
+                            &self.runtime_shader_temp_path,
+                            &selected.source,
+                            "GNOME production shader handoff",
+                        )?;
 
                         self.active_shader_name = selected.entry.name.clone();
                         self.active_policy_id = selected.entry.policy_id;
@@ -215,6 +327,8 @@ impl GnomeShaderSourceProducer {
     fn cleanup(&mut self) {
         let _ = fs::remove_file(&self.runtime_shader_path);
         let _ = fs::remove_file(&self.runtime_shader_temp_path);
+        let _ = fs::remove_file(&self.runtime_metadata_path);
+        let _ = fs::remove_file(&self.runtime_metadata_temp_path);
     }
 }
 
@@ -227,6 +341,8 @@ impl Drop for GnomeShaderSourceProducer {
 struct ProductionShader {
     entry: crate::manage_shader::ShaderEntry,
     source: String,
+    channel_usage: crate::preprocess_shader::ShaderChannelUsage,
+    built_in_default: bool,
 }
 
 fn select_production_shader(
@@ -258,6 +374,7 @@ fn select_production_shader(
                 source,
                 channel_usage,
                 shader_inputs,
+                built_in_default,
                 ..
             } => {
                 if channel_usage.channels.iter().any(|used| *used) {
@@ -287,7 +404,12 @@ fn select_production_shader(
                     continue;
                 }
 
-                return Ok(ProductionShader { entry, source });
+                return Ok(ProductionShader {
+                    entry,
+                    source,
+                    channel_usage,
+                    built_in_default,
+                });
             }
 
             crate::load_shader::ShaderLoadResult::Rejected { reasons, .. } => {
@@ -313,10 +435,130 @@ fn select_production_shader(
     Err("No Test #20-compatible production ShaderToy shader is available".to_string())
 }
 
-fn publish_shader_source(
+fn build_presentation_metadata(
+    selected: &ProductionShader,
+    texture_manager: &crate::manage_textures::TextureManager,
+    animation_speed: f32,
+    configured_fps: u32,
+    subtitles: bool,
+    subtitle_placement: crate::parse_subtitle_placement::SubtitlePlacement,
+) -> String {
+    let (texture, palette) = texture_manager
+        .active_specification_selection()
+        .map(|(specification, palette)| {
+            let texture = if specification.count_was_explicit {
+                specification.display_name()
+            } else {
+                format!(
+                    "{} ({})",
+                    specification.display_name(),
+                    specification.requested_primitive_count,
+                )
+            };
+
+            (Some(texture), Some(palette.to_string()))
+        })
+        .unwrap_or((None, None));
+
+    let shader_label = if selected.built_in_default
+        || Path::new(&selected.entry.name)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.eq_ignore_ascii_case("default.glsl"))
+    {
+        "Collect more shaders at https://editor.isf.video/shaders and https://shadertoy.com/browse"
+            .to_string()
+    } else {
+        selected.entry.policy_name.clone()
+    };
+
+    let shader_label = format!(
+        "{} | {}",
+        shader_label,
+        format_animation_speed(animation_speed),
+    );
+
+    let mut lines = Vec::new();
+    lines.push("version=1".to_string());
+    lines.push(format!("source_bytes={}", selected.source.len()));
+    lines.push(format!("policy_id={}", selected.entry.policy_id));
+    lines.push(format!("shader={}", sanitize_metadata_value(&shader_label)));
+    lines.push(format!(
+        "texture={}",
+        sanitize_metadata_value(texture.as_deref().unwrap_or(""))
+    ));
+    lines.push(format!(
+        "palette={}",
+        sanitize_metadata_value(palette.as_deref().unwrap_or(""))
+    ));
+    lines.push(format!("configured_fps={}", configured_fps.max(1)));
+    lines.push(format!("subtitles={}", if subtitles { 1 } else { 0 }));
+    lines.push(format!("placement={}", subtitle_placement.name()));
+    lines.push(String::new());
+    lines.join("\n")
+}
+
+fn format_animation_speed(speed: f32) -> String {
+    if speed.fract() == 0.0 {
+        format!("×{speed:.1}")
+    } else {
+        format!("×{speed}")
+    }
+}
+
+fn sanitize_metadata_value(value: &str) -> String {
+    value
+        .chars()
+        .map(|character| match character {
+            '\n' | '\r' | '\0' => ' ',
+            _ => character,
+        })
+        .collect()
+}
+
+fn resolve_shader_fps(
+    global_rendered_fps: u32,
+    fps_policy_entries: &[crate::load_config::FpsPolicyEntry],
+    policy_id: i64,
+    shader_name: &str,
+    source_path: Option<&Path>,
+) -> u32 {
+    if policy_id > 0 {
+        if let Some(entry) = fps_policy_entries
+            .iter()
+            .find(|entry| entry.policy_id == policy_id)
+        {
+            return entry.rendered_fps.max(1);
+        }
+    }
+
+    if let Some(source_path) = source_path {
+        if let Some(entry) = fps_policy_entries.iter().find(|entry| {
+            entry
+                .source_path
+                .as_deref()
+                .is_some_and(|policy_path| paths_refer_to_same_file(policy_path, source_path))
+        }) {
+            return entry.rendered_fps.max(1);
+        }
+    }
+
+    fps_policy_entries
+        .iter()
+        .find(|entry| {
+            entry.source_path.is_none()
+                && entry.shader.eq_ignore_ascii_case(shader_name)
+        })
+        .map(|entry| entry.rendered_fps)
+        .unwrap_or(global_rendered_fps)
+        .max(1)
+}
+
+fn publish_text_atomically(
     destination: &Path,
     temporary: &Path,
-    source: &str,
+    contents: &str,
+    description: &str,
 ) -> Result<(), String> {
     let _ = fs::remove_file(temporary);
 
@@ -328,21 +570,21 @@ fn publish_shader_source(
             .open(temporary)
             .map_err(|error| {
                 format!(
-                    "Unable to create GNOME production shader handoff '{}': {error}",
+                    "Unable to create {description} '{}': {error}",
                     temporary.display(),
                 )
             })?;
 
-        file.write_all(source.as_bytes()).map_err(|error| {
+        file.write_all(contents.as_bytes()).map_err(|error| {
             format!(
-                "Unable to write GNOME production shader handoff '{}': {error}",
+                "Unable to write {description} '{}': {error}",
                 temporary.display(),
             )
         })?;
 
         file.flush().map_err(|error| {
             format!(
-                "Unable to flush GNOME production shader handoff '{}': {error}",
+                "Unable to flush {description} '{}': {error}",
                 temporary.display(),
             )
         })?;
@@ -350,7 +592,7 @@ fn publish_shader_source(
 
     fs::rename(temporary, destination).map_err(|error| {
         format!(
-            "Unable to publish GNOME production shader handoff '{}' -> '{}': {error}",
+            "Unable to publish {description} '{}' -> '{}': {error}",
             temporary.display(),
             destination.display(),
         )
