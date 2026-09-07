@@ -1119,6 +1119,13 @@ pub struct EditWindowOverlay {
     bulk_flip_vertical:
         BulkBooleanSelection,
 
+    // Bulk Edit intent for Hue Rotation is independent of its numeric value.
+    // This allows an explicit 0-degree bulk assignment even when 0 is the
+    // suspended single-policy baseline.  Clicking/engaging the slider toggles
+    // this intent on/off.
+    bulk_hue_rotation_selected:
+        bool,
+
     pending_policy_navigation:
         Option<PolicyNavigation>,
 
@@ -1452,6 +1459,9 @@ impl EditWindowOverlay {
 
                 bulk_flip_vertical:
                     BulkBooleanSelection::Unchanged,
+
+                bulk_hue_rotation_selected:
+                    false,
 
                 pending_policy_navigation:
                     None,
@@ -2187,6 +2197,9 @@ impl EditWindowOverlay {
         let mut bulk_flip_vertical =
             self.bulk_flip_vertical;
 
+        let mut bulk_hue_rotation_selected =
+            self.bulk_hue_rotation_selected;
+
 
         // A shader physically located in one of Screenshaver's managed
         // runtime folders has exactly one available policy target.  Enforce
@@ -2526,6 +2539,11 @@ impl EditWindowOverlay {
                 policy_target_change_requested =
                     None;
 
+                // Bulk Edit begins with no Hue Rotation apply intent, even
+                // though the slider displays a legitimate numeric value.
+                bulk_hue_rotation_selected =
+                    false;
+
                 status_message =
                     "Bulk Edit Mode active-- click Cancel to return to Single Edit mode."
                         .to_string();
@@ -2625,6 +2643,9 @@ impl EditWindowOverlay {
 
                 hue_rotation_drag_state =
                     None;
+
+                bulk_hue_rotation_selected =
+                    false;
             }
 
             bulk_invert_colors =
@@ -2803,6 +2824,13 @@ impl EditWindowOverlay {
                             pending_bulk_changes.flip_vertical =
                                 bulk_edit_mode
                                     && bulk_flip_vertical.applies();
+
+                            // Hue Rotation uses explicit Bulk Edit intent
+                            // rather than a comparison with the suspended
+                            // single-policy baseline.
+                            pending_bulk_changes.hue_rotation =
+                                bulk_edit_mode
+                                    && bulk_hue_rotation_selected;
 
 
                             let policy_dirty =
@@ -3030,6 +3058,7 @@ impl EditWindowOverlay {
                                                         &mut bulk_flip_vertical,
                                                         &mut hue_rotation,
                                                         &mut hue_rotation_drag_state,
+                                                        &mut bulk_hue_rotation_selected,
                                                         bulk_edit_baseline,
                                                         &mut hover_help_message,
                                                     );
@@ -3417,7 +3446,6 @@ impl EditWindowOverlay {
             }
         }
 
-
         let current_editor_configuration =
             EditorConfiguration::new(
                 displayed_fps,
@@ -3466,6 +3494,10 @@ impl EditWindowOverlay {
         bulk_edit_changes.flip_vertical =
             bulk_edit_mode
                 && bulk_flip_vertical.applies();
+
+        bulk_edit_changes.hue_rotation =
+            bulk_edit_mode
+                && bulk_hue_rotation_selected;
 
 
         self.bulk_selected_policy_rows =
@@ -3580,6 +3612,9 @@ impl EditWindowOverlay {
 
         self.hue_rotation_drag_state =
             hue_rotation_drag_state;
+
+        self.bulk_hue_rotation_selected =
+            bulk_hue_rotation_selected;
 
         let clipped_primitives =
             self.context.tessellate(
@@ -4204,6 +4239,9 @@ impl EditWindowOverlay {
         let suspended_editor_state =
             self.bulk_edit_baseline;
 
+        self.bulk_hue_rotation_selected =
+            false;
+
 
         self.bulk_selected_policy_rows.clear();
 
@@ -4330,6 +4368,9 @@ impl EditWindowOverlay {
 
         self.hue_rotation_drag_state =
             None;
+
+        self.bulk_hue_rotation_selected =
+            false;
     }
 
 
@@ -9793,6 +9834,7 @@ fn draw_post_processing_tab(
     bulk_flip_vertical: &mut BulkBooleanSelection,
     hue_rotation: &mut f32,
     hue_rotation_drag_state: &mut Option<SliderDragState>,
+    bulk_hue_rotation_selected: &mut bool,
     bulk_edit_baseline: Option<EditorConfiguration>,
     hover_help_message: &mut Option<&'static str>,
 ) {
@@ -10132,10 +10174,23 @@ fn draw_post_processing_tab(
                 &hue_response,
                 hover_help_message,
                 "Rotate shader hue from -180° through +180°. Hold Shift while dragging for 10x finer adjustment.",
-            ); if bulk_edit_baseline.is_some_and(
-                |baseline| (*hue_rotation - baseline.hue_rotation).abs() > 0.0001
-            ) {
-                editor_theme::paint_bulk_edit_border(ui, hue_response.rect, metrics.scale);
+            );
+
+            if bulk_edit_baseline.is_some()
+                && (hue_response.clicked() || hue_response.drag_started())
+            {
+                *bulk_hue_rotation_selected =
+                    !*bulk_hue_rotation_selected;
+            }
+
+            if bulk_edit_baseline.is_some()
+                && *bulk_hue_rotation_selected
+            {
+                editor_theme::paint_bulk_edit_border(
+                    ui,
+                    hue_response.rect,
+                    metrics.scale,
+                );
             }
             ui.end_row();
 
