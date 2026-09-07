@@ -3,6 +3,7 @@ import Cogl from 'gi://Cogl';
 import GLib from 'gi://GLib';
 import Gio from 'gi://Gio';
 import GObject from 'gi://GObject';
+import Graphene from 'gi://Graphene';
 import Pango from 'gi://Pango';
 import Shell from 'gi://Shell';
 import St from 'gi://St';
@@ -156,55 +157,88 @@ function createShaderEffectClass(shaderBody, generation, renderScale) {
             );
         }
 
-        // Test #29: retain the Test #28 offscreen probe after scaled allocation.
-        // Inspect the actual offscreen target from inside paint_target(), where
-        // Clutter documents the target texture/size as valid, then chain directly
-        // to Shell.GLSLEffect so rendering behavior remains unchanged.
+        // Test #29B: keep the genuine reduced-resolution offscreen texture from
+        // Test #29A, but present the Shell.GLSLEffect pipeline across the original
+        // native target rectangle. Using get_pipeline() is essential: the shader
+        // snippets live on that pipeline, so painting the raw texture directly
+        // would bypass the actual Screenshaver GLSL effect.
         vfunc_paint_target(node, paintContext) {
-            if (!this._screenshaverOffscreenProbeLogged) {
-                try {
-                    const targetSize = this.get_target_size();
-                    const texture = this.get_texture();
+            let targetValid = false;
+            let targetWidth = 0.0;
+            let targetHeight = 0.0;
+            let textureWidth = 0;
+            let textureHeight = 0;
 
-                    let valid = false;
-                    let targetWidth = 0.0;
-                    let targetHeight = 0.0;
+            try {
+                const targetSize = this.get_target_size();
+                const texture = this.get_texture();
 
-                    if (Array.isArray(targetSize)) {
-                        if (targetSize.length >= 3) {
-                            valid = Boolean(targetSize[0]);
-                            targetWidth = Number(targetSize[1]);
-                            targetHeight = Number(targetSize[2]);
-                        } else if (targetSize.length >= 2) {
-                            // Some GI versions omit the gboolean success return.
-                            valid = true;
-                            targetWidth = Number(targetSize[0]);
-                            targetHeight = Number(targetSize[1]);
-                        }
+                if (Array.isArray(targetSize)) {
+                    if (targetSize.length >= 3) {
+                        targetValid = Boolean(targetSize[0]);
+                        targetWidth = Number(targetSize[1]);
+                        targetHeight = Number(targetSize[2]);
+                    } else if (targetSize.length >= 2) {
+                        // Some GI versions omit the gboolean success return.
+                        targetValid = true;
+                        targetWidth = Number(targetSize[0]);
+                        targetHeight = Number(targetSize[1]);
                     }
+                }
 
-                    const textureWidth = texture?.get_width?.() ?? 0;
-                    const textureHeight = texture?.get_height?.() ?? 0;
+                textureWidth = texture?.get_width?.() ?? 0;
+                textureHeight = texture?.get_height?.() ?? 0;
 
+                if (!this._screenshaverOffscreenProbeLogged) {
                     console.log(
-                        `[Screenshaver] Test #29 Shell.GLSLEffect offscreen target: ` +
-                        `valid=${valid} target=${targetWidth}x${targetHeight} ` +
+                        `[Screenshaver] Test #29B Shell.GLSLEffect offscreen target: ` +
+                        `valid=${targetValid} target=${targetWidth}x${targetHeight} ` +
                         `texture=${textureWidth}x${textureHeight} generation=${generation}`
                     );
-
-                    this._screenshaverOffscreenProbeLogged = true;
-                } catch (error) {
-                    console.log(
-                        `[Screenshaver] Test #29 Shell.GLSLEffect offscreen probe failed ` +
-                        `generation=${generation}: ${error}`
-                    );
-                    // Log only once per generation. A probe failure must not
-                    // interfere with the already-proven shader presentation path.
                     this._screenshaverOffscreenProbeLogged = true;
                 }
-            }
 
-            super.vfunc_paint_target(node, paintContext);
+                const nativeWidth = this._screenshaverNativeTargetWidth ?? targetWidth;
+                const nativeHeight = this._screenshaverNativeTargetHeight ?? targetHeight;
+                const scale = this._screenshaverRenderScale ?? 1.0;
+
+                // At 1.0 there is no presentation mismatch to correct. Preserve
+                // Shell.GLSLEffect's proven native paint path exactly.
+                if (Math.abs(scale - 1.0) <= 0.0001) {
+                    super.vfunc_paint_target(node, paintContext);
+                    return;
+                }
+
+                const pipeline = this.get_pipeline();
+                if (!pipeline)
+                    throw new Error('Shell.GLSLEffect pipeline unavailable during paint_target');
+                if (!(nativeWidth > 0.0) || !(nativeHeight > 0.0))
+                    throw new Error(`invalid native target ${nativeWidth}x${nativeHeight}`);
+
+                const rect = new Graphene.Rect();
+                rect.init(0.0, 0.0, nativeWidth, nativeHeight);
+
+                const pipelineNode = Clutter.PipelineNode.new(pipeline);
+                pipelineNode.add_texture_rectangle(rect, 0.0, 0.0, 1.0, 1.0);
+                node.add_child(pipelineNode);
+
+                if (!this._screenshaverPresentationProbeLogged) {
+                    console.log(
+                        `[Screenshaver] Test #29B fullscreen presentation: ` +
+                        `texture=${textureWidth}x${textureHeight} -> ` +
+                        `native=${nativeWidth}x${nativeHeight} scale=${scale.toFixed(3)} ` +
+                        `generation=${generation}`
+                    );
+                    this._screenshaverPresentationProbeLogged = true;
+                }
+            } catch (error) {
+                console.log(
+                    `[Screenshaver] Test #29B fullscreen presentation failed; ` +
+                    `falling back to Shell.GLSLEffect native paint ` +
+                    `generation=${generation}: ${error}`
+                );
+                super.vfunc_paint_target(node, paintContext);
+            }
         }
     });
 }
