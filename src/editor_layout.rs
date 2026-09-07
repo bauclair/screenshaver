@@ -10178,94 +10178,99 @@ fn draw_post_processing_tab(
             ui.label("Bloom");
 
             let selected_text =
-                match *bloom {
-                    BloomSelection::Off => "Off",
-                    BloomSelection::Highlight => "Highlight",
-                    BloomSelection::Audio => "Audio",
+                if bulk_edit_baseline.is_some()
+                    && !*bulk_bloom_selected
+                {
+                    "Unchanged"
+                } else {
+                    match *bloom {
+                        BloomSelection::Off => "Off",
+                        BloomSelection::Highlight => "Highlight",
+                        BloomSelection::Audio => "Audio",
+                    }
                 };
 
             let response =
-                if bulk_edit_baseline.is_some() {
-                    ui.horizontal(
-                        |ui| {
-                            let combo_width =
-                                (metrics.dropdown_width - 62.0 * metrics.scale)
-                                    .max(80.0 * metrics.scale);
-
-                            let combo_response =
-                                ui.add_enabled_ui(
-                                    *bulk_bloom_selected,
-                                    |ui| {
-                                        egui::ComboBox::from_id_source(
-                                            "editor_bloom"
-                                        )
-                                        .selected_text(selected_text)
-                                        .width(combo_width)
-                                        .show_ui(
-                                            ui,
-                                            |ui| {
-                                                draw_bloom_options(ui, bloom);
-                                            },
-                                        )
-                                        .response
-                                    },
-                                )
-                                .inner;
-
-                            let bulk_response =
-                                ui.add_sized(
-                                    egui::vec2(
-                                        58.0 * metrics.scale,
-                                        ui.spacing().interact_size.y,
-                                    ),
-                                    egui::Button::new("Bulk"),
-                                )
-                                .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                .on_hover_text(
-                                    if *bulk_bloom_selected {
-                                        "Click to exclude Bloom from Bulk Edit"
-                                    } else {
-                                        "Click to include Bloom in Bulk Edit"
-                                    }
+                egui::ComboBox::from_id_source(
+                    "editor_bloom"
+                )
+                .selected_text(selected_text)
+                .width(metrics.dropdown_width)
+                .show_ui(
+                    ui,
+                    |ui| {
+                        if bulk_edit_baseline.is_some() {
+                            let unchanged_response =
+                                ui.selectable_label(
+                                    !*bulk_bloom_selected,
+                                    "Unchanged",
                                 );
 
-                            if bulk_response.clicked() {
-                                *bulk_bloom_selected =
-                                    !*bulk_bloom_selected;
+                            if unchanged_response.clicked() {
+                                *bulk_bloom_selected = false;
                             }
 
-                            if *bulk_bloom_selected {
-                                editor_theme::paint_bulk_edit_border(
-                                    ui,
-                                    bulk_response.rect,
-                                    metrics.scale,
-                                );
-                            }
+                            ui.separator();
+                        }
 
-                            combo_response
-                        },
-                    )
-                    .inner
-                } else {
-                    egui::ComboBox::from_id_source(
-                        "editor_bloom"
-                    )
-                    .selected_text(selected_text)
-                    .width(metrics.dropdown_width)
-                    .show_ui(
-                        ui,
-                        |ui| {
-                            draw_bloom_options(ui, bloom);
-                        },
-                    )
-                    .response
-                };
+                        let off_response =
+                            ui.selectable_value(
+                                bloom,
+                                BloomSelection::Off,
+                                "Off",
+                            );
+                        if bulk_edit_baseline.is_some()
+                            && off_response.clicked()
+                        {
+                            *bulk_bloom_selected = true;
+                        }
+
+                        let highlight_response =
+                            ui.selectable_value(
+                                bloom,
+                                BloomSelection::Highlight,
+                                "Highlight",
+                            );
+                        if bulk_edit_baseline.is_some()
+                            && highlight_response.clicked()
+                        {
+                            *bulk_bloom_selected = true;
+                        }
+
+                        let audio_response =
+                            ui.selectable_value(
+                                bloom,
+                                BloomSelection::Audio,
+                                "Audio",
+                            );
+                        if bulk_edit_baseline.is_some()
+                            && audio_response.clicked()
+                        {
+                            *bulk_bloom_selected = true;
+                        }
+                    },
+                )
+                .response;
+
+            if bulk_edit_baseline.is_some()
+                && *bulk_bloom_selected
+            {
+                editor_theme::paint_bulk_edit_border(
+                    ui,
+                    response.rect,
+                    metrics.scale,
+                );
+            }
 
             update_hover_help(
                 &response,
                 hover_help_message,
-                if bulk_edit_baseline.is_some() && !*bulk_bloom_selected {
-                    "Click Bulk to enable Bloom for Bulk Edit."
+                if bulk_edit_baseline.is_some()
+                    && !*bulk_bloom_selected
+                {
+                    "Choose a Bloom value to include it in Bulk Edit. Select Unchanged to exclude it."
+                } else if bulk_edit_baseline.is_some() {
+                    "Select Off, Highlight, or Audio. Choose Unchanged to exclude Bloom from Bulk Edit."
                 } else {
                     "Select the bloom processing mode. Highlight bloom affects bright image regions; Audio bloom targets bass, midrange, and high-frequency color bands."
                 },
@@ -10756,105 +10761,74 @@ fn draw_post_processing_panel(
                     ui.label("Anti-Aliasing");
 
                     let selected_text =
-                        match *anti_aliasing {
-                            AntiAliasingSelection::Off => "Off",
-                            AntiAliasingSelection::Fxaa => "FXAA",
+                        if bulk_edit_baseline.is_some()
+                            && !*bulk_anti_aliasing_selected
+                        {
+                            "Unchanged"
+                        } else {
+                            match *anti_aliasing {
+                                AntiAliasingSelection::Off => "Off",
+                                AntiAliasingSelection::Fxaa => "FXAA",
+                            }
                         };
 
                     let response =
-                        if bulk_edit_baseline.is_some() {
-                            ui.horizontal(
-                                |ui| {
-                                    let combo_width =
-                                        (metrics.dropdown_width - 62.0 * metrics.scale)
-                                            .max(80.0 * metrics.scale);
-
-                                    let combo_response =
-                                        ui.add_enabled_ui(
-                                            *bulk_anti_aliasing_selected,
-                                            |ui| {
-                                                egui::ComboBox::from_id_source(
-                                                    "editor_anti_aliasing"
-                                                )
-                                                .selected_text(selected_text)
-                                                .width(combo_width)
-                                                .show_ui(
-                                                    ui,
-                                                    |ui| {
-                                                        ui.selectable_value(
-                                                            anti_aliasing,
-                                                            AntiAliasingSelection::Off,
-                                                            "Off",
-                                                        );
-                                                        ui.selectable_value(
-                                                            anti_aliasing,
-                                                            AntiAliasingSelection::Fxaa,
-                                                            "FXAA",
-                                                        );
-                                                    },
-                                                )
-                                                .response
-                                            },
-                                        )
-                                        .inner;
-
-                                    let bulk_response =
-                                        ui.add_sized(
-                                            egui::vec2(
-                                                58.0 * metrics.scale,
-                                                ui.spacing().interact_size.y,
-                                            ),
-                                            egui::Button::new("Bulk"),
-                                        )
-                                        .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                        .on_hover_text(
-                                            if *bulk_anti_aliasing_selected {
-                                                "Click to exclude Anti-Aliasing from Bulk Edit"
-                                            } else {
-                                                "Click to include Anti-Aliasing in Bulk Edit"
-                                            }
+                        egui::ComboBox::from_id_source(
+                            "editor_anti_aliasing"
+                        )
+                        .selected_text(selected_text)
+                        .width(metrics.dropdown_width)
+                        .show_ui(
+                            ui,
+                            |ui| {
+                                if bulk_edit_baseline.is_some() {
+                                    let unchanged_response =
+                                        ui.selectable_label(
+                                            !*bulk_anti_aliasing_selected,
+                                            "Unchanged",
                                         );
 
-                                    if bulk_response.clicked() {
-                                        *bulk_anti_aliasing_selected =
-                                            !*bulk_anti_aliasing_selected;
+                                    if unchanged_response.clicked() {
+                                        *bulk_anti_aliasing_selected = false;
                                     }
 
-                                    if *bulk_anti_aliasing_selected {
-                                        editor_theme::paint_bulk_edit_border(
-                                            ui,
-                                            bulk_response.rect,
-                                            metrics.scale,
-                                        );
-                                    }
+                                    ui.separator();
+                                }
 
-                                    combo_response
-                                },
-                            )
-                            .inner
-                        } else {
-                            egui::ComboBox::from_id_source(
-                                "editor_anti_aliasing"
-                            )
-                            .selected_text(selected_text)
-                            .width(metrics.dropdown_width)
-                            .show_ui(
-                                ui,
-                                |ui| {
-                                    ui.selectable_value(
-                                        anti_aliasing,
-                                        AntiAliasingSelection::Off,
-                                        "Off",
-                                    );
-                                    ui.selectable_value(
-                                        anti_aliasing,
-                                        AntiAliasingSelection::Fxaa,
-                                        "FXAA",
-                                    );
-                                },
-                            )
-                            .response
-                        };
+                                let off_response = ui.selectable_value(
+                                    anti_aliasing,
+                                    AntiAliasingSelection::Off,
+                                    "Off",
+                                );
+                                if bulk_edit_baseline.is_some()
+                                    && off_response.clicked()
+                                {
+                                    *bulk_anti_aliasing_selected = true;
+                                }
+
+                                let fxaa_response = ui.selectable_value(
+                                    anti_aliasing,
+                                    AntiAliasingSelection::Fxaa,
+                                    "FXAA",
+                                );
+                                if bulk_edit_baseline.is_some()
+                                    && fxaa_response.clicked()
+                                {
+                                    *bulk_anti_aliasing_selected = true;
+                                }
+                            },
+                        )
+                        .response;
+
+                    if bulk_edit_baseline.is_some()
+                        && *bulk_anti_aliasing_selected
+                    {
+                        editor_theme::paint_bulk_edit_border(
+                            ui,
+                            response.rect,
+                            metrics.scale,
+                        );
+                    }
 
                     update_hover_help(
                         &response,
@@ -10862,7 +10836,9 @@ fn draw_post_processing_panel(
                         if bulk_edit_baseline.is_some()
                             && !*bulk_anti_aliasing_selected
                         {
-                            "Click Bulk to enable Anti-Aliasing for Bulk Edit."
+                            "Choose a Anti-Aliasing value to include it in Bulk Edit. Select Unchanged to exclude it."
+                        } else if bulk_edit_baseline.is_some() {
+                            "Choose Unchanged to exclude Anti-Aliasing from Bulk Edit."
                         } else {
                             "Select the anti-aliasing method used to smooth rendered edges."
                         },
@@ -10872,105 +10848,74 @@ fn draw_post_processing_panel(
                     ui.label("Dithering");
 
                     let selected_text =
-                        match *dithering {
-                            DitheringSelection::Off => "Off",
-                            DitheringSelection::Subtle => "Subtle",
+                        if bulk_edit_baseline.is_some()
+                            && !*bulk_dithering_selected
+                        {
+                            "Unchanged"
+                        } else {
+                            match *dithering {
+                                DitheringSelection::Off => "Off",
+                                DitheringSelection::Subtle => "Subtle",
+                            }
                         };
 
                     let response =
-                        if bulk_edit_baseline.is_some() {
-                            ui.horizontal(
-                                |ui| {
-                                    let combo_width =
-                                        (metrics.dropdown_width - 62.0 * metrics.scale)
-                                            .max(80.0 * metrics.scale);
-
-                                    let combo_response =
-                                        ui.add_enabled_ui(
-                                            *bulk_dithering_selected,
-                                            |ui| {
-                                                egui::ComboBox::from_id_source(
-                                                    "editor_dithering"
-                                                )
-                                                .selected_text(selected_text)
-                                                .width(combo_width)
-                                                .show_ui(
-                                                    ui,
-                                                    |ui| {
-                                                        ui.selectable_value(
-                                                            dithering,
-                                                            DitheringSelection::Off,
-                                                            "Off",
-                                                        );
-                                                        ui.selectable_value(
-                                                            dithering,
-                                                            DitheringSelection::Subtle,
-                                                            "Subtle",
-                                                        );
-                                                    },
-                                                )
-                                                .response
-                                            },
-                                        )
-                                        .inner;
-
-                                    let bulk_response =
-                                        ui.add_sized(
-                                            egui::vec2(
-                                                58.0 * metrics.scale,
-                                                ui.spacing().interact_size.y,
-                                            ),
-                                            egui::Button::new("Bulk"),
-                                        )
-                                        .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                        .on_hover_text(
-                                            if *bulk_dithering_selected {
-                                                "Click to exclude Dithering from Bulk Edit"
-                                            } else {
-                                                "Click to include Dithering in Bulk Edit"
-                                            }
+                        egui::ComboBox::from_id_source(
+                            "editor_dithering"
+                        )
+                        .selected_text(selected_text)
+                        .width(metrics.dropdown_width)
+                        .show_ui(
+                            ui,
+                            |ui| {
+                                if bulk_edit_baseline.is_some() {
+                                    let unchanged_response =
+                                        ui.selectable_label(
+                                            !*bulk_dithering_selected,
+                                            "Unchanged",
                                         );
 
-                                    if bulk_response.clicked() {
-                                        *bulk_dithering_selected =
-                                            !*bulk_dithering_selected;
+                                    if unchanged_response.clicked() {
+                                        *bulk_dithering_selected = false;
                                     }
 
-                                    if *bulk_dithering_selected {
-                                        editor_theme::paint_bulk_edit_border(
-                                            ui,
-                                            bulk_response.rect,
-                                            metrics.scale,
-                                        );
-                                    }
+                                    ui.separator();
+                                }
 
-                                    combo_response
-                                },
-                            )
-                            .inner
-                        } else {
-                            egui::ComboBox::from_id_source(
-                                "editor_dithering"
-                            )
-                            .selected_text(selected_text)
-                            .width(metrics.dropdown_width)
-                            .show_ui(
-                                ui,
-                                |ui| {
-                                    ui.selectable_value(
-                                        dithering,
-                                        DitheringSelection::Off,
-                                        "Off",
-                                    );
-                                    ui.selectable_value(
-                                        dithering,
-                                        DitheringSelection::Subtle,
-                                        "Subtle",
-                                    );
-                                },
-                            )
-                            .response
-                        };
+                                let off_response = ui.selectable_value(
+                                    dithering,
+                                    DitheringSelection::Off,
+                                    "Off",
+                                );
+                                if bulk_edit_baseline.is_some()
+                                    && off_response.clicked()
+                                {
+                                    *bulk_dithering_selected = true;
+                                }
+
+                                let subtle_response = ui.selectable_value(
+                                    dithering,
+                                    DitheringSelection::Subtle,
+                                    "Subtle",
+                                );
+                                if bulk_edit_baseline.is_some()
+                                    && subtle_response.clicked()
+                                {
+                                    *bulk_dithering_selected = true;
+                                }
+                            },
+                        )
+                        .response;
+
+                    if bulk_edit_baseline.is_some()
+                        && *bulk_dithering_selected
+                    {
+                        editor_theme::paint_bulk_edit_border(
+                            ui,
+                            response.rect,
+                            metrics.scale,
+                        );
+                    }
 
                     update_hover_help(
                         &response,
@@ -10978,7 +10923,9 @@ fn draw_post_processing_panel(
                         if bulk_edit_baseline.is_some()
                             && !*bulk_dithering_selected
                         {
-                            "Click Bulk to enable Dithering for Bulk Edit."
+                            "Choose a Dithering value to include it in Bulk Edit. Select Unchanged to exclude it."
+                        } else if bulk_edit_baseline.is_some() {
+                            "Choose Unchanged to exclude Dithering from Bulk Edit."
                         } else {
                             "Reduce visible color banding in smooth gradients."
                         },
@@ -10987,114 +10934,83 @@ fn draw_post_processing_panel(
 
                     ui.label("Color Precision");
 
-                    let response =
-                        if bulk_edit_baseline.is_some() {
-                            ui.horizontal(
-                                |ui| {
-                                    let combo_width =
-                                        (metrics.dropdown_width - 62.0 * metrics.scale)
-                                            .max(80.0 * metrics.scale);
-
-                                    let combo_response =
-                                        ui.add_enabled_ui(
-                                            *bulk_color_precision_selected,
-                                            |ui| {
-                                                egui::ComboBox::from_id_source(
-                                                    "editor_color_precision"
-                                                )
-                                                .selected_text(
-                                                    color_precision.display_name()
-                                                )
-                                                .width(combo_width)
-                                                .show_ui(
-                                                    ui,
-                                                    |ui| {
-                                                        ui.selectable_value(
-                                                            color_precision,
-                                                            ColorPrecisionSelection::Automatic,
-                                                            "Automatic",
-                                                        );
-                                                        ui.selectable_value(
-                                                            color_precision,
-                                                            ColorPrecisionSelection::High,
-                                                            "High Precision",
-                                                        );
-                                                        ui.selectable_value(
-                                                            color_precision,
-                                                            ColorPrecisionSelection::Standard,
-                                                            "Standard Precision",
-                                                        );
-                                                    },
-                                                )
-                                                .response
-                                            },
-                                        )
-                                        .inner;
-
-                                    let bulk_response =
-                                        ui.add_sized(
-                                            egui::vec2(
-                                                58.0 * metrics.scale,
-                                                ui.spacing().interact_size.y,
-                                            ),
-                                            egui::Button::new("Bulk"),
-                                        )
-                                        .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                        .on_hover_text(
-                                            if *bulk_color_precision_selected {
-                                                "Click to exclude Color Precision from Bulk Edit"
-                                            } else {
-                                                "Click to include Color Precision in Bulk Edit"
-                                            }
-                                        );
-
-                                    if bulk_response.clicked() {
-                                        *bulk_color_precision_selected =
-                                            !*bulk_color_precision_selected;
-                                    }
-
-                                    if *bulk_color_precision_selected {
-                                        editor_theme::paint_bulk_edit_border(
-                                            ui,
-                                            bulk_response.rect,
-                                            metrics.scale,
-                                        );
-                                    }
-
-                                    combo_response
-                                },
-                            )
-                            .inner
+                    let selected_text =
+                        if bulk_edit_baseline.is_some()
+                            && !*bulk_color_precision_selected
+                        {
+                            "Unchanged"
                         } else {
-                            egui::ComboBox::from_id_source(
-                                "editor_color_precision"
-                            )
-                            .selected_text(
-                                color_precision.display_name()
-                            )
-                            .width(metrics.dropdown_width)
-                            .show_ui(
-                                ui,
-                                |ui| {
-                                    ui.selectable_value(
-                                        color_precision,
-                                        ColorPrecisionSelection::Automatic,
-                                        "Automatic",
-                                    );
-                                    ui.selectable_value(
-                                        color_precision,
-                                        ColorPrecisionSelection::High,
-                                        "High Precision",
-                                    );
-                                    ui.selectable_value(
-                                        color_precision,
-                                        ColorPrecisionSelection::Standard,
-                                        "Standard Precision",
-                                    );
-                                },
-                            )
-                            .response
+                            color_precision.display_name()
                         };
+
+                    let response =
+                        egui::ComboBox::from_id_source(
+                            "editor_color_precision"
+                        )
+                        .selected_text(selected_text)
+                        .width(metrics.dropdown_width)
+                        .show_ui(
+                            ui,
+                            |ui| {
+                                if bulk_edit_baseline.is_some() {
+                                    let unchanged_response =
+                                        ui.selectable_label(
+                                            !*bulk_color_precision_selected,
+                                            "Unchanged",
+                                        );
+
+                                    if unchanged_response.clicked() {
+                                        *bulk_color_precision_selected = false;
+                                    }
+
+                                    ui.separator();
+                                }
+
+                                let automatic_response = ui.selectable_value(
+                                    color_precision,
+                                    ColorPrecisionSelection::Automatic,
+                                    "Automatic",
+                                );
+                                if bulk_edit_baseline.is_some()
+                                    && automatic_response.clicked()
+                                {
+                                    *bulk_color_precision_selected = true;
+                                }
+
+                                let high_response = ui.selectable_value(
+                                    color_precision,
+                                    ColorPrecisionSelection::High,
+                                    "High Precision",
+                                );
+                                if bulk_edit_baseline.is_some()
+                                    && high_response.clicked()
+                                {
+                                    *bulk_color_precision_selected = true;
+                                }
+
+                                let standard_response = ui.selectable_value(
+                                    color_precision,
+                                    ColorPrecisionSelection::Standard,
+                                    "Standard Precision",
+                                );
+                                if bulk_edit_baseline.is_some()
+                                    && standard_response.clicked()
+                                {
+                                    *bulk_color_precision_selected = true;
+                                }
+                            },
+                        )
+                        .response;
+
+                    if bulk_edit_baseline.is_some()
+                        && *bulk_color_precision_selected
+                    {
+                        editor_theme::paint_bulk_edit_border(
+                            ui,
+                            response.rect,
+                            metrics.scale,
+                        );
+                    }
 
                     update_hover_help(
                         &response,
@@ -11102,12 +11018,15 @@ fn draw_post_processing_panel(
                         if bulk_edit_baseline.is_some()
                             && !*bulk_color_precision_selected
                         {
-                            "Click Bulk to enable Color Precision for Bulk Edit."
+                            "Choose a Color Precision value to include it in Bulk Edit. Select Unchanged to exclude it."
+                        } else if bulk_edit_baseline.is_some() {
+                            "Choose Unchanged to exclude Color Precision from Bulk Edit."
                         } else {
                             "Controls off-screen render-target precision. Higher precision can reduce banding but may use more GPU memory."
                         },
                     );
                     ui.end_row();
+
                 },
             );
         },
