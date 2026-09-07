@@ -655,6 +655,37 @@ struct PendingPolicyRename {
 
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BulkBooleanSelection {
+    #[default]
+    Unchanged,
+    True,
+    False,
+}
+
+impl BulkBooleanSelection {
+    fn display_name(self) -> &'static str {
+        match self {
+            Self::Unchanged => "Unchanged",
+            Self::True => "True",
+            Self::False => "False",
+        }
+    }
+
+    fn value(self) -> Option<bool> {
+        match self {
+            Self::Unchanged => None,
+            Self::True => Some(true),
+            Self::False => Some(false),
+        }
+    }
+
+    fn applies(self) -> bool {
+        !matches!(self, Self::Unchanged)
+    }
+}
+
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct BulkEditChanges {
     pub policy_target: bool,
     pub fps: bool,
@@ -1079,6 +1110,15 @@ pub struct EditWindowOverlay {
     bulk_edit_baseline:
         Option<EditorConfiguration>,
 
+    bulk_invert_colors:
+        BulkBooleanSelection,
+
+    bulk_flip_horizontal:
+        BulkBooleanSelection,
+
+    bulk_flip_vertical:
+        BulkBooleanSelection,
+
     pending_policy_navigation:
         Option<PolicyNavigation>,
 
@@ -1403,6 +1443,15 @@ impl EditWindowOverlay {
 
                 bulk_edit_baseline:
                     None,
+
+                bulk_invert_colors:
+                    BulkBooleanSelection::Unchanged,
+
+                bulk_flip_horizontal:
+                    BulkBooleanSelection::Unchanged,
+
+                bulk_flip_vertical:
+                    BulkBooleanSelection::Unchanged,
 
                 pending_policy_navigation:
                     None,
@@ -2129,6 +2178,15 @@ impl EditWindowOverlay {
         let mut hue_rotation_drag_state =
             self.hue_rotation_drag_state;
 
+        let mut bulk_invert_colors =
+            self.bulk_invert_colors;
+
+        let mut bulk_flip_horizontal =
+            self.bulk_flip_horizontal;
+
+        let mut bulk_flip_vertical =
+            self.bulk_flip_vertical;
+
 
         // A shader physically located in one of Screenshaver's managed
         // runtime folders has exactly one available policy target.  Enforce
@@ -2449,6 +2507,15 @@ impl EditWindowOverlay {
                         )
                     );
 
+                bulk_invert_colors =
+                    BulkBooleanSelection::Unchanged;
+
+                bulk_flip_horizontal =
+                    BulkBooleanSelection::Unchanged;
+
+                bulk_flip_vertical =
+                    BulkBooleanSelection::Unchanged;
+
                 // Policy Target has special Bulk Edit semantics.  A blank
                 // target means "leave every checked policy's target unchanged."
                 // The original loaded-policy target remains in the baseline
@@ -2559,6 +2626,15 @@ impl EditWindowOverlay {
                 hue_rotation_drag_state =
                     None;
             }
+
+            bulk_invert_colors =
+                BulkBooleanSelection::Unchanged;
+
+            bulk_flip_horizontal =
+                BulkBooleanSelection::Unchanged;
+
+            bulk_flip_vertical =
+                BulkBooleanSelection::Unchanged;
         }
 
         let bulk_edit_baseline =
@@ -2715,6 +2791,18 @@ impl EditWindowOverlay {
                             pending_bulk_changes.policy_target =
                                 bulk_edit_mode
                                     && policy_target.is_some();
+
+                            pending_bulk_changes.invert_colors =
+                                bulk_edit_mode
+                                    && bulk_invert_colors.applies();
+
+                            pending_bulk_changes.flip_horizontal =
+                                bulk_edit_mode
+                                    && bulk_flip_horizontal.applies();
+
+                            pending_bulk_changes.flip_vertical =
+                                bulk_edit_mode
+                                    && bulk_flip_vertical.applies();
 
 
                             let policy_dirty =
@@ -2937,6 +3025,9 @@ impl EditWindowOverlay {
                                                         &mut invert_colors,
                                                         &mut flip_horizontal,
                                                         &mut flip_vertical,
+                                                        &mut bulk_invert_colors,
+                                                        &mut bulk_flip_horizontal,
+                                                        &mut bulk_flip_vertical,
                                                         &mut hue_rotation,
                                                         &mut hue_rotation_drag_state,
                                                         bulk_edit_baseline,
@@ -3312,6 +3403,21 @@ impl EditWindowOverlay {
             bulk_selected_policy_rows.clone();
 
 
+        if bulk_edit_mode {
+            if let Some(value) = bulk_invert_colors.value() {
+                invert_colors = value;
+            }
+
+            if let Some(value) = bulk_flip_horizontal.value() {
+                flip_horizontal = value;
+            }
+
+            if let Some(value) = bulk_flip_vertical.value() {
+                flip_vertical = value;
+            }
+        }
+
+
         let current_editor_configuration =
             EditorConfiguration::new(
                 displayed_fps,
@@ -3348,6 +3454,18 @@ impl EditWindowOverlay {
         bulk_edit_changes.policy_target =
             bulk_edit_mode
                 && policy_target.is_some();
+
+        bulk_edit_changes.invert_colors =
+            bulk_edit_mode
+                && bulk_invert_colors.applies();
+
+        bulk_edit_changes.flip_horizontal =
+            bulk_edit_mode
+                && bulk_flip_horizontal.applies();
+
+        bulk_edit_changes.flip_vertical =
+            bulk_edit_mode
+                && bulk_flip_vertical.applies();
 
 
         self.bulk_selected_policy_rows =
@@ -3448,6 +3566,15 @@ impl EditWindowOverlay {
         self.flip_vertical =
             flip_vertical;
 
+        self.bulk_invert_colors =
+            bulk_invert_colors;
+
+        self.bulk_flip_horizontal =
+            bulk_flip_horizontal;
+
+        self.bulk_flip_vertical =
+            bulk_flip_vertical;
+
         self.hue_rotation =
             hue_rotation;
 
@@ -3544,29 +3671,33 @@ impl EditWindowOverlay {
             rename_policy_requested,
 
             policy_dirty:
-                EditorConfiguration::new(
-                    displayed_fps,
-                    displayed_animation_speed,
-                    displayed_render_scale,
-                    policy_target,
-                    texture,
-                    palette,
-                    primitive_count,
-                    anti_aliasing,
-                    dithering,
-                    color_precision,
-                    bloom,
-                    bloom_intensity,
-                    bloom_threshold,
-                    invert_colors,
-                    flip_horizontal,
-                    flip_vertical,
-                    hue_rotation,
-                )
-                .differs_from(
-                    baseline_configuration
-                )
-                || self.policy_creation_pending,
+                if bulk_edit_mode {
+                    bulk_edit_changes.any()
+                } else {
+                    EditorConfiguration::new(
+                        displayed_fps,
+                        displayed_animation_speed,
+                        displayed_render_scale,
+                        policy_target,
+                        texture,
+                        palette,
+                        primitive_count,
+                        anti_aliasing,
+                        dithering,
+                        color_precision,
+                        bloom,
+                        bloom_intensity,
+                        bloom_threshold,
+                        invert_colors,
+                        flip_horizontal,
+                        flip_vertical,
+                        hue_rotation,
+                    )
+                    .differs_from(
+                        baseline_configuration
+                    )
+                    || self.policy_creation_pending
+                },
 
             control_configuration_dirty:
                 control_configuration.as_ref()
@@ -4081,6 +4212,15 @@ impl EditWindowOverlay {
 
         self.bulk_edit_baseline =
             None;
+
+        self.bulk_invert_colors =
+            BulkBooleanSelection::Unchanged;
+
+        self.bulk_flip_horizontal =
+            BulkBooleanSelection::Unchanged;
+
+        self.bulk_flip_vertical =
+            BulkBooleanSelection::Unchanged;
 
 
         if active_policy_was_selected {
@@ -9600,6 +9740,39 @@ fn draw_color_picker_placeholder(
 // ============================================================
 // Copy/paste replacement boundary for this editor section.
 
+fn draw_bulk_boolean_selector(
+    ui: &mut egui::Ui,
+    id_source: &'static str,
+    selection: &mut BulkBooleanSelection,
+    metrics: EditorMetrics,
+) -> egui::Response {
+    egui::ComboBox::from_id_source(id_source)
+        .selected_text(selection.display_name())
+        .width(metrics.dropdown_width)
+        .show_ui(
+            ui,
+            |ui| {
+                ui.selectable_value(
+                    selection,
+                    BulkBooleanSelection::Unchanged,
+                    "Unchanged",
+                );
+                ui.selectable_value(
+                    selection,
+                    BulkBooleanSelection::True,
+                    "True",
+                );
+                ui.selectable_value(
+                    selection,
+                    BulkBooleanSelection::False,
+                    "False",
+                );
+            },
+        )
+        .response
+}
+
+
 fn draw_post_processing_tab(
     ui: &mut egui::Ui,
     metrics: EditorMetrics,
@@ -9615,6 +9788,9 @@ fn draw_post_processing_tab(
     invert_colors: &mut bool,
     flip_horizontal: &mut bool,
     flip_vertical: &mut bool,
+    bulk_invert_colors: &mut BulkBooleanSelection,
+    bulk_flip_horizontal: &mut BulkBooleanSelection,
+    bulk_flip_vertical: &mut BulkBooleanSelection,
     hue_rotation: &mut f32,
     hue_rotation_drag_state: &mut Option<SliderDragState>,
     bulk_edit_baseline: Option<EditorConfiguration>,
@@ -9839,34 +10015,67 @@ fn draw_post_processing_tab(
             }
             ui.end_row();
             ui.label("Invert Colors");
-            let invert_response = ui.checkbox(invert_colors, "Enabled");
+            let invert_response =
+                if bulk_edit_baseline.is_some() {
+                    draw_bulk_boolean_selector(
+                        ui,
+                        "bulk_invert_colors",
+                        bulk_invert_colors,
+                        metrics,
+                    )
+                } else {
+                    ui.checkbox(invert_colors, "Enabled")
+                };
             update_hover_help(
                 &invert_response,
                 hover_help_message,
                 "Invert the rendered shader colors before Bloom and the remaining post-processing stages.",
-            ); if bulk_edit_baseline.is_some_and(|baseline| *invert_colors != baseline.invert_colors) {
+            );
+            if bulk_edit_baseline.is_some() && bulk_invert_colors.applies() {
                 editor_theme::paint_bulk_edit_border(ui, invert_response.rect, metrics.scale);
             }
             ui.end_row();
 
             ui.label("Flip Horizontal");
-            let flip_horizontal_response = ui.checkbox(flip_horizontal, "Enabled");
+            let flip_horizontal_response =
+                if bulk_edit_baseline.is_some() {
+                    draw_bulk_boolean_selector(
+                        ui,
+                        "bulk_flip_horizontal",
+                        bulk_flip_horizontal,
+                        metrics,
+                    )
+                } else {
+                    ui.checkbox(flip_horizontal, "Enabled")
+                };
             update_hover_help(
                 &flip_horizontal_response,
                 hover_help_message,
                 "Mirror the rendered shader from left to right without changing its aspect ratio.",
-            ); if bulk_edit_baseline.is_some_and(|baseline| *flip_horizontal != baseline.flip_horizontal) {
+            );
+            if bulk_edit_baseline.is_some() && bulk_flip_horizontal.applies() {
                 editor_theme::paint_bulk_edit_border(ui, flip_horizontal_response.rect, metrics.scale);
             }
             ui.end_row();
 
             ui.label("Flip Vertical");
-            let flip_vertical_response = ui.checkbox(flip_vertical, "Enabled");
+            let flip_vertical_response =
+                if bulk_edit_baseline.is_some() {
+                    draw_bulk_boolean_selector(
+                        ui,
+                        "bulk_flip_vertical",
+                        bulk_flip_vertical,
+                        metrics,
+                    )
+                } else {
+                    ui.checkbox(flip_vertical, "Enabled")
+                };
             update_hover_help(
                 &flip_vertical_response,
                 hover_help_message,
                 "Mirror the rendered shader from top to bottom without changing its aspect ratio.",
-            ); if bulk_edit_baseline.is_some_and(|baseline| *flip_vertical != baseline.flip_vertical) {
+            );
+            if bulk_edit_baseline.is_some() && bulk_flip_vertical.applies() {
                 editor_theme::paint_bulk_edit_border(ui, flip_vertical_response.rect, metrics.scale);
             }
             ui.end_row();
