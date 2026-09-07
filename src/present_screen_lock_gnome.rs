@@ -746,6 +746,7 @@ fn build_presentation_metadata(
         if postprocess_profile.flip_vertical { 1 } else { 0 }
     ));
     lines.push(format!("hue_rotation={}", postprocess_profile.hue_rotation));
+    lines.push(format!("render_scale={}", postprocess_profile.render_scale));
     lines.push(format!("subtitles={}", if subtitles { 1 } else { 0 }));
     lines.push(format!("placement={}", subtitle_placement.name()));
     lines.push(String::new());

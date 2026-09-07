@@ -13,7 +13,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 let shaderEffectTypeSerial = 0;
 
-function createShaderEffectClass(shaderBody, generation) {
+function createShaderEffectClass(shaderBody, generation, renderScale) {
     // GObject type registrations survive effect destruction and can also survive
     // extension disable/enable cycles inside the same GNOME Shell process.
     // Include monotonic time plus a module-local serial so every construction
@@ -28,6 +28,68 @@ function createShaderEffectClass(shaderBody, generation) {
         GTypeName: gtypeName,
     },
     class extends Shell.GLSLEffect {
+        vfunc_create_texture(width, height) {
+            const requestedWidth = Math.max(1, Math.round(Number(width)));
+            const requestedHeight = Math.max(1, Math.round(Number(height)));
+            const scale = Number.isFinite(renderScale) && renderScale > 0.0
+                ? renderScale
+                : 1.0;
+            const scaledWidth = Math.max(1, Math.round(requestedWidth * scale));
+            const scaledHeight = Math.max(1, Math.round(requestedHeight * scale));
+
+            try {
+                const actor = this.get_actor();
+                if (!actor)
+                    throw new Error('effect actor unavailable during create_texture');
+
+                const coglContext = actor.get_context().get_backend().get_cogl_context();
+                const texture = Cogl.Texture2D.new_with_size(
+                    coglContext,
+                    scaledWidth,
+                    scaledHeight
+                );
+
+                // Force allocation now so a failure is caught here instead of
+                // surfacing later from an unrelated paint operation.
+                texture.allocate();
+
+                this._screenshaverNativeTargetWidth = requestedWidth;
+                this._screenshaverNativeTargetHeight = requestedHeight;
+                this._screenshaverRenderWidth = scaledWidth;
+                this._screenshaverRenderHeight = scaledHeight;
+                this._screenshaverRenderScale = scale;
+
+                console.log(
+                    `[Screenshaver] Test #29 Render Scale allocation: ` +
+                    `native=${requestedWidth}x${requestedHeight} scale=${scale.toFixed(3)} ` +
+                    `scaled=${scaledWidth}x${scaledHeight} generation=${generation}`
+                );
+
+                return texture;
+            } catch (error) {
+                console.log(
+                    `[Screenshaver] Test #29 scaled offscreen allocation failed; ` +
+                    `falling back to Shell.GLSLEffect native target ` +
+                    `generation=${generation}: ${error}`
+                );
+
+                this._screenshaverNativeTargetWidth = requestedWidth;
+                this._screenshaverNativeTargetHeight = requestedHeight;
+                this._screenshaverRenderWidth = requestedWidth;
+                this._screenshaverRenderHeight = requestedHeight;
+                this._screenshaverRenderScale = 1.0;
+
+                return super.vfunc_create_texture(width, height);
+            }
+        }
+
+        screenshaver_render_size(fallbackWidth, fallbackHeight) {
+            return [
+                this._screenshaverRenderWidth ?? Math.max(1, Math.round(fallbackWidth * renderScale)),
+                this._screenshaverRenderHeight ?? Math.max(1, Math.round(fallbackHeight * renderScale)),
+            ];
+        }
+
         vfunc_build_pipeline() {
             this.add_glsl_snippet(
                 Cogl.SnippetHook.FRAGMENT,
@@ -96,7 +158,7 @@ function createShaderEffectClass(shaderBody, generation) {
             );
         }
 
-        // Test #28: Shell.GLSLEffect is itself a Clutter.OffscreenEffect.
+        // Test #29: retain the Test #28 offscreen probe after scaled allocation.
         // Inspect the actual offscreen target from inside paint_target(), where
         // Clutter documents the target texture/size as valid, then chain directly
         // to Shell.GLSLEffect so rendering behavior remains unchanged.
@@ -127,7 +189,7 @@ function createShaderEffectClass(shaderBody, generation) {
                     const textureHeight = texture?.get_height?.() ?? 0;
 
                     console.log(
-                        `[Screenshaver] Test #28 Shell.GLSLEffect offscreen target: ` +
+                        `[Screenshaver] Test #29 Shell.GLSLEffect offscreen target: ` +
                         `valid=${valid} target=${targetWidth}x${targetHeight} ` +
                         `texture=${textureWidth}x${textureHeight} generation=${generation}`
                     );
@@ -135,7 +197,7 @@ function createShaderEffectClass(shaderBody, generation) {
                     this._screenshaverOffscreenProbeLogged = true;
                 } catch (error) {
                     console.log(
-                        `[Screenshaver] Test #28 Shell.GLSLEffect offscreen probe failed ` +
+                        `[Screenshaver] Test #29 Shell.GLSLEffect offscreen probe failed ` +
                         `generation=${generation}: ${error}`
                     );
                     // Log only once per generation. A probe failure must not
@@ -511,6 +573,7 @@ export default class ScreenshaverExtension extends Extension {
             flipHorizontal: values.get('flip_horizontal') === '1',
             flipVertical: values.get('flip_vertical') === '1',
             hueRotation: Number.parseFloat(values.get('hue_rotation') ?? '0') || 0.0,
+            renderScale: Math.max(0.01, Number.parseFloat(values.get('render_scale') ?? '1') || 1.0),
             subtitles: values.get('subtitles') === '1',
             placement: values.get('placement') ?? 'bottom:left',
         };
@@ -531,6 +594,7 @@ export default class ScreenshaverExtension extends Extension {
             metadata.flipHorizontal ? 1 : 0,
             metadata.flipVertical ? 1 : 0,
             metadata.hueRotation,
+            metadata.renderScale,
             metadata.subtitles ? 1 : 0,
             metadata.placement,
         ].join('\u001f');
@@ -923,7 +987,7 @@ export default class ScreenshaverExtension extends Extension {
         };
     }
 
-    _buildShaderEffect(productionSource, width, height, elapsedSeconds) {
+    _buildShaderEffect(productionSource, width, height, elapsedSeconds, renderScale) {
         const shaderBody =
             this._extractShaderToyBodyFromProductionSource(productionSource);
 
@@ -936,7 +1000,8 @@ export default class ScreenshaverExtension extends Extension {
         const nextGeneration = this._shaderGeneration + 1;
         const EffectClass = createShaderEffectClass(
             shaderBody,
-            nextGeneration
+            nextGeneration,
+            renderScale
         );
         const effect = new EffectClass();
 
@@ -956,10 +1021,12 @@ export default class ScreenshaverExtension extends Extension {
             1,
             [elapsedSeconds]
         );
+        const initialRenderWidth = Math.max(1, Math.round(width * renderScale));
+        const initialRenderHeight = Math.max(1, Math.round(height * renderScale));
         effect.set_uniform_float(
             uniformResolution,
             3,
-            [width, height, 1.0]
+            [initialRenderWidth, initialRenderHeight, 1.0]
         );
         effect.set_uniform_float(uniformInvertColors, 1, [0.0]);
         effect.set_uniform_float(uniformFlipHorizontal, 1, [0.0]);
@@ -984,11 +1051,22 @@ export default class ScreenshaverExtension extends Extension {
             productionSource,
         } = this._readProductionShaderSource();
 
+        let initialMetadata = null;
+        try {
+            const metadata = this._readPresentationMetadata();
+            if (!metadata.sourceBytes || metadata.sourceBytes === shaderBytes.length)
+                initialMetadata = metadata;
+        } catch (error) {
+            console.log(`[Screenshaver] GNOME description metadata unavailable: ${error}`);
+        }
+
+        const initialRenderScale = initialMetadata?.renderScale ?? 1.0;
         const built = this._buildShaderEffect(
             productionSource,
             dialog.width,
             dialog.height,
-            0.0
+            0.0,
+            initialRenderScale
         );
 
         this._shaderEffect = built.effect;
@@ -1001,15 +1079,10 @@ export default class ScreenshaverExtension extends Extension {
         this._activeProductionSource = productionSource;
         this._shaderGeneration = 1;
 
-        try {
-            const metadata = this._readPresentationMetadata();
-            if (!metadata.sourceBytes || metadata.sourceBytes === shaderBytes.length) {
-                this._descriptionMetadata = metadata;
-                this._activeMetadataSignature = this._metadataSignature(metadata);
-                this._applyPostprocessTransformMetadata(metadata);
-            }
-        } catch (error) {
-            console.log(`[Screenshaver] GNOME description metadata unavailable: ${error}`);
+        if (initialMetadata) {
+            this._descriptionMetadata = initialMetadata;
+            this._activeMetadataSignature = this._metadataSignature(initialMetadata);
+            this._applyPostprocessTransformMetadata(initialMetadata);
         }
 
         this._lockActor.add_effect_with_name(
@@ -1083,16 +1156,27 @@ export default class ScreenshaverExtension extends Extension {
         const observedMetadataSignature = this._metadataSignature(observedMetadata);
 
         if (handoff.productionSource === this._activeProductionSource) {
-            if (observedMetadataSignature !== this._activeMetadataSignature) {
-                this._descriptionMetadata = observedMetadata;
-                this._activeMetadataSignature = observedMetadataSignature;
-                this._applyPostprocessTransformMetadata(observedMetadata);
-                this._resetFpsWarningMonitor();
-                console.log(
-                    `[Screenshaver] GNOME description metadata updated for policy_id=${observedMetadata.policyId}`
-                );
+            const activeScale = this._descriptionMetadata?.renderScale ?? 1.0;
+            const scaleChanged = Math.abs(observedMetadata.renderScale - activeScale) > 0.0001;
+
+            if (!scaleChanged) {
+                if (observedMetadataSignature !== this._activeMetadataSignature) {
+                    this._descriptionMetadata = observedMetadata;
+                    this._activeMetadataSignature = observedMetadataSignature;
+                    this._applyPostprocessTransformMetadata(observedMetadata);
+                    this._resetFpsWarningMonitor();
+                    console.log(
+                        `[Screenshaver] GNOME description metadata updated for policy_id=${observedMetadata.policyId}`
+                    );
+                }
+                return;
             }
-            return;
+
+            console.log(
+                `[Screenshaver] Test #29 Render Scale metadata changed ` +
+                `${activeScale.toFixed(3)} -> ${observedMetadata.renderScale.toFixed(3)}; ` +
+                `rebuilding native effect target`
+            );
         }
 
         const elapsedSeconds = this._shaderStartedUs > 0
@@ -1106,7 +1190,8 @@ export default class ScreenshaverExtension extends Extension {
                 handoff.productionSource,
                 this._lockActor.width,
                 this._lockActor.height,
-                elapsedSeconds
+                elapsedSeconds,
+                observedMetadata.renderScale
             );
         } catch (error) {
             console.log(
@@ -1321,10 +1406,15 @@ export default class ScreenshaverExtension extends Extension {
                     (GLib.get_monotonic_time() - this._shaderStartedUs) / 1000000.0;
 
                 try {
+                    const [renderWidth, renderHeight] =
+                        this._shaderEffect.screenshaver_render_size(
+                            this._lockActor.width,
+                            this._lockActor.height
+                        );
                     this._shaderEffect.set_uniform_float(
                         this._shaderUniformResolution,
                         3,
-                        [this._lockActor.width, this._lockActor.height, 1.0]
+                        [renderWidth, renderHeight, 1.0]
                     );
                     this._shaderEffect.set_uniform_float(
                         this._shaderUniformTime,
