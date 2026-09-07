@@ -29,63 +29,13 @@ function createShaderEffectClass(shaderBody, generation, renderScale) {
         GTypeName: gtypeName,
     },
     class extends Shell.GLSLEffect {
-        vfunc_create_texture(coglContext, width, height) {
-            const requestedWidth = Math.max(1, Math.round(Number(width)));
-            const requestedHeight = Math.max(1, Math.round(Number(height)));
+        screenshaver_render_size(fallbackWidth, fallbackHeight) {
             const scale = Number.isFinite(renderScale) && renderScale > 0.0
                 ? renderScale
                 : 1.0;
-            const scaledWidth = Math.max(1, Math.round(requestedWidth * scale));
-            const scaledHeight = Math.max(1, Math.round(requestedHeight * scale));
-
-            try {
-                if (!coglContext)
-                    throw new Error('Cogl context unavailable during create_texture');
-
-                const texture = Cogl.Texture2D.new_with_size(
-                    coglContext,
-                    scaledWidth,
-                    scaledHeight
-                );
-
-                // Force allocation now so a failure is caught here instead of
-                // surfacing later from an unrelated paint operation.
-                texture.allocate();
-
-                this._screenshaverNativeTargetWidth = requestedWidth;
-                this._screenshaverNativeTargetHeight = requestedHeight;
-                this._screenshaverRenderWidth = scaledWidth;
-                this._screenshaverRenderHeight = scaledHeight;
-                this._screenshaverRenderScale = scale;
-
-                console.log(
-                    `[Screenshaver] Test #29 Render Scale allocation: ` +
-                    `native=${requestedWidth}x${requestedHeight} scale=${scale.toFixed(3)} ` +
-                    `scaled=${scaledWidth}x${scaledHeight} generation=${generation}`
-                );
-
-                return texture;
-            } catch (error) {
-                console.log(
-                    `[Screenshaver] Test #29 scaled offscreen allocation failed; ` +
-                    `falling back to Shell.GLSLEffect native target ` +
-                    `generation=${generation}: ${error}`
-                );
-
-                this._screenshaverNativeTargetWidth = requestedWidth;
-                this._screenshaverNativeTargetHeight = requestedHeight;
-                this._screenshaverRenderWidth = requestedWidth;
-                this._screenshaverRenderHeight = requestedHeight;
-                this._screenshaverRenderScale = 1.0;
-
-                return super.vfunc_create_texture(coglContext, width, height);
-            }
-        }
-
-        screenshaver_render_size(fallbackWidth, fallbackHeight) {
             return [
-                this._screenshaverRenderWidth ?? Math.max(1, Math.round(fallbackWidth * renderScale)),
-                this._screenshaverRenderHeight ?? Math.max(1, Math.round(fallbackHeight * renderScale)),
+                Math.max(1, Math.round(fallbackWidth * scale)),
+                Math.max(1, Math.round(fallbackHeight * scale)),
             ];
         }
 
@@ -157,21 +107,22 @@ function createShaderEffectClass(shaderBody, generation, renderScale) {
             );
         }
 
-        // Test #29B: keep the genuine reduced-resolution offscreen texture from
-        // Test #29A, but present the Shell.GLSLEffect pipeline across the original
-        // native target rectangle. Using get_pipeline() is essential: the shader
-        // snippets live on that pipeline, so painting the raw texture directly
-        // would bypass the actual Screenshaver GLSL effect.
+        // Test #29C: keep Shell.GLSLEffect's own target at native size. For
+        // Render Scale < 1.0, execute the shader pipeline into a separate
+        // reduced-resolution Cogl.Offscreen framebuffer, then present that
+        // resulting texture fullscreen with a plain Cogl pipeline. This is the
+        // first test that separates shader rasterization resolution from final
+        // presentation resolution.
         vfunc_paint_target(node, paintContext) {
             let targetValid = false;
             let targetWidth = 0.0;
             let targetHeight = 0.0;
-            let textureWidth = 0;
-            let textureHeight = 0;
+            let sourceTextureWidth = 0;
+            let sourceTextureHeight = 0;
 
             try {
                 const targetSize = this.get_target_size();
-                const texture = this.get_texture();
+                const sourceTexture = this.get_texture();
 
                 if (Array.isArray(targetSize)) {
                     if (targetSize.length >= 3) {
@@ -179,68 +130,154 @@ function createShaderEffectClass(shaderBody, generation, renderScale) {
                         targetWidth = Number(targetSize[1]);
                         targetHeight = Number(targetSize[2]);
                     } else if (targetSize.length >= 2) {
-                        // Some GI versions omit the gboolean success return.
                         targetValid = true;
                         targetWidth = Number(targetSize[0]);
                         targetHeight = Number(targetSize[1]);
                     }
                 }
 
-                textureWidth = texture?.get_width?.() ?? 0;
-                textureHeight = texture?.get_height?.() ?? 0;
+                sourceTextureWidth = sourceTexture?.get_width?.() ?? 0;
+                sourceTextureHeight = sourceTexture?.get_height?.() ?? 0;
+
+                const nativeWidth = Math.max(1, Math.round(targetWidth));
+                const nativeHeight = Math.max(1, Math.round(targetHeight));
+                const scale = Number.isFinite(renderScale) && renderScale > 0.0
+                    ? renderScale
+                    : 1.0;
+                const renderWidth = Math.max(1, Math.round(nativeWidth * scale));
+                const renderHeight = Math.max(1, Math.round(nativeHeight * scale));
 
                 if (!this._screenshaverOffscreenProbeLogged) {
                     console.log(
-                        `[Screenshaver] Test #29B1 Shell.GLSLEffect offscreen target: ` +
+                        `[Screenshaver] Test #29C native Shell.GLSLEffect target: ` +
                         `valid=${targetValid} target=${targetWidth}x${targetHeight} ` +
-                        `texture=${textureWidth}x${textureHeight} generation=${generation}`
+                        `texture=${sourceTextureWidth}x${sourceTextureHeight} ` +
+                        `generation=${generation}`
                     );
                     this._screenshaverOffscreenProbeLogged = true;
                 }
 
-                const nativeWidth = this._screenshaverNativeTargetWidth ?? targetWidth;
-                const nativeHeight = this._screenshaverNativeTargetHeight ?? targetHeight;
-                const scale = this._screenshaverRenderScale ?? 1.0;
-
-                // At 1.0 there is no presentation mismatch to correct. Preserve
-                // Shell.GLSLEffect's proven native paint path exactly.
                 if (Math.abs(scale - 1.0) <= 0.0001) {
                     super.vfunc_paint_target(node, paintContext);
                     return;
                 }
 
-                const pipeline = this.get_pipeline();
-                if (!pipeline)
-                    throw new Error('Shell.GLSLEffect pipeline unavailable during paint_target');
-                if (!(nativeWidth > 0.0) || !(nativeHeight > 0.0))
-                    throw new Error(`invalid native target ${nativeWidth}x${nativeHeight}`);
+                if (!targetValid || !(targetWidth > 0.0) || !(targetHeight > 0.0))
+                    throw new Error(`invalid native target ${targetWidth}x${targetHeight}`);
+                if (!sourceTexture)
+                    throw new Error('Shell.GLSLEffect source texture unavailable');
 
-                // Clutter.PaintNode.add_texture_rectangle() requires a
-                // Clutter.ActorBox. Test #29B incorrectly supplied a
-                // Graphene.Rect, so the custom fullscreen path never ran.
+                const coglContext = sourceTexture.get_context();
+                if (!coglContext)
+                    throw new Error('Cogl context unavailable from Shell.GLSLEffect texture');
+
+                const needsRenderTarget =
+                    !this._screenshaverRenderTexture ||
+                    !this._screenshaverRenderOffscreen ||
+                    this._screenshaverRenderWidth !== renderWidth ||
+                    this._screenshaverRenderHeight !== renderHeight;
+
+                if (needsRenderTarget) {
+                    const renderTexture = Cogl.Texture2D.new_with_size(
+                        coglContext,
+                        renderWidth,
+                        renderHeight
+                    );
+                    renderTexture.allocate();
+
+                    const renderOffscreen = Cogl.Offscreen.new_with_texture(renderTexture);
+                    renderOffscreen.allocate();
+                    renderOffscreen.set_viewport(
+                        0.0,
+                        0.0,
+                        renderWidth,
+                        renderHeight
+                    );
+
+                    const presentationPipeline = Cogl.Pipeline.new(coglContext);
+                    presentationPipeline.set_layer_texture(0, renderTexture);
+                    presentationPipeline.set_layer_filters(
+                        0,
+                        Cogl.PipelineFilter.LINEAR,
+                        Cogl.PipelineFilter.LINEAR
+                    );
+
+                    this._screenshaverRenderTexture = renderTexture;
+                    this._screenshaverRenderOffscreen = renderOffscreen;
+                    this._screenshaverPresentationPipeline = presentationPipeline;
+                    this._screenshaverRenderWidth = renderWidth;
+                    this._screenshaverRenderHeight = renderHeight;
+
+                    console.log(
+                        `[Screenshaver] Test #29C reduced shader framebuffer allocated: ` +
+                        `native=${nativeWidth}x${nativeHeight} scale=${scale.toFixed(3)} ` +
+                        `render=${renderWidth}x${renderHeight} generation=${generation}`
+                    );
+                }
+
+                const shaderPipeline = this.get_pipeline();
+                if (!shaderPipeline)
+                    throw new Error('Shell.GLSLEffect shader pipeline unavailable');
+
+                // Execute the Screenshaver shader at the reduced framebuffer
+                // resolution. The pipeline still has Shell.GLSLEffect's native
+                // actor texture as layer 0, but the procedural mainImage() body
+                // determines the output color.
+                this._screenshaverRenderOffscreen.clear4f(
+                    Cogl.BufferBit.COLOR,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0
+                );
+                this._screenshaverRenderOffscreen.draw_textured_rectangle(
+                    shaderPipeline,
+                    -1.0,
+                    1.0,
+                    1.0,
+                    -1.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                    1.0
+                );
+                this._screenshaverRenderOffscreen.flush();
+
                 const rect = new Clutter.ActorBox({
                     x1: 0.0,
                     y1: 0.0,
                     x2: nativeWidth,
                     y2: nativeHeight,
                 });
-
-                const pipelineNode = Clutter.PipelineNode.new(pipeline);
-                pipelineNode.add_texture_rectangle(rect, 0.0, 0.0, 1.0, 1.0);
-                node.add_child(pipelineNode);
+                const presentationNode = Clutter.PipelineNode.new(
+                    this._screenshaverPresentationPipeline
+                );
+                presentationNode.add_texture_rectangle(
+                    rect,
+                    0.0,
+                    0.0,
+                    1.0,
+                    1.0
+                );
+                node.add_child(presentationNode);
 
                 if (!this._screenshaverPresentationProbeLogged) {
+                    const fbWidth = this._screenshaverRenderOffscreen.get_width();
+                    const fbHeight = this._screenshaverRenderOffscreen.get_height();
+                    const viewportWidth = this._screenshaverRenderOffscreen.get_viewport_width();
+                    const viewportHeight = this._screenshaverRenderOffscreen.get_viewport_height();
                     console.log(
-                        `[Screenshaver] Test #29B1 fullscreen presentation: ` +
-                        `texture=${textureWidth}x${textureHeight} -> ` +
-                        `native=${nativeWidth}x${nativeHeight} scale=${scale.toFixed(3)} ` +
-                        `generation=${generation}`
+                        `[Screenshaver] Test #29C shader rasterization: ` +
+                        `framebuffer=${fbWidth}x${fbHeight} ` +
+                        `viewport=${viewportWidth}x${viewportHeight} -> ` +
+                        `presentation=${nativeWidth}x${nativeHeight} ` +
+                        `scale=${scale.toFixed(3)} generation=${generation}`
                     );
                     this._screenshaverPresentationProbeLogged = true;
                 }
             } catch (error) {
                 console.log(
-                    `[Screenshaver] Test #29B1 fullscreen presentation failed; ` +
+                    `[Screenshaver] Test #29C reduced shader pass failed; ` +
                     `falling back to Shell.GLSLEffect native paint ` +
                     `generation=${generation}: ${error}`
                 );
