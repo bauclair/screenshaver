@@ -10,6 +10,7 @@ import St from 'gi://St';
 
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import * as Config from 'resource:///org/gnome/shell/misc/config.js';
 
 
 let shaderEffectTypeSerial = 0;
@@ -1262,6 +1263,7 @@ const SHADER_METRICS_REPORT_INTERVAL_US = 5 * 1000000;
 const POWER_SAVE_FALLBACK_INTERVAL_MS = 1000;
 const POST_WAKE_POWER_SAVE_MIN_DELAY_MS = 10000;
 const POST_BLANK_SCREENSHIELD_WAKE_DELAY_MS = 250;
+const GNOME_50_STABILIZATION_WAKE_DELAY_MS = 1000;
 const RUNTIME_MARKER_FILENAME = 'screenshaver-gnome-lock.active';
 const RUNTIME_MARKER_VERSION = 1;
 const SESSION_VALIDATION_INTERVAL_MS = 1000;
@@ -1279,6 +1281,7 @@ const CONTROL_SESSION_ID_OFFSET = 36;
 export default class ScreenshaverExtension extends Extension {
     enable() {
         console.log('[Screenshaver] GNOME Shell extension enabled');
+        console.log(`[Screenshaver] Test #39 GNOME Shell version=${Config.PACKAGE_VERSION} major=${this._gnomeShellMajor || Number.parseInt(Config.PACKAGE_VERSION?.split('.')[0] ?? '0', 10) || 0}`);
 
         this._lockActor = null;
         this._imageContent = null;
@@ -1318,6 +1321,9 @@ export default class ScreenshaverExtension extends Extension {
         this._lastFrameCounter = 0;
         this._displayedFrames = 0;
         this._screenShieldWakeIssued = false;
+        this._gnomeShellMajor = Number.parseInt(Config.PACKAGE_VERSION?.split('.')[0] ?? '0', 10) || 0;
+        this._gnome50StabilizationWakeIssued = false;
+        this._gnome50StabilizationWakeSource = null;
         this._postWakePowerSaveCorrectionArmed = false;
         this._postWakeNormalObserved = false;
         this._postWakeNormalObservedUs = 0;
@@ -2883,6 +2889,7 @@ export default class ScreenshaverExtension extends Extension {
         try {
             screenShield._wakeUpScreen();
             console.log('[Screenshaver] One-shot native ScreenShield wake completed');
+            this._scheduleGnome50StabilizationWake();
 
             if (this._lastObservedPowerSaveMode === 0 && !this._postWakeNormalObserved) {
                 this._postWakeNormalObserved = true;
@@ -2895,6 +2902,68 @@ export default class ScreenshaverExtension extends Extension {
             this._postWakeNormalObservedUs = 0;
             console.log(`[Screenshaver] One-shot native ScreenShield wake failed: ${error}`);
         }
+    }
+
+
+    _scheduleGnome50StabilizationWake() {
+        if (this._gnomeShellMajor !== 50 ||
+            this._gnome50StabilizationWakeIssued ||
+            this._gnome50StabilizationWakeSource ||
+            !this._lockActor) {
+            return;
+        }
+
+        console.log(
+            `[Screenshaver] Test #39 GNOME 50 stabilization wake scheduled in ${GNOME_50_STABILIZATION_WAKE_DELAY_MS}ms`
+        );
+
+        this._gnome50StabilizationWakeSource = GLib.timeout_add(
+            GLib.PRIORITY_DEFAULT,
+            GNOME_50_STABILIZATION_WAKE_DELAY_MS,
+            () => {
+                this._gnome50StabilizationWakeSource = null;
+
+                if (this._gnome50StabilizationWakeIssued)
+                    return GLib.SOURCE_REMOVE;
+
+                this._gnome50StabilizationWakeIssued = true;
+
+                if (!this._lockActor ||
+                    Main.sessionMode.currentMode !== 'unlock-dialog' ||
+                    !Main.screenShield?.locked ||
+                    !Main.screenShield?.active) {
+                    console.log(
+                        '[Screenshaver] Test #39 GNOME 50 stabilization wake skipped because secure lock state is no longer active'
+                    );
+                    return GLib.SOURCE_REMOVE;
+                }
+
+                const screenShield = Main.screenShield;
+
+                if (typeof screenShield._wakeUpScreen !== 'function') {
+                    console.log(
+                        '[Screenshaver] Test #39 GNOME 50 stabilization wake method unavailable'
+                    );
+                    return GLib.SOURCE_REMOVE;
+                }
+
+                try {
+                    console.log(
+                        '[Screenshaver] Test #39 requesting GNOME 50 one-shot stabilization ScreenShield wake'
+                    );
+                    screenShield._wakeUpScreen();
+                    console.log(
+                        '[Screenshaver] Test #39 GNOME 50 one-shot stabilization ScreenShield wake completed'
+                    );
+                } catch (error) {
+                    console.log(
+                        `[Screenshaver] Test #39 GNOME 50 stabilization ScreenShield wake failed: ${error}`
+                    );
+                }
+
+                return GLib.SOURCE_REMOVE;
+            }
+        );
     }
 
 
@@ -3383,6 +3452,11 @@ export default class ScreenshaverExtension extends Extension {
         this._stopPowerSaveRecovery();
         this._releaseIdleInhibitor();
 
+        if (this._gnome50StabilizationWakeSource) {
+            GLib.source_remove(this._gnome50StabilizationWakeSource);
+            this._gnome50StabilizationWakeSource = null;
+        }
+
         if (this._postBlankScreenShieldWakeSource) {
             GLib.source_remove(this._postBlankScreenShieldWakeSource);
             this._postBlankScreenShieldWakeSource = null;
@@ -3447,6 +3521,8 @@ export default class ScreenshaverExtension extends Extension {
         this._uploadSuccesses = 0;
         this._transportErrorLogged = false;
         this._lastObservedPowerSaveMode = null;
+        this._gnome50StabilizationWakeIssued = false;
+        this._gnome50StabilizationWakeSource = null;
         this._postWakePowerSaveCorrectionArmed = false;
         this._postWakeNormalObserved = false;
         this._postWakeNormalObservedUs = 0;
