@@ -452,10 +452,11 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
 
             const texelStepLocation =
                 pipeline.get_uniform_location('screenshaverBloomTexelStep');
-            pipeline.set_uniform_2f(
+            pipeline.set_uniform_float(
                 texelStepLocation,
-                texelStepX,
-                texelStepY
+                2,
+                1,
+                [texelStepX, texelStepY]
             );
 
             return pipeline;
