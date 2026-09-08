@@ -1301,6 +1301,7 @@ export default class ScreenshaverExtension extends Extension {
         this._failureAdvanceSource = null;
         this._shaderGeneration = 0;
         this._shaderStartedUs = 0;
+        this._activeAnimationSpeed = 1.0;
         this._shaderTicks = 0;
         this._descriptionPill = null;
         this._descriptionPrefix = null;
@@ -1732,6 +1733,7 @@ export default class ScreenshaverExtension extends Extension {
             shader: values.get('shader') ?? '',
             texture: values.get('texture') ?? '',
             palette: values.get('palette') ?? '',
+            animationSpeed: Math.max(0.0, Number.parseFloat(values.get('animation_speed') ?? '1.0') || 0.0),
             configuredFps: Math.max(1, Number.parseInt(values.get('configured_fps') ?? '1', 10) || 1),
             invertColors: values.get('invert_colors') === '1',
             flipHorizontal: values.get('flip_horizontal') === '1',
@@ -1759,6 +1761,7 @@ export default class ScreenshaverExtension extends Extension {
             metadata.shader,
             metadata.texture,
             metadata.palette,
+            metadata.animationSpeed,
             metadata.configuredFps,
             metadata.invertColors ? 1 : 0,
             metadata.flipHorizontal ? 1 : 0,
@@ -2250,6 +2253,7 @@ export default class ScreenshaverExtension extends Extension {
             console.log(`[Screenshaver] GNOME description metadata unavailable: ${error}`);
         }
 
+        const initialAnimationSpeed = initialMetadata?.animationSpeed ?? 1.0;
         const initialRenderScale = initialMetadata?.renderScale ?? 1.0;
         const initialColorPrecision = initialMetadata?.colorPrecision ?? 'auto';
         const initialAntiAliasing = initialMetadata?.antiAliasing ?? 'fxaa';
@@ -2286,6 +2290,7 @@ export default class ScreenshaverExtension extends Extension {
         this._shaderUniformFlipVertical = built.uniformFlipVertical;
         this._shaderUniformHueRotation = built.uniformHueRotation;
         this._activeProductionSource = productionSource;
+        this._activeAnimationSpeed = initialAnimationSpeed;
         this._shaderGeneration = 1;
 
         if (initialMetadata) {
@@ -2301,6 +2306,9 @@ export default class ScreenshaverExtension extends Extension {
 
         console.log(
             `[Screenshaver] Test #27 loaded production-preprocessed shader handoff: ${shaderPath} (${shaderBytes.length} bytes) generation=${this._shaderGeneration}`
+        );
+        console.log(
+            `[Screenshaver] Test #38 GNOME animation speed: generation=${this._shaderGeneration} speed=${this._activeAnimationSpeed.toFixed(3)}x`
         );
     }
 
@@ -2433,9 +2441,9 @@ export default class ScreenshaverExtension extends Extension {
             }
         }
 
-        const elapsedSeconds = this._shaderStartedUs > 0
-            ? (GLib.get_monotonic_time() - this._shaderStartedUs) / 1000000.0
-            : 0.0;
+        // Test #38: production FrameRenderEngine resets start_time on each
+        // shader switch. Build the replacement at shader-local time zero.
+        const elapsedSeconds = 0.0;
 
         let built;
 
@@ -2474,6 +2482,7 @@ export default class ScreenshaverExtension extends Extension {
         const previousUniformFlipVertical = this._shaderUniformFlipVertical;
         const previousUniformHueRotation = this._shaderUniformHueRotation;
         const previousDescriptionMetadata = this._descriptionMetadata;
+        const previousAnimationSpeed = this._activeAnimationSpeed;
 
         try {
             // Keep the lock actor itself in place. Only the shader effect is
@@ -2496,6 +2505,8 @@ export default class ScreenshaverExtension extends Extension {
             this._shaderUniformHueRotation = built.uniformHueRotation;
 
             this._descriptionMetadata = replacementMetadata;
+            this._activeAnimationSpeed = replacementMetadata.animationSpeed;
+            this._shaderStartedUs = GLib.get_monotonic_time();
             this._applyPostprocessTransformMetadata(replacementMetadata);
 
             this._lockActor.add_effect_with_name(
@@ -2514,6 +2525,9 @@ export default class ScreenshaverExtension extends Extension {
 
             console.log(
                 `[Screenshaver] Test #27 hot-swapped production shader generation=${this._shaderGeneration} bytes=${handoff.shaderBytes.length} unique-gtype=true`
+            );
+            console.log(
+                `[Screenshaver] Test #38 GNOME animation speed: generation=${this._shaderGeneration} speed=${this._activeAnimationSpeed.toFixed(3)}x`
             );
         } catch (error) {
             console.log(
@@ -2539,6 +2553,7 @@ export default class ScreenshaverExtension extends Extension {
             this._shaderUniformFlipVertical = previousUniformFlipVertical;
             this._shaderUniformHueRotation = previousUniformHueRotation;
             this._descriptionMetadata = previousDescriptionMetadata;
+            this._activeAnimationSpeed = previousAnimationSpeed;
 
             try {
                 this._lockActor.add_effect_with_name(
@@ -2687,7 +2702,7 @@ export default class ScreenshaverExtension extends Extension {
                     this._shaderEffect.set_uniform_float(
                         this._shaderUniformTime,
                         1,
-                        [elapsedSeconds]
+                        [elapsedSeconds * this._activeAnimationSpeed]
                     );
                     this._shaderEffect.queue_repaint();
                     this._lockActor.queue_redraw();
@@ -3415,6 +3430,7 @@ export default class ScreenshaverExtension extends Extension {
         this._shaderUniformFlipVertical = -1;
         this._shaderUniformHueRotation = -1;
         this._shaderStartedUs = 0;
+        this._activeAnimationSpeed = 1.0;
         this._shaderTicks = 0;
         this._descriptionPrefix = null;
         this._descriptionFps = null;

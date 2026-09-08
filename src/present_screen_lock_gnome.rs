@@ -794,6 +794,7 @@ fn build_presentation_metadata(
         "palette={}",
         sanitize_metadata_value(palette.as_deref().unwrap_or(""))
     ));
+    lines.push(format!("animation_speed={}", animation_speed));
     lines.push(format!("configured_fps={}", configured_fps.max(1)));
     lines.push(format!(
         "invert_colors={}",
