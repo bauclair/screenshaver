@@ -101,6 +101,11 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                             screenshaverHueRotation
                         );
 
+                    // Test #30B: Screenshaver is a fullscreen presentation layer.
+                    // Match the normal OpenGL framebuffer semantics by making the
+                    // final GNOME/Cogl presentation opaque; shader alpha must not
+                    // participate in lock-screen compositing.
+                    fragColor.a = 1.0;
                     cogl_color_out = fragColor;
                 `,
                 true
@@ -251,7 +256,7 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                         : 'RGBA8-equivalent';
 
                     console.log(
-                        `[Screenshaver] Test #30A Color Precision texture allocated: ` +
+                        `[Screenshaver] Test #30B Color Precision texture allocated: ` +
                         `requested=${requestedPrecision} selected=${selectedPrecision} ` +
                         `fallback=${fellBack ? 'yes' : 'no'} ` +
                         `texture_format=${textureFormat} expected=${expectedFormat} ` +
