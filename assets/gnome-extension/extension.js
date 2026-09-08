@@ -433,6 +433,10 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     );
 
                     let fxaaPipeline = null;
+                    let fxaaTexture = null;
+                    let fxaaOffscreen = null;
+                    let fxaaPresentationPipeline = null;
+
                     if (antiAliasing === 'fxaa') {
                         fxaaPipeline = this.screenshaver_create_fxaa_pipeline(
                             coglContext,
@@ -440,12 +444,46 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                             renderWidth,
                             renderHeight
                         );
+
+                        // Match the production PostprocessPipeline: FXAA is a
+                        // primary image-processing pass that writes into the
+                        // output-resolution scratch target. GNOME then presents
+                        // that texture using the same plain presentation path
+                        // proven stable by Test #30B.
+                        fxaaTexture = Cogl.Texture2D.new_with_format(
+                            coglContext,
+                            nativeWidth,
+                            nativeHeight,
+                            selectedFormat
+                        );
+                        fxaaTexture.set_premultiplied(false);
+                        fxaaTexture.allocate();
+
+                        fxaaOffscreen = Cogl.Offscreen.new_with_texture(fxaaTexture);
+                        fxaaOffscreen.allocate();
+                        fxaaOffscreen.set_viewport(
+                            0.0,
+                            0.0,
+                            nativeWidth,
+                            nativeHeight
+                        );
+
+                        fxaaPresentationPipeline = Cogl.Pipeline.new(coglContext);
+                        fxaaPresentationPipeline.set_layer_texture(0, fxaaTexture);
+                        fxaaPresentationPipeline.set_layer_filters(
+                            0,
+                            Cogl.PipelineFilter.LINEAR,
+                            Cogl.PipelineFilter.LINEAR
+                        );
                     }
 
                     this._screenshaverRenderTexture = renderTexture;
                     this._screenshaverRenderOffscreen = renderOffscreen;
                     this._screenshaverPresentationPipeline = presentationPipeline;
                     this._screenshaverFxaaPipeline = fxaaPipeline;
+                    this._screenshaverFxaaTexture = fxaaTexture;
+                    this._screenshaverFxaaOffscreen = fxaaOffscreen;
+                    this._screenshaverFxaaPresentationPipeline = fxaaPresentationPipeline;
                     this._screenshaverRenderWidth = renderWidth;
                     this._screenshaverRenderHeight = renderHeight;
                     this._screenshaverRequestedPrecision = requestedPrecision;
@@ -501,11 +539,36 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                 );
                 this._screenshaverRenderOffscreen.flush();
 
-                const finalPipeline = antiAliasing === 'fxaa' && this._screenshaverFxaaPipeline
-                    ? this._screenshaverFxaaPipeline
-                    : this._screenshaverPresentationPipeline;
-                if (antiAliasing === 'fxaa')
+                let finalPipeline = this._screenshaverPresentationPipeline;
+
+                if (antiAliasing === 'fxaa' &&
+                    this._screenshaverFxaaPipeline &&
+                    this._screenshaverFxaaOffscreen &&
+                    this._screenshaverFxaaPresentationPipeline) {
                     this.screenshaver_update_fxaa_uniforms();
+
+                    this._screenshaverFxaaOffscreen.clear4f(
+                        Cogl.BufferBit.COLOR,
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0
+                    );
+                    this._screenshaverFxaaOffscreen.draw_textured_rectangle(
+                        this._screenshaverFxaaPipeline,
+                        -1.0,
+                        1.0,
+                        1.0,
+                        -1.0,
+                        0.0,
+                        0.0,
+                        1.0,
+                        1.0
+                    );
+                    this._screenshaverFxaaOffscreen.flush();
+
+                    finalPipeline = this._screenshaverFxaaPresentationPipeline;
+                }
 
                 const rect = new Clutter.ActorBox({
                     x1: 0.0,
@@ -531,7 +594,7 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     const viewportWidth = this._screenshaverRenderOffscreen.get_viewport_width();
                     const viewportHeight = this._screenshaverRenderOffscreen.get_viewport_height();
                     console.log(
-                        `[Screenshaver] Test #30 shader rasterization: ` +
+                        `[Screenshaver] Test #31A shader rasterization: ` +
                         `framebuffer=${fbWidth}x${fbHeight} ` +
                         `viewport=${viewportWidth}x${viewportHeight} -> ` +
                         `presentation=${nativeWidth}x${nativeHeight} ` +
