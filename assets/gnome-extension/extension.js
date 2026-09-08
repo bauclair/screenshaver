@@ -1264,6 +1264,12 @@ const POWER_SAVE_FALLBACK_INTERVAL_MS = 1000;
 const POST_WAKE_POWER_SAVE_MIN_DELAY_MS = 10000;
 const POST_BLANK_SCREENSHIELD_WAKE_DELAY_MS = 250;
 const GNOME_50_STABILIZATION_WAKE_DELAY_MS = 1000;
+
+// Test #39A: resolve GNOME Shell version at module scope so version gating is
+// independent of extension instance initialization order.
+const GNOME_SHELL_VERSION = String(Config.PACKAGE_VERSION ?? 'unknown');
+const GNOME_SHELL_MAJOR =
+    Number.parseInt(GNOME_SHELL_VERSION.split('.')[0], 10) || 0;
 const RUNTIME_MARKER_FILENAME = 'screenshaver-gnome-lock.active';
 const RUNTIME_MARKER_VERSION = 1;
 const SESSION_VALIDATION_INTERVAL_MS = 1000;
@@ -1281,7 +1287,9 @@ const CONTROL_SESSION_ID_OFFSET = 36;
 export default class ScreenshaverExtension extends Extension {
     enable() {
         console.log('[Screenshaver] GNOME Shell extension enabled');
-        console.log(`[Screenshaver] Test #39 GNOME Shell version=${Config.PACKAGE_VERSION} major=${this._gnomeShellMajor || Number.parseInt(Config.PACKAGE_VERSION?.split('.')[0] ?? '0', 10) || 0}`);
+        console.log(
+            `[Screenshaver] Test #39A GNOME Shell version=${GNOME_SHELL_VERSION} major=${GNOME_SHELL_MAJOR}`
+        );
 
         this._lockActor = null;
         this._imageContent = null;
@@ -1321,7 +1329,7 @@ export default class ScreenshaverExtension extends Extension {
         this._lastFrameCounter = 0;
         this._displayedFrames = 0;
         this._screenShieldWakeIssued = false;
-        this._gnomeShellMajor = Number.parseInt(Config.PACKAGE_VERSION?.split('.')[0] ?? '0', 10) || 0;
+        this._gnomeShellMajor = GNOME_SHELL_MAJOR;
         this._gnome50StabilizationWakeIssued = false;
         this._gnome50StabilizationWakeSource = null;
         this._postWakePowerSaveCorrectionArmed = false;
@@ -2906,15 +2914,40 @@ export default class ScreenshaverExtension extends Extension {
 
 
     _scheduleGnome50StabilizationWake() {
-        if (this._gnomeShellMajor !== 50 ||
-            this._gnome50StabilizationWakeIssued ||
-            this._gnome50StabilizationWakeSource ||
-            !this._lockActor) {
+        console.log(
+            `[Screenshaver] Test #39A stabilization helper entered: major=${this._gnomeShellMajor} issued=${this._gnome50StabilizationWakeIssued} pending=${Boolean(this._gnome50StabilizationWakeSource)} actor=${Boolean(this._lockActor)} mode=${Main.sessionMode.currentMode}`
+        );
+
+        if (this._gnomeShellMajor !== 50) {
+            console.log(
+                `[Screenshaver] Test #39A stabilization wake skipped: GNOME major ${this._gnomeShellMajor} is not 50`
+            );
+            return;
+        }
+
+        if (this._gnome50StabilizationWakeIssued) {
+            console.log(
+                '[Screenshaver] Test #39A stabilization wake skipped: one-shot wake already issued'
+            );
+            return;
+        }
+
+        if (this._gnome50StabilizationWakeSource) {
+            console.log(
+                '[Screenshaver] Test #39A stabilization wake skipped: one-shot wake already pending'
+            );
+            return;
+        }
+
+        if (!this._lockActor) {
+            console.log(
+                '[Screenshaver] Test #39A stabilization wake skipped: lock actor unavailable'
+            );
             return;
         }
 
         console.log(
-            `[Screenshaver] Test #39 GNOME 50 stabilization wake scheduled in ${GNOME_50_STABILIZATION_WAKE_DELAY_MS}ms`
+            `[Screenshaver] Test #39A GNOME 50 stabilization wake scheduled in ${GNOME_50_STABILIZATION_WAKE_DELAY_MS}ms`
         );
 
         this._gnome50StabilizationWakeSource = GLib.timeout_add(
@@ -2933,7 +2966,7 @@ export default class ScreenshaverExtension extends Extension {
                     !Main.screenShield?.locked ||
                     !Main.screenShield?.active) {
                     console.log(
-                        '[Screenshaver] Test #39 GNOME 50 stabilization wake skipped because secure lock state is no longer active'
+                        '[Screenshaver] Test #39A GNOME 50 stabilization wake skipped because secure lock state is no longer active'
                     );
                     return GLib.SOURCE_REMOVE;
                 }
@@ -2942,22 +2975,22 @@ export default class ScreenshaverExtension extends Extension {
 
                 if (typeof screenShield._wakeUpScreen !== 'function') {
                     console.log(
-                        '[Screenshaver] Test #39 GNOME 50 stabilization wake method unavailable'
+                        '[Screenshaver] Test #39A GNOME 50 stabilization wake method unavailable'
                     );
                     return GLib.SOURCE_REMOVE;
                 }
 
                 try {
                     console.log(
-                        '[Screenshaver] Test #39 requesting GNOME 50 one-shot stabilization ScreenShield wake'
+                        '[Screenshaver] Test #39A requesting GNOME 50 one-shot stabilization ScreenShield wake'
                     );
                     screenShield._wakeUpScreen();
                     console.log(
-                        '[Screenshaver] Test #39 GNOME 50 one-shot stabilization ScreenShield wake completed'
+                        '[Screenshaver] Test #39A GNOME 50 one-shot stabilization ScreenShield wake completed'
                     );
                 } catch (error) {
                     console.log(
-                        `[Screenshaver] Test #39 GNOME 50 stabilization ScreenShield wake failed: ${error}`
+                        `[Screenshaver] Test #39A GNOME 50 stabilization ScreenShield wake failed: ${error}`
                     );
                 }
 
