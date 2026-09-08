@@ -937,7 +937,7 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                         );
 
                         console.log(
-                            `[Screenshaver] Test #36 Audio Bloom composite target allocated: ` +
+                            `[Screenshaver] Test #37 Audio Bloom full pipeline targets allocated: ` +
                             `source=${bloomInputTexture.get_width()}x${bloomInputTexture.get_height()} ` +
                             `bloom=${bloomWidth}x${bloomHeight} threshold=${bloomThreshold.toFixed(3)} ` +
                             `intensity=${bloomIntensity.toFixed(3)} generation=${generation}`
@@ -1128,9 +1128,10 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     );
                     this._screenshaverAudioBloomExtractionOffscreen.flush();
 
-                    // Test #36: production additive composite at native output
-                    // resolution. Dithering remains intentionally bypassed so this
-                    // checkpoint isolates scene + bloom * intensity.
+                    // Test #37: production additive composite at native output
+                    // resolution. When Subtle dithering is enabled, the composite
+                    // texture becomes the input to the already-proven final
+                    // dithering pass below.
                     this._screenshaverAudioBloomCompositeOffscreen.clear4f(
                         Cogl.BufferBit.COLOR,
                         0.0,
@@ -1154,10 +1155,21 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     finalPipeline = this._screenshaverAudioBloomCompositePresentationPipeline;
                 }
 
-                if (bloomMode !== 'audio' && dithering === 'subtle' &&
+                if (dithering === 'subtle' &&
                     this._screenshaverDitheringPipeline &&
                     this._screenshaverDitheringOffscreen &&
                     this._screenshaverDitheringPresentationPipeline) {
+                    // Production ordering requires dithering after Bloom
+                    // composition. For Audio Bloom, retarget layer 0 from the
+                    // primary-pass texture to the completed native-size
+                    // composite texture immediately before the dithering draw.
+                    if (bloomMode === 'audio' &&
+                        this._screenshaverAudioBloomCompositeTexture) {
+                        this._screenshaverDitheringPipeline.set_layer_texture(
+                            0,
+                            this._screenshaverAudioBloomCompositeTexture
+                        );
+                    }
                     this._screenshaverDitheringOffscreen.clear4f(
                         Cogl.BufferBit.COLOR,
                         0.0,
