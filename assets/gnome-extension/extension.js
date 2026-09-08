@@ -462,6 +462,58 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
             return pipeline;
         }
 
+        screenshaver_create_audio_bloom_composite_pipeline(coglContext, sceneTexture, bloomTexture) {
+            const pipeline = Cogl.Pipeline.new(coglContext);
+            pipeline.set_layer_texture(0, sceneTexture);
+            pipeline.set_layer_texture(1, bloomTexture);
+            pipeline.set_layer_filters(
+                0,
+                Cogl.PipelineFilter.LINEAR,
+                Cogl.PipelineFilter.LINEAR
+            );
+            pipeline.set_layer_filters(
+                1,
+                Cogl.PipelineFilter.LINEAR,
+                Cogl.PipelineFilter.LINEAR
+            );
+            pipeline.set_layer_wrap_mode(
+                0,
+                Cogl.PipelineWrapMode.CLAMP_TO_EDGE
+            );
+            pipeline.set_layer_wrap_mode(
+                1,
+                Cogl.PipelineWrapMode.CLAMP_TO_EDGE
+            );
+
+            const snippet = Cogl.Snippet.new(
+                Cogl.SnippetHook.FRAGMENT,
+                `
+                    uniform float screenshaverBloomIntensity;
+                `,
+                null
+            );
+
+            snippet.set_replace(`
+                vec2 uv = cogl_tex_coord0_in.st;
+                vec3 sceneColor = texture2D(cogl_sampler0, uv).rgb;
+                vec3 bloomColor = texture2D(cogl_sampler1, uv).rgb;
+                cogl_color_out = vec4(
+                    sceneColor + bloomColor * screenshaverBloomIntensity,
+                    1.0
+                );
+            `);
+            pipeline.add_snippet(snippet);
+
+            const intensityLocation =
+                pipeline.get_uniform_location('screenshaverBloomIntensity');
+            pipeline.set_uniform_1f(
+                intensityLocation,
+                Number.isFinite(bloomIntensity) ? bloomIntensity : 1.0
+            );
+
+            return pipeline;
+        }
+
         vfunc_build_pipeline() {
             this.add_glsl_snippet(
                 Cogl.SnippetHook.FRAGMENT,
@@ -764,6 +816,10 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     let audioBloomBlurOffscreen = null;
                     let audioBloomBlurVerticalPipeline = null;
                     let audioBloomBlurPresentationPipeline = null;
+                    let audioBloomCompositePipeline = null;
+                    let audioBloomCompositeTexture = null;
+                    let audioBloomCompositeOffscreen = null;
+                    let audioBloomCompositePresentationPipeline = null;
 
                     if (bloomMode === 'audio') {
                         const bloomInputTexture = antiAliasing === 'fxaa' && fxaaTexture
@@ -843,8 +899,45 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                             Cogl.PipelineFilter.LINEAR
                         );
 
+                        audioBloomCompositePipeline =
+                            this.screenshaver_create_audio_bloom_composite_pipeline(
+                                coglContext,
+                                bloomInputTexture,
+                                audioBloomExtractionTexture
+                            );
+
+                        audioBloomCompositeTexture = Cogl.Texture2D.new_with_format(
+                            coglContext,
+                            nativeWidth,
+                            nativeHeight,
+                            selectedFormat
+                        );
+                        audioBloomCompositeTexture.set_premultiplied(false);
+                        audioBloomCompositeTexture.allocate();
+
+                        audioBloomCompositeOffscreen =
+                            Cogl.Offscreen.new_with_texture(audioBloomCompositeTexture);
+                        audioBloomCompositeOffscreen.allocate();
+                        audioBloomCompositeOffscreen.set_viewport(
+                            0.0,
+                            0.0,
+                            nativeWidth,
+                            nativeHeight
+                        );
+
+                        audioBloomCompositePresentationPipeline = Cogl.Pipeline.new(coglContext);
+                        audioBloomCompositePresentationPipeline.set_layer_texture(
+                            0,
+                            audioBloomCompositeTexture
+                        );
+                        audioBloomCompositePresentationPipeline.set_layer_filters(
+                            0,
+                            Cogl.PipelineFilter.LINEAR,
+                            Cogl.PipelineFilter.LINEAR
+                        );
+
                         console.log(
-                            `[Screenshaver] Test #35 Audio Bloom blur targets allocated: ` +
+                            `[Screenshaver] Test #36 Audio Bloom composite target allocated: ` +
                             `source=${bloomInputTexture.get_width()}x${bloomInputTexture.get_height()} ` +
                             `bloom=${bloomWidth}x${bloomHeight} threshold=${bloomThreshold.toFixed(3)} ` +
                             `intensity=${bloomIntensity.toFixed(3)} generation=${generation}`
@@ -870,6 +963,10 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     this._screenshaverAudioBloomBlurOffscreen = audioBloomBlurOffscreen;
                     this._screenshaverAudioBloomBlurVerticalPipeline = audioBloomBlurVerticalPipeline;
                     this._screenshaverAudioBloomBlurPresentationPipeline = audioBloomBlurPresentationPipeline;
+                    this._screenshaverAudioBloomCompositePipeline = audioBloomCompositePipeline;
+                    this._screenshaverAudioBloomCompositeTexture = audioBloomCompositeTexture;
+                    this._screenshaverAudioBloomCompositeOffscreen = audioBloomCompositeOffscreen;
+                    this._screenshaverAudioBloomCompositePresentationPipeline = audioBloomCompositePresentationPipeline;
                     this.screenshaver_update_audio_bloom_uniforms();
                     this._screenshaverRenderWidth = renderWidth;
                     this._screenshaverRenderHeight = renderHeight;
@@ -963,7 +1060,9 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     this._screenshaverAudioBloomBlurHorizontalPipeline &&
                     this._screenshaverAudioBloomBlurOffscreen &&
                     this._screenshaverAudioBloomBlurVerticalPipeline &&
-                    this._screenshaverAudioBloomBlurPresentationPipeline) {
+                    this._screenshaverAudioBloomCompositePipeline &&
+                    this._screenshaverAudioBloomCompositeOffscreen &&
+                    this._screenshaverAudioBloomCompositePresentationPipeline) {
                     this.screenshaver_update_audio_bloom_uniforms();
 
                     // Audio extraction -> half-resolution Bloom target A.
@@ -1029,10 +1128,30 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     );
                     this._screenshaverAudioBloomExtractionOffscreen.flush();
 
-                    // Test #35 remains diagnostic: present only the final blurred
-                    // Bloom texture fullscreen. Additive composition and dithering
-                    // are intentionally deferred to the next checkpoint.
-                    finalPipeline = this._screenshaverAudioBloomBlurPresentationPipeline;
+                    // Test #36: production additive composite at native output
+                    // resolution. Dithering remains intentionally bypassed so this
+                    // checkpoint isolates scene + bloom * intensity.
+                    this._screenshaverAudioBloomCompositeOffscreen.clear4f(
+                        Cogl.BufferBit.COLOR,
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0
+                    );
+                    this._screenshaverAudioBloomCompositeOffscreen.draw_textured_rectangle(
+                        this._screenshaverAudioBloomCompositePipeline,
+                        -1.0,
+                        1.0,
+                        1.0,
+                        -1.0,
+                        0.0,
+                        0.0,
+                        1.0,
+                        1.0
+                    );
+                    this._screenshaverAudioBloomCompositeOffscreen.flush();
+
+                    finalPipeline = this._screenshaverAudioBloomCompositePresentationPipeline;
                 }
 
                 if (bloomMode !== 'audio' && dithering === 'subtle' &&
