@@ -14,7 +14,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 let shaderEffectTypeSerial = 0;
 
-function createShaderEffectClass(shaderBody, generation, renderScale, colorPrecision, antiAliasing, dithering) {
+function createShaderEffectClass(shaderBody, generation, renderScale, colorPrecision, antiAliasing, dithering, bloomMode, bloomThreshold, bloomIntensity) {
     // GObject type registrations survive effect destruction and can also survive
     // extension disable/enable cycles inside the same GNOME Shell process.
     // Include monotonic time plus a module-local serial so every construction
@@ -290,6 +290,122 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
             pipeline.set_uniform_1f(strengthLocation, 0.5 / 255.0);
 
             return pipeline;
+        }
+
+        screenshaver_set_audio_bands(bass, midrange, treble) {
+            this._screenshaverAudioBass = Number.isFinite(bass) ? Math.max(0.0, Math.min(1.0, bass)) : 0.0;
+            this._screenshaverAudioMidrange = Number.isFinite(midrange) ? Math.max(0.0, Math.min(1.0, midrange)) : 0.0;
+            this._screenshaverAudioTreble = Number.isFinite(treble) ? Math.max(0.0, Math.min(1.0, treble)) : 0.0;
+            this.screenshaver_update_audio_bloom_uniforms();
+        }
+
+        screenshaver_create_audio_bloom_extraction_pipeline(coglContext, sceneTexture) {
+            const pipeline = Cogl.Pipeline.new(coglContext);
+            pipeline.set_layer_texture(0, sceneTexture);
+            pipeline.set_layer_filters(
+                0,
+                Cogl.PipelineFilter.LINEAR,
+                Cogl.PipelineFilter.LINEAR
+            );
+            pipeline.set_layer_wrap_mode(
+                0,
+                Cogl.PipelineWrapMode.CLAMP_TO_EDGE
+            );
+
+            const snippet = Cogl.Snippet.new(
+                Cogl.SnippetHook.FRAGMENT,
+                `
+                    uniform float screenshaverBloomThreshold;
+                    uniform vec3 screenshaverAudioBands;
+
+                    vec3 screenshaverBloomRgbToHsv(vec3 c)
+                    {
+                        float maxChannel = max(c.r, max(c.g, c.b));
+                        float minChannel = min(c.r, min(c.g, c.b));
+                        float chroma = maxChannel - minChannel;
+                        float hue = 0.0;
+
+                        if (chroma > 0.00001) {
+                            if (maxChannel == c.r)
+                                hue = mod((c.g - c.b) / chroma, 6.0);
+                            else if (maxChannel == c.g)
+                                hue = ((c.b - c.r) / chroma) + 2.0;
+                            else
+                                hue = ((c.r - c.g) / chroma) + 4.0;
+
+                            hue *= 60.0;
+                            if (hue < 0.0)
+                                hue += 360.0;
+                        }
+
+                        float saturation = maxChannel > 0.00001
+                            ? chroma / maxChannel
+                            : 0.0;
+
+                        return vec3(hue, saturation, maxChannel);
+                    }
+                `,
+                null
+            );
+
+            snippet.set_replace(`
+                vec3 sceneColor = texture2D(cogl_sampler0, cogl_tex_coord0_in.st).rgb;
+                vec3 hsv = screenshaverBloomRgbToHsv(max(sceneColor, vec3(0.0)));
+                float hue = hsv.x;
+                float saturation = hsv.y;
+                float value = hsv.z;
+
+                float bassEnergy = clamp(screenshaverAudioBands.x, 0.0, 1.0);
+                float midEnergy = clamp(screenshaverAudioBands.y, 0.0, 1.0);
+                float highEnergy = clamp(screenshaverAudioBands.z, 0.0, 1.0);
+
+                float bassMatch = (hue >= 0.0 && hue < 45.0) ? bassEnergy : 0.0;
+                float midMatch = (hue >= 45.0 && hue < 150.0) ? midEnergy : 0.0;
+                float highMatch = (hue >= 240.0 && hue < 300.0) ? highEnergy : 0.0;
+                float bandMatch = max(bassMatch, max(midMatch, highMatch));
+
+                float colorStrength = saturation * 2.0
+                    * smoothstep(0.02, 0.15, value);
+                float energy = clamp(bandMatch, 0.0, 1.0);
+                float effectiveThreshold = mix(2.0, screenshaverBloomThreshold, energy);
+                float response = energy * smoothstep(
+                    effectiveThreshold,
+                    min(effectiveThreshold + 0.35, 2.0001),
+                    colorStrength
+                );
+
+                cogl_color_out = vec4(sceneColor * response, 1.0);
+            `);
+            pipeline.add_snippet(snippet);
+
+            this._screenshaverBloomThresholdUniform =
+                pipeline.get_uniform_location('screenshaverBloomThreshold');
+            this._screenshaverAudioBandsUniform =
+                pipeline.get_uniform_location('screenshaverAudioBands');
+
+            pipeline.set_uniform_1f(
+                this._screenshaverBloomThresholdUniform,
+                Number.isFinite(bloomThreshold) ? bloomThreshold : 0.80
+            );
+
+            return pipeline;
+        }
+
+        screenshaver_update_audio_bloom_uniforms() {
+            const pipeline = this._screenshaverAudioBloomExtractionPipeline;
+            if (!pipeline || this._screenshaverAudioBandsUniform === undefined)
+                return;
+
+            pipeline.set_uniform_float(
+                this._screenshaverAudioBandsUniform,
+                3,
+                1,
+                [
+                    this._screenshaverAudioBass ?? 0.0,
+                    this._screenshaverAudioMidrange ?? 0.0,
+                    this._screenshaverAudioTreble ?? 0.0,
+                ]
+            );
         }
 
         vfunc_build_pipeline() {
@@ -586,6 +702,62 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                         );
                     }
 
+                    let audioBloomExtractionPipeline = null;
+                    let audioBloomExtractionTexture = null;
+                    let audioBloomExtractionOffscreen = null;
+                    let audioBloomExtractionPresentationPipeline = null;
+
+                    if (bloomMode === 'audio') {
+                        const bloomInputTexture = antiAliasing === 'fxaa' && fxaaTexture
+                            ? fxaaTexture
+                            : renderTexture;
+                        const bloomWidth = Math.max(1, Math.floor(nativeWidth / 2));
+                        const bloomHeight = Math.max(1, Math.floor(nativeHeight / 2));
+
+                        audioBloomExtractionPipeline =
+                            this.screenshaver_create_audio_bloom_extraction_pipeline(
+                                coglContext,
+                                bloomInputTexture
+                            );
+
+                        audioBloomExtractionTexture = Cogl.Texture2D.new_with_format(
+                            coglContext,
+                            bloomWidth,
+                            bloomHeight,
+                            selectedFormat
+                        );
+                        audioBloomExtractionTexture.set_premultiplied(false);
+                        audioBloomExtractionTexture.allocate();
+
+                        audioBloomExtractionOffscreen =
+                            Cogl.Offscreen.new_with_texture(audioBloomExtractionTexture);
+                        audioBloomExtractionOffscreen.allocate();
+                        audioBloomExtractionOffscreen.set_viewport(
+                            0.0,
+                            0.0,
+                            bloomWidth,
+                            bloomHeight
+                        );
+
+                        audioBloomExtractionPresentationPipeline = Cogl.Pipeline.new(coglContext);
+                        audioBloomExtractionPresentationPipeline.set_layer_texture(
+                            0,
+                            audioBloomExtractionTexture
+                        );
+                        audioBloomExtractionPresentationPipeline.set_layer_filters(
+                            0,
+                            Cogl.PipelineFilter.LINEAR,
+                            Cogl.PipelineFilter.LINEAR
+                        );
+
+                        console.log(
+                            `[Screenshaver] Test #34 Audio Bloom extraction target allocated: ` +
+                            `source=${bloomInputTexture.get_width()}x${bloomInputTexture.get_height()} ` +
+                            `bloom=${bloomWidth}x${bloomHeight} threshold=${bloomThreshold.toFixed(3)} ` +
+                            `intensity=${bloomIntensity.toFixed(3)} generation=${generation}`
+                        );
+                    }
+
                     this._screenshaverRenderTexture = renderTexture;
                     this._screenshaverRenderOffscreen = renderOffscreen;
                     this._screenshaverPresentationPipeline = presentationPipeline;
@@ -597,6 +769,11 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     this._screenshaverDitheringTexture = ditheringTexture;
                     this._screenshaverDitheringOffscreen = ditheringOffscreen;
                     this._screenshaverDitheringPresentationPipeline = ditheringPresentationPipeline;
+                    this._screenshaverAudioBloomExtractionPipeline = audioBloomExtractionPipeline;
+                    this._screenshaverAudioBloomExtractionTexture = audioBloomExtractionTexture;
+                    this._screenshaverAudioBloomExtractionOffscreen = audioBloomExtractionOffscreen;
+                    this._screenshaverAudioBloomExtractionPresentationPipeline = audioBloomExtractionPresentationPipeline;
+                    this.screenshaver_update_audio_bloom_uniforms();
                     this._screenshaverRenderWidth = renderWidth;
                     this._screenshaverRenderHeight = renderHeight;
                     this._screenshaverRequestedPrecision = requestedPrecision;
@@ -683,7 +860,39 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     finalPipeline = this._screenshaverFxaaPresentationPipeline;
                 }
 
-                if (dithering === 'subtle' &&
+                if (bloomMode === 'audio' &&
+                    this._screenshaverAudioBloomExtractionPipeline &&
+                    this._screenshaverAudioBloomExtractionOffscreen &&
+                    this._screenshaverAudioBloomExtractionPresentationPipeline) {
+                    this.screenshaver_update_audio_bloom_uniforms();
+
+                    this._screenshaverAudioBloomExtractionOffscreen.clear4f(
+                        Cogl.BufferBit.COLOR,
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0
+                    );
+                    this._screenshaverAudioBloomExtractionOffscreen.draw_textured_rectangle(
+                        this._screenshaverAudioBloomExtractionPipeline,
+                        -1.0,
+                        1.0,
+                        1.0,
+                        -1.0,
+                        0.0,
+                        0.0,
+                        1.0,
+                        1.0
+                    );
+                    this._screenshaverAudioBloomExtractionOffscreen.flush();
+
+                    // Test #34 is intentionally extraction-only. Present the
+                    // half-resolution raw Audio Bloom extraction fullscreen and
+                    // bypass blur, composite, and dithering for diagnostic clarity.
+                    finalPipeline = this._screenshaverAudioBloomExtractionPresentationPipeline;
+                }
+
+                if (bloomMode !== 'audio' && dithering === 'subtle' &&
                     this._screenshaverDitheringPipeline &&
                     this._screenshaverDitheringOffscreen &&
                     this._screenshaverDitheringPresentationPipeline) {
@@ -739,7 +948,7 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                         `viewport=${viewportWidth}x${viewportHeight} -> ` +
                         `presentation=${nativeWidth}x${nativeHeight} ` +
                         `scale=${scale.toFixed(3)} precision=${this._screenshaverSelectedPrecision ?? requestedPrecision} ` +
-                        `anti_aliasing=${antiAliasing} dithering=${dithering} generation=${generation}`
+                        `anti_aliasing=${antiAliasing} dithering=${dithering} bloom=${bloomMode} generation=${generation}`
                     );
                     this._screenshaverPresentationProbeLogged = true;
                 }
@@ -1146,6 +1355,11 @@ export default class ScreenshaverExtension extends Extension {
 
                     const bands = this._parseAudioBands(contents);
                     this._lastAudioBands = bands;
+                    this._shaderEffect?.screenshaver_set_audio_bands?.(
+                        bands.bass,
+                        bands.midrange,
+                        bands.treble
+                    );
 
                     const nowUs = GLib.get_monotonic_time();
 
@@ -1253,6 +1467,9 @@ export default class ScreenshaverExtension extends Extension {
             colorPrecision: (values.get('color_precision') ?? 'auto').toLowerCase(),
             antiAliasing: (values.get('anti_aliasing') ?? 'fxaa').toLowerCase(),
             dithering: (values.get('dithering') ?? 'subtle').toLowerCase(),
+            bloomMode: (values.get('bloom') ?? 'off').toLowerCase(),
+            bloomIntensity: Number.parseFloat(values.get('bloom_intensity') ?? '1.0') || 0.0,
+            bloomThreshold: Number.parseFloat(values.get('bloom_threshold') ?? '0.80') || 0.0,
             subtitles: values.get('subtitles') === '1',
             placement: values.get('placement') ?? 'bottom:left',
         };
@@ -1277,6 +1494,9 @@ export default class ScreenshaverExtension extends Extension {
             metadata.colorPrecision,
             metadata.antiAliasing,
             metadata.dithering,
+            metadata.bloomMode,
+            metadata.bloomIntensity,
+            metadata.bloomThreshold,
             metadata.subtitles ? 1 : 0,
             metadata.placement,
         ].join('\u001f');
@@ -1677,7 +1897,7 @@ export default class ScreenshaverExtension extends Extension {
         };
     }
 
-    _buildShaderEffect(productionSource, width, height, elapsedSeconds, renderScale, colorPrecision, antiAliasing, dithering) {
+    _buildShaderEffect(productionSource, width, height, elapsedSeconds, renderScale, colorPrecision, antiAliasing, dithering, bloomMode, bloomThreshold, bloomIntensity) {
         const shaderBody =
             this._extractShaderToyBodyFromProductionSource(productionSource);
 
@@ -1694,7 +1914,10 @@ export default class ScreenshaverExtension extends Extension {
             renderScale,
             colorPrecision,
             antiAliasing,
-            dithering
+            dithering,
+            bloomMode,
+            bloomThreshold,
+            bloomIntensity
         );
         const effect = new EffectClass();
 
@@ -1757,6 +1980,9 @@ export default class ScreenshaverExtension extends Extension {
         const initialColorPrecision = initialMetadata?.colorPrecision ?? 'auto';
         const initialAntiAliasing = initialMetadata?.antiAliasing ?? 'fxaa';
         const initialDithering = initialMetadata?.dithering ?? 'subtle';
+        const initialBloomMode = initialMetadata?.bloomMode ?? 'off';
+        const initialBloomThreshold = initialMetadata?.bloomThreshold ?? 0.80;
+        const initialBloomIntensity = initialMetadata?.bloomIntensity ?? 1.0;
         const built = this._buildShaderEffect(
             productionSource,
             dialog.width,
@@ -1765,10 +1991,20 @@ export default class ScreenshaverExtension extends Extension {
             initialRenderScale,
             initialColorPrecision,
             initialAntiAliasing,
-            initialDithering
+            initialDithering,
+            initialBloomMode,
+            initialBloomThreshold,
+            initialBloomIntensity
         );
 
         this._shaderEffect = built.effect;
+        if (this._lastAudioBands) {
+            this._shaderEffect.screenshaver_set_audio_bands(
+                this._lastAudioBands.bass,
+                this._lastAudioBands.midrange,
+                this._lastAudioBands.treble
+            );
+        }
         this._shaderUniformTime = built.uniformTime;
         this._shaderUniformResolution = built.uniformResolution;
         this._shaderUniformInvertColors = built.uniformInvertColors;
@@ -1859,12 +2095,18 @@ export default class ScreenshaverExtension extends Extension {
             const activePrecision = this._descriptionMetadata?.colorPrecision ?? 'auto';
             const activeAntiAliasing = this._descriptionMetadata?.antiAliasing ?? 'fxaa';
             const activeDithering = this._descriptionMetadata?.dithering ?? 'subtle';
+            const activeBloomMode = this._descriptionMetadata?.bloomMode ?? 'off';
+            const activeBloomThreshold = this._descriptionMetadata?.bloomThreshold ?? 0.80;
+            const activeBloomIntensity = this._descriptionMetadata?.bloomIntensity ?? 1.0;
             const scaleChanged = Math.abs(observedMetadata.renderScale - activeScale) > 0.0001;
             const precisionChanged = observedMetadata.colorPrecision !== activePrecision;
             const antiAliasingChanged = observedMetadata.antiAliasing !== activeAntiAliasing;
             const ditheringChanged = observedMetadata.dithering !== activeDithering;
+            const bloomChanged = observedMetadata.bloomMode !== activeBloomMode
+                || Math.abs(observedMetadata.bloomThreshold - activeBloomThreshold) > 0.0001
+                || Math.abs(observedMetadata.bloomIntensity - activeBloomIntensity) > 0.0001;
 
-            if (!scaleChanged && !precisionChanged && !antiAliasingChanged && !ditheringChanged) {
+            if (!scaleChanged && !precisionChanged && !antiAliasingChanged && !ditheringChanged && !bloomChanged) {
                 if (observedMetadataSignature !== this._activeMetadataSignature) {
                     this._descriptionMetadata = observedMetadata;
                     this._activeMetadataSignature = observedMetadataSignature;
@@ -1908,6 +2150,13 @@ export default class ScreenshaverExtension extends Extension {
                     `rebuilding native effect pipeline`
                 );
             }
+
+            if (bloomChanged) {
+                console.log(
+                    `[Screenshaver] Test #34 Audio Bloom metadata changed; ` +
+                    `rebuilding extraction pipeline`
+                );
+            }
         }
 
         const elapsedSeconds = this._shaderStartedUs > 0
@@ -1925,7 +2174,10 @@ export default class ScreenshaverExtension extends Extension {
                 observedMetadata.renderScale,
                 observedMetadata.colorPrecision,
                 observedMetadata.antiAliasing,
-                observedMetadata.dithering
+                observedMetadata.dithering,
+                observedMetadata.bloomMode,
+                observedMetadata.bloomThreshold,
+                observedMetadata.bloomIntensity
             );
         } catch (error) {
             console.log(
@@ -1955,6 +2207,13 @@ export default class ScreenshaverExtension extends Extension {
             this._lockActor.remove_effect(previousEffect);
 
             this._shaderEffect = built.effect;
+        if (this._lastAudioBands) {
+            this._shaderEffect.screenshaver_set_audio_bands(
+                this._lastAudioBands.bass,
+                this._lastAudioBands.midrange,
+                this._lastAudioBands.treble
+            );
+        }
             this._shaderUniformTime = built.uniformTime;
             this._shaderUniformResolution = built.uniformResolution;
             this._shaderUniformInvertColors = built.uniformInvertColors;

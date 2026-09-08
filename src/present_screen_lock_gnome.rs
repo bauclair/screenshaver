@@ -821,6 +821,12 @@ fn build_presentation_metadata(
         "dithering={}",
         postprocess_profile.dithering.name()
     ));
+    lines.push(format!(
+        "bloom={}",
+        postprocess_profile.bloom.name()
+    ));
+    lines.push(format!("bloom_intensity={}", postprocess_profile.bloom_intensity));
+    lines.push(format!("bloom_threshold={}", postprocess_profile.bloom_threshold));
     lines.push(format!("subtitles={}", if subtitles { 1 } else { 0 }));
     lines.push(format!("placement={}", subtitle_placement.name()));
     lines.push(String::new());
