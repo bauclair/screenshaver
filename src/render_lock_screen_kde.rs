@@ -5,6 +5,13 @@ use std::sync::{LazyLock, Mutex};
 pub type GlProcLoader = unsafe extern "C" fn(*const c_char) -> *const c_void;
 
 pub struct KdeFrameRenderer {
+    // The KDE renderer lives inside KScreenLocker/Qt Quick rather than in the
+    // resident Screenshaver process. Keep a lock-local audio backend alive for
+    // the same lifetime as FrameRenderEngine so Audio Bloom receives live bands.
+    //
+    // This is audio capture only; KDE still owns the sole lock-screen shader
+    // renderer through the existing QSGRenderNode/FrameRenderEngine path.
+    _audio_backend: Option<Box<dyn crate::audio_backend::AudioBackend>>,
     engine: crate::render_frame_engine::FrameRenderEngine,
 }
 
@@ -121,9 +128,54 @@ unsafe fn create_renderer(
     let shader_interval = screensaver_interval(&cfg);
     let shader_manager = crate::manage_shader::ShaderManager::new(shader_mode);
 
-    // Phase 2 deliberately does not start a second audio-capture backend or
-    // subtitle/TTF overlay inside KScreenLocker. The shader, texture, palette,
-    // animation, FPS, and postprocess policies still come from Screenshaver.
+    // KScreenLocker loads this Rust renderer into the greeter process, so the
+    // resident Screenshaver process's in-memory SharedAudioBands cannot be
+    // shared directly with this FrameRenderEngine. Start a lock-local audio
+    // capture backend and retain the backend itself for the renderer lifetime;
+    // dropping it would stop its capture worker.
+    //
+    // Audio capture failure must never compromise the secure lock presentation.
+    // If no backend is available, continue rendering with zeroed bands; only
+    // Audio Bloom becomes inactive.
+    let audio_backend =
+        match crate::audio_backend::create_backend() {
+            Ok(backend) => {
+                crate::logger::information(
+                    &crate::locate_paths::runtime_log_path(),
+                    &format!(
+                        "[LOCK] KDE Audio Bloom capture backend ready: {}",
+                        backend.backend_name(),
+                    ),
+                );
+
+                Some(backend)
+            }
+
+            Err(error) => {
+                crate::logger::warning(
+                    &crate::locate_paths::runtime_log_path(),
+                    &format!(
+                        "[LOCK] KDE Audio Bloom capture unavailable; continuing without live audio bands: {}",
+                        error,
+                    ),
+                );
+
+                None
+            }
+        };
+
+    let audio_bands =
+        audio_backend
+            .as_ref()
+            .map(
+                |backend| {
+                    backend.shared_bands()
+                }
+            );
+
+    // Subtitle/TTF overlay remains deliberately disabled inside KScreenLocker.
+    // Shader, texture, palette, animation, FPS, and every production
+    // post-processing policy continue to come from Screenshaver.
     let engine = crate::render_frame_engine::FrameRenderEngine::new(
         shader_manager,
         shader_interval,
@@ -132,14 +184,17 @@ unsafe fn create_renderer(
         cfg.screensaver_fps_policy_entries,
         cfg.texture_policy,
         cfg.screensaver_postprocess_policy,
-        None,
+        audio_bands,
         false,
         cfg.subtitle_placement,
         width as u32,
         height as u32,
     )?;
 
-    Ok(Box::into_raw(Box::new(KdeFrameRenderer { engine })))
+    Ok(Box::into_raw(Box::new(KdeFrameRenderer {
+        _audio_backend: audio_backend,
+        engine,
+    })))
 }
 
 unsafe fn render_frame(
