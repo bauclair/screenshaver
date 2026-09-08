@@ -751,6 +751,10 @@ fn build_presentation_metadata(
         "color_precision={}",
         postprocess_profile.color_precision.name()
     ));
+    lines.push(format!(
+        "anti_aliasing={}",
+        postprocess_profile.anti_aliasing.name()
+    ));
     lines.push(format!("subtitles={}", if subtitles { 1 } else { 0 }));
     lines.push(format!("placement={}", subtitle_placement.name()));
     lines.push(String::new());

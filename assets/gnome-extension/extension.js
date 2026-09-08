@@ -14,7 +14,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 let shaderEffectTypeSerial = 0;
 
-function createShaderEffectClass(shaderBody, generation, renderScale, colorPrecision) {
+function createShaderEffectClass(shaderBody, generation, renderScale, colorPrecision, antiAliasing) {
     // GObject type registrations survive effect destruction and can also survive
     // extension disable/enable cycles inside the same GNOME Shell process.
     // Include monotonic time plus a module-local serial so every construction
@@ -37,6 +37,196 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                 Math.max(1, Math.round(fallbackWidth * scale)),
                 Math.max(1, Math.round(fallbackHeight * scale)),
             ];
+        }
+
+        screenshaver_set_fxaa_transforms(invertColors, flipHorizontal, flipVertical, hueRotation) {
+            this._screenshaverFxaaInvertColors = invertColors ? 1.0 : 0.0;
+            this._screenshaverFxaaFlipHorizontal = flipHorizontal ? 1.0 : 0.0;
+            this._screenshaverFxaaFlipVertical = flipVertical ? 1.0 : 0.0;
+            this._screenshaverFxaaHueRotation = Number.isFinite(hueRotation) ? hueRotation : 0.0;
+        }
+
+        screenshaver_create_fxaa_pipeline(coglContext, sceneTexture, width, height) {
+            const pipeline = Cogl.Pipeline.new(coglContext);
+            pipeline.set_layer_texture(0, sceneTexture);
+            pipeline.set_layer_filters(
+                0,
+                Cogl.PipelineFilter.LINEAR,
+                Cogl.PipelineFilter.LINEAR
+            );
+            pipeline.set_layer_wrap_mode(
+                0,
+                Cogl.PipelineWrapMode.CLAMP_TO_EDGE
+            );
+
+            const snippet = Cogl.Snippet.new(
+                Cogl.SnippetHook.FRAGMENT,
+                `
+                    uniform vec2 screenshaverFxaaInverseResolution;
+                    uniform float screenshaverFxaaInvertColors;
+                    uniform float screenshaverFxaaFlipHorizontal;
+                    uniform float screenshaverFxaaFlipVertical;
+                    uniform float screenshaverFxaaHueRotation;
+
+                    const float SCREENSHAVER_FXAA_EDGE_THRESHOLD_MIN = 0.0312;
+                    const float SCREENSHAVER_FXAA_EDGE_THRESHOLD_MAX = 0.125;
+                    const float SCREENSHAVER_FXAA_SUBPIXEL_QUALITY = 0.75;
+
+                    float screenshaverFxaaLuminance(vec3 color)
+                    {
+                        return dot(color, vec3(0.299, 0.587, 0.114));
+                    }
+
+                    vec3 screenshaverFxaaRotateHue(vec3 color, float degrees)
+                    {
+                        float angle = radians(degrees);
+                        float cosine = cos(angle);
+                        float sine = sin(angle);
+                        float y = dot(color, vec3(0.299, 0.587, 0.114));
+                        float i = dot(color, vec3(0.596, -0.274, -0.322));
+                        float q = dot(color, vec3(0.211, -0.523, 0.312));
+                        float rotatedI = i * cosine - q * sine;
+                        float rotatedQ = i * sine + q * cosine;
+                        return clamp(
+                            vec3(
+                                y + 0.956 * rotatedI + 0.621 * rotatedQ,
+                                y - 0.272 * rotatedI - 0.647 * rotatedQ,
+                                y - 1.106 * rotatedI + 1.703 * rotatedQ
+                            ),
+                            0.0,
+                            1.0
+                        );
+                    }
+
+                    vec3 screenshaverFxaaApplyColorEffects(vec3 color)
+                    {
+                        if (screenshaverFxaaInvertColors > 0.5)
+                            color = vec3(1.0) - color;
+                        if (abs(screenshaverFxaaHueRotation) > 0.0001)
+                            color = screenshaverFxaaRotateHue(color, screenshaverFxaaHueRotation);
+                        return color;
+                    }
+                `,
+                null
+            );
+
+            snippet.set_replace(`
+                vec2 uv = cogl_tex_coord0_in.st;
+                if (screenshaverFxaaFlipHorizontal > 0.5)
+                    uv.x = 1.0 - uv.x;
+                if (screenshaverFxaaFlipVertical > 0.5)
+                    uv.y = 1.0 - uv.y;
+
+                vec4 centerSample = texture2D(cogl_sampler0, uv);
+                float lumaCenter = screenshaverFxaaLuminance(centerSample.rgb);
+                float lumaNorth = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(0.0, screenshaverFxaaInverseResolution.y)).rgb);
+                float lumaSouth = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv - vec2(0.0, screenshaverFxaaInverseResolution.y)).rgb);
+                float lumaEast = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(screenshaverFxaaInverseResolution.x, 0.0)).rgb);
+                float lumaWest = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv - vec2(screenshaverFxaaInverseResolution.x, 0.0)).rgb);
+                float lumaMinimum = min(lumaCenter, min(min(lumaNorth, lumaSouth), min(lumaEast, lumaWest)));
+                float lumaMaximum = max(lumaCenter, max(max(lumaNorth, lumaSouth), max(lumaEast, lumaWest)));
+                float lumaRange = lumaMaximum - lumaMinimum;
+                float edgeThreshold = max(SCREENSHAVER_FXAA_EDGE_THRESHOLD_MIN, lumaMaximum * SCREENSHAVER_FXAA_EDGE_THRESHOLD_MAX);
+
+                if (lumaRange < edgeThreshold) {
+                    cogl_color_out = vec4(screenshaverFxaaApplyColorEffects(centerSample.rgb), 1.0);
+                } else {
+                    float lumaNorthWest = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(-screenshaverFxaaInverseResolution.x, screenshaverFxaaInverseResolution.y)).rgb);
+                    float lumaNorthEast = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(screenshaverFxaaInverseResolution.x, screenshaverFxaaInverseResolution.y)).rgb);
+                    float lumaSouthWest = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(-screenshaverFxaaInverseResolution.x, -screenshaverFxaaInverseResolution.y)).rgb);
+                    float lumaSouthEast = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(screenshaverFxaaInverseResolution.x, -screenshaverFxaaInverseResolution.y)).rgb);
+                    float horizontalEdge = abs(lumaNorthWest + 2.0 * lumaNorth + lumaNorthEast - 2.0 * lumaCenter)
+                        + abs(lumaSouthWest + 2.0 * lumaSouth + lumaSouthEast - 2.0 * lumaCenter);
+                    float verticalEdge = abs(lumaNorthWest + 2.0 * lumaWest + lumaSouthWest - 2.0 * lumaCenter)
+                        + abs(lumaNorthEast + 2.0 * lumaEast + lumaSouthEast - 2.0 * lumaCenter);
+                    bool isHorizontal = horizontalEdge >= verticalEdge;
+                    float lumaNegative = isHorizontal ? lumaNorth : lumaWest;
+                    float lumaPositive = isHorizontal ? lumaSouth : lumaEast;
+                    float gradientNegative = abs(lumaNegative - lumaCenter);
+                    float gradientPositive = abs(lumaPositive - lumaCenter);
+                    bool useNegativeDirection = gradientNegative >= gradientPositive;
+                    float gradient = max(gradientNegative, gradientPositive);
+                    vec2 stepDirection = isHorizontal
+                        ? vec2(screenshaverFxaaInverseResolution.x, 0.0)
+                        : vec2(0.0, screenshaverFxaaInverseResolution.y);
+                    vec2 normalDirection = isHorizontal
+                        ? vec2(0.0, screenshaverFxaaInverseResolution.y)
+                        : vec2(screenshaverFxaaInverseResolution.x, 0.0);
+                    if (useNegativeDirection)
+                        normalDirection = -normalDirection;
+                    float lumaReference = 0.5 * (lumaCenter + (useNegativeDirection ? lumaNegative : lumaPositive));
+                    vec2 edgeUv = uv + normalDirection * 0.5;
+                    vec2 negativeUv = edgeUv - stepDirection;
+                    vec2 positiveUv = edgeUv + stepDirection;
+                    float gradientThreshold = gradient * 0.25;
+                    float negativeDelta = screenshaverFxaaLuminance(texture2D(cogl_sampler0, negativeUv).rgb) - lumaReference;
+                    float positiveDelta = screenshaverFxaaLuminance(texture2D(cogl_sampler0, positiveUv).rgb) - lumaReference;
+                    bool negativeReached = abs(negativeDelta) >= gradientThreshold;
+                    bool positiveReached = abs(positiveDelta) >= gradientThreshold;
+                    for (int i = 0; i < 8; ++i) {
+                        if (!negativeReached) {
+                            negativeUv -= stepDirection;
+                            negativeDelta = screenshaverFxaaLuminance(texture2D(cogl_sampler0, negativeUv).rgb) - lumaReference;
+                            negativeReached = abs(negativeDelta) >= gradientThreshold;
+                        }
+                        if (!positiveReached) {
+                            positiveUv += stepDirection;
+                            positiveDelta = screenshaverFxaaLuminance(texture2D(cogl_sampler0, positiveUv).rgb) - lumaReference;
+                            positiveReached = abs(positiveDelta) >= gradientThreshold;
+                        }
+                        if (negativeReached && positiveReached)
+                            break;
+                    }
+                    float negativeDistance = isHorizontal ? uv.x - negativeUv.x : uv.y - negativeUv.y;
+                    float positiveDistance = isHorizontal ? positiveUv.x - uv.x : positiveUv.y - uv.y;
+                    negativeDistance = abs(negativeDistance);
+                    positiveDistance = abs(positiveDistance);
+                    float nearestDistance = min(negativeDistance, positiveDistance);
+                    float totalDistance = max(negativeDistance + positiveDistance, 0.000001);
+                    float edgeOffset = 0.5 - nearestDistance / totalDistance;
+                    bool nearestIsNegative = negativeDistance < positiveDistance;
+                    float nearestDelta = nearestIsNegative ? negativeDelta : positiveDelta;
+                    bool centerIsDarker = lumaCenter < lumaReference;
+                    bool nearestIsDarker = nearestDelta < 0.0;
+                    if (centerIsDarker == nearestIsDarker)
+                        edgeOffset = 0.0;
+                    float averageLuma = (2.0 * (lumaNorth + lumaSouth + lumaEast + lumaWest)
+                        + lumaNorthWest + lumaNorthEast + lumaSouthWest + lumaSouthEast) / 12.0;
+                    float subpixelContrast = clamp(abs(averageLuma - lumaCenter) / max(lumaRange, 0.000001), 0.0, 1.0);
+                    float subpixelOffset = smoothstep(0.0, 1.0, subpixelContrast);
+                    subpixelOffset = subpixelOffset * subpixelOffset * SCREENSHAVER_FXAA_SUBPIXEL_QUALITY;
+                    float finalOffset = max(edgeOffset, subpixelOffset);
+                    vec2 finalUv = uv + normalDirection * finalOffset;
+                    vec4 filteredSample = texture2D(cogl_sampler0, finalUv);
+                    cogl_color_out = vec4(screenshaverFxaaApplyColorEffects(filteredSample.rgb), 1.0);
+                }
+            `);
+            pipeline.add_snippet(snippet);
+
+            const inverseResolutionLocation = pipeline.get_uniform_location('screenshaverFxaaInverseResolution');
+            pipeline.set_uniform_float(
+                inverseResolutionLocation,
+                2,
+                1,
+                [1.0 / width, 1.0 / height]
+            );
+
+            this._screenshaverFxaaUniformInvert = pipeline.get_uniform_location('screenshaverFxaaInvertColors');
+            this._screenshaverFxaaUniformFlipHorizontal = pipeline.get_uniform_location('screenshaverFxaaFlipHorizontal');
+            this._screenshaverFxaaUniformFlipVertical = pipeline.get_uniform_location('screenshaverFxaaFlipVertical');
+            this._screenshaverFxaaUniformHueRotation = pipeline.get_uniform_location('screenshaverFxaaHueRotation');
+
+            return pipeline;
+        }
+
+        screenshaver_update_fxaa_uniforms() {
+            const pipeline = this._screenshaverFxaaPipeline;
+            if (!pipeline)
+                return;
+            pipeline.set_uniform_1f(this._screenshaverFxaaUniformInvert, this._screenshaverFxaaInvertColors ?? 0.0);
+            pipeline.set_uniform_1f(this._screenshaverFxaaUniformFlipHorizontal, this._screenshaverFxaaFlipHorizontal ?? 0.0);
+            pipeline.set_uniform_1f(this._screenshaverFxaaUniformFlipVertical, this._screenshaverFxaaFlipVertical ?? 0.0);
+            pipeline.set_uniform_1f(this._screenshaverFxaaUniformHueRotation, this._screenshaverFxaaHueRotation ?? 0.0);
         }
 
         vfunc_build_pipeline() {
@@ -242,9 +432,20 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                         Cogl.PipelineFilter.LINEAR
                     );
 
+                    let fxaaPipeline = null;
+                    if (antiAliasing === 'fxaa') {
+                        fxaaPipeline = this.screenshaver_create_fxaa_pipeline(
+                            coglContext,
+                            renderTexture,
+                            renderWidth,
+                            renderHeight
+                        );
+                    }
+
                     this._screenshaverRenderTexture = renderTexture;
                     this._screenshaverRenderOffscreen = renderOffscreen;
                     this._screenshaverPresentationPipeline = presentationPipeline;
+                    this._screenshaverFxaaPipeline = fxaaPipeline;
                     this._screenshaverRenderWidth = renderWidth;
                     this._screenshaverRenderHeight = renderHeight;
                     this._screenshaverRequestedPrecision = requestedPrecision;
@@ -300,6 +501,12 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                 );
                 this._screenshaverRenderOffscreen.flush();
 
+                const finalPipeline = antiAliasing === 'fxaa' && this._screenshaverFxaaPipeline
+                    ? this._screenshaverFxaaPipeline
+                    : this._screenshaverPresentationPipeline;
+                if (antiAliasing === 'fxaa')
+                    this.screenshaver_update_fxaa_uniforms();
+
                 const rect = new Clutter.ActorBox({
                     x1: 0.0,
                     y1: 0.0,
@@ -307,7 +514,7 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     y2: nativeHeight,
                 });
                 const presentationNode = Clutter.PipelineNode.new(
-                    this._screenshaverPresentationPipeline
+                    finalPipeline
                 );
                 presentationNode.add_texture_rectangle(
                     rect,
@@ -328,7 +535,8 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                         `framebuffer=${fbWidth}x${fbHeight} ` +
                         `viewport=${viewportWidth}x${viewportHeight} -> ` +
                         `presentation=${nativeWidth}x${nativeHeight} ` +
-                        `scale=${scale.toFixed(3)} precision=${this._screenshaverSelectedPrecision ?? requestedPrecision} generation=${generation}`
+                        `scale=${scale.toFixed(3)} precision=${this._screenshaverSelectedPrecision ?? requestedPrecision} ` +
+                        `anti_aliasing=${antiAliasing} generation=${generation}`
                     );
                     this._screenshaverPresentationProbeLogged = true;
                 }
@@ -708,6 +916,7 @@ export default class ScreenshaverExtension extends Extension {
             hueRotation: Number.parseFloat(values.get('hue_rotation') ?? '0') || 0.0,
             renderScale: Math.max(0.01, Number.parseFloat(values.get('render_scale') ?? '1') || 1.0),
             colorPrecision: (values.get('color_precision') ?? 'auto').toLowerCase(),
+            antiAliasing: (values.get('anti_aliasing') ?? 'fxaa').toLowerCase(),
             subtitles: values.get('subtitles') === '1',
             placement: values.get('placement') ?? 'bottom:left',
         };
@@ -730,6 +939,7 @@ export default class ScreenshaverExtension extends Extension {
             metadata.hueRotation,
             metadata.renderScale,
             metadata.colorPrecision,
+            metadata.antiAliasing,
             metadata.subtitles ? 1 : 0,
             metadata.placement,
         ].join('\u001f');
@@ -739,25 +949,33 @@ export default class ScreenshaverExtension extends Extension {
         if (!this._shaderEffect || !metadata)
             return;
 
+        const fxaaEnabled = metadata.antiAliasing === 'fxaa';
         this._shaderEffect.set_uniform_float(
             this._shaderUniformInvertColors,
             1,
-            [metadata.invertColors ? 1.0 : 0.0]
+            [fxaaEnabled ? 0.0 : (metadata.invertColors ? 1.0 : 0.0)]
         );
         this._shaderEffect.set_uniform_float(
             this._shaderUniformFlipHorizontal,
             1,
-            [metadata.flipHorizontal ? 1.0 : 0.0]
+            [fxaaEnabled ? 0.0 : (metadata.flipHorizontal ? 1.0 : 0.0)]
         );
         this._shaderEffect.set_uniform_float(
             this._shaderUniformFlipVertical,
             1,
-            [metadata.flipVertical ? 1.0 : 0.0]
+            [fxaaEnabled ? 0.0 : (metadata.flipVertical ? 1.0 : 0.0)]
         );
         this._shaderEffect.set_uniform_float(
             this._shaderUniformHueRotation,
             1,
-            [metadata.hueRotation]
+            [fxaaEnabled ? 0.0 : metadata.hueRotation]
+        );
+
+        this._shaderEffect.screenshaver_set_fxaa_transforms(
+            metadata.invertColors,
+            metadata.flipHorizontal,
+            metadata.flipVertical,
+            metadata.hueRotation
         );
 
         this._shaderEffect.queue_repaint();
@@ -1122,7 +1340,7 @@ export default class ScreenshaverExtension extends Extension {
         };
     }
 
-    _buildShaderEffect(productionSource, width, height, elapsedSeconds, renderScale, colorPrecision) {
+    _buildShaderEffect(productionSource, width, height, elapsedSeconds, renderScale, colorPrecision, antiAliasing) {
         const shaderBody =
             this._extractShaderToyBodyFromProductionSource(productionSource);
 
@@ -1137,7 +1355,8 @@ export default class ScreenshaverExtension extends Extension {
             shaderBody,
             nextGeneration,
             renderScale,
-            colorPrecision
+            colorPrecision,
+            antiAliasing
         );
         const effect = new EffectClass();
 
@@ -1198,13 +1417,15 @@ export default class ScreenshaverExtension extends Extension {
 
         const initialRenderScale = initialMetadata?.renderScale ?? 1.0;
         const initialColorPrecision = initialMetadata?.colorPrecision ?? 'auto';
+        const initialAntiAliasing = initialMetadata?.antiAliasing ?? 'fxaa';
         const built = this._buildShaderEffect(
             productionSource,
             dialog.width,
             dialog.height,
             0.0,
             initialRenderScale,
-            initialColorPrecision
+            initialColorPrecision,
+            initialAntiAliasing
         );
 
         this._shaderEffect = built.effect;
@@ -1296,10 +1517,12 @@ export default class ScreenshaverExtension extends Extension {
         if (handoff.productionSource === this._activeProductionSource) {
             const activeScale = this._descriptionMetadata?.renderScale ?? 1.0;
             const activePrecision = this._descriptionMetadata?.colorPrecision ?? 'auto';
+            const activeAntiAliasing = this._descriptionMetadata?.antiAliasing ?? 'fxaa';
             const scaleChanged = Math.abs(observedMetadata.renderScale - activeScale) > 0.0001;
             const precisionChanged = observedMetadata.colorPrecision !== activePrecision;
+            const antiAliasingChanged = observedMetadata.antiAliasing !== activeAntiAliasing;
 
-            if (!scaleChanged && !precisionChanged) {
+            if (!scaleChanged && !precisionChanged && !antiAliasingChanged) {
                 if (observedMetadataSignature !== this._activeMetadataSignature) {
                     this._descriptionMetadata = observedMetadata;
                     this._activeMetadataSignature = observedMetadataSignature;
@@ -1327,6 +1550,14 @@ export default class ScreenshaverExtension extends Extension {
                     `rebuilding native effect target`
                 );
             }
+
+            if (antiAliasingChanged) {
+                console.log(
+                    `[Screenshaver] Test #31 Anti-Aliasing metadata changed ` +
+                    `${activeAntiAliasing} -> ${observedMetadata.antiAliasing}; ` +
+                    `rebuilding native effect pipeline`
+                );
+            }
         }
 
         const elapsedSeconds = this._shaderStartedUs > 0
@@ -1342,7 +1573,8 @@ export default class ScreenshaverExtension extends Extension {
                 this._lockActor.height,
                 elapsedSeconds,
                 observedMetadata.renderScale,
-                observedMetadata.colorPrecision
+                observedMetadata.colorPrecision,
+                observedMetadata.antiAliasing
             );
         } catch (error) {
             console.log(
