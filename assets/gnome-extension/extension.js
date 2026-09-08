@@ -14,7 +14,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 let shaderEffectTypeSerial = 0;
 
-function createShaderEffectClass(shaderBody, generation, renderScale, colorPrecision, antiAliasing) {
+function createShaderEffectClass(shaderBody, generation, renderScale, colorPrecision, antiAliasing, dithering) {
     // GObject type registrations survive effect destruction and can also survive
     // extension disable/enable cycles inside the same GNOME Shell process.
     // Include monotonic time plus a module-local serial so every construction
@@ -227,6 +227,69 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
             pipeline.set_uniform_1f(this._screenshaverFxaaUniformFlipHorizontal, this._screenshaverFxaaFlipHorizontal ?? 0.0);
             pipeline.set_uniform_1f(this._screenshaverFxaaUniformFlipVertical, this._screenshaverFxaaFlipVertical ?? 0.0);
             pipeline.set_uniform_1f(this._screenshaverFxaaUniformHueRotation, this._screenshaverFxaaHueRotation ?? 0.0);
+        }
+
+        screenshaver_create_dithering_pipeline(coglContext, sceneTexture) {
+            const pipeline = Cogl.Pipeline.new(coglContext);
+            pipeline.set_layer_texture(0, sceneTexture);
+            pipeline.set_layer_filters(
+                0,
+                Cogl.PipelineFilter.LINEAR,
+                Cogl.PipelineFilter.LINEAR
+            );
+            pipeline.set_layer_wrap_mode(
+                0,
+                Cogl.PipelineWrapMode.CLAMP_TO_EDGE
+            );
+
+            const snippet = Cogl.Snippet.new(
+                Cogl.SnippetHook.FRAGMENT,
+                `
+                    uniform float screenshaverDitherStrength;
+
+                    float screenshaverBayer4x4(vec2 fragCoord)
+                    {
+                        int x = int(mod(floor(fragCoord.x), 4.0));
+                        int y = int(mod(floor(fragCoord.y), 4.0));
+                        int index = y * 4 + x;
+
+                        if (index == 0) return 0.0 / 16.0;
+                        if (index == 1) return 8.0 / 16.0;
+                        if (index == 2) return 2.0 / 16.0;
+                        if (index == 3) return 10.0 / 16.0;
+                        if (index == 4) return 12.0 / 16.0;
+                        if (index == 5) return 4.0 / 16.0;
+                        if (index == 6) return 14.0 / 16.0;
+                        if (index == 7) return 6.0 / 16.0;
+                        if (index == 8) return 3.0 / 16.0;
+                        if (index == 9) return 11.0 / 16.0;
+                        if (index == 10) return 1.0 / 16.0;
+                        if (index == 11) return 9.0 / 16.0;
+                        if (index == 12) return 15.0 / 16.0;
+                        if (index == 13) return 7.0 / 16.0;
+                        if (index == 14) return 13.0 / 16.0;
+                        return 5.0 / 16.0;
+                    }
+                `,
+                null
+            );
+
+            snippet.set_replace(`
+                vec4 scene = texture2D(cogl_sampler0, cogl_tex_coord0_in.st);
+                float signedThreshold = screenshaverBayer4x4(gl_FragCoord.xy) - 0.5;
+                vec3 dithered = clamp(
+                    scene.rgb + signedThreshold * screenshaverDitherStrength,
+                    0.0,
+                    1.0
+                );
+                cogl_color_out = vec4(dithered, 1.0);
+            `);
+            pipeline.add_snippet(snippet);
+
+            const strengthLocation = pipeline.get_uniform_location('screenshaverDitherStrength');
+            pipeline.set_uniform_1f(strengthLocation, 0.5 / 255.0);
+
+            return pipeline;
         }
 
         vfunc_build_pipeline() {
@@ -477,6 +540,52 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                         );
                     }
 
+                    let ditheringPipeline = null;
+                    let ditheringTexture = null;
+                    let ditheringOffscreen = null;
+                    let ditheringPresentationPipeline = null;
+
+                    if (dithering === 'subtle') {
+                        const ditheringInputTexture = antiAliasing === 'fxaa' && fxaaTexture
+                            ? fxaaTexture
+                            : renderTexture;
+
+                        ditheringPipeline = this.screenshaver_create_dithering_pipeline(
+                            coglContext,
+                            ditheringInputTexture
+                        );
+
+                        // Production dithering runs after the primary pass.
+                        // Keep a dedicated output-resolution target so the
+                        // final Clutter-facing pipeline remains a plain texture
+                        // presentation, as proven stable by Test #31A.
+                        ditheringTexture = Cogl.Texture2D.new_with_format(
+                            coglContext,
+                            nativeWidth,
+                            nativeHeight,
+                            selectedFormat
+                        );
+                        ditheringTexture.set_premultiplied(false);
+                        ditheringTexture.allocate();
+
+                        ditheringOffscreen = Cogl.Offscreen.new_with_texture(ditheringTexture);
+                        ditheringOffscreen.allocate();
+                        ditheringOffscreen.set_viewport(
+                            0.0,
+                            0.0,
+                            nativeWidth,
+                            nativeHeight
+                        );
+
+                        ditheringPresentationPipeline = Cogl.Pipeline.new(coglContext);
+                        ditheringPresentationPipeline.set_layer_texture(0, ditheringTexture);
+                        ditheringPresentationPipeline.set_layer_filters(
+                            0,
+                            Cogl.PipelineFilter.LINEAR,
+                            Cogl.PipelineFilter.LINEAR
+                        );
+                    }
+
                     this._screenshaverRenderTexture = renderTexture;
                     this._screenshaverRenderOffscreen = renderOffscreen;
                     this._screenshaverPresentationPipeline = presentationPipeline;
@@ -484,6 +593,10 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     this._screenshaverFxaaTexture = fxaaTexture;
                     this._screenshaverFxaaOffscreen = fxaaOffscreen;
                     this._screenshaverFxaaPresentationPipeline = fxaaPresentationPipeline;
+                    this._screenshaverDitheringPipeline = ditheringPipeline;
+                    this._screenshaverDitheringTexture = ditheringTexture;
+                    this._screenshaverDitheringOffscreen = ditheringOffscreen;
+                    this._screenshaverDitheringPresentationPipeline = ditheringPresentationPipeline;
                     this._screenshaverRenderWidth = renderWidth;
                     this._screenshaverRenderHeight = renderHeight;
                     this._screenshaverRequestedPrecision = requestedPrecision;
@@ -570,6 +683,33 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     finalPipeline = this._screenshaverFxaaPresentationPipeline;
                 }
 
+                if (dithering === 'subtle' &&
+                    this._screenshaverDitheringPipeline &&
+                    this._screenshaverDitheringOffscreen &&
+                    this._screenshaverDitheringPresentationPipeline) {
+                    this._screenshaverDitheringOffscreen.clear4f(
+                        Cogl.BufferBit.COLOR,
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0
+                    );
+                    this._screenshaverDitheringOffscreen.draw_textured_rectangle(
+                        this._screenshaverDitheringPipeline,
+                        -1.0,
+                        1.0,
+                        1.0,
+                        -1.0,
+                        0.0,
+                        0.0,
+                        1.0,
+                        1.0
+                    );
+                    this._screenshaverDitheringOffscreen.flush();
+
+                    finalPipeline = this._screenshaverDitheringPresentationPipeline;
+                }
+
                 const rect = new Clutter.ActorBox({
                     x1: 0.0,
                     y1: 0.0,
@@ -599,7 +739,7 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                         `viewport=${viewportWidth}x${viewportHeight} -> ` +
                         `presentation=${nativeWidth}x${nativeHeight} ` +
                         `scale=${scale.toFixed(3)} precision=${this._screenshaverSelectedPrecision ?? requestedPrecision} ` +
-                        `anti_aliasing=${antiAliasing} generation=${generation}`
+                        `anti_aliasing=${antiAliasing} dithering=${dithering} generation=${generation}`
                     );
                     this._screenshaverPresentationProbeLogged = true;
                 }
@@ -980,6 +1120,7 @@ export default class ScreenshaverExtension extends Extension {
             renderScale: Math.max(0.01, Number.parseFloat(values.get('render_scale') ?? '1') || 1.0),
             colorPrecision: (values.get('color_precision') ?? 'auto').toLowerCase(),
             antiAliasing: (values.get('anti_aliasing') ?? 'fxaa').toLowerCase(),
+            dithering: (values.get('dithering') ?? 'subtle').toLowerCase(),
             subtitles: values.get('subtitles') === '1',
             placement: values.get('placement') ?? 'bottom:left',
         };
@@ -1003,6 +1144,7 @@ export default class ScreenshaverExtension extends Extension {
             metadata.renderScale,
             metadata.colorPrecision,
             metadata.antiAliasing,
+            metadata.dithering,
             metadata.subtitles ? 1 : 0,
             metadata.placement,
         ].join('\u001f');
@@ -1403,7 +1545,7 @@ export default class ScreenshaverExtension extends Extension {
         };
     }
 
-    _buildShaderEffect(productionSource, width, height, elapsedSeconds, renderScale, colorPrecision, antiAliasing) {
+    _buildShaderEffect(productionSource, width, height, elapsedSeconds, renderScale, colorPrecision, antiAliasing, dithering) {
         const shaderBody =
             this._extractShaderToyBodyFromProductionSource(productionSource);
 
@@ -1419,7 +1561,8 @@ export default class ScreenshaverExtension extends Extension {
             nextGeneration,
             renderScale,
             colorPrecision,
-            antiAliasing
+            antiAliasing,
+            dithering
         );
         const effect = new EffectClass();
 
@@ -1481,6 +1624,7 @@ export default class ScreenshaverExtension extends Extension {
         const initialRenderScale = initialMetadata?.renderScale ?? 1.0;
         const initialColorPrecision = initialMetadata?.colorPrecision ?? 'auto';
         const initialAntiAliasing = initialMetadata?.antiAliasing ?? 'fxaa';
+        const initialDithering = initialMetadata?.dithering ?? 'subtle';
         const built = this._buildShaderEffect(
             productionSource,
             dialog.width,
@@ -1488,7 +1632,8 @@ export default class ScreenshaverExtension extends Extension {
             0.0,
             initialRenderScale,
             initialColorPrecision,
-            initialAntiAliasing
+            initialAntiAliasing,
+            initialDithering
         );
 
         this._shaderEffect = built.effect;
@@ -1581,11 +1726,13 @@ export default class ScreenshaverExtension extends Extension {
             const activeScale = this._descriptionMetadata?.renderScale ?? 1.0;
             const activePrecision = this._descriptionMetadata?.colorPrecision ?? 'auto';
             const activeAntiAliasing = this._descriptionMetadata?.antiAliasing ?? 'fxaa';
+            const activeDithering = this._descriptionMetadata?.dithering ?? 'subtle';
             const scaleChanged = Math.abs(observedMetadata.renderScale - activeScale) > 0.0001;
             const precisionChanged = observedMetadata.colorPrecision !== activePrecision;
             const antiAliasingChanged = observedMetadata.antiAliasing !== activeAntiAliasing;
+            const ditheringChanged = observedMetadata.dithering !== activeDithering;
 
-            if (!scaleChanged && !precisionChanged && !antiAliasingChanged) {
+            if (!scaleChanged && !precisionChanged && !antiAliasingChanged && !ditheringChanged) {
                 if (observedMetadataSignature !== this._activeMetadataSignature) {
                     this._descriptionMetadata = observedMetadata;
                     this._activeMetadataSignature = observedMetadataSignature;
@@ -1621,6 +1768,14 @@ export default class ScreenshaverExtension extends Extension {
                     `rebuilding native effect pipeline`
                 );
             }
+
+            if (ditheringChanged) {
+                console.log(
+                    `[Screenshaver] Test #32 Dithering metadata changed ` +
+                    `${activeDithering} -> ${observedMetadata.dithering}; ` +
+                    `rebuilding native effect pipeline`
+                );
+            }
         }
 
         const elapsedSeconds = this._shaderStartedUs > 0
@@ -1637,7 +1792,8 @@ export default class ScreenshaverExtension extends Extension {
                 elapsedSeconds,
                 observedMetadata.renderScale,
                 observedMetadata.colorPrecision,
-                observedMetadata.antiAliasing
+                observedMetadata.antiAliasing,
+                observedMetadata.dithering
             );
         } catch (error) {
             console.log(
