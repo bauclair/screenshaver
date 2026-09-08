@@ -809,6 +809,8 @@ export default class ScreenshaverExtension extends Extension {
         this._shaderTickSource = null;
         this._shaderSourcePoll = null;
         this._audioBandPoll = null;
+        this._audioBandReadInFlight = false;
+        this._audioBandCancellable = null;
         this._lastAudioBands = null;
         this._lastAudioBandLogUs = 0;
         this._activeProductionSource = null;
@@ -1089,14 +1091,7 @@ export default class ScreenshaverExtension extends Extension {
         ]);
     }
 
-    _readAudioBands() {
-        const audioPath = this._runtimeAudioPath();
-        const audioFile = Gio.File.new_for_path(audioPath);
-        const [ok, contents] = audioFile.load_contents(null);
-
-        if (!ok)
-            throw new Error(`Unable to read GNOME lock audio-band handoff ${audioPath}`);
-
+    _parseAudioBands(contents) {
         const values = new Map();
         const text = new TextDecoder().decode(contents);
 
@@ -1128,21 +1123,28 @@ export default class ScreenshaverExtension extends Extension {
         };
     }
 
-    _startAudioBandPolling() {
-        if (this._audioBandPoll)
+    _requestAudioBandsAsync() {
+        if (this._audioBandReadInFlight || !this._lockActor)
             return;
 
-        this._audioBandPoll = GLib.timeout_add(
-            GLib.PRIORITY_DEFAULT,
-            AUDIO_BAND_POLL_INTERVAL_MS,
-            () => {
-                if (!this._lockActor) {
-                    this._audioBandPoll = null;
-                    return GLib.SOURCE_REMOVE;
-                }
+        const audioFile = Gio.File.new_for_path(this._runtimeAudioPath());
+        this._audioBandReadInFlight = true;
+
+        audioFile.load_contents_async(
+            this._audioBandCancellable,
+            (file, result) => {
+                this._audioBandReadInFlight = false;
+
+                if (!this._lockActor)
+                    return;
 
                 try {
-                    const bands = this._readAudioBands();
+                    const [ok, contents] = file.load_contents_finish(result);
+
+                    if (!ok)
+                        return;
+
+                    const bands = this._parseAudioBands(contents);
                     this._lastAudioBands = bands;
 
                     const nowUs = GLib.get_monotonic_time();
@@ -1150,7 +1152,7 @@ export default class ScreenshaverExtension extends Extension {
                     if (this._lastAudioBandLogUs === 0
                         || nowUs - this._lastAudioBandLogUs >= AUDIO_BAND_LOG_INTERVAL_US) {
                         console.log(
-                            `[Screenshaver] Test #33 GNOME audio bands: ` +
+                            `[Screenshaver] Test #33A GNOME audio bands: ` +
                             `bass=${bands.bass.toFixed(3)} ` +
                             `mid=${bands.midrange.toFixed(3)} ` +
                             `treble=${bands.treble.toFixed(3)}`
@@ -1160,13 +1162,33 @@ export default class ScreenshaverExtension extends Extension {
                 } catch (_) {
                     // Atomic publication or teardown can briefly leave no readable file.
                 }
+            }
+        );
+    }
 
+    _startAudioBandPolling() {
+        if (this._audioBandPoll)
+            return;
+
+        this._audioBandCancellable = new Gio.Cancellable();
+        this._audioBandReadInFlight = false;
+
+        this._audioBandPoll = GLib.timeout_add(
+            GLib.PRIORITY_DEFAULT_IDLE,
+            AUDIO_BAND_POLL_INTERVAL_MS,
+            () => {
+                if (!this._lockActor) {
+                    this._audioBandPoll = null;
+                    return GLib.SOURCE_REMOVE;
+                }
+
+                this._requestAudioBandsAsync();
                 return GLib.SOURCE_CONTINUE;
             }
         );
 
         console.log(
-            `[Screenshaver] Test #33 GNOME audio-band polling started: ${AUDIO_BAND_POLL_INTERVAL_MS}ms`
+            `[Screenshaver] Test #33A GNOME asynchronous audio-band polling started: ${AUDIO_BAND_POLL_INTERVAL_MS}ms`
         );
     }
 
@@ -1176,6 +1198,12 @@ export default class ScreenshaverExtension extends Extension {
             this._audioBandPoll = null;
         }
 
+        if (this._audioBandCancellable) {
+            this._audioBandCancellable.cancel();
+            this._audioBandCancellable = null;
+        }
+
+        this._audioBandReadInFlight = false;
         this._lastAudioBands = null;
         this._lastAudioBandLogUs = 0;
     }
