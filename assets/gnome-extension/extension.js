@@ -408,6 +408,59 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
             );
         }
 
+        screenshaver_create_bloom_blur_pipeline(coglContext, sourceTexture, texelStepX, texelStepY) {
+            const pipeline = Cogl.Pipeline.new(coglContext);
+            pipeline.set_layer_texture(0, sourceTexture);
+            pipeline.set_layer_filters(
+                0,
+                Cogl.PipelineFilter.LINEAR,
+                Cogl.PipelineFilter.LINEAR
+            );
+            pipeline.set_layer_wrap_mode(
+                0,
+                Cogl.PipelineWrapMode.CLAMP_TO_EDGE
+            );
+
+            const snippet = Cogl.Snippet.new(
+                Cogl.SnippetHook.FRAGMENT,
+                `
+                    uniform vec2 screenshaverBloomTexelStep;
+                `,
+                null
+            );
+
+            snippet.set_replace(`
+                const float w0 = 0.2270270270;
+                const float w1 = 0.1945945946;
+                const float w2 = 0.1216216216;
+                const float w3 = 0.0540540541;
+                const float w4 = 0.0162162162;
+
+                vec2 uv = cogl_tex_coord0_in.st;
+                vec3 color = texture2D(cogl_sampler0, uv).rgb * w0;
+                color += texture2D(cogl_sampler0, uv + screenshaverBloomTexelStep * 1.0).rgb * w1;
+                color += texture2D(cogl_sampler0, uv - screenshaverBloomTexelStep * 1.0).rgb * w1;
+                color += texture2D(cogl_sampler0, uv + screenshaverBloomTexelStep * 2.0).rgb * w2;
+                color += texture2D(cogl_sampler0, uv - screenshaverBloomTexelStep * 2.0).rgb * w2;
+                color += texture2D(cogl_sampler0, uv + screenshaverBloomTexelStep * 3.0).rgb * w3;
+                color += texture2D(cogl_sampler0, uv - screenshaverBloomTexelStep * 3.0).rgb * w3;
+                color += texture2D(cogl_sampler0, uv + screenshaverBloomTexelStep * 4.0).rgb * w4;
+                color += texture2D(cogl_sampler0, uv - screenshaverBloomTexelStep * 4.0).rgb * w4;
+                cogl_color_out = vec4(color, 1.0);
+            `);
+            pipeline.add_snippet(snippet);
+
+            const texelStepLocation =
+                pipeline.get_uniform_location('screenshaverBloomTexelStep');
+            pipeline.set_uniform_2f(
+                texelStepLocation,
+                texelStepX,
+                texelStepY
+            );
+
+            return pipeline;
+        }
+
         vfunc_build_pipeline() {
             this.add_glsl_snippet(
                 Cogl.SnippetHook.FRAGMENT,
@@ -705,7 +758,11 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     let audioBloomExtractionPipeline = null;
                     let audioBloomExtractionTexture = null;
                     let audioBloomExtractionOffscreen = null;
-                    let audioBloomExtractionPresentationPipeline = null;
+                    let audioBloomBlurHorizontalPipeline = null;
+                    let audioBloomBlurTexture = null;
+                    let audioBloomBlurOffscreen = null;
+                    let audioBloomBlurVerticalPipeline = null;
+                    let audioBloomBlurPresentationPipeline = null;
 
                     if (bloomMode === 'audio') {
                         const bloomInputTexture = antiAliasing === 'fxaa' && fxaaTexture
@@ -739,19 +796,54 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                             bloomHeight
                         );
 
-                        audioBloomExtractionPresentationPipeline = Cogl.Pipeline.new(coglContext);
-                        audioBloomExtractionPresentationPipeline.set_layer_texture(
+                        audioBloomBlurTexture = Cogl.Texture2D.new_with_format(
+                            coglContext,
+                            bloomWidth,
+                            bloomHeight,
+                            selectedFormat
+                        );
+                        audioBloomBlurTexture.set_premultiplied(false);
+                        audioBloomBlurTexture.allocate();
+
+                        audioBloomBlurOffscreen =
+                            Cogl.Offscreen.new_with_texture(audioBloomBlurTexture);
+                        audioBloomBlurOffscreen.allocate();
+                        audioBloomBlurOffscreen.set_viewport(
+                            0.0,
+                            0.0,
+                            bloomWidth,
+                            bloomHeight
+                        );
+
+                        audioBloomBlurHorizontalPipeline =
+                            this.screenshaver_create_bloom_blur_pipeline(
+                                coglContext,
+                                audioBloomExtractionTexture,
+                                1.0 / bloomWidth,
+                                0.0
+                            );
+
+                        audioBloomBlurVerticalPipeline =
+                            this.screenshaver_create_bloom_blur_pipeline(
+                                coglContext,
+                                audioBloomBlurTexture,
+                                0.0,
+                                1.0 / bloomHeight
+                            );
+
+                        audioBloomBlurPresentationPipeline = Cogl.Pipeline.new(coglContext);
+                        audioBloomBlurPresentationPipeline.set_layer_texture(
                             0,
                             audioBloomExtractionTexture
                         );
-                        audioBloomExtractionPresentationPipeline.set_layer_filters(
+                        audioBloomBlurPresentationPipeline.set_layer_filters(
                             0,
                             Cogl.PipelineFilter.LINEAR,
                             Cogl.PipelineFilter.LINEAR
                         );
 
                         console.log(
-                            `[Screenshaver] Test #34 Audio Bloom extraction target allocated: ` +
+                            `[Screenshaver] Test #35 Audio Bloom blur targets allocated: ` +
                             `source=${bloomInputTexture.get_width()}x${bloomInputTexture.get_height()} ` +
                             `bloom=${bloomWidth}x${bloomHeight} threshold=${bloomThreshold.toFixed(3)} ` +
                             `intensity=${bloomIntensity.toFixed(3)} generation=${generation}`
@@ -772,7 +864,11 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     this._screenshaverAudioBloomExtractionPipeline = audioBloomExtractionPipeline;
                     this._screenshaverAudioBloomExtractionTexture = audioBloomExtractionTexture;
                     this._screenshaverAudioBloomExtractionOffscreen = audioBloomExtractionOffscreen;
-                    this._screenshaverAudioBloomExtractionPresentationPipeline = audioBloomExtractionPresentationPipeline;
+                    this._screenshaverAudioBloomBlurHorizontalPipeline = audioBloomBlurHorizontalPipeline;
+                    this._screenshaverAudioBloomBlurTexture = audioBloomBlurTexture;
+                    this._screenshaverAudioBloomBlurOffscreen = audioBloomBlurOffscreen;
+                    this._screenshaverAudioBloomBlurVerticalPipeline = audioBloomBlurVerticalPipeline;
+                    this._screenshaverAudioBloomBlurPresentationPipeline = audioBloomBlurPresentationPipeline;
                     this.screenshaver_update_audio_bloom_uniforms();
                     this._screenshaverRenderWidth = renderWidth;
                     this._screenshaverRenderHeight = renderHeight;
@@ -863,9 +959,13 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                 if (bloomMode === 'audio' &&
                     this._screenshaverAudioBloomExtractionPipeline &&
                     this._screenshaverAudioBloomExtractionOffscreen &&
-                    this._screenshaverAudioBloomExtractionPresentationPipeline) {
+                    this._screenshaverAudioBloomBlurHorizontalPipeline &&
+                    this._screenshaverAudioBloomBlurOffscreen &&
+                    this._screenshaverAudioBloomBlurVerticalPipeline &&
+                    this._screenshaverAudioBloomBlurPresentationPipeline) {
                     this.screenshaver_update_audio_bloom_uniforms();
 
+                    // Audio extraction -> half-resolution Bloom target A.
                     this._screenshaverAudioBloomExtractionOffscreen.clear4f(
                         Cogl.BufferBit.COLOR,
                         0.0,
@@ -886,10 +986,52 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     );
                     this._screenshaverAudioBloomExtractionOffscreen.flush();
 
-                    // Test #34 is intentionally extraction-only. Present the
-                    // half-resolution raw Audio Bloom extraction fullscreen and
-                    // bypass blur, composite, and dithering for diagnostic clarity.
-                    finalPipeline = this._screenshaverAudioBloomExtractionPresentationPipeline;
+                    // Production horizontal Gaussian pass: A -> B.
+                    this._screenshaverAudioBloomBlurOffscreen.clear4f(
+                        Cogl.BufferBit.COLOR,
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0
+                    );
+                    this._screenshaverAudioBloomBlurOffscreen.draw_textured_rectangle(
+                        this._screenshaverAudioBloomBlurHorizontalPipeline,
+                        -1.0,
+                        1.0,
+                        1.0,
+                        -1.0,
+                        0.0,
+                        0.0,
+                        1.0,
+                        1.0
+                    );
+                    this._screenshaverAudioBloomBlurOffscreen.flush();
+
+                    // Production vertical Gaussian pass: B -> A.
+                    this._screenshaverAudioBloomExtractionOffscreen.clear4f(
+                        Cogl.BufferBit.COLOR,
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0
+                    );
+                    this._screenshaverAudioBloomExtractionOffscreen.draw_textured_rectangle(
+                        this._screenshaverAudioBloomBlurVerticalPipeline,
+                        -1.0,
+                        1.0,
+                        1.0,
+                        -1.0,
+                        0.0,
+                        0.0,
+                        1.0,
+                        1.0
+                    );
+                    this._screenshaverAudioBloomExtractionOffscreen.flush();
+
+                    // Test #35 remains diagnostic: present only the final blurred
+                    // Bloom texture fullscreen. Additive composition and dithering
+                    // are intentionally deferred to the next checkpoint.
+                    finalPipeline = this._screenshaverAudioBloomBlurPresentationPipeline;
                 }
 
                 if (bloomMode !== 'audio' && dithering === 'subtle' &&
