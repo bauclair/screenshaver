@@ -11,6 +11,8 @@ const RUNTIME_SHADER_TEMP_FILENAME: &str = "screenshaver-gnome-lock-shader.glsl.
 const RUNTIME_METADATA_FILENAME: &str = "screenshaver-gnome-lock-metadata.txt";
 const RUNTIME_METADATA_TEMP_FILENAME: &str = "screenshaver-gnome-lock-metadata.txt.tmp";
 const RUNTIME_ADVANCE_FILENAME: &str = "screenshaver-gnome-lock-advance.txt";
+const RUNTIME_AUDIO_FILENAME: &str = "screenshaver-gnome-lock-audio.txt";
+const RUNTIME_AUDIO_TEMP_FILENAME: &str = "screenshaver-gnome-lock-audio.txt.tmp";
 const IDLE_POLL_INTERVAL: Duration = Duration::from_millis(25);
 const JOURNAL_FAILURE_ARM_WINDOW: Duration = Duration::from_secs(2);
 const JOURNAL_FAILURE_ADVANCE_DELAY: Duration = Duration::from_millis(500);
@@ -39,7 +41,7 @@ impl GnomeLockPresenter {
         fps_policy_entries: Vec<crate::load_config::FpsPolicyEntry>,
         texture_policy: crate::load_config::TexturePolicy,
         postprocess_policy: crate::load_config::PostprocessPolicy,
-        _audio_bands: Option<crate::audio_backend::SharedAudioBands>,
+        audio_bands: Option<crate::audio_backend::SharedAudioBands>,
         subtitles: bool,
         subtitle_placement: crate::parse_subtitle_placement::SubtitlePlacement,
     ) -> Result<Self, String> {
@@ -53,6 +55,7 @@ impl GnomeLockPresenter {
             fps_policy_entries,
             texture_policy,
             postprocess_policy,
+            audio_bands,
             subtitles,
             subtitle_placement,
         )?;
@@ -85,6 +88,7 @@ struct GnomeShaderSourceProducer {
     fps_policy_entries: Vec<crate::load_config::FpsPolicyEntry>,
     texture_manager: crate::manage_textures::TextureManager,
     postprocess_policy: crate::load_config::PostprocessPolicy,
+    audio_bands: Option<crate::audio_backend::SharedAudioBands>,
     subtitles: bool,
     subtitle_placement: crate::parse_subtitle_placement::SubtitlePlacement,
     last_shader_switch: Instant,
@@ -93,6 +97,9 @@ struct GnomeShaderSourceProducer {
     runtime_metadata_path: PathBuf,
     runtime_metadata_temp_path: PathBuf,
     runtime_advance_path: PathBuf,
+    runtime_audio_path: PathBuf,
+    runtime_audio_temp_path: PathBuf,
+    last_audio_bands: Option<crate::analyze_audio::AudioBands>,
     journal_watcher: Option<GnomeShellJournalWatcher>,
     journal_failure_armed_until: Option<Instant>,
     journal_failure_consumed: bool,
@@ -112,6 +119,7 @@ impl GnomeShaderSourceProducer {
         fps_policy_entries: Vec<crate::load_config::FpsPolicyEntry>,
         texture_policy: crate::load_config::TexturePolicy,
         postprocess_policy: crate::load_config::PostprocessPolicy,
+        audio_bands: Option<crate::audio_backend::SharedAudioBands>,
         subtitles: bool,
         subtitle_placement: crate::parse_subtitle_placement::SubtitlePlacement,
     ) -> Result<Self, String> {
@@ -127,11 +135,15 @@ impl GnomeShaderSourceProducer {
         let runtime_metadata_path = runtime_dir.join(RUNTIME_METADATA_FILENAME);
         let runtime_metadata_temp_path = runtime_dir.join(RUNTIME_METADATA_TEMP_FILENAME);
         let runtime_advance_path = runtime_dir.join(RUNTIME_ADVANCE_FILENAME);
+        let runtime_audio_path = runtime_dir.join(RUNTIME_AUDIO_FILENAME);
+        let runtime_audio_temp_path = runtime_dir.join(RUNTIME_AUDIO_TEMP_FILENAME);
         let _ = fs::remove_file(&runtime_shader_path);
         let _ = fs::remove_file(&runtime_shader_temp_path);
         let _ = fs::remove_file(&runtime_metadata_path);
         let _ = fs::remove_file(&runtime_metadata_temp_path);
         let _ = fs::remove_file(&runtime_advance_path);
+        let _ = fs::remove_file(&runtime_audio_path);
+        let _ = fs::remove_file(&runtime_audio_temp_path);
 
         let journal_watcher = match GnomeShellJournalWatcher::start() {
             Ok(watcher) => {
@@ -229,6 +241,23 @@ impl GnomeShaderSourceProducer {
             ),
         );
 
+        let initial_audio_bands = read_audio_bands(&audio_bands);
+        publish_audio_bands(
+            &runtime_audio_path,
+            &runtime_audio_temp_path,
+            initial_audio_bands,
+        )?;
+
+        log_information(
+            logfile,
+            &format!(
+                "[LOCK] Test #33 GNOME audio-band handoff initialized: bass={:.3} mid={:.3} treble={:.3}",
+                initial_audio_bands.bass,
+                initial_audio_bands.midrange,
+                initial_audio_bands.treble,
+            ),
+        );
+
         Ok(Self {
             logfile: logfile.to_path_buf(),
             shader_manager,
@@ -238,6 +267,7 @@ impl GnomeShaderSourceProducer {
             fps_policy_entries,
             texture_manager,
             postprocess_policy,
+            audio_bands,
             subtitles,
             subtitle_placement,
             last_shader_switch: Instant::now(),
@@ -246,6 +276,9 @@ impl GnomeShaderSourceProducer {
             runtime_metadata_path,
             runtime_metadata_temp_path,
             runtime_advance_path,
+            runtime_audio_path,
+            runtime_audio_temp_path,
+            last_audio_bands: Some(initial_audio_bands),
             journal_watcher,
             journal_failure_armed_until: Some(Instant::now() + JOURNAL_FAILURE_ARM_WINDOW),
             journal_failure_consumed: false,
@@ -391,6 +424,7 @@ impl GnomeShaderSourceProducer {
                 }
             }
 
+            self.publish_audio_bands_if_changed();
             std::thread::sleep(IDLE_POLL_INTERVAL);
         }
 
@@ -406,6 +440,32 @@ impl GnomeShaderSourceProducer {
         );
 
         Ok(())
+    }
+
+    fn publish_audio_bands_if_changed(&mut self) {
+        let bands = read_audio_bands(&self.audio_bands);
+
+        if self.last_audio_bands.is_some_and(|previous| audio_bands_equal(previous, bands)) {
+            return;
+        }
+
+        match publish_audio_bands(
+            &self.runtime_audio_path,
+            &self.runtime_audio_temp_path,
+            bands,
+        ) {
+            Ok(()) => {
+                self.last_audio_bands = Some(bands);
+            }
+            Err(error) => {
+                log_warning(
+                    &self.logfile,
+                    &format!(
+                        "[LOCK] Test #33 unable to publish GNOME audio bands: {error}"
+                    ),
+                );
+            }
+        }
     }
 
     fn take_early_advance_request(&self) -> bool {
@@ -499,6 +559,8 @@ impl GnomeShaderSourceProducer {
         let _ = fs::remove_file(&self.runtime_metadata_path);
         let _ = fs::remove_file(&self.runtime_metadata_temp_path);
         let _ = fs::remove_file(&self.runtime_advance_path);
+        let _ = fs::remove_file(&self.runtime_audio_path);
+        let _ = fs::remove_file(&self.runtime_audio_temp_path);
     }
 }
 
@@ -819,6 +881,50 @@ fn resolve_shader_fps(
         .map(|entry| entry.rendered_fps)
         .unwrap_or(global_rendered_fps)
         .max(1)
+}
+
+fn read_audio_bands(
+    shared: &Option<crate::audio_backend::SharedAudioBands>,
+) -> crate::analyze_audio::AudioBands {
+    let Some(shared) = shared.as_ref() else {
+        return crate::analyze_audio::AudioBands::default();
+    };
+
+    shared
+        .read()
+        .map(|bands| *bands)
+        .unwrap_or_default()
+}
+
+fn audio_bands_equal(
+    left: crate::analyze_audio::AudioBands,
+    right: crate::analyze_audio::AudioBands,
+) -> bool {
+    const EPSILON: f32 = 0.0005;
+
+    (left.bass - right.bass).abs() < EPSILON
+        && (left.midrange - right.midrange).abs() < EPSILON
+        && (left.treble - right.treble).abs() < EPSILON
+}
+
+fn publish_audio_bands(
+    destination: &Path,
+    temporary: &Path,
+    bands: crate::analyze_audio::AudioBands,
+) -> Result<(), String> {
+    let contents = format!(
+        "version=1\nbass={:.6}\nmidrange={:.6}\ntreble={:.6}\n",
+        bands.bass.clamp(0.0, 1.0),
+        bands.midrange.clamp(0.0, 1.0),
+        bands.treble.clamp(0.0, 1.0),
+    );
+
+    publish_text_atomically(
+        destination,
+        temporary,
+        &contents,
+        "GNOME lock audio-band handoff",
+    )
 }
 
 fn publish_text_atomically(

@@ -758,6 +758,7 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
 const RUNTIME_SHADER_FILENAME = 'screenshaver-gnome-lock-shader.glsl';
 const RUNTIME_METADATA_FILENAME = 'screenshaver-gnome-lock-metadata.txt';
 const RUNTIME_ADVANCE_FILENAME = 'screenshaver-gnome-lock-advance.txt';
+const RUNTIME_AUDIO_FILENAME = 'screenshaver-gnome-lock-audio.txt';
 const SHADER_FAILURE_ADVANCE_DELAY_MS = 500;
 const CONTROL_FILENAME = 'screenshaver-lock-control.bin';
 const FRAME_FILENAME_PREFIX = 'screenshaver-lock-frame-';
@@ -769,6 +770,8 @@ const CONTROL_SESSION_ID_BYTES = 16;
 const POLL_INTERVAL_MS = 33;
 const SHADER_TICK_INTERVAL_MS = 8;
 const SHADER_SOURCE_POLL_INTERVAL_MS = 250;
+const AUDIO_BAND_POLL_INTERVAL_MS = 100;
+const AUDIO_BAND_LOG_INTERVAL_US = 1000000;
 const FPS_AVERAGE_WINDOW_US = 5 * 1000000;
 const FPS_CRITICAL_BLINK_INTERVAL_MS = 500;
 
@@ -805,6 +808,9 @@ export default class ScreenshaverExtension extends Extension {
         this._shaderUniformHueRotation = -1;
         this._shaderTickSource = null;
         this._shaderSourcePoll = null;
+        this._audioBandPoll = null;
+        this._lastAudioBands = null;
+        this._lastAudioBandLogUs = 0;
         this._activeProductionSource = null;
         this._failedProductionSource = null;
         this._failureAdvanceSource = null;
@@ -1074,6 +1080,104 @@ export default class ScreenshaverExtension extends Extension {
             GLib.get_user_runtime_dir(),
             RUNTIME_METADATA_FILENAME,
         ]);
+    }
+
+    _runtimeAudioPath() {
+        return GLib.build_filenamev([
+            GLib.get_user_runtime_dir(),
+            RUNTIME_AUDIO_FILENAME,
+        ]);
+    }
+
+    _readAudioBands() {
+        const audioPath = this._runtimeAudioPath();
+        const audioFile = Gio.File.new_for_path(audioPath);
+        const [ok, contents] = audioFile.load_contents(null);
+
+        if (!ok)
+            throw new Error(`Unable to read GNOME lock audio-band handoff ${audioPath}`);
+
+        const values = new Map();
+        const text = new TextDecoder().decode(contents);
+
+        for (const rawLine of text.split('\n')) {
+            const line = rawLine.trim();
+
+            if (!line)
+                continue;
+
+            const separator = line.indexOf('=');
+
+            if (separator <= 0)
+                continue;
+
+            values.set(line.slice(0, separator), line.slice(separator + 1));
+        }
+
+        const version = Number.parseInt(values.get('version') ?? '', 10);
+
+        if (version !== 1)
+            throw new Error(`Unsupported GNOME lock audio-band version: ${version}`);
+
+        const clampBand = value => Math.max(0.0, Math.min(1.0, value));
+
+        return {
+            bass: clampBand(Number.parseFloat(values.get('bass') ?? '0') || 0.0),
+            midrange: clampBand(Number.parseFloat(values.get('midrange') ?? '0') || 0.0),
+            treble: clampBand(Number.parseFloat(values.get('treble') ?? '0') || 0.0),
+        };
+    }
+
+    _startAudioBandPolling() {
+        if (this._audioBandPoll)
+            return;
+
+        this._audioBandPoll = GLib.timeout_add(
+            GLib.PRIORITY_DEFAULT,
+            AUDIO_BAND_POLL_INTERVAL_MS,
+            () => {
+                if (!this._lockActor) {
+                    this._audioBandPoll = null;
+                    return GLib.SOURCE_REMOVE;
+                }
+
+                try {
+                    const bands = this._readAudioBands();
+                    this._lastAudioBands = bands;
+
+                    const nowUs = GLib.get_monotonic_time();
+
+                    if (this._lastAudioBandLogUs === 0
+                        || nowUs - this._lastAudioBandLogUs >= AUDIO_BAND_LOG_INTERVAL_US) {
+                        console.log(
+                            `[Screenshaver] Test #33 GNOME audio bands: ` +
+                            `bass=${bands.bass.toFixed(3)} ` +
+                            `mid=${bands.midrange.toFixed(3)} ` +
+                            `treble=${bands.treble.toFixed(3)}`
+                        );
+                        this._lastAudioBandLogUs = nowUs;
+                    }
+                } catch (_) {
+                    // Atomic publication or teardown can briefly leave no readable file.
+                }
+
+                return GLib.SOURCE_CONTINUE;
+            }
+        );
+
+        console.log(
+            `[Screenshaver] Test #33 GNOME audio-band polling started: ${AUDIO_BAND_POLL_INTERVAL_MS}ms`
+        );
+    }
+
+    _stopAudioBandPolling() {
+        if (this._audioBandPoll) {
+            GLib.source_remove(this._audioBandPoll);
+            this._audioBandPoll = null;
+        }
+
+        this._lastAudioBands = null;
+        this._lastAudioBandLogUs = 0;
     }
 
     _readPresentationMetadata() {
@@ -1976,6 +2080,7 @@ export default class ScreenshaverExtension extends Extension {
         // Preserve the already-proven GNOME lock/power-management handling.
         this._startPowerSaveRecovery();
         this._startShaderSourcePolling();
+        this._startAudioBandPolling();
 
         this._shaderStartedUs = GLib.get_monotonic_time();
         this._shaderTicks = 0;
@@ -2698,6 +2803,7 @@ export default class ScreenshaverExtension extends Extension {
     _removeLockActor() {
         this._stopSessionValidation();
         this._stopShaderSourcePolling();
+        this._stopAudioBandPolling();
         this._stopPowerSaveRecovery();
         this._releaseIdleInhibitor();
 
