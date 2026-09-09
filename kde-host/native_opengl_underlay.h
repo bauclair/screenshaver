@@ -28,6 +28,7 @@ protected:
 
 private:
     void refreshRuntimeActive();
+    void simulateUserActivity();
     bool runtimeMarkerIsLive() const;
 
     // This value is only a Qt Quick invalidation heartbeat. FrameRenderEngine

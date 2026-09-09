@@ -33,27 +33,20 @@ NativeOpenGLUnderlay::NativeOpenGLUnderlay(QQuickItem *parent)
 
     // Plasma 6 PowerDevil deliberately ignores ordinary screen-management
     // inhibitions while the screen locker is active and, by default, registers
-    // a 60-second locked-screen DPMS timeout. Keep KDE's idle clock alive only
-    // while a live Screenshaver process owns this lock-screen integration.
+    // a 60-second locked-screen DPMS timeout. Wake the lock presentation once
+    // immediately when Screenshaver is active, then keep KDE's idle clock alive
+    // with the existing 30-second heartbeat.
     m_idleHeartbeat = new QTimer(this);
     m_idleHeartbeat->setInterval(30000);
     m_idleHeartbeat->setTimerType(Qt::CoarseTimer);
 
-    connect(m_idleHeartbeat, &QTimer::timeout, this, [this] {
-        if (!m_runtimeActive)
-            return;
+    connect(m_idleHeartbeat, &QTimer::timeout,
+            this, &NativeOpenGLUnderlay::simulateUserActivity);
 
-        QDBusMessage message = QDBusMessage::createMethodCall(
-            QStringLiteral("org.freedesktop.ScreenSaver"),
-            QStringLiteral("/ScreenSaver"),
-            QStringLiteral("org.freedesktop.ScreenSaver"),
-            QStringLiteral("SimulateUserActivity"));
-
-        QDBusConnection::sessionBus().asyncCall(message);
-    });
-
-    if (m_runtimeActive)
+    if (m_runtimeActive) {
+        simulateUserActivity();
         m_idleHeartbeat->start();
+    }
 }
 
 void NativeOpenGLUnderlay::refreshRuntimeActive()
@@ -66,14 +59,30 @@ void NativeOpenGLUnderlay::refreshRuntimeActive()
     m_runtimeActive = active;
 
     if (m_idleHeartbeat) {
-        if (m_runtimeActive)
+        if (m_runtimeActive) {
+            simulateUserActivity();
             m_idleHeartbeat->start();
-        else
+        } else {
             m_idleHeartbeat->stop();
+        }
     }
 
     emit runtimeActiveChanged();
     update();
+}
+
+void NativeOpenGLUnderlay::simulateUserActivity()
+{
+    if (!m_runtimeActive)
+        return;
+
+    QDBusMessage message = QDBusMessage::createMethodCall(
+        QStringLiteral("org.freedesktop.ScreenSaver"),
+        QStringLiteral("/ScreenSaver"),
+        QStringLiteral("org.freedesktop.ScreenSaver"),
+        QStringLiteral("SimulateUserActivity"));
+
+    QDBusConnection::sessionBus().asyncCall(message);
 }
 
 bool NativeOpenGLUnderlay::runtimeMarkerIsLive() const
