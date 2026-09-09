@@ -173,9 +173,9 @@ unsafe fn create_renderer(
                 }
             );
 
-    // Subtitle/TTF overlay remains deliberately disabled inside KScreenLocker.
-    // Shader, texture, palette, animation, FPS, and every production
-    // post-processing policy continue to come from Screenshaver.
+    // Preserve the configured Screenshaver subtitle/descriptive-pill policy
+    // inside KScreenLocker. FPS Warning/CRITICAL overlays remain available
+    // independently through FrameRenderEngine when subtitles are disabled.
     let engine = crate::render_frame_engine::FrameRenderEngine::new(
         shader_manager,
         shader_interval,
@@ -185,7 +185,7 @@ unsafe fn create_renderer(
         cfg.texture_policy,
         cfg.screensaver_postprocess_policy,
         audio_bands,
-        false,
+        cfg.subtitles,
         cfg.subtitle_placement,
         width as u32,
         height as u32,
