@@ -643,12 +643,25 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                 if (!sourceTexture)
                     throw new Error('Shell.GLSLEffect source texture unavailable');
 
-                // GNOME Shell/Cogl API compatibility: newer Shell builds may
-                // expose the Cogl.Context directly from the effect texture, while
-                // GNOME 46 does not. Prefer the texture-owned context when it is
-                // available, then fall back to the Clutter stage/backend context.
-                // The latter is the public extension-side route used by GNOME 45+.
-                let coglContext = sourceTexture?.get_context?.() ?? null;
+                // GNOME Shell/Cogl API compatibility:
+                //
+                // 1. Some newer Shell builds expose the Cogl.Context directly
+                //    from the effect texture.
+                // 2. Newer Clutter builds expose the actor/stage Clutter.Context,
+                //    whose backend owns the Cogl.Context.
+                // 3. GNOME 46 still exposes Clutter.get_default_backend(), which
+                //    provides the Clutter.Backend directly.
+                //
+                // Feature-detect every route so newer working Shell versions keep
+                // their existing behavior while GNOME 46 can use its native API.
+                let coglContext = null;
+                let coglContextSource = null;
+
+                if (typeof sourceTexture?.get_context === 'function') {
+                    coglContext = sourceTexture.get_context();
+                    if (coglContext)
+                        coglContextSource = 'Shell.GLSLEffect texture';
+                }
 
                 if (!coglContext) {
                     const stageContext =
@@ -656,11 +669,36 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                         global.stage?.context ??
                         null;
                     const clutterBackend = stageContext?.get_backend?.() ?? null;
-                    coglContext = clutterBackend?.get_cogl_context?.() ?? null;
+
+                    if (typeof clutterBackend?.get_cogl_context === 'function') {
+                        coglContext = clutterBackend.get_cogl_context();
+                        if (coglContext)
+                            coglContextSource = 'Clutter stage backend';
+                    }
+                }
+
+                if (!coglContext && typeof Clutter.get_default_backend === 'function') {
+                    const clutterBackend = Clutter.get_default_backend();
+
+                    if (typeof clutterBackend?.get_cogl_context === 'function') {
+                        coglContext = clutterBackend.get_cogl_context();
+                        if (coglContext)
+                            coglContextSource = 'Clutter.get_default_backend()';
+                    }
                 }
 
                 if (!coglContext)
-                    throw new Error('Cogl context unavailable from Shell.GLSLEffect texture or Clutter stage backend');
+                    throw new Error(
+                        'Cogl context unavailable from Shell.GLSLEffect texture, ' +
+                        'Clutter stage backend, or Clutter.get_default_backend()'
+                    );
+
+                if (!this._screenshaverCoglContextSourceLogged) {
+                    console.log(
+                        `[Screenshaver] Test #30 Cogl context acquired via ${coglContextSource}`
+                    );
+                    this._screenshaverCoglContextSourceLogged = true;
+                }
 
                 const requestedPrecision = ['standard', 'high', 'auto'].includes(colorPrecision)
                     ? colorPrecision
