@@ -52,7 +52,7 @@ const RECOVERY_FILE_NAME: &str =
     "xfce-saver-runtime.restore";
 
 const RECOVERY_VERSION: u32 =
-    1;
+    2;
 
 const XFCONF_QUERY_BINARY: &str =
     "/usr/bin/xfconf-query";
@@ -75,8 +75,8 @@ const SCREENSHAVER_THEME_ID: &str =
 
 #[derive(Debug, Clone)]
 struct XfceSaverConfiguration {
-    mode: i32,
-    themes: Vec<String>,
+    mode: Option<i32>,
+    themes: Option<Vec<String>>,
 }
 
 
@@ -289,9 +289,11 @@ impl XfceRuntimeSession {
             logfile,
             &format!(
                 "[LOCK] XFCE saver temporarily assigned to Screenshaver; previous mode={} themes={}",
-                previous_configuration.mode,
-                describe_theme_list(
-                    &previous_configuration.themes
+                describe_optional_mode(
+                    previous_configuration.mode
+                ),
+                describe_optional_theme_list(
+                    previous_configuration.themes.as_deref()
                 ),
             ),
         );
@@ -363,9 +365,11 @@ impl XfceRuntimeSession {
                             &self.logfile,
                             &format!(
                                 "[LOCK] XFCE saver configuration restored after Screenshaver runtime: mode={} themes={}",
-                                self.previous_configuration.mode,
-                                describe_theme_list(
-                                    &self.previous_configuration.themes
+                                describe_optional_mode(
+                                    self.previous_configuration.mode
+                                ),
+                                describe_optional_theme_list(
+                                    self.previous_configuration.themes.as_deref()
                                 ),
                             ),
                         );
@@ -518,13 +522,33 @@ pub(crate) fn resident_runtime_active(
 fn read_xfce_saver_configuration(
 ) -> Result<XfceSaverConfiguration, String> {
 
+    let mode =
+        if xfce_property_exists(
+            SAVER_MODE_PATH
+        )? {
+            Some(
+                read_xfce_saver_mode()?
+            )
+        } else {
+            None
+        };
+
+    let themes =
+        if xfce_property_exists(
+            SAVER_THEME_LIST_PATH
+        )? {
+            Some(
+                read_xfce_saver_themes()?
+            )
+        } else {
+            None
+        };
+
+
     Ok(
         XfceSaverConfiguration {
-            mode:
-                read_xfce_saver_mode()?,
-
-            themes:
-                read_xfce_saver_themes()?,
+            mode,
+            themes,
         }
     )
 }
@@ -535,14 +559,142 @@ fn restore_xfce_saver_configuration(
 ) -> Result<(), String> {
 
     // Restore themes first while runtime authorization is still present. Then
-    // restore the user's original mode.
-    select_xfce_saver_themes(
-        &configuration.themes
-    )?;
+    // restore the user's original mode.  A missing property is a valid Xfce
+    // implicit-default state and must be restored by removing the temporary
+    // property Screenshaver created.
+    match configuration.themes.as_deref() {
+        Some(themes) => {
+            select_xfce_saver_themes(
+                themes
+            )?;
+        }
 
-    set_xfce_saver_mode(
-        configuration.mode
+        None => {
+            remove_xfce_property(
+                SAVER_THEME_LIST_PATH
+            )?;
+        }
+    }
+
+
+    match configuration.mode {
+        Some(mode) => {
+            set_xfce_saver_mode(
+                mode
+            )
+        }
+
+        None => {
+            remove_xfce_property(
+                SAVER_MODE_PATH
+            )
+        }
+    }
+}
+
+
+fn xfce_property_exists(
+    property: &str,
+) -> Result<bool, String> {
+
+    let output =
+        Command::new(
+            XFCONF_QUERY_BINARY
+        )
+        .args(
+            [
+                "-c",
+                XFCE_SCREENSAVER_CHANNEL,
+                "-l",
+            ]
+        )
+        .output()
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to list XFCE saver properties: {}",
+                    error,
+                )
+            }
+        )?;
+
+
+    if !output.status.success() {
+        return Err(
+            command_failure(
+                "Unable to list XFCE saver properties",
+                &output,
+            )
+        );
+    }
+
+
+    Ok(
+        String::from_utf8_lossy(
+            &output.stdout
+        )
+        .lines()
+        .any(
+            |line| {
+                line.trim() == property
+            }
+        )
     )
+}
+
+
+fn remove_xfce_property(
+    property: &str,
+) -> Result<(), String> {
+
+    if !xfce_property_exists(
+        property
+    )? {
+        return Ok(
+            ()
+        );
+    }
+
+
+    let output =
+        Command::new(
+            XFCONF_QUERY_BINARY
+        )
+        .args(
+            [
+                "-c",
+                XFCE_SCREENSAVER_CHANNEL,
+                "-p",
+                property,
+                "-r",
+            ]
+        )
+        .output()
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to remove XFCE saver property '{}': {}",
+                    property,
+                    error,
+                )
+            }
+        )?;
+
+
+    if !output.status.success() {
+        return Err(
+            command_failure(
+                &format!(
+                    "Unable to remove XFCE saver property '{}'",
+                    property,
+                ),
+                &output,
+            )
+        );
+    }
+
+
+    Ok(())
 }
 
 
@@ -612,29 +764,55 @@ fn set_xfce_saver_mode(
         mode.to_string();
 
 
-    let output =
+    let property_exists =
+        xfce_property_exists(
+            SAVER_MODE_PATH
+        )?;
+
+
+    let mut command =
         Command::new(
             XFCONF_QUERY_BINARY
-        )
-        .args(
+        );
+
+    command.args(
+        [
+            "-c",
+            XFCE_SCREENSAVER_CHANNEL,
+            "-p",
+            SAVER_MODE_PATH,
+        ]
+    );
+
+    if !property_exists {
+        command.args(
             [
-                "-c",
-                XFCE_SCREENSAVER_CHANNEL,
-                "-p",
-                SAVER_MODE_PATH,
-                "-s",
-                mode.as_str(),
+                "-n",
+                "-t",
+                "int",
             ]
-        )
-        .output()
-        .map_err(
-            |error| {
-                format!(
-                    "Unable to configure XFCE saver mode: {}",
-                    error,
-                )
-            }
-        )?;
+        );
+    }
+
+    command.args(
+        [
+            "-s",
+            mode.as_str(),
+        ]
+    );
+
+
+    let output =
+        command
+            .output()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to configure XFCE saver mode: {}",
+                        error,
+                    )
+                }
+            )?;
 
 
     if !output.status.success() {
@@ -741,6 +919,12 @@ fn select_xfce_saver_themes(
     }
 
 
+    let property_exists =
+        xfce_property_exists(
+            SAVER_THEME_LIST_PATH
+        )?;
+
+
     let mut command =
         Command::new(
             XFCONF_QUERY_BINARY
@@ -754,6 +938,12 @@ fn select_xfce_saver_themes(
             SAVER_THEME_LIST_PATH,
         ]
     );
+
+    if !property_exists {
+        command.arg(
+            "-n"
+        );
+    }
 
 
     for theme in themes {
@@ -837,6 +1027,42 @@ fn describe_theme_list(
     themes.join(
         ", "
     )
+}
+
+
+fn describe_optional_mode(
+    mode: Option<i32>,
+) -> String {
+
+    match mode {
+        Some(mode) => {
+            mode.to_string()
+        }
+
+        None => {
+            "<implicit default>"
+                .to_string()
+        }
+    }
+}
+
+
+fn describe_optional_theme_list(
+    themes: Option<&[String]>,
+) -> String {
+
+    match themes {
+        Some(themes) => {
+            describe_theme_list(
+                themes
+            )
+        }
+
+        None => {
+            "<implicit default>"
+                .to_string()
+        }
+    }
 }
 
 
@@ -991,41 +1217,85 @@ fn write_recovery_snapshot(
         |error| error.to_string()
     )?;
 
-    writeln!(
-        file,
-        "mode={}",
-        configuration.mode
-    )
-    .map_err(
-        |error| error.to_string()
-    )?;
+    match configuration.mode {
+        Some(mode) => {
+            writeln!(
+                file,
+                "mode_present=1"
+            )
+            .map_err(
+                |error| error.to_string()
+            )?;
 
-
-    for theme in &configuration.themes {
-        if theme.contains(
-            '\n'
-        ) || theme.contains(
-            '\r'
-        ) {
-            let _ =
-                fs::remove_file(
-                    &temporary_path
-                );
-
-            return Err(
-                "XFCE saver theme contains an invalid line break"
-                    .to_string()
-            );
+            writeln!(
+                file,
+                "mode={}",
+                mode
+            )
+            .map_err(
+                |error| error.to_string()
+            )?;
         }
 
-        writeln!(
-            file,
-            "theme={}",
-            theme
-        )
-        .map_err(
-            |error| error.to_string()
-        )?;
+        None => {
+            writeln!(
+                file,
+                "mode_present=0"
+            )
+            .map_err(
+                |error| error.to_string()
+            )?;
+        }
+    }
+
+
+    match &configuration.themes {
+        Some(themes) => {
+            writeln!(
+                file,
+                "themes_present=1"
+            )
+            .map_err(
+                |error| error.to_string()
+            )?;
+
+            for theme in themes {
+                if theme.contains(
+                    '\n'
+                ) || theme.contains(
+                    '\r'
+                ) {
+                    let _ =
+                        fs::remove_file(
+                            &temporary_path
+                        );
+
+                    return Err(
+                        "XFCE saver theme contains an invalid line break"
+                            .to_string()
+                    );
+                }
+
+                writeln!(
+                    file,
+                    "theme={}",
+                    theme
+                )
+                .map_err(
+                    |error| error.to_string()
+                )?;
+            }
+        }
+
+        None => {
+            writeln!(
+                file,
+                "themes_present=0"
+            )
+            .map_err(
+                |error| error.to_string()
+            )?;
+        }
     }
 
 
@@ -1084,6 +1354,12 @@ fn read_recovery_snapshot(
     let mut version =
         None;
 
+    let mut mode_present =
+        None;
+
+    let mut themes_present =
+        None;
+
     let mut mode =
         None;
 
@@ -1110,6 +1386,30 @@ fn read_recovery_snapshot(
                                 )
                             }
                         )?
+                );
+        } else if let Some(value) =
+            line.strip_prefix(
+                "mode_present="
+            )
+        {
+            mode_present =
+                Some(
+                    parse_snapshot_presence(
+                        "mode_present",
+                        value,
+                    )?
+                );
+        } else if let Some(value) =
+            line.strip_prefix(
+                "themes_present="
+            )
+        {
+            themes_present =
+                Some(
+                    parse_snapshot_presence(
+                        "themes_present",
+                        value,
+                    )?
                 );
         } else if let Some(value) =
             line.strip_prefix(
@@ -1144,42 +1444,134 @@ fn read_recovery_snapshot(
     }
 
 
-    if version != Some(
-        RECOVERY_VERSION
-    ) {
-        return Err(
-            format!(
-                "Unsupported or missing XFCE saver recovery snapshot version: {:?}",
-                version,
-            )
-        );
-    }
+    match version {
+        Some(1) => {
+            // Version 1 snapshots predate implicit-default tracking.  Their
+            // concrete mode/theme fields necessarily represent properties that
+            // were present when the snapshot was written.
+            let mode =
+                mode
+                    .ok_or_else(
+                        || {
+                            "XFCE saver recovery snapshot is missing its saver mode"
+                                .to_string()
+                        }
+                    )?;
 
-
-    let mode =
-        mode
-            .ok_or_else(
-                || {
-                    "XFCE saver recovery snapshot is missing its saver mode"
+            if themes.is_empty() {
+                return Err(
+                    "XFCE saver recovery snapshot contains no saver themes"
                         .to_string()
+                );
+            }
+
+            Ok(
+                XfceSaverConfiguration {
+                    mode:
+                        Some(
+                            mode
+                        ),
+                    themes:
+                        Some(
+                            themes
+                        ),
                 }
-            )?;
-
-
-    if themes.is_empty() {
-        return Err(
-            "XFCE saver recovery snapshot contains no saver themes"
-                .to_string()
-        );
-    }
-
-
-    Ok(
-        XfceSaverConfiguration {
-            mode,
-            themes,
+            )
         }
-    )
+
+        Some(RECOVERY_VERSION) => {
+            let mode =
+                match mode_present {
+                    Some(true) => {
+                        Some(
+                            mode
+                                .ok_or_else(
+                                    || {
+                                        "XFCE saver recovery snapshot says saver mode was present but contains no mode value"
+                                            .to_string()
+                                    }
+                                )?
+                        )
+                    }
+
+                    Some(false) => {
+                        None
+                    }
+
+                    None => {
+                        return Err(
+                            "XFCE saver recovery snapshot is missing mode_present"
+                                .to_string()
+                        );
+                    }
+                };
+
+            let themes =
+                match themes_present {
+                    Some(true) => {
+                        if themes.is_empty() {
+                            return Err(
+                                "XFCE saver recovery snapshot says saver themes were present but contains no themes"
+                                    .to_string()
+                            );
+                        }
+
+                        Some(
+                            themes
+                        )
+                    }
+
+                    Some(false) => {
+                        None
+                    }
+
+                    None => {
+                        return Err(
+                            "XFCE saver recovery snapshot is missing themes_present"
+                                .to_string()
+                        );
+                    }
+                };
+
+            Ok(
+                XfceSaverConfiguration {
+                    mode,
+                    themes,
+                }
+            )
+        }
+
+        _ => {
+            Err(
+                format!(
+                    "Unsupported or missing XFCE saver recovery snapshot version: {:?}",
+                    version,
+                )
+            )
+        }
+    }
+}
+
+
+fn parse_snapshot_presence(
+    field: &str,
+    value: &str,
+) -> Result<bool, String> {
+
+    match value {
+        "0" => Ok(false),
+        "1" => Ok(true),
+
+        _ => {
+            Err(
+                format!(
+                    "Invalid XFCE saver recovery {} value '{}'",
+                    field,
+                    value,
+                )
+            )
+        }
+    }
 }
 
 
@@ -1205,9 +1597,19 @@ fn recover_stale_configuration(
 
 
     let screenshaver_still_selected =
-        current.themes.len() == 1
-            && current.themes[0]
-                == SCREENSHAVER_THEME_ID;
+        current
+            .themes
+            .as_ref()
+            .map(
+                |themes| {
+                    themes.len() == 1
+                        && themes[0]
+                            == SCREENSHAVER_THEME_ID
+                }
+            )
+            .unwrap_or(
+                false
+            );
 
 
     if screenshaver_still_selected {
@@ -1219,9 +1621,11 @@ fn recover_stale_configuration(
             logfile,
             &format!(
                 "[LOCK] Recovered stale XFCE saver configuration from a previous Screenshaver runtime: mode={} themes={}",
-                saved.mode,
-                describe_theme_list(
-                    &saved.themes
+                describe_optional_mode(
+                    saved.mode
+                ),
+                describe_optional_theme_list(
+                    saved.themes.as_deref()
                 ),
             ),
         );
