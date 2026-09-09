@@ -661,13 +661,18 @@ resolve_xfce_saver_directory() {
 
     $XFCE_INTEGRATION || return 0
 
-    if ! is_debian_family; then
-        return 1
+    # The trusted-presenter path is an Xfce integration detail, not a distro
+    # family property.  Linux Mint/Ubuntu-family systems and Void Linux both
+    # provide xfce4-screensaver's helper directory at this location.
+    #
+    # Keep this path synchronized with construct_lock_screen_xfce.rs, which
+    # registers the presenter as /usr/libexec/xfce4-screensaver/screenshaver.
+    if [[ -d /usr/libexec/xfce4-screensaver ]]; then
+        XFCE_SAVER_DIR="/usr/libexec/xfce4-screensaver"
+        return 0
     fi
 
-    # Verified with xfce4-screensaver on Linux Mint/Ubuntu-family systems.
-    XFCE_SAVER_DIR="/usr/libexec/xfce4-screensaver"
-    return 0
+    return 1
 }
 
 install_xfce_lock_integration() {
@@ -782,9 +787,11 @@ verify_conventional_installation() {
     verify_desktop_file
     verify_shared_libraries
 
-    if $XFCE_INTEGRATION && is_debian_family; then
-        [[ -x "/usr/libexec/xfce4-screensaver/${BINARY_NAME}" ]] ||
-            die "Trusted Xfce presenter is missing after installation."
+    if $XFCE_INTEGRATION; then
+        if resolve_xfce_saver_directory; then
+            [[ -x "${XFCE_SAVER_DIR}/${BINARY_NAME}" ]] ||
+                die "Trusted Xfce presenter is missing after installation."
+        fi
     fi
 }
 
