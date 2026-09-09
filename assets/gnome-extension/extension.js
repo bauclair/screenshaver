@@ -643,9 +643,24 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                 if (!sourceTexture)
                     throw new Error('Shell.GLSLEffect source texture unavailable');
 
-                const coglContext = sourceTexture.get_context();
+                // GNOME Shell/Cogl API compatibility: newer Shell builds may
+                // expose the Cogl.Context directly from the effect texture, while
+                // GNOME 46 does not. Prefer the texture-owned context when it is
+                // available, then fall back to the Clutter stage/backend context.
+                // The latter is the public extension-side route used by GNOME 45+.
+                let coglContext = sourceTexture?.get_context?.() ?? null;
+
+                if (!coglContext) {
+                    const stageContext =
+                        global.stage?.get_context?.() ??
+                        global.stage?.context ??
+                        null;
+                    const clutterBackend = stageContext?.get_backend?.() ?? null;
+                    coglContext = clutterBackend?.get_cogl_context?.() ?? null;
+                }
+
                 if (!coglContext)
-                    throw new Error('Cogl context unavailable from Shell.GLSLEffect texture');
+                    throw new Error('Cogl context unavailable from Shell.GLSLEffect texture or Clutter stage backend');
 
                 const requestedPrecision = ['standard', 'high', 'auto'].includes(colorPrecision)
                     ? colorPrecision
