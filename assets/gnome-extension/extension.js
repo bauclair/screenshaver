@@ -1055,6 +1055,66 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                                 `${sourceTexture.get_height?.() ?? 0} ` +
                                 `generation=${generation}`
                             );
+
+
+                            // Test #30N: perform one textured draw using the
+                            // actual Shell.GLSLEffect source texture as input,
+                            // but render only into a disposable RGBA_8888
+                            // offscreen target owned by the validated
+                            // PaintContext Cogl.Context.  Do not attach shader
+                            // snippets and do not present the result onscreen.
+                            const shellSourceDrawDestinationTexture =
+                                Cogl.Texture2D.new_with_format(
+                                    paintCoglContext,
+                                    renderWidth,
+                                    renderHeight,
+                                    Cogl.PixelFormat.RGBA_8888
+                                );
+                            shellSourceDrawDestinationTexture.set_premultiplied(false);
+                            shellSourceDrawDestinationTexture.allocate();
+
+                            const shellSourceDrawOffscreen =
+                                Cogl.Offscreen.new_with_texture(
+                                    shellSourceDrawDestinationTexture
+                                );
+                            shellSourceDrawOffscreen.allocate();
+                            shellSourceDrawOffscreen.set_viewport(
+                                0.0,
+                                0.0,
+                                renderWidth,
+                                renderHeight
+                            );
+
+                            shellSourceDrawOffscreen.clear4f(
+                                Cogl.BufferBit.COLOR,
+                                0.0,
+                                0.0,
+                                0.0,
+                                1.0
+                            );
+
+                            shellSourceDrawOffscreen.draw_textured_rectangle(
+                                shellSourcePipeline,
+                                -1.0,
+                                1.0,
+                                1.0,
+                                -1.0,
+                                0.0,
+                                0.0,
+                                1.0,
+                                1.0
+                            );
+
+                            shellSourceDrawOffscreen.flush();
+
+                            console.log(
+                                `[Screenshaver] Test #30N GNOME Shell source-texture draw probe: ` +
+                                `drawn=true flushed=true ` +
+                                `source=${sourceTexture.get_width?.() ?? 0}x` +
+                                `${sourceTexture.get_height?.() ?? 0} ` +
+                                `target=${renderWidth}x${renderHeight} ` +
+                                `generation=${generation}`
+                            );
                         } catch (error) {
                             console.log(
                                 `[Screenshaver] Test #30E GNOME paint-context texture probe failed: ` +
