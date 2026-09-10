@@ -1145,6 +1145,82 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                                 `pipeline=true snippet-created=true snippet-attached=true ` +
                                 `generation=${generation}`
                             );
+
+
+                            // Test #30P: execute the already-created minimal
+                            // no-op snippet pipeline against disposable
+                            // PaintContext-owned resources only.  This isolates
+                            // snippet execution from the production postprocess
+                            // shader code and from Shell.GLSLEffect presentation.
+                            const snippetDrawSourceTexture =
+                                Cogl.Texture2D.new_with_format(
+                                    paintCoglContext,
+                                    4,
+                                    4,
+                                    Cogl.PixelFormat.RGBA_8888
+                                );
+                            snippetDrawSourceTexture.set_premultiplied(false);
+                            snippetDrawSourceTexture.allocate();
+
+                            const snippetDrawDestinationTexture =
+                                Cogl.Texture2D.new_with_format(
+                                    paintCoglContext,
+                                    4,
+                                    4,
+                                    Cogl.PixelFormat.RGBA_8888
+                                );
+                            snippetDrawDestinationTexture.set_premultiplied(false);
+                            snippetDrawDestinationTexture.allocate();
+
+                            const snippetDrawOffscreen =
+                                Cogl.Offscreen.new_with_texture(
+                                    snippetDrawDestinationTexture
+                                );
+                            snippetDrawOffscreen.allocate();
+                            snippetDrawOffscreen.set_viewport(
+                                0.0,
+                                0.0,
+                                4.0,
+                                4.0
+                            );
+
+                            screenshaverSnippetProbePipeline.set_layer_texture(
+                                0,
+                                snippetDrawSourceTexture
+                            );
+                            screenshaverSnippetProbePipeline.set_layer_filters(
+                                0,
+                                Cogl.PipelineFilter.LINEAR,
+                                Cogl.PipelineFilter.LINEAR
+                            );
+
+                            snippetDrawOffscreen.clear4f(
+                                Cogl.BufferBit.COLOR,
+                                0.0,
+                                0.0,
+                                0.0,
+                                1.0
+                            );
+
+                            snippetDrawOffscreen.draw_textured_rectangle(
+                                screenshaverSnippetProbePipeline,
+                                -1.0,
+                                1.0,
+                                1.0,
+                                -1.0,
+                                0.0,
+                                0.0,
+                                1.0,
+                                1.0
+                            );
+
+                            snippetDrawOffscreen.flush();
+
+                            console.log(
+                                `[Screenshaver] Test #30P GNOME shader-snippet draw probe: ` +
+                                `drawn=true flushed=true size=4x4 ` +
+                                `generation=${generation}`
+                            );
                         } catch (error) {
                             console.log(
                                 `[Screenshaver] Test #30E GNOME paint-context texture probe failed: ` +
