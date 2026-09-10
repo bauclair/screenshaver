@@ -581,9 +581,7 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     vec2 uv = cogl_tex_coord0_in.st;
 
                     if (screenshaverPresentLayer0 > 0.5) {
-                        vec4 presentedColor = texture2D(cogl_sampler0, uv);
-                        presentedColor.a = 1.0;
-                        cogl_color_out = presentedColor;
+                        cogl_color_out = vec4(1.0, 0.0, 0.0, 1.0);
                     } else {
                     vec2 fragCoord = vec2(
                         uv.x * iResolution.x,
@@ -768,8 +766,8 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
 
                         if (!this._screenshaverSolidTextureProbeLogged) {
                             console.log(
-                                `[Screenshaver] Test #30AH GNOME native sampler-switch probe: ` +
-                                `solid-red-bound=true sampler-switch=layer0 ` +
+                                `[Screenshaver] Test #30AI GNOME native uniform-branch probe: ` +
+                                `uniform-switch=constant-red ` +
                                 `size=16x16 before-chain-up=true generation=${generation}`
                             );
                             this._screenshaverSolidTextureProbeLogged = true;
@@ -780,7 +778,7 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     }
 
                     console.log(
-                        `[Screenshaver] Test #30AH GNOME native sampler-switch probe: ` +
+                        `[Screenshaver] Test #30AI GNOME native uniform-branch probe: ` +
                         `unavailable=true ` +
                         `paint-cogl-context=${paintCoglContext ? 'true' : 'false'} ` +
                         `native-pipeline=${nativePipeline ? 'true' : 'false'} ` +
