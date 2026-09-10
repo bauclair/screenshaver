@@ -1115,6 +1115,36 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                                 `target=${renderWidth}x${renderHeight} ` +
                                 `generation=${generation}`
                             );
+
+
+                            // Test #30O: isolate Cogl shader-snippet creation
+                            // and attachment.  This deliberately uses a tiny
+                            // no-op fragment snippet and DOES NOT draw with the
+                            // pipeline, so shader execution remains outside
+                            // this probe.
+                            const screenshaverSnippetProbePipeline =
+                                Cogl.Pipeline.new(paintCoglContext);
+
+                            const screenshaverProbeSnippet =
+                                Cogl.Snippet.new(
+                                    Cogl.SnippetHook.FRAGMENT,
+                                    null,
+                                    null
+                                );
+
+                            screenshaverProbeSnippet.set_replace(`
+                                cogl_color_out = cogl_color_in;
+                            `);
+
+                            screenshaverSnippetProbePipeline.add_snippet(
+                                screenshaverProbeSnippet
+                            );
+
+                            console.log(
+                                `[Screenshaver] Test #30O GNOME shader-snippet probe: ` +
+                                `pipeline=true snippet-created=true snippet-attached=true ` +
+                                `generation=${generation}`
+                            );
                         } catch (error) {
                             console.log(
                                 `[Screenshaver] Test #30E GNOME paint-context texture probe failed: ` +
