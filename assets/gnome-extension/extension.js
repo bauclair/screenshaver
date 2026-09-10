@@ -667,58 +667,6 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                 if (!sourceTexture)
                     throw new Error('Shell.GLSLEffect source texture unavailable');
 
-                // Test #30AE: GNOME 46 native effect-pipeline source rebind.
-                //
-                // Rebind the effect's own known-good source texture to layer 0
-                // of Clutter.OffscreenEffect's native pipeline, then chain to
-                // Shell.GLSLEffect/Clutter.ShaderEffect parent paint. If the
-                // shader remains visible, this gives Screenshaver a native
-                // presentation hook for a later postprocessed-texture test.
-                if (GNOME_SHELL_MAJOR === 46) {
-                    const nativePipeline =
-                        this.get_pipeline?.() ??
-                        null;
-
-                    const setLayerTextureType =
-                        typeof nativePipeline?.set_layer_texture;
-
-                    if (!this._screenshaverNativePipelineProbeLogged) {
-                        console.log(
-                            `[Screenshaver] Test #30AE GNOME native effect pipeline: ` +
-                            `pipeline=${nativePipeline ? 'true' : 'false'} ` +
-                            `set-layer-texture-type=${setLayerTextureType} ` +
-                            `source=${sourceTexture.get_width?.() ?? nativeWidth}x` +
-                            `${sourceTexture.get_height?.() ?? nativeHeight} ` +
-                            `generation=${generation}`
-                        );
-                        this._screenshaverNativePipelineProbeLogged = true;
-                    }
-
-                    if (
-                        nativePipeline &&
-                        setLayerTextureType === 'function'
-                    ) {
-                        nativePipeline.set_layer_texture(0, sourceTexture);
-
-                        if (!this._screenshaverNativePipelineRebindLogged) {
-                            console.log(
-                                `[Screenshaver] Test #30AE GNOME native effect pipeline: ` +
-                                `source-rebound=true before-chain-up=true ` +
-                                `generation=${generation}`
-                            );
-                            this._screenshaverNativePipelineRebindLogged = true;
-                        }
-                    } else {
-                        console.log(
-                            `[Screenshaver] Test #30AE GNOME native effect pipeline: ` +
-                            `rebind-unavailable=true generation=${generation}`
-                        );
-                    }
-
-                    super.vfunc_paint_target(node, paintContext);
-                    return;
-                }
-
                 let coglContext = sourceTexture?.get_context?.() ?? null;
 
                 if (!coglContext) {
@@ -2701,6 +2649,7 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                 this._screenshaverRenderOffscreen.flush();
 
                 let finalPipeline = this._screenshaverPresentationPipeline;
+                let finalTexture = this._screenshaverRenderTexture;
 
                 if (antiAliasing === 'fxaa' &&
                     this._screenshaverFxaaPipeline &&
@@ -2729,6 +2678,7 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     this._screenshaverFxaaOffscreen.flush();
 
                     finalPipeline = this._screenshaverFxaaPresentationPipeline;
+                    finalTexture = this._screenshaverFxaaTexture;
                 }
 
                 if (bloomMode === 'audio' &&
@@ -2830,6 +2780,7 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     this._screenshaverAudioBloomCompositeOffscreen.flush();
 
                     finalPipeline = this._screenshaverAudioBloomCompositePresentationPipeline;
+                    finalTexture = this._screenshaverAudioBloomCompositeTexture;
                 }
 
                 if (dithering === 'subtle' &&
@@ -2868,25 +2819,67 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     this._screenshaverDitheringOffscreen.flush();
 
                     finalPipeline = this._screenshaverDitheringPresentationPipeline;
+                    finalTexture = this._screenshaverDitheringTexture;
                 }
 
-                const rect = new Clutter.ActorBox({
-                    x1: 0.0,
-                    y1: 0.0,
-                    x2: nativeWidth,
-                    y2: nativeHeight,
-                });
-                const presentationNode = Clutter.PipelineNode.new(
-                    finalPipeline
-                );
-                presentationNode.add_texture_rectangle(
-                    rect,
-                    0.0,
-                    0.0,
-                    1.0,
-                    1.0
-                );
-                node.add_child(presentationNode);
+                if (GNOME_SHELL_MAJOR === 46) {
+                    const nativePipeline =
+                        this.get_pipeline?.() ??
+                        null;
+
+                    if (!nativePipeline)
+                        throw new Error(
+                            'GNOME 46 native Shell.GLSLEffect pipeline unavailable'
+                        );
+
+                    if (!finalTexture)
+                        throw new Error(
+                            'GNOME 46 final postprocess texture unavailable'
+                        );
+
+                    nativePipeline.set_layer_texture(0, finalTexture);
+                    nativePipeline.set_layer_filters(
+                        0,
+                        Cogl.PipelineFilter.LINEAR,
+                        Cogl.PipelineFilter.LINEAR
+                    );
+                    nativePipeline.set_layer_wrap_mode(
+                        0,
+                        Cogl.PipelineWrapMode.CLAMP_TO_EDGE
+                    );
+
+                    if (!this._screenshaverNativePostprocessPresentationLogged) {
+                        console.log(
+                            `[Screenshaver] Test #30AF GNOME native postprocess presentation: ` +
+                            `final-texture=true ` +
+                            `size=${finalTexture.get_width?.() ?? nativeWidth}x` +
+                            `${finalTexture.get_height?.() ?? nativeHeight} ` +
+                            `anti_aliasing=${antiAliasing} dithering=${dithering} ` +
+                            `bloom=${bloomMode} generation=${generation}`
+                        );
+                        this._screenshaverNativePostprocessPresentationLogged = true;
+                    }
+
+                    super.vfunc_paint_target(node, paintContext);
+                } else {
+                    const rect = new Clutter.ActorBox({
+                        x1: 0.0,
+                        y1: 0.0,
+                        x2: nativeWidth,
+                        y2: nativeHeight,
+                    });
+                    const presentationNode = Clutter.PipelineNode.new(
+                        finalPipeline
+                    );
+                    presentationNode.add_texture_rectangle(
+                        rect,
+                        0.0,
+                        0.0,
+                        1.0,
+                        1.0
+                    );
+                    node.add_child(presentationNode);
+                }
 
                 if (!this._screenshaverPresentationProbeLogged) {
                     const fbWidth = this._screenshaverRenderOffscreen.get_width();
