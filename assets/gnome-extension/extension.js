@@ -769,6 +769,38 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                                 `created=${probeOffscreen !== null} size=4x4 ` +
                                 `generation=${generation}`
                             );
+
+                            // Test #30G: exercise the smallest production-style
+                            // framebuffer operation sequence using the Cogl
+                            // context owned by the framebuffer currently being
+                            // painted.  No pipeline or shader is attached and
+                            // nothing is presented to the lock-screen actor.
+                            probeTexture.set_premultiplied(false);
+                            probeTexture.allocate();
+
+                            probeOffscreen.allocate();
+                            probeOffscreen.set_viewport(
+                                0.0,
+                                0.0,
+                                4.0,
+                                4.0
+                            );
+
+                            probeOffscreen.clear4f(
+                                Cogl.BufferBit.COLOR,
+                                0.0,
+                                0.0,
+                                0.0,
+                                1.0
+                            );
+
+                            probeOffscreen.flush();
+
+                            console.log(
+                                `[Screenshaver] Test #30G GNOME paint-context clear probe: ` +
+                                `allocated=true cleared=true flushed=true size=4x4 ` +
+                                `generation=${generation}`
+                            );
                         } catch (error) {
                             console.log(
                                 `[Screenshaver] Test #30E GNOME paint-context texture probe failed: ` +
