@@ -63,7 +63,8 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
             const snippet = Cogl.Snippet.new(
                 Cogl.SnippetHook.FRAGMENT,
                 `
-                    uniform vec2 screenshaverFxaaInverseResolution;
+                    uniform float screenshaverFxaaInverseResolutionX;
+                    uniform float screenshaverFxaaInverseResolutionY;
                     uniform float screenshaverFxaaInvertColors;
                     uniform float screenshaverFxaaFlipHorizontal;
                     uniform float screenshaverFxaaFlipVertical;
@@ -120,9 +121,9 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
 
                 vec4 centerSample = texture2D(cogl_sampler0, uv);
                 float lumaCenter = screenshaverFxaaLuminance(centerSample.rgb);
-                float lumaNorth = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(0.0, screenshaverFxaaInverseResolution.y)).rgb);
+                float lumaNorth = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(0.0, screenshaverFxaaInverseResolutionY)).rgb);
                 float lumaSouth = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv - vec2(0.0, screenshaverFxaaInverseResolution.y)).rgb);
-                float lumaEast = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(screenshaverFxaaInverseResolution.x, 0.0)).rgb);
+                float lumaEast = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(screenshaverFxaaInverseResolutionX, 0.0)).rgb);
                 float lumaWest = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv - vec2(screenshaverFxaaInverseResolution.x, 0.0)).rgb);
                 float lumaMinimum = min(lumaCenter, min(min(lumaNorth, lumaSouth), min(lumaEast, lumaWest)));
                 float lumaMaximum = max(lumaCenter, max(max(lumaNorth, lumaSouth), max(lumaEast, lumaWest)));
@@ -204,12 +205,17 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
             `);
             pipeline.add_snippet(snippet);
 
-            const inverseResolutionLocation = pipeline.get_uniform_location('screenshaverFxaaInverseResolution');
-            pipeline.set_uniform_float(
-                inverseResolutionLocation,
-                2,
-                1,
-                [1.0 / width, 1.0 / height]
+            const inverseResolutionXLocation =
+                pipeline.get_uniform_location('screenshaverFxaaInverseResolutionX');
+            const inverseResolutionYLocation =
+                pipeline.get_uniform_location('screenshaverFxaaInverseResolutionY');
+            pipeline.set_uniform_1f(
+                inverseResolutionXLocation,
+                1.0 / width
+            );
+            pipeline.set_uniform_1f(
+                inverseResolutionYLocation,
+                1.0 / height
             );
 
             this._screenshaverFxaaUniformInvert = pipeline.get_uniform_location('screenshaverFxaaInvertColors');
@@ -317,7 +323,9 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                 Cogl.SnippetHook.FRAGMENT,
                 `
                     uniform float screenshaverBloomThreshold;
-                    uniform vec3 screenshaverAudioBands;
+                    uniform float screenshaverAudioBass;
+                    uniform float screenshaverAudioMidrange;
+                    uniform float screenshaverAudioTreble;
 
                     vec3 screenshaverBloomRgbToHsv(vec3 c)
                     {
@@ -356,9 +364,9 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                 float saturation = hsv.y;
                 float value = hsv.z;
 
-                float bassEnergy = clamp(screenshaverAudioBands.x, 0.0, 1.0);
-                float midEnergy = clamp(screenshaverAudioBands.y, 0.0, 1.0);
-                float highEnergy = clamp(screenshaverAudioBands.z, 0.0, 1.0);
+                float bassEnergy = clamp(screenshaverAudioBass, 0.0, 1.0);
+                float midEnergy = clamp(screenshaverAudioMidrange, 0.0, 1.0);
+                float highEnergy = clamp(screenshaverAudioTreble, 0.0, 1.0);
 
                 float bassMatch = (hue >= 0.0 && hue < 45.0) ? bassEnergy : 0.0;
                 float midMatch = (hue >= 45.0 && hue < 150.0) ? midEnergy : 0.0;
@@ -381,8 +389,12 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
 
             this._screenshaverBloomThresholdUniform =
                 pipeline.get_uniform_location('screenshaverBloomThreshold');
-            this._screenshaverAudioBandsUniform =
-                pipeline.get_uniform_location('screenshaverAudioBands');
+            this._screenshaverAudioBassUniform =
+                pipeline.get_uniform_location('screenshaverAudioBass');
+            this._screenshaverAudioMidrangeUniform =
+                pipeline.get_uniform_location('screenshaverAudioMidrange');
+            this._screenshaverAudioTrebleUniform =
+                pipeline.get_uniform_location('screenshaverAudioTreble');
 
             pipeline.set_uniform_1f(
                 this._screenshaverBloomThresholdUniform,
@@ -394,18 +406,25 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
 
         screenshaver_update_audio_bloom_uniforms() {
             const pipeline = this._screenshaverAudioBloomExtractionPipeline;
-            if (!pipeline || this._screenshaverAudioBandsUniform === undefined)
+            if (
+                !pipeline ||
+                this._screenshaverAudioBassUniform === undefined ||
+                this._screenshaverAudioMidrangeUniform === undefined ||
+                this._screenshaverAudioTrebleUniform === undefined
+            )
                 return;
 
-            pipeline.set_uniform_float(
-                this._screenshaverAudioBandsUniform,
-                3,
-                1,
-                [
-                    this._screenshaverAudioBass ?? 0.0,
-                    this._screenshaverAudioMidrange ?? 0.0,
-                    this._screenshaverAudioTreble ?? 0.0,
-                ]
+            pipeline.set_uniform_1f(
+                this._screenshaverAudioBassUniform,
+                this._screenshaverAudioBass ?? 0.0
+            );
+            pipeline.set_uniform_1f(
+                this._screenshaverAudioMidrangeUniform,
+                this._screenshaverAudioMidrange ?? 0.0
+            );
+            pipeline.set_uniform_1f(
+                this._screenshaverAudioTrebleUniform,
+                this._screenshaverAudioTreble ?? 0.0
             );
         }
 
@@ -425,7 +444,8 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
             const snippet = Cogl.Snippet.new(
                 Cogl.SnippetHook.FRAGMENT,
                 `
-                    uniform vec2 screenshaverBloomTexelStep;
+                    uniform float screenshaverBloomTexelStepX;
+                    uniform float screenshaverBloomTexelStepY;
                 `,
                 null
             );
@@ -439,25 +459,29 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
 
                 vec2 uv = cogl_tex_coord0_in.st;
                 vec3 color = texture2D(cogl_sampler0, uv).rgb * w0;
-                color += texture2D(cogl_sampler0, uv + screenshaverBloomTexelStep * 1.0).rgb * w1;
-                color += texture2D(cogl_sampler0, uv - screenshaverBloomTexelStep * 1.0).rgb * w1;
-                color += texture2D(cogl_sampler0, uv + screenshaverBloomTexelStep * 2.0).rgb * w2;
-                color += texture2D(cogl_sampler0, uv - screenshaverBloomTexelStep * 2.0).rgb * w2;
-                color += texture2D(cogl_sampler0, uv + screenshaverBloomTexelStep * 3.0).rgb * w3;
-                color += texture2D(cogl_sampler0, uv - screenshaverBloomTexelStep * 3.0).rgb * w3;
-                color += texture2D(cogl_sampler0, uv + screenshaverBloomTexelStep * 4.0).rgb * w4;
-                color += texture2D(cogl_sampler0, uv - screenshaverBloomTexelStep * 4.0).rgb * w4;
+                color += texture2D(cogl_sampler0, uv + vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 1.0).rgb * w1;
+                color += texture2D(cogl_sampler0, uv - vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 1.0).rgb * w1;
+                color += texture2D(cogl_sampler0, uv + vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 2.0).rgb * w2;
+                color += texture2D(cogl_sampler0, uv - vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 2.0).rgb * w2;
+                color += texture2D(cogl_sampler0, uv + vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 3.0).rgb * w3;
+                color += texture2D(cogl_sampler0, uv - vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 3.0).rgb * w3;
+                color += texture2D(cogl_sampler0, uv + vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 4.0).rgb * w4;
+                color += texture2D(cogl_sampler0, uv - vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 4.0).rgb * w4;
                 cogl_color_out = vec4(color, 1.0);
             `);
             pipeline.add_snippet(snippet);
 
-            const texelStepLocation =
-                pipeline.get_uniform_location('screenshaverBloomTexelStep');
-            pipeline.set_uniform_float(
-                texelStepLocation,
-                2,
-                1,
-                [texelStepX, texelStepY]
+            const texelStepXLocation =
+                pipeline.get_uniform_location('screenshaverBloomTexelStepX');
+            const texelStepYLocation =
+                pipeline.get_uniform_location('screenshaverBloomTexelStepY');
+            pipeline.set_uniform_1f(
+                texelStepXLocation,
+                texelStepX
+            );
+            pipeline.set_uniform_1f(
+                texelStepYLocation,
+                texelStepY
             );
 
             return pipeline;
@@ -2218,8 +2242,25 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     }
                 }
 
+                if (!coglContext) {
+                    const paintFramebuffer =
+                        paintContext?.get_framebuffer?.() ??
+                        null;
+                    coglContext =
+                        paintFramebuffer?.get_context?.() ??
+                        null;
+
+                    if (coglContext) {
+                        console.log(
+                            `[Screenshaver] Test #30Z GNOME production postprocess: ` +
+                            `Cogl context acquired via Clutter PaintContext framebuffer ` +
+                            `generation=${generation}`
+                        );
+                    }
+                }
+
                 if (!coglContext)
-                    throw new Error('Cogl context unavailable from Shell.GLSLEffect texture or Clutter stage backend');
+                    throw new Error('Cogl context unavailable from Shell.GLSLEffect texture, Clutter stage backend, or PaintContext framebuffer');
 
                 const requestedPrecision = ['standard', 'high', 'auto'].includes(colorPrecision)
                     ? colorPrecision
