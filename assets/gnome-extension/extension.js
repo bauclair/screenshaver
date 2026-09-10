@@ -1449,6 +1449,83 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                                 `[Screenshaver] Test #30S GNOME FXAA snippet stage: ` +
                                 `after-add-snippet=true generation=${generation}`
                             );
+
+
+                            // Test #30T: isolate the remaining operations in
+                            // screenshaver_create_fxaa_pipeline() after the
+                            // production FXAA snippet has been attached.
+                            console.log(
+                                `[Screenshaver] Test #30T GNOME FXAA uniform stage: ` +
+                                `before-inverse-location=true generation=${generation}`
+                            );
+
+                            const screenshaverFxaaProbeInverseLocation =
+                                screenshaverFxaaStagePipeline.get_uniform_location(
+                                    'screenshaverFxaaInverseResolution'
+                                );
+
+                            console.log(
+                                `[Screenshaver] Test #30T GNOME FXAA uniform stage: ` +
+                                `after-inverse-location=true ` +
+                                `location=${screenshaverFxaaProbeInverseLocation} ` +
+                                `generation=${generation}`
+                            );
+
+                            screenshaverFxaaStagePipeline.set_uniform_float(
+                                screenshaverFxaaProbeInverseLocation,
+                                2,
+                                1,
+                                [1.0 / renderWidth, 1.0 / renderHeight]
+                            );
+
+                            console.log(
+                                `[Screenshaver] Test #30T GNOME FXAA uniform stage: ` +
+                                `after-inverse-set=true generation=${generation}`
+                            );
+
+                            const screenshaverFxaaProbeInvertLocation =
+                                screenshaverFxaaStagePipeline.get_uniform_location(
+                                    'screenshaverFxaaInvertColors'
+                                );
+                            console.log(
+                                `[Screenshaver] Test #30T GNOME FXAA uniform stage: ` +
+                                `after-invert-location=true ` +
+                                `location=${screenshaverFxaaProbeInvertLocation} ` +
+                                `generation=${generation}`
+                            );
+
+                            const screenshaverFxaaProbeFlipHLocation =
+                                screenshaverFxaaStagePipeline.get_uniform_location(
+                                    'screenshaverFxaaFlipHorizontal'
+                                );
+                            console.log(
+                                `[Screenshaver] Test #30T GNOME FXAA uniform stage: ` +
+                                `after-flip-h-location=true ` +
+                                `location=${screenshaverFxaaProbeFlipHLocation} ` +
+                                `generation=${generation}`
+                            );
+
+                            const screenshaverFxaaProbeFlipVLocation =
+                                screenshaverFxaaStagePipeline.get_uniform_location(
+                                    'screenshaverFxaaFlipVertical'
+                                );
+                            console.log(
+                                `[Screenshaver] Test #30T GNOME FXAA uniform stage: ` +
+                                `after-flip-v-location=true ` +
+                                `location=${screenshaverFxaaProbeFlipVLocation} ` +
+                                `generation=${generation}`
+                            );
+
+                            const screenshaverFxaaProbeHueLocation =
+                                screenshaverFxaaStagePipeline.get_uniform_location(
+                                    'screenshaverFxaaHueRotation'
+                                );
+                            console.log(
+                                `[Screenshaver] Test #30T GNOME FXAA uniform stage: ` +
+                                `after-hue-location=true ` +
+                                `location=${screenshaverFxaaProbeHueLocation} ` +
+                                `generation=${generation}`
+                            );
                         } catch (error) {
                             console.log(
                                 `[Screenshaver] Test #30E GNOME paint-context texture probe failed: ` +
