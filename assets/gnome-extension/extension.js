@@ -1957,6 +1957,258 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                                 `target=${screenshaverBloomProbeWidth}x${screenshaverBloomProbeHeight} ` +
                                 `generation=${generation}`
                             );
+
+
+                            // Test #30Y: execute the exact production Bloom blur
+                            // shader with the vec2 texel-step uniform scalarized
+                            // into X/Y float uniforms.  This uses the extraction
+                            // texture from Test #30X as the blur source.
+                            const screenshaverBlurPipeline =
+                                Cogl.Pipeline.new(paintCoglContext);
+                            screenshaverBlurPipeline.set_layer_texture(
+                                0,
+                                screenshaverAudioExtractTexture
+                            );
+                            screenshaverBlurPipeline.set_layer_filters(
+                                0,
+                                Cogl.PipelineFilter.LINEAR,
+                                Cogl.PipelineFilter.LINEAR
+                            );
+                            screenshaverBlurPipeline.set_layer_wrap_mode(
+                                0,
+                                Cogl.PipelineWrapMode.CLAMP_TO_EDGE
+                            );
+
+                            const screenshaverBlurSnippet =
+                                Cogl.Snippet.new(
+                                    Cogl.SnippetHook.FRAGMENT,
+                                    `
+                    uniform float screenshaverBloomTexelStepX;
+                    uniform float screenshaverBloomTexelStepY;
+                `,
+                                    null
+                                );
+                            screenshaverBlurSnippet.set_replace(
+                                `
+                const float w0 = 0.2270270270;
+                const float w1 = 0.1945945946;
+                const float w2 = 0.1216216216;
+                const float w3 = 0.0540540541;
+                const float w4 = 0.0162162162;
+
+                vec2 uv = cogl_tex_coord0_in.st;
+                vec3 color = texture2D(cogl_sampler0, uv).rgb * w0;
+                color += texture2D(cogl_sampler0, uv + vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 1.0).rgb * w1;
+                color += texture2D(cogl_sampler0, uv - vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 1.0).rgb * w1;
+                color += texture2D(cogl_sampler0, uv + vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 2.0).rgb * w2;
+                color += texture2D(cogl_sampler0, uv - vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 2.0).rgb * w2;
+                color += texture2D(cogl_sampler0, uv + vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 3.0).rgb * w3;
+                color += texture2D(cogl_sampler0, uv - vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 3.0).rgb * w3;
+                color += texture2D(cogl_sampler0, uv + vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 4.0).rgb * w4;
+                color += texture2D(cogl_sampler0, uv - vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 4.0).rgb * w4;
+                cogl_color_out = vec4(color, 1.0);
+            `
+                            );
+                            screenshaverBlurPipeline.add_snippet(
+                                screenshaverBlurSnippet
+                            );
+
+                            const screenshaverBlurStepX =
+                                screenshaverBlurPipeline.get_uniform_location(
+                                    'screenshaverBloomTexelStepX'
+                                );
+                            const screenshaverBlurStepY =
+                                screenshaverBlurPipeline.get_uniform_location(
+                                    'screenshaverBloomTexelStepY'
+                                );
+
+                            // Horizontal production blur pass.
+                            screenshaverBlurPipeline.set_uniform_1f(
+                                screenshaverBlurStepX,
+                                1.0 / screenshaverBloomProbeWidth
+                            );
+                            screenshaverBlurPipeline.set_uniform_1f(
+                                screenshaverBlurStepY,
+                                0.0
+                            );
+
+                            const screenshaverBlurTexture =
+                                Cogl.Texture2D.new_with_format(
+                                    paintCoglContext,
+                                    screenshaverBloomProbeWidth,
+                                    screenshaverBloomProbeHeight,
+                                    Cogl.PixelFormat.RGBA_8888
+                                );
+                            screenshaverBlurTexture.set_premultiplied(false);
+                            screenshaverBlurTexture.allocate();
+
+                            const screenshaverBlurOffscreen =
+                                Cogl.Offscreen.new_with_texture(
+                                    screenshaverBlurTexture
+                                );
+                            screenshaverBlurOffscreen.allocate();
+                            screenshaverBlurOffscreen.set_viewport(
+                                0.0,
+                                0.0,
+                                screenshaverBloomProbeWidth,
+                                screenshaverBloomProbeHeight
+                            );
+                            screenshaverBlurOffscreen.clear4f(
+                                Cogl.BufferBit.COLOR,
+                                0.0,
+                                0.0,
+                                0.0,
+                                1.0
+                            );
+
+                            console.log(
+                                `[Screenshaver] Test #30Y GNOME scalarized Bloom blur: ` +
+                                `before-horizontal-draw=true ` +
+                                `target=${screenshaverBloomProbeWidth}x${screenshaverBloomProbeHeight} ` +
+                                `generation=${generation}`
+                            );
+
+                            screenshaverBlurOffscreen.draw_textured_rectangle(
+                                screenshaverBlurPipeline,
+                                -1.0,
+                                1.0,
+                                1.0,
+                                -1.0,
+                                0.0,
+                                0.0,
+                                1.0,
+                                1.0
+                            );
+                            screenshaverBlurOffscreen.flush();
+
+                            console.log(
+                                `[Screenshaver] Test #30Y GNOME scalarized Bloom blur: ` +
+                                `horizontal-drawn=true flushed=true ` +
+                                `generation=${generation}`
+                            );
+
+                            // Vertical production blur pass using a second
+                            // scalarized pipeline bound to the horizontal result.
+                            const screenshaverBlurVerticalPipeline =
+                                Cogl.Pipeline.new(paintCoglContext);
+                            screenshaverBlurVerticalPipeline.set_layer_texture(
+                                0,
+                                screenshaverBlurTexture
+                            );
+                            screenshaverBlurVerticalPipeline.set_layer_filters(
+                                0,
+                                Cogl.PipelineFilter.LINEAR,
+                                Cogl.PipelineFilter.LINEAR
+                            );
+                            screenshaverBlurVerticalPipeline.set_layer_wrap_mode(
+                                0,
+                                Cogl.PipelineWrapMode.CLAMP_TO_EDGE
+                            );
+
+                            const screenshaverBlurVerticalSnippet =
+                                Cogl.Snippet.new(
+                                    Cogl.SnippetHook.FRAGMENT,
+                                    `
+                    uniform float screenshaverBloomTexelStepX;
+                    uniform float screenshaverBloomTexelStepY;
+                `,
+                                    null
+                                );
+                            screenshaverBlurVerticalSnippet.set_replace(
+                                `
+                const float w0 = 0.2270270270;
+                const float w1 = 0.1945945946;
+                const float w2 = 0.1216216216;
+                const float w3 = 0.0540540541;
+                const float w4 = 0.0162162162;
+
+                vec2 uv = cogl_tex_coord0_in.st;
+                vec3 color = texture2D(cogl_sampler0, uv).rgb * w0;
+                color += texture2D(cogl_sampler0, uv + vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 1.0).rgb * w1;
+                color += texture2D(cogl_sampler0, uv - vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 1.0).rgb * w1;
+                color += texture2D(cogl_sampler0, uv + vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 2.0).rgb * w2;
+                color += texture2D(cogl_sampler0, uv - vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 2.0).rgb * w2;
+                color += texture2D(cogl_sampler0, uv + vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 3.0).rgb * w3;
+                color += texture2D(cogl_sampler0, uv - vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 3.0).rgb * w3;
+                color += texture2D(cogl_sampler0, uv + vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 4.0).rgb * w4;
+                color += texture2D(cogl_sampler0, uv - vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 4.0).rgb * w4;
+                cogl_color_out = vec4(color, 1.0);
+            `
+                            );
+                            screenshaverBlurVerticalPipeline.add_snippet(
+                                screenshaverBlurVerticalSnippet
+                            );
+
+                            const screenshaverBlurVerticalStepX =
+                                screenshaverBlurVerticalPipeline.get_uniform_location(
+                                    'screenshaverBloomTexelStepX'
+                                );
+                            const screenshaverBlurVerticalStepY =
+                                screenshaverBlurVerticalPipeline.get_uniform_location(
+                                    'screenshaverBloomTexelStepY'
+                                );
+                            screenshaverBlurVerticalPipeline.set_uniform_1f(
+                                screenshaverBlurVerticalStepX,
+                                0.0
+                            );
+                            screenshaverBlurVerticalPipeline.set_uniform_1f(
+                                screenshaverBlurVerticalStepY,
+                                1.0 / screenshaverBloomProbeHeight
+                            );
+
+                            const screenshaverBlurVerticalTexture =
+                                Cogl.Texture2D.new_with_format(
+                                    paintCoglContext,
+                                    screenshaverBloomProbeWidth,
+                                    screenshaverBloomProbeHeight,
+                                    Cogl.PixelFormat.RGBA_8888
+                                );
+                            screenshaverBlurVerticalTexture.set_premultiplied(false);
+                            screenshaverBlurVerticalTexture.allocate();
+
+                            const screenshaverBlurVerticalOffscreen =
+                                Cogl.Offscreen.new_with_texture(
+                                    screenshaverBlurVerticalTexture
+                                );
+                            screenshaverBlurVerticalOffscreen.allocate();
+                            screenshaverBlurVerticalOffscreen.set_viewport(
+                                0.0,
+                                0.0,
+                                screenshaverBloomProbeWidth,
+                                screenshaverBloomProbeHeight
+                            );
+                            screenshaverBlurVerticalOffscreen.clear4f(
+                                Cogl.BufferBit.COLOR,
+                                0.0,
+                                0.0,
+                                0.0,
+                                1.0
+                            );
+
+                            console.log(
+                                `[Screenshaver] Test #30Y GNOME scalarized Bloom blur: ` +
+                                `before-vertical-draw=true generation=${generation}`
+                            );
+
+                            screenshaverBlurVerticalOffscreen.draw_textured_rectangle(
+                                screenshaverBlurVerticalPipeline,
+                                -1.0,
+                                1.0,
+                                1.0,
+                                -1.0,
+                                0.0,
+                                0.0,
+                                1.0,
+                                1.0
+                            );
+                            screenshaverBlurVerticalOffscreen.flush();
+
+                            console.log(
+                                `[Screenshaver] Test #30Y GNOME scalarized Bloom blur: ` +
+                                `vertical-drawn=true flushed=true ` +
+                                `target=${screenshaverBloomProbeWidth}x${screenshaverBloomProbeHeight} ` +
+                                `generation=${generation}`
+                            );
                         } catch (error) {
                             console.log(
                                 `[Screenshaver] Test #30E GNOME paint-context texture probe failed: ` +
