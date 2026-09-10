@@ -755,6 +755,20 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                                 `created=${probeTexture !== null} size=4x4 ` +
                                 `generation=${generation}`
                             );
+
+                            // Test #30F: create one tiny offscreen framebuffer
+                            // backed by the texture created from the paint-owned
+                            // Cogl.Context.  Do not draw into it yet.
+                            const probeOffscreen =
+                                Cogl.Offscreen.new_with_texture(
+                                    probeTexture
+                                );
+
+                            console.log(
+                                `[Screenshaver] Test #30F GNOME paint-context offscreen probe: ` +
+                                `created=${probeOffscreen !== null} size=4x4 ` +
+                                `generation=${generation}`
+                            );
                         } catch (error) {
                             console.log(
                                 `[Screenshaver] Test #30E GNOME paint-context texture probe failed: ` +
