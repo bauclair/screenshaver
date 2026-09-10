@@ -667,66 +667,30 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                 if (!sourceTexture)
                     throw new Error('Shell.GLSLEffect source texture unavailable');
 
-                // Test #30AC: GNOME 46 actor-native texture presentation.
+                // Test #30AD: GNOME 46 native parent-paint control.
                 //
-                // Use Clutter.Actor.create_texture_paint_node() to paint the
-                // known-good Shell.GLSLEffect source texture directly. This
-                // changes only the final GNOME 46 presentation mechanism and
-                // deliberately bypasses Screenshaver offscreen postprocessing.
+                // Shell.GLSLEffect derives from Clutter.ShaderEffect, whose
+                // documented paint_target contract is to update uniforms and
+                // chain to the parent implementation for final presentation.
+                //
+                // This deliberately bypasses all Screenshaver Cogl
+                // postprocessing and tests only the native GNOME presentation
+                // path that previously displayed the shader successfully.
                 if (GNOME_SHELL_MAJOR === 46) {
-                    const effectActor =
-                        this.get_actor?.() ??
-                        this.actor ??
-                        null;
-
-                    const createTexturePaintNodeType =
-                        typeof effectActor?.create_texture_paint_node;
-
-                    console.log(
-                        `[Screenshaver] Test #30AC GNOME actor texture-node probe: ` +
-                        `actor=${effectActor ? 'true' : 'false'} ` +
-                        `create-texture-paint-node-type=${createTexturePaintNodeType} ` +
-                        `generation=${generation}`
-                    );
-
-                    if (
-                        effectActor &&
-                        createTexturePaintNodeType === 'function'
-                    ) {
-                        const textureNode =
-                            effectActor.create_texture_paint_node(sourceTexture);
-
-                        if (!textureNode)
-                            throw new Error(
-                                'Clutter.Actor.create_texture_paint_node returned null'
-                            );
-
-                        node.add_child(textureNode);
-
-                        if (!this._screenshaverActorTextureNodeLogged) {
-                            console.log(
-                                `[Screenshaver] Test #30AC GNOME actor texture-node probe: ` +
-                                `node-added=true source=${sourceTexture.get_width?.() ?? nativeWidth}x` +
-                                `${sourceTexture.get_height?.() ?? nativeHeight} ` +
-                                `generation=${generation}`
-                            );
-                            this._screenshaverActorTextureNodeLogged = true;
-                        }
-
-                        return;
+                    if (!this._screenshaverNativeParentPaintLogged) {
+                        console.log(
+                            `[Screenshaver] Test #30AD GNOME native parent paint: ` +
+                            `before-chain-up=true source=${sourceTexture.get_width?.() ?? nativeWidth}x` +
+                            `${sourceTexture.get_height?.() ?? nativeHeight} ` +
+                            `generation=${generation}`
+                        );
+                        this._screenshaverNativeParentPaintLogged = true;
                     }
 
-                    console.log(
-                        `[Screenshaver] Test #30AC GNOME actor texture-node probe: ` +
-                        `unavailable=true generation=${generation}`
-                    );
+                    super.vfunc_paint_target(node, paintContext);
+                    return;
                 }
 
-                // GNOME Shell/Cogl API compatibility: newer Shell builds may
-                // expose the Cogl.Context directly from the effect texture, while
-                // GNOME 46 does not. Prefer the texture-owned context when it is
-                // available, then fall back to the Clutter stage/backend context.
-                // The latter is the public extension-side route used by GNOME 45+.
                 let coglContext = sourceTexture?.get_context?.() ?? null;
 
                 if (!coglContext) {
