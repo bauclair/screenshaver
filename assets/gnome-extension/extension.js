@@ -1451,44 +1451,36 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                             );
 
 
-                            // Test #30U: avoid Cogl.Pipeline.set_uniform_float()
-                            // array marshalling entirely.  Query the same FXAA
-                            // vec2 uniform, then use the fixed-arity convenience
-                            // API set_uniform_2f() if GNOME 46 exposes it.
-                            const screenshaverFxaa2fLocation =
+                            // Test #30V: verify that the fixed-arity scalar
+                            // uniform API is safe on GNOME 46. This uses one
+                            // real scalar uniform from the production FXAA
+                            // snippet and deliberately avoids set_uniform_float().
+                            const screenshaverFxaaScalarLocation =
                                 screenshaverFxaaStagePipeline.get_uniform_location(
-                                    'screenshaverFxaaInverseResolution'
+                                    'screenshaverFxaaInvertColors'
                                 );
 
                             console.log(
-                                `[Screenshaver] Test #30U GNOME FXAA uniform-2f probe: ` +
-                                `location=${screenshaverFxaa2fLocation} ` +
-                                `set-uniform-2f-type=${typeof screenshaverFxaaStagePipeline.set_uniform_2f} ` +
+                                `[Screenshaver] Test #30V GNOME FXAA uniform-1f probe: ` +
+                                `location=${screenshaverFxaaScalarLocation} ` +
+                                `set-uniform-1f-type=${typeof screenshaverFxaaStagePipeline.set_uniform_1f} ` +
                                 `generation=${generation}`
                             );
 
-                            if (typeof screenshaverFxaaStagePipeline.set_uniform_2f === 'function') {
-                                console.log(
-                                    `[Screenshaver] Test #30U GNOME FXAA uniform-2f probe: ` +
-                                    `before-set-uniform-2f=true generation=${generation}`
-                                );
+                            console.log(
+                                `[Screenshaver] Test #30V GNOME FXAA uniform-1f probe: ` +
+                                `before-set-uniform-1f=true generation=${generation}`
+                            );
 
-                                screenshaverFxaaStagePipeline.set_uniform_2f(
-                                    screenshaverFxaa2fLocation,
-                                    1.0 / renderWidth,
-                                    1.0 / renderHeight
-                                );
+                            screenshaverFxaaStagePipeline.set_uniform_1f(
+                                screenshaverFxaaScalarLocation,
+                                0.0
+                            );
 
-                                console.log(
-                                    `[Screenshaver] Test #30U GNOME FXAA uniform-2f probe: ` +
-                                    `after-set-uniform-2f=true generation=${generation}`
-                                );
-                            } else {
-                                console.log(
-                                    `[Screenshaver] Test #30U GNOME FXAA uniform-2f probe: ` +
-                                    `set-uniform-2f-unavailable=true generation=${generation}`
-                                );
-                            }
+                            console.log(
+                                `[Screenshaver] Test #30V GNOME FXAA uniform-1f probe: ` +
+                                `after-set-uniform-1f=true generation=${generation}`
+                            );
                         } catch (error) {
                             console.log(
                                 `[Screenshaver] Test #30E GNOME paint-context texture probe failed: ` +
