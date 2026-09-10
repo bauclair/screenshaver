@@ -667,72 +667,58 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                 if (!sourceTexture)
                     throw new Error('Shell.GLSLEffect source texture unavailable');
 
-                // Test #30AB: GNOME 46 visual isolation.
+                // Test #30AC: GNOME 46 actor-native texture presentation.
                 //
-                // Present the known-good Shell.GLSLEffect source texture directly
-                // through the exact Clutter.PipelineNode mechanism used by the
-                // production postprocess path.  This deliberately bypasses all
-                // Screenshaver offscreen render targets, FXAA, dithering, and
-                // Bloom.  If the shader becomes visible, PipelineNode
-                // presentation is valid and a production intermediate is black.
-                //
-                // Restrict this diagnostic to GNOME 46 so newer GNOME behavior
-                // remains untouched.
+                // Use Clutter.Actor.create_texture_paint_node() to paint the
+                // known-good Shell.GLSLEffect source texture directly. This
+                // changes only the final GNOME 46 presentation mechanism and
+                // deliberately bypasses Screenshaver offscreen postprocessing.
                 if (GNOME_SHELL_MAJOR === 46) {
-                    const paintFramebuffer =
-                        paintContext?.get_framebuffer?.() ??
-                        null;
-                    const paintCoglContext =
-                        paintFramebuffer?.get_context?.() ??
+                    const effectActor =
+                        this.get_actor?.() ??
+                        this.actor ??
                         null;
 
-                    if (paintCoglContext) {
-                        const directPipeline =
-                            Cogl.Pipeline.new(paintCoglContext);
-                        directPipeline.set_layer_texture(0, sourceTexture);
-                        directPipeline.set_layer_filters(
-                            0,
-                            Cogl.PipelineFilter.LINEAR,
-                            Cogl.PipelineFilter.LINEAR
-                        );
-                        directPipeline.set_layer_wrap_mode(
-                            0,
-                            Cogl.PipelineWrapMode.CLAMP_TO_EDGE
-                        );
+                    const createTexturePaintNodeType =
+                        typeof effectActor?.create_texture_paint_node;
 
-                        const directRect = new Clutter.ActorBox({
-                            x1: 0.0,
-                            y1: 0.0,
-                            x2: nativeWidth,
-                            y2: nativeHeight,
-                        });
-                        const directNode =
-                            Clutter.PipelineNode.new(directPipeline);
-                        directNode.add_texture_rectangle(
-                            directRect,
-                            0.0,
-                            0.0,
-                            1.0,
-                            1.0
-                        );
-                        node.add_child(directNode);
+                    console.log(
+                        `[Screenshaver] Test #30AC GNOME actor texture-node probe: ` +
+                        `actor=${effectActor ? 'true' : 'false'} ` +
+                        `create-texture-paint-node-type=${createTexturePaintNodeType} ` +
+                        `generation=${generation}`
+                    );
 
-                        if (!this._screenshaverDirectSourcePresentationLogged) {
-                            console.log(
-                                `[Screenshaver] Test #30AB GNOME direct source presentation: ` +
-                                `pipeline-node-added=true source=${sourceTexture.get_width?.() ?? nativeWidth}x` +
-                                `${sourceTexture.get_height?.() ?? nativeHeight} ` +
-                                `presentation=${nativeWidth}x${nativeHeight} generation=${generation}`
+                    if (
+                        effectActor &&
+                        createTexturePaintNodeType === 'function'
+                    ) {
+                        const textureNode =
+                            effectActor.create_texture_paint_node(sourceTexture);
+
+                        if (!textureNode)
+                            throw new Error(
+                                'Clutter.Actor.create_texture_paint_node returned null'
                             );
-                            this._screenshaverDirectSourcePresentationLogged = true;
+
+                        node.add_child(textureNode);
+
+                        if (!this._screenshaverActorTextureNodeLogged) {
+                            console.log(
+                                `[Screenshaver] Test #30AC GNOME actor texture-node probe: ` +
+                                `node-added=true source=${sourceTexture.get_width?.() ?? nativeWidth}x` +
+                                `${sourceTexture.get_height?.() ?? nativeHeight} ` +
+                                `generation=${generation}`
+                            );
+                            this._screenshaverActorTextureNodeLogged = true;
                         }
 
                         return;
                     }
 
                     console.log(
-                        `[Screenshaver] Test #30AB GNOME direct source presentation: ` +
-                        `paint-cogl-context-unavailable=true generation=${generation}`
+                        `[Screenshaver] Test #30AC GNOME actor texture-node probe: ` +
+                        `unavailable=true generation=${generation}`
                     );
                 }
 
