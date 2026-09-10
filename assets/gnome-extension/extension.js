@@ -1221,6 +1221,27 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                                 `drawn=true flushed=true size=4x4 ` +
                                 `generation=${generation}`
                             );
+
+
+                            // Test #30Q: isolate the first real production
+                            // post-processing shader constructor: FXAA.
+                            // Build the exact production FXAA pipeline against
+                            // the already-validated full-size RGBA_8888 texture,
+                            // but DO NOT draw with it yet.
+                            const screenshaverFxaaProbePipeline =
+                                this.screenshaver_create_fxaa_pipeline(
+                                    paintCoglContext,
+                                    fullSizeStandardTexture,
+                                    renderWidth,
+                                    renderHeight
+                                );
+
+                            console.log(
+                                `[Screenshaver] Test #30Q GNOME production FXAA pipeline probe: ` +
+                                `pipeline=true created=true ` +
+                                `size=${renderWidth}x${renderHeight} ` +
+                                `generation=${generation}`
+                            );
                         } catch (error) {
                             console.log(
                                 `[Screenshaver] Test #30E GNOME paint-context texture probe failed: ` +
@@ -4204,3 +4225,4 @@ function readU32LE(data, offset) {
         | (data[offset + 3] << 24)
     ) >>> 0;
 }
+
