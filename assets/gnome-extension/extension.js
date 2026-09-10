@@ -643,25 +643,12 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                 if (!sourceTexture)
                     throw new Error('Shell.GLSLEffect source texture unavailable');
 
-                // GNOME Shell/Cogl API compatibility:
-                //
-                // 1. Some newer Shell builds expose the Cogl.Context directly
-                //    from the effect texture.
-                // 2. Newer Clutter builds expose the actor/stage Clutter.Context,
-                //    whose backend owns the Cogl.Context.
-                // 3. GNOME 46 still exposes Clutter.get_default_backend(), which
-                //    provides the Clutter.Backend directly.
-                //
-                // Feature-detect every route so newer working Shell versions keep
-                // their existing behavior while GNOME 46 can use its native API.
-                let coglContext = null;
-                let coglContextSource = null;
-
-                if (typeof sourceTexture?.get_context === 'function') {
-                    coglContext = sourceTexture.get_context();
-                    if (coglContext)
-                        coglContextSource = 'Shell.GLSLEffect texture';
-                }
+                // GNOME Shell/Cogl API compatibility: newer Shell builds may
+                // expose the Cogl.Context directly from the effect texture, while
+                // GNOME 46 does not. Prefer the texture-owned context when it is
+                // available, then fall back to the Clutter stage/backend context.
+                // The latter is the public extension-side route used by GNOME 45+.
+                let coglContext = sourceTexture?.get_context?.() ?? null;
 
                 if (!coglContext) {
                     const stageContext =
@@ -669,36 +656,11 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                         global.stage?.context ??
                         null;
                     const clutterBackend = stageContext?.get_backend?.() ?? null;
-
-                    if (typeof clutterBackend?.get_cogl_context === 'function') {
-                        coglContext = clutterBackend.get_cogl_context();
-                        if (coglContext)
-                            coglContextSource = 'Clutter stage backend';
-                    }
-                }
-
-                if (!coglContext && typeof Clutter.get_default_backend === 'function') {
-                    const clutterBackend = Clutter.get_default_backend();
-
-                    if (typeof clutterBackend?.get_cogl_context === 'function') {
-                        coglContext = clutterBackend.get_cogl_context();
-                        if (coglContext)
-                            coglContextSource = 'Clutter.get_default_backend()';
-                    }
+                    coglContext = clutterBackend?.get_cogl_context?.() ?? null;
                 }
 
                 if (!coglContext)
-                    throw new Error(
-                        'Cogl context unavailable from Shell.GLSLEffect texture, ' +
-                        'Clutter stage backend, or Clutter.get_default_backend()'
-                    );
-
-                if (!this._screenshaverCoglContextSourceLogged) {
-                    console.log(
-                        `[Screenshaver] Test #30 Cogl context acquired via ${coglContextSource}`
-                    );
-                    this._screenshaverCoglContextSourceLogged = true;
-                }
+                    throw new Error('Cogl context unavailable from Shell.GLSLEffect texture or Clutter stage backend');
 
                 const requestedPrecision = ['standard', 'high', 'auto'].includes(colorPrecision)
                     ? colorPrecision
@@ -1358,6 +1320,10 @@ export default class ScreenshaverExtension extends Extension {
         this._audioBandPoll = null;
         this._audioBandReadInFlight = false;
         this._audioBandCancellable = null;
+        // Preserve across GNOME disable()/enable() object reuse for the same
+        // reason as the idle-inhibitor request generation below.
+        this._audioBandRequestGeneration =
+            this._audioBandRequestGeneration ?? 0;
         this._lastAudioBands = null;
         this._lastAudioBandLogUs = 0;
         this._activeProductionSource = null;
@@ -1405,7 +1371,11 @@ export default class ScreenshaverExtension extends Extension {
         this._powerSaveFallbackSource = null;
         this._powerSaveFallbackQueryInFlight = false;
         this._idleInhibitCookie = 0;
-        this._idleInhibitRequestGeneration = 0;
+        // GNOME may reuse this extension object across disable()/enable()
+        // during session-mode transitions. Keep this generation monotonic so
+        // callbacks from an earlier activation can never become current again.
+        this._idleInhibitRequestGeneration =
+            this._idleInhibitRequestGeneration ?? 0;
         this._idleInhibitRequestPending = false;
         this._idleInhibitWaitState = null;
 
@@ -1679,11 +1649,15 @@ export default class ScreenshaverExtension extends Extension {
             return;
 
         const audioFile = Gio.File.new_for_path(this._runtimeAudioPath());
+        const requestGeneration = ++this._audioBandRequestGeneration;
         this._audioBandReadInFlight = true;
 
         audioFile.load_contents_async(
             this._audioBandCancellable,
             (file, result) => {
+                if (requestGeneration !== this._audioBandRequestGeneration)
+                    return;
+
                 this._audioBandReadInFlight = false;
 
                 if (!this._lockActor)
@@ -1749,6 +1723,10 @@ export default class ScreenshaverExtension extends Extension {
     }
 
     _stopAudioBandPolling() {
+        // Invalidate callbacks from reads issued by the activation being
+        // torn down before cancelling their Gio.Cancellable.
+        this._audioBandRequestGeneration++;
+
         if (this._audioBandPoll) {
             GLib.source_remove(this._audioBandPoll);
             this._audioBandPoll = null;
