@@ -1028,6 +1028,33 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                                 `size=${renderWidth}x${renderHeight} format=RGBA_8888 ` +
                                 `generation=${generation}`
                             );
+
+
+                            // Test #30M: isolate the actual Shell.GLSLEffect
+                            // source texture.  Bind it to a plain pipeline using
+                            // the validated PaintContext-owned Cogl.Context, but
+                            // DO NOT draw with it.  This distinguishes a source-
+                            // texture/context ownership incompatibility from the
+                            // draw operation itself.
+                            const shellSourcePipeline =
+                                Cogl.Pipeline.new(paintCoglContext);
+                            shellSourcePipeline.set_layer_texture(
+                                0,
+                                sourceTexture
+                            );
+                            shellSourcePipeline.set_layer_filters(
+                                0,
+                                Cogl.PipelineFilter.LINEAR,
+                                Cogl.PipelineFilter.LINEAR
+                            );
+
+                            console.log(
+                                `[Screenshaver] Test #30M GNOME Shell source-texture bind probe: ` +
+                                `pipeline=true source-texture-bound=true filters=true ` +
+                                `source=${sourceTexture.get_width?.() ?? 0}x` +
+                                `${sourceTexture.get_height?.() ?? 0} ` +
+                                `generation=${generation}`
+                            );
                         } catch (error) {
                             console.log(
                                 `[Screenshaver] Test #30E GNOME paint-context texture probe failed: ` +
