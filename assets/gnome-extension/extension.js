@@ -699,6 +699,40 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     }
                 }
 
+                if (!coglContext) {
+                    // GNOME 46 diagnostic only:
+                    //
+                    // Clutter's paint callback is already executing with the
+                    // framebuffer that owns this render operation.  Probe that
+                    // ownership chain directly:
+                    //
+                    //   Clutter.PaintContext
+                    //       -> Cogl.Framebuffer
+                    //       -> Cogl.Context
+                    //
+                    // Do not allocate or render through this context yet.
+                    const paintFramebuffer =
+                        paintContext?.get_framebuffer?.() ??
+                        null;
+
+                    const paintCoglContext =
+                        paintFramebuffer?.get_context?.() ??
+                        null;
+
+                    if (!this._screenshaverPaintFramebufferProbeLogged) {
+                        console.log(
+                            `[Screenshaver] Test #30D GNOME paint-framebuffer probe: ` +
+                            `paint-context=${paintContext !== null && paintContext !== undefined} ` +
+                            `get-framebuffer=${typeof paintContext?.get_framebuffer === 'function'} ` +
+                            `framebuffer=${paintFramebuffer !== null} ` +
+                            `get-context=${typeof paintFramebuffer?.get_context === 'function'} ` +
+                            `cogl-context=${paintCoglContext !== null} ` +
+                            `generation=${generation}`
+                        );
+                        this._screenshaverPaintFramebufferProbeLogged = true;
+                    }
+                }
+
                 if (!coglContext)
                     throw new Error('Cogl context unavailable from Shell.GLSLEffect texture or Clutter stage backend');
 
