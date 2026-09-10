@@ -667,24 +667,52 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                 if (!sourceTexture)
                     throw new Error('Shell.GLSLEffect source texture unavailable');
 
-                // Test #30AD: GNOME 46 native parent-paint control.
+                // Test #30AE: GNOME 46 native effect-pipeline source rebind.
                 //
-                // Shell.GLSLEffect derives from Clutter.ShaderEffect, whose
-                // documented paint_target contract is to update uniforms and
-                // chain to the parent implementation for final presentation.
-                //
-                // This deliberately bypasses all Screenshaver Cogl
-                // postprocessing and tests only the native GNOME presentation
-                // path that previously displayed the shader successfully.
+                // Rebind the effect's own known-good source texture to layer 0
+                // of Clutter.OffscreenEffect's native pipeline, then chain to
+                // Shell.GLSLEffect/Clutter.ShaderEffect parent paint. If the
+                // shader remains visible, this gives Screenshaver a native
+                // presentation hook for a later postprocessed-texture test.
                 if (GNOME_SHELL_MAJOR === 46) {
-                    if (!this._screenshaverNativeParentPaintLogged) {
+                    const nativePipeline =
+                        this.get_pipeline?.() ??
+                        null;
+
+                    const setLayerTextureType =
+                        typeof nativePipeline?.set_layer_texture;
+
+                    if (!this._screenshaverNativePipelineProbeLogged) {
                         console.log(
-                            `[Screenshaver] Test #30AD GNOME native parent paint: ` +
-                            `before-chain-up=true source=${sourceTexture.get_width?.() ?? nativeWidth}x` +
+                            `[Screenshaver] Test #30AE GNOME native effect pipeline: ` +
+                            `pipeline=${nativePipeline ? 'true' : 'false'} ` +
+                            `set-layer-texture-type=${setLayerTextureType} ` +
+                            `source=${sourceTexture.get_width?.() ?? nativeWidth}x` +
                             `${sourceTexture.get_height?.() ?? nativeHeight} ` +
                             `generation=${generation}`
                         );
-                        this._screenshaverNativeParentPaintLogged = true;
+                        this._screenshaverNativePipelineProbeLogged = true;
+                    }
+
+                    if (
+                        nativePipeline &&
+                        setLayerTextureType === 'function'
+                    ) {
+                        nativePipeline.set_layer_texture(0, sourceTexture);
+
+                        if (!this._screenshaverNativePipelineRebindLogged) {
+                            console.log(
+                                `[Screenshaver] Test #30AE GNOME native effect pipeline: ` +
+                                `source-rebound=true before-chain-up=true ` +
+                                `generation=${generation}`
+                            );
+                            this._screenshaverNativePipelineRebindLogged = true;
+                        }
+                    } else {
+                        console.log(
+                            `[Screenshaver] Test #30AE GNOME native effect pipeline: ` +
+                            `rebind-unavailable=true generation=${generation}`
+                        );
                     }
 
                     super.vfunc_paint_target(node, paintContext);
