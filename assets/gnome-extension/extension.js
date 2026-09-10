@@ -1223,23 +1223,38 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                             );
 
 
-                            // Test #30Q: isolate the first real production
-                            // post-processing shader constructor: FXAA.
-                            // Build the exact production FXAA pipeline against
-                            // the already-validated full-size RGBA_8888 texture,
-                            // but DO NOT draw with it yet.
-                            const screenshaverFxaaProbePipeline =
-                                this.screenshaver_create_fxaa_pipeline(
-                                    paintCoglContext,
-                                    fullSizeStandardTexture,
-                                    renderWidth,
-                                    renderHeight
-                                );
+                            // Test #30R: isolate the first previously untested
+                            // operation inside the production FXAA constructor:
+                            // setting CLAMP_TO_EDGE wrap mode on layer 0.
+                            // Pipeline creation, texture binding, and LINEAR
+                            // filtering have already been proven safe.
+                            const screenshaverWrapProbePipeline =
+                                Cogl.Pipeline.new(paintCoglContext);
+
+                            screenshaverWrapProbePipeline.set_layer_texture(
+                                0,
+                                fullSizeStandardTexture
+                            );
+                            screenshaverWrapProbePipeline.set_layer_filters(
+                                0,
+                                Cogl.PipelineFilter.LINEAR,
+                                Cogl.PipelineFilter.LINEAR
+                            );
 
                             console.log(
-                                `[Screenshaver] Test #30Q GNOME production FXAA pipeline probe: ` +
-                                `pipeline=true created=true ` +
-                                `size=${renderWidth}x${renderHeight} ` +
+                                `[Screenshaver] Test #30R GNOME wrap-mode probe: ` +
+                                `before-set-layer-wrap-mode=true ` +
+                                `generation=${generation}`
+                            );
+
+                            screenshaverWrapProbePipeline.set_layer_wrap_mode(
+                                0,
+                                Cogl.PipelineWrapMode.CLAMP_TO_EDGE
+                            );
+
+                            console.log(
+                                `[Screenshaver] Test #30R GNOME wrap-mode probe: ` +
+                                `after-set-layer-wrap-mode=true mode=CLAMP_TO_EDGE ` +
                                 `generation=${generation}`
                             );
                         } catch (error) {
