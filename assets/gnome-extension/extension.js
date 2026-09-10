@@ -659,6 +659,46 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     coglContext = clutterBackend?.get_cogl_context?.() ?? null;
                 }
 
+                if (!coglContext) {
+                    // GNOME 46 diagnostic only:
+                    //
+                    // Probe the Clutter context attached to the actual effect actor.
+                    // GNOME's newer extension guidance prefers actor.get_context()
+                    // over a process-global/default backend.  Do NOT use the
+                    // returned Cogl.Context yet: the previous default-backend
+                    // experiment proved that allocating Cogl resources from an
+                    // unsuitable context can crash GNOME Shell.
+                    const effectActor =
+                        this.get_actor?.() ??
+                        this.actor ??
+                        null;
+
+                    const actorContext =
+                        effectActor?.get_context?.() ??
+                        effectActor?.context ??
+                        null;
+
+                    const actorBackend =
+                        actorContext?.get_backend?.() ??
+                        null;
+
+                    const actorCoglContext =
+                        actorBackend?.get_cogl_context?.() ??
+                        null;
+
+                    if (!this._screenshaverActorCoglContextProbeLogged) {
+                        console.log(
+                            `[Screenshaver] Test #30C GNOME actor-context probe: ` +
+                            `actor=${effectActor !== null} ` +
+                            `clutter-context=${actorContext !== null} ` +
+                            `backend=${actorBackend !== null} ` +
+                            `cogl-context=${actorCoglContext !== null} ` +
+                            `generation=${generation}`
+                        );
+                        this._screenshaverActorCoglContextProbeLogged = true;
+                    }
+                }
+
                 if (!coglContext)
                     throw new Error('Cogl context unavailable from Shell.GLSLEffect texture or Clutter stage backend');
 
