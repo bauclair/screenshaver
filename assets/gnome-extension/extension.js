@@ -549,6 +549,7 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     uniform float screenshaverFlipHorizontal;
                     uniform float screenshaverFlipVertical;
                     uniform float screenshaverHueRotation;
+                    uniform float screenshaverPresentLayer0;
 
                     vec3 screenshaverRotateHue(vec3 color, float degrees)
                     {
@@ -578,6 +579,12 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                 `,
                 `
                     vec2 uv = cogl_tex_coord0_in.st;
+
+                    if (screenshaverPresentLayer0 > 0.5) {
+                        vec4 presentedColor = texture2D(cogl_sampler0, uv);
+                        presentedColor.a = 1.0;
+                        cogl_color_out = presentedColor;
+                    } else {
                     vec2 fragCoord = vec2(
                         uv.x * iResolution.x,
                         (1.0 - uv.y) * iResolution.y
@@ -607,6 +614,7 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     // participate in lock-screen compositing.
                     fragColor.a = 1.0;
                     cogl_color_out = fragColor;
+                    }
                 `,
                 true
             );
@@ -619,6 +627,15 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
         // first test that separates shader rasterization resolution from final
         // presentation resolution.
         vfunc_paint_target(node, paintContext) {
+            // Test #30AH: default to the normal procedural shader path for all
+            // intermediate/manual draws. GNOME 46 switches to layer-0 sampling
+            // only immediately before the native parent presentation below.
+            this.set_uniform_float(
+                'screenshaverPresentLayer0',
+                1,
+                [0.0]
+            );
+
             let targetValid = false;
             let targetWidth = 0.0;
             let targetHeight = 0.0;
@@ -743,11 +760,17 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                             Cogl.PipelineWrapMode.CLAMP_TO_EDGE
                         );
 
+                        this.set_uniform_float(
+                            'screenshaverPresentLayer0',
+                            1,
+                            [1.0]
+                        );
+
                         if (!this._screenshaverSolidTextureProbeLogged) {
                             console.log(
-                                `[Screenshaver] Test #30AG GNOME native pipeline solid-texture probe: ` +
-                                `solid-red-bound=true size=16x16 before-chain-up=true ` +
-                                `generation=${generation}`
+                                `[Screenshaver] Test #30AH GNOME native sampler-switch probe: ` +
+                                `solid-red-bound=true sampler-switch=layer0 ` +
+                                `size=16x16 before-chain-up=true generation=${generation}`
                             );
                             this._screenshaverSolidTextureProbeLogged = true;
                         }
@@ -757,7 +780,7 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     }
 
                     console.log(
-                        `[Screenshaver] Test #30AG GNOME native pipeline solid-texture probe: ` +
+                        `[Screenshaver] Test #30AH GNOME native sampler-switch probe: ` +
                         `unavailable=true ` +
                         `paint-cogl-context=${paintCoglContext ? 'true' : 'false'} ` +
                         `native-pipeline=${nativePipeline ? 'true' : 'false'} ` +
