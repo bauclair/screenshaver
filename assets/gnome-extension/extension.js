@@ -1757,6 +1757,206 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                                 `target=${renderWidth}x${renderHeight} ` +
                                 `generation=${generation}`
                             );
+
+
+                            // Test #30X: execute the exact production Audio Bloom
+                            // extraction shader with the vec3 audio-band uniform
+                            // scalarized into three float uniforms.  All writes
+                            // use set_uniform_1f(); set_uniform_float() is never
+                            // called by this probe.
+                            const screenshaverAudioExtractPipeline =
+                                Cogl.Pipeline.new(paintCoglContext);
+                            screenshaverAudioExtractPipeline.set_layer_texture(
+                                0,
+                                sourceTexture
+                            );
+                            screenshaverAudioExtractPipeline.set_layer_filters(
+                                0,
+                                Cogl.PipelineFilter.LINEAR,
+                                Cogl.PipelineFilter.LINEAR
+                            );
+                            screenshaverAudioExtractPipeline.set_layer_wrap_mode(
+                                0,
+                                Cogl.PipelineWrapMode.CLAMP_TO_EDGE
+                            );
+
+                            const screenshaverAudioExtractSnippet =
+                                Cogl.Snippet.new(
+                                    Cogl.SnippetHook.FRAGMENT,
+                                    `
+                    uniform float screenshaverBloomThreshold;
+                    uniform float screenshaverAudioBass;
+                    uniform float screenshaverAudioMidrange;
+                    uniform float screenshaverAudioTreble;
+
+                    vec3 screenshaverBloomRgbToHsv(vec3 c)
+                    {
+                        float maxChannel = max(c.r, max(c.g, c.b));
+                        float minChannel = min(c.r, min(c.g, c.b));
+                        float chroma = maxChannel - minChannel;
+                        float hue = 0.0;
+
+                        if (chroma > 0.00001) {
+                            if (maxChannel == c.r)
+                                hue = mod((c.g - c.b) / chroma, 6.0);
+                            else if (maxChannel == c.g)
+                                hue = ((c.b - c.r) / chroma) + 2.0;
+                            else
+                                hue = ((c.r - c.g) / chroma) + 4.0;
+
+                            hue *= 60.0;
+                            if (hue < 0.0)
+                                hue += 360.0;
+                        }
+
+                        float saturation = maxChannel > 0.00001
+                            ? chroma / maxChannel
+                            : 0.0;
+
+                        return vec3(hue, saturation, maxChannel);
+                    }
+                `,
+                                    null
+                                );
+                            screenshaverAudioExtractSnippet.set_replace(
+                                `
+                vec3 sceneColor = texture2D(cogl_sampler0, cogl_tex_coord0_in.st).rgb;
+                vec3 hsv = screenshaverBloomRgbToHsv(max(sceneColor, vec3(0.0)));
+                float hue = hsv.x;
+                float saturation = hsv.y;
+                float value = hsv.z;
+
+                float bassEnergy = clamp(screenshaverAudioBass, 0.0, 1.0);
+                float midEnergy = clamp(screenshaverAudioMidrange, 0.0, 1.0);
+                float highEnergy = clamp(screenshaverAudioTreble, 0.0, 1.0);
+
+                float bassMatch = (hue >= 0.0 && hue < 45.0) ? bassEnergy : 0.0;
+                float midMatch = (hue >= 45.0 && hue < 150.0) ? midEnergy : 0.0;
+                float highMatch = (hue >= 240.0 && hue < 300.0) ? highEnergy : 0.0;
+                float bandMatch = max(bassMatch, max(midMatch, highMatch));
+
+                float colorStrength = saturation * 2.0
+                    * smoothstep(0.02, 0.15, value);
+                float energy = clamp(bandMatch, 0.0, 1.0);
+                float effectiveThreshold = mix(2.0, screenshaverBloomThreshold, energy);
+                float response = energy * smoothstep(
+                    effectiveThreshold,
+                    min(effectiveThreshold + 0.35, 2.0001),
+                    colorStrength
+                );
+
+                cogl_color_out = vec4(sceneColor * response, 1.0);
+            `
+                            );
+                            screenshaverAudioExtractPipeline.add_snippet(
+                                screenshaverAudioExtractSnippet
+                            );
+
+                            const screenshaverBloomThresholdLocation =
+                                screenshaverAudioExtractPipeline.get_uniform_location(
+                                    'screenshaverBloomThreshold'
+                                );
+                            const screenshaverAudioBassLocation =
+                                screenshaverAudioExtractPipeline.get_uniform_location(
+                                    'screenshaverAudioBass'
+                                );
+                            const screenshaverAudioMidLocation =
+                                screenshaverAudioExtractPipeline.get_uniform_location(
+                                    'screenshaverAudioMidrange'
+                                );
+                            const screenshaverAudioTrebleLocation =
+                                screenshaverAudioExtractPipeline.get_uniform_location(
+                                    'screenshaverAudioTreble'
+                                );
+
+                            const screenshaverProbeBass =
+                                this._screenshaverAudioBass ?? 0.0;
+                            const screenshaverProbeMid =
+                                this._screenshaverAudioMidrange ?? 0.0;
+                            const screenshaverProbeTreble =
+                                this._screenshaverAudioTreble ?? 0.0;
+
+                            screenshaverAudioExtractPipeline.set_uniform_1f(
+                                screenshaverBloomThresholdLocation,
+                                Number.isFinite(bloomThreshold)
+                                    ? bloomThreshold
+                                    : 0.80
+                            );
+                            screenshaverAudioExtractPipeline.set_uniform_1f(
+                                screenshaverAudioBassLocation,
+                                screenshaverProbeBass
+                            );
+                            screenshaverAudioExtractPipeline.set_uniform_1f(
+                                screenshaverAudioMidLocation,
+                                screenshaverProbeMid
+                            );
+                            screenshaverAudioExtractPipeline.set_uniform_1f(
+                                screenshaverAudioTrebleLocation,
+                                screenshaverProbeTreble
+                            );
+
+                            const screenshaverBloomProbeWidth =
+                                Math.max(1, Math.floor(nativeWidth / 2));
+                            const screenshaverBloomProbeHeight =
+                                Math.max(1, Math.floor(nativeHeight / 2));
+
+                            console.log(
+                                `[Screenshaver] Test #30X GNOME scalarized Audio Bloom extraction: ` +
+                                `before-draw=true ` +
+                                `bands=${screenshaverProbeBass.toFixed(3)}/` +
+                                `${screenshaverProbeMid.toFixed(3)}/` +
+                                `${screenshaverProbeTreble.toFixed(3)} ` +
+                                `target=${screenshaverBloomProbeWidth}x${screenshaverBloomProbeHeight} ` +
+                                `generation=${generation}`
+                            );
+
+                            const screenshaverAudioExtractTexture =
+                                Cogl.Texture2D.new_with_format(
+                                    paintCoglContext,
+                                    screenshaverBloomProbeWidth,
+                                    screenshaverBloomProbeHeight,
+                                    Cogl.PixelFormat.RGBA_8888
+                                );
+                            screenshaverAudioExtractTexture.set_premultiplied(false);
+                            screenshaverAudioExtractTexture.allocate();
+
+                            const screenshaverAudioExtractOffscreen =
+                                Cogl.Offscreen.new_with_texture(
+                                    screenshaverAudioExtractTexture
+                                );
+                            screenshaverAudioExtractOffscreen.allocate();
+                            screenshaverAudioExtractOffscreen.set_viewport(
+                                0.0,
+                                0.0,
+                                screenshaverBloomProbeWidth,
+                                screenshaverBloomProbeHeight
+                            );
+                            screenshaverAudioExtractOffscreen.clear4f(
+                                Cogl.BufferBit.COLOR,
+                                0.0,
+                                0.0,
+                                0.0,
+                                1.0
+                            );
+                            screenshaverAudioExtractOffscreen.draw_textured_rectangle(
+                                screenshaverAudioExtractPipeline,
+                                -1.0,
+                                1.0,
+                                1.0,
+                                -1.0,
+                                0.0,
+                                0.0,
+                                1.0,
+                                1.0
+                            );
+                            screenshaverAudioExtractOffscreen.flush();
+
+                            console.log(
+                                `[Screenshaver] Test #30X GNOME scalarized Audio Bloom extraction: ` +
+                                `drawn=true flushed=true ` +
+                                `target=${screenshaverBloomProbeWidth}x${screenshaverBloomProbeHeight} ` +
+                                `generation=${generation}`
+                            );
                         } catch (error) {
                             console.log(
                                 `[Screenshaver] Test #30E GNOME paint-context texture probe failed: ` +
