@@ -667,6 +667,75 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                 if (!sourceTexture)
                     throw new Error('Shell.GLSLEffect source texture unavailable');
 
+                // Test #30AB: GNOME 46 visual isolation.
+                //
+                // Present the known-good Shell.GLSLEffect source texture directly
+                // through the exact Clutter.PipelineNode mechanism used by the
+                // production postprocess path.  This deliberately bypasses all
+                // Screenshaver offscreen render targets, FXAA, dithering, and
+                // Bloom.  If the shader becomes visible, PipelineNode
+                // presentation is valid and a production intermediate is black.
+                //
+                // Restrict this diagnostic to GNOME 46 so newer GNOME behavior
+                // remains untouched.
+                if (GNOME_SHELL_MAJOR === 46) {
+                    const paintFramebuffer =
+                        paintContext?.get_framebuffer?.() ??
+                        null;
+                    const paintCoglContext =
+                        paintFramebuffer?.get_context?.() ??
+                        null;
+
+                    if (paintCoglContext) {
+                        const directPipeline =
+                            Cogl.Pipeline.new(paintCoglContext);
+                        directPipeline.set_layer_texture(0, sourceTexture);
+                        directPipeline.set_layer_filters(
+                            0,
+                            Cogl.PipelineFilter.LINEAR,
+                            Cogl.PipelineFilter.LINEAR
+                        );
+                        directPipeline.set_layer_wrap_mode(
+                            0,
+                            Cogl.PipelineWrapMode.CLAMP_TO_EDGE
+                        );
+
+                        const directRect = new Clutter.ActorBox({
+                            x1: 0.0,
+                            y1: 0.0,
+                            x2: nativeWidth,
+                            y2: nativeHeight,
+                        });
+                        const directNode =
+                            Clutter.PipelineNode.new(directPipeline);
+                        directNode.add_texture_rectangle(
+                            directRect,
+                            0.0,
+                            0.0,
+                            1.0,
+                            1.0
+                        );
+                        node.add_child(directNode);
+
+                        if (!this._screenshaverDirectSourcePresentationLogged) {
+                            console.log(
+                                `[Screenshaver] Test #30AB GNOME direct source presentation: ` +
+                                `pipeline-node-added=true source=${sourceTexture.get_width?.() ?? nativeWidth}x` +
+                                `${sourceTexture.get_height?.() ?? nativeHeight} ` +
+                                `presentation=${nativeWidth}x${nativeHeight} generation=${generation}`
+                            );
+                            this._screenshaverDirectSourcePresentationLogged = true;
+                        }
+
+                        return;
+                    }
+
+                    console.log(
+                        `[Screenshaver] Test #30AB GNOME direct source presentation: ` +
+                        `paint-cogl-context-unavailable=true generation=${generation}`
+                    );
+                }
+
                 // GNOME Shell/Cogl API compatibility: newer Shell builds may
                 // expose the Cogl.Context directly from the effect texture, while
                 // GNOME 46 does not. Prefer the texture-owned context when it is
