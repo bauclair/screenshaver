@@ -667,6 +667,104 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                 if (!sourceTexture)
                     throw new Error('Shell.GLSLEffect source texture unavailable');
 
+                // Test #30AG: determine whether rebinding layer 0 on
+                // Shell.GLSLEffect's native pipeline actually controls the
+                // pixels that the parent paint presents on GNOME 46.
+                //
+                // Build a tiny solid-red Cogl texture using the paint-owned
+                // context, bind it to layer 0 of the native effect pipeline,
+                // then chain to the parent paint. If the display is still the
+                // procedural shader, Shell.GLSLEffect's shader program is
+                // producing the image independently of layer 0.
+                if (GNOME_SHELL_MAJOR === 46) {
+                    const paintFramebuffer =
+                        paintContext?.get_framebuffer?.() ??
+                        null;
+                    const paintCoglContext =
+                        paintFramebuffer?.get_context?.() ??
+                        null;
+                    const nativePipeline =
+                        this.get_pipeline?.() ??
+                        null;
+
+                    if (
+                        paintCoglContext &&
+                        nativePipeline &&
+                        typeof nativePipeline.set_layer_texture === 'function'
+                    ) {
+                        if (!this._screenshaverSolidTextureProbeTexture) {
+                            const solidTexture =
+                                Cogl.Texture2D.new_with_format(
+                                    paintCoglContext,
+                                    16,
+                                    16,
+                                    Cogl.PixelFormat.RGBA_8888
+                                );
+                            solidTexture.set_premultiplied(false);
+                            solidTexture.allocate();
+
+                            const solidOffscreen =
+                                Cogl.Offscreen.new_with_texture(
+                                    solidTexture
+                                );
+                            solidOffscreen.allocate();
+                            solidOffscreen.set_viewport(
+                                0.0,
+                                0.0,
+                                16.0,
+                                16.0
+                            );
+                            solidOffscreen.clear4f(
+                                Cogl.BufferBit.COLOR,
+                                1.0,
+                                0.0,
+                                0.0,
+                                1.0
+                            );
+                            solidOffscreen.flush();
+
+                            this._screenshaverSolidTextureProbeTexture =
+                                solidTexture;
+                            this._screenshaverSolidTextureProbeOffscreen =
+                                solidOffscreen;
+                        }
+
+                        nativePipeline.set_layer_texture(
+                            0,
+                            this._screenshaverSolidTextureProbeTexture
+                        );
+                        nativePipeline.set_layer_filters(
+                            0,
+                            Cogl.PipelineFilter.NEAREST,
+                            Cogl.PipelineFilter.NEAREST
+                        );
+                        nativePipeline.set_layer_wrap_mode(
+                            0,
+                            Cogl.PipelineWrapMode.CLAMP_TO_EDGE
+                        );
+
+                        if (!this._screenshaverSolidTextureProbeLogged) {
+                            console.log(
+                                `[Screenshaver] Test #30AG GNOME native pipeline solid-texture probe: ` +
+                                `solid-red-bound=true size=16x16 before-chain-up=true ` +
+                                `generation=${generation}`
+                            );
+                            this._screenshaverSolidTextureProbeLogged = true;
+                        }
+
+                        super.vfunc_paint_target(node, paintContext);
+                        return;
+                    }
+
+                    console.log(
+                        `[Screenshaver] Test #30AG GNOME native pipeline solid-texture probe: ` +
+                        `unavailable=true ` +
+                        `paint-cogl-context=${paintCoglContext ? 'true' : 'false'} ` +
+                        `native-pipeline=${nativePipeline ? 'true' : 'false'} ` +
+                        `generation=${generation}`
+                    );
+                }
+
                 let coglContext = sourceTexture?.get_context?.() ?? null;
 
                 if (!coglContext) {
