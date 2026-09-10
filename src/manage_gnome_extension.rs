@@ -55,8 +55,9 @@ pub(crate) struct GnomeExtensionIntegrationGuard {
 
 impl GnomeExtensionIntegrationGuard {
     /// Provision Screenshaver's GNOME Shell extension into the current user's
-    /// extension directory, reload it when GNOME already knows about the UUID,
-    /// enable it, and verify that GNOME Shell reports it ACTIVE.
+    /// extension directory, preserve an already-ACTIVE unchanged extension,
+    /// reload it only when provisioned assets changed, otherwise enable it as
+    /// needed, and verify that GNOME Shell reports it ACTIVE.
     ///
     /// Installation is persistent; activation is runtime-owned.  The extension
     /// itself remains fail-closed and creates no Screenshaver actors unless the
@@ -126,17 +127,72 @@ impl GnomeExtensionIntegrationGuard {
         }
 
 
-        // If the extension is already known in this GNOME Shell session,
-        // disabling before enabling forces Shell to load the provisioned copy.
-        // Failure here is intentionally non-fatal because a first installation
-        // may not yet be known to GNOME Shell.
-        let _ =
-            run_gnome_extensions_command(
-                &[
-                    "disable",
-                    GNOME_EXTENSION_UUID,
-                ]
+        let assets_changed =
+            extension_changed
+                || metadata_changed;
+
+
+        let initial_state =
+            extension_state()?;
+
+
+        // Zorin's GNOME 46 session uses a custom normal-session mode named
+        // "zorin".  An extension that is already ACTIVE there can become
+        // temporarily non-ACTIVE if we gratuitously disable it and immediately
+        // re-enable it; Shell may not activate it again until unlock-dialog is
+        // entered.  That is too late for Screenshaver's runtime guard and shader
+        // handoff setup.
+        //
+        // Therefore an unchanged extension that is already ACTIVE is adopted
+        // in-place.  A forced disable/re-enable is reserved for the one case
+        // that actually requires Shell to reload code: provisioned assets changed.
+        if !assets_changed
+            && initial_state.as_deref()
+                == Some(
+                    "ACTIVE"
+                )
+        {
+            crate::logger::information(
+                logfile,
+                "[LOCK] Screenshaver GNOME Shell extension already ACTIVE; preserving current activation",
             );
+
+
+            return Ok(
+                Self {
+                    logfile:
+                        logfile.to_path_buf(),
+
+                    enabled:
+                        true,
+                }
+            );
+        }
+
+
+        if assets_changed
+            && initial_state.as_deref()
+                == Some(
+                    "ACTIVE"
+                )
+        {
+            crate::logger::information(
+                logfile,
+                "[LOCK] GNOME extension assets changed; reloading active extension",
+            );
+
+
+            // Failure here is intentionally non-fatal because Shell may already
+            // be transitioning extension state while the new files are being
+            // discovered.
+            let _ =
+                run_gnome_extensions_command(
+                    &[
+                        "disable",
+                        GNOME_EXTENSION_UUID,
+                    ]
+                );
+        }
 
 
         let enable_output =
