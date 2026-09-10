@@ -731,6 +731,37 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                         );
                         this._screenshaverPaintFramebufferProbeLogged = true;
                     }
+
+                    // Test #30E: create one tiny texture from the Cogl.Context
+                    // owned by the framebuffer currently being painted.  This is
+                    // intentionally diagnostic-only: no offscreen framebuffer is
+                    // created, no shader is rendered into the texture, and the
+                    // production Test #30 path still falls back afterward.
+                    if (paintCoglContext &&
+                        !this._screenshaverPaintContextTextureProbeAttempted) {
+                        this._screenshaverPaintContextTextureProbeAttempted = true;
+
+                        try {
+                            const probeTexture =
+                                Cogl.Texture2D.new_with_format(
+                                    paintCoglContext,
+                                    4,
+                                    4,
+                                    Cogl.PixelFormat.RGBA_8888
+                                );
+
+                            console.log(
+                                `[Screenshaver] Test #30E GNOME paint-context texture probe: ` +
+                                `created=${probeTexture !== null} size=4x4 ` +
+                                `generation=${generation}`
+                            );
+                        } catch (error) {
+                            console.log(
+                                `[Screenshaver] Test #30E GNOME paint-context texture probe failed: ` +
+                                `${error} generation=${generation}`
+                            );
+                        }
+                    }
                 }
 
                 if (!coglContext)
