@@ -801,6 +801,84 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                                 `allocated=true cleared=true flushed=true size=4x4 ` +
                                 `generation=${generation}`
                             );
+
+                            // Test #30H: exercise the same textured-rectangle draw
+                            // primitive used by the production Test #30 pipeline,
+                            // but only with disposable 4x4 resources.  The source
+                            // and destination textures are separate to avoid a
+                            // feedback loop.  Nothing from this probe is attached
+                            // to the lock-screen presentation node.
+                            const probeSourceTexture =
+                                Cogl.Texture2D.new_with_format(
+                                    paintCoglContext,
+                                    4,
+                                    4,
+                                    Cogl.PixelFormat.RGBA_8888
+                                );
+                            probeSourceTexture.set_premultiplied(false);
+                            probeSourceTexture.allocate();
+
+                            const probeDestinationTexture =
+                                Cogl.Texture2D.new_with_format(
+                                    paintCoglContext,
+                                    4,
+                                    4,
+                                    Cogl.PixelFormat.RGBA_8888
+                                );
+                            probeDestinationTexture.set_premultiplied(false);
+                            probeDestinationTexture.allocate();
+
+                            const probeDestinationOffscreen =
+                                Cogl.Offscreen.new_with_texture(
+                                    probeDestinationTexture
+                                );
+                            probeDestinationOffscreen.allocate();
+                            probeDestinationOffscreen.set_viewport(
+                                0.0,
+                                0.0,
+                                4.0,
+                                4.0
+                            );
+
+                            const probePipeline =
+                                Cogl.Pipeline.new(paintCoglContext);
+                            probePipeline.set_layer_texture(
+                                0,
+                                probeSourceTexture
+                            );
+                            probePipeline.set_layer_filters(
+                                0,
+                                Cogl.PipelineFilter.LINEAR,
+                                Cogl.PipelineFilter.LINEAR
+                            );
+
+                            probeDestinationOffscreen.clear4f(
+                                Cogl.BufferBit.COLOR,
+                                0.0,
+                                0.0,
+                                0.0,
+                                1.0
+                            );
+
+                            probeDestinationOffscreen.draw_textured_rectangle(
+                                probePipeline,
+                                -1.0,
+                                1.0,
+                                1.0,
+                                -1.0,
+                                0.0,
+                                0.0,
+                                1.0,
+                                1.0
+                            );
+
+                            probeDestinationOffscreen.flush();
+
+                            console.log(
+                                `[Screenshaver] Test #30H GNOME paint-context draw probe: ` +
+                                `pipeline=true textured-rectangle=true flushed=true size=4x4 ` +
+                                `generation=${generation}`
+                            );
                         } catch (error) {
                             console.log(
                                 `[Screenshaver] Test #30E GNOME paint-context texture probe failed: ` +
