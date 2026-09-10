@@ -2589,10 +2589,24 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     this._screenshaverRequestedPrecision = requestedPrecision;
                     this._screenshaverSelectedPrecision = selectedPrecision;
 
-                    const textureFormat = renderTexture.get_format();
+                    // GNOME 46's GJS Cogl.Texture2D wrapper does not expose
+                    // get_format().  The texture format has already been chosen
+                    // explicitly during allocation, so this getter is diagnostic
+                    // only and must not abort the production postprocess path.
+                    const textureFormat =
+                        typeof renderTexture.get_format === 'function'
+                            ? renderTexture.get_format()
+                            : 'unavailable';
+
                     const expectedFormat = selectedPrecision === 'high'
                         ? 'RGBA16F-equivalent'
                         : 'RGBA8-equivalent';
+
+                    console.log(
+                        `[Screenshaver] Test #30AA GNOME texture-format compatibility: ` +
+                        `get-format=${typeof renderTexture.get_format === 'function' ? 'available' : 'unavailable'} ` +
+                        `generation=${generation}`
+                    );
 
                     console.log(
                         `[Screenshaver] Test #30B Color Precision texture allocated: ` +
