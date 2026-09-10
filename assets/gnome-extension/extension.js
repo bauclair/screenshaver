@@ -949,6 +949,85 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                                 `size=${renderWidth}x${renderHeight} format=RGBA_8888 ` +
                                 `generation=${generation}`
                             );
+
+
+                            // Test #30L: perform one full-size textured draw
+                            // using only disposable RGBA_8888 resources created
+                            // from the validated PaintContext-owned Cogl.Context.
+                            // This still does NOT use the Shell.GLSLEffect source
+                            // texture and does not present anything onscreen.
+                            const fullSizeDrawSourceTexture =
+                                Cogl.Texture2D.new_with_format(
+                                    paintCoglContext,
+                                    renderWidth,
+                                    renderHeight,
+                                    Cogl.PixelFormat.RGBA_8888
+                                );
+                            fullSizeDrawSourceTexture.set_premultiplied(false);
+                            fullSizeDrawSourceTexture.allocate();
+
+                            const fullSizeDrawDestinationTexture =
+                                Cogl.Texture2D.new_with_format(
+                                    paintCoglContext,
+                                    renderWidth,
+                                    renderHeight,
+                                    Cogl.PixelFormat.RGBA_8888
+                                );
+                            fullSizeDrawDestinationTexture.set_premultiplied(false);
+                            fullSizeDrawDestinationTexture.allocate();
+
+                            const fullSizeDrawOffscreen =
+                                Cogl.Offscreen.new_with_texture(
+                                    fullSizeDrawDestinationTexture
+                                );
+                            fullSizeDrawOffscreen.allocate();
+                            fullSizeDrawOffscreen.set_viewport(
+                                0.0,
+                                0.0,
+                                renderWidth,
+                                renderHeight
+                            );
+
+                            const fullSizeDrawPipeline =
+                                Cogl.Pipeline.new(paintCoglContext);
+                            fullSizeDrawPipeline.set_layer_texture(
+                                0,
+                                fullSizeDrawSourceTexture
+                            );
+                            fullSizeDrawPipeline.set_layer_filters(
+                                0,
+                                Cogl.PipelineFilter.LINEAR,
+                                Cogl.PipelineFilter.LINEAR
+                            );
+
+                            fullSizeDrawOffscreen.clear4f(
+                                Cogl.BufferBit.COLOR,
+                                0.0,
+                                0.0,
+                                0.0,
+                                1.0
+                            );
+
+                            fullSizeDrawOffscreen.draw_textured_rectangle(
+                                fullSizeDrawPipeline,
+                                -1.0,
+                                1.0,
+                                1.0,
+                                -1.0,
+                                0.0,
+                                0.0,
+                                1.0,
+                                1.0
+                            );
+
+                            fullSizeDrawOffscreen.flush();
+
+                            console.log(
+                                `[Screenshaver] Test #30L GNOME full-size draw probe: ` +
+                                `drawn=true flushed=true ` +
+                                `size=${renderWidth}x${renderHeight} format=RGBA_8888 ` +
+                                `generation=${generation}`
+                            );
                         } catch (error) {
                             console.log(
                                 `[Screenshaver] Test #30E GNOME paint-context texture probe failed: ` +
