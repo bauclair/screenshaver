@@ -643,68 +643,297 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                 if (!sourceTexture)
                     throw new Error('Shell.GLSLEffect source texture unavailable');
 
-                // GNOME Shell/Cogl API compatibility:
-                //
-                // Prefer the source texture's Cogl.Context when GNOME Shell
-                // exposes it.  This remains the existing/newer-GNOME path.
-                //
-                // Some Shell versions expose a usable Clutter stage/backend
-                // context, so preserve that compatibility route as a secondary
-                // fallback.
-                //
-                // GNOME 46 does not expose either route reliably.  In that case,
-                // obtain the Cogl.Context from the framebuffer attached to the
-                // PaintContext for this exact paint operation.  Tests #30D-#30H
-                // validated texture creation, offscreen allocation, clear/flush,
-                // and textured-rectangle drawing through this paint-owned
-                // context without destabilizing GNOME Shell.
+                // GNOME Shell/Cogl API compatibility: newer Shell builds may
+                // expose the Cogl.Context directly from the effect texture, while
+                // GNOME 46 does not. Prefer the texture-owned context when it is
+                // available, then fall back to the Clutter stage/backend context.
+                // The latter is the public extension-side route used by GNOME 45+.
                 let coglContext = sourceTexture?.get_context?.() ?? null;
-                let coglContextSource =
-                    coglContext ? 'Shell.GLSLEffect source texture' : null;
 
                 if (!coglContext) {
                     const stageContext =
                         global.stage?.get_context?.() ??
                         global.stage?.context ??
                         null;
-                    const clutterBackend =
-                        stageContext?.get_backend?.() ??
-                        null;
-
-                    coglContext =
-                        clutterBackend?.get_cogl_context?.() ??
-                        null;
-
-                    if (coglContext)
-                        coglContextSource = 'Clutter stage backend';
+                    const clutterBackend = stageContext?.get_backend?.() ?? null;
+                    coglContext = clutterBackend?.get_cogl_context?.() ?? null;
                 }
 
                 if (!coglContext) {
+                    // GNOME 46 diagnostic only:
+                    //
+                    // Probe the Clutter context attached to the actual effect actor.
+                    // GNOME's newer extension guidance prefers actor.get_context()
+                    // over a process-global/default backend.  Do NOT use the
+                    // returned Cogl.Context yet: the previous default-backend
+                    // experiment proved that allocating Cogl resources from an
+                    // unsuitable context can crash GNOME Shell.
+                    const effectActor =
+                        this.get_actor?.() ??
+                        this.actor ??
+                        null;
+
+                    const actorContext =
+                        effectActor?.get_context?.() ??
+                        effectActor?.context ??
+                        null;
+
+                    const actorBackend =
+                        actorContext?.get_backend?.() ??
+                        null;
+
+                    const actorCoglContext =
+                        actorBackend?.get_cogl_context?.() ??
+                        null;
+
+                    if (!this._screenshaverActorCoglContextProbeLogged) {
+                        console.log(
+                            `[Screenshaver] Test #30C GNOME actor-context probe: ` +
+                            `actor=${effectActor !== null} ` +
+                            `clutter-context=${actorContext !== null} ` +
+                            `backend=${actorBackend !== null} ` +
+                            `cogl-context=${actorCoglContext !== null} ` +
+                            `generation=${generation}`
+                        );
+                        this._screenshaverActorCoglContextProbeLogged = true;
+                    }
+                }
+
+                if (!coglContext) {
+                    // GNOME 46 diagnostic only:
+                    //
+                    // Clutter's paint callback is already executing with the
+                    // framebuffer that owns this render operation.  Probe that
+                    // ownership chain directly:
+                    //
+                    //   Clutter.PaintContext
+                    //       -> Cogl.Framebuffer
+                    //       -> Cogl.Context
+                    //
+                    // Do not allocate or render through this context yet.
                     const paintFramebuffer =
                         paintContext?.get_framebuffer?.() ??
                         null;
 
-                    coglContext =
+                    const paintCoglContext =
                         paintFramebuffer?.get_context?.() ??
                         null;
 
-                    if (coglContext)
-                        coglContextSource = 'Clutter PaintContext framebuffer';
+                    if (!this._screenshaverPaintFramebufferProbeLogged) {
+                        console.log(
+                            `[Screenshaver] Test #30D GNOME paint-framebuffer probe: ` +
+                            `paint-context=${paintContext !== null && paintContext !== undefined} ` +
+                            `get-framebuffer=${typeof paintContext?.get_framebuffer === 'function'} ` +
+                            `framebuffer=${paintFramebuffer !== null} ` +
+                            `get-context=${typeof paintFramebuffer?.get_context === 'function'} ` +
+                            `cogl-context=${paintCoglContext !== null} ` +
+                            `generation=${generation}`
+                        );
+                        this._screenshaverPaintFramebufferProbeLogged = true;
+                    }
+
+                    // Test #30E: create one tiny texture from the Cogl.Context
+                    // owned by the framebuffer currently being painted.  This is
+                    // intentionally diagnostic-only: no offscreen framebuffer is
+                    // created, no shader is rendered into the texture, and the
+                    // production Test #30 path still falls back afterward.
+                    if (paintCoglContext &&
+                        !this._screenshaverPaintContextTextureProbeAttempted) {
+                        this._screenshaverPaintContextTextureProbeAttempted = true;
+
+                        try {
+                            const probeTexture =
+                                Cogl.Texture2D.new_with_format(
+                                    paintCoglContext,
+                                    4,
+                                    4,
+                                    Cogl.PixelFormat.RGBA_8888
+                                );
+
+                            console.log(
+                                `[Screenshaver] Test #30E GNOME paint-context texture probe: ` +
+                                `created=${probeTexture !== null} size=4x4 ` +
+                                `generation=${generation}`
+                            );
+
+                            // Test #30F: create one tiny offscreen framebuffer
+                            // backed by the texture created from the paint-owned
+                            // Cogl.Context.  Do not draw into it yet.
+                            const probeOffscreen =
+                                Cogl.Offscreen.new_with_texture(
+                                    probeTexture
+                                );
+
+                            console.log(
+                                `[Screenshaver] Test #30F GNOME paint-context offscreen probe: ` +
+                                `created=${probeOffscreen !== null} size=4x4 ` +
+                                `generation=${generation}`
+                            );
+
+                            // Test #30G: exercise the smallest production-style
+                            // framebuffer operation sequence using the Cogl
+                            // context owned by the framebuffer currently being
+                            // painted.  No pipeline or shader is attached and
+                            // nothing is presented to the lock-screen actor.
+                            probeTexture.set_premultiplied(false);
+                            probeTexture.allocate();
+
+                            probeOffscreen.allocate();
+                            probeOffscreen.set_viewport(
+                                0.0,
+                                0.0,
+                                4.0,
+                                4.0
+                            );
+
+                            probeOffscreen.clear4f(
+                                Cogl.BufferBit.COLOR,
+                                0.0,
+                                0.0,
+                                0.0,
+                                1.0
+                            );
+
+                            probeOffscreen.flush();
+
+                            console.log(
+                                `[Screenshaver] Test #30G GNOME paint-context clear probe: ` +
+                                `allocated=true cleared=true flushed=true size=4x4 ` +
+                                `generation=${generation}`
+                            );
+
+                            // Test #30H: exercise the same textured-rectangle draw
+                            // primitive used by the production Test #30 pipeline,
+                            // but only with disposable 4x4 resources.  The source
+                            // and destination textures are separate to avoid a
+                            // feedback loop.  Nothing from this probe is attached
+                            // to the lock-screen presentation node.
+                            const probeSourceTexture =
+                                Cogl.Texture2D.new_with_format(
+                                    paintCoglContext,
+                                    4,
+                                    4,
+                                    Cogl.PixelFormat.RGBA_8888
+                                );
+                            probeSourceTexture.set_premultiplied(false);
+                            probeSourceTexture.allocate();
+
+                            const probeDestinationTexture =
+                                Cogl.Texture2D.new_with_format(
+                                    paintCoglContext,
+                                    4,
+                                    4,
+                                    Cogl.PixelFormat.RGBA_8888
+                                );
+                            probeDestinationTexture.set_premultiplied(false);
+                            probeDestinationTexture.allocate();
+
+                            const probeDestinationOffscreen =
+                                Cogl.Offscreen.new_with_texture(
+                                    probeDestinationTexture
+                                );
+                            probeDestinationOffscreen.allocate();
+                            probeDestinationOffscreen.set_viewport(
+                                0.0,
+                                0.0,
+                                4.0,
+                                4.0
+                            );
+
+                            const probePipeline =
+                                Cogl.Pipeline.new(paintCoglContext);
+                            probePipeline.set_layer_texture(
+                                0,
+                                probeSourceTexture
+                            );
+                            probePipeline.set_layer_filters(
+                                0,
+                                Cogl.PipelineFilter.LINEAR,
+                                Cogl.PipelineFilter.LINEAR
+                            );
+
+                            probeDestinationOffscreen.clear4f(
+                                Cogl.BufferBit.COLOR,
+                                0.0,
+                                0.0,
+                                0.0,
+                                1.0
+                            );
+
+                            probeDestinationOffscreen.draw_textured_rectangle(
+                                probePipeline,
+                                -1.0,
+                                1.0,
+                                1.0,
+                                -1.0,
+                                0.0,
+                                0.0,
+                                1.0,
+                                1.0
+                            );
+
+                            probeDestinationOffscreen.flush();
+
+                            console.log(
+                                `[Screenshaver] Test #30H GNOME paint-context draw probe: ` +
+                                `pipeline=true textured-rectangle=true flushed=true size=4x4 ` +
+                                `generation=${generation}`
+                            );
+
+
+                            // Test #30I: isolate production dimensions from
+                            // production pixel precision.  Allocate a real-size
+                            // STANDARD RGBA_8888 target only; do not use FP16,
+                            // do not run the production shader, and do not
+                            // present this texture.
+                            const fullSizeStandardTexture =
+                                Cogl.Texture2D.new_with_format(
+                                    paintCoglContext,
+                                    renderWidth,
+                                    renderHeight,
+                                    Cogl.PixelFormat.RGBA_8888
+                                );
+                            fullSizeStandardTexture.set_premultiplied(false);
+                            fullSizeStandardTexture.allocate();
+
+                            const fullSizeStandardOffscreen =
+                                Cogl.Offscreen.new_with_texture(
+                                    fullSizeStandardTexture
+                                );
+                            fullSizeStandardOffscreen.allocate();
+                            fullSizeStandardOffscreen.set_viewport(
+                                0.0,
+                                0.0,
+                                renderWidth,
+                                renderHeight
+                            );
+
+                            fullSizeStandardOffscreen.clear4f(
+                                Cogl.BufferBit.COLOR,
+                                0.0,
+                                0.0,
+                                0.0,
+                                1.0
+                            );
+                            fullSizeStandardOffscreen.flush();
+
+                            console.log(
+                                `[Screenshaver] Test #30I GNOME full-size standard target probe: ` +
+                                `allocated=true cleared=true flushed=true ` +
+                                `size=${renderWidth}x${renderHeight} format=RGBA_8888 ` +
+                                `generation=${generation}`
+                            );
+                        } catch (error) {
+                            console.log(
+                                `[Screenshaver] Test #30E GNOME paint-context texture probe failed: ` +
+                                `${error} generation=${generation}`
+                            );
+                        }
+                    }
                 }
 
                 if (!coglContext)
-                    throw new Error(
-                        'Cogl context unavailable from Shell.GLSLEffect texture, ' +
-                        'Clutter stage backend, or PaintContext framebuffer'
-                    );
-
-                if (!this._screenshaverCoglContextSourceLogged) {
-                    console.log(
-                        `[Screenshaver] Test #30 Cogl context acquired via ` +
-                        `${coglContextSource} generation=${generation}`
-                    );
-                    this._screenshaverCoglContextSourceLogged = true;
-                }
+                    throw new Error('Cogl context unavailable from Shell.GLSLEffect texture or Clutter stage backend');
 
                 const requestedPrecision = ['standard', 'high', 'auto'].includes(colorPrecision)
                     ? colorPrecision
