@@ -41,7 +41,7 @@ class ScreenshaverGnome46TextureActor extends Clutter.Actor {
 
         if (!textureNode) {
             console.log(
-                '[Screenshaver] Test #30AK GNOME sibling texture actor: ' +
+                '[Screenshaver] Test #30AL GNOME sibling postprocess actor: ' +
                 'create_texture_paint_node returned null'
             );
             return;
@@ -51,7 +51,7 @@ class ScreenshaverGnome46TextureActor extends Clutter.Actor {
 
         if (!this._screenshaverTextureLogged) {
             console.log(
-                '[Screenshaver] Test #30AK GNOME sibling texture actor: ' +
+                '[Screenshaver] Test #30AL GNOME sibling postprocess actor: ' +
                 'paint-node-added=true'
             );
             this._screenshaverTextureLogged = true;
@@ -168,9 +168,9 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                 vec4 centerSample = texture2D(cogl_sampler0, uv);
                 float lumaCenter = screenshaverFxaaLuminance(centerSample.rgb);
                 float lumaNorth = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(0.0, screenshaverFxaaInverseResolutionY)).rgb);
-                float lumaSouth = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv - vec2(0.0, screenshaverFxaaInverseResolution.y)).rgb);
+                float lumaSouth = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv - vec2(0.0, screenshaverFxaaInverseResolutionY)).rgb);
                 float lumaEast = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(screenshaverFxaaInverseResolutionX, 0.0)).rgb);
-                float lumaWest = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv - vec2(screenshaverFxaaInverseResolution.x, 0.0)).rgb);
+                float lumaWest = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv - vec2(screenshaverFxaaInverseResolutionX, 0.0)).rgb);
                 float lumaMinimum = min(lumaCenter, min(min(lumaNorth, lumaSouth), min(lumaEast, lumaWest)));
                 float lumaMaximum = max(lumaCenter, max(max(lumaNorth, lumaSouth), max(lumaEast, lumaWest)));
                 float lumaRange = lumaMaximum - lumaMinimum;
@@ -179,10 +179,10 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                 if (lumaRange < edgeThreshold) {
                     cogl_color_out = vec4(screenshaverFxaaApplyColorEffects(centerSample.rgb), 1.0);
                 } else {
-                    float lumaNorthWest = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(-screenshaverFxaaInverseResolution.x, screenshaverFxaaInverseResolution.y)).rgb);
-                    float lumaNorthEast = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(screenshaverFxaaInverseResolution.x, screenshaverFxaaInverseResolution.y)).rgb);
-                    float lumaSouthWest = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(-screenshaverFxaaInverseResolution.x, -screenshaverFxaaInverseResolution.y)).rgb);
-                    float lumaSouthEast = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(screenshaverFxaaInverseResolution.x, -screenshaverFxaaInverseResolution.y)).rgb);
+                    float lumaNorthWest = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(-screenshaverFxaaInverseResolutionX, screenshaverFxaaInverseResolutionY)).rgb);
+                    float lumaNorthEast = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(screenshaverFxaaInverseResolutionX, screenshaverFxaaInverseResolutionY)).rgb);
+                    float lumaSouthWest = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(-screenshaverFxaaInverseResolutionX, -screenshaverFxaaInverseResolutionY)).rgb);
+                    float lumaSouthEast = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(screenshaverFxaaInverseResolutionX, -screenshaverFxaaInverseResolutionY)).rgb);
                     float horizontalEdge = abs(lumaNorthWest + 2.0 * lumaNorth + lumaNorthEast - 2.0 * lumaCenter)
                         + abs(lumaSouthWest + 2.0 * lumaSouth + lumaSouthEast - 2.0 * lumaCenter);
                     float verticalEdge = abs(lumaNorthWest + 2.0 * lumaWest + lumaSouthWest - 2.0 * lumaCenter)
@@ -195,11 +195,11 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     bool useNegativeDirection = gradientNegative >= gradientPositive;
                     float gradient = max(gradientNegative, gradientPositive);
                     vec2 stepDirection = isHorizontal
-                        ? vec2(screenshaverFxaaInverseResolution.x, 0.0)
-                        : vec2(0.0, screenshaverFxaaInverseResolution.y);
+                        ? vec2(screenshaverFxaaInverseResolutionX, 0.0)
+                        : vec2(0.0, screenshaverFxaaInverseResolutionY);
                     vec2 normalDirection = isHorizontal
-                        ? vec2(0.0, screenshaverFxaaInverseResolution.y)
-                        : vec2(screenshaverFxaaInverseResolution.x, 0.0);
+                        ? vec2(0.0, screenshaverFxaaInverseResolutionY)
+                        : vec2(screenshaverFxaaInverseResolutionX, 0.0);
                     if (useNegativeDirection)
                         normalDirection = -normalDirection;
                     float lumaReference = 0.5 * (lumaCenter + (useNegativeDirection ? lumaNegative : lumaPositive));
@@ -720,117 +720,6 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     throw new Error(`invalid native target ${targetWidth}x${targetHeight}`);
                 if (!sourceTexture)
                     throw new Error('Shell.GLSLEffect source texture unavailable');
-
-                // Test #30AG: determine whether rebinding layer 0 on
-                // Shell.GLSLEffect's native pipeline actually controls the
-                // pixels that the parent paint presents on GNOME 46.
-                //
-                // Build a tiny solid-red Cogl texture using the paint-owned
-                // context, bind it to layer 0 of the native effect pipeline,
-                // then chain to the parent paint. If the display is still the
-                // procedural shader, Shell.GLSLEffect's shader program is
-                // producing the image independently of layer 0.
-                if (GNOME_SHELL_MAJOR === 46) {
-                    const paintFramebuffer =
-                        paintContext?.get_framebuffer?.() ??
-                        null;
-                    const paintCoglContext =
-                        paintFramebuffer?.get_context?.() ??
-                        null;
-                    const nativePipeline =
-                        this.get_pipeline?.() ??
-                        null;
-
-                    if (
-                        paintCoglContext &&
-                        nativePipeline &&
-                        typeof nativePipeline.set_layer_texture === 'function'
-                    ) {
-                        if (!this._screenshaverSolidTextureProbeTexture) {
-                            const solidTexture =
-                                Cogl.Texture2D.new_with_format(
-                                    paintCoglContext,
-                                    16,
-                                    16,
-                                    Cogl.PixelFormat.RGBA_8888
-                                );
-                            solidTexture.set_premultiplied(false);
-                            solidTexture.allocate();
-
-                            const solidOffscreen =
-                                Cogl.Offscreen.new_with_texture(
-                                    solidTexture
-                                );
-                            solidOffscreen.allocate();
-                            solidOffscreen.set_viewport(
-                                0.0,
-                                0.0,
-                                16.0,
-                                16.0
-                            );
-                            solidOffscreen.clear4f(
-                                Cogl.BufferBit.COLOR,
-                                1.0,
-                                0.0,
-                                0.0,
-                                1.0
-                            );
-                            solidOffscreen.flush();
-
-                            this._screenshaverSolidTextureProbeTexture =
-                                solidTexture;
-                            this._screenshaverSolidTextureProbeOffscreen =
-                                solidOffscreen;
-                        }
-
-                        nativePipeline.set_layer_texture(
-                            0,
-                            this._screenshaverSolidTextureProbeTexture
-                        );
-                        nativePipeline.set_layer_filters(
-                            0,
-                            Cogl.PipelineFilter.NEAREST,
-                            Cogl.PipelineFilter.NEAREST
-                        );
-                        nativePipeline.set_layer_wrap_mode(
-                            0,
-                            Cogl.PipelineWrapMode.CLAMP_TO_EDGE
-                        );
-
-                        if (gnome46PresentationActor) {
-                            gnome46PresentationActor.screenshaver_set_texture(
-                                this._screenshaverSolidTextureProbeTexture
-                            );
-
-                            if (!this._screenshaverSolidTextureProbeLogged) {
-                                console.log(
-                                    `[Screenshaver] Test #30AK GNOME sibling texture actor: ` +
-                                    `solid-red-supplied=true size=16x16 ` +
-                                    `generation=${generation}`
-                                );
-                                this._screenshaverSolidTextureProbeLogged = true;
-                            }
-                        } else if (!this._screenshaverSolidTextureProbeLogged) {
-                            console.log(
-                                `[Screenshaver] Test #30AK GNOME sibling texture actor: ` +
-                                `presentation-actor-unavailable=true ` +
-                                `generation=${generation}`
-                            );
-                            this._screenshaverSolidTextureProbeLogged = true;
-                        }
-
-                        super.vfunc_paint_target(node, paintContext);
-                        return;
-                    }
-
-                    console.log(
-                        `[Screenshaver] Test #30AK GNOME sibling texture actor: ` +
-                        `unavailable=true ` +
-                        `paint-cogl-context=${paintCoglContext ? 'true' : 'false'} ` +
-                        `native-pipeline=${nativePipeline ? 'true' : 'false'} ` +
-                        `generation=${generation}`
-                    );
-                }
 
                 let coglContext = sourceTexture?.get_context?.() ?? null;
 
@@ -1536,10 +1425,10 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
 
                 vec4 centerSample = texture2D(cogl_sampler0, uv);
                 float lumaCenter = screenshaverFxaaLuminance(centerSample.rgb);
-                float lumaNorth = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(0.0, screenshaverFxaaInverseResolution.y)).rgb);
-                float lumaSouth = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv - vec2(0.0, screenshaverFxaaInverseResolution.y)).rgb);
-                float lumaEast = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(screenshaverFxaaInverseResolution.x, 0.0)).rgb);
-                float lumaWest = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv - vec2(screenshaverFxaaInverseResolution.x, 0.0)).rgb);
+                float lumaNorth = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(0.0, screenshaverFxaaInverseResolutionY)).rgb);
+                float lumaSouth = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv - vec2(0.0, screenshaverFxaaInverseResolutionY)).rgb);
+                float lumaEast = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(screenshaverFxaaInverseResolutionX, 0.0)).rgb);
+                float lumaWest = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv - vec2(screenshaverFxaaInverseResolutionX, 0.0)).rgb);
                 float lumaMinimum = min(lumaCenter, min(min(lumaNorth, lumaSouth), min(lumaEast, lumaWest)));
                 float lumaMaximum = max(lumaCenter, max(max(lumaNorth, lumaSouth), max(lumaEast, lumaWest)));
                 float lumaRange = lumaMaximum - lumaMinimum;
@@ -1548,10 +1437,10 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                 if (lumaRange < edgeThreshold) {
                     cogl_color_out = vec4(screenshaverFxaaApplyColorEffects(centerSample.rgb), 1.0);
                 } else {
-                    float lumaNorthWest = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(-screenshaverFxaaInverseResolution.x, screenshaverFxaaInverseResolution.y)).rgb);
-                    float lumaNorthEast = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(screenshaverFxaaInverseResolution.x, screenshaverFxaaInverseResolution.y)).rgb);
-                    float lumaSouthWest = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(-screenshaverFxaaInverseResolution.x, -screenshaverFxaaInverseResolution.y)).rgb);
-                    float lumaSouthEast = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(screenshaverFxaaInverseResolution.x, -screenshaverFxaaInverseResolution.y)).rgb);
+                    float lumaNorthWest = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(-screenshaverFxaaInverseResolutionX, screenshaverFxaaInverseResolutionY)).rgb);
+                    float lumaNorthEast = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(screenshaverFxaaInverseResolutionX, screenshaverFxaaInverseResolutionY)).rgb);
+                    float lumaSouthWest = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(-screenshaverFxaaInverseResolutionX, -screenshaverFxaaInverseResolutionY)).rgb);
+                    float lumaSouthEast = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(screenshaverFxaaInverseResolutionX, -screenshaverFxaaInverseResolutionY)).rgb);
                     float horizontalEdge = abs(lumaNorthWest + 2.0 * lumaNorth + lumaNorthEast - 2.0 * lumaCenter)
                         + abs(lumaSouthWest + 2.0 * lumaSouth + lumaSouthEast - 2.0 * lumaCenter);
                     float verticalEdge = abs(lumaNorthWest + 2.0 * lumaWest + lumaSouthWest - 2.0 * lumaCenter)
@@ -1564,11 +1453,11 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     bool useNegativeDirection = gradientNegative >= gradientPositive;
                     float gradient = max(gradientNegative, gradientPositive);
                     vec2 stepDirection = isHorizontal
-                        ? vec2(screenshaverFxaaInverseResolution.x, 0.0)
-                        : vec2(0.0, screenshaverFxaaInverseResolution.y);
+                        ? vec2(screenshaverFxaaInverseResolutionX, 0.0)
+                        : vec2(0.0, screenshaverFxaaInverseResolutionY);
                     vec2 normalDirection = isHorizontal
-                        ? vec2(0.0, screenshaverFxaaInverseResolution.y)
-                        : vec2(screenshaverFxaaInverseResolution.x, 0.0);
+                        ? vec2(0.0, screenshaverFxaaInverseResolutionY)
+                        : vec2(screenshaverFxaaInverseResolutionX, 0.0);
                     if (useNegativeDirection)
                         normalDirection = -normalDirection;
                     float lumaReference = 0.5 * (lumaCenter + (useNegativeDirection ? lumaNegative : lumaPositive));
@@ -2988,41 +2877,30 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                 }
 
                 if (GNOME_SHELL_MAJOR === 46) {
-                    const nativePipeline =
-                        this.get_pipeline?.() ??
-                        null;
-
-                    if (!nativePipeline)
-                        throw new Error(
-                            'GNOME 46 native Shell.GLSLEffect pipeline unavailable'
-                        );
-
                     if (!finalTexture)
                         throw new Error(
                             'GNOME 46 final postprocess texture unavailable'
                         );
 
-                    nativePipeline.set_layer_texture(0, finalTexture);
-                    nativePipeline.set_layer_filters(
-                        0,
-                        Cogl.PipelineFilter.LINEAR,
-                        Cogl.PipelineFilter.LINEAR
-                    );
-                    nativePipeline.set_layer_wrap_mode(
-                        0,
-                        Cogl.PipelineWrapMode.CLAMP_TO_EDGE
+                    if (!gnome46PresentationActor)
+                        throw new Error(
+                            'GNOME 46 sibling presentation actor unavailable'
+                        );
+
+                    gnome46PresentationActor.screenshaver_set_texture(
+                        finalTexture
                     );
 
-                    if (!this._screenshaverNativePostprocessPresentationLogged) {
+                    if (!this._screenshaverSiblingPostprocessLogged) {
                         console.log(
-                            `[Screenshaver] Test #30AF GNOME native postprocess presentation: ` +
-                            `final-texture=true ` +
+                            `[Screenshaver] Test #30AL GNOME sibling postprocess presentation: ` +
+                            `final-texture-supplied=true ` +
                             `size=${finalTexture.get_width?.() ?? nativeWidth}x` +
                             `${finalTexture.get_height?.() ?? nativeHeight} ` +
                             `anti_aliasing=${antiAliasing} dithering=${dithering} ` +
                             `bloom=${bloomMode} generation=${generation}`
                         );
-                        this._screenshaverNativePostprocessPresentationLogged = true;
+                        this._screenshaverSiblingPostprocessLogged = true;
                     }
 
                     super.vfunc_paint_target(node, paintContext);
@@ -4524,7 +4402,7 @@ export default class ScreenshaverExtension extends Extension {
             backgroundGroup.add_child(gnome46PresentationActor);
 
             console.log(
-                '[Screenshaver] Test #30AK GNOME sibling texture actor: ' +
+                '[Screenshaver] Test #30AL GNOME sibling postprocess actor: ' +
                 'actor-added=true'
             );
         }
