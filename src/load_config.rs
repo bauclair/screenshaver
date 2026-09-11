@@ -991,7 +991,7 @@ pub fn load_config(
         crate::manage_configuration::load_app_defaults()?;
 
 
-    let screensaver_defaults =
+    let mut screensaver_defaults =
         crate::manage_configuration::load_target_defaults(
             "screensaver"
         )?;
@@ -1293,8 +1293,8 @@ pub fn load_config(
 
 
     if raw.locking.screen_lock_enabled {
-        validate_screen_lock_screensaver_timeout(
-            &screensaver_defaults
+        enforce_screen_lock_screensaver_timeout(
+            &mut screensaver_defaults
         )?;
     }
 
@@ -4062,77 +4062,83 @@ fn parse_shader_palette(
 const SCREEN_LOCK_MIN_IDLE_SECONDS: i64 = 60;
 
 
-fn validate_screen_lock_screensaver_timeout(
-    defaults: &crate::manage_configuration::TargetDefaults,
+pub fn load_screen_lock_enabled(
+    path: &Path,
+) -> Result<bool, String> {
+    let text = fs::read_to_string(path)
+        .map_err(|error| {
+            format!(
+                "Unable to read configuration file {} ({})",
+                path.display(),
+                error,
+            )
+        })?;
+
+    let raw: RawToml = toml::from_str(&text)
+        .map_err(|error| {
+            format!(
+                "Invalid TOML in {} ({})",
+                path.display(),
+                error,
+            )
+        })?;
+
+    Ok(raw.locking.screen_lock_enabled)
+}
+
+
+fn enforce_screen_lock_screensaver_timeout(
+    defaults: &mut crate::manage_configuration::TargetDefaults,
 ) -> Result<(), String> {
-
-    let value =
-        defaults
-            .idle_timeout_value
-            .unwrap_or(10);
-
-
-    let unit =
-        defaults
-            .idle_timeout_unit
-            .as_deref()
-            .unwrap_or("minutes");
-
+    let value = defaults.idle_timeout_value.unwrap_or(10);
+    let unit = defaults.idle_timeout_unit.as_deref().unwrap_or("minutes");
 
     if value <= 0 {
-        return Err(
-            format!(
-                "Invalid screensaver idle timeout '{} {}'; screen locking requires a minimum idle timeout of 60 seconds",
-                value,
-                unit,
-            )
-        );
+        return Err(format!(
+            "Invalid screensaver idle timeout '{} {}'; idle timeout must be greater than zero",
+            value,
+            unit,
+        ));
     }
 
+    let multiplier = match unit {
+        "seconds" => 1_i64,
+        "minutes" => 60_i64,
+        "hours" => 3600_i64,
+        other => {
+            return Err(format!(
+                "Invalid screensaver idle-timeout unit '{}'; screen locking supports seconds, minutes, or hours",
+                other,
+            ));
+        }
+    };
 
-    let multiplier =
-        match unit {
-            "seconds" => 1_i64,
-            "minutes" => 60_i64,
-            "hours" => 3600_i64,
-
-            other => {
-                return Err(
-                    format!(
-                        "Invalid screensaver idle-timeout unit '{}'; screen locking supports seconds, minutes, or hours",
-                        other,
-                    )
-                );
-            }
-        };
-
-
-    let seconds =
-        value
-            .checked_mul(
-                multiplier
-            )
-            .ok_or_else(
-                || {
-                    format!(
-                        "Invalid screensaver idle timeout '{} {}'; duration is too large",
-                        value,
-                        unit,
-                    )
-                }
-            )?;
-
+    let seconds = value.checked_mul(multiplier).ok_or_else(|| {
+        format!(
+            "Invalid screensaver idle timeout '{} {}'; duration is too large",
+            value,
+            unit,
+        )
+    })?;
 
     if seconds < SCREEN_LOCK_MIN_IDLE_SECONDS {
-        return Err(
-            format!(
-                "Invalid screensaver idle timeout '{} {}'; screen locking requires a minimum idle timeout of 60 seconds",
-                value,
-                unit,
-            )
+        eprintln!(
+            "[CONFIG] WARNING: Screensaver idle timeout '{} {}' is below the 60-second minimum required when screen locking is enabled; resetting it to 60 seconds.",
+            value,
+            unit,
         );
-    }
 
+        defaults.idle_timeout_value = Some(SCREEN_LOCK_MIN_IDLE_SECONDS);
+        defaults.idle_timeout_unit = Some("seconds".to_string());
+
+        crate::manage_configuration::save_target_defaults(defaults)
+            .map_err(|error| {
+                format!(
+                    "Unable to persist the 60-second minimum screensaver idle timeout required for screen locking: {}",
+                    error,
+                )
+            })?;
+    }
 
     Ok(())
 }

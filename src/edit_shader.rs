@@ -9898,11 +9898,42 @@ fn save_control_configuration(
             render_scale: control.render_scale,
         };
 
+    let config_path = crate::locate_paths::config_path();
+    let screen_lock_enabled =
+        crate::load_config::load_screen_lock_enabled(&config_path)?;
+
+    let requested_idle_timeout = format!(
+        "{}{}",
+        control.screensaver_idle_timeout_value,
+        match control.screensaver_idle_timeout_unit.as_str() {
+            "seconds" => "s",
+            "minutes" => "m",
+            "hours" => "h",
+            _ => "s",
+        },
+    );
+
+    let (requested_idle_timeout_value, requested_idle_timeout_unit, requested_idle_timeout_seconds) =
+        crate::manage_configuration::parse_idle_timeout_duration(
+            &requested_idle_timeout
+        )?;
+
+    let (idle_timeout_value, idle_timeout_unit) =
+        if screen_lock_enabled && requested_idle_timeout_seconds < 60 {
+            log_warning(
+                "[CONFIG] Screensaver idle timeout was below the 60-second minimum required while screen locking is enabled; storing 60 seconds instead."
+            );
+
+            (60_i64, "seconds".to_string())
+        } else {
+            (requested_idle_timeout_value, requested_idle_timeout_unit)
+        };
+
     let screensaver_defaults =
         crate::manage_configuration::TargetDefaults {
             target: "screensaver".to_string(),
-            idle_timeout_value: Some(control.screensaver_idle_timeout_value),
-            idle_timeout_unit: Some(control.screensaver_idle_timeout_unit.clone()),
+            idle_timeout_value: Some(idle_timeout_value),
+            idle_timeout_unit: Some(idle_timeout_unit.clone()),
             animation_speed: control.screensaver_animation_speed,
             texture_mode: screensaver_texture_mode,
             texture_family: screensaver_texture_family,
@@ -9937,8 +9968,8 @@ fn save_control_configuration(
             screensaver_mode,
             idle_timeout: format!(
                 "{}{}",
-                control.screensaver_idle_timeout_value,
-                match control.screensaver_idle_timeout_unit.as_str() {
+                idle_timeout_value,
+                match idle_timeout_unit.as_str() {
                     "seconds" => "s",
                     "minutes" => "m",
                     "hours" => "h",
@@ -9954,7 +9985,6 @@ fn save_control_configuration(
             wallpaper_global_palette: None,
         };
 
-    let config_path = crate::locate_paths::config_path();
     crate::manage_configuration::save_configuration(&config_path, &updates)?;
 
     crate::load_config::load_config(&config_path)

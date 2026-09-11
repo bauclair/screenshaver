@@ -377,7 +377,8 @@ fn main() {
 
         crate::parse_arguments::Command::Run
         | crate::parse_arguments::Command::Start
-        | crate::parse_arguments::Command::Control { .. } => {}
+        | crate::parse_arguments::Command::Control { .. }
+        | crate::parse_arguments::Command::ResetIdleTimeout { .. } => {}
     }
 
 
@@ -571,6 +572,49 @@ fn main() {
                 return;
             }
         };
+
+
+    // --reset-idle-timeout is a recovery command.  Handle it after the
+    // database has been prepared, but before shader reconciliation or normal
+    // configuration loading so an invalid existing timeout cannot block repair.
+    if let crate::parse_arguments::Command::ResetIdleTimeout { value } = &command {
+        let cfg_path = crate::locate_paths::config_path();
+
+        let screen_lock_enabled =
+            match crate::load_config::load_screen_lock_enabled(&cfg_path) {
+                Ok(enabled) => enabled,
+                Err(error) => {
+                    eprintln!("[CONFIG] Unable to determine screen-lock state: {}", error);
+                    return;
+                }
+            };
+
+        match crate::manage_configuration::reset_screensaver_idle_timeout(
+            value,
+            screen_lock_enabled,
+        ) {
+            Ok((stored_value, stored_unit, clamped)) => {
+                if clamped {
+                    println!(
+                        "[CONFIG] Requested idle timeout '{}' is below the 60-second minimum required when screen locking is enabled; stored 60 seconds instead.",
+                        value,
+                    );
+                } else {
+                    println!(
+                        "[CONFIG] Screensaver idle timeout reset to {} {}.",
+                        stored_value,
+                        stored_unit,
+                    );
+                }
+            }
+
+            Err(error) => {
+                eprintln!("[CONFIG] Unable to reset screensaver idle timeout: {}", error);
+            }
+        }
+
+        return;
+    }
 
 
     // Keep the managed shader inventory current before configuration is
@@ -822,7 +866,8 @@ fn main() {
         | crate::parse_arguments::Command::Help
         | crate::parse_arguments::Command::Version
         | crate::parse_arguments::Command::ConstructLockScreenKde
-        | crate::parse_arguments::Command::ConstructLockScreenXfce => {
+        | crate::parse_arguments::Command::ConstructLockScreenXfce
+        | crate::parse_arguments::Command::ResetIdleTimeout { .. } => {
 
             unreachable!(
                 "Database-independent command reached runtime startup"

@@ -17,6 +17,10 @@ pub enum Command {
     ConstructLockScreenKde,
 
     ConstructLockScreenXfce,
+
+    ResetIdleTimeout {
+        value: String,
+    },
 }
 
 
@@ -98,6 +102,14 @@ pub fn parse() -> Result<Command, String> {
         }
 
 
+        "--reset-idle-timeout" => {
+
+            parse_reset_idle_timeout(
+                &args[1..]
+            )
+        }
+
+
         "--control" => {
 
             parse_control(
@@ -151,6 +163,34 @@ pub fn parse() -> Result<Command, String> {
             )
         }
     }
+}
+
+
+fn parse_reset_idle_timeout(
+    args: &[String],
+) -> Result<Command, String> {
+
+    if args.len() != 1 {
+        return Err(
+            "--reset-idle-timeout requires exactly one duration (for example: 60s, 2m, or 1h)"
+                .to_string()
+        );
+    }
+
+    let value = args[0].trim();
+
+    if value.is_empty() || value.starts_with('-') {
+        return Err(
+            "--reset-idle-timeout requires a positive duration (for example: 60s, 2m, or 1h)"
+                .to_string()
+        );
+    }
+
+    Ok(
+        Command::ResetIdleTimeout {
+            value: value.to_string(),
+        }
+    )
 }
 
 
@@ -284,6 +324,11 @@ pub fn print_help() {
              --control [PATH]\n\
                  Open the Screenshaver Control Center.\n\
                  If PATH is supplied, preload that shader for policy editing.\n\
+         \n\
+             --reset-idle-timeout <DURATION>\n\
+                 Reset the database-backed screensaver idle timeout and exit.\n\
+                 Examples: 60s, 2m, 1h. When screen locking is enabled,\n\
+                 values below 60 seconds are stored as 60 seconds.\n\
          \n\
          Temporary development/setup options:\n\
          \n\
