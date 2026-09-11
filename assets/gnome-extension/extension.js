@@ -15,6 +15,52 @@ import * as Config from 'resource:///org/gnome/shell/misc/config.js';
 
 let shaderEffectTypeSerial = 0;
 
+
+const ScreenshaverGnome46TextureActor = GObject.registerClass(
+{
+    GTypeName: 'ScreenshaverGnome46TextureActor',
+},
+class ScreenshaverGnome46TextureActor extends Clutter.Actor {
+    _init(params = {}) {
+        super._init(params);
+        this._screenshaverTexture = null;
+        this._screenshaverTextureLogged = false;
+    }
+
+    screenshaver_set_texture(texture) {
+        this._screenshaverTexture = texture ?? null;
+        this.queue_redraw();
+    }
+
+    vfunc_paint_node(node) {
+        if (!this._screenshaverTexture)
+            return;
+
+        const textureNode =
+            this.create_texture_paint_node(this._screenshaverTexture);
+
+        if (!textureNode) {
+            console.log(
+                '[Screenshaver] Test #30AK GNOME sibling texture actor: ' +
+                'create_texture_paint_node returned null'
+            );
+            return;
+        }
+
+        node.add_child(textureNode);
+
+        if (!this._screenshaverTextureLogged) {
+            console.log(
+                '[Screenshaver] Test #30AK GNOME sibling texture actor: ' +
+                'paint-node-added=true'
+            );
+            this._screenshaverTextureLogged = true;
+        }
+    }
+});
+
+let gnome46PresentationActor = null;
+
 function createShaderEffectClass(shaderBody, generation, renderScale, colorPrecision, antiAliasing, dithering, bloomMode, bloomThreshold, bloomIntensity) {
     // GObject type registrations survive effect destruction and can also survive
     // extension disable/enable cycles inside the same GNOME Shell process.
@@ -751,41 +797,34 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                             Cogl.PipelineWrapMode.CLAMP_TO_EDGE
                         );
 
-                        const offscreenPaintTarget =
-                            Clutter.OffscreenEffect?.prototype?.vfunc_paint_target ??
-                            null;
+                        if (gnome46PresentationActor) {
+                            gnome46PresentationActor.screenshaver_set_texture(
+                                this._screenshaverSolidTextureProbeTexture
+                            );
 
-                        if (!this._screenshaverSolidTextureProbeLogged) {
+                            if (!this._screenshaverSolidTextureProbeLogged) {
+                                console.log(
+                                    `[Screenshaver] Test #30AK GNOME sibling texture actor: ` +
+                                    `solid-red-supplied=true size=16x16 ` +
+                                    `generation=${generation}`
+                                );
+                                this._screenshaverSolidTextureProbeLogged = true;
+                            }
+                        } else if (!this._screenshaverSolidTextureProbeLogged) {
                             console.log(
-                                `[Screenshaver] Test #30AJ GNOME OffscreenEffect parent-paint probe: ` +
-                                `solid-red-bound=true ` +
-                                `offscreen-vfunc-type=${typeof offscreenPaintTarget} ` +
+                                `[Screenshaver] Test #30AK GNOME sibling texture actor: ` +
+                                `presentation-actor-unavailable=true ` +
                                 `generation=${generation}`
                             );
                             this._screenshaverSolidTextureProbeLogged = true;
                         }
-
-                        if (typeof offscreenPaintTarget === 'function') {
-                            offscreenPaintTarget.call(
-                                this,
-                                node,
-                                paintContext
-                            );
-                            return;
-                        }
-
-                        console.log(
-                            `[Screenshaver] Test #30AJ GNOME OffscreenEffect parent-paint probe: ` +
-                            `offscreen-vfunc-unavailable=true falling-back-to-shell-parent=true ` +
-                            `generation=${generation}`
-                        );
 
                         super.vfunc_paint_target(node, paintContext);
                         return;
                     }
 
                     console.log(
-                        `[Screenshaver] Test #30AJ GNOME OffscreenEffect parent-paint probe: ` +
+                        `[Screenshaver] Test #30AK GNOME sibling texture actor: ` +
                         `unavailable=true ` +
                         `paint-cogl-context=${paintCoglContext ? 'true' : 'false'} ` +
                         `native-pipeline=${nativePipeline ? 'true' : 'false'} ` +
@@ -4471,6 +4510,25 @@ export default class ScreenshaverExtension extends Extension {
         }
 
         backgroundGroup.add_child(this._lockActor);
+
+        if (GNOME_SHELL_MAJOR === 46) {
+            gnome46PresentationActor =
+                new ScreenshaverGnome46TextureActor({
+                    reactive: false,
+                });
+            gnome46PresentationActor.set_position(0, 0);
+            gnome46PresentationActor.set_size(
+                dialog.width,
+                dialog.height
+            );
+            backgroundGroup.add_child(gnome46PresentationActor);
+
+            console.log(
+                '[Screenshaver] Test #30AK GNOME sibling texture actor: ' +
+                'actor-added=true'
+            );
+        }
+
         this._createDescriptionPill(backgroundGroup);
         this._resetFpsWarningMonitor();
 
@@ -5331,6 +5389,11 @@ export default class ScreenshaverExtension extends Extension {
         if (this._descriptionPill) {
             this._descriptionPill.destroy();
             this._descriptionPill = null;
+        }
+
+        if (gnome46PresentationActor) {
+            gnome46PresentationActor.destroy();
+            gnome46PresentationActor = null;
         }
 
         if (this._lockActor) {
