@@ -675,6 +675,40 @@ resolve_xfce_saver_directory() {
     return 1
 }
 
+
+install_omarchy_pam_service() {
+    # Omarchy uses a dedicated PAM service for its native lock-password stack.
+    # Screenshaver keeps its own stable PAM service name ("screenshaver") and
+    # delegates to Omarchy here, rather than hard-coding distro-specific PAM
+    # service names in the Rust authentication code.
+    #
+    # Screenshaver calls both pam_authenticate() and pam_acct_mgmt().  Both PAM
+    # management groups therefore must be defined.  Omitting the account stack
+    # causes PAM to fall through to pam_warn(screenshaver:account); the password
+    # can authenticate successfully, but Screenshaver will still reject the
+    # unlock and desktop access will not be restored.
+    [[ "$DISTRO_ID" == "omarchy" ]] || return 0
+
+    [[ -r /etc/pam.d/omarchy-lock-password ]] ||
+        die "/etc/pam.d/omarchy-lock-password was not found on this Omarchy system."
+
+    log "Installing the Screenshaver PAM service for Omarchy"
+
+    cat <<'PAM_EOF' | "${SUDO[@]}" tee /etc/pam.d/screenshaver >/dev/null
+#%PAM-1.0
+
+# Screenshaver authentication on Omarchy.
+#
+# Delegate both password authentication and account validation to Omarchy's
+# native lock-password PAM service. Screenshaver calls both pam_authenticate()
+# and pam_acct_mgmt(), so both PAM management groups must be defined here.
+auth       include    omarchy-lock-password
+account    include    omarchy-lock-password
+PAM_EOF
+
+    "${SUDO[@]}" chmod 0644 /etc/pam.d/screenshaver
+}
+
 install_xfce_lock_integration() {
     local trusted_presenter
     local installed_binary
@@ -828,6 +862,7 @@ install_conventional_linux() {
     install_rust_toolchain
     build_application
     install_application
+    install_omarchy_pam_service
     install_xfce_lock_integration
     refresh_desktop_caches
     verify_conventional_installation
