@@ -2326,6 +2326,14 @@ fn render_mirror_frames(
         active_shader.clone();
 
 
+    // The initial wallpaper has now loaded, compiled, prepared textures,
+    // created post-processing pipelines, and resolved its uniforms. Persist
+    // Ordered position only after reaching this accepted render state.
+    shader_manager.record_rendered_policy(
+        current_shader.policy_id
+    );
+
+
     let mut frame_times =
         crate::fps_monitor::FrameTimeWindow::new();
 
@@ -2822,6 +2830,11 @@ fn render_mirror_frames(
                                     current_shader.policy_id,
                                     current_shader.shader_name.clone(),
                                     current_shader.source_path.clone(),
+                                );
+
+
+                                shader_manager.record_rendered_policy(
+                                    current_shader.policy_id
                                 );
 
 

@@ -345,6 +345,14 @@ impl FrameRenderEngine {
             );
         }
 
+        // Selection alone must not advance persistent Ordered state. At this
+        // point loading, compilation, texture preparation, overlay creation,
+        // and post-processing setup have all succeeded, so this policy is the
+        // renderer's accepted active shader.
+        shader_manager.record_rendered_policy(
+            active_shader.policy_id
+        );
+
         Ok(
             Self {
                 postprocess,
@@ -1137,6 +1145,10 @@ impl FrameRenderEngine {
 
                 log_active_shader(
                     &self.active_shader
+                );
+
+                self.shader_manager.record_rendered_policy(
+                    self.active_shader.policy_id
                 );
 
                 log_information(

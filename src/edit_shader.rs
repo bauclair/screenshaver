@@ -61,6 +61,30 @@ struct ControlCenterState {
     #[serde(default)]
     window:
         PersistentWindowState,
+
+    // Runtime Ordered-mode continuity shares state.json with the Control
+    // Center. Keep this field in the typed state so Control Center saves do
+    // not discard the renderer's screensaver/wallpaper cursors.
+    #[serde(default)]
+    ordered:
+        PersistentOrderedState,
+}
+
+
+#[derive(
+    serde::Serialize,
+    serde::Deserialize,
+    Default,
+)]
+struct PersistentOrderedState {
+
+    #[serde(default)]
+    last_screensaver_policy_id:
+        Option<i64>,
+
+    #[serde(default)]
+    last_wallpaper_policy_id:
+        Option<i64>,
 }
 
 

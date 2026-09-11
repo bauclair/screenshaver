@@ -106,6 +106,7 @@ struct GnomeShaderSourceProducer {
     journal_advance_due_at: Option<Instant>,
     active_shader_name: String,
     active_policy_id: i64,
+    ordered_position_recorded: bool,
 }
 
 impl GnomeShaderSourceProducer {
@@ -285,6 +286,7 @@ impl GnomeShaderSourceProducer {
             journal_advance_due_at: None,
             active_shader_name: selected.entry.name,
             active_policy_id: selected.entry.policy_id,
+            ordered_position_recorded: false,
         })
     }
 
@@ -397,6 +399,7 @@ impl GnomeShaderSourceProducer {
 
                         self.active_shader_name = selected.entry.name.clone();
                         self.active_policy_id = selected.entry.policy_id;
+                        self.ordered_position_recorded = false;
                         self.last_shader_switch = Instant::now();
                         self.arm_journal_failure_detection();
                         let _ = fs::remove_file(&self.runtime_advance_path);
@@ -501,10 +504,6 @@ impl GnomeShaderSourceProducer {
     }
 
     fn poll_journal_shader_failure(&mut self) {
-        let Some(watcher) = self.journal_watcher.as_ref() else {
-            return;
-        };
-
         let now = Instant::now();
         let armed = self
             .journal_failure_armed_until
@@ -512,31 +511,53 @@ impl GnomeShaderSourceProducer {
 
         let mut detected = false;
 
-        while let Some(line) = watcher.try_recv() {
-            if line.contains("Shader compilation failed:")
-                || line.contains("Failed to link GLSL program:")
-            {
-                detected = true;
+        if let Some(watcher) = self.journal_watcher.as_ref() {
+            while let Some(line) = watcher.try_recv() {
+                if line.contains("Shader compilation failed:")
+                    || line.contains("Failed to link GLSL program:")
+                {
+                    detected = true;
+                }
             }
         }
 
-        if !detected || !armed || self.journal_failure_consumed {
+        if detected && armed && !self.journal_failure_consumed {
+            self.journal_failure_consumed = true;
+            self.journal_advance_due_at =
+                Some(Instant::now() + JOURNAL_FAILURE_ADVANCE_DELAY);
+
+            log_warning(
+                &self.logfile,
+                &format!(
+                    "[LOCK] Test #27 observed GNOME/Cogl shader failure for '{}' (policy_id={}); truncating interval to {}ms",
+                    self.active_shader_name,
+                    self.active_policy_id,
+                    JOURNAL_FAILURE_ADVANCE_DELAY.as_millis(),
+                ),
+            );
+
             return;
         }
 
-        self.journal_failure_consumed = true;
-        self.journal_advance_due_at =
-            Some(Instant::now() + JOURNAL_FAILURE_ADVANCE_DELAY);
+        // GNOME compiles the published source asynchronously inside Shell. A
+        // policy is not allowed to consume the persistent Ordered cursor until
+        // the Cogl failure-detection window has elapsed without a compile/link
+        // failure. An extension-requested early advance also replaces the
+        // active policy before this confirmation can occur.
+        let confirmation_due = self
+            .journal_failure_armed_until
+            .is_some_and(|deadline| now > deadline);
 
-        log_warning(
-            &self.logfile,
-            &format!(
-                "[LOCK] Test #27 observed GNOME/Cogl shader failure for '{}' (policy_id={}); truncating interval to {}ms",
-                self.active_shader_name,
-                self.active_policy_id,
-                JOURNAL_FAILURE_ADVANCE_DELAY.as_millis(),
-            ),
-        );
+        if confirmation_due
+            && !self.journal_failure_consumed
+            && !self.ordered_position_recorded
+        {
+            self.shader_manager.record_rendered_policy(
+                self.active_policy_id
+            );
+            self.ordered_position_recorded = true;
+            self.journal_failure_armed_until = None;
+        }
     }
 
     fn take_due_journal_advance(&mut self) -> bool {
