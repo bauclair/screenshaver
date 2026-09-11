@@ -581,7 +581,9 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     vec2 uv = cogl_tex_coord0_in.st;
 
                     if (screenshaverPresentLayer0 > 0.5) {
-                        cogl_color_out = vec4(1.0, 0.0, 0.0, 1.0);
+                        vec4 presentedColor = texture2D(cogl_sampler0, uv);
+                        presentedColor.a = 1.0;
+                        cogl_color_out = presentedColor;
                     } else {
                     vec2 fragCoord = vec2(
                         uv.x * iResolution.x,
@@ -625,15 +627,6 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
         // first test that separates shader rasterization resolution from final
         // presentation resolution.
         vfunc_paint_target(node, paintContext) {
-            // Test #30AH: default to the normal procedural shader path for all
-            // intermediate/manual draws. GNOME 46 switches to layer-0 sampling
-            // only immediately before the native parent presentation below.
-            this.set_uniform_float(
-                'screenshaverPresentLayer0',
-                1,
-                [0.0]
-            );
-
             let targetValid = false;
             let targetWidth = 0.0;
             let targetHeight = 0.0;
@@ -758,27 +751,41 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                             Cogl.PipelineWrapMode.CLAMP_TO_EDGE
                         );
 
-                        this.set_uniform_float(
-                            'screenshaverPresentLayer0',
-                            1,
-                            [1.0]
-                        );
+                        const offscreenPaintTarget =
+                            Clutter.OffscreenEffect?.prototype?.vfunc_paint_target ??
+                            null;
 
                         if (!this._screenshaverSolidTextureProbeLogged) {
                             console.log(
-                                `[Screenshaver] Test #30AI GNOME native uniform-branch probe: ` +
-                                `uniform-switch=constant-red ` +
-                                `size=16x16 before-chain-up=true generation=${generation}`
+                                `[Screenshaver] Test #30AJ GNOME OffscreenEffect parent-paint probe: ` +
+                                `solid-red-bound=true ` +
+                                `offscreen-vfunc-type=${typeof offscreenPaintTarget} ` +
+                                `generation=${generation}`
                             );
                             this._screenshaverSolidTextureProbeLogged = true;
                         }
+
+                        if (typeof offscreenPaintTarget === 'function') {
+                            offscreenPaintTarget.call(
+                                this,
+                                node,
+                                paintContext
+                            );
+                            return;
+                        }
+
+                        console.log(
+                            `[Screenshaver] Test #30AJ GNOME OffscreenEffect parent-paint probe: ` +
+                            `offscreen-vfunc-unavailable=true falling-back-to-shell-parent=true ` +
+                            `generation=${generation}`
+                        );
 
                         super.vfunc_paint_target(node, paintContext);
                         return;
                     }
 
                     console.log(
-                        `[Screenshaver] Test #30AI GNOME native uniform-branch probe: ` +
+                        `[Screenshaver] Test #30AJ GNOME OffscreenEffect parent-paint probe: ` +
                         `unavailable=true ` +
                         `paint-cogl-context=${paintCoglContext ? 'true' : 'false'} ` +
                         `native-pipeline=${nativePipeline ? 'true' : 'false'} ` +
