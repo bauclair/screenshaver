@@ -16,6 +16,33 @@ import * as Config from 'resource:///org/gnome/shell/misc/config.js';
 let shaderEffectTypeSerial = 0;
 
 
+// GNOME 46 compatibility architecture
+// -----------------------------------
+// GNOME 46 cannot safely use the same Shell.GLSLEffect object both to generate
+// the procedural shader and to present Screenshaver's Cogl postprocessing
+// result. Extensive testing on Zorin OS / GNOME Shell 46 established:
+//
+//   * Shell.GLSLEffect's native parent paint MUST remain in control of the
+//     procedural shader's own final paint. Replacing that paint with a
+//     Clutter.PipelineNode produced a black lock screen.
+//
+//   * Rebinding layer 0 of Shell.GLSLEffect's native pipeline does not replace
+//     the visible image. The effect re-runs its procedural fragment program
+//     during parent painting, so even a deliberately solid-red layer-0 texture
+//     still displayed the original shader.
+//
+//   * Calling Clutter.OffscreenEffect.vfunc_paint_target() directly on the
+//     Shell.GLSLEffect instance does not escape that shader-configured pipeline;
+//     the procedural shader still wins.
+//
+//   * Clutter.Actor.create_texture_paint_node() DOES work when used from the
+//     paint-node implementation of a separate actor. This is therefore the
+//     supported GNOME-46 presentation boundary.
+//
+// Keep generation/postprocessing in Shell.GLSLEffect, but present the final
+// postprocessed Cogl texture with this sibling actor. Do not "simplify" this
+// into a single-effect design without re-validating GNOME 46 lock-screen
+// rendering, Audio Bloom, native authentication, and compositor stability.
 const ScreenshaverGnome46TextureActor = GObject.registerClass(
 {
     GTypeName: 'ScreenshaverGnome46TextureActor',
@@ -28,11 +55,18 @@ class ScreenshaverGnome46TextureActor extends Clutter.Actor {
     }
 
     screenshaver_set_texture(texture) {
+        // The producer (Shell.GLSLEffect) owns creation and postprocessing of
+        // this texture. This actor only presents the latest completed texture.
+        // queue_redraw() asks Clutter to schedule this actor's own paint-node
+        // pass after the producer hands off a new frame.
         this._screenshaverTexture = texture ?? null;
         this.queue_redraw();
     }
 
     vfunc_paint_node(node) {
+        // create_texture_paint_node() was intentionally moved here after it
+        // failed when invoked from Shell.GLSLEffect.vfunc_paint_target().
+        // Clutter expects this helper in an Actor paint-node context.
         if (!this._screenshaverTexture)
             return;
 
@@ -41,7 +75,7 @@ class ScreenshaverGnome46TextureActor extends Clutter.Actor {
 
         if (!textureNode) {
             console.log(
-                '[Screenshaver] Test #30AL GNOME sibling postprocess actor: ' +
+                '[Screenshaver] GNOME 46 postprocess presentation actor: ' +
                 'create_texture_paint_node returned null'
             );
             return;
@@ -51,7 +85,7 @@ class ScreenshaverGnome46TextureActor extends Clutter.Actor {
 
         if (!this._screenshaverTextureLogged) {
             console.log(
-                '[Screenshaver] Test #30AL GNOME sibling postprocess actor: ' +
+                '[Screenshaver] GNOME 46 postprocess presentation actor: ' +
                 'paint-node-added=true'
             );
             this._screenshaverTextureLogged = true;
@@ -61,6 +95,25 @@ class ScreenshaverGnome46TextureActor extends Clutter.Actor {
 
 let gnome46PresentationActor = null;
 
+// GNOME 46 compatibility history, condensed for future maintainers:
+//
+// SAFE / VERIFIED:
+//   PaintContext -> framebuffer -> Cogl.Context
+//   scalar Cogl.Pipeline set_uniform_1f()
+//   separate sibling Actor + create_texture_paint_node()
+//   Shell.GLSLEffect native parent paint
+//
+// TESTED AND REJECTED:
+//   Clutter.get_default_backend().get_cogl_context()   -> gnome-shell segfault
+//   Clutter.PipelineNode final presentation            -> black screen
+//   Actor.create_texture_paint_node() inside effect    -> black screen
+//   native Shell.GLSLEffect layer-0 texture rebinding -> original shader wins
+//   lower OffscreenEffect parent-paint call            -> original shader wins
+//   Cogl.Pipeline.set_uniform_float() for vec2/vec3    -> gnome-shell segfault
+//
+// These are observed GNOME 46/GJS/Clutter behaviors, not assumptions. If a
+// future GNOME version changes them, keep compatibility changes version-gated
+// rather than replacing the proven GNOME 46 path globally.
 function createShaderEffectClass(shaderBody, generation, renderScale, colorPrecision, antiAliasing, dithering, bloomMode, bloomThreshold, bloomIntensity) {
     // GObject type registrations survive effect destruction and can also survive
     // extension disable/enable cycles inside the same GNOME Shell process.
@@ -94,6 +147,15 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
         }
 
         screenshaver_create_fxaa_pipeline(coglContext, sceneTexture, width, height) {
+            // GNOME 46 / GJS compatibility note:
+            // Cogl.Pipeline.set_uniform_float(location, 2, 1, [x, y]) caused a
+            // native GNOME Shell crash during diagnostic testing.
+            // get_uniform_location() and scalar set_uniform_1f() were proven
+            // safe. Therefore vector uniforms in Screenshaver's Cogl
+            // postprocessing are intentionally decomposed into scalar uniforms.
+            // Do not recombine these X/Y values into vec2 plus
+            // Pipeline.set_uniform_float() without testing the exact
+            // GNOME/GJS version first.
             const pipeline = Cogl.Pipeline.new(coglContext);
             pipeline.set_layer_texture(0, sceneTexture);
             pipeline.set_layer_filters(
@@ -353,6 +415,11 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
         }
 
         screenshaver_create_audio_bloom_extraction_pipeline(coglContext, sceneTexture) {
+            // Keep bass/midrange/treble as three scalar uniforms. GNOME 46
+            // crashed when the equivalent vec3 was supplied through
+            // Cogl.Pipeline.set_uniform_float(location, 3, 1, [...]).
+            // Scalar set_uniform_1f() calls were verified stable and the full
+            // Audio Bloom extraction/blur/composite chain works with them.
             const pipeline = Cogl.Pipeline.new(coglContext);
             pipeline.set_layer_texture(0, sceneTexture);
             pipeline.set_layer_filters(
@@ -475,6 +542,10 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
         }
 
         screenshaver_create_bloom_blur_pipeline(coglContext, sourceTexture, texelStepX, texelStepY) {
+            // texelStepX/Y deliberately remain separate float uniforms for the
+            // same GNOME 46 reason as FXAA inverse resolution and Audio Bloom
+            // bands: generic Cogl Pipeline vector-uniform marshalling is unsafe
+            // here, while set_uniform_1f() is stable.
             const pipeline = Cogl.Pipeline.new(coglContext);
             pipeline.set_layer_texture(0, sourceTexture);
             pipeline.set_layer_filters(
@@ -595,7 +666,6 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     uniform float screenshaverFlipHorizontal;
                     uniform float screenshaverFlipVertical;
                     uniform float screenshaverHueRotation;
-                    uniform float screenshaverPresentLayer0;
 
                     vec3 screenshaverRotateHue(vec3 color, float degrees)
                     {
@@ -625,12 +695,6 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                 `,
                 `
                     vec2 uv = cogl_tex_coord0_in.st;
-
-                    if (screenshaverPresentLayer0 > 0.5) {
-                        vec4 presentedColor = texture2D(cogl_sampler0, uv);
-                        presentedColor.a = 1.0;
-                        cogl_color_out = presentedColor;
-                    } else {
                     vec2 fragCoord = vec2(
                         uv.x * iResolution.x,
                         (1.0 - uv.y) * iResolution.y
@@ -660,7 +724,6 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                     // participate in lock-screen compositing.
                     fragColor.a = 1.0;
                     cogl_color_out = fragColor;
-                    }
                 `,
                 true
             );
@@ -733,1565 +796,20 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                 }
 
                 if (!coglContext) {
-                    // GNOME 46 diagnostic only:
+                    // GNOME 46 exposes the Cogl context reliably through the
+                    // framebuffer owned by the current Clutter.PaintContext.
+                    // This context is tied to the active paint traversal and
+                    // was validated for Texture2D creation, Cogl.Offscreen,
+                    // pipelines, snippets, full-size draws, FXAA, and Bloom.
                     //
-                    // Probe the Clutter context attached to the actual effect actor.
-                    // GNOME's newer extension guidance prefers actor.get_context()
-                    // over a process-global/default backend.  Do NOT use the
-                    // returned Cogl.Context yet: the previous default-backend
-                    // experiment proved that allocating Cogl resources from an
-                    // unsuitable context can crash GNOME Shell.
-                    const effectActor =
-                        this.get_actor?.() ??
-                        this.actor ??
-                        null;
-
-                    const actorContext =
-                        effectActor?.get_context?.() ??
-                        effectActor?.context ??
-                        null;
-
-                    const actorBackend =
-                        actorContext?.get_backend?.() ??
-                        null;
-
-                    const actorCoglContext =
-                        actorBackend?.get_cogl_context?.() ??
-                        null;
-
-                    if (!this._screenshaverActorCoglContextProbeLogged) {
-                        console.log(
-                            `[Screenshaver] Test #30C GNOME actor-context probe: ` +
-                            `actor=${effectActor !== null} ` +
-                            `clutter-context=${actorContext !== null} ` +
-                            `backend=${actorBackend !== null} ` +
-                            `cogl-context=${actorCoglContext !== null} ` +
-                            `generation=${generation}`
-                        );
-                        this._screenshaverActorCoglContextProbeLogged = true;
-                    }
-                }
-
-                if (!coglContext) {
-                    // GNOME 46 diagnostic only:
+                    // IMPORTANT: do NOT replace this with:
                     //
-                    // Clutter's paint callback is already executing with the
-                    // framebuffer that owns this render operation.  Probe that
-                    // ownership chain directly:
+                    //   Clutter.get_default_backend().get_cogl_context()
                     //
-                    //   Clutter.PaintContext
-                    //       -> Cogl.Framebuffer
-                    //       -> Cogl.Context
-                    //
-                    // Do not allocate or render through this context yet.
-                    const paintFramebuffer =
-                        paintContext?.get_framebuffer?.() ??
-                        null;
-
-                    const paintCoglContext =
-                        paintFramebuffer?.get_context?.() ??
-                        null;
-
-                    if (!this._screenshaverPaintFramebufferProbeLogged) {
-                        console.log(
-                            `[Screenshaver] Test #30D GNOME paint-framebuffer probe: ` +
-                            `paint-context=${paintContext !== null && paintContext !== undefined} ` +
-                            `get-framebuffer=${typeof paintContext?.get_framebuffer === 'function'} ` +
-                            `framebuffer=${paintFramebuffer !== null} ` +
-                            `get-context=${typeof paintFramebuffer?.get_context === 'function'} ` +
-                            `cogl-context=${paintCoglContext !== null} ` +
-                            `generation=${generation}`
-                        );
-                        this._screenshaverPaintFramebufferProbeLogged = true;
-                    }
-
-                    // Test #30E: create one tiny texture from the Cogl.Context
-                    // owned by the framebuffer currently being painted.  This is
-                    // intentionally diagnostic-only: no offscreen framebuffer is
-                    // created, no shader is rendered into the texture, and the
-                    // production Test #30 path still falls back afterward.
-                    if (paintCoglContext &&
-                        !this._screenshaverPaintContextTextureProbeAttempted) {
-                        this._screenshaverPaintContextTextureProbeAttempted = true;
-
-                        try {
-                            const probeTexture =
-                                Cogl.Texture2D.new_with_format(
-                                    paintCoglContext,
-                                    4,
-                                    4,
-                                    Cogl.PixelFormat.RGBA_8888
-                                );
-
-                            console.log(
-                                `[Screenshaver] Test #30E GNOME paint-context texture probe: ` +
-                                `created=${probeTexture !== null} size=4x4 ` +
-                                `generation=${generation}`
-                            );
-
-                            // Test #30F: create one tiny offscreen framebuffer
-                            // backed by the texture created from the paint-owned
-                            // Cogl.Context.  Do not draw into it yet.
-                            const probeOffscreen =
-                                Cogl.Offscreen.new_with_texture(
-                                    probeTexture
-                                );
-
-                            console.log(
-                                `[Screenshaver] Test #30F GNOME paint-context offscreen probe: ` +
-                                `created=${probeOffscreen !== null} size=4x4 ` +
-                                `generation=${generation}`
-                            );
-
-                            // Test #30G: exercise the smallest production-style
-                            // framebuffer operation sequence using the Cogl
-                            // context owned by the framebuffer currently being
-                            // painted.  No pipeline or shader is attached and
-                            // nothing is presented to the lock-screen actor.
-                            probeTexture.set_premultiplied(false);
-                            probeTexture.allocate();
-
-                            probeOffscreen.allocate();
-                            probeOffscreen.set_viewport(
-                                0.0,
-                                0.0,
-                                4.0,
-                                4.0
-                            );
-
-                            probeOffscreen.clear4f(
-                                Cogl.BufferBit.COLOR,
-                                0.0,
-                                0.0,
-                                0.0,
-                                1.0
-                            );
-
-                            probeOffscreen.flush();
-
-                            console.log(
-                                `[Screenshaver] Test #30G GNOME paint-context clear probe: ` +
-                                `allocated=true cleared=true flushed=true size=4x4 ` +
-                                `generation=${generation}`
-                            );
-
-                            // Test #30H: exercise the same textured-rectangle draw
-                            // primitive used by the production Test #30 pipeline,
-                            // but only with disposable 4x4 resources.  The source
-                            // and destination textures are separate to avoid a
-                            // feedback loop.  Nothing from this probe is attached
-                            // to the lock-screen presentation node.
-                            const probeSourceTexture =
-                                Cogl.Texture2D.new_with_format(
-                                    paintCoglContext,
-                                    4,
-                                    4,
-                                    Cogl.PixelFormat.RGBA_8888
-                                );
-                            probeSourceTexture.set_premultiplied(false);
-                            probeSourceTexture.allocate();
-
-                            const probeDestinationTexture =
-                                Cogl.Texture2D.new_with_format(
-                                    paintCoglContext,
-                                    4,
-                                    4,
-                                    Cogl.PixelFormat.RGBA_8888
-                                );
-                            probeDestinationTexture.set_premultiplied(false);
-                            probeDestinationTexture.allocate();
-
-                            const probeDestinationOffscreen =
-                                Cogl.Offscreen.new_with_texture(
-                                    probeDestinationTexture
-                                );
-                            probeDestinationOffscreen.allocate();
-                            probeDestinationOffscreen.set_viewport(
-                                0.0,
-                                0.0,
-                                4.0,
-                                4.0
-                            );
-
-                            const probePipeline =
-                                Cogl.Pipeline.new(paintCoglContext);
-                            probePipeline.set_layer_texture(
-                                0,
-                                probeSourceTexture
-                            );
-                            probePipeline.set_layer_filters(
-                                0,
-                                Cogl.PipelineFilter.LINEAR,
-                                Cogl.PipelineFilter.LINEAR
-                            );
-
-                            probeDestinationOffscreen.clear4f(
-                                Cogl.BufferBit.COLOR,
-                                0.0,
-                                0.0,
-                                0.0,
-                                1.0
-                            );
-
-                            probeDestinationOffscreen.draw_textured_rectangle(
-                                probePipeline,
-                                -1.0,
-                                1.0,
-                                1.0,
-                                -1.0,
-                                0.0,
-                                0.0,
-                                1.0,
-                                1.0
-                            );
-
-                            probeDestinationOffscreen.flush();
-
-                            console.log(
-                                `[Screenshaver] Test #30H GNOME paint-context draw probe: ` +
-                                `pipeline=true textured-rectangle=true flushed=true size=4x4 ` +
-                                `generation=${generation}`
-                            );
-
-
-                            // Test #30I: isolate production dimensions from
-                            // production pixel precision.  Allocate a real-size
-                            // STANDARD RGBA_8888 target only; do not use FP16,
-                            // do not run the production shader, and do not
-                            // present this texture.
-                            const fullSizeStandardTexture =
-                                Cogl.Texture2D.new_with_format(
-                                    paintCoglContext,
-                                    renderWidth,
-                                    renderHeight,
-                                    Cogl.PixelFormat.RGBA_8888
-                                );
-                            fullSizeStandardTexture.set_premultiplied(false);
-                            fullSizeStandardTexture.allocate();
-
-                            const fullSizeStandardOffscreen =
-                                Cogl.Offscreen.new_with_texture(
-                                    fullSizeStandardTexture
-                                );
-                            fullSizeStandardOffscreen.allocate();
-                            fullSizeStandardOffscreen.set_viewport(
-                                0.0,
-                                0.0,
-                                renderWidth,
-                                renderHeight
-                            );
-
-                            fullSizeStandardOffscreen.clear4f(
-                                Cogl.BufferBit.COLOR,
-                                0.0,
-                                0.0,
-                                0.0,
-                                1.0
-                            );
-                            fullSizeStandardOffscreen.flush();
-
-                            console.log(
-                                `[Screenshaver] Test #30I GNOME full-size standard target probe: ` +
-                                `allocated=true cleared=true flushed=true ` +
-                                `size=${renderWidth}x${renderHeight} format=RGBA_8888 ` +
-                                `generation=${generation}`
-                            );
-
-
-                            // Test #30K: add only the next production operation
-                            // after the already-safe full-size target allocation:
-                            // create a plain Cogl.Pipeline and bind the full-size
-                            // RGBA_8888 texture to layer 0.  Do not draw with it,
-                            // do not attach any shader snippet, and do not present
-                            // it to the lock-screen actor.
-                            const fullSizeStandardPipeline =
-                                Cogl.Pipeline.new(paintCoglContext);
-                            fullSizeStandardPipeline.set_layer_texture(
-                                0,
-                                fullSizeStandardTexture
-                            );
-                            fullSizeStandardPipeline.set_layer_filters(
-                                0,
-                                Cogl.PipelineFilter.LINEAR,
-                                Cogl.PipelineFilter.LINEAR
-                            );
-
-                            console.log(
-                                `[Screenshaver] Test #30K GNOME full-size pipeline probe: ` +
-                                `pipeline=true texture-bound=true filters=true ` +
-                                `size=${renderWidth}x${renderHeight} format=RGBA_8888 ` +
-                                `generation=${generation}`
-                            );
-
-
-                            // Test #30L: perform one full-size textured draw
-                            // using only disposable RGBA_8888 resources created
-                            // from the validated PaintContext-owned Cogl.Context.
-                            // This still does NOT use the Shell.GLSLEffect source
-                            // texture and does not present anything onscreen.
-                            const fullSizeDrawSourceTexture =
-                                Cogl.Texture2D.new_with_format(
-                                    paintCoglContext,
-                                    renderWidth,
-                                    renderHeight,
-                                    Cogl.PixelFormat.RGBA_8888
-                                );
-                            fullSizeDrawSourceTexture.set_premultiplied(false);
-                            fullSizeDrawSourceTexture.allocate();
-
-                            const fullSizeDrawDestinationTexture =
-                                Cogl.Texture2D.new_with_format(
-                                    paintCoglContext,
-                                    renderWidth,
-                                    renderHeight,
-                                    Cogl.PixelFormat.RGBA_8888
-                                );
-                            fullSizeDrawDestinationTexture.set_premultiplied(false);
-                            fullSizeDrawDestinationTexture.allocate();
-
-                            const fullSizeDrawOffscreen =
-                                Cogl.Offscreen.new_with_texture(
-                                    fullSizeDrawDestinationTexture
-                                );
-                            fullSizeDrawOffscreen.allocate();
-                            fullSizeDrawOffscreen.set_viewport(
-                                0.0,
-                                0.0,
-                                renderWidth,
-                                renderHeight
-                            );
-
-                            const fullSizeDrawPipeline =
-                                Cogl.Pipeline.new(paintCoglContext);
-                            fullSizeDrawPipeline.set_layer_texture(
-                                0,
-                                fullSizeDrawSourceTexture
-                            );
-                            fullSizeDrawPipeline.set_layer_filters(
-                                0,
-                                Cogl.PipelineFilter.LINEAR,
-                                Cogl.PipelineFilter.LINEAR
-                            );
-
-                            fullSizeDrawOffscreen.clear4f(
-                                Cogl.BufferBit.COLOR,
-                                0.0,
-                                0.0,
-                                0.0,
-                                1.0
-                            );
-
-                            fullSizeDrawOffscreen.draw_textured_rectangle(
-                                fullSizeDrawPipeline,
-                                -1.0,
-                                1.0,
-                                1.0,
-                                -1.0,
-                                0.0,
-                                0.0,
-                                1.0,
-                                1.0
-                            );
-
-                            fullSizeDrawOffscreen.flush();
-
-                            console.log(
-                                `[Screenshaver] Test #30L GNOME full-size draw probe: ` +
-                                `drawn=true flushed=true ` +
-                                `size=${renderWidth}x${renderHeight} format=RGBA_8888 ` +
-                                `generation=${generation}`
-                            );
-
-
-                            // Test #30M: isolate the actual Shell.GLSLEffect
-                            // source texture.  Bind it to a plain pipeline using
-                            // the validated PaintContext-owned Cogl.Context, but
-                            // DO NOT draw with it.  This distinguishes a source-
-                            // texture/context ownership incompatibility from the
-                            // draw operation itself.
-                            const shellSourcePipeline =
-                                Cogl.Pipeline.new(paintCoglContext);
-                            shellSourcePipeline.set_layer_texture(
-                                0,
-                                sourceTexture
-                            );
-                            shellSourcePipeline.set_layer_filters(
-                                0,
-                                Cogl.PipelineFilter.LINEAR,
-                                Cogl.PipelineFilter.LINEAR
-                            );
-
-                            console.log(
-                                `[Screenshaver] Test #30M GNOME Shell source-texture bind probe: ` +
-                                `pipeline=true source-texture-bound=true filters=true ` +
-                                `source=${sourceTexture.get_width?.() ?? 0}x` +
-                                `${sourceTexture.get_height?.() ?? 0} ` +
-                                `generation=${generation}`
-                            );
-
-
-                            // Test #30N: perform one textured draw using the
-                            // actual Shell.GLSLEffect source texture as input,
-                            // but render only into a disposable RGBA_8888
-                            // offscreen target owned by the validated
-                            // PaintContext Cogl.Context.  Do not attach shader
-                            // snippets and do not present the result onscreen.
-                            const shellSourceDrawDestinationTexture =
-                                Cogl.Texture2D.new_with_format(
-                                    paintCoglContext,
-                                    renderWidth,
-                                    renderHeight,
-                                    Cogl.PixelFormat.RGBA_8888
-                                );
-                            shellSourceDrawDestinationTexture.set_premultiplied(false);
-                            shellSourceDrawDestinationTexture.allocate();
-
-                            const shellSourceDrawOffscreen =
-                                Cogl.Offscreen.new_with_texture(
-                                    shellSourceDrawDestinationTexture
-                                );
-                            shellSourceDrawOffscreen.allocate();
-                            shellSourceDrawOffscreen.set_viewport(
-                                0.0,
-                                0.0,
-                                renderWidth,
-                                renderHeight
-                            );
-
-                            shellSourceDrawOffscreen.clear4f(
-                                Cogl.BufferBit.COLOR,
-                                0.0,
-                                0.0,
-                                0.0,
-                                1.0
-                            );
-
-                            shellSourceDrawOffscreen.draw_textured_rectangle(
-                                shellSourcePipeline,
-                                -1.0,
-                                1.0,
-                                1.0,
-                                -1.0,
-                                0.0,
-                                0.0,
-                                1.0,
-                                1.0
-                            );
-
-                            shellSourceDrawOffscreen.flush();
-
-                            console.log(
-                                `[Screenshaver] Test #30N GNOME Shell source-texture draw probe: ` +
-                                `drawn=true flushed=true ` +
-                                `source=${sourceTexture.get_width?.() ?? 0}x` +
-                                `${sourceTexture.get_height?.() ?? 0} ` +
-                                `target=${renderWidth}x${renderHeight} ` +
-                                `generation=${generation}`
-                            );
-
-
-                            // Test #30O: isolate Cogl shader-snippet creation
-                            // and attachment.  This deliberately uses a tiny
-                            // no-op fragment snippet and DOES NOT draw with the
-                            // pipeline, so shader execution remains outside
-                            // this probe.
-                            const screenshaverSnippetProbePipeline =
-                                Cogl.Pipeline.new(paintCoglContext);
-
-                            const screenshaverProbeSnippet =
-                                Cogl.Snippet.new(
-                                    Cogl.SnippetHook.FRAGMENT,
-                                    null,
-                                    null
-                                );
-
-                            screenshaverProbeSnippet.set_replace(`
-                                cogl_color_out = cogl_color_in;
-                            `);
-
-                            screenshaverSnippetProbePipeline.add_snippet(
-                                screenshaverProbeSnippet
-                            );
-
-                            console.log(
-                                `[Screenshaver] Test #30O GNOME shader-snippet probe: ` +
-                                `pipeline=true snippet-created=true snippet-attached=true ` +
-                                `generation=${generation}`
-                            );
-
-
-                            // Test #30P: execute the already-created minimal
-                            // no-op snippet pipeline against disposable
-                            // PaintContext-owned resources only.  This isolates
-                            // snippet execution from the production postprocess
-                            // shader code and from Shell.GLSLEffect presentation.
-                            const snippetDrawSourceTexture =
-                                Cogl.Texture2D.new_with_format(
-                                    paintCoglContext,
-                                    4,
-                                    4,
-                                    Cogl.PixelFormat.RGBA_8888
-                                );
-                            snippetDrawSourceTexture.set_premultiplied(false);
-                            snippetDrawSourceTexture.allocate();
-
-                            const snippetDrawDestinationTexture =
-                                Cogl.Texture2D.new_with_format(
-                                    paintCoglContext,
-                                    4,
-                                    4,
-                                    Cogl.PixelFormat.RGBA_8888
-                                );
-                            snippetDrawDestinationTexture.set_premultiplied(false);
-                            snippetDrawDestinationTexture.allocate();
-
-                            const snippetDrawOffscreen =
-                                Cogl.Offscreen.new_with_texture(
-                                    snippetDrawDestinationTexture
-                                );
-                            snippetDrawOffscreen.allocate();
-                            snippetDrawOffscreen.set_viewport(
-                                0.0,
-                                0.0,
-                                4.0,
-                                4.0
-                            );
-
-                            screenshaverSnippetProbePipeline.set_layer_texture(
-                                0,
-                                snippetDrawSourceTexture
-                            );
-                            screenshaverSnippetProbePipeline.set_layer_filters(
-                                0,
-                                Cogl.PipelineFilter.LINEAR,
-                                Cogl.PipelineFilter.LINEAR
-                            );
-
-                            snippetDrawOffscreen.clear4f(
-                                Cogl.BufferBit.COLOR,
-                                0.0,
-                                0.0,
-                                0.0,
-                                1.0
-                            );
-
-                            snippetDrawOffscreen.draw_textured_rectangle(
-                                screenshaverSnippetProbePipeline,
-                                -1.0,
-                                1.0,
-                                1.0,
-                                -1.0,
-                                0.0,
-                                0.0,
-                                1.0,
-                                1.0
-                            );
-
-                            snippetDrawOffscreen.flush();
-
-                            console.log(
-                                `[Screenshaver] Test #30P GNOME shader-snippet draw probe: ` +
-                                `drawn=true flushed=true size=4x4 ` +
-                                `generation=${generation}`
-                            );
-
-
-                            // Test #30R: isolate the first previously untested
-                            // operation inside the production FXAA constructor:
-                            // setting CLAMP_TO_EDGE wrap mode on layer 0.
-                            // Pipeline creation, texture binding, and LINEAR
-                            // filtering have already been proven safe.
-                            const screenshaverWrapProbePipeline =
-                                Cogl.Pipeline.new(paintCoglContext);
-
-                            screenshaverWrapProbePipeline.set_layer_texture(
-                                0,
-                                fullSizeStandardTexture
-                            );
-                            screenshaverWrapProbePipeline.set_layer_filters(
-                                0,
-                                Cogl.PipelineFilter.LINEAR,
-                                Cogl.PipelineFilter.LINEAR
-                            );
-
-                            console.log(
-                                `[Screenshaver] Test #30R GNOME wrap-mode probe: ` +
-                                `before-set-layer-wrap-mode=true ` +
-                                `generation=${generation}`
-                            );
-
-                            screenshaverWrapProbePipeline.set_layer_wrap_mode(
-                                0,
-                                Cogl.PipelineWrapMode.CLAMP_TO_EDGE
-                            );
-
-                            console.log(
-                                `[Screenshaver] Test #30R GNOME wrap-mode probe: ` +
-                                `after-set-layer-wrap-mode=true mode=CLAMP_TO_EDGE ` +
-                                `generation=${generation}`
-                            );
-
-
-                            // Test #30S: split the production FXAA snippet path
-                            // into explicit checkpoints. This uses the exact
-                            // declaration and replacement GLSL from
-                            // screenshaver_create_fxaa_pipeline(), but does not
-                            // query/set uniforms and does not draw.
-                            const screenshaverFxaaStagePipeline =
-                                Cogl.Pipeline.new(paintCoglContext);
-                            screenshaverFxaaStagePipeline.set_layer_texture(
-                                0,
-                                fullSizeStandardTexture
-                            );
-                            screenshaverFxaaStagePipeline.set_layer_filters(
-                                0,
-                                Cogl.PipelineFilter.LINEAR,
-                                Cogl.PipelineFilter.LINEAR
-                            );
-                            screenshaverFxaaStagePipeline.set_layer_wrap_mode(
-                                0,
-                                Cogl.PipelineWrapMode.CLAMP_TO_EDGE
-                            );
-
-                            console.log(
-                                `[Screenshaver] Test #30S GNOME FXAA snippet stage: ` +
-                                `before-snippet-new=true generation=${generation}`
-                            );
-
-                            const screenshaverFxaaStageSnippet =
-                                Cogl.Snippet.new(
-                                    Cogl.SnippetHook.FRAGMENT,
-                                    `
-                    uniform vec2 screenshaverFxaaInverseResolution;
-                    uniform float screenshaverFxaaInvertColors;
-                    uniform float screenshaverFxaaFlipHorizontal;
-                    uniform float screenshaverFxaaFlipVertical;
-                    uniform float screenshaverFxaaHueRotation;
-
-                    const float SCREENSHAVER_FXAA_EDGE_THRESHOLD_MIN = 0.0312;
-                    const float SCREENSHAVER_FXAA_EDGE_THRESHOLD_MAX = 0.125;
-                    const float SCREENSHAVER_FXAA_SUBPIXEL_QUALITY = 0.75;
-
-                    float screenshaverFxaaLuminance(vec3 color)
-                    {
-                        return dot(color, vec3(0.299, 0.587, 0.114));
-                    }
-
-                    vec3 screenshaverFxaaRotateHue(vec3 color, float degrees)
-                    {
-                        float angle = radians(degrees);
-                        float cosine = cos(angle);
-                        float sine = sin(angle);
-                        float y = dot(color, vec3(0.299, 0.587, 0.114));
-                        float i = dot(color, vec3(0.596, -0.274, -0.322));
-                        float q = dot(color, vec3(0.211, -0.523, 0.312));
-                        float rotatedI = i * cosine - q * sine;
-                        float rotatedQ = i * sine + q * cosine;
-                        return clamp(
-                            vec3(
-                                y + 0.956 * rotatedI + 0.621 * rotatedQ,
-                                y - 0.272 * rotatedI - 0.647 * rotatedQ,
-                                y - 1.106 * rotatedI + 1.703 * rotatedQ
-                            ),
-                            0.0,
-                            1.0
-                        );
-                    }
-
-                    vec3 screenshaverFxaaApplyColorEffects(vec3 color)
-                    {
-                        if (screenshaverFxaaInvertColors > 0.5)
-                            color = vec3(1.0) - color;
-                        if (abs(screenshaverFxaaHueRotation) > 0.0001)
-                            color = screenshaverFxaaRotateHue(color, screenshaverFxaaHueRotation);
-                        return color;
-                    }
-                `,
-                                    null
-                                );
-
-                            console.log(
-                                `[Screenshaver] Test #30S GNOME FXAA snippet stage: ` +
-                                `after-snippet-new=true generation=${generation}`
-                            );
-
-                            screenshaverFxaaStageSnippet.set_replace(
-                                `
-                vec2 uv = cogl_tex_coord0_in.st;
-                if (screenshaverFxaaFlipHorizontal > 0.5)
-                    uv.x = 1.0 - uv.x;
-                if (screenshaverFxaaFlipVertical > 0.5)
-                    uv.y = 1.0 - uv.y;
-
-                vec4 centerSample = texture2D(cogl_sampler0, uv);
-                float lumaCenter = screenshaverFxaaLuminance(centerSample.rgb);
-                float lumaNorth = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(0.0, screenshaverFxaaInverseResolutionY)).rgb);
-                float lumaSouth = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv - vec2(0.0, screenshaverFxaaInverseResolutionY)).rgb);
-                float lumaEast = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(screenshaverFxaaInverseResolutionX, 0.0)).rgb);
-                float lumaWest = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv - vec2(screenshaverFxaaInverseResolutionX, 0.0)).rgb);
-                float lumaMinimum = min(lumaCenter, min(min(lumaNorth, lumaSouth), min(lumaEast, lumaWest)));
-                float lumaMaximum = max(lumaCenter, max(max(lumaNorth, lumaSouth), max(lumaEast, lumaWest)));
-                float lumaRange = lumaMaximum - lumaMinimum;
-                float edgeThreshold = max(SCREENSHAVER_FXAA_EDGE_THRESHOLD_MIN, lumaMaximum * SCREENSHAVER_FXAA_EDGE_THRESHOLD_MAX);
-
-                if (lumaRange < edgeThreshold) {
-                    cogl_color_out = vec4(screenshaverFxaaApplyColorEffects(centerSample.rgb), 1.0);
-                } else {
-                    float lumaNorthWest = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(-screenshaverFxaaInverseResolutionX, screenshaverFxaaInverseResolutionY)).rgb);
-                    float lumaNorthEast = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(screenshaverFxaaInverseResolutionX, screenshaverFxaaInverseResolutionY)).rgb);
-                    float lumaSouthWest = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(-screenshaverFxaaInverseResolutionX, -screenshaverFxaaInverseResolutionY)).rgb);
-                    float lumaSouthEast = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(screenshaverFxaaInverseResolutionX, -screenshaverFxaaInverseResolutionY)).rgb);
-                    float horizontalEdge = abs(lumaNorthWest + 2.0 * lumaNorth + lumaNorthEast - 2.0 * lumaCenter)
-                        + abs(lumaSouthWest + 2.0 * lumaSouth + lumaSouthEast - 2.0 * lumaCenter);
-                    float verticalEdge = abs(lumaNorthWest + 2.0 * lumaWest + lumaSouthWest - 2.0 * lumaCenter)
-                        + abs(lumaNorthEast + 2.0 * lumaEast + lumaSouthEast - 2.0 * lumaCenter);
-                    bool isHorizontal = horizontalEdge >= verticalEdge;
-                    float lumaNegative = isHorizontal ? lumaNorth : lumaWest;
-                    float lumaPositive = isHorizontal ? lumaSouth : lumaEast;
-                    float gradientNegative = abs(lumaNegative - lumaCenter);
-                    float gradientPositive = abs(lumaPositive - lumaCenter);
-                    bool useNegativeDirection = gradientNegative >= gradientPositive;
-                    float gradient = max(gradientNegative, gradientPositive);
-                    vec2 stepDirection = isHorizontal
-                        ? vec2(screenshaverFxaaInverseResolutionX, 0.0)
-                        : vec2(0.0, screenshaverFxaaInverseResolutionY);
-                    vec2 normalDirection = isHorizontal
-                        ? vec2(0.0, screenshaverFxaaInverseResolutionY)
-                        : vec2(screenshaverFxaaInverseResolutionX, 0.0);
-                    if (useNegativeDirection)
-                        normalDirection = -normalDirection;
-                    float lumaReference = 0.5 * (lumaCenter + (useNegativeDirection ? lumaNegative : lumaPositive));
-                    vec2 edgeUv = uv + normalDirection * 0.5;
-                    vec2 negativeUv = edgeUv - stepDirection;
-                    vec2 positiveUv = edgeUv + stepDirection;
-                    float gradientThreshold = gradient * 0.25;
-                    float negativeDelta = screenshaverFxaaLuminance(texture2D(cogl_sampler0, negativeUv).rgb) - lumaReference;
-                    float positiveDelta = screenshaverFxaaLuminance(texture2D(cogl_sampler0, positiveUv).rgb) - lumaReference;
-                    bool negativeReached = abs(negativeDelta) >= gradientThreshold;
-                    bool positiveReached = abs(positiveDelta) >= gradientThreshold;
-                    for (int i = 0; i < 8; ++i) {
-                        if (!negativeReached) {
-                            negativeUv -= stepDirection;
-                            negativeDelta = screenshaverFxaaLuminance(texture2D(cogl_sampler0, negativeUv).rgb) - lumaReference;
-                            negativeReached = abs(negativeDelta) >= gradientThreshold;
-                        }
-                        if (!positiveReached) {
-                            positiveUv += stepDirection;
-                            positiveDelta = screenshaverFxaaLuminance(texture2D(cogl_sampler0, positiveUv).rgb) - lumaReference;
-                            positiveReached = abs(positiveDelta) >= gradientThreshold;
-                        }
-                        if (negativeReached && positiveReached)
-                            break;
-                    }
-                    float negativeDistance = isHorizontal ? uv.x - negativeUv.x : uv.y - negativeUv.y;
-                    float positiveDistance = isHorizontal ? positiveUv.x - uv.x : positiveUv.y - uv.y;
-                    negativeDistance = abs(negativeDistance);
-                    positiveDistance = abs(positiveDistance);
-                    float nearestDistance = min(negativeDistance, positiveDistance);
-                    float totalDistance = max(negativeDistance + positiveDistance, 0.000001);
-                    float edgeOffset = 0.5 - nearestDistance / totalDistance;
-                    bool nearestIsNegative = negativeDistance < positiveDistance;
-                    float nearestDelta = nearestIsNegative ? negativeDelta : positiveDelta;
-                    bool centerIsDarker = lumaCenter < lumaReference;
-                    bool nearestIsDarker = nearestDelta < 0.0;
-                    if (centerIsDarker == nearestIsDarker)
-                        edgeOffset = 0.0;
-                    float averageLuma = (2.0 * (lumaNorth + lumaSouth + lumaEast + lumaWest)
-                        + lumaNorthWest + lumaNorthEast + lumaSouthWest + lumaSouthEast) / 12.0;
-                    float subpixelContrast = clamp(abs(averageLuma - lumaCenter) / max(lumaRange, 0.000001), 0.0, 1.0);
-                    float subpixelOffset = smoothstep(0.0, 1.0, subpixelContrast);
-                    subpixelOffset = subpixelOffset * subpixelOffset * SCREENSHAVER_FXAA_SUBPIXEL_QUALITY;
-                    float finalOffset = max(edgeOffset, subpixelOffset);
-                    vec2 finalUv = uv + normalDirection * finalOffset;
-                    vec4 filteredSample = texture2D(cogl_sampler0, finalUv);
-                    cogl_color_out = vec4(screenshaverFxaaApplyColorEffects(filteredSample.rgb), 1.0);
-                }
-            `
-                            );
-
-                            console.log(
-                                `[Screenshaver] Test #30S GNOME FXAA snippet stage: ` +
-                                `after-set-replace=true generation=${generation}`
-                            );
-
-                            screenshaverFxaaStagePipeline.add_snippet(
-                                screenshaverFxaaStageSnippet
-                            );
-
-                            console.log(
-                                `[Screenshaver] Test #30S GNOME FXAA snippet stage: ` +
-                                `after-add-snippet=true generation=${generation}`
-                            );
-
-
-                            // Test #30V: verify that the fixed-arity scalar
-                            // uniform API is safe on GNOME 46. This uses one
-                            // real scalar uniform from the production FXAA
-                            // snippet and deliberately avoids set_uniform_float().
-                            const screenshaverFxaaScalarLocation =
-                                screenshaverFxaaStagePipeline.get_uniform_location(
-                                    'screenshaverFxaaInvertColors'
-                                );
-
-                            console.log(
-                                `[Screenshaver] Test #30V GNOME FXAA uniform-1f probe: ` +
-                                `location=${screenshaverFxaaScalarLocation} ` +
-                                `set-uniform-1f-type=${typeof screenshaverFxaaStagePipeline.set_uniform_1f} ` +
-                                `generation=${generation}`
-                            );
-
-                            console.log(
-                                `[Screenshaver] Test #30V GNOME FXAA uniform-1f probe: ` +
-                                `before-set-uniform-1f=true generation=${generation}`
-                            );
-
-                            screenshaverFxaaStagePipeline.set_uniform_1f(
-                                screenshaverFxaaScalarLocation,
-                                0.0
-                            );
-
-                            console.log(
-                                `[Screenshaver] Test #30V GNOME FXAA uniform-1f probe: ` +
-                                `after-set-uniform-1f=true generation=${generation}`
-                            );
-
-
-                            // Test #30W: execute the real production FXAA logic
-                            // with only the vec2 inverse-resolution uniform
-                            // scalarized into two float uniforms.  All uniform
-                            // writes use set_uniform_1f(); the crash-prone
-                            // set_uniform_float() binding is not used.
-                            const screenshaverFxaaScalarPipeline =
-                                Cogl.Pipeline.new(paintCoglContext);
-                            screenshaverFxaaScalarPipeline.set_layer_texture(
-                                0,
-                                sourceTexture
-                            );
-                            screenshaverFxaaScalarPipeline.set_layer_filters(
-                                0,
-                                Cogl.PipelineFilter.LINEAR,
-                                Cogl.PipelineFilter.LINEAR
-                            );
-                            screenshaverFxaaScalarPipeline.set_layer_wrap_mode(
-                                0,
-                                Cogl.PipelineWrapMode.CLAMP_TO_EDGE
-                            );
-
-                            const screenshaverFxaaScalarSnippet =
-                                Cogl.Snippet.new(
-                                    Cogl.SnippetHook.FRAGMENT,
-                                    `
-                    uniform float screenshaverFxaaInverseResolutionX;
-                    uniform float screenshaverFxaaInverseResolutionY;
-                    uniform float screenshaverFxaaInvertColors;
-                    uniform float screenshaverFxaaFlipHorizontal;
-                    uniform float screenshaverFxaaFlipVertical;
-                    uniform float screenshaverFxaaHueRotation;
-
-                    const float SCREENSHAVER_FXAA_EDGE_THRESHOLD_MIN = 0.0312;
-                    const float SCREENSHAVER_FXAA_EDGE_THRESHOLD_MAX = 0.125;
-                    const float SCREENSHAVER_FXAA_SUBPIXEL_QUALITY = 0.75;
-
-                    float screenshaverFxaaLuminance(vec3 color)
-                    {
-                        return dot(color, vec3(0.299, 0.587, 0.114));
-                    }
-
-                    vec3 screenshaverFxaaRotateHue(vec3 color, float degrees)
-                    {
-                        float angle = radians(degrees);
-                        float cosine = cos(angle);
-                        float sine = sin(angle);
-                        float y = dot(color, vec3(0.299, 0.587, 0.114));
-                        float i = dot(color, vec3(0.596, -0.274, -0.322));
-                        float q = dot(color, vec3(0.211, -0.523, 0.312));
-                        float rotatedI = i * cosine - q * sine;
-                        float rotatedQ = i * sine + q * cosine;
-                        return clamp(
-                            vec3(
-                                y + 0.956 * rotatedI + 0.621 * rotatedQ,
-                                y - 0.272 * rotatedI - 0.647 * rotatedQ,
-                                y - 1.106 * rotatedI + 1.703 * rotatedQ
-                            ),
-                            0.0,
-                            1.0
-                        );
-                    }
-
-                    vec3 screenshaverFxaaApplyColorEffects(vec3 color)
-                    {
-                        if (screenshaverFxaaInvertColors > 0.5)
-                            color = vec3(1.0) - color;
-                        if (abs(screenshaverFxaaHueRotation) > 0.0001)
-                            color = screenshaverFxaaRotateHue(color, screenshaverFxaaHueRotation);
-                        return color;
-                    }
-                `,
-                                    null
-                                );
-                            screenshaverFxaaScalarSnippet.set_replace(
-                                `
-                vec2 uv = cogl_tex_coord0_in.st;
-                if (screenshaverFxaaFlipHorizontal > 0.5)
-                    uv.x = 1.0 - uv.x;
-                if (screenshaverFxaaFlipVertical > 0.5)
-                    uv.y = 1.0 - uv.y;
-
-                vec4 centerSample = texture2D(cogl_sampler0, uv);
-                float lumaCenter = screenshaverFxaaLuminance(centerSample.rgb);
-                float lumaNorth = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(0.0, screenshaverFxaaInverseResolutionY)).rgb);
-                float lumaSouth = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv - vec2(0.0, screenshaverFxaaInverseResolutionY)).rgb);
-                float lumaEast = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(screenshaverFxaaInverseResolutionX, 0.0)).rgb);
-                float lumaWest = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv - vec2(screenshaverFxaaInverseResolutionX, 0.0)).rgb);
-                float lumaMinimum = min(lumaCenter, min(min(lumaNorth, lumaSouth), min(lumaEast, lumaWest)));
-                float lumaMaximum = max(lumaCenter, max(max(lumaNorth, lumaSouth), max(lumaEast, lumaWest)));
-                float lumaRange = lumaMaximum - lumaMinimum;
-                float edgeThreshold = max(SCREENSHAVER_FXAA_EDGE_THRESHOLD_MIN, lumaMaximum * SCREENSHAVER_FXAA_EDGE_THRESHOLD_MAX);
-
-                if (lumaRange < edgeThreshold) {
-                    cogl_color_out = vec4(screenshaverFxaaApplyColorEffects(centerSample.rgb), 1.0);
-                } else {
-                    float lumaNorthWest = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(-screenshaverFxaaInverseResolutionX, screenshaverFxaaInverseResolutionY)).rgb);
-                    float lumaNorthEast = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(screenshaverFxaaInverseResolutionX, screenshaverFxaaInverseResolutionY)).rgb);
-                    float lumaSouthWest = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(-screenshaverFxaaInverseResolutionX, -screenshaverFxaaInverseResolutionY)).rgb);
-                    float lumaSouthEast = screenshaverFxaaLuminance(texture2D(cogl_sampler0, uv + vec2(screenshaverFxaaInverseResolutionX, -screenshaverFxaaInverseResolutionY)).rgb);
-                    float horizontalEdge = abs(lumaNorthWest + 2.0 * lumaNorth + lumaNorthEast - 2.0 * lumaCenter)
-                        + abs(lumaSouthWest + 2.0 * lumaSouth + lumaSouthEast - 2.0 * lumaCenter);
-                    float verticalEdge = abs(lumaNorthWest + 2.0 * lumaWest + lumaSouthWest - 2.0 * lumaCenter)
-                        + abs(lumaNorthEast + 2.0 * lumaEast + lumaSouthEast - 2.0 * lumaCenter);
-                    bool isHorizontal = horizontalEdge >= verticalEdge;
-                    float lumaNegative = isHorizontal ? lumaNorth : lumaWest;
-                    float lumaPositive = isHorizontal ? lumaSouth : lumaEast;
-                    float gradientNegative = abs(lumaNegative - lumaCenter);
-                    float gradientPositive = abs(lumaPositive - lumaCenter);
-                    bool useNegativeDirection = gradientNegative >= gradientPositive;
-                    float gradient = max(gradientNegative, gradientPositive);
-                    vec2 stepDirection = isHorizontal
-                        ? vec2(screenshaverFxaaInverseResolutionX, 0.0)
-                        : vec2(0.0, screenshaverFxaaInverseResolutionY);
-                    vec2 normalDirection = isHorizontal
-                        ? vec2(0.0, screenshaverFxaaInverseResolutionY)
-                        : vec2(screenshaverFxaaInverseResolutionX, 0.0);
-                    if (useNegativeDirection)
-                        normalDirection = -normalDirection;
-                    float lumaReference = 0.5 * (lumaCenter + (useNegativeDirection ? lumaNegative : lumaPositive));
-                    vec2 edgeUv = uv + normalDirection * 0.5;
-                    vec2 negativeUv = edgeUv - stepDirection;
-                    vec2 positiveUv = edgeUv + stepDirection;
-                    float gradientThreshold = gradient * 0.25;
-                    float negativeDelta = screenshaverFxaaLuminance(texture2D(cogl_sampler0, negativeUv).rgb) - lumaReference;
-                    float positiveDelta = screenshaverFxaaLuminance(texture2D(cogl_sampler0, positiveUv).rgb) - lumaReference;
-                    bool negativeReached = abs(negativeDelta) >= gradientThreshold;
-                    bool positiveReached = abs(positiveDelta) >= gradientThreshold;
-                    for (int i = 0; i < 8; ++i) {
-                        if (!negativeReached) {
-                            negativeUv -= stepDirection;
-                            negativeDelta = screenshaverFxaaLuminance(texture2D(cogl_sampler0, negativeUv).rgb) - lumaReference;
-                            negativeReached = abs(negativeDelta) >= gradientThreshold;
-                        }
-                        if (!positiveReached) {
-                            positiveUv += stepDirection;
-                            positiveDelta = screenshaverFxaaLuminance(texture2D(cogl_sampler0, positiveUv).rgb) - lumaReference;
-                            positiveReached = abs(positiveDelta) >= gradientThreshold;
-                        }
-                        if (negativeReached && positiveReached)
-                            break;
-                    }
-                    float negativeDistance = isHorizontal ? uv.x - negativeUv.x : uv.y - negativeUv.y;
-                    float positiveDistance = isHorizontal ? positiveUv.x - uv.x : positiveUv.y - uv.y;
-                    negativeDistance = abs(negativeDistance);
-                    positiveDistance = abs(positiveDistance);
-                    float nearestDistance = min(negativeDistance, positiveDistance);
-                    float totalDistance = max(negativeDistance + positiveDistance, 0.000001);
-                    float edgeOffset = 0.5 - nearestDistance / totalDistance;
-                    bool nearestIsNegative = negativeDistance < positiveDistance;
-                    float nearestDelta = nearestIsNegative ? negativeDelta : positiveDelta;
-                    bool centerIsDarker = lumaCenter < lumaReference;
-                    bool nearestIsDarker = nearestDelta < 0.0;
-                    if (centerIsDarker == nearestIsDarker)
-                        edgeOffset = 0.0;
-                    float averageLuma = (2.0 * (lumaNorth + lumaSouth + lumaEast + lumaWest)
-                        + lumaNorthWest + lumaNorthEast + lumaSouthWest + lumaSouthEast) / 12.0;
-                    float subpixelContrast = clamp(abs(averageLuma - lumaCenter) / max(lumaRange, 0.000001), 0.0, 1.0);
-                    float subpixelOffset = smoothstep(0.0, 1.0, subpixelContrast);
-                    subpixelOffset = subpixelOffset * subpixelOffset * SCREENSHAVER_FXAA_SUBPIXEL_QUALITY;
-                    float finalOffset = max(edgeOffset, subpixelOffset);
-                    vec2 finalUv = uv + normalDirection * finalOffset;
-                    vec4 filteredSample = texture2D(cogl_sampler0, finalUv);
-                    cogl_color_out = vec4(screenshaverFxaaApplyColorEffects(filteredSample.rgb), 1.0);
-                }
-            `
-                            );
-                            screenshaverFxaaScalarPipeline.add_snippet(
-                                screenshaverFxaaScalarSnippet
-                            );
-
-                            const screenshaverFxaaInvX =
-                                screenshaverFxaaScalarPipeline.get_uniform_location(
-                                    'screenshaverFxaaInverseResolutionX'
-                                );
-                            const screenshaverFxaaInvY =
-                                screenshaverFxaaScalarPipeline.get_uniform_location(
-                                    'screenshaverFxaaInverseResolutionY'
-                                );
-                            const screenshaverFxaaInvert =
-                                screenshaverFxaaScalarPipeline.get_uniform_location(
-                                    'screenshaverFxaaInvertColors'
-                                );
-                            const screenshaverFxaaFlipH =
-                                screenshaverFxaaScalarPipeline.get_uniform_location(
-                                    'screenshaverFxaaFlipHorizontal'
-                                );
-                            const screenshaverFxaaFlipV =
-                                screenshaverFxaaScalarPipeline.get_uniform_location(
-                                    'screenshaverFxaaFlipVertical'
-                                );
-                            const screenshaverFxaaHue =
-                                screenshaverFxaaScalarPipeline.get_uniform_location(
-                                    'screenshaverFxaaHueRotation'
-                                );
-
-                            screenshaverFxaaScalarPipeline.set_uniform_1f(
-                                screenshaverFxaaInvX,
-                                1.0 / renderWidth
-                            );
-                            screenshaverFxaaScalarPipeline.set_uniform_1f(
-                                screenshaverFxaaInvY,
-                                1.0 / renderHeight
-                            );
-                            screenshaverFxaaScalarPipeline.set_uniform_1f(
-                                screenshaverFxaaInvert,
-                                0.0
-                            );
-                            screenshaverFxaaScalarPipeline.set_uniform_1f(
-                                screenshaverFxaaFlipH,
-                                0.0
-                            );
-                            screenshaverFxaaScalarPipeline.set_uniform_1f(
-                                screenshaverFxaaFlipV,
-                                0.0
-                            );
-                            screenshaverFxaaScalarPipeline.set_uniform_1f(
-                                screenshaverFxaaHue,
-                                0.0
-                            );
-
-                            console.log(
-                                `[Screenshaver] Test #30W GNOME scalarized FXAA draw probe: ` +
-                                `before-target-and-draw=true ` +
-                                `source=${sourceTexture.get_width?.() ?? renderWidth}x${sourceTexture.get_height?.() ?? renderHeight} ` +
-                                `target=${renderWidth}x${renderHeight} ` +
-                                `generation=${generation}`
-                            );
-
-                            const screenshaverFxaaScalarTargetTexture =
-                                Cogl.Texture2D.new_with_size(
-                                    paintCoglContext,
-                                    renderWidth,
-                                    renderHeight
-                                );
-                            screenshaverFxaaScalarTargetTexture.set_premultiplied(
-                                true
-                            );
-                            const screenshaverFxaaScalarTarget =
-                                Cogl.Offscreen.new_with_texture(
-                                    screenshaverFxaaScalarTargetTexture
-                                );
-                            screenshaverFxaaScalarTarget.allocate();
-                            screenshaverFxaaScalarTarget.set_viewport(
-                                0,
-                                0,
-                                renderWidth,
-                                renderHeight
-                            );
-                            screenshaverFxaaScalarTarget.clear4f(
-                                Cogl.BufferBit.COLOR,
-                                0.0,
-                                0.0,
-                                0.0,
-                                0.0
-                            );
-                            screenshaverFxaaScalarTarget.draw_textured_rectangle(
-                                screenshaverFxaaScalarPipeline,
-                                -1.0,
-                                -1.0,
-                                1.0,
-                                1.0,
-                                0.0,
-                                0.0,
-                                1.0,
-                                1.0
-                            );
-                            screenshaverFxaaScalarTarget.flush();
-
-                            console.log(
-                                `[Screenshaver] Test #30W GNOME scalarized FXAA draw probe: ` +
-                                `drawn=true flushed=true ` +
-                                `target=${renderWidth}x${renderHeight} ` +
-                                `generation=${generation}`
-                            );
-
-
-                            // Test #30X: execute the exact production Audio Bloom
-                            // extraction shader with the vec3 audio-band uniform
-                            // scalarized into three float uniforms.  All writes
-                            // use set_uniform_1f(); set_uniform_float() is never
-                            // called by this probe.
-                            const screenshaverAudioExtractPipeline =
-                                Cogl.Pipeline.new(paintCoglContext);
-                            screenshaverAudioExtractPipeline.set_layer_texture(
-                                0,
-                                sourceTexture
-                            );
-                            screenshaverAudioExtractPipeline.set_layer_filters(
-                                0,
-                                Cogl.PipelineFilter.LINEAR,
-                                Cogl.PipelineFilter.LINEAR
-                            );
-                            screenshaverAudioExtractPipeline.set_layer_wrap_mode(
-                                0,
-                                Cogl.PipelineWrapMode.CLAMP_TO_EDGE
-                            );
-
-                            const screenshaverAudioExtractSnippet =
-                                Cogl.Snippet.new(
-                                    Cogl.SnippetHook.FRAGMENT,
-                                    `
-                    uniform float screenshaverBloomThreshold;
-                    uniform float screenshaverAudioBass;
-                    uniform float screenshaverAudioMidrange;
-                    uniform float screenshaverAudioTreble;
-
-                    vec3 screenshaverBloomRgbToHsv(vec3 c)
-                    {
-                        float maxChannel = max(c.r, max(c.g, c.b));
-                        float minChannel = min(c.r, min(c.g, c.b));
-                        float chroma = maxChannel - minChannel;
-                        float hue = 0.0;
-
-                        if (chroma > 0.00001) {
-                            if (maxChannel == c.r)
-                                hue = mod((c.g - c.b) / chroma, 6.0);
-                            else if (maxChannel == c.g)
-                                hue = ((c.b - c.r) / chroma) + 2.0;
-                            else
-                                hue = ((c.r - c.g) / chroma) + 4.0;
-
-                            hue *= 60.0;
-                            if (hue < 0.0)
-                                hue += 360.0;
-                        }
-
-                        float saturation = maxChannel > 0.00001
-                            ? chroma / maxChannel
-                            : 0.0;
-
-                        return vec3(hue, saturation, maxChannel);
-                    }
-                `,
-                                    null
-                                );
-                            screenshaverAudioExtractSnippet.set_replace(
-                                `
-                vec3 sceneColor = texture2D(cogl_sampler0, cogl_tex_coord0_in.st).rgb;
-                vec3 hsv = screenshaverBloomRgbToHsv(max(sceneColor, vec3(0.0)));
-                float hue = hsv.x;
-                float saturation = hsv.y;
-                float value = hsv.z;
-
-                float bassEnergy = clamp(screenshaverAudioBass, 0.0, 1.0);
-                float midEnergy = clamp(screenshaverAudioMidrange, 0.0, 1.0);
-                float highEnergy = clamp(screenshaverAudioTreble, 0.0, 1.0);
-
-                float bassMatch = (hue >= 0.0 && hue < 45.0) ? bassEnergy : 0.0;
-                float midMatch = (hue >= 45.0 && hue < 150.0) ? midEnergy : 0.0;
-                float highMatch = (hue >= 240.0 && hue < 300.0) ? highEnergy : 0.0;
-                float bandMatch = max(bassMatch, max(midMatch, highMatch));
-
-                float colorStrength = saturation * 2.0
-                    * smoothstep(0.02, 0.15, value);
-                float energy = clamp(bandMatch, 0.0, 1.0);
-                float effectiveThreshold = mix(2.0, screenshaverBloomThreshold, energy);
-                float response = energy * smoothstep(
-                    effectiveThreshold,
-                    min(effectiveThreshold + 0.35, 2.0001),
-                    colorStrength
-                );
-
-                cogl_color_out = vec4(sceneColor * response, 1.0);
-            `
-                            );
-                            screenshaverAudioExtractPipeline.add_snippet(
-                                screenshaverAudioExtractSnippet
-                            );
-
-                            const screenshaverBloomThresholdLocation =
-                                screenshaverAudioExtractPipeline.get_uniform_location(
-                                    'screenshaverBloomThreshold'
-                                );
-                            const screenshaverAudioBassLocation =
-                                screenshaverAudioExtractPipeline.get_uniform_location(
-                                    'screenshaverAudioBass'
-                                );
-                            const screenshaverAudioMidLocation =
-                                screenshaverAudioExtractPipeline.get_uniform_location(
-                                    'screenshaverAudioMidrange'
-                                );
-                            const screenshaverAudioTrebleLocation =
-                                screenshaverAudioExtractPipeline.get_uniform_location(
-                                    'screenshaverAudioTreble'
-                                );
-
-                            const screenshaverProbeBass =
-                                this._screenshaverAudioBass ?? 0.0;
-                            const screenshaverProbeMid =
-                                this._screenshaverAudioMidrange ?? 0.0;
-                            const screenshaverProbeTreble =
-                                this._screenshaverAudioTreble ?? 0.0;
-
-                            screenshaverAudioExtractPipeline.set_uniform_1f(
-                                screenshaverBloomThresholdLocation,
-                                Number.isFinite(bloomThreshold)
-                                    ? bloomThreshold
-                                    : 0.80
-                            );
-                            screenshaverAudioExtractPipeline.set_uniform_1f(
-                                screenshaverAudioBassLocation,
-                                screenshaverProbeBass
-                            );
-                            screenshaverAudioExtractPipeline.set_uniform_1f(
-                                screenshaverAudioMidLocation,
-                                screenshaverProbeMid
-                            );
-                            screenshaverAudioExtractPipeline.set_uniform_1f(
-                                screenshaverAudioTrebleLocation,
-                                screenshaverProbeTreble
-                            );
-
-                            const screenshaverBloomProbeWidth =
-                                Math.max(1, Math.floor(nativeWidth / 2));
-                            const screenshaverBloomProbeHeight =
-                                Math.max(1, Math.floor(nativeHeight / 2));
-
-                            console.log(
-                                `[Screenshaver] Test #30X GNOME scalarized Audio Bloom extraction: ` +
-                                `before-draw=true ` +
-                                `bands=${screenshaverProbeBass.toFixed(3)}/` +
-                                `${screenshaverProbeMid.toFixed(3)}/` +
-                                `${screenshaverProbeTreble.toFixed(3)} ` +
-                                `target=${screenshaverBloomProbeWidth}x${screenshaverBloomProbeHeight} ` +
-                                `generation=${generation}`
-                            );
-
-                            const screenshaverAudioExtractTexture =
-                                Cogl.Texture2D.new_with_format(
-                                    paintCoglContext,
-                                    screenshaverBloomProbeWidth,
-                                    screenshaverBloomProbeHeight,
-                                    Cogl.PixelFormat.RGBA_8888
-                                );
-                            screenshaverAudioExtractTexture.set_premultiplied(false);
-                            screenshaverAudioExtractTexture.allocate();
-
-                            const screenshaverAudioExtractOffscreen =
-                                Cogl.Offscreen.new_with_texture(
-                                    screenshaverAudioExtractTexture
-                                );
-                            screenshaverAudioExtractOffscreen.allocate();
-                            screenshaverAudioExtractOffscreen.set_viewport(
-                                0.0,
-                                0.0,
-                                screenshaverBloomProbeWidth,
-                                screenshaverBloomProbeHeight
-                            );
-                            screenshaverAudioExtractOffscreen.clear4f(
-                                Cogl.BufferBit.COLOR,
-                                0.0,
-                                0.0,
-                                0.0,
-                                1.0
-                            );
-                            screenshaverAudioExtractOffscreen.draw_textured_rectangle(
-                                screenshaverAudioExtractPipeline,
-                                -1.0,
-                                1.0,
-                                1.0,
-                                -1.0,
-                                0.0,
-                                0.0,
-                                1.0,
-                                1.0
-                            );
-                            screenshaverAudioExtractOffscreen.flush();
-
-                            console.log(
-                                `[Screenshaver] Test #30X GNOME scalarized Audio Bloom extraction: ` +
-                                `drawn=true flushed=true ` +
-                                `target=${screenshaverBloomProbeWidth}x${screenshaverBloomProbeHeight} ` +
-                                `generation=${generation}`
-                            );
-
-
-                            // Test #30Y: execute the exact production Bloom blur
-                            // shader with the vec2 texel-step uniform scalarized
-                            // into X/Y float uniforms.  This uses the extraction
-                            // texture from Test #30X as the blur source.
-                            const screenshaverBlurPipeline =
-                                Cogl.Pipeline.new(paintCoglContext);
-                            screenshaverBlurPipeline.set_layer_texture(
-                                0,
-                                screenshaverAudioExtractTexture
-                            );
-                            screenshaverBlurPipeline.set_layer_filters(
-                                0,
-                                Cogl.PipelineFilter.LINEAR,
-                                Cogl.PipelineFilter.LINEAR
-                            );
-                            screenshaverBlurPipeline.set_layer_wrap_mode(
-                                0,
-                                Cogl.PipelineWrapMode.CLAMP_TO_EDGE
-                            );
-
-                            const screenshaverBlurSnippet =
-                                Cogl.Snippet.new(
-                                    Cogl.SnippetHook.FRAGMENT,
-                                    `
-                    uniform float screenshaverBloomTexelStepX;
-                    uniform float screenshaverBloomTexelStepY;
-                `,
-                                    null
-                                );
-                            screenshaverBlurSnippet.set_replace(
-                                `
-                const float w0 = 0.2270270270;
-                const float w1 = 0.1945945946;
-                const float w2 = 0.1216216216;
-                const float w3 = 0.0540540541;
-                const float w4 = 0.0162162162;
-
-                vec2 uv = cogl_tex_coord0_in.st;
-                vec3 color = texture2D(cogl_sampler0, uv).rgb * w0;
-                color += texture2D(cogl_sampler0, uv + vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 1.0).rgb * w1;
-                color += texture2D(cogl_sampler0, uv - vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 1.0).rgb * w1;
-                color += texture2D(cogl_sampler0, uv + vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 2.0).rgb * w2;
-                color += texture2D(cogl_sampler0, uv - vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 2.0).rgb * w2;
-                color += texture2D(cogl_sampler0, uv + vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 3.0).rgb * w3;
-                color += texture2D(cogl_sampler0, uv - vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 3.0).rgb * w3;
-                color += texture2D(cogl_sampler0, uv + vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 4.0).rgb * w4;
-                color += texture2D(cogl_sampler0, uv - vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 4.0).rgb * w4;
-                cogl_color_out = vec4(color, 1.0);
-            `
-                            );
-                            screenshaverBlurPipeline.add_snippet(
-                                screenshaverBlurSnippet
-                            );
-
-                            const screenshaverBlurStepX =
-                                screenshaverBlurPipeline.get_uniform_location(
-                                    'screenshaverBloomTexelStepX'
-                                );
-                            const screenshaverBlurStepY =
-                                screenshaverBlurPipeline.get_uniform_location(
-                                    'screenshaverBloomTexelStepY'
-                                );
-
-                            // Horizontal production blur pass.
-                            screenshaverBlurPipeline.set_uniform_1f(
-                                screenshaverBlurStepX,
-                                1.0 / screenshaverBloomProbeWidth
-                            );
-                            screenshaverBlurPipeline.set_uniform_1f(
-                                screenshaverBlurStepY,
-                                0.0
-                            );
-
-                            const screenshaverBlurTexture =
-                                Cogl.Texture2D.new_with_format(
-                                    paintCoglContext,
-                                    screenshaverBloomProbeWidth,
-                                    screenshaverBloomProbeHeight,
-                                    Cogl.PixelFormat.RGBA_8888
-                                );
-                            screenshaverBlurTexture.set_premultiplied(false);
-                            screenshaverBlurTexture.allocate();
-
-                            const screenshaverBlurOffscreen =
-                                Cogl.Offscreen.new_with_texture(
-                                    screenshaverBlurTexture
-                                );
-                            screenshaverBlurOffscreen.allocate();
-                            screenshaverBlurOffscreen.set_viewport(
-                                0.0,
-                                0.0,
-                                screenshaverBloomProbeWidth,
-                                screenshaverBloomProbeHeight
-                            );
-                            screenshaverBlurOffscreen.clear4f(
-                                Cogl.BufferBit.COLOR,
-                                0.0,
-                                0.0,
-                                0.0,
-                                1.0
-                            );
-
-                            console.log(
-                                `[Screenshaver] Test #30Y GNOME scalarized Bloom blur: ` +
-                                `before-horizontal-draw=true ` +
-                                `target=${screenshaverBloomProbeWidth}x${screenshaverBloomProbeHeight} ` +
-                                `generation=${generation}`
-                            );
-
-                            screenshaverBlurOffscreen.draw_textured_rectangle(
-                                screenshaverBlurPipeline,
-                                -1.0,
-                                1.0,
-                                1.0,
-                                -1.0,
-                                0.0,
-                                0.0,
-                                1.0,
-                                1.0
-                            );
-                            screenshaverBlurOffscreen.flush();
-
-                            console.log(
-                                `[Screenshaver] Test #30Y GNOME scalarized Bloom blur: ` +
-                                `horizontal-drawn=true flushed=true ` +
-                                `generation=${generation}`
-                            );
-
-                            // Vertical production blur pass using a second
-                            // scalarized pipeline bound to the horizontal result.
-                            const screenshaverBlurVerticalPipeline =
-                                Cogl.Pipeline.new(paintCoglContext);
-                            screenshaverBlurVerticalPipeline.set_layer_texture(
-                                0,
-                                screenshaverBlurTexture
-                            );
-                            screenshaverBlurVerticalPipeline.set_layer_filters(
-                                0,
-                                Cogl.PipelineFilter.LINEAR,
-                                Cogl.PipelineFilter.LINEAR
-                            );
-                            screenshaverBlurVerticalPipeline.set_layer_wrap_mode(
-                                0,
-                                Cogl.PipelineWrapMode.CLAMP_TO_EDGE
-                            );
-
-                            const screenshaverBlurVerticalSnippet =
-                                Cogl.Snippet.new(
-                                    Cogl.SnippetHook.FRAGMENT,
-                                    `
-                    uniform float screenshaverBloomTexelStepX;
-                    uniform float screenshaverBloomTexelStepY;
-                `,
-                                    null
-                                );
-                            screenshaverBlurVerticalSnippet.set_replace(
-                                `
-                const float w0 = 0.2270270270;
-                const float w1 = 0.1945945946;
-                const float w2 = 0.1216216216;
-                const float w3 = 0.0540540541;
-                const float w4 = 0.0162162162;
-
-                vec2 uv = cogl_tex_coord0_in.st;
-                vec3 color = texture2D(cogl_sampler0, uv).rgb * w0;
-                color += texture2D(cogl_sampler0, uv + vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 1.0).rgb * w1;
-                color += texture2D(cogl_sampler0, uv - vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 1.0).rgb * w1;
-                color += texture2D(cogl_sampler0, uv + vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 2.0).rgb * w2;
-                color += texture2D(cogl_sampler0, uv - vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 2.0).rgb * w2;
-                color += texture2D(cogl_sampler0, uv + vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 3.0).rgb * w3;
-                color += texture2D(cogl_sampler0, uv - vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 3.0).rgb * w3;
-                color += texture2D(cogl_sampler0, uv + vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 4.0).rgb * w4;
-                color += texture2D(cogl_sampler0, uv - vec2(screenshaverBloomTexelStepX, screenshaverBloomTexelStepY) * 4.0).rgb * w4;
-                cogl_color_out = vec4(color, 1.0);
-            `
-                            );
-                            screenshaverBlurVerticalPipeline.add_snippet(
-                                screenshaverBlurVerticalSnippet
-                            );
-
-                            const screenshaverBlurVerticalStepX =
-                                screenshaverBlurVerticalPipeline.get_uniform_location(
-                                    'screenshaverBloomTexelStepX'
-                                );
-                            const screenshaverBlurVerticalStepY =
-                                screenshaverBlurVerticalPipeline.get_uniform_location(
-                                    'screenshaverBloomTexelStepY'
-                                );
-                            screenshaverBlurVerticalPipeline.set_uniform_1f(
-                                screenshaverBlurVerticalStepX,
-                                0.0
-                            );
-                            screenshaverBlurVerticalPipeline.set_uniform_1f(
-                                screenshaverBlurVerticalStepY,
-                                1.0 / screenshaverBloomProbeHeight
-                            );
-
-                            const screenshaverBlurVerticalTexture =
-                                Cogl.Texture2D.new_with_format(
-                                    paintCoglContext,
-                                    screenshaverBloomProbeWidth,
-                                    screenshaverBloomProbeHeight,
-                                    Cogl.PixelFormat.RGBA_8888
-                                );
-                            screenshaverBlurVerticalTexture.set_premultiplied(false);
-                            screenshaverBlurVerticalTexture.allocate();
-
-                            const screenshaverBlurVerticalOffscreen =
-                                Cogl.Offscreen.new_with_texture(
-                                    screenshaverBlurVerticalTexture
-                                );
-                            screenshaverBlurVerticalOffscreen.allocate();
-                            screenshaverBlurVerticalOffscreen.set_viewport(
-                                0.0,
-                                0.0,
-                                screenshaverBloomProbeWidth,
-                                screenshaverBloomProbeHeight
-                            );
-                            screenshaverBlurVerticalOffscreen.clear4f(
-                                Cogl.BufferBit.COLOR,
-                                0.0,
-                                0.0,
-                                0.0,
-                                1.0
-                            );
-
-                            console.log(
-                                `[Screenshaver] Test #30Y GNOME scalarized Bloom blur: ` +
-                                `before-vertical-draw=true generation=${generation}`
-                            );
-
-                            screenshaverBlurVerticalOffscreen.draw_textured_rectangle(
-                                screenshaverBlurVerticalPipeline,
-                                -1.0,
-                                1.0,
-                                1.0,
-                                -1.0,
-                                0.0,
-                                0.0,
-                                1.0,
-                                1.0
-                            );
-                            screenshaverBlurVerticalOffscreen.flush();
-
-                            console.log(
-                                `[Screenshaver] Test #30Y GNOME scalarized Bloom blur: ` +
-                                `vertical-drawn=true flushed=true ` +
-                                `target=${screenshaverBloomProbeWidth}x${screenshaverBloomProbeHeight} ` +
-                                `generation=${generation}`
-                            );
-                        } catch (error) {
-                            console.log(
-                                `[Screenshaver] Test #30E GNOME paint-context texture probe failed: ` +
-                                `${error} generation=${generation}`
-                            );
-                        }
-                    }
-                }
-
-                if (!coglContext) {
+                    // That process-global backend context looked valid from
+                    // GJS but caused an immediate native gnome-shell segfault
+                    // when production drawing began on GNOME 46. A JavaScript
+                    // try/catch cannot protect against that native crash.
                     const paintFramebuffer =
                         paintContext?.get_framebuffer?.() ??
                         null;
@@ -2301,7 +819,7 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
 
                     if (coglContext) {
                         console.log(
-                            `[Screenshaver] Test #30Z GNOME production postprocess: ` +
+                            `[Screenshaver] GNOME 46 production postprocess: ` +
                             `Cogl context acquired via Clutter PaintContext framebuffer ` +
                             `generation=${generation}`
                         );
@@ -2652,7 +1170,7 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                         : 'RGBA8-equivalent';
 
                     console.log(
-                        `[Screenshaver] Test #30AA GNOME texture-format compatibility: ` +
+                        `[Screenshaver] GNOME texture-format compatibility: ` +
                         `get-format=${typeof renderTexture.get_format === 'function' ? 'available' : 'unavailable'} ` +
                         `generation=${generation}`
                     );
@@ -2877,6 +1395,19 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                 }
 
                 if (GNOME_SHELL_MAJOR === 46) {
+                    // GNOME 46 presentation is intentionally a two-actor
+                    // operation:
+                    //
+                    //   Shell.GLSLEffect
+                    //       -> procedural shader + Cogl postprocessing
+                    //       -> finalTexture
+                    //       -> ScreenshaverGnome46TextureActor
+                    //       -> create_texture_paint_node()
+                    //
+                    // The sibling actor must receive finalTexture. Attempts to
+                    // present the same texture through Shell.GLSLEffect itself
+                    // either produced a black screen or silently re-rendered
+                    // the original procedural shader, thereby hiding Bloom.
                     if (!finalTexture)
                         throw new Error(
                             'GNOME 46 final postprocess texture unavailable'
@@ -2893,7 +1424,7 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
 
                     if (!this._screenshaverSiblingPostprocessLogged) {
                         console.log(
-                            `[Screenshaver] Test #30AL GNOME sibling postprocess presentation: ` +
+                            `[Screenshaver] GNOME 46 postprocess presentation: ` +
                             `final-texture-supplied=true ` +
                             `size=${finalTexture.get_width?.() ?? nativeWidth}x` +
                             `${finalTexture.get_height?.() ?? nativeHeight} ` +
@@ -2903,6 +1434,12 @@ function createShaderEffectClass(shaderBody, generation, renderScale, colorPreci
                         this._screenshaverSiblingPostprocessLogged = true;
                     }
 
+                    // Keep Shell.GLSLEffect's native parent paint even though
+                    // the sibling actor is what displays finalTexture. On
+                    // GNOME 46 this native chain-up is required for correct
+                    // effect lifecycle/painting; replacing it caused black
+                    // output. The sibling actor sits above the producer and
+                    // therefore displays the postprocessed result.
                     super.vfunc_paint_target(node, paintContext);
                 } else {
                     const rect = new Clutter.ActorBox({
@@ -4390,6 +2927,12 @@ export default class ScreenshaverExtension extends Extension {
         backgroundGroup.add_child(this._lockActor);
 
         if (GNOME_SHELL_MAJOR === 46) {
+            // Add the postprocess presentation actor AFTER the procedural
+            // shader actor so its texture is visible, but BEFORE the
+            // description pill so normal shader descriptions and FPS
+            // Warning/CRITICAL UI remain readable above the rendered frame.
+            // Authentication remains GNOME-native and is not implemented by
+            // this actor.
             gnome46PresentationActor =
                 new ScreenshaverGnome46TextureActor({
                     reactive: false,
@@ -4402,7 +2945,7 @@ export default class ScreenshaverExtension extends Extension {
             backgroundGroup.add_child(gnome46PresentationActor);
 
             console.log(
-                '[Screenshaver] Test #30AL GNOME sibling postprocess actor: ' +
+                '[Screenshaver] GNOME 46 postprocess presentation actor: ' +
                 'actor-added=true'
             );
         }
