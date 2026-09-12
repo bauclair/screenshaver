@@ -334,6 +334,62 @@ fn light_locker_override_is_current(
 fn read_selected_themes(
 ) -> Result<Vec<String>, String> {
 
+    // A fresh xfce4-screensaver profile may not contain an explicit
+    // /saver/themes/list property yet. That is a valid Xfce implicit-default
+    // state, not an installation error. This is seen in particular on fresh
+    // Void Linux/Xfce installations.
+    //
+    // Do not detect this by matching xfconf-query's localized error text.
+    // Instead, list the properties in the channel first and query the theme
+    // list only when the property actually exists. A genuine failure to
+    // query the channel remains fatal.
+    let list_output =
+        Command::new(
+            XFCONF_QUERY_BINARY
+        )
+        .args(
+            [
+                "-c",
+                "xfce4-screensaver",
+                "-l",
+            ]
+        )
+        .output()
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to inspect XFCE screensaver properties: {}",
+                    error,
+                )
+            }
+        )?;
+
+    let listed_properties =
+        require_command_success(
+            list_output,
+            "Unable to inspect XFCE screensaver properties",
+        )?;
+
+    let theme_list_exists =
+        listed_properties
+            .lines()
+            .map(
+                |line| line.trim()
+            )
+            .any(
+                |line| {
+                    line
+                        == SAVER_THEME_LIST_PATH
+                }
+            );
+
+    if !theme_list_exists {
+        return Ok(
+            Vec::new()
+        );
+    }
+
+
     let output =
         Command::new(
             XFCONF_QUERY_BINARY
