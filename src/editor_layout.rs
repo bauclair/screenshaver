@@ -655,6 +655,37 @@ struct PendingPolicyRename {
 
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BulkBooleanSelection {
+    #[default]
+    Unchanged,
+    True,
+    False,
+}
+
+impl BulkBooleanSelection {
+    fn display_name(self) -> &'static str {
+        match self {
+            Self::Unchanged => "Unchanged",
+            Self::True => "True",
+            Self::False => "False",
+        }
+    }
+
+    fn value(self) -> Option<bool> {
+        match self {
+            Self::Unchanged => None,
+            Self::True => Some(true),
+            Self::False => Some(false),
+        }
+    }
+
+    fn applies(self) -> bool {
+        !matches!(self, Self::Unchanged)
+    }
+}
+
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct BulkEditChanges {
     pub policy_target: bool,
     pub fps: bool,
@@ -1079,6 +1110,50 @@ pub struct EditWindowOverlay {
     bulk_edit_baseline:
         Option<EditorConfiguration>,
 
+    bulk_invert_colors:
+        BulkBooleanSelection,
+
+    bulk_flip_horizontal:
+        BulkBooleanSelection,
+
+    bulk_flip_vertical:
+        BulkBooleanSelection,
+
+    // Bulk Edit intent for numeric slider controls is independent of the
+    // displayed numeric value.  The value cell explicitly opts each field
+    // into or out of the bulk operation; its slider remains disabled until
+    // that intent is active.
+    bulk_fps_selected:
+        bool,
+
+    bulk_animation_speed_selected:
+        bool,
+
+    bulk_render_scale_selected:
+        bool,
+
+    bulk_bloom_intensity_selected:
+        bool,
+
+    bulk_bloom_threshold_selected:
+        bool,
+
+    // Bulk Edit intent for categorical post-processing controls.
+    bulk_anti_aliasing_selected:
+        bool,
+
+    bulk_dithering_selected:
+        bool,
+
+    bulk_color_precision_selected:
+        bool,
+
+    bulk_bloom_selected:
+        bool,
+
+    bulk_hue_rotation_selected:
+        bool,
+
     pending_policy_navigation:
         Option<PolicyNavigation>,
 
@@ -1403,6 +1478,45 @@ impl EditWindowOverlay {
 
                 bulk_edit_baseline:
                     None,
+
+                bulk_invert_colors:
+                    BulkBooleanSelection::Unchanged,
+
+                bulk_flip_horizontal:
+                    BulkBooleanSelection::Unchanged,
+
+                bulk_flip_vertical:
+                    BulkBooleanSelection::Unchanged,
+
+                bulk_fps_selected:
+                    false,
+
+                bulk_animation_speed_selected:
+                    false,
+
+                bulk_render_scale_selected:
+                    false,
+
+                bulk_bloom_intensity_selected:
+                    false,
+
+                bulk_bloom_threshold_selected:
+                    false,
+
+                bulk_anti_aliasing_selected:
+                    false,
+
+                bulk_dithering_selected:
+                    false,
+
+                bulk_color_precision_selected:
+                    false,
+
+                bulk_bloom_selected:
+                    false,
+
+                bulk_hue_rotation_selected:
+                    false,
 
                 pending_policy_navigation:
                     None,
@@ -2129,6 +2243,45 @@ impl EditWindowOverlay {
         let mut hue_rotation_drag_state =
             self.hue_rotation_drag_state;
 
+        let mut bulk_invert_colors =
+            self.bulk_invert_colors;
+
+        let mut bulk_flip_horizontal =
+            self.bulk_flip_horizontal;
+
+        let mut bulk_flip_vertical =
+            self.bulk_flip_vertical;
+
+        let mut bulk_fps_selected =
+            self.bulk_fps_selected;
+
+        let mut bulk_animation_speed_selected =
+            self.bulk_animation_speed_selected;
+
+        let mut bulk_render_scale_selected =
+            self.bulk_render_scale_selected;
+
+        let mut bulk_bloom_intensity_selected =
+            self.bulk_bloom_intensity_selected;
+
+        let mut bulk_bloom_threshold_selected =
+            self.bulk_bloom_threshold_selected;
+
+        let mut bulk_anti_aliasing_selected =
+            self.bulk_anti_aliasing_selected;
+
+        let mut bulk_dithering_selected =
+            self.bulk_dithering_selected;
+
+        let mut bulk_color_precision_selected =
+            self.bulk_color_precision_selected;
+
+        let mut bulk_bloom_selected =
+            self.bulk_bloom_selected;
+
+        let mut bulk_hue_rotation_selected =
+            self.bulk_hue_rotation_selected;
+
 
         // A shader physically located in one of Screenshaver's managed
         // runtime folders has exactly one available policy target.  Enforce
@@ -2449,6 +2602,15 @@ impl EditWindowOverlay {
                         )
                     );
 
+                bulk_invert_colors =
+                    BulkBooleanSelection::Unchanged;
+
+                bulk_flip_horizontal =
+                    BulkBooleanSelection::Unchanged;
+
+                bulk_flip_vertical =
+                    BulkBooleanSelection::Unchanged;
+
                 // Policy Target has special Bulk Edit semantics.  A blank
                 // target means "leave every checked policy's target unchanged."
                 // The original loaded-policy target remains in the baseline
@@ -2458,6 +2620,19 @@ impl EditWindowOverlay {
 
                 policy_target_change_requested =
                     None;
+
+                // Bulk Edit begins with no numeric-slider apply intent,
+                // even though each control displays a legitimate value.
+                bulk_fps_selected = false;
+                bulk_animation_speed_selected = false;
+                bulk_render_scale_selected = false;
+                bulk_bloom_intensity_selected = false;
+                bulk_bloom_threshold_selected = false;
+                bulk_anti_aliasing_selected = false;
+                bulk_dithering_selected = false;
+                bulk_color_precision_selected = false;
+                bulk_bloom_selected = false;
+                bulk_hue_rotation_selected = false;
 
                 status_message =
                     "Bulk Edit Mode active-- click Cancel to return to Single Edit mode."
@@ -2558,7 +2733,27 @@ impl EditWindowOverlay {
 
                 hue_rotation_drag_state =
                     None;
+
+                bulk_fps_selected = false;
+                bulk_animation_speed_selected = false;
+                bulk_render_scale_selected = false;
+                bulk_bloom_intensity_selected = false;
+                bulk_bloom_threshold_selected = false;
+                bulk_anti_aliasing_selected = false;
+                bulk_dithering_selected = false;
+                bulk_color_precision_selected = false;
+                bulk_bloom_selected = false;
+                bulk_hue_rotation_selected = false;
             }
+
+            bulk_invert_colors =
+                BulkBooleanSelection::Unchanged;
+
+            bulk_flip_horizontal =
+                BulkBooleanSelection::Unchanged;
+
+            bulk_flip_vertical =
+                BulkBooleanSelection::Unchanged;
         }
 
         let bulk_edit_baseline =
@@ -2716,6 +2911,42 @@ impl EditWindowOverlay {
                                 bulk_edit_mode
                                     && policy_target.is_some();
 
+                            pending_bulk_changes.invert_colors =
+                                bulk_edit_mode
+                                    && bulk_invert_colors.applies();
+
+                            pending_bulk_changes.flip_horizontal =
+                                bulk_edit_mode
+                                    && bulk_flip_horizontal.applies();
+
+                            pending_bulk_changes.flip_vertical =
+                                bulk_edit_mode
+                                    && bulk_flip_vertical.applies();
+
+                            // Numeric slider fields use explicit Bulk Edit
+                            // intent rather than comparison with the suspended
+                            // single-policy baseline.
+                            pending_bulk_changes.fps =
+                                bulk_edit_mode && bulk_fps_selected;
+                            pending_bulk_changes.animation_speed =
+                                bulk_edit_mode && bulk_animation_speed_selected;
+                            pending_bulk_changes.render_scale =
+                                bulk_edit_mode && bulk_render_scale_selected;
+                            pending_bulk_changes.bloom_intensity =
+                                bulk_edit_mode && bulk_bloom_intensity_selected;
+                            pending_bulk_changes.bloom_threshold =
+                                bulk_edit_mode && bulk_bloom_threshold_selected;
+                            pending_bulk_changes.anti_aliasing =
+                                bulk_edit_mode && bulk_anti_aliasing_selected;
+                            pending_bulk_changes.dithering =
+                                bulk_edit_mode && bulk_dithering_selected;
+                            pending_bulk_changes.color_precision =
+                                bulk_edit_mode && bulk_color_precision_selected;
+                            pending_bulk_changes.bloom =
+                                bulk_edit_mode && bulk_bloom_selected;
+                            pending_bulk_changes.hue_rotation =
+                                bulk_edit_mode && bulk_hue_rotation_selected;
+
 
                             let policy_dirty =
                                 if bulk_edit_mode {
@@ -2835,6 +3066,9 @@ impl EditWindowOverlay {
                                                         &mut fps_drag_state,
                                                         &mut animation_speed_drag_state,
                                                         &mut render_scale_drag_state,
+                                                        &mut bulk_fps_selected,
+                                                        &mut bulk_animation_speed_selected,
+                                                        &mut bulk_render_scale_selected,
                                                         bulk_edit_baseline,
                                                         &mut hover_help_message,
                                                     );
@@ -2937,8 +3171,18 @@ impl EditWindowOverlay {
                                                         &mut invert_colors,
                                                         &mut flip_horizontal,
                                                         &mut flip_vertical,
+                                                        &mut bulk_invert_colors,
+                                                        &mut bulk_flip_horizontal,
+                                                        &mut bulk_flip_vertical,
+                                                        &mut bulk_anti_aliasing_selected,
+                                                        &mut bulk_dithering_selected,
+                                                        &mut bulk_color_precision_selected,
+                                                        &mut bulk_bloom_selected,
+                                                        &mut bulk_bloom_intensity_selected,
+                                                        &mut bulk_bloom_threshold_selected,
                                                         &mut hue_rotation,
                                                         &mut hue_rotation_drag_state,
+                                                        &mut bulk_hue_rotation_selected,
                                                         bulk_edit_baseline,
                                                         &mut hover_help_message,
                                                     );
@@ -3312,6 +3556,20 @@ impl EditWindowOverlay {
             bulk_selected_policy_rows.clone();
 
 
+        if bulk_edit_mode {
+            if let Some(value) = bulk_invert_colors.value() {
+                invert_colors = value;
+            }
+
+            if let Some(value) = bulk_flip_horizontal.value() {
+                flip_horizontal = value;
+            }
+
+            if let Some(value) = bulk_flip_vertical.value() {
+                flip_vertical = value;
+            }
+        }
+
         let current_editor_configuration =
             EditorConfiguration::new(
                 displayed_fps,
@@ -3348,6 +3606,39 @@ impl EditWindowOverlay {
         bulk_edit_changes.policy_target =
             bulk_edit_mode
                 && policy_target.is_some();
+
+        bulk_edit_changes.invert_colors =
+            bulk_edit_mode
+                && bulk_invert_colors.applies();
+
+        bulk_edit_changes.flip_horizontal =
+            bulk_edit_mode
+                && bulk_flip_horizontal.applies();
+
+        bulk_edit_changes.flip_vertical =
+            bulk_edit_mode
+                && bulk_flip_vertical.applies();
+
+        bulk_edit_changes.fps =
+            bulk_edit_mode && bulk_fps_selected;
+        bulk_edit_changes.animation_speed =
+            bulk_edit_mode && bulk_animation_speed_selected;
+        bulk_edit_changes.render_scale =
+            bulk_edit_mode && bulk_render_scale_selected;
+        bulk_edit_changes.bloom_intensity =
+            bulk_edit_mode && bulk_bloom_intensity_selected;
+        bulk_edit_changes.bloom_threshold =
+            bulk_edit_mode && bulk_bloom_threshold_selected;
+        bulk_edit_changes.anti_aliasing =
+            bulk_edit_mode && bulk_anti_aliasing_selected;
+        bulk_edit_changes.dithering =
+            bulk_edit_mode && bulk_dithering_selected;
+        bulk_edit_changes.color_precision =
+            bulk_edit_mode && bulk_color_precision_selected;
+        bulk_edit_changes.bloom =
+            bulk_edit_mode && bulk_bloom_selected;
+        bulk_edit_changes.hue_rotation =
+            bulk_edit_mode && bulk_hue_rotation_selected;
 
 
         self.bulk_selected_policy_rows =
@@ -3448,11 +3739,41 @@ impl EditWindowOverlay {
         self.flip_vertical =
             flip_vertical;
 
+        self.bulk_invert_colors =
+            bulk_invert_colors;
+
+        self.bulk_flip_horizontal =
+            bulk_flip_horizontal;
+
+        self.bulk_flip_vertical =
+            bulk_flip_vertical;
+
         self.hue_rotation =
             hue_rotation;
 
         self.hue_rotation_drag_state =
             hue_rotation_drag_state;
+
+        self.bulk_fps_selected =
+            bulk_fps_selected;
+        self.bulk_animation_speed_selected =
+            bulk_animation_speed_selected;
+        self.bulk_render_scale_selected =
+            bulk_render_scale_selected;
+        self.bulk_bloom_intensity_selected =
+            bulk_bloom_intensity_selected;
+        self.bulk_bloom_threshold_selected =
+            bulk_bloom_threshold_selected;
+        self.bulk_anti_aliasing_selected =
+            bulk_anti_aliasing_selected;
+        self.bulk_dithering_selected =
+            bulk_dithering_selected;
+        self.bulk_color_precision_selected =
+            bulk_color_precision_selected;
+        self.bulk_bloom_selected =
+            bulk_bloom_selected;
+        self.bulk_hue_rotation_selected =
+            bulk_hue_rotation_selected;
 
         let clipped_primitives =
             self.context.tessellate(
@@ -3544,29 +3865,33 @@ impl EditWindowOverlay {
             rename_policy_requested,
 
             policy_dirty:
-                EditorConfiguration::new(
-                    displayed_fps,
-                    displayed_animation_speed,
-                    displayed_render_scale,
-                    policy_target,
-                    texture,
-                    palette,
-                    primitive_count,
-                    anti_aliasing,
-                    dithering,
-                    color_precision,
-                    bloom,
-                    bloom_intensity,
-                    bloom_threshold,
-                    invert_colors,
-                    flip_horizontal,
-                    flip_vertical,
-                    hue_rotation,
-                )
-                .differs_from(
-                    baseline_configuration
-                )
-                || self.policy_creation_pending,
+                if bulk_edit_mode {
+                    bulk_edit_changes.any()
+                } else {
+                    EditorConfiguration::new(
+                        displayed_fps,
+                        displayed_animation_speed,
+                        displayed_render_scale,
+                        policy_target,
+                        texture,
+                        palette,
+                        primitive_count,
+                        anti_aliasing,
+                        dithering,
+                        color_precision,
+                        bloom,
+                        bloom_intensity,
+                        bloom_threshold,
+                        invert_colors,
+                        flip_horizontal,
+                        flip_vertical,
+                        hue_rotation,
+                    )
+                    .differs_from(
+                        baseline_configuration
+                    )
+                    || self.policy_creation_pending
+                },
 
             control_configuration_dirty:
                 control_configuration.as_ref()
@@ -4073,6 +4398,16 @@ impl EditWindowOverlay {
         let suspended_editor_state =
             self.bulk_edit_baseline;
 
+        self.bulk_fps_selected = false;
+        self.bulk_animation_speed_selected = false;
+        self.bulk_render_scale_selected = false;
+        self.bulk_bloom_intensity_selected = false;
+        self.bulk_bloom_threshold_selected = false;
+        self.bulk_anti_aliasing_selected = false;
+        self.bulk_dithering_selected = false;
+        self.bulk_color_precision_selected = false;
+        self.bulk_bloom_selected = false;
+        self.bulk_hue_rotation_selected = false;
 
         self.bulk_selected_policy_rows.clear();
 
@@ -4081,6 +4416,15 @@ impl EditWindowOverlay {
 
         self.bulk_edit_baseline =
             None;
+
+        self.bulk_invert_colors =
+            BulkBooleanSelection::Unchanged;
+
+        self.bulk_flip_horizontal =
+            BulkBooleanSelection::Unchanged;
+
+        self.bulk_flip_vertical =
+            BulkBooleanSelection::Unchanged;
 
 
         if active_policy_was_selected {
@@ -4190,6 +4534,17 @@ impl EditWindowOverlay {
 
         self.hue_rotation_drag_state =
             None;
+
+        self.bulk_fps_selected = false;
+        self.bulk_animation_speed_selected = false;
+        self.bulk_render_scale_selected = false;
+        self.bulk_bloom_intensity_selected = false;
+        self.bulk_bloom_threshold_selected = false;
+        self.bulk_anti_aliasing_selected = false;
+        self.bulk_dithering_selected = false;
+        self.bulk_color_precision_selected = false;
+        self.bulk_bloom_selected = false;
+        self.bulk_hue_rotation_selected = false;
     }
 
 
@@ -7464,6 +7819,9 @@ fn draw_render_panel(
     fps_drag_state: &mut Option<SliderDragState>,
     animation_speed_drag_state: &mut Option<SliderDragState>,
     render_scale_drag_state: &mut Option<SliderDragState>,
+    bulk_fps_selected: &mut bool,
+    bulk_animation_speed_selected: &mut bool,
+    bulk_render_scale_selected: &mut bool,
     bulk_edit_baseline: Option<EditorConfiguration>,
     hover_help_message: &mut Option<&'static str>,
 ) {
@@ -7499,6 +7857,9 @@ fn draw_render_panel(
             180.0 * metrics.scale
         );
 
+    let bulk_edit_mode =
+        bulk_edit_baseline.is_some();
+
     egui::Grid::new(
         "editor_render_controls_grid"
     )
@@ -7516,7 +7877,7 @@ fn draw_render_panel(
             let mut fps_value =
                 *displayed_fps as f32;
 
-            let fps_response =
+            let (fps_response, fps_value_response) =
                 draw_aligned_slider_grid_row(
                     ui,
                     "FPS (Max)",
@@ -7533,12 +7894,20 @@ fn draw_render_panel(
                     slider_width,
                     value_width,
                     fps_drag_state,
+                    bulk_edit_mode,
+                    *bulk_fps_selected,
+                    "Click to include FPS in Bulk Edit",
+                    "Click to exclude FPS from Bulk Edit",
                 );
 
             update_hover_help(
                 &fps_response,
                 hover_help_message,
-                "Set the maximum rendering frame rate. Hold Shift for fine adjustment.",
+                if bulk_edit_mode && !*bulk_fps_selected {
+                    "Click the numeric FPS value to enable this slider for Bulk Edit."
+                } else {
+                    "Set the maximum rendering frame rate. Hold Shift for fine adjustment."
+                },
             );
 
             *displayed_fps =
@@ -7548,11 +7917,20 @@ fn draw_render_panel(
                         crate::define_constants::MAX_RENDER_FPS as f32,
                     ) as u32;
 
-            if bulk_edit_baseline.is_some_and(|baseline| *displayed_fps != baseline.fps) {
-                editor_theme::paint_bulk_edit_border(ui, fps_response.rect, metrics.scale);
+            if bulk_edit_mode && fps_value_response.clicked() {
+                *bulk_fps_selected =
+                    !*bulk_fps_selected;
             }
 
-            let speed_response =
+            if bulk_edit_mode && *bulk_fps_selected {
+                editor_theme::paint_bulk_edit_border(
+                    ui,
+                    fps_value_response.rect,
+                    metrics.scale,
+                );
+            }
+
+            let (speed_response, speed_value_response) =
                 draw_aligned_log_speed_grid_row(
                     ui,
                     "Animation Speed",
@@ -7569,21 +7947,36 @@ fn draw_render_panel(
                     slider_width,
                     value_width,
                     animation_speed_drag_state,
+                    bulk_edit_mode,
+                    *bulk_animation_speed_selected,
+                    "Click to include Animation Speed in Bulk Edit",
+                    "Click to exclude Animation Speed from Bulk Edit",
                 );
 
             update_hover_help(
                 &speed_response,
                 hover_help_message,
-                "Adjust animation speed on a logarithmic scale. The slider midpoint is 1.0x. Hold Shift for fine adjustment.",
+                if bulk_edit_mode && !*bulk_animation_speed_selected {
+                    "Click the numeric Animation Speed value to enable this slider for Bulk Edit."
+                } else {
+                    "Adjust animation speed on a logarithmic scale. The slider midpoint is 1.0x. Hold Shift for fine adjustment."
+                },
             );
 
-            if bulk_edit_baseline.is_some_and(
-                |baseline| (*displayed_animation_speed - baseline.animation_speed).abs() > 0.0001
-            ) {
-                editor_theme::paint_bulk_edit_border(ui, speed_response.rect, metrics.scale);
+            if bulk_edit_mode && speed_value_response.clicked() {
+                *bulk_animation_speed_selected =
+                    !*bulk_animation_speed_selected;
             }
 
-            let scale_response =
+            if bulk_edit_mode && *bulk_animation_speed_selected {
+                editor_theme::paint_bulk_edit_border(
+                    ui,
+                    speed_value_response.rect,
+                    metrics.scale,
+                );
+            }
+
+            let (scale_response, scale_value_response) =
                 draw_aligned_slider_grid_row(
                     ui,
                     "Render Scale",
@@ -7600,18 +7993,33 @@ fn draw_render_panel(
                     slider_width,
                     value_width,
                     render_scale_drag_state,
+                    bulk_edit_mode,
+                    *bulk_render_scale_selected,
+                    "Click to include Render Scale in Bulk Edit",
+                    "Click to exclude Render Scale from Bulk Edit",
                 );
 
             update_hover_help(
                 &scale_response,
                 hover_help_message,
-                "Change internal rendering resolution. Lower values improve performance; higher values improve quality.",
+                if bulk_edit_mode && !*bulk_render_scale_selected {
+                    "Click the numeric Render Scale value to enable this slider for Bulk Edit."
+                } else {
+                    "Change internal rendering resolution. Lower values improve performance; higher values improve quality."
+                },
             );
 
-            if bulk_edit_baseline.is_some_and(
-                |baseline| (*displayed_render_scale - baseline.render_scale).abs() > 0.0001
-            ) {
-                editor_theme::paint_bulk_edit_border(ui, scale_response.rect, metrics.scale);
+            if bulk_edit_mode && scale_value_response.clicked() {
+                *bulk_render_scale_selected =
+                    !*bulk_render_scale_selected;
+            }
+
+            if bulk_edit_mode && *bulk_render_scale_selected {
+                editor_theme::paint_bulk_edit_border(
+                    ui,
+                    scale_value_response.rect,
+                    metrics.scale,
+                );
             }
         },
     );
@@ -7631,7 +8039,11 @@ fn draw_aligned_slider_grid_row(
     slider_width: f32,
     value_width: f32,
     drag_state: &mut Option<SliderDragState>,
-) -> egui::Response {
+    bulk_edit_mode: bool,
+    bulk_selected: bool,
+    bulk_include_help: &'static str,
+    bulk_exclude_help: &'static str,
+) -> (egui::Response, egui::Response) {
     draw_slider_label_cell(
         ui,
         label,
@@ -7652,28 +8064,39 @@ fn draw_aligned_slider_grid_row(
                     slider_width
                 );
 
-                draw_fine_slider(
-                    ui,
-                    value,
-                    minimum,
-                    maximum,
-                    shift_held,
-                    metrics.scale,
-                    drag_state,
+                ui.add_enabled_ui(
+                    !bulk_edit_mode || bulk_selected,
+                    |ui| {
+                        draw_fine_slider(
+                            ui,
+                            value,
+                            minimum,
+                            maximum,
+                            shift_held,
+                            metrics.scale,
+                            drag_state,
+                        )
+                    },
                 )
+                .inner
             },
         )
         .inner;
 
-    draw_slider_value_cell(
-        ui,
-        displayed_value,
-        value_width,
-    );
+    let value_response =
+        draw_slider_value_cell(
+            ui,
+            displayed_value,
+            value_width,
+            bulk_edit_mode,
+            bulk_selected,
+            bulk_include_help,
+            bulk_exclude_help,
+        );
 
     ui.end_row();
 
-    response
+    (response, value_response)
 }
 
 
@@ -7690,7 +8113,11 @@ fn draw_aligned_log_speed_grid_row(
     slider_width: f32,
     value_width: f32,
     drag_state: &mut Option<SliderDragState>,
-) -> egui::Response {
+    bulk_edit_mode: bool,
+    bulk_selected: bool,
+    bulk_include_help: &'static str,
+    bulk_exclude_help: &'static str,
+) -> (egui::Response, egui::Response) {
     draw_slider_label_cell(
         ui,
         label,
@@ -7711,28 +8138,39 @@ fn draw_aligned_log_speed_grid_row(
                     slider_width
                 );
 
-                draw_log_animation_speed_slider(
-                    ui,
-                    value,
-                    minimum,
-                    maximum,
-                    shift_held,
-                    metrics.scale,
-                    drag_state,
+                ui.add_enabled_ui(
+                    !bulk_edit_mode || bulk_selected,
+                    |ui| {
+                        draw_log_animation_speed_slider(
+                            ui,
+                            value,
+                            minimum,
+                            maximum,
+                            shift_held,
+                            metrics.scale,
+                            drag_state,
+                        )
+                    },
                 )
+                .inner
             },
         )
         .inner;
 
-    draw_slider_value_cell(
-        ui,
-        displayed_value,
-        value_width,
-    );
+    let value_response =
+        draw_slider_value_cell(
+            ui,
+            displayed_value,
+            value_width,
+            bulk_edit_mode,
+            bulk_selected,
+            bulk_include_help,
+            bulk_exclude_help,
+        );
 
     ui.end_row();
 
-    response
+    (response, value_response)
 }
 
 
@@ -7760,7 +8198,11 @@ fn draw_slider_value_cell(
     ui: &mut egui::Ui,
     displayed_value: &str,
     width: f32,
-) {
+    bulk_edit_mode: bool,
+    bulk_selected: bool,
+    bulk_include_help: &'static str,
+    bulk_exclude_help: &'static str,
+) -> egui::Response {
     ui.allocate_ui_with_layout(
         egui::vec2(
             width,
@@ -7770,11 +8212,30 @@ fn draw_slider_value_cell(
             egui::Align::Center
         ),
         |ui| {
-            ui.label(
-                displayed_value
-            );
+            if bulk_edit_mode {
+                ui.add_sized(
+                    egui::vec2(
+                        width,
+                        ui.spacing().interact_size.y,
+                    ),
+                    egui::Button::new(displayed_value),
+                )
+                .on_hover_cursor(
+                    egui::CursorIcon::PointingHand
+                )
+                .on_hover_text(
+                    if bulk_selected {
+                        bulk_exclude_help
+                    } else {
+                        bulk_include_help
+                    }
+                )
+            } else {
+                ui.label(displayed_value)
+            }
         },
-    );
+    )
+    .inner
 }
 
 
@@ -9600,6 +10061,60 @@ fn draw_color_picker_placeholder(
 // ============================================================
 // Copy/paste replacement boundary for this editor section.
 
+fn draw_bulk_boolean_selector(
+    ui: &mut egui::Ui,
+    id_source: &'static str,
+    selection: &mut BulkBooleanSelection,
+    metrics: EditorMetrics,
+) -> egui::Response {
+    egui::ComboBox::from_id_source(id_source)
+        .selected_text(selection.display_name())
+        .width(metrics.dropdown_width)
+        .show_ui(
+            ui,
+            |ui| {
+                ui.selectable_value(
+                    selection,
+                    BulkBooleanSelection::Unchanged,
+                    "Unchanged",
+                );
+                ui.selectable_value(
+                    selection,
+                    BulkBooleanSelection::True,
+                    "True",
+                );
+                ui.selectable_value(
+                    selection,
+                    BulkBooleanSelection::False,
+                    "False",
+                );
+            },
+        )
+        .response
+}
+
+
+fn draw_bloom_options(
+    ui: &mut egui::Ui,
+    bloom: &mut BloomSelection,
+) {
+    ui.selectable_value(
+        bloom,
+        BloomSelection::Off,
+        "Off",
+    );
+    ui.selectable_value(
+        bloom,
+        BloomSelection::Highlight,
+        "Highlight",
+    );
+    ui.selectable_value(
+        bloom,
+        BloomSelection::Audio,
+        "Audio",
+    );
+}
+
 fn draw_post_processing_tab(
     ui: &mut egui::Ui,
     metrics: EditorMetrics,
@@ -9615,8 +10130,18 @@ fn draw_post_processing_tab(
     invert_colors: &mut bool,
     flip_horizontal: &mut bool,
     flip_vertical: &mut bool,
+    bulk_invert_colors: &mut BulkBooleanSelection,
+    bulk_flip_horizontal: &mut BulkBooleanSelection,
+    bulk_flip_vertical: &mut BulkBooleanSelection,
+    bulk_anti_aliasing_selected: &mut bool,
+    bulk_dithering_selected: &mut bool,
+    bulk_color_precision_selected: &mut bool,
+    bulk_bloom_selected: &mut bool,
+    bulk_bloom_intensity_selected: &mut bool,
+    bulk_bloom_threshold_selected: &mut bool,
     hue_rotation: &mut f32,
     hue_rotation_drag_state: &mut Option<SliderDragState>,
+    bulk_hue_rotation_selected: &mut bool,
     bulk_edit_baseline: Option<EditorConfiguration>,
     hover_help_message: &mut Option<&'static str>,
 ) {
@@ -9626,6 +10151,9 @@ fn draw_post_processing_tab(
         anti_aliasing,
         dithering,
         color_precision,
+        bulk_anti_aliasing_selected,
+        bulk_dithering_selected,
+        bulk_color_precision_selected,
         bulk_edit_baseline,
         hover_help_message,
     );
@@ -9650,10 +10178,16 @@ fn draw_post_processing_tab(
             ui.label("Bloom");
 
             let selected_text =
-                match *bloom {
-                    BloomSelection::Off => "Off",
-                    BloomSelection::Highlight => "Highlight",
-                    BloomSelection::Audio => "Audio",
+                if bulk_edit_baseline.is_some()
+                    && !*bulk_bloom_selected
+                {
+                    "Unchanged"
+                } else {
+                    match *bloom {
+                        BloomSelection::Off => "Off",
+                        BloomSelection::Highlight => "Highlight",
+                        BloomSelection::Audio => "Audio",
+                    }
                 };
 
             let response =
@@ -9665,69 +10199,127 @@ fn draw_post_processing_tab(
                 .show_ui(
                     ui,
                     |ui| {
-                        ui.selectable_value(
-                            bloom,
-                            BloomSelection::Off,
-                            "Off",
-                        );
+                        if bulk_edit_baseline.is_some() {
+                            let unchanged_response =
+                                ui.selectable_label(
+                                    !*bulk_bloom_selected,
+                                    "Unchanged",
+                                );
 
-                        ui.selectable_value(
-                            bloom,
-                            BloomSelection::Highlight,
-                            "Highlight",
-                        );
+                            if unchanged_response.clicked() {
+                                *bulk_bloom_selected = false;
+                            }
 
-                        ui.selectable_value(
-                            bloom,
-                            BloomSelection::Audio,
-                            "Audio",
-                        );
+                            ui.separator();
+                        }
+
+                        let off_response =
+                            ui.selectable_value(
+                                bloom,
+                                BloomSelection::Off,
+                                "Off",
+                            );
+                        if bulk_edit_baseline.is_some()
+                            && off_response.clicked()
+                        {
+                            *bulk_bloom_selected = true;
+                        }
+
+                        let highlight_response =
+                            ui.selectable_value(
+                                bloom,
+                                BloomSelection::Highlight,
+                                "Highlight",
+                            );
+                        if bulk_edit_baseline.is_some()
+                            && highlight_response.clicked()
+                        {
+                            *bulk_bloom_selected = true;
+                        }
+
+                        let audio_response =
+                            ui.selectable_value(
+                                bloom,
+                                BloomSelection::Audio,
+                                "Audio",
+                            );
+                        if bulk_edit_baseline.is_some()
+                            && audio_response.clicked()
+                        {
+                            *bulk_bloom_selected = true;
+                        }
                     },
                 )
                 .response;
 
+            if bulk_edit_baseline.is_some()
+                && *bulk_bloom_selected
+            {
+                editor_theme::paint_bulk_edit_border(
+                    ui,
+                    response.rect,
+                    metrics.scale,
+                );
+            }
+
             update_hover_help(
                 &response,
                 hover_help_message,
-                "Select the bloom processing mode. Highlight bloom affects bright image regions; Audio bloom targets bass, midrange, and high-frequency color bands.",
-            ); if bulk_edit_baseline.is_some_and(|baseline| *bloom != baseline.bloom) {
-                editor_theme::paint_bulk_edit_border(ui, response.rect, metrics.scale);
-            }
+                if bulk_edit_baseline.is_some()
+                    && !*bulk_bloom_selected
+                {
+                    "Choose a Bloom value to include it in Bulk Edit. Select Unchanged to exclude it."
+                } else if bulk_edit_baseline.is_some() {
+                    "Select Off, Highlight, or Audio. Choose Unchanged to exclude Bloom from Bulk Edit."
+                } else {
+                    "Select the bloom processing mode. Highlight bloom affects bright image regions; Audio bloom targets bass, midrange, and high-frequency color bands."
+                },
+            );
             ui.end_row();
 
             ui.label("Bloom Intensity");
 
-            let intensity_response =
-                ui.add_enabled_ui(
-                    *bloom != BloomSelection::Off,
+            let intensity_control_available =
+                *bloom != BloomSelection::Off;
+
+            let (intensity_response, intensity_value_response) =
+                ui.horizontal(
                     |ui| {
-                        ui.horizontal(
-                            |ui| {
-                                ui.set_width(
-                                    metrics.dropdown_width
+                        ui.set_width(
+                            metrics.dropdown_width
+                        );
+
+                        let slider_width =
+                            (metrics.dropdown_width
+                                - 52.0 * metrics.scale)
+                                .max(
+                                    80.0 * metrics.scale
                                 );
 
-                                let slider_width =
-                                    (metrics.dropdown_width
-                                        - 52.0 * metrics.scale)
-                                        .max(
-                                            80.0 * metrics.scale
-                                        );
+                        let response =
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(
+                                    slider_width,
+                                    ui.spacing().interact_size.y,
+                                ),
+                                egui::Layout::left_to_right(
+                                    egui::Align::Center
+                                ),
+                                |ui| {
+                                    ui.set_width(
+                                        slider_width
+                                    );
 
-                                let response =
-                                    ui.allocate_ui_with_layout(
-                                        egui::vec2(
-                                            slider_width,
-                                            ui.spacing().interact_size.y,
-                                        ),
-                                        egui::Layout::left_to_right(
-                                            egui::Align::Center
-                                        ),
-                                        |ui| {
-                                            ui.set_width(
-                                                slider_width
+                                    let slider_enabled =
+                                        intensity_control_available
+                                            && (
+                                                bulk_edit_baseline.is_none()
+                                                    || *bulk_bloom_intensity_selected
                                             );
 
+                                    ui.add_enabled_ui(
+                                        slider_enabled,
+                                        |ui| {
                                             draw_fine_slider(
                                                 ui,
                                                 bloom_intensity,
@@ -9739,19 +10331,42 @@ fn draw_post_processing_tab(
                                             )
                                         },
                                     )
-                                    .inner;
+                                    .inner
+                                },
+                            )
+                            .inner;
 
+                        let value_response =
+                            if bulk_edit_baseline.is_some() {
+                                ui.add_enabled(
+                                    intensity_control_available,
+                                    egui::Button::new(
+                                        format!(
+                                            "{:.2}",
+                                            *bloom_intensity,
+                                        )
+                                    ),
+                                )
+                                .on_hover_cursor(
+                                    egui::CursorIcon::PointingHand
+                                )
+                                .on_hover_text(
+                                    if *bulk_bloom_intensity_selected {
+                                        "Click to exclude Bloom Intensity from Bulk Edit"
+                                    } else {
+                                        "Click to include Bloom Intensity in Bulk Edit"
+                                    }
+                                )
+                            } else {
                                 ui.label(
                                     format!(
                                         "{:.2}",
                                         *bloom_intensity,
                                     )
-                                );
+                                )
+                            };
 
-                                response
-                            },
-                        )
-                        .inner
+                        (response, value_response)
                     },
                 )
                 .inner;
@@ -9759,47 +10374,77 @@ fn draw_post_processing_tab(
             update_hover_help(
                 &intensity_response,
                 hover_help_message,
-                "Set the strength of the bloom effect. Hold Shift while dragging for fine adjustment. Lower values are suitable for subtle wallpaper bloom; higher values produce a stronger effect.",
-            ); if bulk_edit_baseline.is_some_and(
-                |baseline| (*bloom_intensity - baseline.bloom_intensity).abs() > 0.0001
-            ) {
-                editor_theme::paint_bulk_edit_border(ui, intensity_response.rect, metrics.scale);
+                if bulk_edit_baseline.is_some()
+                    && !*bulk_bloom_intensity_selected
+                {
+                    "Click the numeric Bloom Intensity value to enable this slider for Bulk Edit."
+                } else {
+                    "Set the strength of the bloom effect. Hold Shift while dragging for fine adjustment. Lower values are suitable for subtle wallpaper bloom; higher values produce a stronger effect."
+                },
+            );
+
+            if bulk_edit_baseline.is_some()
+                && intensity_control_available
+                && intensity_value_response.clicked()
+            {
+                *bulk_bloom_intensity_selected =
+                    !*bulk_bloom_intensity_selected;
+            }
+
+            if bulk_edit_baseline.is_some()
+                && *bulk_bloom_intensity_selected
+            {
+                editor_theme::paint_bulk_edit_border(
+                    ui,
+                    intensity_value_response.rect,
+                    metrics.scale,
+                );
             }
             ui.end_row();
 
             ui.label("Bloom Threshold");
 
-            let threshold_response =
-                ui.add_enabled_ui(
-                    *bloom != BloomSelection::Off,
+            let threshold_control_available =
+                *bloom != BloomSelection::Off;
+
+            let (threshold_response, threshold_value_response) =
+                ui.horizontal(
                     |ui| {
-                        ui.horizontal(
-                            |ui| {
-                                ui.set_width(
-                                    metrics.dropdown_width
+                        ui.set_width(
+                            metrics.dropdown_width
+                        );
+
+                        let slider_width =
+                            (metrics.dropdown_width
+                                - 52.0 * metrics.scale)
+                                .max(
+                                    80.0 * metrics.scale
                                 );
 
-                                let slider_width =
-                                    (metrics.dropdown_width
-                                        - 52.0 * metrics.scale)
-                                        .max(
-                                            80.0 * metrics.scale
-                                        );
+                        let response =
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(
+                                    slider_width,
+                                    ui.spacing().interact_size.y,
+                                ),
+                                egui::Layout::left_to_right(
+                                    egui::Align::Center
+                                ),
+                                |ui| {
+                                    ui.set_width(
+                                        slider_width
+                                    );
 
-                                let response =
-                                    ui.allocate_ui_with_layout(
-                                        egui::vec2(
-                                            slider_width,
-                                            ui.spacing().interact_size.y,
-                                        ),
-                                        egui::Layout::left_to_right(
-                                            egui::Align::Center
-                                        ),
-                                        |ui| {
-                                            ui.set_width(
-                                                slider_width
+                                    let slider_enabled =
+                                        threshold_control_available
+                                            && (
+                                                bulk_edit_baseline.is_none()
+                                                    || *bulk_bloom_threshold_selected
                                             );
 
+                                    ui.add_enabled_ui(
+                                        slider_enabled,
+                                        |ui| {
                                             draw_fine_slider(
                                                 ui,
                                                 bloom_threshold,
@@ -9811,19 +10456,42 @@ fn draw_post_processing_tab(
                                             )
                                         },
                                     )
-                                    .inner;
+                                    .inner
+                                },
+                            )
+                            .inner;
 
+                        let value_response =
+                            if bulk_edit_baseline.is_some() {
+                                ui.add_enabled(
+                                    threshold_control_available,
+                                    egui::Button::new(
+                                        format!(
+                                            "{:.2}",
+                                            *bloom_threshold,
+                                        )
+                                    ),
+                                )
+                                .on_hover_cursor(
+                                    egui::CursorIcon::PointingHand
+                                )
+                                .on_hover_text(
+                                    if *bulk_bloom_threshold_selected {
+                                        "Click to exclude Bloom Threshold from Bulk Edit"
+                                    } else {
+                                        "Click to include Bloom Threshold in Bulk Edit"
+                                    }
+                                )
+                            } else {
                                 ui.label(
                                     format!(
                                         "{:.2}",
                                         *bloom_threshold,
                                     )
-                                );
+                                )
+                            };
 
-                                response
-                            },
-                        )
-                        .inner
+                        (response, value_response)
                     },
                 )
                 .inner;
@@ -9831,42 +10499,95 @@ fn draw_post_processing_tab(
             update_hover_help(
                 &threshold_response,
                 hover_help_message,
-                "Set the minimum luminance that contributes to Highlight Bloom. Lower values include more of the image; higher values restrict bloom to brighter regions. Hold Shift while dragging for fine adjustment.",
-            ); if bulk_edit_baseline.is_some_and(
-                |baseline| (*bloom_threshold - baseline.bloom_threshold).abs() > 0.0001
-            ) {
-                editor_theme::paint_bulk_edit_border(ui, threshold_response.rect, metrics.scale);
+                if bulk_edit_baseline.is_some()
+                    && !*bulk_bloom_threshold_selected
+                {
+                    "Click the numeric Bloom Threshold value to enable this slider for Bulk Edit."
+                } else {
+                    "Set the minimum luminance that contributes to Highlight Bloom. Lower values include more of the image; higher values restrict bloom to brighter regions. Hold Shift while dragging for fine adjustment."
+                },
+            );
+
+            if bulk_edit_baseline.is_some()
+                && threshold_control_available
+                && threshold_value_response.clicked()
+            {
+                *bulk_bloom_threshold_selected =
+                    !*bulk_bloom_threshold_selected;
+            }
+
+            if bulk_edit_baseline.is_some()
+                && *bulk_bloom_threshold_selected
+            {
+                editor_theme::paint_bulk_edit_border(
+                    ui,
+                    threshold_value_response.rect,
+                    metrics.scale,
+                );
             }
             ui.end_row();
             ui.label("Invert Colors");
-            let invert_response = ui.checkbox(invert_colors, "Enabled");
+            let invert_response =
+                if bulk_edit_baseline.is_some() {
+                    draw_bulk_boolean_selector(
+                        ui,
+                        "bulk_invert_colors",
+                        bulk_invert_colors,
+                        metrics,
+                    )
+                } else {
+                    ui.checkbox(invert_colors, "Enabled")
+                };
             update_hover_help(
                 &invert_response,
                 hover_help_message,
                 "Invert the rendered shader colors before Bloom and the remaining post-processing stages.",
-            ); if bulk_edit_baseline.is_some_and(|baseline| *invert_colors != baseline.invert_colors) {
+            );
+            if bulk_edit_baseline.is_some() && bulk_invert_colors.applies() {
                 editor_theme::paint_bulk_edit_border(ui, invert_response.rect, metrics.scale);
             }
             ui.end_row();
 
             ui.label("Flip Horizontal");
-            let flip_horizontal_response = ui.checkbox(flip_horizontal, "Enabled");
+            let flip_horizontal_response =
+                if bulk_edit_baseline.is_some() {
+                    draw_bulk_boolean_selector(
+                        ui,
+                        "bulk_flip_horizontal",
+                        bulk_flip_horizontal,
+                        metrics,
+                    )
+                } else {
+                    ui.checkbox(flip_horizontal, "Enabled")
+                };
             update_hover_help(
                 &flip_horizontal_response,
                 hover_help_message,
                 "Mirror the rendered shader from left to right without changing its aspect ratio.",
-            ); if bulk_edit_baseline.is_some_and(|baseline| *flip_horizontal != baseline.flip_horizontal) {
+            );
+            if bulk_edit_baseline.is_some() && bulk_flip_horizontal.applies() {
                 editor_theme::paint_bulk_edit_border(ui, flip_horizontal_response.rect, metrics.scale);
             }
             ui.end_row();
 
             ui.label("Flip Vertical");
-            let flip_vertical_response = ui.checkbox(flip_vertical, "Enabled");
+            let flip_vertical_response =
+                if bulk_edit_baseline.is_some() {
+                    draw_bulk_boolean_selector(
+                        ui,
+                        "bulk_flip_vertical",
+                        bulk_flip_vertical,
+                        metrics,
+                    )
+                } else {
+                    ui.checkbox(flip_vertical, "Enabled")
+                };
             update_hover_help(
                 &flip_vertical_response,
                 hover_help_message,
                 "Mirror the rendered shader from top to bottom without changing its aspect ratio.",
-            ); if bulk_edit_baseline.is_some_and(|baseline| *flip_vertical != baseline.flip_vertical) {
+            );
+            if bulk_edit_baseline.is_some() && bulk_flip_vertical.applies() {
                 editor_theme::paint_bulk_edit_border(ui, flip_vertical_response.rect, metrics.scale);
             }
             ui.end_row();
@@ -9894,39 +10615,95 @@ fn draw_post_processing_tab(
                                 |ui| {
                                     ui.set_width(slider_width);
 
-                                    draw_fine_slider(
-                                        ui,
-                                        hue_rotation,
-                                        crate::postprocess_shader::HUE_ROTATION_MIN,
-                                        crate::postprocess_shader::HUE_ROTATION_MAX,
-                                        shift_held,
-                                        metrics.scale,
-                                        hue_rotation_drag_state,
+                                    let slider_enabled =
+                                        bulk_edit_baseline.is_none()
+                                            || *bulk_hue_rotation_selected;
+
+                                    ui.add_enabled_ui(
+                                        slider_enabled,
+                                        |ui| {
+                                            draw_fine_slider(
+                                                ui,
+                                                hue_rotation,
+                                                crate::postprocess_shader::HUE_ROTATION_MIN,
+                                                crate::postprocess_shader::HUE_ROTATION_MAX,
+                                                shift_held,
+                                                metrics.scale,
+                                                hue_rotation_drag_state,
+                                            )
+                                        },
                                     )
+                                    .inner
                                 },
                             )
                             .inner;
 
-                        ui.label(
-                            format!(
-                                "{:.1}°",
-                                *hue_rotation,
-                            )
-                        );
+                        let hue_value_response =
+                            if bulk_edit_baseline.is_some() {
+                                ui.add_sized(
+                                    egui::vec2(
+                                        54.0 * metrics.scale,
+                                        ui.spacing().interact_size.y,
+                                    ),
+                                    egui::Button::new(
+                                        format!(
+                                            "{:.1}°",
+                                            *hue_rotation,
+                                        )
+                                    ),
+                                )
+                                .on_hover_cursor(
+                                    egui::CursorIcon::PointingHand
+                                )
+                                .on_hover_text(
+                                    if *bulk_hue_rotation_selected {
+                                        "Click to exclude Hue Rotation from Bulk Edit"
+                                    } else {
+                                        "Click to include Hue Rotation in Bulk Edit"
+                                    }
+                                )
+                            } else {
+                                ui.label(
+                                    format!(
+                                        "{:.1}°",
+                                        *hue_rotation,
+                                    )
+                                )
+                            };
 
-                        response
+                        (response, hue_value_response)
                     },
                 )
                 .inner;
 
+            let (hue_response, hue_value_response) =
+                hue_response;
+
             update_hover_help(
                 &hue_response,
                 hover_help_message,
-                "Rotate shader hue from -180° through +180°. Hold Shift while dragging for 10x finer adjustment.",
-            ); if bulk_edit_baseline.is_some_and(
-                |baseline| (*hue_rotation - baseline.hue_rotation).abs() > 0.0001
-            ) {
-                editor_theme::paint_bulk_edit_border(ui, hue_response.rect, metrics.scale);
+                if bulk_edit_baseline.is_some() && !*bulk_hue_rotation_selected {
+                    "Click the numeric Hue Rotation value to enable this slider for Bulk Edit."
+                } else {
+                    "Rotate shader hue from -180° through +180°. Hold Shift while dragging for 10x finer adjustment."
+                },
+            );
+
+            if bulk_edit_baseline.is_some()
+                && hue_value_response.clicked()
+            {
+                *bulk_hue_rotation_selected =
+                    !*bulk_hue_rotation_selected;
+            }
+
+            if bulk_edit_baseline.is_some()
+                && *bulk_hue_rotation_selected
+            {
+                editor_theme::paint_bulk_edit_border(
+                    ui,
+                    hue_value_response.rect,
+                    metrics.scale,
+                );
             }
             ui.end_row();
 
@@ -9946,6 +10723,9 @@ fn draw_post_processing_panel(
     anti_aliasing: &mut AntiAliasingSelection,
     dithering: &mut DitheringSelection,
     color_precision: &mut ColorPrecisionSelection,
+    bulk_anti_aliasing_selected: &mut bool,
+    bulk_dithering_selected: &mut bool,
+    bulk_color_precision_selected: &mut bool,
     bulk_edit_baseline: Option<EditorConfiguration>,
     hover_help_message: &mut Option<&'static str>,
 ) {
@@ -9981,11 +10761,15 @@ fn draw_post_processing_panel(
                     ui.label("Anti-Aliasing");
 
                     let selected_text =
-                        match *anti_aliasing {
-                            AntiAliasingSelection::Off =>
-                                "Off",
-                            AntiAliasingSelection::Fxaa =>
-                                "FXAA",
+                        if bulk_edit_baseline.is_some()
+                            && !*bulk_anti_aliasing_selected
+                        {
+                            "Unchanged"
+                        } else {
+                            match *anti_aliasing {
+                                AntiAliasingSelection::Off => "Off",
+                                AntiAliasingSelection::Fxaa => "FXAA",
+                            }
                         };
 
                     let response =
@@ -9997,38 +10781,82 @@ fn draw_post_processing_panel(
                         .show_ui(
                             ui,
                             |ui| {
-                                ui.selectable_value(
+                                if bulk_edit_baseline.is_some() {
+                                    let unchanged_response =
+                                        ui.selectable_label(
+                                            !*bulk_anti_aliasing_selected,
+                                            "Unchanged",
+                                        );
+
+                                    if unchanged_response.clicked() {
+                                        *bulk_anti_aliasing_selected = false;
+                                    }
+
+                                    ui.separator();
+                                }
+
+                                let off_response = ui.selectable_value(
                                     anti_aliasing,
                                     AntiAliasingSelection::Off,
                                     "Off",
                                 );
+                                if bulk_edit_baseline.is_some()
+                                    && off_response.clicked()
+                                {
+                                    *bulk_anti_aliasing_selected = true;
+                                }
 
-                                ui.selectable_value(
+                                let fxaa_response = ui.selectable_value(
                                     anti_aliasing,
                                     AntiAliasingSelection::Fxaa,
                                     "FXAA",
                                 );
+                                if bulk_edit_baseline.is_some()
+                                    && fxaa_response.clicked()
+                                {
+                                    *bulk_anti_aliasing_selected = true;
+                                }
                             },
                         )
                         .response;
 
+                    if bulk_edit_baseline.is_some()
+                        && *bulk_anti_aliasing_selected
+                    {
+                        editor_theme::paint_bulk_edit_border(
+                            ui,
+                            response.rect,
+                            metrics.scale,
+                        );
+                    }
+
                     update_hover_help(
                         &response,
                         hover_help_message,
-                        "Select the anti-aliasing method used to smooth rendered edges.",
-                    ); if bulk_edit_baseline.is_some_and(|baseline| *anti_aliasing != baseline.anti_aliasing) {
-                        editor_theme::paint_bulk_edit_border(ui, response.rect, metrics.scale);
-                    }
+                        if bulk_edit_baseline.is_some()
+                            && !*bulk_anti_aliasing_selected
+                        {
+                            "Choose a Anti-Aliasing value to include it in Bulk Edit. Select Unchanged to exclude it."
+                        } else if bulk_edit_baseline.is_some() {
+                            "Choose Unchanged to exclude Anti-Aliasing from Bulk Edit."
+                        } else {
+                            "Select the anti-aliasing method used to smooth rendered edges."
+                        },
+                    );
                     ui.end_row();
 
                     ui.label("Dithering");
 
                     let selected_text =
-                        match *dithering {
-                            DitheringSelection::Off =>
-                                "Off",
-                            DitheringSelection::Subtle =>
-                                "Subtle",
+                        if bulk_edit_baseline.is_some()
+                            && !*bulk_dithering_selected
+                        {
+                            "Unchanged"
+                        } else {
+                            match *dithering {
+                                DitheringSelection::Off => "Off",
+                                DitheringSelection::Subtle => "Subtle",
+                            }
                         };
 
                     let response =
@@ -10040,72 +10868,165 @@ fn draw_post_processing_panel(
                         .show_ui(
                             ui,
                             |ui| {
-                                ui.selectable_value(
+                                if bulk_edit_baseline.is_some() {
+                                    let unchanged_response =
+                                        ui.selectable_label(
+                                            !*bulk_dithering_selected,
+                                            "Unchanged",
+                                        );
+
+                                    if unchanged_response.clicked() {
+                                        *bulk_dithering_selected = false;
+                                    }
+
+                                    ui.separator();
+                                }
+
+                                let off_response = ui.selectable_value(
                                     dithering,
                                     DitheringSelection::Off,
                                     "Off",
                                 );
+                                if bulk_edit_baseline.is_some()
+                                    && off_response.clicked()
+                                {
+                                    *bulk_dithering_selected = true;
+                                }
 
-                                ui.selectable_value(
+                                let subtle_response = ui.selectable_value(
                                     dithering,
                                     DitheringSelection::Subtle,
                                     "Subtle",
                                 );
+                                if bulk_edit_baseline.is_some()
+                                    && subtle_response.clicked()
+                                {
+                                    *bulk_dithering_selected = true;
+                                }
                             },
                         )
                         .response;
 
+                    if bulk_edit_baseline.is_some()
+                        && *bulk_dithering_selected
+                    {
+                        editor_theme::paint_bulk_edit_border(
+                            ui,
+                            response.rect,
+                            metrics.scale,
+                        );
+                    }
+
                     update_hover_help(
                         &response,
                         hover_help_message,
-                        "Reduce visible color banding in smooth gradients.",
-                    ); if bulk_edit_baseline.is_some_and(|baseline| *dithering != baseline.dithering) {
-                        editor_theme::paint_bulk_edit_border(ui, response.rect, metrics.scale);
-                    }
+                        if bulk_edit_baseline.is_some()
+                            && !*bulk_dithering_selected
+                        {
+                            "Choose a Dithering value to include it in Bulk Edit. Select Unchanged to exclude it."
+                        } else if bulk_edit_baseline.is_some() {
+                            "Choose Unchanged to exclude Dithering from Bulk Edit."
+                        } else {
+                            "Reduce visible color banding in smooth gradients."
+                        },
+                    );
                     ui.end_row();
 
                     ui.label("Color Precision");
+
+                    let selected_text =
+                        if bulk_edit_baseline.is_some()
+                            && !*bulk_color_precision_selected
+                        {
+                            "Unchanged"
+                        } else {
+                            color_precision.display_name()
+                        };
 
                     let response =
                         egui::ComboBox::from_id_source(
                             "editor_color_precision"
                         )
-                        .selected_text(
-                            color_precision.display_name()
-                        )
+                        .selected_text(selected_text)
                         .width(metrics.dropdown_width)
                         .show_ui(
                             ui,
                             |ui| {
-                                ui.selectable_value(
+                                if bulk_edit_baseline.is_some() {
+                                    let unchanged_response =
+                                        ui.selectable_label(
+                                            !*bulk_color_precision_selected,
+                                            "Unchanged",
+                                        );
+
+                                    if unchanged_response.clicked() {
+                                        *bulk_color_precision_selected = false;
+                                    }
+
+                                    ui.separator();
+                                }
+
+                                let automatic_response = ui.selectable_value(
                                     color_precision,
                                     ColorPrecisionSelection::Automatic,
                                     "Automatic",
                                 );
+                                if bulk_edit_baseline.is_some()
+                                    && automatic_response.clicked()
+                                {
+                                    *bulk_color_precision_selected = true;
+                                }
 
-                                ui.selectable_value(
+                                let high_response = ui.selectable_value(
                                     color_precision,
                                     ColorPrecisionSelection::High,
                                     "High Precision",
                                 );
+                                if bulk_edit_baseline.is_some()
+                                    && high_response.clicked()
+                                {
+                                    *bulk_color_precision_selected = true;
+                                }
 
-                                ui.selectable_value(
+                                let standard_response = ui.selectable_value(
                                     color_precision,
                                     ColorPrecisionSelection::Standard,
                                     "Standard Precision",
                                 );
+                                if bulk_edit_baseline.is_some()
+                                    && standard_response.clicked()
+                                {
+                                    *bulk_color_precision_selected = true;
+                                }
                             },
                         )
                         .response;
 
+                    if bulk_edit_baseline.is_some()
+                        && *bulk_color_precision_selected
+                    {
+                        editor_theme::paint_bulk_edit_border(
+                            ui,
+                            response.rect,
+                            metrics.scale,
+                        );
+                    }
+
                     update_hover_help(
                         &response,
                         hover_help_message,
-                        "Controls off-screen render-target precision. Higher precision can reduce banding but may use more GPU memory.",
-                    ); if bulk_edit_baseline.is_some_and(|baseline| *color_precision != baseline.color_precision) {
-                        editor_theme::paint_bulk_edit_border(ui, response.rect, metrics.scale);
-                    }
+                        if bulk_edit_baseline.is_some()
+                            && !*bulk_color_precision_selected
+                        {
+                            "Choose a Color Precision value to include it in Bulk Edit. Select Unchanged to exclude it."
+                        } else if bulk_edit_baseline.is_some() {
+                            "Choose Unchanged to exclude Color Precision from Bulk Edit."
+                        } else {
+                            "Controls off-screen render-target precision. Higher precision can reduce banding but may use more GPU memory."
+                        },
+                    );
                     ui.end_row();
+
                 },
             );
         },

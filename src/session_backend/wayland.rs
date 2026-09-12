@@ -37,6 +37,8 @@ pub struct WaylandGlobal {
 
 pub struct WaylandProbeReport {
     pub globals: Vec<WaylandGlobal>,
+    pub session_lock_available: bool,
+    pub session_lock_version: Option<u32>,
 }
 
 
@@ -239,6 +241,18 @@ impl WaylandBackend {
                 });
 
 
+        let session_lock_global =
+            state
+                .globals
+                .iter()
+                .find(|global| {
+                    global.interface == "ext_session_lock_manager_v1"
+                })
+                .map(|global| {
+                    (global.name, global.version)
+                });
+
+
         let (idle_global_name, idle_global_version) =
             idle_global
                 .ok_or_else(|| {
@@ -344,7 +358,19 @@ impl WaylandBackend {
 
         let report =
             WaylandProbeReport {
-                globals: state.globals.drain(..).collect(),
+                globals:
+                    state.globals.drain(..).collect(),
+
+                session_lock_available:
+                    session_lock_global.is_some(),
+
+                session_lock_version:
+                    session_lock_global
+                        .map(
+                            |(_, version)| {
+                                version
+                            }
+                        ),
             };
 
 

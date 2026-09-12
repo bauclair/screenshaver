@@ -2282,6 +2282,19 @@ fn render_mirror_frames(
     }
 
 
+    let mut audio_required =
+        runtime.postprocess_policy
+            .profile_for_shader(
+                &active_shader.shader_name,
+                Some(
+                    active_shader.source_path.as_path()
+                ),
+            )
+            .bloom
+            .name()
+            == "audio";
+
+
     let mut i_time =
         uniform_location(
             program,
@@ -2324,6 +2337,14 @@ fn render_mirror_frames(
 
     let mut current_shader =
         active_shader.clone();
+
+
+    // The initial wallpaper has now loaded, compiled, prepared textures,
+    // created post-processing pipelines, and resolved its uniforms. Persist
+    // Ordered position only after reaching this accepted render state.
+    shader_manager.record_rendered_policy(
+        current_shader.policy_id
+    );
 
 
     let mut frame_times =
@@ -2809,6 +2830,11 @@ fn render_mirror_frames(
                                         );
 
 
+                                audio_required =
+                                    postprocess_profile.bloom.name()
+                                        == "audio";
+
+
                                 for pipeline in
                                     postprocess_pipelines.values_mut()
                                 {
@@ -2822,6 +2848,11 @@ fn render_mirror_frames(
                                     current_shader.policy_id,
                                     current_shader.shader_name.clone(),
                                     current_shader.source_path.clone(),
+                                );
+
+
+                                shader_manager.record_rendered_policy(
+                                    current_shader.policy_id
                                 );
 
 
@@ -2939,6 +2970,11 @@ fn render_mirror_frames(
 
             let shader_render_start =
                 Instant::now();
+
+
+            crate::audio_backend::set_audio_required(
+                audio_required
+            );
 
 
             let current_audio_bands =

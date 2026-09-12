@@ -61,6 +61,30 @@ struct ControlCenterState {
     #[serde(default)]
     window:
         PersistentWindowState,
+
+    // Runtime Ordered-mode continuity shares state.json with the Control
+    // Center. Keep this field in the typed state so Control Center saves do
+    // not discard the renderer's screensaver/wallpaper cursors.
+    #[serde(default)]
+    ordered:
+        PersistentOrderedState,
+}
+
+
+#[derive(
+    serde::Serialize,
+    serde::Deserialize,
+    Default,
+)]
+struct PersistentOrderedState {
+
+    #[serde(default)]
+    last_screensaver_policy_id:
+        Option<i64>,
+
+    #[serde(default)]
+    last_wallpaper_policy_id:
+        Option<i64>,
 }
 
 
@@ -781,6 +805,7 @@ pub fn run_wallpaper_only(
 
 pub fn run_screensaver_only(
     shader_path: PathBuf,
+    policy_id: i64,
     audio_bands:
         Option<crate::audio_backend::SharedAudioBands>,
 ) -> Result<(), String> {
@@ -795,7 +820,9 @@ pub fn run_screensaver_only(
         Some(
             crate::editor_layout::PolicyTarget::Screensaver
         ),
-        None,
+        Some(
+            policy_id
+        ),
         None,
         audio_bands,
     )
@@ -805,6 +832,12 @@ fn run_empty_session(
     audio_bands:
         Option<crate::audio_backend::SharedAudioBands>,
 ) -> Result<(), String> {
+
+    // An empty Control Center session renders no shader, so it must never keep
+    // playback-monitor capture active while the wallpaper is paused beneath it.
+    crate::audio_backend::set_audio_required(
+        false
+    );
 
     let wallpaper_pause_guard =
         crate::control_wallpaper::WallpaperPauseGuard::acquire();
@@ -2887,6 +2920,10 @@ fn run_paths(
 
 
             if bulk_edit_preview_suspended {
+                crate::audio_backend::set_audio_required(
+                    false
+                );
+
                 let (
                     suspended_width,
                     suspended_height,
@@ -3567,6 +3604,15 @@ fn run_paths(
                     .as_secs_f32()
                     * animation_speed;
 
+
+            // Demand playback capture only while this live preview actually
+            // uses Audio Bloom.  The call is a no-op while the requirement is
+            // unchanged, so live policy edits can turn capture on/off without
+            // restarting the shader or blocking the render loop.
+            crate::audio_backend::set_audio_required(
+                live_postprocess_profile.bloom.name()
+                    == "audio"
+            );
 
             // Audio Bloom consumes the latest backend-independent analyzer
             // output. If audio is unavailable (or the shared state cannot be
@@ -9874,11 +9920,42 @@ fn save_control_configuration(
             render_scale: control.render_scale,
         };
 
+    let config_path = crate::locate_paths::config_path();
+    let screen_lock_enabled =
+        crate::load_config::load_screen_lock_enabled(&config_path)?;
+
+    let requested_idle_timeout = format!(
+        "{}{}",
+        control.screensaver_idle_timeout_value,
+        match control.screensaver_idle_timeout_unit.as_str() {
+            "seconds" => "s",
+            "minutes" => "m",
+            "hours" => "h",
+            _ => "s",
+        },
+    );
+
+    let (requested_idle_timeout_value, requested_idle_timeout_unit, requested_idle_timeout_seconds) =
+        crate::manage_configuration::parse_idle_timeout_duration(
+            &requested_idle_timeout
+        )?;
+
+    let (idle_timeout_value, idle_timeout_unit) =
+        if screen_lock_enabled && requested_idle_timeout_seconds < 60 {
+            log_warning(
+                "[CONFIG] Screensaver idle timeout was below the 60-second minimum required while screen locking is enabled; storing 60 seconds instead."
+            );
+
+            (60_i64, "seconds".to_string())
+        } else {
+            (requested_idle_timeout_value, requested_idle_timeout_unit)
+        };
+
     let screensaver_defaults =
         crate::manage_configuration::TargetDefaults {
             target: "screensaver".to_string(),
-            idle_timeout_value: Some(control.screensaver_idle_timeout_value),
-            idle_timeout_unit: Some(control.screensaver_idle_timeout_unit.clone()),
+            idle_timeout_value: Some(idle_timeout_value),
+            idle_timeout_unit: Some(idle_timeout_unit.clone()),
             animation_speed: control.screensaver_animation_speed,
             texture_mode: screensaver_texture_mode,
             texture_family: screensaver_texture_family,
@@ -9913,8 +9990,8 @@ fn save_control_configuration(
             screensaver_mode,
             idle_timeout: format!(
                 "{}{}",
-                control.screensaver_idle_timeout_value,
-                match control.screensaver_idle_timeout_unit.as_str() {
+                idle_timeout_value,
+                match idle_timeout_unit.as_str() {
                     "seconds" => "s",
                     "minutes" => "m",
                     "hours" => "h",
@@ -9930,7 +10007,6 @@ fn save_control_configuration(
             wallpaper_global_palette: None,
         };
 
-    let config_path = crate::locate_paths::config_path();
     crate::manage_configuration::save_configuration(&config_path, &updates)?;
 
     crate::load_config::load_config(&config_path)

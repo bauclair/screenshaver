@@ -393,9 +393,10 @@ pub fn run(
 
 
     let shader_manager =
-        crate::manage_shader::ShaderManager::from_shader_entries(
+        crate::manage_shader::ShaderManager::from_shader_entries_for_target(
             shader_mode,
             shader_entries,
+            crate::manage_shader::OrderedTarget::Wallpaper,
         );
 
 

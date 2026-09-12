@@ -1,0 +1,49 @@
+[package]
+name = "screenshaver-kde-renderer"
+version = "0.5.3"
+edition = "2024"
+
+[lib]
+name = "screenshaver"
+crate-type = ["cdylib"]
+
+[features]
+default = ["kde-host"]
+kde-host = []
+
+[dependencies]
+sdl2 = { version = "0.38", features = ["ttf", "raw-window-handle"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+toml_edit = "0.22"
+gl = "0.14"
+libc = "0.2"
+notify = "6"
+ctrlc = "3.4"
+evdev = "0.13"
+zbus = "5"
+wayland-client = { version = "0.31", features = ["system"] }
+wayland-egl = "0.32"
+khronos-egl = { version = "6.0", features = ["static"] }
+wayland-protocols = { version = "0.32", features = ["staging", "client"] }
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+x11 = { version = "2.21", features = ["xlib", "xss"] }
+fs2 = "0.4"
+image = { version = "0.25", default-features = false, features = ["png"] }
+regex = "1"
+ksni = { version = "0.3", features = ["blocking"] }
+signal-hook = "0.3"
+egui = "0.33"
+egui_glow = "0.33"
+glow = "0.16"
+rfd = "0.17.2"
+sha2 = "0.10"
+libpulse-binding = "2.30.1"
+rustfft = "6.4"
+rusqlite = { version = "0.40.1", features = ["bundled"] }
+xkbcommon = "0.9"
+pam = "0.8"
+pam_unix = "0.3.1"
+zeroize = "1.8"

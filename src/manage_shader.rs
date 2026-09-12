@@ -109,6 +109,199 @@ impl ShaderEntry {
 }
 
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OrderedTarget {
+    Screensaver,
+    Wallpaper,
+}
+
+
+fn last_ordered_policy_id(
+    target: OrderedTarget,
+) -> Option<i64> {
+    let state_path =
+        crate::locate_paths::state_path();
+
+    let text =
+        std::fs::read_to_string(
+            &state_path
+        ).ok()?;
+
+    let root =
+        serde_json::from_str::<serde_json::Value>(
+            &text
+        ).ok()?;
+
+    let key =
+        match target {
+            OrderedTarget::Screensaver =>
+                "last_screensaver_policy_id",
+            OrderedTarget::Wallpaper =>
+                "last_wallpaper_policy_id",
+        };
+
+    root.get("ordered")
+        .and_then(
+            |ordered| ordered.get(key)
+        )
+        .and_then(
+            serde_json::Value::as_i64
+        )
+        .filter(
+            |policy_id| *policy_id > 0
+        )
+}
+
+
+fn save_last_ordered_policy_id(
+    target: OrderedTarget,
+    policy_id: i64,
+) -> Result<(), String> {
+    if policy_id <= 0 {
+        return Ok(());
+    }
+
+    let state_path =
+        crate::locate_paths::state_path();
+
+    let mut root =
+        std::fs::read_to_string(
+            &state_path
+        )
+        .ok()
+        .and_then(
+            |text| {
+                serde_json::from_str::<serde_json::Value>(
+                    &text
+                ).ok()
+            }
+        )
+        .filter(
+            serde_json::Value::is_object
+        )
+        .unwrap_or_else(
+            || {
+                serde_json::Value::Object(
+                    serde_json::Map::new()
+                )
+            }
+        );
+
+    let object =
+        root.as_object_mut()
+            .expect(
+                "state root was normalized to an object"
+            );
+
+    let ordered_value =
+        object.entry(
+            "ordered".to_string()
+        )
+        .or_insert_with(
+            || {
+                serde_json::Value::Object(
+                    serde_json::Map::new()
+                )
+            }
+        );
+
+    if !ordered_value.is_object() {
+        *ordered_value =
+            serde_json::Value::Object(
+                serde_json::Map::new()
+            );
+    }
+
+    let key =
+        match target {
+            OrderedTarget::Screensaver =>
+                "last_screensaver_policy_id",
+            OrderedTarget::Wallpaper =>
+                "last_wallpaper_policy_id",
+        };
+
+    ordered_value
+        .as_object_mut()
+        .expect(
+            "ordered state was normalized to an object"
+        )
+        .insert(
+            key.to_string(),
+            serde_json::Value::Number(
+                policy_id.into()
+            ),
+        );
+
+    if let Some(parent) =
+        state_path.parent()
+    {
+        std::fs::create_dir_all(
+            parent
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to create runtime state folder {}: {}",
+                    parent.display(),
+                    error,
+                )
+            }
+        )?;
+    }
+
+    let serialized =
+        serde_json::to_string_pretty(
+            &root
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to serialize runtime state: {}",
+                    error,
+                )
+            }
+        )?;
+
+    let temp_path =
+        state_path.with_extension(
+            "json.tmp"
+        );
+
+    std::fs::write(
+        &temp_path,
+        serialized,
+    )
+    .map_err(
+        |error| {
+            format!(
+                "Unable to write temporary runtime state {}: {}",
+                temp_path.display(),
+                error,
+            )
+        }
+    )?;
+
+    std::fs::rename(
+        &temp_path,
+        &state_path,
+    )
+    .map_err(
+        |error| {
+            let _ =
+                std::fs::remove_file(
+                    &temp_path
+                );
+
+            format!(
+                "Unable to replace runtime state {}: {}",
+                state_path.display(),
+                error,
+            )
+        }
+    )
+}
+
+
 /// Manages shader discovery and selection.
 #[derive(Clone)]
 pub struct ShaderManager {
@@ -124,6 +317,9 @@ pub struct ShaderManager {
 
     resume_shader:
         Option<String>,
+
+    ordered_target:
+        Option<OrderedTarget>,
 }
 
 
@@ -134,9 +330,10 @@ impl ShaderManager {
         mode: ShaderMode,
     ) -> Self {
 
-        Self::from_shader_entries(
+        Self::from_shader_entries_for_target(
             mode,
             Self::load_shader_entries(),
+            OrderedTarget::Screensaver,
         )
     }
 
@@ -149,9 +346,10 @@ impl ShaderManager {
     ) -> Self {
 
         let mut manager =
-            Self::from_shader_entries(
+            Self::from_shader_entries_for_target(
                 mode,
                 Self::load_shader_entries(),
+                OrderedTarget::Screensaver,
             );
 
 
@@ -232,11 +430,18 @@ impl ShaderManager {
         mut shaders: Vec<ShaderEntry>,
     ) -> Self {
 
+        // Policy Name is the user-facing identity and therefore defines
+        // Ordered-mode presentation order.  Compare case-insensitively first
+        // so capitalization does not split the alphabetic sequence; the
+        // original spelling, Policy ID, filename, and source path are only
+        // deterministic tie-breakers.
         shaders.sort_by(
             |left, right| {
-                left.name
+                left.policy_name
+                    .to_ascii_lowercase()
                     .cmp(
-                        &right.name
+                        &right.policy_name
+                            .to_ascii_lowercase()
                     )
                     .then_with(
                         || {
@@ -251,6 +456,14 @@ impl ShaderManager {
                             left.policy_id.cmp(
                                 &right.policy_id
                             )
+                        }
+                    )
+                    .then_with(
+                        || {
+                            left.name
+                                .cmp(
+                                    &right.name
+                                )
                         }
                     )
                     .then_with(
@@ -284,6 +497,108 @@ impl ShaderManager {
 
             resume_shader:
                 None,
+
+            ordered_target:
+                None,
+        }
+    }
+
+
+    /// Create a target-aware shader manager. Ordered mode resumes immediately
+    /// after the last successfully rendered policy stored in state.json.
+    pub fn from_shader_entries_for_target(
+        mode: ShaderMode,
+        shaders: Vec<ShaderEntry>,
+        target: OrderedTarget,
+    ) -> Self {
+        let mut manager =
+            Self::from_shader_entries(
+                mode,
+                shaders,
+            );
+
+        manager.ordered_target =
+            Some(target);
+
+        if matches!(
+            manager.mode,
+            ShaderMode::Ordered
+        ) {
+            if let Some(last_policy_id) =
+                last_ordered_policy_id(
+                    target
+                )
+            {
+                if let Some(position) =
+                    manager.shaders.iter()
+                        .position(
+                            |shader| {
+                                shader.policy_id
+                                    == last_policy_id
+                            }
+                        )
+                {
+                    manager.index =
+                        if manager.shaders.is_empty() {
+                            0
+                        } else {
+                            (position + 1)
+                                % manager.shaders.len()
+                        };
+
+                    log_information(
+                        &format!(
+                            "[SHADER] Ordered mode resuming after policy_id={}",
+                            last_policy_id,
+                        )
+                    );
+                } else {
+                    log_information(
+                        &format!(
+                            "[SHADER] Ordered-mode saved policy_id={} is no longer eligible; starting with the first current policy",
+                            last_policy_id,
+                        )
+                    );
+                }
+            }
+        }
+
+        manager
+    }
+
+
+    /// Record a policy only after its renderer has accepted it as active.
+    /// Random and Single modes deliberately leave the Ordered cursor unchanged.
+    pub fn record_rendered_policy(
+        &self,
+        policy_id: i64,
+    ) {
+        if !matches!(
+            self.mode,
+            ShaderMode::Ordered
+        ) {
+            return;
+        }
+
+        let Some(target) =
+            self.ordered_target
+        else {
+            return;
+        };
+
+        if let Err(error) =
+            save_last_ordered_policy_id(
+                target,
+                policy_id,
+            )
+        {
+            log_warning(
+                &format!(
+                    "[SHADER] Unable to persist Ordered-mode position for policy_id={}: {}",
+                    policy_id,
+                    error,
+                )
+            );
         }
     }
 
@@ -320,11 +635,11 @@ impl ShaderManager {
                      WHERE s.source_path = ?1
                        AND s.file_status = 'present'
                        AND p.policy_target = 'screensaver'
-                     ORDER BY s.filename COLLATE NOCASE,
-                              s.filename,
-                              p.policy_name COLLATE NOCASE,
+                     ORDER BY p.policy_name COLLATE NOCASE,
                               p.policy_name,
-                              p.policy_id"
+                              p.policy_id,
+                              s.filename COLLATE NOCASE,
+                              s.filename"
                 ) {
 
                     Ok(mut statement) => {
@@ -488,11 +803,18 @@ impl ShaderManager {
         }
 
 
+        // Policy Name is the user-facing identity and therefore defines
+        // Ordered-mode presentation order.  Compare case-insensitively first
+        // so capitalization does not split the alphabetic sequence; the
+        // original spelling, Policy ID, filename, and source path are only
+        // deterministic tie-breakers.
         shaders.sort_by(
             |left, right| {
-                left.name
+                left.policy_name
+                    .to_ascii_lowercase()
                     .cmp(
-                        &right.name
+                        &right.policy_name
+                            .to_ascii_lowercase()
                     )
                     .then_with(
                         || {
@@ -507,6 +829,14 @@ impl ShaderManager {
                             left.policy_id.cmp(
                                 &right.policy_id
                             )
+                        }
+                    )
+                    .then_with(
+                        || {
+                            left.name
+                                .cmp(
+                                    &right.name
+                                )
                         }
                     )
                     .then_with(

@@ -126,7 +126,7 @@ impl Drop for RenderTarget {
 /// then runs the selected presentation plan. Highlight Bloom extracts and
 /// blurs bright regions at half resolution, additively composites them over
 /// the normally presented scene, then applies optional dithering before
-/// returning framebuffer zero to the caller for crisp overlay rendering.
+/// returning the host-selected output framebuffer to the caller for crisp overlay rendering.
 pub(crate) struct PostprocessPipeline {
     scene_target: RenderTarget,
     scratch_target: RenderTarget,
@@ -324,15 +324,30 @@ impl PostprocessPipeline {
 
 
     /// Executes the current post-processing plan and presents it to
-    /// framebuffer zero.
+    /// framebuffer zero. This remains the SDL/default-window compatibility path.
     ///
     /// Draw subtitle, FPS-warning, and future editor overlays after this call
     /// so they remain crisp and are not affected by post-processing.
     pub(crate) fn present_scene(
         &self,
     ) {
-        self.present_scene_with_bloom_diagnostic(
-            false
+        self.present_scene_to_framebuffer(
+            0
+        );
+    }
+
+
+    /// Executes the current post-processing plan and presents it to a
+    /// framebuffer supplied by the active presentation host. SDL callers use
+    /// framebuffer zero; embedded hosts such as KDE/Qt Quick can supply the
+    /// scene-graph framebuffer that was active when rendering began.
+    pub(crate) fn present_scene_to_framebuffer(
+        &self,
+        output_framebuffer: u32,
+    ) {
+        self.present_scene_with_bloom_diagnostic_to_framebuffer(
+            false,
+            output_framebuffer,
         );
     }
 
@@ -345,6 +360,18 @@ impl PostprocessPipeline {
     pub(crate) fn present_scene_with_bloom_diagnostic(
         &self,
         bloom_diagnostic: bool,
+    ) {
+        self.present_scene_with_bloom_diagnostic_to_framebuffer(
+            bloom_diagnostic,
+            0,
+        );
+    }
+
+
+    fn present_scene_with_bloom_diagnostic_to_framebuffer(
+        &self,
+        bloom_diagnostic: bool,
+        output_framebuffer: u32,
     ) {
         prepare_fullscreen_pass();
 
@@ -365,7 +392,8 @@ impl PostprocessPipeline {
             // directly at full output resolution. Blur, composition, and
             // dithering are intentionally bypassed for this frame.
             if bloom_diagnostic {
-                bind_default_framebuffer(
+                bind_output_framebuffer(
+                    output_framebuffer,
                     self.output_width,
                     self.output_height,
                 );
@@ -440,7 +468,8 @@ impl PostprocessPipeline {
                     self.bloom_intensity,
                 );
 
-                bind_default_framebuffer(
+                bind_output_framebuffer(
+                    output_framebuffer,
                     self.output_width,
                     self.output_height,
                 );
@@ -450,7 +479,8 @@ impl PostprocessPipeline {
                     self.dithering_level,
                 );
             } else {
-                bind_default_framebuffer(
+                bind_output_framebuffer(
+                    output_framebuffer,
                     self.output_width,
                     self.output_height,
                 );
@@ -475,7 +505,8 @@ impl PostprocessPipeline {
                 self.scene_target.texture
             );
 
-            bind_default_framebuffer(
+            bind_output_framebuffer(
+                    output_framebuffer,
                 self.output_width,
                 self.output_height,
             );
@@ -485,7 +516,8 @@ impl PostprocessPipeline {
                 self.dithering_level,
             );
         } else {
-            bind_default_framebuffer(
+            bind_output_framebuffer(
+                    output_framebuffer,
                 self.output_width,
                 self.output_height,
             );
@@ -993,14 +1025,15 @@ fn prepare_fullscreen_pass(
     }
 }
 
-fn bind_default_framebuffer(
+fn bind_output_framebuffer(
+    framebuffer: u32,
     width: u32,
     height: u32,
 ) {
     unsafe {
         gl::BindFramebuffer(
             gl::FRAMEBUFFER,
-            0,
+            framebuffer,
         );
 
         gl::Viewport(
@@ -1204,6 +1237,14 @@ fn create_render_target(
         0_u32;
 
     unsafe {
+        let mut previous_framebuffer =
+            0_i32;
+
+        gl::GetIntegerv(
+            gl::FRAMEBUFFER_BINDING,
+            &mut previous_framebuffer,
+        );
+
         gl::GenFramebuffers(
             1,
             &mut framebuffer,
@@ -1299,7 +1340,7 @@ fn create_render_target(
 
         gl::BindFramebuffer(
             gl::FRAMEBUFFER,
-            0,
+            previous_framebuffer.max(0) as u32,
         );
 
         gl::BindTexture(

@@ -207,6 +207,273 @@ pub fn construct_with_fps_warning(
     })
 }
 
+
+pub fn construct_message(
+    message: &str,
+    output_width: u32,
+    output_height: u32,
+) -> Result<ConstructedTextOverlay, String> {
+    let message =
+        message.trim();
+
+
+    if message.is_empty() {
+        return Err(
+            "Cannot construct a message overlay without content"
+                .to_string()
+        );
+    }
+
+
+    let scale =
+        calculate_scale(
+            output_height
+        );
+
+    let font_size =
+        (
+            BASE_FONT_SIZE
+                * scale
+        )
+        .round()
+        .clamp(
+            10.0,
+            72.0,
+        ) as u16;
+
+    let padding_x =
+        (
+            BASE_HORIZONTAL_PADDING
+                * scale
+        )
+        .round()
+        .max(
+            8.0
+        ) as u32;
+
+    let padding_y =
+        (
+            BASE_VERTICAL_PADDING
+                * scale
+        )
+        .round()
+        .max(
+            5.0
+        ) as u32;
+
+    let maximum_width =
+        (
+            output_width as f32
+                * MAXIMUM_WIDTH_RATIO
+        )
+        .round()
+        .max(
+            1.0
+        ) as u32;
+
+
+    let ttf_context =
+        sdl2::ttf::init()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to initialize SDL_ttf: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    let font_path =
+        locate_subtitle_font()?;
+
+
+    let font =
+        ttf_context
+            .load_font(
+                &font_path,
+                font_size,
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to load message-overlay font '{}': {}",
+                        font_path.display(),
+                        error,
+                    )
+                }
+            )?;
+
+
+    let available_text_width =
+        maximum_width
+            .saturating_sub(
+                padding_x.saturating_mul(
+                    2
+                )
+            )
+            .max(
+                1
+            );
+
+
+    let fitted_message =
+        if text_fits(
+            &font,
+            message,
+            available_text_width,
+        )? {
+            message.to_string()
+        } else {
+            truncate_plain_text(
+                message,
+                &font,
+                available_text_width,
+            )?
+        };
+
+
+    let text_surface =
+        font
+            .render(
+                &fitted_message
+            )
+            .blended(
+                TEXT_COLOR
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to render message-overlay text: {}",
+                        error,
+                    )
+                }
+            )?
+            .convert_format(
+                PixelFormatEnum::RGBA32
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to convert message-overlay text surface: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    let text_width =
+        text_surface.width();
+
+    let text_height =
+        text_surface.height();
+
+    let height =
+        text_height
+            .saturating_add(
+                padding_y.saturating_mul(
+                    2
+                )
+            )
+            .max(
+                1
+            );
+
+    let width =
+        text_width
+            .saturating_add(
+                padding_x.saturating_mul(
+                    2
+                )
+            )
+            .max(
+                height
+            )
+            .min(
+                maximum_width
+            )
+            .max(
+                1
+            );
+
+
+    let byte_count =
+        usize::try_from(
+            width
+        )
+        .ok()
+        .and_then(
+            |w| {
+                usize::try_from(
+                    height
+                )
+                .ok()
+                .and_then(
+                    |h| {
+                        w.checked_mul(
+                            h
+                        )
+                    }
+                )
+            }
+        )
+        .and_then(
+            |pixels| {
+                pixels.checked_mul(
+                    4
+                )
+            }
+        )
+        .ok_or_else(
+            || {
+                "Message overlay dimensions overflow"
+                    .to_string()
+            }
+        )?;
+
+
+    let mut pixels =
+        vec![
+            0_u8;
+            byte_count
+        ];
+
+
+    draw_capsule_background(
+        &mut pixels,
+        width,
+        height,
+    );
+
+
+    composite_surface(
+        &mut pixels,
+        width,
+        height,
+        &text_surface,
+        padding_x,
+        padding_y
+            .saturating_add(
+                (
+                    text_height
+                        .saturating_sub(
+                            text_surface.height()
+                        )
+                )
+                    / 2
+            ),
+    )?;
+
+
+    Ok(
+        ConstructedTextOverlay {
+            width,
+            height,
+            pixels,
+        }
+    )
+}
+
 pub fn calculate_scale(output_height: u32) -> f32 {
     (output_height as f32 / BASELINE_HEIGHT).clamp(MINIMUM_SCALE, MAXIMUM_SCALE)
 }

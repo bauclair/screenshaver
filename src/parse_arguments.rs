@@ -13,6 +13,14 @@ pub enum Command {
     Control {
         shader_name: Option<String>,
     },
+
+    ConstructLockScreenKde,
+
+    ConstructLockScreenXfce,
+
+    ResetIdleTimeout {
+        value: String,
+    },
 }
 
 
@@ -94,10 +102,40 @@ pub fn parse() -> Result<Command, String> {
         }
 
 
+        "--reset-idle-timeout" => {
+
+            parse_reset_idle_timeout(
+                &args[1..]
+            )
+        }
+
+
         "--control" => {
 
             parse_control(
                 &args[1..]
+            )
+        }
+
+
+        "--construct-lock-screen-kde" => {
+
+            parse_construct_lock_screen_kde(
+                &args[1..]
+            )
+        }
+
+
+        "--construct-lock-screen-xfce" => {
+
+            require_no_extra_arguments(
+                &args,
+                "--construct-lock-screen-xfce",
+            )?;
+
+
+            Ok(
+                Command::ConstructLockScreenXfce
             )
         }
 
@@ -125,6 +163,34 @@ pub fn parse() -> Result<Command, String> {
             )
         }
     }
+}
+
+
+fn parse_reset_idle_timeout(
+    args: &[String],
+) -> Result<Command, String> {
+
+    if args.len() != 1 {
+        return Err(
+            "--reset-idle-timeout requires exactly one duration (for example: 60s, 2m, or 1h)"
+                .to_string()
+        );
+    }
+
+    let value = args[0].trim();
+
+    if value.is_empty() || value.starts_with('-') {
+        return Err(
+            "--reset-idle-timeout requires a positive duration (for example: 60s, 2m, or 1h)"
+                .to_string()
+        );
+    }
+
+    Ok(
+        Command::ResetIdleTimeout {
+            value: value.to_string(),
+        }
+    )
 }
 
 
@@ -180,6 +246,24 @@ fn parse_control(
     )
 }
 
+
+fn parse_construct_lock_screen_kde(
+    args: &[String],
+) -> Result<Command, String> {
+
+    if !args.is_empty() {
+
+        return Err(
+            "--construct-lock-screen-kde does not accept additional arguments"
+                .to_string()
+        );
+    }
+
+
+    Ok(
+        Command::ConstructLockScreenKde
+    )
+}
 
 fn require_no_extra_arguments(
     args: &[String],
@@ -240,6 +324,21 @@ pub fn print_help() {
              --control [PATH]\n\
                  Open the Screenshaver Control Center.\n\
                  If PATH is supplied, preload that shader for policy editing.\n\
+         \n\
+             --reset-idle-timeout <DURATION>\n\
+                 Reset the database-backed screensaver idle timeout and exit.\n\
+                 Examples: 60s, 2m, 1h. When screen locking is enabled,\n\
+                 values below 60 seconds are stored as 60 seconds.\n\
+         \n\
+         Temporary development/setup options:\n\
+         \n\
+             --construct-lock-screen-kde\n\
+                 Construct/install the KDE lock-screen integration.\n\
+                 Temporary development/setup command.\n\
+         \n\
+             --construct-lock-screen-xfce\n\
+                 Construct/configure the Xfce lock-screen integration.\n\
+                 Temporary development/setup command.\n\
          \n\
          Examples:\n\
              screenshaver --start\n\

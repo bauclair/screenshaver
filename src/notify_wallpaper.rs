@@ -413,6 +413,7 @@ pub fn show(
         "Screenshaver Wallpaper",
         &metadata.body(),
         metadata.is_critical(),
+        !metadata.is_performance_alert(),
     ) {
         Ok(notification_id) => {
             Some(notification_id)
@@ -457,6 +458,7 @@ fn send_notification(
     summary: &str,
     body: &str,
     critical: bool,
+    suppress_sound: bool,
 ) -> Result<u32, String> {
 
     let connection =
@@ -489,6 +491,30 @@ fn send_notification(
             "urgency",
             zbus::zvariant::Value::U8(
                 2,
+            ),
+        );
+    }
+
+
+    if suppress_sound {
+        hints.insert(
+            "suppress-sound",
+            zbus::zvariant::Value::Bool(
+                true,
+            ),
+        );
+
+        hints.insert(
+            "desktop-entry",
+            zbus::zvariant::Value::Str(
+                "screenshaver".into(),
+            ),
+        );
+
+        hints.insert(
+            "transient",
+            zbus::zvariant::Value::Bool(
+                true,
             ),
         );
     }

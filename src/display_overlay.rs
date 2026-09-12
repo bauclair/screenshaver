@@ -146,6 +146,34 @@ pub struct OpenGlOverlay {
 
 impl OpenGlOverlay {
 
+    pub fn new_message(
+        message: &str,
+
+        placement:
+            crate::parse_subtitle_placement::SubtitlePlacement,
+
+        output_width:
+            u32,
+
+        output_height:
+            u32,
+    ) -> Result<Self, String> {
+
+        let overlay =
+            crate::construct_text_overlay::construct_message(
+                message,
+                output_width,
+                output_height,
+            )?;
+
+
+        Self::new_from_constructed(
+            overlay,
+            placement,
+        )
+    }
+
+
     pub fn new(
         descriptor:
             &crate::construct_text_overlay::OverlayDescriptor,
@@ -286,6 +314,21 @@ impl OpenGlOverlay {
             )?;
 
 
+        Self::new_from_constructed(
+            overlay,
+            placement,
+        )
+    }
+
+
+    fn new_from_constructed(
+        overlay:
+            crate::construct_text_overlay::ConstructedTextOverlay,
+
+        placement:
+            crate::parse_subtitle_placement::SubtitlePlacement,
+    ) -> Result<Self, String> {
+
         let program =
             build_overlay_program()?;
 
@@ -418,6 +461,145 @@ impl OpenGlOverlay {
                 placement,
             }
         )
+    }
+
+
+    pub fn display_at_center(
+        &self,
+        output_width: u32,
+        output_height: u32,
+        center_y: f32,
+    ) {
+        if output_width == 0
+            || output_height == 0
+        {
+            return;
+        }
+
+
+        let x =
+            output_width
+                .saturating_sub(
+                    self.width
+                )
+                / 2;
+
+
+        // OpenGL overlay coordinates use a lower-left origin.  center_y is
+        // supplied in ordinary top-left UI coordinates by the lock panel, so
+        // convert the requested center position into the lower-left origin
+        // expected by the existing overlay shader.
+        let top =
+            (
+                center_y
+                    - self.height as f32
+                        * 0.5
+            )
+            .max(
+                0.0
+            );
+
+
+        let y =
+            output_height
+                .saturating_sub(
+                    (
+                        top
+                            + self.height as f32
+                    )
+                    .round()
+                    .max(
+                        0.0
+                    ) as u32
+                );
+
+
+        unsafe {
+            gl::Enable(
+                gl::BLEND
+            );
+
+
+            gl::BlendFunc(
+                gl::SRC_ALPHA,
+                gl::ONE_MINUS_SRC_ALPHA,
+            );
+
+
+            gl::UseProgram(
+                self.program
+            );
+
+
+            set_vec2(
+                self.program,
+                "uViewport",
+                output_width as f32,
+                output_height as f32,
+            );
+
+
+            set_vec2(
+                self.program,
+                "uOrigin",
+                x as f32,
+                y as f32,
+            );
+
+
+            set_vec2(
+                self.program,
+                "uSize",
+                self.width as f32,
+                self.height as f32,
+            );
+
+
+            gl::ActiveTexture(
+                gl::TEXTURE7
+            );
+
+
+            gl::BindTexture(
+                gl::TEXTURE_2D,
+                self.texture,
+            );
+
+
+            set_int(
+                self.program,
+                "uOverlay",
+                7,
+            );
+
+
+            gl::BindVertexArray(
+                self.vao
+            );
+
+
+            gl::DrawArrays(
+                gl::TRIANGLE_STRIP,
+                0,
+                4,
+            );
+
+
+            gl::BindTexture(
+                gl::TEXTURE_2D,
+                0,
+            );
+
+
+            gl::ActiveTexture(
+                gl::TEXTURE0
+            );
+
+
+            gl::Disable(
+                gl::BLEND
+            );
+        }
     }
 
 

@@ -341,6 +341,102 @@ pub fn load_curated_palette_choices(
 }
 
 
+pub fn parse_idle_timeout_duration(
+    text: &str,
+) -> Result<(i64, String, i64), String> {
+    let normalized = text.trim().to_ascii_lowercase();
+
+    if normalized.is_empty() {
+        return Err("Idle timeout cannot be empty.".to_string());
+    }
+
+    let split_at = normalized
+        .find(|character: char| !character.is_ascii_digit())
+        .unwrap_or(normalized.len());
+
+    let (number_text, unit_text) = normalized.split_at(split_at);
+
+    if number_text.is_empty() {
+        return Err(format!("Invalid idle timeout '{}'.", text));
+    }
+
+    let value = number_text
+        .parse::<i64>()
+        .map_err(|_| format!("Invalid idle timeout '{}'.", text))?;
+
+    if value <= 0 {
+        return Err("Idle timeout must be greater than zero.".to_string());
+    }
+
+    let (unit, multiplier) = match unit_text.trim() {
+        "s" | "sec" | "secs" | "second" | "seconds" => ("seconds", 1_i64),
+        "m" | "min" | "mins" | "minute" | "minutes" => ("minutes", 60_i64),
+        "h" | "hr" | "hrs" | "hour" | "hours" => ("hours", 3600_i64),
+        "" => ("seconds", 1_i64),
+        other => {
+            return Err(format!(
+                "Invalid idle-timeout unit '{}'; use seconds (s), minutes (m), or hours (h).",
+                other,
+            ));
+        }
+    };
+
+    let seconds = value
+        .checked_mul(multiplier)
+        .ok_or_else(|| "Idle timeout is too large.".to_string())?;
+
+    Ok((value, unit.to_string(), seconds))
+}
+
+
+pub fn reset_screensaver_idle_timeout(
+    requested: &str,
+    screen_lock_enabled: bool,
+) -> Result<(i64, String, bool), String> {
+    const SCREEN_LOCK_MIN_IDLE_SECONDS: i64 = 60;
+
+    let (mut value, mut unit, seconds) =
+        parse_idle_timeout_duration(requested)?;
+
+    let clamped = screen_lock_enabled
+        && seconds < SCREEN_LOCK_MIN_IDLE_SECONDS;
+
+    if clamped {
+        value = SCREEN_LOCK_MIN_IDLE_SECONDS;
+        unit = "seconds".to_string();
+    }
+
+    let connection = crate::open_database::open()
+        .map_err(|error| {
+            format!(
+                "Unable to open database while resetting screensaver idle timeout: {}",
+                error,
+            )
+        })?;
+
+    let changed = connection
+        .execute(
+            "UPDATE target_defaults
+             SET idle_timeout_value = ?1,
+                 idle_timeout_unit = ?2
+             WHERE target = 'screensaver'",
+            rusqlite::params![value, unit],
+        )
+        .map_err(|error| {
+            format!("Unable to reset screensaver idle timeout: {}", error)
+        })?;
+
+    if changed != 1 {
+        return Err(format!(
+            "Unable to reset screensaver idle timeout: expected one row, updated {}",
+            changed,
+        ));
+    }
+
+    Ok((value, unit, clamped))
+}
+
+
 pub fn load_target_defaults(
     target: &str,
 ) -> Result<TargetDefaults, String> {

@@ -47,6 +47,62 @@ pub fn create_backend(
             }
 
 
+            if report.session_lock_available {
+
+                let version =
+                    report
+                        .session_lock_version
+                        .unwrap_or(1);
+
+                let message =
+                    format!(
+                        "[LOCK] Wayland ext-session-lock-v1: available (v{})",
+                        version,
+                    );
+
+                println!(
+                    "{}",
+                    message
+                );
+
+                let logfile =
+                    crate::locate_paths::runtime_log_path();
+
+                crate::logger::information(
+                    &logfile,
+                    &message,
+                );
+
+                crate::logger::information(
+                    &logfile,
+                    "[LOCK] Wayland secure session locking supported",
+                );
+
+            } else {
+
+                let message =
+                    "[LOCK] Wayland ext-session-lock-v1: unavailable";
+
+                println!(
+                    "{}",
+                    message
+                );
+
+                let logfile =
+                    crate::locate_paths::runtime_log_path();
+
+                crate::logger::information(
+                    &logfile,
+                    message,
+                );
+
+                crate::logger::information(
+                    &logfile,
+                    "[LOCK] Wayland secure session locking unavailable",
+                );
+            }
+
+
             println!(
                 "[SESSION] Selected [WAYLAND] backend"
             );

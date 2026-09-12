@@ -42,6 +42,10 @@ DISTRO_ID=""
 DISTRO_LIKE=""
 DISTRO_NAME=""
 
+DESKTOP_ENVIRONMENT=""
+XFCE_INTEGRATION=false
+XFCE_SAVER_DIR=""
+
 SUDO=()
 
 usage() {
@@ -192,6 +196,36 @@ validate_repository_layout() {
   ${PROJECT_DIR}
 
 This script must remain in the repository's scripts directory."
+}
+
+# -----------------------------------------------------------------------------
+# Desktop-environment detection
+# -----------------------------------------------------------------------------
+
+detect_desktop_environment() {
+    local desktop_value
+
+    desktop_value="${XDG_CURRENT_DESKTOP:-${XDG_SESSION_DESKTOP:-${DESKTOP_SESSION:-}}}"
+    DESKTOP_ENVIRONMENT="$desktop_value"
+
+    case "${desktop_value,,}" in
+        *xfce*)
+            XFCE_INTEGRATION=true
+            ;;
+        *)
+            XFCE_INTEGRATION=false
+            ;;
+    esac
+}
+
+is_debian_family() {
+    case "$DISTRO_ID" in
+        ubuntu|debian|linuxmint|pop|elementary|zorin)
+            return 0
+            ;;
+    esac
+
+    is_like debian
 }
 
 # -----------------------------------------------------------------------------
@@ -399,6 +433,23 @@ install_void_dependencies() {
         desktop-file-utils
 }
 
+install_xfce_runtime_dependency() {
+    $XFCE_INTEGRATION || return 0
+
+    if ! is_debian_family; then
+        warn \
+            "Xfce was detected, but automatic xfce4-screensaver provisioning is
+currently verified only for Debian-family distributions. Core Screenshaver
+installation will continue without modifying the native screen locker."
+        return 0
+    fi
+
+    log "Installing the Xfce secure-lock runtime dependency"
+
+    "${SUDO[@]}" apt-get install -y \
+        xfce4-screensaver
+}
+
 install_build_dependencies() {
     log "Detected ${DISTRO_NAME}"
 
@@ -467,6 +518,8 @@ Install these components manually and run the installer again:
             fi
             ;;
     esac
+
+    install_xfce_runtime_dependency
 }
 
 # -----------------------------------------------------------------------------
@@ -603,6 +656,94 @@ install_application() {
     install_icons
 }
 
+resolve_xfce_saver_directory() {
+    XFCE_SAVER_DIR=""
+
+    $XFCE_INTEGRATION || return 0
+
+    # The trusted-presenter path is an Xfce integration detail, not a distro
+    # family property.  Linux Mint/Ubuntu-family systems and Void Linux both
+    # provide xfce4-screensaver's helper directory at this location.
+    #
+    # Keep this path synchronized with construct_lock_screen_xfce.rs, which
+    # registers the presenter as /usr/libexec/xfce4-screensaver/screenshaver.
+    if [[ -d /usr/libexec/xfce4-screensaver ]]; then
+        XFCE_SAVER_DIR="/usr/libexec/xfce4-screensaver"
+        return 0
+    fi
+
+    return 1
+}
+
+
+install_omarchy_pam_service() {
+    # Omarchy uses a dedicated PAM service for its native lock-password stack.
+    # Screenshaver keeps its own stable PAM service name ("screenshaver") and
+    # delegates to Omarchy here, rather than hard-coding distro-specific PAM
+    # service names in the Rust authentication code.
+    #
+    # Screenshaver calls both pam_authenticate() and pam_acct_mgmt().  Both PAM
+    # management groups therefore must be defined.  Omitting the account stack
+    # causes PAM to fall through to pam_warn(screenshaver:account); the password
+    # can authenticate successfully, but Screenshaver will still reject the
+    # unlock and desktop access will not be restored.
+    [[ "$DISTRO_ID" == "omarchy" ]] || return 0
+
+    [[ -r /etc/pam.d/omarchy-lock-password ]] ||
+        die "/etc/pam.d/omarchy-lock-password was not found on this Omarchy system."
+
+    log "Installing the Screenshaver PAM service for Omarchy"
+
+    cat <<'PAM_EOF' | "${SUDO[@]}" tee /etc/pam.d/screenshaver >/dev/null
+#%PAM-1.0
+
+# Screenshaver authentication on Omarchy.
+#
+# Delegate both password authentication and account validation to Omarchy's
+# native lock-password PAM service. Screenshaver calls both pam_authenticate()
+# and pam_acct_mgmt(), so both PAM management groups must be defined here.
+auth       include    omarchy-lock-password
+account    include    omarchy-lock-password
+PAM_EOF
+
+    "${SUDO[@]}" chmod 0644 /etc/pam.d/screenshaver
+}
+
+install_xfce_lock_integration() {
+    local trusted_presenter
+    local installed_binary
+
+    $XFCE_INTEGRATION || return 0
+
+    if ! resolve_xfce_saver_directory; then
+        warn \
+            "Xfce was detected, but the trusted xfce4-screensaver engine directory
+is not yet verified for ${DISTRO_NAME}. Xfce lock-screen integration was not
+installed."
+        return 0
+    fi
+
+    [[ -x /usr/bin/xfce4-screensaver ]] ||
+        die "xfce4-screensaver was not found after installing the Xfce runtime dependency."
+
+    installed_binary="${INSTALL_PREFIX}/bin/${BINARY_NAME}"
+    trusted_presenter="${XFCE_SAVER_DIR}/${BINARY_NAME}"
+
+    log "Installing the trusted Xfce Screenshaver presenter"
+
+    "${SUDO[@]}" install \
+        -Dm755 \
+        "$installed_binary" \
+        "$trusted_presenter"
+
+    [[ -x "$trusted_presenter" ]] ||
+        die "Trusted Xfce presenter was not installed: $trusted_presenter"
+
+    log "Configuring Screenshaver for the current Xfce user"
+
+    "$installed_binary" --construct-lock-screen-xfce
+}
+
 refresh_desktop_caches() {
     log "Refreshing desktop application and icon caches"
 
@@ -679,6 +820,13 @@ verify_conventional_installation() {
 
     verify_desktop_file
     verify_shared_libraries
+
+    if $XFCE_INTEGRATION; then
+        if resolve_xfce_saver_directory; then
+            [[ -x "${XFCE_SAVER_DIR}/${BINARY_NAME}" ]] ||
+                die "Trusted Xfce presenter is missing after installation."
+        fi
+    fi
 }
 
 print_conventional_success() {
@@ -714,6 +862,8 @@ install_conventional_linux() {
     install_rust_toolchain
     build_application
     install_application
+    install_omarchy_pam_service
+    install_xfce_lock_integration
     refresh_desktop_caches
     verify_conventional_installation
     print_conventional_success
@@ -874,9 +1024,11 @@ main() {
     require_normal_user
     validate_repository_layout
     load_os_release
+    detect_desktop_environment
 
     printf '%s source installer\n' "$APP_NAME"
     printf 'Detected system: %s\n' "$DISTRO_NAME"
+    printf 'Detected desktop: %s\n' "${DESKTOP_ENVIRONMENT:-unknown}"
     printf 'Project directory: %s\n' "$PROJECT_DIR"
 
     if [[ "$DISTRO_ID" == "nixos" ]] || is_like nixos; then

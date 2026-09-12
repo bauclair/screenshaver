@@ -127,7 +127,32 @@
               rustfmt
               clippy
               pkg-config
+              cmake
+
+              # Required by clang-sys/bindgen when building the KDE renderer
+              # secondary crate.
+              llvmPackages.llvm
+              llvmPackages.libclang
+
+              # Required by pam-sys when building the KDE renderer
+              # secondary crate. Provides PAM headers and libraries.
+              linux-pam
+
+              # Required when building the KDE renderer secondary crate.
+              libpulseaudio
+
+              # Required when building the kde-host CMake project.
+              qt6.qtbase
+              qt6.qtdeclarative
             ];
+
+            LLVM_CONFIG_PATH = "${pkgs.llvmPackages.llvm}/bin/llvm-config";
+            LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+
+            BINDGEN_EXTRA_CLANG_ARGS = ''
+              -I${pkgs.lib.getDev pkgs.linux-pam}/include
+              -I${pkgs.lib.getDev pkgs.glibc}/include
+            '';
 
             shellHook = ''
               echo "Screenshaver development environment"
