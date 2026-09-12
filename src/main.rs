@@ -809,19 +809,13 @@ fn main() {
             shader_name,
         } => {
 
-            let control_audio_backend =
-                crate::audio_backend::create_backend()
-                    .ok();
-
-
+            // The Control Center receives the process-local band handle, but
+            // this alone does not open PulseAudio.  Audio capture starts only
+            // when the editor actually renders an Audio Bloom policy.
             let control_audio_bands =
-                control_audio_backend
-                    .as_ref()
-                    .map(
-                        |backend| {
-                            backend.shared_bands()
-                        }
-                    );
+                Some(
+                    crate::audio_backend::shared_audio_bands()
+                );
 
 
             match crate::edit_shader::run(
@@ -917,58 +911,14 @@ fn main() {
     }
 
 
-    // Audio is an optional runtime capability.  Failure to locate a usable
-    // backend must never prevent Screenshaver from continuing normally.
-    let audio_backend =
-        match crate::audio_backend::create_backend() {
-
-            Ok(backend) => {
-
-                println!(
-                    "[MAIN] Audio backend = {}",
-                    backend.backend_name()
-                );
-
-
-                crate::logger::information(
-                    &logfile,
-                    &format!(
-                        "[AUDIO] Backend ready: {}",
-                        backend.backend_name(),
-                    ),
-                );
-
-
-                Some(backend)
-            }
-
-
-            Err(error) => {
-
-                println!(
-                    "[AUDIO] No compatible audio backend available: {}",
-                    error
-                );
-
-
-                crate::logger::warning(
-                    &logfile,
-                    &format!(
-                        "[AUDIO] No compatible audio backend available: {}",
-                        error,
-                    ),
-                );
-
-
-                crate::logger::information(
-                    &logfile,
-                    "[AUDIO] Audio Bloom unavailable for this session",
-                );
-
-
-                None
-            }
-        };
+    // Keep one stable audio-band handle for every renderer in this process.
+    // Accessing it does not initialize PulseAudio or create a capture stream;
+    // active renderers demand Audio Bloom capture only while their current
+    // policy actually requires it.
+    let audio_bands =
+        Some(
+            crate::audio_backend::shared_audio_bands()
+        );
 
 
     let _singleton =
@@ -1689,13 +1639,7 @@ fn main() {
             postprocess_policy:
                 cfg.wallpaper_postprocess_policy,
             audio_bands:
-                audio_backend
-                    .as_ref()
-                    .map(
-                        |backend| {
-                            backend.shared_bands()
-                        }
-                    ),
+                audio_bands.clone(),
             tray_status:
                 tray_status.clone(),
         };
@@ -1792,26 +1736,14 @@ fn main() {
                             crate::edit_shader::run_wallpaper_only(
                                 active_wallpaper.path,
                                 active_wallpaper.policy_id,
-                                audio_backend
-                                    .as_ref()
-                                    .map(
-                                        |backend| {
-                                            backend.shared_bands()
-                                        }
-                                    ),
+                                audio_bands.clone(),
                             )
                         }
 
                         None => {
                             crate::edit_shader::run(
                                 None,
-                                audio_backend
-                                    .as_ref()
-                                    .map(
-                                        |backend| {
-                                            backend.shared_bands()
-                                        }
-                                    ),
+                                audio_bands.clone(),
                             )
                         }
                     };
@@ -2107,13 +2039,7 @@ fn main() {
                                                 cfg.screensaver_fps_policy_entries.clone(),
                                                 cfg.texture_policy.clone(),
                                                 cfg.screensaver_postprocess_policy.clone(),
-                                                audio_backend
-                                                    .as_ref()
-                                                    .map(
-                                                        |backend| {
-                                                            backend.shared_bands()
-                                                        }
-                                                    ),
+                                                audio_bands.clone(),
                                                 cfg.subtitles,
                                                 cfg.subtitle_placement,
                                             )
@@ -2264,13 +2190,7 @@ fn main() {
                                     cfg.screensaver_fps_policy_entries.clone(),
                                     cfg.texture_policy.clone(),
                                     cfg.screensaver_postprocess_policy.clone(),
-                                    audio_backend
-                                        .as_ref()
-                                        .map(
-                                            |backend| {
-                                                backend.shared_bands()
-                                            }
-                                        ),
+                                    audio_bands.clone(),
                                     cfg.subtitles,
                                     cfg.subtitle_placement,
                                 )
@@ -2320,13 +2240,7 @@ fn main() {
                             cfg.screensaver_fps_policy_entries.clone(),
                             cfg.texture_policy.clone(),
                             cfg.screensaver_postprocess_policy.clone(),
-                            audio_backend
-                                .as_ref()
-                                .map(
-                                    |backend| {
-                                        backend.shared_bands()
-                                    }
-                                ),
+                            audio_bands.clone(),
                             cfg.subtitles,
                             cfg.subtitle_placement,
                         ) {
@@ -2397,13 +2311,7 @@ fn main() {
                             let edit_result =
                                 crate::edit_shader::run_screensaver_only(
                                     shader_path.clone(),
-                                    audio_backend
-                                        .as_ref()
-                                        .map(
-                                            |backend| {
-                                                backend.shared_bands()
-                                            }
-                                        ),
+                                    audio_bands.clone(),
                                 );
 
                             if let Err(error) = &edit_result {

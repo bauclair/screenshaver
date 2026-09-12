@@ -123,6 +123,7 @@ pub(crate) struct FrameRenderEngine {
         crate::load_config::PostprocessPolicy,
     audio_bands:
         Option<crate::audio_backend::SharedAudioBands>,
+    audio_required: bool,
     output_policy: FrameOutputPolicy,
     configured_fps: u32,
     fps_warning_state: FpsWarningState,
@@ -324,6 +325,10 @@ impl FrameRenderEngine {
                 active_shader.source_path.as_deref(),
             );
 
+        let audio_required =
+            postprocess_profile.bloom.name()
+                == "audio";
+
         let postprocess =
             crate::postprocess_shader::PostprocessPipeline::new(
                 output_width,
@@ -380,6 +385,7 @@ impl FrameRenderEngine {
                 fps_policy,
                 postprocess_policy,
                 audio_bands,
+                audio_required,
                 output_policy,
                 configured_fps,
                 fps_warning_state:
@@ -458,6 +464,10 @@ impl FrameRenderEngine {
         self.postprocess.set_profile(
             replacement_postprocess_profile
         )?;
+
+        self.audio_required =
+            replacement_postprocess_profile.bloom.name()
+                == "audio";
 
         replacement_texture_manager.configure_program(
             self.active_shader.program
@@ -736,6 +746,14 @@ impl FrameRenderEngine {
         height: u32,
         output_framebuffer: u32,
     ) -> FrameRenderEvents {
+        // Audio capture follows the renderer that currently owns presentation.
+        // Reasserting once per frame is cheap (unchanged values are a no-op)
+        // and lets a paused wallpaper restart Audio Bloom immediately when it
+        // resumes after a screensaver or editor temporarily owned presentation.
+        crate::audio_backend::set_audio_required(
+            self.audio_required
+        );
+
         let current_audio_bands =
             self.audio_bands
                 .as_ref()
@@ -1090,6 +1108,10 @@ impl FrameRenderEngine {
 
                     return false;
                 }
+
+                self.audio_required =
+                    new_postprocess_profile.bloom.name()
+                        == "audio";
 
                 self.active_shader =
                     new_shader;

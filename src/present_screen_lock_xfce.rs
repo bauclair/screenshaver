@@ -274,18 +274,14 @@ fn run_opengl_clear_test(
             shader_mode
         );
 
-    let audio_backend =
-        crate::audio_backend::create_backend()
-            .ok();
-
+    // The Xfce saver child is a separate process, so it receives its own
+    // process-local demand-driven audio runtime.  Obtaining the shared bands
+    // does not open a capture stream; FrameRenderEngine activates capture only
+    // while the current policy uses Audio Bloom.
     let audio_bands =
-        audio_backend
-            .as_ref()
-            .map(
-                |backend| {
-                    backend.shared_bands()
-                }
-            );
+        Some(
+            crate::audio_backend::shared_audio_bands()
+        );
 
     crate::logger::information(
         logfile,

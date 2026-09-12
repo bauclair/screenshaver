@@ -830,6 +830,12 @@ fn run_empty_session(
         Option<crate::audio_backend::SharedAudioBands>,
 ) -> Result<(), String> {
 
+    // An empty Control Center session renders no shader, so it must never keep
+    // playback-monitor capture active while the wallpaper is paused beneath it.
+    crate::audio_backend::set_audio_required(
+        false
+    );
+
     let wallpaper_pause_guard =
         crate::control_wallpaper::WallpaperPauseGuard::acquire();
 
@@ -2911,6 +2917,10 @@ fn run_paths(
 
 
             if bulk_edit_preview_suspended {
+                crate::audio_backend::set_audio_required(
+                    false
+                );
+
                 let (
                     suspended_width,
                     suspended_height,
@@ -3591,6 +3601,15 @@ fn run_paths(
                     .as_secs_f32()
                     * animation_speed;
 
+
+            // Demand playback capture only while this live preview actually
+            // uses Audio Bloom.  The call is a no-op while the requirement is
+            // unchanged, so live policy edits can turn capture on/off without
+            // restarting the shader or blocking the render loop.
+            crate::audio_backend::set_audio_required(
+                live_postprocess_profile.bloom.name()
+                    == "audio"
+            );
 
             // Audio Bloom consumes the latest backend-independent analyzer
             // output. If audio is unavailable (or the shared state cannot be

@@ -84,6 +84,15 @@ impl PulseAudioBackend {
 
     pub fn new(
     ) -> Result<Self, crate::audio_backend::AudioError> {
+        Self::new_with_shared_bands(
+            crate::audio_backend::new_shared_audio_bands()
+        )
+    }
+
+
+    pub fn new_with_shared_bands(
+        shared_bands: crate::audio_backend::SharedAudioBands,
+    ) -> Result<Self, crate::audio_backend::AudioError> {
 
         let stop_requested =
             Arc::new(
@@ -91,10 +100,6 @@ impl PulseAudioBackend {
                     false
                 )
             );
-
-
-        let shared_bands =
-            crate::audio_backend::new_shared_audio_bands();
 
 
         let worker_stop =
@@ -280,6 +285,17 @@ fn run_capture_worker(
             &shared_bands,
             &startup_sender,
         );
+
+
+    // Never leave the last measured spectrum visible after capture terminates,
+    // including unexpected PulseAudio/context failures that return before the
+    // normal shutdown path at the bottom of run_capture_worker_inner().
+    if let Ok(mut shared) =
+        shared_bands.write()
+    {
+        *shared =
+            crate::analyze_audio::AudioBands::default();
+    }
 
 
     if let Err(error) =

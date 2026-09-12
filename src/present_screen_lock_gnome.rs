@@ -106,6 +106,7 @@ struct GnomeShaderSourceProducer {
     journal_advance_due_at: Option<Instant>,
     active_shader_name: String,
     active_policy_id: i64,
+    active_audio_required: bool,
     ordered_position_recorded: bool,
 }
 
@@ -204,6 +205,9 @@ impl GnomeShaderSourceProducer {
             selected.entry.source_path.as_deref(),
         );
 
+        let active_audio_required =
+            postprocess_profile.bloom.name() == "audio";
+
         let metadata = build_presentation_metadata(
             &selected,
             &texture_manager,
@@ -286,6 +290,7 @@ impl GnomeShaderSourceProducer {
             journal_advance_due_at: None,
             active_shader_name: selected.entry.name,
             active_policy_id: selected.entry.policy_id,
+            active_audio_required,
             ordered_position_recorded: false,
         })
     }
@@ -300,6 +305,10 @@ impl GnomeShaderSourceProducer {
         );
 
         while !lock_finished() {
+            crate::audio_backend::set_audio_required(
+                self.active_audio_required
+            );
+
             // GNOME keeps a single native Shell.GLSLEffect renderer. Rust owns
             // production policy selection/preprocessing and publishes each
             // rotation; the extension polls the handoff and hot-swaps the effect.
@@ -397,6 +406,8 @@ impl GnomeShaderSourceProducer {
                             "GNOME production shader handoff",
                         )?;
 
+                        self.active_audio_required =
+                            postprocess_profile.bloom.name() == "audio";
                         self.active_shader_name = selected.entry.name.clone();
                         self.active_policy_id = selected.entry.policy_id;
                         self.ordered_position_recorded = false;
@@ -575,6 +586,10 @@ impl GnomeShaderSourceProducer {
     }
 
     fn cleanup(&mut self) {
+        crate::audio_backend::set_audio_required(
+            false
+        );
+
         let _ = fs::remove_file(&self.runtime_shader_path);
         let _ = fs::remove_file(&self.runtime_shader_temp_path);
         let _ = fs::remove_file(&self.runtime_metadata_path);
