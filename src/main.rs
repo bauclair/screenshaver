@@ -2297,13 +2297,15 @@ fn main() {
                             break 'screensaver_session;
                         }
 
-                        crate::render_frame::ScreensaverRunOutcome::EditCurrentShader(
-                            shader_path
-                        ) => {
+                        crate::render_frame::ScreensaverRunOutcome::EditCurrentShader {
+                            shader_path,
+                            policy_id,
+                        } => {
                             crate::logger::information(
                                 &logfile,
                                 &format!(
-                                    "[SESSION] Editing active screensaver shader: {}",
+                                    "[SESSION] Editing active screensaver policy_id={} shader: {}",
+                                    policy_id,
                                     shader_path.display(),
                                 ),
                             );
@@ -2311,6 +2313,7 @@ fn main() {
                             let edit_result =
                                 crate::edit_shader::run_screensaver_only(
                                     shader_path.clone(),
+                                    policy_id,
                                     audio_bands.clone(),
                                 );
 

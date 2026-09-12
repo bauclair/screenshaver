@@ -805,6 +805,7 @@ pub fn run_wallpaper_only(
 
 pub fn run_screensaver_only(
     shader_path: PathBuf,
+    policy_id: i64,
     audio_bands:
         Option<crate::audio_backend::SharedAudioBands>,
 ) -> Result<(), String> {
@@ -819,7 +820,9 @@ pub fn run_screensaver_only(
         Some(
             crate::editor_layout::PolicyTarget::Screensaver
         ),
-        None,
+        Some(
+            policy_id
+        ),
         None,
         audio_bands,
     )

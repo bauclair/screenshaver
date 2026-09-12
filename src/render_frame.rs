@@ -22,7 +22,10 @@ const MOUSE_MOTION_EXIT_THRESHOLD: i32 = 4;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ScreensaverRunOutcome {
     Exit,
-    EditCurrentShader(PathBuf),
+    EditCurrentShader {
+        shader_path: PathBuf,
+        policy_id: i64,
+    },
 }
 
 
@@ -280,17 +283,26 @@ impl FrameRenderer {
                     repeat: false,
                     ..
                 } if edit_shortcut_modifiers_allowed(keymod) => {
+                    let metadata =
+                        self.engine.current_metadata();
+
                     if let Some(shader_path) =
-                        self.engine.current_metadata().shader_path
+                        metadata.shader_path
                     {
                         log_information(
-                            "[RENDER] E pressed: editing active screensaver shader"
+                            &format!(
+                                "[RENDER] E pressed: editing active screensaver policy '{}' (policy_id={})",
+                                metadata.policy_name,
+                                metadata.policy_id,
+                            )
                         );
 
                         return Some(
-                            ScreensaverRunOutcome::EditCurrentShader(
-                                shader_path
-                            )
+                            ScreensaverRunOutcome::EditCurrentShader {
+                                shader_path,
+                                policy_id:
+                                    metadata.policy_id,
+                            }
                         );
                     }
 
