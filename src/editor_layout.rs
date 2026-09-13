@@ -75,6 +75,7 @@ enum EditorTab {
     Rendering,
     Textures,
     PostProcessing,
+    Temporary,
     Config,
 }
 
@@ -3190,6 +3191,17 @@ impl EditWindowOverlay {
                                             );
                                         }
 
+                                        EditorTab::Temporary => {
+                                            ui.add_enabled_ui(
+                                                policy_controls_enabled,
+                                                |ui| {
+                                                    crate::nested_tabs::draw_temporary_post_processing(
+                                                        ui,
+                                                    );
+                                                },
+                                            );
+                                        }
+
                                         EditorTab::Config => {
                                             ui.add_enabled_ui(
                                                 !bulk_edit_mode,
@@ -4655,6 +4667,10 @@ fn draw_editor_tab_bar(
                 (
                     EditorTab::PostProcessing,
                     "Post-Processing",
+                ),
+                (
+                    EditorTab::Temporary,
+                    "Temporary",
                 ),
                 (
                     EditorTab::Config,

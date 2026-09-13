@@ -1,7 +1,8 @@
 // Reusable nested-tab layout helpers.
 //
-// This module owns the vertical nested-tab navigation used by the Control
-// Center Configuration tab and the compact configuration-page presentation.
+// This module owns reusable vertical nested-tab navigation for Control Center
+// parent tabs. Configuration remains the first production user; the Temporary
+// Post-Processing mock-up deliberately reuses the same rail and page layout.
 // Existing configuration persistence remains owned by editor_layout.rs /
 // edit_shader.rs / manage_configuration.rs.
 
@@ -43,6 +44,72 @@ impl ConfigurationNestedTab {
             ConfigurationNestedTab::Screensaver => "Screensaver",
             ConfigurationNestedTab::Wallpaper => "Wallpaper",
             ConfigurationNestedTab::Rendering => "Rendering",
+        }
+    }
+}
+
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TemporaryPostProcessingNestedTab {
+    VisualQuality,
+    ImageTransforms,
+    Audio,
+}
+
+
+impl TemporaryPostProcessingNestedTab {
+    const ALL: [
+        TemporaryPostProcessingNestedTab;
+        3
+    ] = [
+        TemporaryPostProcessingNestedTab::VisualQuality,
+        TemporaryPostProcessingNestedTab::ImageTransforms,
+        TemporaryPostProcessingNestedTab::Audio,
+    ];
+
+
+    fn label(
+        self,
+    ) -> &'static str {
+        match self {
+            TemporaryPostProcessingNestedTab::VisualQuality => "Visual Quality",
+            TemporaryPostProcessingNestedTab::ImageTransforms => "Image Transforms",
+            TemporaryPostProcessingNestedTab::Audio => "Audio",
+        }
+    }
+}
+
+
+#[derive(Clone, Debug)]
+struct TemporaryPostProcessingMockState {
+    anti_aliasing: String,
+    dithering: String,
+    color_precision: String,
+    invert_colors: bool,
+    flip_horizontal: bool,
+    flip_vertical: bool,
+    hue_rotation: f32,
+    audio_bloom: bool,
+    bloom_intensity: f32,
+    bloom_threshold: f32,
+    frequency_rotation: f32,
+}
+
+
+impl Default for TemporaryPostProcessingMockState {
+    fn default() -> Self {
+        Self {
+            anti_aliasing: "FXAA".to_string(),
+            dithering: "Subtle".to_string(),
+            color_precision: "Automatic".to_string(),
+            invert_colors: false,
+            flip_horizontal: false,
+            flip_vertical: false,
+            hue_rotation: 0.0,
+            audio_bloom: false,
+            bloom_intensity: 1.0,
+            bloom_threshold: 0.80,
+            frequency_rotation: 0.0,
         }
     }
 }
@@ -122,6 +189,8 @@ pub fn draw_configuration(
                     draw_nested_tab_rail(
                         ui,
                         &mut selected,
+                        &ConfigurationNestedTab::ALL,
+                        ConfigurationNestedTab::label,
                     );
 
 
@@ -284,19 +353,22 @@ pub fn draw_configuration(
 }
 
 
-fn draw_nested_tab_rail(
+fn draw_nested_tab_rail<T>(
     ui: &mut egui::Ui,
-    selected: &mut ConfigurationNestedTab,
-) {
+    selected: &mut T,
+    tabs: &[T],
+    label: impl Fn(T) -> &'static str,
+)
+where
+    T: Copy + PartialEq,
+{
     ui.vertical(
         |ui| {
             ui.set_min_width(
                 200.0
             );
 
-            for tab in
-                ConfigurationNestedTab::ALL
-            {
+            for &tab in tabs {
                 let mut clicked =
                     false;
 
@@ -317,7 +389,7 @@ fn draw_nested_tab_rail(
                             ui.selectable_label(
                                 *selected == tab,
                                 egui::RichText::new(
-                                    tab.label()
+                                    label(tab)
                                 )
                                 .strong(),
                             );
@@ -339,6 +411,472 @@ fn draw_nested_tab_rail(
                 );
             }
         },
+    );
+}
+
+
+pub fn draw_temporary_post_processing(
+    ui: &mut egui::Ui,
+) {
+    let selected_id =
+        egui::Id::new(
+            "screenshaver_temporary_post_processing_nested_tab"
+        );
+
+    let state_id =
+        egui::Id::new(
+            "screenshaver_temporary_post_processing_mock_state"
+        );
+
+    let mut selected =
+        ui.ctx()
+            .data(
+                |data| {
+                    data.get_temp::<TemporaryPostProcessingNestedTab>(
+                        selected_id
+                    )
+                    .unwrap_or(
+                        TemporaryPostProcessingNestedTab::VisualQuality
+                    )
+                }
+            );
+
+    let mut state =
+        ui.ctx()
+            .data(
+                |data| {
+                    data.get_temp::<TemporaryPostProcessingMockState>(
+                        state_id
+                    )
+                    .unwrap_or_default()
+                }
+            );
+
+    let full_width =
+        ui.available_width();
+
+    let full_height =
+        ui.available_height();
+
+    ui.allocate_ui_with_layout(
+        egui::vec2(
+            full_width,
+            full_height,
+        ),
+        egui::Layout::top_down(
+            egui::Align::Min
+        ),
+        |ui| {
+            ui.horizontal(
+                |ui| {
+                    draw_nested_tab_rail(
+                        ui,
+                        &mut selected,
+                        &TemporaryPostProcessingNestedTab::ALL,
+                        TemporaryPostProcessingNestedTab::label,
+                    );
+
+                    ui.separator();
+
+                    ui.add_space(
+                        12.0
+                    );
+
+                    ui.vertical(
+                        |ui| {
+                            ui.set_width(
+                                ui.available_width()
+                            );
+
+                            match selected {
+                                TemporaryPostProcessingNestedTab::VisualQuality => {
+                                    draw_temporary_visual_quality(
+                                        ui,
+                                        &mut state,
+                                    );
+                                }
+
+                                TemporaryPostProcessingNestedTab::ImageTransforms => {
+                                    draw_temporary_image_transforms(
+                                        ui,
+                                        &mut state,
+                                    );
+                                }
+
+                                TemporaryPostProcessingNestedTab::Audio => {
+                                    draw_temporary_audio(
+                                        ui,
+                                        &mut state,
+                                    );
+                                }
+                            }
+                        },
+                    );
+                },
+            );
+        },
+    );
+
+    ui.ctx()
+        .data_mut(
+            |data| {
+                data.insert_temp(
+                    selected_id,
+                    selected,
+                );
+
+                data.insert_temp(
+                    state_id,
+                    state,
+                );
+            }
+        );
+}
+
+
+fn draw_temporary_visual_quality(
+    ui: &mut egui::Ui,
+    state: &mut TemporaryPostProcessingMockState,
+) {
+    const CONTROL_WIDTH: f32 =
+        190.0;
+
+    ui.heading(
+        "Visual Quality"
+    );
+
+    ui.add_space(
+        8.0
+    );
+
+    egui::Grid::new(
+        "temporary_post_processing_visual_quality_grid"
+    )
+    .num_columns(
+        2
+    )
+    .spacing(
+        egui::vec2(
+            8.0,
+            8.0,
+        )
+    )
+    .show(
+        ui,
+        |ui| {
+            ui.label(
+                "Anti-Aliasing:"
+            )
+            .on_hover_text(
+                "Controls edge smoothing for the rendered shader."
+            );
+
+            egui::ComboBox::from_id_source(
+                "temporary_post_processing_anti_aliasing"
+            )
+            .selected_text(
+                state.anti_aliasing.as_str()
+            )
+            .width(
+                CONTROL_WIDTH
+            )
+            .show_ui(
+                ui,
+                |ui| {
+                    for choice in [
+                        "Off",
+                        "FXAA",
+                    ] {
+                        ui.selectable_value(
+                            &mut state.anti_aliasing,
+                            choice.to_string(),
+                            choice,
+                        );
+                    }
+                },
+            );
+
+            ui.end_row();
+
+            ui.label(
+                "Dithering:"
+            )
+            .on_hover_text(
+                "Controls subtle dithering used to reduce visible color banding."
+            );
+
+            egui::ComboBox::from_id_source(
+                "temporary_post_processing_dithering"
+            )
+            .selected_text(
+                state.dithering.as_str()
+            )
+            .width(
+                CONTROL_WIDTH
+            )
+            .show_ui(
+                ui,
+                |ui| {
+                    for choice in [
+                        "Off",
+                        "Subtle",
+                    ] {
+                        ui.selectable_value(
+                            &mut state.dithering,
+                            choice.to_string(),
+                            choice,
+                        );
+                    }
+                },
+            );
+
+            ui.end_row();
+
+            ui.label(
+                "Color Precision:"
+            )
+            .on_hover_text(
+                "Selects the color precision used by post-processing."
+            );
+
+            egui::ComboBox::from_id_source(
+                "temporary_post_processing_color_precision"
+            )
+            .selected_text(
+                state.color_precision.as_str()
+            )
+            .width(
+                CONTROL_WIDTH
+            )
+            .show_ui(
+                ui,
+                |ui| {
+                    for choice in [
+                        "Automatic",
+                        "Standard Precision",
+                        "High Precision",
+                    ] {
+                        ui.selectable_value(
+                            &mut state.color_precision,
+                            choice.to_string(),
+                            choice,
+                        );
+                    }
+                },
+            );
+
+            ui.end_row();
+        },
+    );
+
+    draw_temporary_mock_note(
+        ui
+    );
+}
+
+
+const TEMPORARY_POST_PROCESSING_SLIDER_WIDTH: f32 =
+    240.0;
+
+
+fn draw_temporary_image_transforms(
+    ui: &mut egui::Ui,
+    state: &mut TemporaryPostProcessingMockState,
+) {
+    ui.heading(
+        "Image Transforms"
+    );
+
+    ui.add_space(
+        8.0
+    );
+
+    ui.checkbox(
+        &mut state.invert_colors,
+        "Invert Colors",
+    )
+    .on_hover_text(
+        "Inverts the final rendered colors."
+    );
+
+    ui.checkbox(
+        &mut state.flip_horizontal,
+        "Flip Horizontal",
+    )
+    .on_hover_text(
+        "Mirrors the final image horizontally."
+    );
+
+    ui.checkbox(
+        &mut state.flip_vertical,
+        "Flip Vertical",
+    )
+    .on_hover_text(
+        "Mirrors the final image vertically."
+    );
+
+    ui.add_space(
+        10.0
+    );
+
+    ui.horizontal(
+        |ui| {
+            ui.label(
+                "Hue Rotation:"
+            )
+            .on_hover_text(
+                "Rotates the displayed shader colors around the hue wheel."
+            );
+
+            ui.add_sized(
+                [
+                    TEMPORARY_POST_PROCESSING_SLIDER_WIDTH,
+                    ui.spacing().interact_size.y,
+                ],
+                egui::Slider::new(
+                    &mut state.hue_rotation,
+                    0.0..=360.0,
+                )
+                .suffix(
+                    "°"
+                )
+            );
+        },
+    );
+
+    draw_temporary_mock_note(
+        ui
+    );
+}
+
+
+fn draw_temporary_audio(
+    ui: &mut egui::Ui,
+    state: &mut TemporaryPostProcessingMockState,
+) {
+    ui.heading(
+        "Audio"
+    );
+
+    ui.add_space(
+        8.0
+    );
+
+    ui.checkbox(
+        &mut state.audio_bloom,
+        "Audio Bloom",
+    )
+    .on_hover_text(
+        "Enables bloom whose response is driven by analyzed audio frequency bands."
+    );
+
+    ui.add_space(
+        8.0
+    );
+
+    ui.add_enabled_ui(
+        state.audio_bloom,
+        |ui| {
+            egui::Grid::new(
+                "temporary_post_processing_audio_grid"
+            )
+            .num_columns(
+                2
+            )
+            .spacing(
+                egui::vec2(
+                    8.0,
+                    8.0,
+                )
+            )
+            .show(
+                ui,
+                |ui| {
+                    ui.label(
+                        "Bloom Intensity:"
+                    )
+                    .on_hover_text(
+                        "Controls the strength of Audio Bloom."
+                    );
+
+                    ui.add_sized(
+                        [
+                            TEMPORARY_POST_PROCESSING_SLIDER_WIDTH,
+                            ui.spacing().interact_size.y,
+                        ],
+                        egui::Slider::new(
+                            &mut state.bloom_intensity,
+                            0.0..=3.0,
+                        )
+                    );
+
+                    ui.end_row();
+
+                    ui.label(
+                        "Bloom Threshold:"
+                    )
+                    .on_hover_text(
+                        "Controls the brightness threshold used to extract bloom."
+                    );
+
+                    ui.add_sized(
+                        [
+                            TEMPORARY_POST_PROCESSING_SLIDER_WIDTH,
+                            ui.spacing().interact_size.y,
+                        ],
+                        egui::Slider::new(
+                            &mut state.bloom_threshold,
+                            0.0..=1.0,
+                        )
+                    );
+
+                    ui.end_row();
+
+                    ui.label(
+                        "Frequency Rotation:"
+                    )
+                    .on_hover_text(
+                        "Rotates Audio Bloom's frequency-to-color mapping without changing the displayed shader colors."
+                    );
+
+                    ui.add_sized(
+                        [
+                            TEMPORARY_POST_PROCESSING_SLIDER_WIDTH,
+                            ui.spacing().interact_size.y,
+                        ],
+                        egui::Slider::new(
+                            &mut state.frequency_rotation,
+                            0.0..=360.0,
+                        )
+                        .suffix(
+                            "°"
+                        )
+                    );
+
+                    ui.end_row();
+                },
+            );
+        },
+    );
+
+    draw_temporary_mock_note(
+        ui
+    );
+}
+
+
+fn draw_temporary_mock_note(
+    ui: &mut egui::Ui,
+) {
+    ui.add_space(
+        14.0
+    );
+
+    ui.label(
+        egui::RichText::new(
+            "Temporary UI mock-up — these controls do not save or alter rendering."
+        )
+        .weak(),
     );
 }
 
