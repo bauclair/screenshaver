@@ -29,6 +29,7 @@ pub enum QbeField {
     Dithering,
     ColorPrecision,
     BloomMode,
+    BloomFrequencyInvert,
 }
 
 
@@ -49,6 +50,7 @@ impl QbeField {
         Self::Dithering,
         Self::ColorPrecision,
         Self::BloomMode,
+        Self::BloomFrequencyInvert,
     ];
 
 
@@ -98,6 +100,9 @@ impl QbeField {
 
             Self::BloomMode =>
                 "Bloom Mode",
+
+            Self::BloomFrequencyInvert =>
+                "Invert Frequency Mapping",
         }
     }
 }
@@ -485,7 +490,8 @@ pub const fn operators_for(
         | QbeField::AntiAliasing
         | QbeField::Dithering
         | QbeField::ColorPrecision
-        | QbeField::BloomMode =>
+        | QbeField::BloomMode
+        | QbeField::BloomFrequencyInvert =>
             ENUM_OPERATORS,
     }
 }
@@ -598,6 +604,13 @@ pub const fn value_kind_for(
             _,
         ) => {
             QbeValueKind::BloomMode
+        }
+
+        (
+            QbeField::BloomFrequencyInvert,
+            _,
+        ) => {
+            QbeValueKind::Boolean
         }
 
         (
@@ -1100,6 +1113,15 @@ fn build_clause_sql(
                 "p.bloom_mode",
                 operator,
                 canonical,
+            )
+        }
+
+        QbeField::BloomFrequencyInvert => {
+            let enabled = parse_boolean(value)?;
+            build_integer_column_clause(
+                "p.bloom_frequency_invert",
+                operator,
+                if enabled { "1" } else { "0" },
             )
         }
     }
@@ -1702,14 +1724,14 @@ fn canonical_bloom_mode(
                 "off".to_string()
             ),
 
-        "highlight" =>
-            Ok(
-                "highlight".to_string()
-            ),
-
         "audio" =>
             Ok(
                 "audio".to_string()
+            ),
+
+        "spectral" =>
+            Ok(
+                "spectral".to_string()
             ),
 
         _ => {

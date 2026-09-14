@@ -1052,7 +1052,10 @@ fn run_empty_session(
                 crate::editor_layout::ColorPrecisionSelection::Automatic,
                 crate::editor_layout::BloomSelection::Off,
                 crate::render_bloom::BLOOM_INTENSITY_DEFAULT,
+                crate::render_bloom::BLOOM_SATURATION_DEFAULT,
                 crate::render_bloom::BLOOM_THRESHOLD_DEFAULT,
+                crate::render_bloom::BLOOM_FREQUENCY_ROTATION_DEFAULT,
+                false,
                 false,
                 false,
                 false,
@@ -2745,6 +2748,9 @@ fn run_paths(
     let mut live_postprocess_profile =
         initial_postprocess_profile;
 
+    let mut live_bloom_saturation =
+        crate::render_bloom::BLOOM_SATURATION_DEFAULT;
+
 
     let mut render_scale =
         live_postprocess_profile.render_scale;
@@ -2756,6 +2762,10 @@ fn run_paths(
             height,
             live_postprocess_profile,
         )?;
+
+    postprocess.set_bloom_saturation(
+        live_bloom_saturation
+    )?;
 
 
     let mut configured_fps =
@@ -2792,7 +2802,10 @@ fn run_paths(
             live_postprocess_profile.bloom
         ),
         live_postprocess_profile.bloom_intensity,
+        live_bloom_saturation,
         live_postprocess_profile.bloom_threshold,
+        live_postprocess_profile.bloom_frequency_rotation,
+        live_postprocess_profile.bloom_frequency_invert,
         live_postprocess_profile.invert_colors,
         live_postprocess_profile.flip_horizontal,
         live_postprocess_profile.flip_vertical,
@@ -2976,8 +2989,13 @@ fn run_paths(
                         ),
                         live_postprocess_profile
                             .bloom_intensity,
+                        live_bloom_saturation,
                         live_postprocess_profile
                             .bloom_threshold,
+                        live_postprocess_profile
+                            .bloom_frequency_rotation,
+                        live_postprocess_profile
+                            .bloom_frequency_invert,
                         live_postprocess_profile
                             .invert_colors,
                         live_postprocess_profile
@@ -3605,18 +3623,24 @@ fn run_paths(
                     * animation_speed;
 
 
-            // Demand playback capture only while this live preview actually
-            // uses Audio Bloom.  The call is a no-op while the requirement is
-            // unchanged, so live policy edits can turn capture on/off without
-            // restarting the shader or blocking the render loop.
+            // Demand playback capture while the live preview uses either
+            // audio-reactive Bloom algorithm. The call is a no-op while the
+            // requirement is unchanged, so live policy edits can switch among
+            // Off, Audio, and Spectral without restarting the shader or
+            // blocking the render loop.
             crate::audio_backend::set_audio_required(
-                live_postprocess_profile.bloom.name()
-                    == "audio"
+                matches!(
+                    live_postprocess_profile.bloom,
+                    crate::render_bloom::BloomMode::Audio
+                        | crate::render_bloom::BloomMode::Spectral
+                        | crate::render_bloom::BloomMode::Loudness
+                )
             );
 
-            // Audio Bloom consumes the latest backend-independent analyzer
-            // output. If audio is unavailable (or the shared state cannot be
-            // read), all three bands remain zero and Bloom contributes nothing.
+            // Audio and Spectral Bloom consume the latest backend-independent
+            // analyzer output. If audio is unavailable (or the shared state
+            // cannot be read), all three bands remain zero and Bloom contributes
+            // nothing.
             let current_audio_bands =
                 audio_bands
                     .as_ref()
@@ -4033,8 +4057,13 @@ fn run_paths(
                     ),
                     live_postprocess_profile
                         .bloom_intensity,
+                    live_bloom_saturation,
                     live_postprocess_profile
                         .bloom_threshold,
+                    live_postprocess_profile
+                        .bloom_frequency_rotation,
+                    live_postprocess_profile
+                        .bloom_frequency_invert,
                     live_postprocess_profile
                         .invert_colors,
                     live_postprocess_profile
@@ -5017,7 +5046,10 @@ fn run_paths(
                                 live_postprocess_profile.bloom
                             ),
                             live_postprocess_profile.bloom_intensity,
+                            live_bloom_saturation,
                             live_postprocess_profile.bloom_threshold,
+                            live_postprocess_profile.bloom_frequency_rotation,
+                            live_postprocess_profile.bloom_frequency_invert,
                             live_postprocess_profile.invert_colors,
                             live_postprocess_profile.flip_horizontal,
                             live_postprocess_profile.flip_vertical,
@@ -5133,7 +5165,10 @@ fn run_paths(
                                 live_postprocess_profile.bloom
                             ),
                             live_postprocess_profile.bloom_intensity,
+                            live_bloom_saturation,
                             live_postprocess_profile.bloom_threshold,
+                            live_postprocess_profile.bloom_frequency_rotation,
+                            live_postprocess_profile.bloom_frequency_invert,
                             live_postprocess_profile.invert_colors,
                             live_postprocess_profile.flip_horizontal,
                             live_postprocess_profile.flip_vertical,
@@ -5447,7 +5482,10 @@ fn run_paths(
                         live_postprocess_profile.bloom
                     ),
                     live_postprocess_profile.bloom_intensity,
+                    live_bloom_saturation,
                     live_postprocess_profile.bloom_threshold,
+                    live_postprocess_profile.bloom_frequency_rotation,
+                    live_postprocess_profile.bloom_frequency_invert,
                     live_postprocess_profile.invert_colors,
                     live_postprocess_profile.flip_horizontal,
                     live_postprocess_profile.flip_vertical,
@@ -5597,8 +5635,17 @@ fn run_paths(
             let selected_bloom_intensity =
                 editor_output.bloom_intensity;
 
+            let selected_bloom_saturation =
+                editor_output.bloom_saturation;
+
             let selected_bloom_threshold =
                 editor_output.bloom_threshold;
+
+            let selected_bloom_frequency_rotation =
+                editor_output.bloom_frequency_rotation;
+
+            let selected_bloom_frequency_invert =
+                editor_output.bloom_frequency_invert;
 
             let selected_invert_colors =
                 editor_output.invert_colors;
@@ -5631,10 +5678,20 @@ fn run_paths(
                     - live_postprocess_profile.bloom_intensity)
                     .abs()
                     > f32::EPSILON
+                || (selected_bloom_saturation
+                    - live_bloom_saturation)
+                    .abs()
+                    > f32::EPSILON
                 || (selected_bloom_threshold
                     - live_postprocess_profile.bloom_threshold)
                     .abs()
                     > f32::EPSILON
+                || (selected_bloom_frequency_rotation
+                    - live_postprocess_profile.bloom_frequency_rotation)
+                    .abs()
+                    > f32::EPSILON
+                || selected_bloom_frequency_invert
+                    != live_postprocess_profile.bloom_frequency_invert
                 || selected_invert_colors
                     != live_postprocess_profile.invert_colors
                 || selected_flip_horizontal
@@ -5664,8 +5721,22 @@ fn run_paths(
                 live_postprocess_profile.bloom_intensity =
                     selected_bloom_intensity;
 
+                live_bloom_saturation =
+                    selected_bloom_saturation;
+
+                postprocess.set_bloom_saturation(
+                    live_bloom_saturation
+                )?;
+
                 live_postprocess_profile.bloom_threshold =
                     selected_bloom_threshold;
+
+                live_postprocess_profile.bloom_frequency_rotation =
+                    selected_bloom_frequency_rotation;
+
+                live_postprocess_profile.bloom_frequency_invert =
+                    selected_bloom_frequency_invert;
+
                 live_postprocess_profile.invert_colors =
                     selected_invert_colors;
 
@@ -6103,6 +6174,18 @@ fn run_paths(
                                     .bloom_threshold
                             ),
 
+                        bloom_frequency_rotation:
+                            Some(
+                                live_postprocess_profile
+                                    .bloom_frequency_rotation
+                            ),
+
+                        bloom_frequency_invert:
+                            Some(
+                                live_postprocess_profile
+                                    .bloom_frequency_invert
+                            ),
+
                         invert_colors:
                             Some(live_postprocess_profile.invert_colors),
 
@@ -6505,8 +6588,13 @@ fn run_paths(
                                             ),
                                             live_postprocess_profile
                                                 .bloom_intensity,
+                                            live_bloom_saturation,
                                             live_postprocess_profile
                                                 .bloom_threshold,
+                                            live_postprocess_profile
+                                                .bloom_frequency_rotation,
+                                            live_postprocess_profile
+                                                .bloom_frequency_invert,
                                             live_postprocess_profile
                                                 .invert_colors,
                                             live_postprocess_profile
@@ -7691,6 +7779,10 @@ fn bulk_policy_patch_from_editor_output(
                     changes.bloom_intensity,
                 bloom_threshold:
                     changes.bloom_threshold,
+                bloom_frequency_rotation:
+                    changes.bloom_frequency_rotation,
+                bloom_frequency_invert:
+                    changes.bloom_frequency_invert,
                 invert_colors:
                     changes.invert_colors,
                 flip_horizontal:
@@ -7731,6 +7823,12 @@ fn bulk_policy_patch_from_editor_output(
                 bloom_threshold:
                     changes.bloom_threshold
                         .then_some(editor_output.bloom_threshold),
+                bloom_frequency_rotation:
+                    changes.bloom_frequency_rotation
+                        .then_some(editor_output.bloom_frequency_rotation),
+                bloom_frequency_invert:
+                    changes.bloom_frequency_invert
+                        .then_some(editor_output.bloom_frequency_invert),
                 invert_colors:
                     changes.invert_colors
                         .then_some(editor_output.invert_colors),
@@ -7866,6 +7964,16 @@ fn bulk_policy_definition_from_editor_output(
         bloom_threshold:
             Some(
                 editor_output.bloom_threshold
+            ),
+
+        bloom_frequency_rotation:
+            Some(
+                editor_output.bloom_frequency_rotation
+            ),
+
+        bloom_frequency_invert:
+            Some(
+                editor_output.bloom_frequency_invert
             ),
 
         invert_colors:
@@ -10083,12 +10191,16 @@ fn bloom_selection_from_mode(
             crate::editor_layout::BloomSelection::Off
         }
 
-        crate::render_bloom::BloomMode::Highlight => {
-            crate::editor_layout::BloomSelection::Highlight
-        }
-
         crate::render_bloom::BloomMode::Audio => {
             crate::editor_layout::BloomSelection::Audio
+        }
+
+        crate::render_bloom::BloomMode::Spectral => {
+            crate::editor_layout::BloomSelection::Spectral
+        }
+
+        crate::render_bloom::BloomMode::Loudness => {
+            crate::editor_layout::BloomSelection::Loudness
         }
     }
 }
@@ -10102,12 +10214,16 @@ fn bloom_mode_from_selection(
             crate::render_bloom::BloomMode::Off
         }
 
-        crate::editor_layout::BloomSelection::Highlight => {
-            crate::render_bloom::BloomMode::Highlight
-        }
-
         crate::editor_layout::BloomSelection::Audio => {
             crate::render_bloom::BloomMode::Audio
+        }
+
+        crate::editor_layout::BloomSelection::Spectral => {
+            crate::render_bloom::BloomMode::Spectral
+        }
+
+        crate::editor_layout::BloomSelection::Loudness => {
+            crate::render_bloom::BloomMode::Loudness
         }
     }
 }

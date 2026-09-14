@@ -2,14 +2,19 @@
 //
 // This module owns reusable vertical nested-tab navigation for Control Center
 // parent tabs. Configuration remains the first production user; the Temporary
-// Post-Processing mock-up deliberately reuses the same rail and page layout.
-// Existing configuration persistence remains owned by editor_layout.rs /
-// edit_shader.rs / manage_configuration.rs.
+// Post-Processing staging tab now uses the same rail and page layout with live
+// policy state. Persistence remains owned by editor_layout.rs / edit_shader.rs
+// and the existing policy/database modules.
 
 use std::sync::OnceLock;
 
 use crate::editor_layout::{
+    AntiAliasingSelection,
+    BloomSelection,
+    BulkBooleanSelection,
+    ColorPrecisionSelection,
     ControlConfiguration,
+    DitheringSelection,
     PolicyDisplayRow,
     PolicyTarget,
 };
@@ -75,41 +80,6 @@ impl TemporaryPostProcessingNestedTab {
             TemporaryPostProcessingNestedTab::VisualQuality => "Visual Quality",
             TemporaryPostProcessingNestedTab::ImageTransforms => "Image Transforms",
             TemporaryPostProcessingNestedTab::Audio => "Audio",
-        }
-    }
-}
-
-
-#[derive(Clone, Debug)]
-struct TemporaryPostProcessingMockState {
-    anti_aliasing: String,
-    dithering: String,
-    color_precision: String,
-    invert_colors: bool,
-    flip_horizontal: bool,
-    flip_vertical: bool,
-    hue_rotation: f32,
-    audio_bloom: bool,
-    bloom_intensity: f32,
-    bloom_threshold: f32,
-    frequency_rotation: f32,
-}
-
-
-impl Default for TemporaryPostProcessingMockState {
-    fn default() -> Self {
-        Self {
-            anti_aliasing: "FXAA".to_string(),
-            dithering: "Subtle".to_string(),
-            color_precision: "Automatic".to_string(),
-            invert_colors: false,
-            flip_horizontal: false,
-            flip_vertical: false,
-            hue_rotation: 0.0,
-            audio_bloom: false,
-            bloom_intensity: 1.0,
-            bloom_threshold: 0.80,
-            frequency_rotation: 0.0,
         }
     }
 }
@@ -417,15 +387,43 @@ where
 
 pub fn draw_temporary_post_processing(
     ui: &mut egui::Ui,
+    scale: f32,
+    shift_held: bool,
+    anti_aliasing: &mut AntiAliasingSelection,
+    dithering: &mut DitheringSelection,
+    color_precision: &mut ColorPrecisionSelection,
+    invert_colors: &mut bool,
+    flip_horizontal: &mut bool,
+    flip_vertical: &mut bool,
+    hue_rotation: &mut f32,
+    hue_rotation_drag_state: &mut Option<crate::editor_layout::SliderDragState>,
+    bloom: &mut BloomSelection,
+    bloom_intensity: &mut f32,
+    bloom_intensity_drag_state: &mut Option<crate::editor_layout::SliderDragState>,
+    bloom_saturation: &mut f32,
+    bloom_saturation_drag_state: &mut Option<crate::editor_layout::SliderDragState>,
+    bloom_threshold: &mut f32,
+    bloom_threshold_drag_state: &mut Option<crate::editor_layout::SliderDragState>,
+    bloom_frequency_rotation: &mut f32,
+    bloom_frequency_rotation_drag_state: &mut Option<crate::editor_layout::SliderDragState>,
+    bloom_frequency_invert: &mut bool,
+    bulk_edit_mode: bool,
+    bulk_invert_colors: &mut BulkBooleanSelection,
+    bulk_flip_horizontal: &mut BulkBooleanSelection,
+    bulk_flip_vertical: &mut BulkBooleanSelection,
+    bulk_anti_aliasing_selected: &mut bool,
+    bulk_dithering_selected: &mut bool,
+    bulk_color_precision_selected: &mut bool,
+    bulk_bloom_selected: &mut bool,
+    bulk_bloom_intensity_selected: &mut bool,
+    bulk_bloom_threshold_selected: &mut bool,
+    bulk_bloom_frequency_rotation_selected: &mut bool,
+    bulk_bloom_frequency_invert: &mut BulkBooleanSelection,
+    bulk_hue_rotation_selected: &mut bool,
 ) {
     let selected_id =
         egui::Id::new(
             "screenshaver_temporary_post_processing_nested_tab"
-        );
-
-    let state_id =
-        egui::Id::new(
-            "screenshaver_temporary_post_processing_mock_state"
         );
 
     let mut selected =
@@ -438,17 +436,6 @@ pub fn draw_temporary_post_processing(
                     .unwrap_or(
                         TemporaryPostProcessingNestedTab::VisualQuality
                     )
-                }
-            );
-
-    let mut state =
-        ui.ctx()
-            .data(
-                |data| {
-                    data.get_temp::<TemporaryPostProcessingMockState>(
-                        state_id
-                    )
-                    .unwrap_or_default()
                 }
             );
 
@@ -477,10 +464,7 @@ pub fn draw_temporary_post_processing(
                     );
 
                     ui.separator();
-
-                    ui.add_space(
-                        12.0
-                    );
+                    ui.add_space(12.0);
 
                     ui.vertical(
                         |ui| {
@@ -490,23 +474,58 @@ pub fn draw_temporary_post_processing(
 
                             match selected {
                                 TemporaryPostProcessingNestedTab::VisualQuality => {
-                                    draw_temporary_visual_quality(
+                                    draw_post_processing_visual_quality(
                                         ui,
-                                        &mut state,
+                                        scale,
+                                        anti_aliasing,
+                                        dithering,
+                                        color_precision,
+                                        bulk_edit_mode,
+                                        bulk_anti_aliasing_selected,
+                                        bulk_dithering_selected,
+                                        bulk_color_precision_selected,
                                     );
                                 }
 
                                 TemporaryPostProcessingNestedTab::ImageTransforms => {
-                                    draw_temporary_image_transforms(
+                                    draw_post_processing_image_transforms(
                                         ui,
-                                        &mut state,
+                                        scale,
+                                        shift_held,
+                                        invert_colors,
+                                        flip_horizontal,
+                                        flip_vertical,
+                                        hue_rotation,
+                                        hue_rotation_drag_state,
+                                        bulk_edit_mode,
+                                        bulk_invert_colors,
+                                        bulk_flip_horizontal,
+                                        bulk_flip_vertical,
+                                        bulk_hue_rotation_selected,
                                     );
                                 }
 
                                 TemporaryPostProcessingNestedTab::Audio => {
-                                    draw_temporary_audio(
+                                    draw_post_processing_audio(
                                         ui,
-                                        &mut state,
+                                        scale,
+                                        shift_held,
+                                        bloom,
+                                        bloom_intensity,
+                                        bloom_intensity_drag_state,
+                                        bloom_saturation,
+                                        bloom_saturation_drag_state,
+                                        bloom_threshold,
+                                        bloom_threshold_drag_state,
+                                        bloom_frequency_rotation,
+                                        bloom_frequency_rotation_drag_state,
+                                        bloom_frequency_invert,
+                                        bulk_edit_mode,
+                                        bulk_bloom_selected,
+                                        bulk_bloom_intensity_selected,
+                                        bulk_bloom_threshold_selected,
+                                        bulk_bloom_frequency_rotation_selected,
+                                        bulk_bloom_frequency_invert,
                                     );
                                 }
                             }
@@ -524,359 +543,808 @@ pub fn draw_temporary_post_processing(
                     selected_id,
                     selected,
                 );
-
-                data.insert_temp(
-                    state_id,
-                    state,
-                );
             }
         );
 }
 
 
-fn draw_temporary_visual_quality(
+const POST_PROCESSING_CONTROL_WIDTH: f32 =
+    190.0;
+
+const POST_PROCESSING_SLIDER_WIDTH: f32 =
+    240.0;
+
+
+fn draw_post_processing_visual_quality(
     ui: &mut egui::Ui,
-    state: &mut TemporaryPostProcessingMockState,
+    scale: f32,
+    anti_aliasing: &mut AntiAliasingSelection,
+    dithering: &mut DitheringSelection,
+    color_precision: &mut ColorPrecisionSelection,
+    bulk_edit_mode: bool,
+    bulk_anti_aliasing_selected: &mut bool,
+    bulk_dithering_selected: &mut bool,
+    bulk_color_precision_selected: &mut bool,
 ) {
-    const CONTROL_WIDTH: f32 =
-        190.0;
-
-    ui.heading(
-        "Visual Quality"
-    );
-
-    ui.add_space(
-        8.0
-    );
+    ui.heading("Visual Quality");
+    ui.add_space(8.0);
 
     egui::Grid::new(
         "temporary_post_processing_visual_quality_grid"
     )
-    .num_columns(
-        2
-    )
-    .spacing(
-        egui::vec2(
-            8.0,
-            8.0,
-        )
-    )
+    .num_columns(2)
+    .spacing(egui::vec2(8.0, 8.0))
     .show(
         ui,
         |ui| {
-            ui.label(
-                "Anti-Aliasing:"
-            )
-            .on_hover_text(
-                "Controls edge smoothing for the rendered shader."
-            );
+            ui.label("Anti-Aliasing:")
+                .on_hover_text(
+                    "Controls edge smoothing for the rendered shader."
+                );
 
-            egui::ComboBox::from_id_source(
+            let selected_text =
+                if bulk_edit_mode
+                    && !*bulk_anti_aliasing_selected
+                {
+                    "Unchanged"
+                } else {
+                    match *anti_aliasing {
+                        AntiAliasingSelection::Off => "Off",
+                        AntiAliasingSelection::Fxaa => "FXAA",
+                    }
+                };
+
+            let response =
+                egui::ComboBox::from_id_source(
                 "temporary_post_processing_anti_aliasing"
             )
-            .selected_text(
-                state.anti_aliasing.as_str()
-            )
-            .width(
-                CONTROL_WIDTH
-            )
+            .selected_text(selected_text)
+            .width(POST_PROCESSING_CONTROL_WIDTH)
             .show_ui(
                 ui,
                 |ui| {
-                    for choice in [
+                    if bulk_edit_mode {
+                        if ui.selectable_label(
+                            !*bulk_anti_aliasing_selected,
+                            "Unchanged",
+                        ).clicked() {
+                            *bulk_anti_aliasing_selected = false;
+                        }
+                        ui.separator();
+                    }
+
+                    if ui.selectable_value(
+                        anti_aliasing,
+                        AntiAliasingSelection::Off,
                         "Off",
+                    ).clicked() && bulk_edit_mode {
+                        *bulk_anti_aliasing_selected = true;
+                    }
+
+                    if ui.selectable_value(
+                        anti_aliasing,
+                        AntiAliasingSelection::Fxaa,
                         "FXAA",
-                    ] {
-                        ui.selectable_value(
-                            &mut state.anti_aliasing,
-                            choice.to_string(),
-                            choice,
-                        );
+                    ).clicked() && bulk_edit_mode {
+                        *bulk_anti_aliasing_selected = true;
                     }
                 },
-            );
+            )
+                .response;
+
+            if bulk_edit_mode
+                && *bulk_anti_aliasing_selected
+            {
+                crate::editor_theme::paint_bulk_edit_border(
+                    ui,
+                    response.rect,
+                    scale,
+                );
+            }
 
             ui.end_row();
 
-            ui.label(
-                "Dithering:"
-            )
-            .on_hover_text(
-                "Controls subtle dithering used to reduce visible color banding."
-            );
+            ui.label("Dithering:")
+                .on_hover_text(
+                    "Controls subtle dithering used to reduce visible color banding."
+                );
 
-            egui::ComboBox::from_id_source(
+            let selected_text =
+                if bulk_edit_mode
+                    && !*bulk_dithering_selected
+                {
+                    "Unchanged"
+                } else {
+                    match *dithering {
+                        DitheringSelection::Off => "Off",
+                        DitheringSelection::Subtle => "Subtle",
+                    }
+                };
+
+            let response =
+                egui::ComboBox::from_id_source(
                 "temporary_post_processing_dithering"
             )
-            .selected_text(
-                state.dithering.as_str()
-            )
-            .width(
-                CONTROL_WIDTH
-            )
+            .selected_text(selected_text)
+            .width(POST_PROCESSING_CONTROL_WIDTH)
             .show_ui(
                 ui,
                 |ui| {
-                    for choice in [
+                    if bulk_edit_mode {
+                        if ui.selectable_label(
+                            !*bulk_dithering_selected,
+                            "Unchanged",
+                        ).clicked() {
+                            *bulk_dithering_selected = false;
+                        }
+                        ui.separator();
+                    }
+
+                    if ui.selectable_value(
+                        dithering,
+                        DitheringSelection::Off,
                         "Off",
+                    ).clicked() && bulk_edit_mode {
+                        *bulk_dithering_selected = true;
+                    }
+
+                    if ui.selectable_value(
+                        dithering,
+                        DitheringSelection::Subtle,
                         "Subtle",
-                    ] {
-                        ui.selectable_value(
-                            &mut state.dithering,
-                            choice.to_string(),
-                            choice,
-                        );
+                    ).clicked() && bulk_edit_mode {
+                        *bulk_dithering_selected = true;
                     }
                 },
-            );
+            )
+                .response;
+
+            if bulk_edit_mode
+                && *bulk_dithering_selected
+            {
+                crate::editor_theme::paint_bulk_edit_border(
+                    ui,
+                    response.rect,
+                    scale,
+                );
+            }
 
             ui.end_row();
 
-            ui.label(
-                "Color Precision:"
-            )
-            .on_hover_text(
-                "Selects the color precision used by post-processing."
-            );
+            ui.label("Color Precision:")
+                .on_hover_text(
+                    "Selects the color precision used by post-processing."
+                );
 
-            egui::ComboBox::from_id_source(
+            let selected_text =
+                if bulk_edit_mode
+                    && !*bulk_color_precision_selected
+                {
+                    "Unchanged"
+                } else {
+                    match *color_precision {
+                        ColorPrecisionSelection::Automatic => "Automatic",
+                        ColorPrecisionSelection::Standard => "Standard Precision",
+                        ColorPrecisionSelection::High => "High Precision",
+                    }
+                };
+
+            let response =
+                egui::ComboBox::from_id_source(
                 "temporary_post_processing_color_precision"
             )
-            .selected_text(
-                state.color_precision.as_str()
-            )
-            .width(
-                CONTROL_WIDTH
-            )
+            .selected_text(selected_text)
+            .width(POST_PROCESSING_CONTROL_WIDTH)
             .show_ui(
                 ui,
                 |ui| {
-                    for choice in [
-                        "Automatic",
-                        "Standard Precision",
-                        "High Precision",
+                    if bulk_edit_mode {
+                        if ui.selectable_label(
+                            !*bulk_color_precision_selected,
+                            "Unchanged",
+                        ).clicked() {
+                            *bulk_color_precision_selected = false;
+                        }
+                        ui.separator();
+                    }
+
+                    for (choice, label) in [
+                        (ColorPrecisionSelection::Automatic, "Automatic"),
+                        (ColorPrecisionSelection::Standard, "Standard Precision"),
+                        (ColorPrecisionSelection::High, "High Precision"),
                     ] {
-                        ui.selectable_value(
-                            &mut state.color_precision,
-                            choice.to_string(),
+                        if ui.selectable_value(
+                            color_precision,
                             choice,
-                        );
+                            label,
+                        ).clicked() && bulk_edit_mode {
+                            *bulk_color_precision_selected = true;
+                        }
                     }
                 },
-            );
+            )
+                .response;
+
+            if bulk_edit_mode
+                && *bulk_color_precision_selected
+            {
+                crate::editor_theme::paint_bulk_edit_border(
+                    ui,
+                    response.rect,
+                    scale,
+                );
+            }
 
             ui.end_row();
         },
     );
+}
 
-    draw_temporary_mock_note(
-        ui
+
+fn draw_post_processing_image_transforms(
+    ui: &mut egui::Ui,
+    scale: f32,
+    shift_held: bool,
+    invert_colors: &mut bool,
+    flip_horizontal: &mut bool,
+    flip_vertical: &mut bool,
+    hue_rotation: &mut f32,
+    hue_rotation_drag_state: &mut Option<crate::editor_layout::SliderDragState>,
+    bulk_edit_mode: bool,
+    bulk_invert_colors: &mut BulkBooleanSelection,
+    bulk_flip_horizontal: &mut BulkBooleanSelection,
+    bulk_flip_vertical: &mut BulkBooleanSelection,
+    bulk_hue_rotation_selected: &mut bool,
+) {
+    ui.heading("Image Transforms");
+    ui.add_space(8.0);
+
+    if bulk_edit_mode {
+        draw_bulk_boolean_row(
+            ui,
+            "temporary_bulk_invert_colors",
+            scale,
+            "Invert Colors",
+            bulk_invert_colors,
+            "Inverts the final rendered colors.",
+        );
+        draw_bulk_boolean_row(
+            ui,
+            "temporary_bulk_flip_horizontal",
+            scale,
+            "Flip Horizontal",
+            bulk_flip_horizontal,
+            "Mirrors the final image horizontally.",
+        );
+        draw_bulk_boolean_row(
+            ui,
+            "temporary_bulk_flip_vertical",
+            scale,
+            "Flip Vertical",
+            bulk_flip_vertical,
+            "Mirrors the final image vertically.",
+        );
+    } else {
+        ui.checkbox(
+            invert_colors,
+            "Invert Colors",
+        )
+        .on_hover_text(
+            "Inverts the final rendered colors."
+        );
+
+        ui.checkbox(
+            flip_horizontal,
+            "Flip Horizontal",
+        )
+        .on_hover_text(
+            "Mirrors the final image horizontally."
+        );
+
+        ui.checkbox(
+            flip_vertical,
+            "Flip Vertical",
+        )
+        .on_hover_text(
+            "Mirrors the final image vertically."
+        );
+    }
+
+    ui.add_space(10.0);
+
+    draw_numeric_slider_row(
+        ui,
+        "Hue Rotation:",
+        hue_rotation,
+        crate::postprocess_shader::HUE_ROTATION_MIN,
+        crate::postprocess_shader::HUE_ROTATION_MAX,
+        "°",
+        shift_held,
+        hue_rotation_drag_state,
+        bulk_edit_mode,
+        bulk_hue_rotation_selected,
+        true,
+        scale,
+        "Rotates the displayed shader colors around the hue wheel.",
     );
 }
 
 
-const TEMPORARY_POST_PROCESSING_SLIDER_WIDTH: f32 =
-    240.0;
-
-
-fn draw_temporary_image_transforms(
+fn draw_post_processing_audio(
     ui: &mut egui::Ui,
-    state: &mut TemporaryPostProcessingMockState,
+    scale: f32,
+    shift_held: bool,
+    bloom: &mut BloomSelection,
+    bloom_intensity: &mut f32,
+    bloom_intensity_drag_state: &mut Option<crate::editor_layout::SliderDragState>,
+    bloom_saturation: &mut f32,
+    bloom_saturation_drag_state: &mut Option<crate::editor_layout::SliderDragState>,
+    bloom_threshold: &mut f32,
+    bloom_threshold_drag_state: &mut Option<crate::editor_layout::SliderDragState>,
+    bloom_frequency_rotation: &mut f32,
+    bloom_frequency_rotation_drag_state: &mut Option<crate::editor_layout::SliderDragState>,
+    bloom_frequency_invert: &mut bool,
+    bulk_edit_mode: bool,
+    bulk_bloom_selected: &mut bool,
+    bulk_bloom_intensity_selected: &mut bool,
+    bulk_bloom_threshold_selected: &mut bool,
+    bulk_bloom_frequency_rotation_selected: &mut bool,
+    bulk_bloom_frequency_invert: &mut BulkBooleanSelection,
 ) {
-    ui.heading(
-        "Image Transforms"
-    );
-
-    ui.add_space(
-        8.0
-    );
-
-    ui.checkbox(
-        &mut state.invert_colors,
-        "Invert Colors",
-    )
-    .on_hover_text(
-        "Inverts the final rendered colors."
-    );
-
-    ui.checkbox(
-        &mut state.flip_horizontal,
-        "Flip Horizontal",
-    )
-    .on_hover_text(
-        "Mirrors the final image horizontally."
-    );
-
-    ui.checkbox(
-        &mut state.flip_vertical,
-        "Flip Vertical",
-    )
-    .on_hover_text(
-        "Mirrors the final image vertically."
-    );
-
-    ui.add_space(
-        10.0
-    );
+    ui.heading("Audio");
+    ui.add_space(8.0);
 
     ui.horizontal(
         |ui| {
-            ui.label(
-                "Hue Rotation:"
+            ui.label("Bloom Mode:")
+                .on_hover_text(
+                    "Selects Off, Audio Bloom, Spectral Bloom, or experimental Loudness Bloom processing."
+                );
+
+            let selected_text =
+                if bulk_edit_mode
+                    && !*bulk_bloom_selected
+                {
+                    "Unchanged"
+                } else {
+                    match *bloom {
+                        BloomSelection::Off => "Off",
+                        BloomSelection::Audio => "Audio",
+                        BloomSelection::Spectral => "Spectral",
+                        BloomSelection::Loudness => "Loudness",
+                    }
+                };
+
+            let response =
+                egui::ComboBox::from_id_source(
+                "temporary_post_processing_bloom_mode"
             )
-            .on_hover_text(
-                "Rotates the displayed shader colors around the hue wheel."
-            );
-
-            ui.add_sized(
-                [
-                    TEMPORARY_POST_PROCESSING_SLIDER_WIDTH,
-                    ui.spacing().interact_size.y,
-                ],
-                egui::Slider::new(
-                    &mut state.hue_rotation,
-                    0.0..=360.0,
-                )
-                .suffix(
-                    "°"
-                )
-            );
-        },
-    );
-
-    draw_temporary_mock_note(
-        ui
-    );
-}
-
-
-fn draw_temporary_audio(
-    ui: &mut egui::Ui,
-    state: &mut TemporaryPostProcessingMockState,
-) {
-    ui.heading(
-        "Audio"
-    );
-
-    ui.add_space(
-        8.0
-    );
-
-    ui.checkbox(
-        &mut state.audio_bloom,
-        "Audio Bloom",
-    )
-    .on_hover_text(
-        "Enables bloom whose response is driven by analyzed audio frequency bands."
-    );
-
-    ui.add_space(
-        8.0
-    );
-
-    ui.add_enabled_ui(
-        state.audio_bloom,
-        |ui| {
-            egui::Grid::new(
-                "temporary_post_processing_audio_grid"
-            )
-            .num_columns(
-                2
-            )
-            .spacing(
-                egui::vec2(
-                    8.0,
-                    8.0,
-                )
-            )
-            .show(
+            .selected_text(selected_text)
+            .width(120.0)
+            .show_ui(
                 ui,
                 |ui| {
-                    ui.label(
-                        "Bloom Intensity:"
-                    )
-                    .on_hover_text(
-                        "Controls the strength of Audio Bloom."
-                    );
+                    if bulk_edit_mode {
+                        if ui.selectable_label(
+                            !*bulk_bloom_selected,
+                            "Unchanged",
+                        ).clicked() {
+                            *bulk_bloom_selected = false;
+                        }
+                        ui.separator();
+                    }
 
-                    ui.add_sized(
-                        [
-                            TEMPORARY_POST_PROCESSING_SLIDER_WIDTH,
-                            ui.spacing().interact_size.y,
-                        ],
-                        egui::Slider::new(
-                            &mut state.bloom_intensity,
-                            0.0..=3.0,
-                        )
-                    );
+                    if ui.selectable_value(
+                        bloom,
+                        BloomSelection::Off,
+                        "Off",
+                    ).clicked() && bulk_edit_mode {
+                        *bulk_bloom_selected = true;
+                    }
 
-                    ui.end_row();
+                    if ui.selectable_value(
+                        bloom,
+                        BloomSelection::Audio,
+                        "Audio",
+                    ).clicked() && bulk_edit_mode {
+                        *bulk_bloom_selected = true;
+                    }
 
-                    ui.label(
-                        "Bloom Threshold:"
-                    )
-                    .on_hover_text(
-                        "Controls the brightness threshold used to extract bloom."
-                    );
 
-                    ui.add_sized(
-                        [
-                            TEMPORARY_POST_PROCESSING_SLIDER_WIDTH,
-                            ui.spacing().interact_size.y,
-                        ],
-                        egui::Slider::new(
-                            &mut state.bloom_threshold,
-                            0.0..=1.0,
-                        )
-                    );
+                    if ui.selectable_value(
+                        bloom,
+                        BloomSelection::Spectral,
+                        "Spectral",
+                    ).clicked() && bulk_edit_mode {
+                        *bulk_bloom_selected = true;
+                    }
 
-                    ui.end_row();
 
-                    ui.label(
-                        "Frequency Rotation:"
-                    )
-                    .on_hover_text(
-                        "Rotates Audio Bloom's frequency-to-color mapping without changing the displayed shader colors."
-                    );
-
-                    ui.add_sized(
-                        [
-                            TEMPORARY_POST_PROCESSING_SLIDER_WIDTH,
-                            ui.spacing().interact_size.y,
-                        ],
-                        egui::Slider::new(
-                            &mut state.frequency_rotation,
-                            0.0..=360.0,
-                        )
-                        .suffix(
-                            "°"
-                        )
-                    );
-
-                    ui.end_row();
+                    if ui.selectable_value(
+                        bloom,
+                        BloomSelection::Loudness,
+                        "Loudness",
+                    ).clicked() && bulk_edit_mode {
+                        *bulk_bloom_selected = true;
+                    }
                 },
+            )
+                .response;
+
+            if bulk_edit_mode
+                && *bulk_bloom_selected
+            {
+                crate::editor_theme::paint_bulk_edit_border(
+                    ui,
+                    response.rect,
+                    scale,
+                );
+            }
+        },
+    );
+
+    ui.add_space(8.0);
+
+    // In ordinary editing, Off disables dependent Bloom parameters.
+    // In Bulk Edit, an Unchanged Bloom Mode still permits independently
+    // applying numeric Bloom values across the selected policies.
+    let bloom_controls_available =
+        if bulk_edit_mode
+            && !*bulk_bloom_selected
+        {
+            true
+        } else {
+            *bloom != BloomSelection::Off
+        };
+
+    let frequency_controls_available =
+        if bulk_edit_mode
+            && !*bulk_bloom_selected
+        {
+            true
+        } else {
+            bloom_controls_available
+                && *bloom != BloomSelection::Loudness
+        };
+
+    let mut experimental_bloom_saturation_selected =
+        !bulk_edit_mode;
+
+    egui::Grid::new(
+        "temporary_post_processing_audio_grid"
+    )
+    .num_columns(2)
+    .spacing(egui::vec2(8.0, 8.0))
+    .show(
+        ui,
+        |ui| {
+            draw_numeric_slider_grid_row(
+                ui,
+                "Bloom Intensity:",
+                bloom_intensity,
+                crate::render_bloom::BLOOM_INTENSITY_MIN,
+                crate::render_bloom::BLOOM_INTENSITY_MAX,
+                "",
+                shift_held,
+                bloom_intensity_drag_state,
+                bulk_edit_mode,
+                bulk_bloom_intensity_selected,
+                bloom_controls_available,
+                scale,
+                "Controls the strength of the selected Bloom mode.",
+            );
+
+            draw_numeric_slider_grid_row(
+                ui,
+                "Bloom Saturation:",
+                bloom_saturation,
+                crate::render_bloom::BLOOM_SATURATION_MIN,
+                crate::render_bloom::BLOOM_SATURATION_MAX,
+                "",
+                shift_held,
+                bloom_saturation_drag_state,
+                bulk_edit_mode,
+                &mut experimental_bloom_saturation_selected,
+                bloom_controls_available,
+                scale,
+                "Boosts bloom color saturation from the neutral 1.0 level up to 2.0 without changing the displayed shader colors. Experimental Control Center test; not yet stored in shader policies.",
+            );
+
+            draw_numeric_slider_grid_row(
+                ui,
+                "Bloom Threshold:",
+                bloom_threshold,
+                crate::render_bloom::BLOOM_THRESHOLD_MIN,
+                crate::render_bloom::BLOOM_THRESHOLD_MAX,
+                "",
+                shift_held,
+                bloom_threshold_drag_state,
+                bulk_edit_mode,
+                bulk_bloom_threshold_selected,
+                bloom_controls_available,
+                scale,
+                "Controls the brightness threshold used to extract bloom.",
+            );
+
+            draw_numeric_slider_grid_row(
+                ui,
+                "Frequency Rotation:",
+                bloom_frequency_rotation,
+                crate::render_bloom::BLOOM_FREQUENCY_ROTATION_MIN,
+                crate::render_bloom::BLOOM_FREQUENCY_ROTATION_MAX,
+                "°",
+                shift_held,
+                bloom_frequency_rotation_drag_state,
+                bulk_edit_mode,
+                bulk_bloom_frequency_rotation_selected,
+                frequency_controls_available,
+                scale,
+                "Rotates Audio/Spectral frequency-to-color mapping. Disabled for Loudness Bloom.",
             );
         },
     );
 
-    draw_temporary_mock_note(
-        ui
+    ui.add_space(8.0);
+
+    ui.add_enabled_ui(
+        frequency_controls_available,
+        |ui| {
+            if bulk_edit_mode {
+                draw_bulk_boolean_row(
+                    ui,
+                    "temporary_bulk_bloom_frequency_invert",
+                    scale,
+                    "Invert Frequency Mapping",
+                    bulk_bloom_frequency_invert,
+                    "Reverses Audio/Spectral low-to-high color-frequency mapping. Disabled for Loudness Bloom.",
+                );
+            } else {
+                ui.checkbox(
+                    bloom_frequency_invert,
+                    "Invert Frequency Mapping",
+                )
+                .on_hover_text(
+                    "Reverses Audio/Spectral low-to-high color-frequency mapping. Disabled for Loudness Bloom."
+                );
+            }
+        },
     );
 }
 
 
-fn draw_temporary_mock_note(
+fn draw_bulk_boolean_row(
     ui: &mut egui::Ui,
+    id: &'static str,
+    scale: f32,
+    label: &'static str,
+    selection: &mut BulkBooleanSelection,
+    help: &'static str,
 ) {
-    ui.add_space(
-        14.0
-    );
+    ui.horizontal(
+        |ui| {
+            ui.label(label)
+                .on_hover_text(help);
 
-    ui.label(
-        egui::RichText::new(
-            "Temporary UI mock-up — these controls do not save or alter rendering."
-        )
-        .weak(),
+            let selected_text =
+                match *selection {
+                    BulkBooleanSelection::Unchanged => "Unchanged",
+                    BulkBooleanSelection::True => "Enabled",
+                    BulkBooleanSelection::False => "Disabled",
+                };
+
+            let response =
+                egui::ComboBox::from_id_source(id)
+                .selected_text(selected_text)
+                .width(POST_PROCESSING_CONTROL_WIDTH)
+                .show_ui(
+                    ui,
+                    |ui| {
+                        ui.selectable_value(
+                            selection,
+                            BulkBooleanSelection::Unchanged,
+                            "Unchanged",
+                        );
+                        ui.separator();
+                        ui.selectable_value(
+                            selection,
+                            BulkBooleanSelection::True,
+                            "Enabled",
+                        );
+                        ui.selectable_value(
+                            selection,
+                            BulkBooleanSelection::False,
+                            "Disabled",
+                        );
+                    },
+                )
+                .response;
+
+
+            if !matches!(
+                *selection,
+                BulkBooleanSelection::Unchanged
+            ) {
+                crate::editor_theme::paint_bulk_edit_border(
+                    ui,
+                    response.rect,
+                    scale,
+                );
+            }
+        },
+    );
+}
+
+
+fn draw_numeric_slider_row(
+    ui: &mut egui::Ui,
+    label: &'static str,
+    value: &mut f32,
+    minimum: f32,
+    maximum: f32,
+    suffix: &'static str,
+    shift_held: bool,
+    drag_state: &mut Option<crate::editor_layout::SliderDragState>,
+    bulk_edit_mode: bool,
+    bulk_selected: &mut bool,
+    control_available: bool,
+    scale: f32,
+    help: &'static str,
+) {
+    ui.horizontal(
+        |ui| {
+            ui.label(label)
+                .on_hover_text(help);
+            draw_numeric_slider_control(
+                ui,
+                value,
+                minimum,
+                maximum,
+                suffix,
+                shift_held,
+                drag_state,
+                bulk_edit_mode,
+                bulk_selected,
+                control_available,
+                scale,
+            );
+        },
+    );
+}
+
+
+fn draw_numeric_slider_grid_row(
+    ui: &mut egui::Ui,
+    label: &'static str,
+    value: &mut f32,
+    minimum: f32,
+    maximum: f32,
+    suffix: &'static str,
+    shift_held: bool,
+    drag_state: &mut Option<crate::editor_layout::SliderDragState>,
+    bulk_edit_mode: bool,
+    bulk_selected: &mut bool,
+    control_available: bool,
+    scale: f32,
+    help: &'static str,
+) {
+    ui.label(label)
+        .on_hover_text(help);
+    draw_numeric_slider_control(
+        ui,
+        value,
+        minimum,
+        maximum,
+        suffix,
+        shift_held,
+        drag_state,
+        bulk_edit_mode,
+        bulk_selected,
+        control_available,
+        scale,
+    );
+    ui.end_row();
+}
+
+
+fn draw_numeric_slider_control(
+    ui: &mut egui::Ui,
+    value: &mut f32,
+    minimum: f32,
+    maximum: f32,
+    suffix: &'static str,
+    shift_held: bool,
+    drag_state: &mut Option<crate::editor_layout::SliderDragState>,
+    bulk_edit_mode: bool,
+    bulk_selected: &mut bool,
+    control_available: bool,
+    scale: f32,
+) {
+    ui.horizontal(
+        |ui| {
+            ui.spacing_mut().slider_width =
+                POST_PROCESSING_SLIDER_WIDTH;
+
+            let slider_enabled =
+                control_available
+                    && (
+                        !bulk_edit_mode
+                            || *bulk_selected
+                    );
+
+            ui.add_enabled_ui(
+                slider_enabled,
+                |ui| {
+                    // Reuse the Control Center's established fine-drag slider
+                    // behavior. Holding Shift reduces drag sensitivity to 0.1x
+                    // (10x finer), and the helper re-anchors if Shift changes
+                    // while the pointer is already dragging.
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(
+                            POST_PROCESSING_SLIDER_WIDTH,
+                            ui.spacing().interact_size.y,
+                        ),
+                        egui::Layout::left_to_right(
+                            egui::Align::Center
+                        ),
+                        |ui| {
+                            ui.set_width(
+                                POST_PROCESSING_SLIDER_WIDTH
+                            );
+
+                            crate::editor_layout::draw_fine_slider(
+                                ui,
+                                value,
+                                minimum,
+                                maximum,
+                                shift_held,
+                                scale,
+                                drag_state,
+                            );
+                        },
+                    );
+                },
+            );
+
+            let displayed_value =
+                if suffix == "°" {
+                    format!("{:.1}°", *value)
+                } else {
+                    format!("{:.2}", *value)
+                };
+
+            if bulk_edit_mode {
+                let response =
+                    ui.add_enabled(
+                        control_available,
+                        egui::Button::new(displayed_value),
+                    )
+                    .on_hover_cursor(
+                        egui::CursorIcon::PointingHand
+                    )
+                    .on_hover_text(
+                        if *bulk_selected {
+                            "Click to exclude this value from Bulk Edit"
+                        } else {
+                            "Click to include this value in Bulk Edit"
+                        }
+                    );
+
+                if response.clicked() {
+                    *bulk_selected =
+                        !*bulk_selected;
+                }
+
+                if *bulk_selected {
+                    crate::editor_theme::paint_bulk_edit_border(
+                        ui,
+                        response.rect,
+                        scale,
+                    );
+                }
+            } else {
+                ui.label(displayed_value);
+            }
+        },
     );
 }
 

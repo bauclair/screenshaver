@@ -150,7 +150,10 @@ pub(crate) struct PostprocessPipeline {
     dithering_level: DitheringLevel,
     bloom_mode: crate::render_bloom::BloomMode,
     bloom_intensity: f32,
+    bloom_saturation: f32,
     bloom_threshold: f32,
+    bloom_frequency_rotation: f32,
+    bloom_frequency_invert: bool,
     invert_colors: bool,
     flip_horizontal: bool,
     flip_vertical: bool,
@@ -279,10 +282,18 @@ impl PostprocessPipeline {
                     crate::render_bloom::validate_bloom_intensity(
                         profile.bloom_intensity
                     )?,
+                bloom_saturation:
+                    crate::render_bloom::BLOOM_SATURATION_DEFAULT,
                 bloom_threshold:
                     crate::render_bloom::validate_bloom_threshold(
                         profile.bloom_threshold
                     )?,
+                bloom_frequency_rotation:
+                    crate::render_bloom::validate_bloom_frequency_rotation(
+                        profile.bloom_frequency_rotation
+                    )?,
+                bloom_frequency_invert:
+                    profile.bloom_frequency_invert,
                 invert_colors:
                     profile.invert_colors,
                 flip_horizontal:
@@ -466,6 +477,12 @@ impl PostprocessPipeline {
                     self.scratch_target.texture,
                     self.bloom_target_a.texture,
                     self.bloom_intensity,
+                    self.bloom_saturation,
+                    matches!(
+                        self.bloom_mode,
+                        crate::render_bloom::BloomMode::Spectral
+                            | crate::render_bloom::BloomMode::Loudness
+                    ),
                 );
 
                 bind_output_framebuffer(
@@ -489,6 +506,12 @@ impl PostprocessPipeline {
                     self.scratch_target.texture,
                     self.bloom_target_a.texture,
                     self.bloom_intensity,
+                    self.bloom_saturation,
+                    matches!(
+                        self.bloom_mode,
+                        crate::render_bloom::BloomMode::Spectral
+                            | crate::render_bloom::BloomMode::Loudness
+                    ),
                 );
             }
 
@@ -536,17 +559,35 @@ impl PostprocessPipeline {
         match self.bloom_mode {
             crate::render_bloom::BloomMode::Off => {}
 
-            crate::render_bloom::BloomMode::Highlight => {
-                self.bloom.render_highlights(
-                    source_texture,
-                    self.bloom_threshold,
-                );
-            }
-
             crate::render_bloom::BloomMode::Audio => {
                 self.bloom.render_audio_colors(
                     source_texture,
                     self.bloom_threshold,
+                    self.bloom_saturation,
+                    self.audio_bands,
+                    self.bloom_frequency_rotation,
+                    self.bloom_frequency_invert,
+                    diagnostic,
+                );
+            }
+
+            crate::render_bloom::BloomMode::Spectral => {
+                self.bloom.render_spectral_colors(
+                    source_texture,
+                    self.bloom_threshold,
+                    self.bloom_saturation,
+                    self.audio_bands,
+                    self.bloom_frequency_rotation,
+                    self.bloom_frequency_invert,
+                    diagnostic,
+                );
+            }
+
+            crate::render_bloom::BloomMode::Loudness => {
+                self.bloom.render_loudness_colors(
+                    source_texture,
+                    self.bloom_threshold,
+                    self.bloom_saturation,
                     self.audio_bands,
                     diagnostic,
                 );
@@ -604,6 +645,11 @@ impl PostprocessPipeline {
         let bloom_threshold =
             crate::render_bloom::validate_bloom_threshold(
                 profile.bloom_threshold
+            )?;
+
+        let bloom_frequency_rotation =
+            crate::render_bloom::validate_bloom_frequency_rotation(
+                profile.bloom_frequency_rotation
             )?;
 
 
@@ -717,6 +763,13 @@ impl PostprocessPipeline {
 
         self.bloom_threshold =
             bloom_threshold;
+
+        self.bloom_frequency_rotation =
+            bloom_frequency_rotation;
+
+        self.bloom_frequency_invert =
+            profile.bloom_frequency_invert;
+
         self.invert_colors =
             profile.invert_colors;
 
@@ -764,10 +817,44 @@ impl PostprocessPipeline {
     }
 
     #[allow(dead_code)]
+    pub(crate) fn set_bloom_saturation(
+        &mut self,
+        bloom_saturation: f32,
+    ) -> Result<(), String> {
+        self.bloom_saturation =
+            crate::render_bloom::validate_bloom_saturation(
+                bloom_saturation
+            )?;
+
+        Ok(())
+    }
+
+
+    pub(crate) fn bloom_saturation(
+        &self,
+    ) -> f32 {
+        self.bloom_saturation
+    }
+
+
     pub(crate) fn bloom_threshold(
         &self,
     ) -> f32 {
         self.bloom_threshold
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn bloom_frequency_rotation(
+        &self,
+    ) -> f32 {
+        self.bloom_frequency_rotation
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn bloom_frequency_invert(
+        &self,
+    ) -> bool {
+        self.bloom_frequency_invert
     }
 
     /// Recreates size-dependent render targets while retaining the compiled

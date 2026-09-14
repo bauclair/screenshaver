@@ -55,7 +55,7 @@ const CONTROL_CENTER_BRANDING_IMAGE: &[u8] =
 
 
 #[derive(Clone, Copy)]
-struct SliderDragState {
+pub(crate) struct SliderDragState {
     anchor_value: f32,
     anchor_pointer_x: f32,
     shift_held: bool,
@@ -209,8 +209,9 @@ pub enum AntiAliasingSelection {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BloomSelection {
     Off,
-    Highlight,
     Audio,
+    Spectral,
+    Loudness,
 }
 
 
@@ -701,6 +702,8 @@ pub struct BulkEditChanges {
     pub bloom: bool,
     pub bloom_intensity: bool,
     pub bloom_threshold: bool,
+    pub bloom_frequency_rotation: bool,
+    pub bloom_frequency_invert: bool,
     pub invert_colors: bool,
     pub flip_horizontal: bool,
     pub flip_vertical: bool,
@@ -722,6 +725,8 @@ impl BulkEditChanges {
             || self.bloom
             || self.bloom_intensity
             || self.bloom_threshold
+            || self.bloom_frequency_rotation
+            || self.bloom_frequency_invert
             || self.invert_colors
             || self.flip_horizontal
             || self.flip_vertical
@@ -744,7 +749,10 @@ pub struct EditorOutput {
     pub color_precision: ColorPrecisionSelection,
     pub bloom: BloomSelection,
     pub bloom_intensity: f32,
+    pub bloom_saturation: f32,
     pub bloom_threshold: f32,
+    pub bloom_frequency_rotation: f32,
+    pub bloom_frequency_invert: bool,
     pub invert_colors: bool,
     pub flip_horizontal: bool,
     pub flip_vertical: bool,
@@ -794,7 +802,10 @@ struct EditorConfiguration {
     color_precision: ColorPrecisionSelection,
     bloom: BloomSelection,
     bloom_intensity: f32,
+    bloom_saturation: f32,
     bloom_threshold: f32,
+    bloom_frequency_rotation: f32,
+    bloom_frequency_invert: bool,
     invert_colors: bool,
     flip_horizontal: bool,
     flip_vertical: bool,
@@ -816,7 +827,10 @@ impl EditorConfiguration {
         color_precision: ColorPrecisionSelection,
         bloom: BloomSelection,
         bloom_intensity: f32,
+        bloom_saturation: f32,
         bloom_threshold: f32,
+        bloom_frequency_rotation: f32,
+        bloom_frequency_invert: bool,
         invert_colors: bool,
         flip_horizontal: bool,
         flip_vertical: bool,
@@ -845,10 +859,19 @@ impl EditorConfiguration {
                 normalize_editor_float(
                     bloom_intensity
                 ),
+            bloom_saturation:
+                normalize_editor_float(
+                    bloom_saturation
+                ),
             bloom_threshold:
                 normalize_editor_float(
                     bloom_threshold
                 ),
+            bloom_frequency_rotation:
+                normalize_editor_float(
+                    bloom_frequency_rotation
+                ),
+            bloom_frequency_invert,
             invert_colors,
             flip_horizontal,
             flip_vertical,
@@ -889,6 +912,10 @@ impl EditorConfiguration {
                 (self.bloom_intensity - baseline.bloom_intensity).abs() > 0.0001,
             bloom_threshold:
                 (self.bloom_threshold - baseline.bloom_threshold).abs() > 0.0001,
+            bloom_frequency_rotation:
+                (self.bloom_frequency_rotation - baseline.bloom_frequency_rotation).abs() > 0.0001,
+            bloom_frequency_invert:
+                self.bloom_frequency_invert != baseline.bloom_frequency_invert,
             invert_colors:
                 self.invert_colors != baseline.invert_colors,
             flip_horizontal:
@@ -940,10 +967,19 @@ impl EditorConfiguration {
                 - other.bloom_intensity)
                 .abs()
                 > 0.0001
+            || (self.bloom_saturation
+                - other.bloom_saturation)
+                .abs()
+                > 0.0001
             || (self.bloom_threshold
                 - other.bloom_threshold)
                 .abs()
                 > 0.0001
+            || (self.bloom_frequency_rotation
+                - other.bloom_frequency_rotation)
+                .abs()
+                > 0.0001
+            || self.bloom_frequency_invert != other.bloom_frequency_invert
             || self.invert_colors != other.invert_colors
             || self.flip_horizontal != other.flip_horizontal
             || self.flip_vertical != other.flip_vertical
@@ -1068,8 +1104,17 @@ pub struct EditWindowOverlay {
     bloom_intensity:
         f32,
 
+    bloom_saturation:
+        f32,
+
     bloom_threshold:
         f32,
+
+    bloom_frequency_rotation:
+        f32,
+
+    bloom_frequency_invert:
+        bool,
 
     invert_colors:
         bool,
@@ -1111,6 +1156,9 @@ pub struct EditWindowOverlay {
     bulk_edit_baseline:
         Option<EditorConfiguration>,
 
+    bulk_bloom_frequency_invert:
+        BulkBooleanSelection,
+
     bulk_invert_colors:
         BulkBooleanSelection,
 
@@ -1137,6 +1185,9 @@ pub struct EditWindowOverlay {
         bool,
 
     bulk_bloom_threshold_selected:
+        bool,
+
+    bulk_bloom_frequency_rotation_selected:
         bool,
 
     // Bulk Edit intent for categorical post-processing controls.
@@ -1200,7 +1251,13 @@ pub struct EditWindowOverlay {
     bloom_intensity_drag_state:
         Option<SliderDragState>,
 
+    bloom_saturation_drag_state:
+        Option<SliderDragState>,
+
     bloom_threshold_drag_state:
+        Option<SliderDragState>,
+
+    bloom_frequency_rotation_drag_state:
         Option<SliderDragState>,
 
     hue_rotation_drag_state:
@@ -1442,8 +1499,14 @@ impl EditWindowOverlay {
 
                 bloom_intensity:
                     crate::render_bloom::BLOOM_INTENSITY_DEFAULT,
+                bloom_saturation:
+                    crate::render_bloom::BLOOM_SATURATION_DEFAULT,
                 bloom_threshold:
                     crate::render_bloom::BLOOM_THRESHOLD_DEFAULT,
+                bloom_frequency_rotation:
+                    crate::render_bloom::BLOOM_FREQUENCY_ROTATION_DEFAULT,
+                bloom_frequency_invert:
+                    crate::render_bloom::BLOOM_FREQUENCY_INVERT_DEFAULT,
                 invert_colors:
                     false,
 
@@ -1480,6 +1543,9 @@ impl EditWindowOverlay {
                 bulk_edit_baseline:
                     None,
 
+                bulk_bloom_frequency_invert:
+                    BulkBooleanSelection::Unchanged,
+
                 bulk_invert_colors:
                     BulkBooleanSelection::Unchanged,
 
@@ -1502,6 +1568,9 @@ impl EditWindowOverlay {
                     false,
 
                 bulk_bloom_threshold_selected:
+                    false,
+
+                bulk_bloom_frequency_rotation_selected:
                     false,
 
                 bulk_anti_aliasing_selected:
@@ -1563,7 +1632,12 @@ impl EditWindowOverlay {
 
                 bloom_intensity_drag_state:
                     None,
+                bloom_saturation_drag_state:
+                    None,
                 bloom_threshold_drag_state:
+                    None,
+
+                bloom_frequency_rotation_drag_state:
                     None,
 
                 hue_rotation_drag_state:
@@ -1931,7 +2005,10 @@ impl EditWindowOverlay {
         resolved_color_precision: ColorPrecisionSelection,
         resolved_bloom: BloomSelection,
         resolved_bloom_intensity: f32,
+        resolved_bloom_saturation: f32,
         resolved_bloom_threshold: f32,
+        resolved_bloom_frequency_rotation: f32,
+        resolved_bloom_frequency_invert: bool,
         resolved_invert_colors: bool,
         resolved_flip_horizontal: bool,
         resolved_flip_vertical: bool,
@@ -2187,8 +2264,14 @@ impl EditWindowOverlay {
         let mut bloom_intensity_drag_state =
             self.bloom_intensity_drag_state;
 
+        let mut bloom_saturation_drag_state =
+            self.bloom_saturation_drag_state;
+
         let mut bloom_threshold_drag_state =
             self.bloom_threshold_drag_state;
+
+        let mut bloom_frequency_rotation_drag_state =
+            self.bloom_frequency_rotation_drag_state;
 
         let mut policy_target =
             self.policy_target;
@@ -2226,8 +2309,17 @@ impl EditWindowOverlay {
         let mut bloom_intensity =
             self.bloom_intensity;
 
+        let mut bloom_saturation =
+            self.bloom_saturation;
+
         let mut bloom_threshold =
             self.bloom_threshold;
+
+        let mut bloom_frequency_rotation =
+            self.bloom_frequency_rotation;
+
+        let mut bloom_frequency_invert =
+            self.bloom_frequency_invert;
 
         let mut invert_colors =
             self.invert_colors;
@@ -2243,6 +2335,9 @@ impl EditWindowOverlay {
 
         let mut hue_rotation_drag_state =
             self.hue_rotation_drag_state;
+
+        let mut bulk_bloom_frequency_invert =
+            self.bulk_bloom_frequency_invert;
 
         let mut bulk_invert_colors =
             self.bulk_invert_colors;
@@ -2267,6 +2362,9 @@ impl EditWindowOverlay {
 
         let mut bulk_bloom_threshold_selected =
             self.bulk_bloom_threshold_selected;
+
+        let mut bulk_bloom_frequency_rotation_selected =
+            self.bulk_bloom_frequency_rotation_selected;
 
         let mut bulk_anti_aliasing_selected =
             self.bulk_anti_aliasing_selected;
@@ -2374,8 +2472,17 @@ impl EditWindowOverlay {
             bloom_intensity =
                 resolved_bloom_intensity;
 
+            bloom_saturation =
+                resolved_bloom_saturation;
+
             bloom_threshold =
                 resolved_bloom_threshold;
+
+            bloom_frequency_rotation =
+                resolved_bloom_frequency_rotation;
+
+            bloom_frequency_invert =
+                resolved_bloom_frequency_invert;
 
             invert_colors =
                 resolved_invert_colors;
@@ -2470,7 +2577,10 @@ impl EditWindowOverlay {
                             color_precision,
                             bloom,
                             bloom_intensity,
+                            bloom_saturation,
                             bloom_threshold,
+                            bloom_frequency_rotation,
+                            bloom_frequency_invert,
                             invert_colors,
                             flip_horizontal,
                             flip_vertical,
@@ -2595,13 +2705,19 @@ impl EditWindowOverlay {
                             color_precision,
                             bloom,
                             bloom_intensity,
+                            bloom_saturation,
                             bloom_threshold,
+                            bloom_frequency_rotation,
+                            bloom_frequency_invert,
                             invert_colors,
                             flip_horizontal,
                             flip_vertical,
                             hue_rotation,
                         )
                     );
+
+                bulk_bloom_frequency_invert =
+                    BulkBooleanSelection::Unchanged;
 
                 bulk_invert_colors =
                     BulkBooleanSelection::Unchanged;
@@ -2629,6 +2745,7 @@ impl EditWindowOverlay {
                 bulk_render_scale_selected = false;
                 bulk_bloom_intensity_selected = false;
                 bulk_bloom_threshold_selected = false;
+                bulk_bloom_frequency_rotation_selected = false;
                 bulk_anti_aliasing_selected = false;
                 bulk_dithering_selected = false;
                 bulk_color_precision_selected = false;
@@ -2686,8 +2803,16 @@ impl EditWindowOverlay {
                 bloom_intensity =
                     suspended_baseline.bloom_intensity;
 
+                bloom_saturation =
+                    suspended_baseline.bloom_saturation;
+
                 bloom_threshold =
                     suspended_baseline.bloom_threshold;
+                bloom_frequency_rotation =
+                    suspended_baseline.bloom_frequency_rotation;
+
+                bloom_frequency_invert =
+                    suspended_baseline.bloom_frequency_invert;
 
                 invert_colors =
                     suspended_baseline.invert_colors;
@@ -2729,7 +2854,13 @@ impl EditWindowOverlay {
                 bloom_intensity_drag_state =
                     None;
 
+                bloom_saturation_drag_state =
+                    None;
+
                 bloom_threshold_drag_state =
+                    None;
+
+                bloom_frequency_rotation_drag_state =
                     None;
 
                 hue_rotation_drag_state =
@@ -2740,12 +2871,16 @@ impl EditWindowOverlay {
                 bulk_render_scale_selected = false;
                 bulk_bloom_intensity_selected = false;
                 bulk_bloom_threshold_selected = false;
+                bulk_bloom_frequency_rotation_selected = false;
                 bulk_anti_aliasing_selected = false;
                 bulk_dithering_selected = false;
                 bulk_color_precision_selected = false;
                 bulk_bloom_selected = false;
                 bulk_hue_rotation_selected = false;
             }
+
+            bulk_bloom_frequency_invert =
+                BulkBooleanSelection::Unchanged;
 
             bulk_invert_colors =
                 BulkBooleanSelection::Unchanged;
@@ -2852,7 +2987,10 @@ impl EditWindowOverlay {
                                     color_precision,
                                     bloom,
                                     bloom_intensity,
+                                    bloom_saturation,
                                     bloom_threshold,
+                                    bloom_frequency_rotation,
+                                    bloom_frequency_invert,
                                     invert_colors,
                                     flip_horizontal,
                                     flip_vertical,
@@ -2912,6 +3050,10 @@ impl EditWindowOverlay {
                                 bulk_edit_mode
                                     && policy_target.is_some();
 
+                            pending_bulk_changes.bloom_frequency_invert =
+                                bulk_edit_mode
+                                    && bulk_bloom_frequency_invert.applies();
+
                             pending_bulk_changes.invert_colors =
                                 bulk_edit_mode
                                     && bulk_invert_colors.applies();
@@ -2937,6 +3079,8 @@ impl EditWindowOverlay {
                                 bulk_edit_mode && bulk_bloom_intensity_selected;
                             pending_bulk_changes.bloom_threshold =
                                 bulk_edit_mode && bulk_bloom_threshold_selected;
+                            pending_bulk_changes.bloom_frequency_rotation =
+                                bulk_edit_mode && bulk_bloom_frequency_rotation_selected;
                             pending_bulk_changes.anti_aliasing =
                                 bulk_edit_mode && bulk_anti_aliasing_selected;
                             pending_bulk_changes.dithering =
@@ -3197,6 +3341,39 @@ impl EditWindowOverlay {
                                                 |ui| {
                                                     crate::nested_tabs::draw_temporary_post_processing(
                                                         ui,
+                                                        metrics.scale,
+                                                        shift_held,
+                                                        &mut anti_aliasing,
+                                                        &mut dithering,
+                                                        &mut color_precision,
+                                                        &mut invert_colors,
+                                                        &mut flip_horizontal,
+                                                        &mut flip_vertical,
+                                                        &mut hue_rotation,
+                                                        &mut hue_rotation_drag_state,
+                                                        &mut bloom,
+                                                        &mut bloom_intensity,
+                                                        &mut bloom_intensity_drag_state,
+                                                        &mut bloom_saturation,
+                                                        &mut bloom_saturation_drag_state,
+                                                        &mut bloom_threshold,
+                                                        &mut bloom_threshold_drag_state,
+                                                        &mut bloom_frequency_rotation,
+                                                        &mut bloom_frequency_rotation_drag_state,
+                                                        &mut bloom_frequency_invert,
+                                                        bulk_edit_mode,
+                                                        &mut bulk_invert_colors,
+                                                        &mut bulk_flip_horizontal,
+                                                        &mut bulk_flip_vertical,
+                                                        &mut bulk_anti_aliasing_selected,
+                                                        &mut bulk_dithering_selected,
+                                                        &mut bulk_color_precision_selected,
+                                                        &mut bulk_bloom_selected,
+                                                        &mut bulk_bloom_intensity_selected,
+                                                        &mut bulk_bloom_threshold_selected,
+                                                        &mut bulk_bloom_frequency_rotation_selected,
+                                                        &mut bulk_bloom_frequency_invert,
+                                                        &mut bulk_hue_rotation_selected,
                                                     );
                                                 },
                                             );
@@ -3298,6 +3475,8 @@ impl EditWindowOverlay {
                                 &mut bloom,
                                 &mut bloom_intensity,
                                 &mut bloom_threshold,
+                                &mut bloom_frequency_rotation,
+                                &mut bloom_frequency_invert,
                                 &mut invert_colors,
                                 &mut flip_horizontal,
                                 &mut flip_vertical,
@@ -3399,7 +3578,10 @@ impl EditWindowOverlay {
                             color_precision,
                             bloom,
                             bloom_intensity,
+                            bloom_saturation,
                             bloom_threshold,
+                            bloom_frequency_rotation,
+                            bloom_frequency_invert,
                             invert_colors,
                             flip_horizontal,
                             flip_vertical,
@@ -3569,6 +3751,10 @@ impl EditWindowOverlay {
 
 
         if bulk_edit_mode {
+            if let Some(value) = bulk_bloom_frequency_invert.value() {
+                bloom_frequency_invert = value;
+            }
+
             if let Some(value) = bulk_invert_colors.value() {
                 invert_colors = value;
             }
@@ -3596,7 +3782,10 @@ impl EditWindowOverlay {
                 color_precision,
                 bloom,
                 bloom_intensity,
+                bloom_saturation,
                 bloom_threshold,
+                bloom_frequency_rotation,
+                bloom_frequency_invert,
                 invert_colors,
                 flip_horizontal,
                 flip_vertical,
@@ -3618,6 +3807,10 @@ impl EditWindowOverlay {
         bulk_edit_changes.policy_target =
             bulk_edit_mode
                 && policy_target.is_some();
+
+        bulk_edit_changes.bloom_frequency_invert =
+            bulk_edit_mode
+                && bulk_bloom_frequency_invert.applies();
 
         bulk_edit_changes.invert_colors =
             bulk_edit_mode
@@ -3641,6 +3834,8 @@ impl EditWindowOverlay {
             bulk_edit_mode && bulk_bloom_intensity_selected;
         bulk_edit_changes.bloom_threshold =
             bulk_edit_mode && bulk_bloom_threshold_selected;
+        bulk_edit_changes.bloom_frequency_rotation =
+            bulk_edit_mode && bulk_bloom_frequency_rotation_selected;
         bulk_edit_changes.anti_aliasing =
             bulk_edit_mode && bulk_anti_aliasing_selected;
         bulk_edit_changes.dithering =
@@ -3695,8 +3890,14 @@ impl EditWindowOverlay {
         self.bloom_intensity_drag_state =
             bloom_intensity_drag_state;
 
+        self.bloom_saturation_drag_state =
+            bloom_saturation_drag_state;
+
         self.bloom_threshold_drag_state =
             bloom_threshold_drag_state;
+
+        self.bloom_frequency_rotation_drag_state =
+            bloom_frequency_rotation_drag_state;
 
         self.policy_target =
             policy_target;
@@ -3740,8 +3941,15 @@ impl EditWindowOverlay {
         self.bloom_intensity =
             bloom_intensity;
 
+        self.bloom_saturation =
+            bloom_saturation;
+
         self.bloom_threshold =
             bloom_threshold;
+        self.bloom_frequency_rotation =
+            bloom_frequency_rotation;
+        self.bloom_frequency_invert =
+            bloom_frequency_invert;
         self.invert_colors =
             invert_colors;
 
@@ -3750,6 +3958,9 @@ impl EditWindowOverlay {
 
         self.flip_vertical =
             flip_vertical;
+
+        self.bulk_bloom_frequency_invert =
+            bulk_bloom_frequency_invert;
 
         self.bulk_invert_colors =
             bulk_invert_colors;
@@ -3776,6 +3987,8 @@ impl EditWindowOverlay {
             bulk_bloom_intensity_selected;
         self.bulk_bloom_threshold_selected =
             bulk_bloom_threshold_selected;
+        self.bulk_bloom_frequency_rotation_selected =
+            bulk_bloom_frequency_rotation_selected;
         self.bulk_anti_aliasing_selected =
             bulk_anti_aliasing_selected;
         self.bulk_dithering_selected =
@@ -3833,7 +4046,13 @@ impl EditWindowOverlay {
 
             bloom_intensity,
 
+            bloom_saturation,
+
             bloom_threshold,
+
+            bloom_frequency_rotation,
+
+            bloom_frequency_invert,
 
             invert_colors,
 
@@ -3893,7 +4112,10 @@ impl EditWindowOverlay {
                         color_precision,
                         bloom,
                         bloom_intensity,
+                        bloom_saturation,
                         bloom_threshold,
+                        bloom_frequency_rotation,
+                        bloom_frequency_invert,
                         invert_colors,
                         flip_horizontal,
                         flip_vertical,
@@ -4219,7 +4441,10 @@ impl EditWindowOverlay {
         color_precision: ColorPrecisionSelection,
         bloom: BloomSelection,
         bloom_intensity: f32,
+        bloom_saturation: f32,
         bloom_threshold: f32,
+        bloom_frequency_rotation: f32,
+        bloom_frequency_invert: bool,
         invert_colors: bool,
         flip_horizontal: bool,
         flip_vertical: bool,
@@ -4274,6 +4499,12 @@ impl EditWindowOverlay {
                 crate::render_bloom::BLOOM_INTENSITY_MAX,
             );
 
+        self.bloom_saturation =
+            bloom_saturation.clamp(
+                crate::render_bloom::BLOOM_SATURATION_MIN,
+                crate::render_bloom::BLOOM_SATURATION_MAX,
+            );
+
         self.invert_colors = invert_colors;
 
         self.flip_horizontal = flip_horizontal;
@@ -4289,6 +4520,15 @@ impl EditWindowOverlay {
                 crate::render_bloom::BLOOM_THRESHOLD_MIN,
                 crate::render_bloom::BLOOM_THRESHOLD_MAX,
             );
+
+        self.bloom_frequency_rotation =
+            bloom_frequency_rotation.clamp(
+                crate::render_bloom::BLOOM_FREQUENCY_ROTATION_MIN,
+                crate::render_bloom::BLOOM_FREQUENCY_ROTATION_MAX,
+            );
+
+        self.bloom_frequency_invert =
+            bloom_frequency_invert;
 
         if let Some((
             specification,
@@ -4332,6 +4572,9 @@ impl EditWindowOverlay {
         self.bloom_threshold_drag_state =
             None;
 
+        self.bloom_frequency_rotation_drag_state =
+            None;
+
         self.status_message =
             status_message.into();
 
@@ -4357,7 +4600,10 @@ impl EditWindowOverlay {
                     self.color_precision,
                     self.bloom,
                     self.bloom_intensity,
+                    self.bloom_saturation,
                     self.bloom_threshold,
+                    self.bloom_frequency_rotation,
+                    self.bloom_frequency_invert,
                     self.invert_colors,
                     self.flip_horizontal,
                     self.flip_vertical,
@@ -4415,6 +4661,7 @@ impl EditWindowOverlay {
         self.bulk_render_scale_selected = false;
         self.bulk_bloom_intensity_selected = false;
         self.bulk_bloom_threshold_selected = false;
+        self.bulk_bloom_frequency_rotation_selected = false;
         self.bulk_anti_aliasing_selected = false;
         self.bulk_dithering_selected = false;
         self.bulk_color_precision_selected = false;
@@ -4428,6 +4675,9 @@ impl EditWindowOverlay {
 
         self.bulk_edit_baseline =
             None;
+
+        self.bulk_bloom_frequency_invert =
+            BulkBooleanSelection::Unchanged;
 
         self.bulk_invert_colors =
             BulkBooleanSelection::Unchanged;
@@ -4516,6 +4766,11 @@ impl EditWindowOverlay {
 
         self.bloom_threshold =
             baseline.bloom_threshold;
+        self.bloom_frequency_rotation =
+            baseline.bloom_frequency_rotation;
+
+        self.bloom_frequency_invert =
+            baseline.bloom_frequency_invert;
 
         self.invert_colors =
             baseline.invert_colors;
@@ -4544,6 +4799,9 @@ impl EditWindowOverlay {
         self.bloom_threshold_drag_state =
             None;
 
+        self.bloom_frequency_rotation_drag_state =
+            None;
+
         self.hue_rotation_drag_state =
             None;
 
@@ -4552,6 +4810,7 @@ impl EditWindowOverlay {
         self.bulk_render_scale_selected = false;
         self.bulk_bloom_intensity_selected = false;
         self.bulk_bloom_threshold_selected = false;
+        self.bulk_bloom_frequency_rotation_selected = false;
         self.bulk_anti_aliasing_selected = false;
         self.bulk_dithering_selected = false;
         self.bulk_color_precision_selected = false;
@@ -4591,7 +4850,10 @@ impl EditWindowOverlay {
                         self.color_precision,
                         self.bloom,
                         self.bloom_intensity,
+                        self.bloom_saturation,
                         self.bloom_threshold,
+                        self.bloom_frequency_rotation,
+                        self.bloom_frequency_invert,
                         self.invert_colors,
                         self.flip_horizontal,
                         self.flip_vertical,
@@ -5180,6 +5442,8 @@ fn draw_compact_action_row(
     bloom: &mut BloomSelection,
     bloom_intensity: &mut f32,
     bloom_threshold: &mut f32,
+    bloom_frequency_rotation: &mut f32,
+    bloom_frequency_invert: &mut bool,
     invert_colors: &mut bool,
     flip_horizontal: &mut bool,
     flip_vertical: &mut bool,
@@ -5300,6 +5564,10 @@ fn draw_compact_action_row(
 
                 *bloom_threshold =
                     baseline_configuration.bloom_threshold;
+                *bloom_frequency_rotation =
+                    baseline_configuration.bloom_frequency_rotation;
+                *bloom_frequency_invert =
+                    baseline_configuration.bloom_frequency_invert;
                 *invert_colors =
                     baseline_configuration.invert_colors;
 
@@ -8257,7 +8525,7 @@ fn draw_slider_value_cell(
 
 // Standard linear slider used by FPS and Render Scale.
 
-fn draw_fine_slider(
+pub(crate) fn draw_fine_slider(
     ui: &mut egui::Ui,
     value: &mut f32,
     minimum: f32,
@@ -10121,13 +10389,18 @@ fn draw_bloom_options(
     );
     ui.selectable_value(
         bloom,
-        BloomSelection::Highlight,
-        "Highlight",
+        BloomSelection::Audio,
+        "Audio",
     );
     ui.selectable_value(
         bloom,
-        BloomSelection::Audio,
-        "Audio",
+        BloomSelection::Spectral,
+        "Spectral",
+    );
+    ui.selectable_value(
+        bloom,
+        BloomSelection::Loudness,
+        "Loudness",
     );
 }
 
@@ -10201,8 +10474,9 @@ fn draw_post_processing_tab(
                 } else {
                     match *bloom {
                         BloomSelection::Off => "Off",
-                        BloomSelection::Highlight => "Highlight",
                         BloomSelection::Audio => "Audio",
+                        BloomSelection::Spectral => "Spectral",
+                        BloomSelection::Loudness => "Loudness",
                     }
                 };
 
@@ -10241,18 +10515,6 @@ fn draw_post_processing_tab(
                             *bulk_bloom_selected = true;
                         }
 
-                        let highlight_response =
-                            ui.selectable_value(
-                                bloom,
-                                BloomSelection::Highlight,
-                                "Highlight",
-                            );
-                        if bulk_edit_baseline.is_some()
-                            && highlight_response.clicked()
-                        {
-                            *bulk_bloom_selected = true;
-                        }
-
                         let audio_response =
                             ui.selectable_value(
                                 bloom,
@@ -10261,6 +10523,32 @@ fn draw_post_processing_tab(
                             );
                         if bulk_edit_baseline.is_some()
                             && audio_response.clicked()
+                        {
+                            *bulk_bloom_selected = true;
+                        }
+
+
+                        let spectral_response =
+                            ui.selectable_value(
+                                bloom,
+                                BloomSelection::Spectral,
+                                "Spectral",
+                            );
+                        if bulk_edit_baseline.is_some()
+                            && spectral_response.clicked()
+                        {
+                            *bulk_bloom_selected = true;
+                        }
+
+
+                        let loudness_response =
+                            ui.selectable_value(
+                                bloom,
+                                BloomSelection::Loudness,
+                                "Loudness",
+                            );
+                        if bulk_edit_baseline.is_some()
+                            && loudness_response.clicked()
                         {
                             *bulk_bloom_selected = true;
                         }
@@ -10286,9 +10574,9 @@ fn draw_post_processing_tab(
                 {
                     "Choose a Bloom value to include it in Bulk Edit. Select Unchanged to exclude it."
                 } else if bulk_edit_baseline.is_some() {
-                    "Select Off, Highlight, or Audio. Choose Unchanged to exclude Bloom from Bulk Edit."
+                    "Select Off or Audio. Choose Unchanged to exclude Bloom from Bulk Edit."
                 } else {
-                    "Select the bloom processing mode. Highlight bloom affects bright image regions; Audio bloom targets bass, midrange, and high-frequency color bands."
+                    "Select the bloom processing mode. Audio bloom targets bass, midrange, and high-frequency color bands."
                 },
             );
             ui.end_row();
@@ -10520,7 +10808,7 @@ fn draw_post_processing_tab(
                 {
                     "Click the numeric Bloom Threshold value to enable this slider for Bulk Edit."
                 } else {
-                    "Set the minimum luminance that contributes to Highlight Bloom. Lower values include more of the image; higher values restrict bloom to brighter regions. Hold Shift while dragging for fine adjustment."
+                    "Set the minimum luminance that contributes to bloom extraction. Lower values include more of the image; higher values restrict bloom to brighter regions. Hold Shift while dragging for fine adjustment."
                 },
             );
 

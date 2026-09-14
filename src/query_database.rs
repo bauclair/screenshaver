@@ -390,6 +390,9 @@ pub struct QbePolicyRecord {
     pub bloom_intensity: Option<f64>,
     pub bloom_threshold: Option<f64>,
 
+    pub bloom_frequency_rotation: Option<f64>,
+    pub bloom_frequency_invert: Option<i64>,
+
     pub invert_colors: Option<i64>,
     pub flip_horizontal: Option<i64>,
     pub flip_vertical: Option<i64>,
@@ -628,17 +631,23 @@ fn execute_policy_query_in_connection(
                             bloom_threshold:
                                 row.get(24)?,
 
-                            invert_colors:
+                            bloom_frequency_rotation:
                                 row.get(25)?,
 
-                            flip_horizontal:
+                            bloom_frequency_invert:
                                 row.get(26)?,
 
-                            flip_vertical:
+                            invert_colors:
                                 row.get(27)?,
 
-                            hue_rotation:
+                            flip_horizontal:
                                 row.get(28)?,
+
+                            flip_vertical:
+                                row.get(29)?,
+
+                            hue_rotation:
+                                row.get(30)?,
                         }
                     )
                 },
@@ -739,6 +748,8 @@ fn policy_select_sql(
                  p.bloom_mode,
                  p.bloom_intensity,
                  p.bloom_threshold,
+                 p.bloom_frequency_rotation,
+                 p.bloom_frequency_invert,
 
                  p.invert_colors,
                  p.flip_horizontal,

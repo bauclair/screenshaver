@@ -148,6 +148,12 @@ pub struct ShaderPolicy {
     pub bloom_threshold:
         Option<f32>,
 
+    pub bloom_frequency_rotation:
+        Option<f32>,
+
+    pub bloom_frequency_invert:
+        Option<bool>,
+
     pub invert_colors:
         Option<bool>,
 
@@ -620,6 +626,12 @@ pub(crate) struct PostprocessProfile {
     pub bloom_threshold:
         f32,
 
+    pub bloom_frequency_rotation:
+        f32,
+
+    pub bloom_frequency_invert:
+        bool,
+
     pub invert_colors:
         bool,
 
@@ -660,6 +672,12 @@ impl Default for PostprocessProfile {
 
             bloom_threshold:
                 crate::render_bloom::BLOOM_THRESHOLD_DEFAULT,
+
+            bloom_frequency_rotation:
+                crate::render_bloom::BLOOM_FREQUENCY_ROTATION_DEFAULT,
+
+            bloom_frequency_invert:
+                crate::render_bloom::BLOOM_FREQUENCY_INVERT_DEFAULT,
 
             invert_colors:
                 false,
@@ -819,6 +837,22 @@ impl PostprocessPolicy {
                     .unwrap_or(
                         self.global_profile.bloom_threshold
                     ),
+
+            bloom_frequency_rotation:
+                shader_policy
+                    .and_then(
+                        |shader_policy| {
+                            shader_policy.bloom_frequency_rotation
+                        }
+                    )
+                    .unwrap_or(
+                        self.global_profile.bloom_frequency_rotation
+                    ),
+
+            bloom_frequency_invert:
+                shader_policy
+                    .and_then(|p| p.bloom_frequency_invert)
+                    .unwrap_or(self.global_profile.bloom_frequency_invert),
 
             invert_colors:
                 shader_policy
@@ -1870,6 +1904,8 @@ fn load_database_policy_table(
         bloom_mode: String,
         bloom_intensity: f64,
         bloom_threshold: f64,
+        bloom_frequency_rotation: f64,
+        bloom_frequency_invert: i64,
         invert_colors: i64,
         flip_horizontal: i64,
         flip_vertical: i64,
@@ -1920,6 +1956,8 @@ fn load_database_policy_table(
                      p.bloom_mode,
                      p.bloom_intensity,
                      p.bloom_threshold,
+                     p.bloom_frequency_rotation,
+                     p.bloom_frequency_invert,
                      p.invert_colors,
                      p.flip_horizontal,
                      p.flip_vertical,
@@ -1969,10 +2007,12 @@ fn load_database_policy_table(
                             bloom_mode: row.get(15)?,
                             bloom_intensity: row.get(16)?,
                             bloom_threshold: row.get(17)?,
-                            invert_colors: row.get(18)?,
-                            flip_horizontal: row.get(19)?,
-                            flip_vertical: row.get(20)?,
-                            hue_rotation: row.get(21)?,
+                            bloom_frequency_rotation: row.get(18)?,
+                            bloom_frequency_invert: row.get(19)?,
+                            invert_colors: row.get(20)?,
+                            flip_horizontal: row.get(21)?,
+                            flip_vertical: row.get(22)?,
+                            hue_rotation: row.get(23)?,
                         }
                     )
                 },
@@ -2209,6 +2249,20 @@ fn load_database_policy_table(
 
         tokens.push(
             format!(
+                "bloom_frequency_rotation:{}",
+                row.bloom_frequency_rotation,
+            )
+        );
+
+        tokens.push(
+            format!(
+                "bloom_frequency_invert:{}",
+                row.bloom_frequency_invert != 0,
+            )
+        );
+
+        tokens.push(
+            format!(
                 "invert_colors:{}",
                 row.invert_colors != 0,
             )
@@ -2296,6 +2350,8 @@ fn parse_policy_specification(
     let mut bloom = None;
     let mut bloom_intensity = None;
     let mut bloom_threshold = None;
+    let mut bloom_frequency_rotation = None;
+    let mut bloom_frequency_invert = None;
     let mut invert_colors = None;
     let mut flip_horizontal = None;
     let mut flip_vertical = None;
@@ -2588,6 +2644,41 @@ fn parse_policy_specification(
                         )?
                     );
             }
+            "bloom_frequency_rotation" => {
+                if bloom_frequency_rotation.is_some() {
+                    return Err(
+                        duplicate_policy_property(
+                            &shader,
+                            target,
+                            "bloom_frequency_rotation",
+                        )
+                    );
+                }
+
+                bloom_frequency_rotation =
+                    Some(
+                        parse_policy_bloom_frequency_rotation(
+                            &shader,
+                            value,
+                            target.table_name(),
+                        )?
+                    );
+            }
+
+            "bloom_frequency_invert" => {
+                if bloom_frequency_invert.is_some() {
+                    return Err(duplicate_policy_property(&shader, target, "bloom_frequency_invert"));
+                }
+                bloom_frequency_invert = Some(match value.trim().to_ascii_lowercase().as_str() {
+                    "true" => true,
+                    "false" => false,
+                    other => return Err(format!(
+                        "Invalid bloom_frequency_invert '{}' for '{}' in [{}]; expected true or false",
+                        other, shader, target.table_name()
+                    )),
+                });
+            }
+
             "invert_colors" => {
                 if invert_colors.is_some() {
                     return Err(duplicate_policy_property(&shader, target, "invert_colors"));
@@ -2651,7 +2742,7 @@ fn parse_policy_specification(
             other => {
                 return Err(
                     format!(
-                        "Unknown policy property '{}' for '{}' in [{}]; supported properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision, render_scale, bloom, bloom_intensity, bloom_threshold, invert_colors, flip_horizontal, flip_vertical, hue_rotation",
+                        "Unknown policy property '{}' for '{}' in [{}]; supported properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision, render_scale, bloom, bloom_intensity, bloom_threshold, bloom_frequency_rotation, bloom_frequency_invert, invert_colors, flip_horizontal, flip_vertical, hue_rotation",
                         other,
                         shader,
                         target.table_name(),
@@ -2673,6 +2764,8 @@ fn parse_policy_specification(
         && bloom.is_none()
         && bloom_intensity.is_none()
         && bloom_threshold.is_none()
+        && bloom_frequency_rotation.is_none()
+        && bloom_frequency_invert.is_none()
         && invert_colors.is_none()
         && flip_horizontal.is_none()
         && flip_vertical.is_none()
@@ -2705,6 +2798,8 @@ fn parse_policy_specification(
             bloom,
             bloom_intensity,
             bloom_threshold,
+            bloom_frequency_rotation,
+            bloom_frequency_invert,
             invert_colors,
             flip_horizontal,
             flip_vertical,
@@ -2896,8 +2991,27 @@ fn format_shader_policy_diagnostic(
             }
         );
 
+    let bloom_frequency_rotation = shader_policy.bloom_frequency_rotation
+        .map(
+            |rotation| {
+                format!(
+                    "{:.1}",
+                    rotation,
+                )
+            }
+        )
+        .unwrap_or_else(
+            || {
+                "<global>".to_string()
+            }
+        );
+
+    let bloom_frequency_invert = shader_policy.bloom_frequency_invert
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "<global>".to_string());
+
     format!(
-        "[CONFIG] {} shader={} source={} texture={} palette={} fps={} speed={} anti_aliasing={} dithering={} color_precision={} render_scale={} bloom={} bloom_intensity={} bloom_threshold={}",
+        "[CONFIG] {} shader={} source={} texture={} palette={} fps={} speed={} anti_aliasing={} dithering={} color_precision={} render_scale={} bloom={} bloom_intensity={} bloom_threshold={} bloom_frequency_rotation={} bloom_frequency_invert={}",
         table_name,
         shader_policy.shader,
         source_path,
@@ -2912,6 +3026,8 @@ fn format_shader_policy_diagnostic(
         bloom,
         bloom_intensity,
         bloom_threshold,
+        bloom_frequency_rotation,
+        bloom_frequency_invert,
     )
 }
 
@@ -3307,6 +3423,46 @@ fn parse_global_color_precision(
             ),
         ),
     }
+}
+
+
+fn parse_policy_bloom_frequency_rotation(
+    shader: &str,
+    value: &str,
+    table_name: &str,
+) -> Result<f32, String> {
+
+    let parsed =
+        value
+            .parse::<f32>()
+            .map_err(
+                |_| {
+                    format!(
+                        "Invalid bloom_frequency_rotation '{}' for '{}' in [{}]; expected a number from {:.1} through {:.1}",
+                        value,
+                        shader,
+                        table_name,
+                        crate::render_bloom::BLOOM_FREQUENCY_ROTATION_MIN,
+                        crate::render_bloom::BLOOM_FREQUENCY_ROTATION_MAX,
+                    )
+                }
+            )?;
+
+    crate::render_bloom::validate_bloom_frequency_rotation(
+        parsed
+    )
+    .map_err(
+        |_| {
+            format!(
+                "bloom_frequency_rotation {} for '{}' in [{}] is outside the supported range {:.1}-{:.1}",
+                parsed,
+                shader,
+                table_name,
+                crate::render_bloom::BLOOM_FREQUENCY_ROTATION_MIN,
+                crate::render_bloom::BLOOM_FREQUENCY_ROTATION_MAX,
+            )
+        }
+    )
 }
 
 

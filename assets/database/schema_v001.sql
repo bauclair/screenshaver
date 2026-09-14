@@ -275,8 +275,8 @@ CREATE TABLE shader_policies (
                            CHECK (
                                bloom_mode IN (
                                    'off',
-                                   'highlight',
-                                   'audio'
+                                   'audio',
+                                   'spectral'
                                )
                            ),
 
@@ -285,6 +285,18 @@ CREATE TABLE shader_policies (
 
     bloom_threshold        REAL NOT NULL
                            DEFAULT 0.80,
+
+    bloom_frequency_rotation
+                           REAL NOT NULL
+                           DEFAULT 0.0
+                           CHECK (
+                               bloom_frequency_rotation
+                                   BETWEEN 0.0 AND 360.0
+                           ),
+
+    bloom_frequency_invert INTEGER NOT NULL
+                           DEFAULT 0
+                           CHECK (bloom_frequency_invert IN (0, 1)),
 
     invert_colors          INTEGER NOT NULL
                            DEFAULT 0
@@ -745,6 +757,8 @@ COMMIT;
 --        bloom_mode       = 'off'
 --        bloom_intensity  = 1.0
 --        bloom_threshold  = 0.80
+--        bloom_frequency_rotation = 0.0
+--        bloom_frequency_invert   = 0
 --        invert_colors    = 0
 --        flip_horizontal  = 0
 --        flip_vertical    = 0
