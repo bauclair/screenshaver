@@ -745,7 +745,7 @@ fn policy_select_sql(
                  p.color_precision,
                  p.render_scale,
 
-                 p.bloom_mode,
+                 p.audiovisual_effect,
                  p.bloom_intensity,
                  p.bloom_threshold,
                  p.bloom_frequency_rotation,

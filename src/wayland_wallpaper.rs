@@ -2283,16 +2283,18 @@ fn render_mirror_frames(
 
 
     let mut audio_required =
-        runtime.postprocess_policy
-            .profile_for_shader(
-                &active_shader.shader_name,
-                Some(
-                    active_shader.source_path.as_path()
-                ),
-            )
-            .bloom
-            .name()
-            == "audio";
+        matches!(
+            runtime.postprocess_policy
+                .profile_for_shader(
+                    &active_shader.shader_name,
+                    Some(
+                        active_shader.source_path.as_path()
+                    ),
+                )
+                .bloom
+                .name(),
+            "audio" | "spectral" | "loudness"
+        );
 
 
     let mut i_time =
@@ -2474,6 +2476,12 @@ fn render_mirror_frames(
                             texture_manager.delete_all();
                             texture_manager =
                                 replacement_texture_manager;
+
+                            audio_required =
+                                matches!(
+                                    replacement_profile.bloom.name(),
+                                    "audio" | "spectral" | "loudness"
+                                );
 
                             animation_speed =
                                 reload.animation_speed_policy
@@ -2831,8 +2839,10 @@ fn render_mirror_frames(
 
 
                                 audio_required =
-                                    postprocess_profile.bloom.name()
-                                        == "audio";
+                                    matches!(
+                                        postprocess_profile.bloom.name(),
+                                        "audio" | "spectral" | "loudness"
+                                    );
 
 
                                 for pipeline in

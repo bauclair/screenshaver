@@ -6156,10 +6156,11 @@ fn run_paths(
 
                         bloom:
                             Some(
-                                live_postprocess_profile
-                                    .bloom
-                                    .name()
-                                    .to_string()
+                                audiovisual_effect_from_bloom_mode(
+                                    live_postprocess_profile
+                                        .bloom
+                                )
+                                .to_string()
                             ),
 
                         bloom_intensity:
@@ -7810,10 +7811,9 @@ fn bulk_policy_patch_from_editor_output(
                 bloom:
                     changes.bloom.then(
                         || {
-                            bloom_mode_from_selection(
+                            audiovisual_effect_from_selection(
                                 editor_output.bloom
                             )
-                            .name()
                             .to_string()
                         }
                     ),
@@ -7949,10 +7949,9 @@ fn bulk_policy_definition_from_editor_output(
 
         bloom:
             Some(
-                bloom_mode_from_selection(
+                audiovisual_effect_from_selection(
                     editor_output.bloom
                 )
-                .name()
                 .to_string()
             ),
 
@@ -10178,6 +10177,54 @@ fn anti_aliasing_method_from_selection(
 
         crate::editor_layout::AntiAliasingSelection::Fxaa => {
             crate::render_fxaa::AntiAliasingMethod::Fxaa
+        }
+    }
+}
+
+
+fn audiovisual_effect_from_selection(
+    selection: crate::editor_layout::BloomSelection,
+) -> &'static str {
+
+    match selection {
+        crate::editor_layout::BloomSelection::Off => {
+            "off"
+        }
+
+        crate::editor_layout::BloomSelection::Audio => {
+            "audio_bloom"
+        }
+
+        crate::editor_layout::BloomSelection::Spectral => {
+            "spectral_bloom"
+        }
+
+        crate::editor_layout::BloomSelection::Loudness => {
+            "loudness_bloom"
+        }
+    }
+}
+
+
+fn audiovisual_effect_from_bloom_mode(
+    mode: crate::render_bloom::BloomMode,
+) -> &'static str {
+
+    match mode {
+        crate::render_bloom::BloomMode::Off => {
+            "off"
+        }
+
+        crate::render_bloom::BloomMode::Audio => {
+            "audio_bloom"
+        }
+
+        crate::render_bloom::BloomMode::Spectral => {
+            "spectral_bloom"
+        }
+
+        crate::render_bloom::BloomMode::Loudness => {
+            "loudness_bloom"
         }
     }
 }

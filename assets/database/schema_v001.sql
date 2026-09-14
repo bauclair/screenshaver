@@ -270,13 +270,14 @@ CREATE TABLE shader_policies (
 
     -- Explicit per-policy visual effects. These do NOT inherit from global
     -- configuration.
-    bloom_mode             TEXT NOT NULL
+    audiovisual_effect      TEXT NOT NULL
                            DEFAULT 'off'
                            CHECK (
-                               bloom_mode IN (
+                               audiovisual_effect IN (
                                    'off',
-                                   'audio',
-                                   'spectral'
+                                   'audio_bloom',
+                                   'spectral_bloom',
+                                   'loudness_bloom'
                                )
                            ),
 
@@ -754,7 +755,7 @@ COMMIT;
 --
 --      Their inherited operational fields remain NULL.
 --      Their explicit visual defaults are:
---        bloom_mode       = 'off'
+--        audiovisual_effect = 'off'
 --        bloom_intensity  = 1.0
 --        bloom_threshold  = 0.80
 --        bloom_frequency_rotation = 0.0

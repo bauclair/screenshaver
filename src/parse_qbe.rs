@@ -99,7 +99,7 @@ impl QbeField {
                 "Color Precision",
 
             Self::BloomMode =>
-                "Bloom Mode",
+                "Audiovisual Effect",
 
             Self::BloomFrequencyInvert =>
                 "Invert Frequency Mapping",
@@ -857,7 +857,7 @@ impl QbeParseError {
 
             Self::InvalidBloomMode(value) =>
                 format!(
-                    "Unknown Bloom Mode value '{}'.",
+                    "Unknown Audiovisual Effect value '{}'.",
                     value,
                 ),
         }
@@ -1110,7 +1110,7 @@ fn build_clause_sql(
                 )?;
 
             build_enum_column_clause(
-                "p.bloom_mode",
+                "p.audiovisual_effect",
                 operator,
                 canonical,
             )
@@ -1724,14 +1724,22 @@ fn canonical_bloom_mode(
                 "off".to_string()
             ),
 
-        "audio" =>
+        "audio"
+        | "audiobloom" =>
             Ok(
-                "audio".to_string()
+                "audio_bloom".to_string()
             ),
 
-        "spectral" =>
+        "spectral"
+        | "spectralbloom" =>
             Ok(
-                "spectral".to_string()
+                "spectral_bloom".to_string()
+            ),
+
+        "loudness"
+        | "loudnessbloom" =>
+            Ok(
+                "loudness_bloom".to_string()
             ),
 
         _ => {

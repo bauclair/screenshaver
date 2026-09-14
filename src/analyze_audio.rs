@@ -61,17 +61,25 @@ const SPECTRAL_RELATIVE_FLOOR: f32 = 0.0025;
 
 const SPECTRAL_FREQUENCY_SMOOTHING: f32 = 0.28;
 
-// Loudness Bloom uses a fixed short-term RMS level in dBFS.
-// This path is deliberately independent of Audio Bloom's existing
-// three-band analysis and Spectral Bloom's dominant-frequency logic.
-const LOUDNESS_MIN_DBFS: f32 = -22.0;
-const LOUDNESS_MAX_DBFS: f32 = -5.0;
+// Loudness Bloom measures short-term stereo RMS in dBFS, then maps it
+// relative to a slowly adapting recent-peak reference.  This keeps the
+// full red-to-violet range usable across different playback-monitor gains
+// without allowing a quiet passage to immediately redefine itself as loud.
 const LOUDNESS_RMS_FLOOR: f32 = 0.000_001;
+
+// Number of decibels below the recent peak that map to the red end of
+// the Loudness Bloom color scale.  The recent peak itself maps to violet.
+const LOUDNESS_DYNAMIC_RANGE_DB: f32 = 18.0;
+
+// The peak reference follows genuinely louder material quickly but falls
+// very slowly so ordinary quiet sections remain visually quiet.
+const LOUDNESS_REFERENCE_ATTACK: f32 = 0.60;
+const LOUDNESS_REFERENCE_RELEASE: f32 = 0.0025;
 
 // Expand the quiet/low-level portion of the color range.  A value
 // greater than 1.0 pulls ordinary musical levels downward toward
 // red/orange while preserving 0.0 = red and 1.0 = violet.
-const LOUDNESS_COLOR_CURVE_EXPONENT: f32 = 1.25;
+const LOUDNESS_COLOR_CURVE_EXPONENT: f32 = 2.00;
 
 const LOUDNESS_ENVELOPE_ATTACK: f32 = 0.45;
 const LOUDNESS_ENVELOPE_RELEASE: f32 = 0.035;
@@ -113,6 +121,12 @@ pub struct AudioAnalyzer {
     samples:
         Vec<f32>,
 
+    // Per-frame stereo power used only by Loudness Bloom.  Keep this
+    // separate from the mono FFT sample stream so left/right phase
+    // cancellation cannot artificially suppress apparent loudness.
+    loudness_power_samples:
+        Vec<f32>,
+
     fft:
         Arc<dyn Fft<f32>>,
 
@@ -145,6 +159,9 @@ pub struct AudioAnalyzer {
 
     loudness_smoothed:
         f32,
+
+    loudness_reference_dbfs:
+        Option<f32>,
 }
 
 
@@ -169,6 +186,11 @@ impl AudioAnalyzer {
                 sample_rate as f32,
 
             samples:
+                Vec::with_capacity(
+                    FFT_SIZE * 2
+                ),
+
+            loudness_power_samples:
                 Vec::with_capacity(
                     FFT_SIZE * 2
                 ),
@@ -210,6 +232,9 @@ impl AudioAnalyzer {
 
             loudness_smoothed:
                 0.0,
+
+            loudness_reference_dbfs:
+                None,
         }
     }
 
@@ -245,6 +270,14 @@ impl AudioAnalyzer {
 
             self.samples.push(
                 (left + right)
+                    * 0.5
+            );
+
+            self.loudness_power_samples.push(
+                (
+                    left * left
+                        + right * right
+                )
                     * 0.5
             );
         }
@@ -314,6 +347,10 @@ impl AudioAnalyzer {
 
 
             self.samples.drain(
+                ..FFT_HOP_SIZE
+            );
+
+            self.loudness_power_samples.drain(
                 ..FFT_HOP_SIZE
             );
         }
@@ -437,33 +474,29 @@ impl AudioAnalyzer {
         &mut self,
     ) -> AudioBands {
 
-        let mut sample_square_sum =
-            0.0_f32;
-
-
-        for sample in
-            self.samples
+        // Loudness is measured from the two captured channels before the
+        // mono FFT downmix.  Using (left + right) / 2 for RMS can suppress
+        // stereo material when the channels contain phase differences.
+        let loudness_power_sum =
+            self.loudness_power_samples
                 .iter()
                 .take(
                     FFT_SIZE
                 )
-        {
-            sample_square_sum +=
-                sample
-                    * sample;
-        }
+                .copied()
+                .sum::<f32>();
 
 
         let rms =
             (
-                sample_square_sum
+                loudness_power_sum
                     / FFT_SIZE as f32
             )
                 .sqrt();
 
 
         let loudness =
-            rms_to_loudness_level(
+            self.rms_to_relative_loudness_level(
                 rms
             );
 
@@ -627,6 +660,84 @@ impl AudioAnalyzer {
 
             loudness,
         }
+    }
+
+
+    fn rms_to_relative_loudness_level(
+        &mut self,
+        rms: f32,
+    ) -> f32 {
+
+        if rms <= LOUDNESS_RMS_FLOOR {
+            return 0.0;
+        }
+
+
+        let dbfs =
+            20.0
+                * rms
+                    .max(
+                        LOUDNESS_RMS_FLOOR
+                    )
+                    .log10();
+
+
+        let reference =
+            match self.loudness_reference_dbfs {
+
+                Some(current_reference) => {
+
+                    let rate =
+                        if dbfs > current_reference {
+                            LOUDNESS_REFERENCE_ATTACK
+                        } else {
+                            LOUDNESS_REFERENCE_RELEASE
+                        };
+
+
+                    current_reference
+                        + (
+                            dbfs
+                                - current_reference
+                        )
+                            * rate
+                }
+
+                None => {
+                    dbfs
+                }
+            };
+
+
+        self.loudness_reference_dbfs =
+            Some(
+                reference
+            );
+
+
+        let quiet_dbfs =
+            reference
+                - LOUDNESS_DYNAMIC_RANGE_DB;
+
+
+        let linear_level =
+            (
+                (
+                    dbfs
+                        - quiet_dbfs
+                )
+                    / LOUDNESS_DYNAMIC_RANGE_DB
+            )
+                .clamp(
+                    0.0,
+                    1.0,
+                );
+
+
+        linear_level
+            .powf(
+                LOUDNESS_COLOR_CURVE_EXPONENT
+            )
     }
 
 
@@ -895,48 +1006,6 @@ pub struct AudioBands {
 
     pub loudness:
         f32,
-}
-
-
-fn rms_to_loudness_level(
-    rms: f32,
-) -> f32 {
-
-    if rms <= LOUDNESS_RMS_FLOOR {
-        return 0.0;
-    }
-
-
-    let dbfs =
-        20.0
-            * rms
-                .max(
-                    LOUDNESS_RMS_FLOOR
-                )
-                .log10();
-
-
-    let linear_level =
-        (
-            (
-                dbfs
-                    - LOUDNESS_MIN_DBFS
-            )
-                / (
-                    LOUDNESS_MAX_DBFS
-                        - LOUDNESS_MIN_DBFS
-                )
-        )
-            .clamp(
-                0.0,
-                1.0,
-            );
-
-
-    linear_level
-        .powf(
-            LOUDNESS_COLOR_CURVE_EXPONENT
-        )
 }
 
 

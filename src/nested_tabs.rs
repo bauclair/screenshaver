@@ -1,10 +1,9 @@
 // Reusable nested-tab layout helpers.
 //
 // This module owns reusable vertical nested-tab navigation for Control Center
-// parent tabs. Configuration remains the first production user; the Temporary
-// Post-Processing staging tab now uses the same rail and page layout with live
-// policy state. Persistence remains owned by editor_layout.rs / edit_shader.rs
-// and the existing policy/database modules.
+// parent tabs. Configuration and Post-Processing use the same rail and page
+// layout with live policy state. Persistence remains owned by editor_layout.rs /
+// edit_shader.rs and the existing policy/database modules.
 
 use std::sync::OnceLock;
 
@@ -55,21 +54,21 @@ impl ConfigurationNestedTab {
 
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum TemporaryPostProcessingNestedTab {
+enum PostProcessingNestedTab {
     VisualQuality,
     ImageTransforms,
     Audio,
 }
 
 
-impl TemporaryPostProcessingNestedTab {
+impl PostProcessingNestedTab {
     const ALL: [
-        TemporaryPostProcessingNestedTab;
+        PostProcessingNestedTab;
         3
     ] = [
-        TemporaryPostProcessingNestedTab::VisualQuality,
-        TemporaryPostProcessingNestedTab::ImageTransforms,
-        TemporaryPostProcessingNestedTab::Audio,
+        PostProcessingNestedTab::VisualQuality,
+        PostProcessingNestedTab::ImageTransforms,
+        PostProcessingNestedTab::Audio,
     ];
 
 
@@ -77,9 +76,9 @@ impl TemporaryPostProcessingNestedTab {
         self,
     ) -> &'static str {
         match self {
-            TemporaryPostProcessingNestedTab::VisualQuality => "Visual Quality",
-            TemporaryPostProcessingNestedTab::ImageTransforms => "Image Transforms",
-            TemporaryPostProcessingNestedTab::Audio => "Audio",
+            PostProcessingNestedTab::VisualQuality => "Visual Quality",
+            PostProcessingNestedTab::ImageTransforms => "Image Transforms",
+            PostProcessingNestedTab::Audio => "Audio",
         }
     }
 }
@@ -385,7 +384,7 @@ where
 }
 
 
-pub fn draw_temporary_post_processing(
+pub fn draw_post_processing(
     ui: &mut egui::Ui,
     scale: f32,
     shift_held: bool,
@@ -423,18 +422,18 @@ pub fn draw_temporary_post_processing(
 ) {
     let selected_id =
         egui::Id::new(
-            "screenshaver_temporary_post_processing_nested_tab"
+            "screenshaver_post_processing_nested_tab"
         );
 
     let mut selected =
         ui.ctx()
             .data(
                 |data| {
-                    data.get_temp::<TemporaryPostProcessingNestedTab>(
+                    data.get_temp::<PostProcessingNestedTab>(
                         selected_id
                     )
                     .unwrap_or(
-                        TemporaryPostProcessingNestedTab::VisualQuality
+                        PostProcessingNestedTab::VisualQuality
                     )
                 }
             );
@@ -459,8 +458,8 @@ pub fn draw_temporary_post_processing(
                     draw_nested_tab_rail(
                         ui,
                         &mut selected,
-                        &TemporaryPostProcessingNestedTab::ALL,
-                        TemporaryPostProcessingNestedTab::label,
+                        &PostProcessingNestedTab::ALL,
+                        PostProcessingNestedTab::label,
                     );
 
                     ui.separator();
@@ -473,7 +472,7 @@ pub fn draw_temporary_post_processing(
                             );
 
                             match selected {
-                                TemporaryPostProcessingNestedTab::VisualQuality => {
+                                PostProcessingNestedTab::VisualQuality => {
                                     draw_post_processing_visual_quality(
                                         ui,
                                         scale,
@@ -487,7 +486,7 @@ pub fn draw_temporary_post_processing(
                                     );
                                 }
 
-                                TemporaryPostProcessingNestedTab::ImageTransforms => {
+                                PostProcessingNestedTab::ImageTransforms => {
                                     draw_post_processing_image_transforms(
                                         ui,
                                         scale,
@@ -505,7 +504,7 @@ pub fn draw_temporary_post_processing(
                                     );
                                 }
 
-                                TemporaryPostProcessingNestedTab::Audio => {
+                                PostProcessingNestedTab::Audio => {
                                     draw_post_processing_audio(
                                         ui,
                                         scale,
@@ -570,7 +569,7 @@ fn draw_post_processing_visual_quality(
     ui.add_space(8.0);
 
     egui::Grid::new(
-        "temporary_post_processing_visual_quality_grid"
+        "post_processing_visual_quality_grid"
     )
     .num_columns(2)
     .spacing(egui::vec2(8.0, 8.0))
@@ -596,7 +595,7 @@ fn draw_post_processing_visual_quality(
 
             let response =
                 egui::ComboBox::from_id_source(
-                "temporary_post_processing_anti_aliasing"
+                "post_processing_anti_aliasing"
             )
             .selected_text(selected_text)
             .width(POST_PROCESSING_CONTROL_WIDTH)
@@ -663,7 +662,7 @@ fn draw_post_processing_visual_quality(
 
             let response =
                 egui::ComboBox::from_id_source(
-                "temporary_post_processing_dithering"
+                "post_processing_dithering"
             )
             .selected_text(selected_text)
             .width(POST_PROCESSING_CONTROL_WIDTH)
@@ -731,7 +730,7 @@ fn draw_post_processing_visual_quality(
 
             let response =
                 egui::ComboBox::from_id_source(
-                "temporary_post_processing_color_precision"
+                "post_processing_color_precision"
             )
             .selected_text(selected_text)
             .width(POST_PROCESSING_CONTROL_WIDTH)
@@ -802,7 +801,7 @@ fn draw_post_processing_image_transforms(
     if bulk_edit_mode {
         draw_bulk_boolean_row(
             ui,
-            "temporary_bulk_invert_colors",
+            "post_processing_bulk_invert_colors",
             scale,
             "Invert Colors",
             bulk_invert_colors,
@@ -810,7 +809,7 @@ fn draw_post_processing_image_transforms(
         );
         draw_bulk_boolean_row(
             ui,
-            "temporary_bulk_flip_horizontal",
+            "post_processing_bulk_flip_horizontal",
             scale,
             "Flip Horizontal",
             bulk_flip_horizontal,
@@ -818,7 +817,7 @@ fn draw_post_processing_image_transforms(
         );
         draw_bulk_boolean_row(
             ui,
-            "temporary_bulk_flip_vertical",
+            "post_processing_bulk_flip_vertical",
             scale,
             "Flip Vertical",
             bulk_flip_vertical,
@@ -896,9 +895,9 @@ fn draw_post_processing_audio(
 
     ui.horizontal(
         |ui| {
-            ui.label("Bloom Mode:")
+            ui.label("Audiovisual Effect:")
                 .on_hover_text(
-                    "Selects Off, Audio Bloom, Spectral Bloom, or experimental Loudness Bloom processing."
+                    "Selects the audio-driven post-processing effect: Off, Audio Bloom, Spectral Bloom, or experimental Loudness Bloom."
                 );
 
             let selected_text =
@@ -909,18 +908,18 @@ fn draw_post_processing_audio(
                 } else {
                     match *bloom {
                         BloomSelection::Off => "Off",
-                        BloomSelection::Audio => "Audio",
-                        BloomSelection::Spectral => "Spectral",
-                        BloomSelection::Loudness => "Loudness",
+                        BloomSelection::Audio => "Audio Bloom",
+                        BloomSelection::Spectral => "Spectral Bloom",
+                        BloomSelection::Loudness => "Loudness Bloom",
                     }
                 };
 
             let response =
                 egui::ComboBox::from_id_source(
-                "temporary_post_processing_bloom_mode"
+                "post_processing_bloom_mode"
             )
             .selected_text(selected_text)
-            .width(120.0)
+            .width(150.0)
             .show_ui(
                 ui,
                 |ui| {
@@ -945,7 +944,7 @@ fn draw_post_processing_audio(
                     if ui.selectable_value(
                         bloom,
                         BloomSelection::Audio,
-                        "Audio",
+                        "Audio Bloom",
                     ).clicked() && bulk_edit_mode {
                         *bulk_bloom_selected = true;
                     }
@@ -954,7 +953,7 @@ fn draw_post_processing_audio(
                     if ui.selectable_value(
                         bloom,
                         BloomSelection::Spectral,
-                        "Spectral",
+                        "Spectral Bloom",
                     ).clicked() && bulk_edit_mode {
                         *bulk_bloom_selected = true;
                     }
@@ -963,7 +962,7 @@ fn draw_post_processing_audio(
                     if ui.selectable_value(
                         bloom,
                         BloomSelection::Loudness,
-                        "Loudness",
+                        "Loudness Bloom",
                     ).clicked() && bulk_edit_mode {
                         *bulk_bloom_selected = true;
                     }
@@ -1011,7 +1010,7 @@ fn draw_post_processing_audio(
         !bulk_edit_mode;
 
     egui::Grid::new(
-        "temporary_post_processing_audio_grid"
+        "post_processing_audio_grid"
     )
     .num_columns(2)
     .spacing(egui::vec2(8.0, 8.0))
@@ -1092,7 +1091,7 @@ fn draw_post_processing_audio(
             if bulk_edit_mode {
                 draw_bulk_boolean_row(
                     ui,
-                    "temporary_bulk_bloom_frequency_invert",
+                    "post_processing_bulk_bloom_frequency_invert",
                     scale,
                     "Invert Frequency Mapping",
                     bulk_bloom_frequency_invert,

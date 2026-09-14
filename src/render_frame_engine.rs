@@ -326,8 +326,10 @@ impl FrameRenderEngine {
             );
 
         let audio_required =
-            postprocess_profile.bloom.name()
-                == "audio";
+            matches!(
+                postprocess_profile.bloom.name(),
+                "audio" | "spectral" | "loudness"
+            );
 
         let postprocess =
             crate::postprocess_shader::PostprocessPipeline::new(
@@ -466,8 +468,10 @@ impl FrameRenderEngine {
         )?;
 
         self.audio_required =
-            replacement_postprocess_profile.bloom.name()
-                == "audio";
+            matches!(
+                replacement_postprocess_profile.bloom.name(),
+                "audio" | "spectral" | "loudness"
+            );
 
         replacement_texture_manager.configure_program(
             self.active_shader.program
@@ -1110,8 +1114,10 @@ impl FrameRenderEngine {
                 }
 
                 self.audio_required =
-                    new_postprocess_profile.bloom.name()
-                        == "audio";
+                    matches!(
+                        new_postprocess_profile.bloom.name(),
+                        "audio" | "spectral" | "loudness"
+                    );
 
                 self.active_shader =
                     new_shader;

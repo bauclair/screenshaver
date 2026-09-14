@@ -1901,7 +1901,7 @@ fn load_database_policy_table(
         dithering: Option<String>,
         color_precision: Option<String>,
         render_scale: Option<f64>,
-        bloom_mode: String,
+        audiovisual_effect: String,
         bloom_intensity: f64,
         bloom_threshold: f64,
         bloom_frequency_rotation: f64,
@@ -1953,7 +1953,7 @@ fn load_database_policy_table(
                      p.dithering,
                      p.color_precision,
                      p.render_scale,
-                     p.bloom_mode,
+                     p.audiovisual_effect,
                      p.bloom_intensity,
                      p.bloom_threshold,
                      p.bloom_frequency_rotation,
@@ -2004,7 +2004,7 @@ fn load_database_policy_table(
                             dithering: row.get(12)?,
                             color_precision: row.get(13)?,
                             render_scale: row.get(14)?,
-                            bloom_mode: row.get(15)?,
+                            audiovisual_effect: row.get(15)?,
                             bloom_intensity: row.get(16)?,
                             bloom_threshold: row.get(17)?,
                             bloom_frequency_rotation: row.get(18)?,
@@ -2229,7 +2229,9 @@ fn load_database_policy_table(
         tokens.push(
             format!(
                 "bloom:{}",
-                row.bloom_mode,
+                database_audiovisual_effect_bloom_token(
+                    &row.audiovisual_effect
+                )?,
             )
         );
 
@@ -2327,6 +2329,51 @@ fn load_database_policy_table(
     Ok(
         policies
     )
+}
+
+
+fn database_audiovisual_effect_bloom_token(
+    value: &str,
+) -> Result<&'static str, String> {
+
+    match value
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "off" => {
+            Ok(
+                "off"
+            )
+        }
+
+        "audio_bloom" => {
+            Ok(
+                "audio"
+            )
+        }
+
+        "spectral_bloom" => {
+            Ok(
+                "spectral"
+            )
+        }
+
+        "loudness_bloom" => {
+            Ok(
+                "loudness"
+            )
+        }
+
+        other => {
+            Err(
+                format!(
+                    "Unsupported audiovisual_effect '{}' in screenshaver.db; supported values: off, audio_bloom, spectral_bloom, loudness_bloom",
+                    other,
+                )
+            )
+        }
+    }
 }
 
 
