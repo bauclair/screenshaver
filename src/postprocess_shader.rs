@@ -283,7 +283,9 @@ impl PostprocessPipeline {
                         profile.bloom_intensity
                     )?,
                 bloom_saturation:
-                    crate::render_bloom::BLOOM_SATURATION_DEFAULT,
+                    crate::render_bloom::validate_bloom_saturation(
+                        profile.bloom_saturation
+                    )?,
                 bloom_threshold:
                     crate::render_bloom::validate_bloom_threshold(
                         profile.bloom_threshold
@@ -642,6 +644,11 @@ impl PostprocessPipeline {
                 profile.bloom_intensity
             )?;
 
+        let bloom_saturation =
+            crate::render_bloom::validate_bloom_saturation(
+                profile.bloom_saturation
+            )?;
+
         let bloom_threshold =
             crate::render_bloom::validate_bloom_threshold(
                 profile.bloom_threshold
@@ -760,6 +767,9 @@ impl PostprocessPipeline {
 
         self.bloom_intensity =
             bloom_intensity;
+
+        self.bloom_saturation =
+            bloom_saturation;
 
         self.bloom_threshold =
             bloom_threshold;

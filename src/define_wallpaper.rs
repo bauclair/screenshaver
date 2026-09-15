@@ -78,6 +78,9 @@ pub struct WallpaperSettings {
 )]
 pub struct WallpaperRuntime {
 
+    pub display_format:
+        crate::manage_configuration::WallpaperDisplayFormat,
+
     pub monitor_mode:
         WallpaperMonitorMode,
 

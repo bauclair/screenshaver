@@ -618,6 +618,7 @@ fn validate_app_defaults(
                    AND screensaver_subtitles = 1
                    AND subtitle_placement = 'bottom:center'
                    AND wallpaper_notifications = 1
+                   AND wallpaper_display_format = 'full_screen'
                    AND rendered_fps = 30
                    AND anti_aliasing = 'fxaa'
                    AND dithering = 'subtle'

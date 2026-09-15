@@ -311,6 +311,8 @@ pub struct ControlConfiguration {
     pub screensaver_global_palette: String,
     pub wallpaper_enabled: bool,
     pub notifications: bool,
+    pub wallpaper_display_format:
+        crate::manage_configuration::WallpaperDisplayFormat,
     pub wallpaper_display: String,
     pub wallpaper_interval_seconds: u64,
     pub wallpaper_single_policy_id: Option<i64>,
@@ -393,6 +395,10 @@ impl ControlConfiguration {
             ),
             wallpaper_enabled: config.wallpaper_enabled,
             notifications: app_defaults.as_ref().map(|d| d.wallpaper_notifications).unwrap_or(config.wallpaper.notifications),
+            wallpaper_display_format: app_defaults
+                .as_ref()
+                .map(|d| d.wallpaper_display_format)
+                .unwrap_or(config.wallpaper_display_format),
             wallpaper_display,
             wallpaper_interval_seconds,
             wallpaper_single_policy_id,
@@ -700,6 +706,7 @@ pub struct BulkEditChanges {
     pub color_precision: bool,
     pub bloom: bool,
     pub bloom_intensity: bool,
+    pub bloom_saturation: bool,
     pub bloom_threshold: bool,
     pub bloom_frequency_rotation: bool,
     pub bloom_frequency_invert: bool,
@@ -723,6 +730,7 @@ impl BulkEditChanges {
             || self.color_precision
             || self.bloom
             || self.bloom_intensity
+            || self.bloom_saturation
             || self.bloom_threshold
             || self.bloom_frequency_rotation
             || self.bloom_frequency_invert
@@ -909,6 +917,8 @@ impl EditorConfiguration {
                 self.bloom != baseline.bloom,
             bloom_intensity:
                 (self.bloom_intensity - baseline.bloom_intensity).abs() > 0.0001,
+            bloom_saturation:
+                (self.bloom_saturation - baseline.bloom_saturation).abs() > 0.0001,
             bloom_threshold:
                 (self.bloom_threshold - baseline.bloom_threshold).abs() > 0.0001,
             bloom_frequency_rotation:
@@ -1181,6 +1191,9 @@ pub struct EditWindowOverlay {
         bool,
 
     bulk_bloom_intensity_selected:
+        bool,
+
+    bulk_bloom_saturation_selected:
         bool,
 
     bulk_bloom_threshold_selected:
@@ -1564,6 +1577,9 @@ impl EditWindowOverlay {
                     false,
 
                 bulk_bloom_intensity_selected:
+                    false,
+
+                bulk_bloom_saturation_selected:
                     false,
 
                 bulk_bloom_threshold_selected:
@@ -2359,6 +2375,9 @@ impl EditWindowOverlay {
         let mut bulk_bloom_intensity_selected =
             self.bulk_bloom_intensity_selected;
 
+        let mut bulk_bloom_saturation_selected =
+            self.bulk_bloom_saturation_selected;
+
         let mut bulk_bloom_threshold_selected =
             self.bulk_bloom_threshold_selected;
 
@@ -2743,6 +2762,7 @@ impl EditWindowOverlay {
                 bulk_animation_speed_selected = false;
                 bulk_render_scale_selected = false;
                 bulk_bloom_intensity_selected = false;
+                bulk_bloom_saturation_selected = false;
                 bulk_bloom_threshold_selected = false;
                 bulk_bloom_frequency_rotation_selected = false;
                 bulk_anti_aliasing_selected = false;
@@ -2869,6 +2889,7 @@ impl EditWindowOverlay {
                 bulk_animation_speed_selected = false;
                 bulk_render_scale_selected = false;
                 bulk_bloom_intensity_selected = false;
+                bulk_bloom_saturation_selected = false;
                 bulk_bloom_threshold_selected = false;
                 bulk_bloom_frequency_rotation_selected = false;
                 bulk_anti_aliasing_selected = false;
@@ -3076,6 +3097,8 @@ impl EditWindowOverlay {
                                 bulk_edit_mode && bulk_render_scale_selected;
                             pending_bulk_changes.bloom_intensity =
                                 bulk_edit_mode && bulk_bloom_intensity_selected;
+                            pending_bulk_changes.bloom_saturation =
+                                bulk_edit_mode && bulk_bloom_saturation_selected;
                             pending_bulk_changes.bloom_threshold =
                                 bulk_edit_mode && bulk_bloom_threshold_selected;
                             pending_bulk_changes.bloom_frequency_rotation =
@@ -3331,6 +3354,7 @@ impl EditWindowOverlay {
                                                         &mut bulk_color_precision_selected,
                                                         &mut bulk_bloom_selected,
                                                         &mut bulk_bloom_intensity_selected,
+                                                        &mut bulk_bloom_saturation_selected,
                                                         &mut bulk_bloom_threshold_selected,
                                                         &mut bulk_bloom_frequency_rotation_selected,
                                                         &mut bulk_bloom_frequency_invert,
@@ -3793,6 +3817,8 @@ impl EditWindowOverlay {
             bulk_edit_mode && bulk_render_scale_selected;
         bulk_edit_changes.bloom_intensity =
             bulk_edit_mode && bulk_bloom_intensity_selected;
+        bulk_edit_changes.bloom_saturation =
+            bulk_edit_mode && bulk_bloom_saturation_selected;
         bulk_edit_changes.bloom_threshold =
             bulk_edit_mode && bulk_bloom_threshold_selected;
         bulk_edit_changes.bloom_frequency_rotation =
@@ -3946,6 +3972,8 @@ impl EditWindowOverlay {
             bulk_render_scale_selected;
         self.bulk_bloom_intensity_selected =
             bulk_bloom_intensity_selected;
+        self.bulk_bloom_saturation_selected =
+            bulk_bloom_saturation_selected;
         self.bulk_bloom_threshold_selected =
             bulk_bloom_threshold_selected;
         self.bulk_bloom_frequency_rotation_selected =
@@ -4621,6 +4649,7 @@ impl EditWindowOverlay {
         self.bulk_animation_speed_selected = false;
         self.bulk_render_scale_selected = false;
         self.bulk_bloom_intensity_selected = false;
+        self.bulk_bloom_saturation_selected = false;
         self.bulk_bloom_threshold_selected = false;
         self.bulk_bloom_frequency_rotation_selected = false;
         self.bulk_anti_aliasing_selected = false;
@@ -4770,6 +4799,7 @@ impl EditWindowOverlay {
         self.bulk_animation_speed_selected = false;
         self.bulk_render_scale_selected = false;
         self.bulk_bloom_intensity_selected = false;
+        self.bulk_bloom_saturation_selected = false;
         self.bulk_bloom_threshold_selected = false;
         self.bulk_bloom_frequency_rotation_selected = false;
         self.bulk_anti_aliasing_selected = false;

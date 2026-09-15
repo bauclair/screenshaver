@@ -57,7 +57,7 @@ impl ConfigurationNestedTab {
 enum PostProcessingNestedTab {
     VisualQuality,
     ImageTransforms,
-    Audio,
+    Audiovisual,
 }
 
 
@@ -68,7 +68,7 @@ impl PostProcessingNestedTab {
     ] = [
         PostProcessingNestedTab::VisualQuality,
         PostProcessingNestedTab::ImageTransforms,
-        PostProcessingNestedTab::Audio,
+        PostProcessingNestedTab::Audiovisual,
     ];
 
 
@@ -78,7 +78,7 @@ impl PostProcessingNestedTab {
         match self {
             PostProcessingNestedTab::VisualQuality => "Visual Quality",
             PostProcessingNestedTab::ImageTransforms => "Image Transforms",
-            PostProcessingNestedTab::Audio => "Audio",
+            PostProcessingNestedTab::Audiovisual => "Audiovisual",
         }
     }
 }
@@ -415,6 +415,7 @@ pub fn draw_post_processing(
     bulk_color_precision_selected: &mut bool,
     bulk_bloom_selected: &mut bool,
     bulk_bloom_intensity_selected: &mut bool,
+    bulk_bloom_saturation_selected: &mut bool,
     bulk_bloom_threshold_selected: &mut bool,
     bulk_bloom_frequency_rotation_selected: &mut bool,
     bulk_bloom_frequency_invert: &mut BulkBooleanSelection,
@@ -504,7 +505,7 @@ pub fn draw_post_processing(
                                     );
                                 }
 
-                                PostProcessingNestedTab::Audio => {
+                                PostProcessingNestedTab::Audiovisual => {
                                     draw_post_processing_audio(
                                         ui,
                                         scale,
@@ -522,6 +523,7 @@ pub fn draw_post_processing(
                                         bulk_edit_mode,
                                         bulk_bloom_selected,
                                         bulk_bloom_intensity_selected,
+                                        bulk_bloom_saturation_selected,
                                         bulk_bloom_threshold_selected,
                                         bulk_bloom_frequency_rotation_selected,
                                         bulk_bloom_frequency_invert,
@@ -886,11 +888,12 @@ fn draw_post_processing_audio(
     bulk_edit_mode: bool,
     bulk_bloom_selected: &mut bool,
     bulk_bloom_intensity_selected: &mut bool,
+    bulk_bloom_saturation_selected: &mut bool,
     bulk_bloom_threshold_selected: &mut bool,
     bulk_bloom_frequency_rotation_selected: &mut bool,
     bulk_bloom_frequency_invert: &mut BulkBooleanSelection,
 ) {
-    ui.heading("Audio");
+    ui.heading("Audiovisual");
     ui.add_space(8.0);
 
     ui.horizontal(
@@ -1006,9 +1009,6 @@ fn draw_post_processing_audio(
                 && *bloom != BloomSelection::Loudness
         };
 
-    let mut experimental_bloom_saturation_selected =
-        !bulk_edit_mode;
-
     egui::Grid::new(
         "post_processing_audio_grid"
     )
@@ -1043,10 +1043,10 @@ fn draw_post_processing_audio(
                 shift_held,
                 bloom_saturation_drag_state,
                 bulk_edit_mode,
-                &mut experimental_bloom_saturation_selected,
+                bulk_bloom_saturation_selected,
                 bloom_controls_available,
                 scale,
-                "Boosts bloom color saturation from the neutral 1.0 level up to 2.0 without changing the displayed shader colors. Experimental Control Center test; not yet stored in shader policies.",
+                "Boosts bloom color saturation from the neutral 1.0 level up to 2.0 without changing the displayed shader colors.",
             );
 
             draw_numeric_slider_grid_row(
@@ -1416,6 +1416,7 @@ fn draw_target_page(
             draw_target_grid(
                 ui,
                 target,
+                None,
                 &mut configuration.screensaver_display,
                 &mut configuration.screensaver_interval_seconds,
                 &mut configuration.screensaver_single_policy_id,
@@ -1457,6 +1458,9 @@ fn draw_target_page(
             draw_target_grid(
                 ui,
                 target,
+                Some(
+                    &mut configuration.wallpaper_display_format
+                ),
                 &mut configuration.wallpaper_display,
                 &mut configuration.wallpaper_interval_seconds,
                 &mut configuration.wallpaper_single_policy_id,
@@ -1482,6 +1486,9 @@ fn draw_target_page(
 fn draw_target_grid(
     ui: &mut egui::Ui,
     target: PolicyTarget,
+    wallpaper_display_format: Option<
+        &mut crate::manage_configuration::WallpaperDisplayFormat
+    >,
     display_mode: &mut String,
     interval_seconds: &mut u64,
     single_policy_id: &mut Option<i64>,
@@ -1519,6 +1526,55 @@ fn draw_target_grid(
     .show(
         ui,
         |ui| {
+            if let Some(
+                wallpaper_display_format
+            ) = wallpaper_display_format
+            {
+                ui.label(
+                    "Display Format:"
+                )
+                .on_hover_text(
+                    "Selects whether wallpaper is presented full-screen or in a normal desktop-managed window."
+                );
+
+                egui::ComboBox::from_id_source(
+                    "nested_config_wallpaper_display_format_combo"
+                )
+                .selected_text(
+                    match *wallpaper_display_format {
+                        crate::manage_configuration::WallpaperDisplayFormat::FullScreen => {
+                            "Full-screen"
+                        }
+
+                        crate::manage_configuration::WallpaperDisplayFormat::Windowed => {
+                            "Windowed"
+                        }
+                    }
+                )
+                .width(
+                    CONTROL_WIDTH
+                )
+                .show_ui(
+                    ui,
+                    |ui| {
+                        ui.selectable_value(
+                            wallpaper_display_format,
+                            crate::manage_configuration::WallpaperDisplayFormat::FullScreen,
+                            "Full-screen",
+                        );
+
+                        ui.selectable_value(
+                            wallpaper_display_format,
+                            crate::manage_configuration::WallpaperDisplayFormat::Windowed,
+                            "Windowed",
+                        );
+                    },
+                );
+
+                ui.end_row();
+            }
+
+
             ui.label(
                 "Mode:"
             );

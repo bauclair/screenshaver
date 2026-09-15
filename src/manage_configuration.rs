@@ -148,12 +148,48 @@ impl ConfigurationUpdates {
 // ------------------------------------------------------------
 //
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WallpaperDisplayFormat {
+    FullScreen,
+    Windowed,
+}
+
+
+impl WallpaperDisplayFormat {
+    pub const fn database_value(
+        self,
+    ) -> &'static str {
+        match self {
+            Self::FullScreen => "full_screen",
+            Self::Windowed => "windowed",
+        }
+    }
+
+
+    pub fn parse_database_value(
+        value: &str,
+    ) -> Result<Self, String> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "full_screen" => Ok(Self::FullScreen),
+            "windowed" => Ok(Self::Windowed),
+            other => Err(
+                format!(
+                    "Unsupported wallpaper display format '{}'; expected 'full_screen' or 'windowed'",
+                    other,
+                )
+            ),
+        }
+    }
+}
+
+
 #[derive(Debug, Clone)]
 pub struct AppDefaults {
     pub show_splash: bool,
     pub screensaver_subtitles: bool,
     pub subtitle_placement: String,
     pub wallpaper_notifications: bool,
+    pub wallpaper_display_format: WallpaperDisplayFormat,
     pub rendered_fps: i64,
     pub anti_aliasing: String,
     pub dithering: String,
@@ -202,6 +238,7 @@ pub fn load_app_defaults() -> Result<AppDefaults, String> {
                  screensaver_subtitles,
                  subtitle_placement,
                  wallpaper_notifications,
+                 wallpaper_display_format,
                  rendered_fps,
                  anti_aliasing,
                  dithering,
@@ -221,16 +258,34 @@ pub fn load_app_defaults() -> Result<AppDefaults, String> {
                             row.get(2)?,
                         wallpaper_notifications:
                             row.get::<_, i64>(3)? != 0,
+                        wallpaper_display_format:
+                            WallpaperDisplayFormat::parse_database_value(
+                                &row.get::<_, String>(4)?
+                            )
+                            .map_err(
+                                |error| {
+                                    rusqlite::Error::FromSqlConversionFailure(
+                                        4,
+                                        rusqlite::types::Type::Text,
+                                        Box::new(
+                                            std::io::Error::new(
+                                                std::io::ErrorKind::InvalidData,
+                                                error,
+                                            )
+                                        ),
+                                    )
+                                }
+                            )?,
                         rendered_fps:
-                            row.get(4)?,
-                        anti_aliasing:
                             row.get(5)?,
-                        dithering:
+                        anti_aliasing:
                             row.get(6)?,
-                        color_precision:
+                        dithering:
                             row.get(7)?,
-                        render_scale:
+                        color_precision:
                             row.get(8)?,
+                        render_scale:
+                            row.get(9)?,
                     }
                 )
             },
@@ -530,17 +585,19 @@ pub fn save_app_defaults(
                      screensaver_subtitles = ?2,
                      subtitle_placement = ?3,
                      wallpaper_notifications = ?4,
-                     rendered_fps = ?5,
-                     anti_aliasing = ?6,
-                     dithering = ?7,
-                     color_precision = ?8,
-                     render_scale = ?9
+                     wallpaper_display_format = ?5,
+                     rendered_fps = ?6,
+                     anti_aliasing = ?7,
+                     dithering = ?8,
+                     color_precision = ?9,
+                     render_scale = ?10
                  WHERE defaults_id = 1",
                 rusqlite::params![
                     defaults.show_splash,
                     defaults.screensaver_subtitles,
                     defaults.subtitle_placement,
                     defaults.wallpaper_notifications,
+                    defaults.wallpaper_display_format.database_value(),
                     defaults.rendered_fps,
                     defaults.anti_aliasing,
                     defaults.dithering,

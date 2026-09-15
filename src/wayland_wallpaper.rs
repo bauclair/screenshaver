@@ -35,6 +35,22 @@ use wayland_client::{
     QueueHandle,
 };
 
+use wayland_protocols::xdg::shell::client::{
+    xdg_surface::{
+        self,
+        XdgSurface,
+    },
+    xdg_toplevel::{
+        self,
+        XdgToplevel,
+    },
+    xdg_wm_base::{
+        self,
+        XdgWmBase,
+    },
+};
+
+
 use wayland_protocols_wlr::layer_shell::v1::client::{
     zwlr_layer_shell_v1::{
         self,
@@ -151,8 +167,10 @@ struct WallpaperSurfaceState {
 struct NativeWallpaperTarget {
     info: WallpaperTargetInfo,
     surface: wl_surface::WlSurface,
-    layer_surface: ZwlrLayerSurfaceV1,
-    input_region: wl_region::WlRegion,
+    layer_surface: Option<ZwlrLayerSurfaceV1>,
+    input_region: Option<wl_region::WlRegion>,
+    xdg_surface: Option<XdgSurface>,
+    xdg_toplevel: Option<XdgToplevel>,
     egl_window: wayland_egl::WlEglSurface,
     width: i32,
     height: i32,
@@ -186,12 +204,16 @@ pub struct WallpaperSurfaceConfiguration {
 struct WaylandState {
     compositor: Option<wl_compositor::WlCompositor>,
     layer_shell: Option<ZwlrLayerShellV1>,
+    xdg_wm_base: Option<XdgWmBase>,
     compositor_version: Option<u32>,
     layer_shell_version: Option<u32>,
+    xdg_wm_base_version: Option<u32>,
     output_count: usize,
     targets: Vec<WallpaperTarget>,
     surface_states: Vec<WallpaperSurfaceState>,
     removed_output_names: Vec<u32>,
+    windowed_pending_width: i32,
+    windowed_pending_height: i32,
 }
 
 
@@ -270,6 +292,37 @@ impl Dispatch<wl_registry::WlRegistry, ()>
                                         name,
                                         version.min(
                                             4
+                                        ),
+                                        queue_handle,
+                                        (),
+                                    )
+                                );
+                        }
+                    }
+
+
+                    "xdg_wm_base" => {
+
+                        state.xdg_wm_base_version =
+                            Some(
+                                version
+                            );
+
+
+                        if state
+                            .xdg_wm_base
+                            .is_none()
+                        {
+                            state.xdg_wm_base =
+                                Some(
+                                    registry.bind::<
+                                        XdgWmBase,
+                                        _,
+                                        _
+                                    >(
+                                        name,
+                                        version.min(
+                                            6
                                         ),
                                         queue_handle,
                                         (),
@@ -447,6 +500,156 @@ impl Dispatch<ZwlrLayerSurfaceV1, LayerSurfaceDispatchData>
                             |surface_state| {
                                 surface_state.registry_name
                                     == data.registry_name
+                            }
+                        )
+                {
+                    surface_state.closed =
+                        true;
+                }
+            }
+
+
+            _ => {}
+        }
+    }
+}
+
+
+impl Dispatch<XdgWmBase, ()>
+    for WaylandState
+{
+    fn event(
+        _state: &mut Self,
+        xdg_wm_base: &XdgWmBase,
+        event: xdg_wm_base::Event,
+        _data: &(),
+        _connection: &Connection,
+        _queue_handle: &QueueHandle<Self>,
+    ) {
+
+        if let xdg_wm_base::Event::Ping {
+            serial,
+        } = event
+        {
+            xdg_wm_base.pong(
+                serial
+            );
+        }
+    }
+}
+
+
+impl Dispatch<XdgSurface, ()>
+    for WaylandState
+{
+    fn event(
+        state: &mut Self,
+        xdg_surface: &XdgSurface,
+        event: xdg_surface::Event,
+        _data: &(),
+        _connection: &Connection,
+        _queue_handle: &QueueHandle<Self>,
+    ) {
+
+        if let xdg_surface::Event::Configure {
+            serial,
+        } = event
+        {
+            xdg_surface.ack_configure(
+                serial
+            );
+
+
+            let configured_width =
+                u32::try_from(
+                    state.windowed_pending_width
+                )
+                .unwrap_or(
+                    0
+                );
+
+
+            let configured_height =
+                u32::try_from(
+                    state.windowed_pending_height
+                )
+                .unwrap_or(
+                    0
+                );
+
+
+            if let Some(
+                surface_state
+            ) =
+                state
+                    .surface_states
+                    .iter_mut()
+                    .find(
+                        |surface_state| {
+                            surface_state.registry_name
+                                == 0
+                        }
+                    )
+            {
+                surface_state.configured =
+                    Some(
+                        WallpaperSurfaceConfiguration {
+                            width:
+                                configured_width,
+
+                            height:
+                                configured_height,
+
+                            serial,
+                        }
+                    );
+            }
+        }
+    }
+}
+
+
+impl Dispatch<XdgToplevel, ()>
+    for WaylandState
+{
+    fn event(
+        state: &mut Self,
+        _xdg_toplevel: &XdgToplevel,
+        event: xdg_toplevel::Event,
+        _data: &(),
+        _connection: &Connection,
+        _queue_handle: &QueueHandle<Self>,
+    ) {
+
+        match event {
+
+            xdg_toplevel::Event::Configure {
+                width,
+                height,
+                ..
+            } => {
+
+                state.windowed_pending_width =
+                    width;
+
+
+                state.windowed_pending_height =
+                    height;
+            }
+
+
+            xdg_toplevel::Event::Close => {
+
+                if let Some(
+                    surface_state
+                ) =
+                    state
+                        .surface_states
+                        .iter_mut()
+                        .find(
+                            |surface_state| {
+                                surface_state.registry_name
+                                    == 0
                             }
                         )
                 {
@@ -1328,8 +1531,18 @@ pub fn run_egl_background_surface(
             NativeWallpaperTarget {
                 info,
                 surface,
-                layer_surface,
-                input_region,
+                layer_surface:
+                    Some(
+                        layer_surface
+                    ),
+                input_region:
+                    Some(
+                        input_region
+                    ),
+                xdg_surface:
+                    None,
+                xdg_toplevel:
+                    None,
                 egl_window,
                 width,
                 height,
@@ -1360,13 +1573,35 @@ pub fn run_egl_background_surface(
         );
 
 
-        target.layer_surface.destroy();
+        if let Some(layer_surface) =
+            target.layer_surface
+        {
+            layer_surface.destroy();
+        }
+
+
+        if let Some(xdg_toplevel) =
+            target.xdg_toplevel
+        {
+            xdg_toplevel.destroy();
+        }
+
+
+        if let Some(xdg_surface) =
+            target.xdg_surface
+        {
+            xdg_surface.destroy();
+        }
 
 
         target.surface.destroy();
 
 
-        target.input_region.destroy();
+        if let Some(input_region) =
+            target.input_region
+        {
+            input_region.destroy();
+        }
     }
 
 
@@ -1388,6 +1623,388 @@ pub fn run_egl_background_surface(
     Ok(
         ()
     )
+}
+
+
+pub fn run_egl_windowed_surface(
+    mut shader_manager: crate::manage_shader::ShaderManager,
+    wallpaper_directory: &Path,
+    shader_interval: Option<Duration>,
+    runtime: &crate::define_wallpaper::WallpaperRuntime,
+    running: Arc<AtomicBool>,
+    control: crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+) -> Result<(), String> {
+
+    const WINDOWED_TARGET_ID: u32 = 0;
+    const DEFAULT_WINDOW_WIDTH: i32 = 960;
+    const DEFAULT_WINDOW_HEIGHT: i32 = 540;
+
+
+    runtime.tray_status
+        .set_starting();
+
+
+    let active_shader =
+        select_safe_wallpaper_shader(
+            &mut shader_manager,
+            wallpaper_directory,
+        )?;
+
+
+    print_active_wallpaper_shader(
+        &active_shader
+    );
+
+
+    runtime.tray_status.set_active(
+        active_shader.policy_id,
+        active_shader.shader_name.clone(),
+        active_shader.source_path.clone(),
+    );
+
+
+    let (
+        connection,
+        mut event_queue,
+        mut state,
+    ) =
+        connect_and_bind_windowed()?;
+
+
+    let queue_handle =
+        event_queue.handle();
+
+
+    let compositor =
+        state
+            .compositor
+            .clone()
+            .ok_or_else(
+                || {
+                    "The Wayland compositor did not advertise wl_compositor"
+                        .to_string()
+                }
+            )?;
+
+
+    let xdg_wm_base =
+        state
+            .xdg_wm_base
+            .clone()
+            .ok_or_else(
+                || {
+                    "The Wayland compositor did not advertise xdg_wm_base"
+                        .to_string()
+                }
+            )?;
+
+
+    state.surface_states.push(
+        WallpaperSurfaceState {
+            registry_name:
+                WINDOWED_TARGET_ID,
+
+            configured:
+                None,
+
+            closed:
+                false,
+        }
+    );
+
+
+    let surface =
+        compositor.create_surface(
+            &queue_handle,
+            (),
+        );
+
+
+    let xdg_surface =
+        xdg_wm_base.get_xdg_surface(
+            &surface,
+            &queue_handle,
+            (),
+        );
+
+
+    let xdg_toplevel =
+        xdg_surface.get_toplevel(
+            &queue_handle,
+            (),
+        );
+
+
+    xdg_toplevel.set_title(
+        "Screenshaver Windowpaper"
+            .to_string()
+    );
+
+
+    xdg_toplevel.set_app_id(
+        "screenshaver"
+            .to_string()
+    );
+
+
+    surface.commit();
+
+
+    connection
+        .flush()
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to send Windowed wallpaper surface requests: {}",
+                    error,
+                )
+            }
+        )?;
+
+
+    while state
+        .surface_states
+        .iter()
+        .any(
+            |surface_state| {
+                surface_state.registry_name
+                    == WINDOWED_TARGET_ID
+                    && surface_state.configured.is_none()
+                    && !surface_state.closed
+            }
+        )
+    {
+        event_queue
+            .blocking_dispatch(
+                &mut state
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to receive Windowed wallpaper configure events: {}",
+                        error,
+                    )
+                }
+            )?;
+    }
+
+
+    let surface_state =
+        state
+            .surface_states
+            .iter_mut()
+            .find(
+                |surface_state| {
+                    surface_state.registry_name
+                        == WINDOWED_TARGET_ID
+                }
+            )
+            .ok_or_else(
+                || {
+                    "Windowed wallpaper surface state was not created"
+                        .to_string()
+                }
+            )?;
+
+
+    if surface_state.closed
+        && surface_state.configured.is_none()
+    {
+        return Err(
+            "The compositor closed the Windowed wallpaper before configuring it"
+                .to_string()
+        );
+    }
+
+
+    let configuration =
+        surface_state
+            .configured
+            .take()
+            .ok_or_else(
+                || {
+                    "The compositor did not configure the Windowed wallpaper"
+                        .to_string()
+                }
+            )?;
+
+
+    let width =
+        configured_dimension(
+            configuration.width,
+            DEFAULT_WINDOW_WIDTH,
+            "width",
+        )?;
+
+
+    let height =
+        configured_dimension(
+            configuration.height,
+            DEFAULT_WINDOW_HEIGHT,
+            "height",
+        )?;
+
+
+    println!(
+        "Wayland Windowed wallpaper configured successfully:"
+    );
+
+
+    println!(
+        "    Width: {}",
+        width
+    );
+
+
+    println!(
+        "    Height: {}",
+        height
+    );
+
+
+    println!(
+        "    Configure serial: {}",
+        configuration.serial
+    );
+
+
+    println!(
+        "    Window role: xdg_toplevel"
+    );
+
+
+    println!(
+        "    Placement: compositor-managed"
+    );
+
+
+    println!();
+
+
+    let egl_window =
+        wayland_egl::WlEglSurface::new(
+            surface.id(),
+            width,
+            height,
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to create wl_egl_window for Windowed wallpaper: {}",
+                    error,
+                )
+            }
+        )?;
+
+
+    let info =
+        WallpaperTargetInfo {
+            registry_name:
+                WINDOWED_TARGET_ID,
+
+            description:
+                Some(
+                    "Windowed wallpaper"
+                        .to_string()
+                ),
+
+            mode_width:
+                width,
+
+            mode_height:
+                height,
+
+            scale:
+                1,
+
+            complete:
+                true,
+
+            ..WallpaperTargetInfo::default()
+        };
+
+
+    let mut native_targets =
+        vec![
+            NativeWallpaperTarget {
+                info,
+                surface,
+                layer_surface:
+                    None,
+                input_region:
+                    None,
+                xdg_surface:
+                    Some(
+                        xdg_surface
+                    ),
+                xdg_toplevel:
+                    Some(
+                        xdg_toplevel
+                    ),
+                egl_window,
+                width,
+                height,
+            }
+        ];
+
+
+    let render_result =
+        render_egl_wallpapers(
+            &connection,
+            &mut event_queue,
+            &mut state,
+            &mut native_targets,
+            &active_shader,
+            &mut shader_manager,
+            wallpaper_directory,
+            shader_interval,
+            runtime,
+            &running,
+            &control,
+        );
+
+
+    for target in native_targets {
+
+        drop(
+            target.egl_window
+        );
+
+
+        if let Some(xdg_toplevel) =
+            target.xdg_toplevel
+        {
+            xdg_toplevel.destroy();
+        }
+
+
+        if let Some(xdg_surface) =
+            target.xdg_surface
+        {
+            xdg_surface.destroy();
+        }
+
+
+        target.surface.destroy();
+    }
+
+
+    xdg_wm_base.destroy();
+
+
+    connection
+        .flush()
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to send Windowed wallpaper cleanup requests: {}",
+                    error,
+                )
+            }
+        )?;
+
+
+    render_result
 }
 
 
@@ -1546,6 +2163,97 @@ fn connect_and_bind(
         )
     )
 }
+
+fn connect_and_bind_windowed(
+) -> Result<
+    (
+        Connection,
+        wayland_client::EventQueue<WaylandState>,
+        WaylandState,
+    ),
+    String,
+> {
+
+    let connection =
+        Connection::connect_to_env()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to connect to the Wayland compositor: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    let display =
+        connection.display();
+
+
+    let mut event_queue =
+        connection.new_event_queue();
+
+
+    let queue_handle =
+        event_queue.handle();
+
+
+    let _registry =
+        display.get_registry(
+            &queue_handle,
+            (),
+        );
+
+
+    let mut state =
+        WaylandState::default();
+
+
+    event_queue
+        .roundtrip(
+            &mut state
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to read Wayland compositor capabilities for Windowed wallpaper: {}",
+                    error,
+                )
+            }
+        )?;
+
+
+    if state
+        .compositor
+        .is_none()
+    {
+        return Err(
+            "The Wayland compositor did not advertise wl_compositor"
+                .to_string()
+        );
+    }
+
+
+    if state
+        .xdg_wm_base
+        .is_none()
+    {
+        return Err(
+            "The Wayland compositor did not advertise xdg_wm_base"
+                .to_string()
+        );
+    }
+
+
+    Ok(
+        (
+            connection,
+            event_queue,
+            state,
+        )
+    )
+}
+
 
 type EglBoolean = u32;
 type EglEnum = u32;
@@ -3558,6 +4266,8 @@ fn remove_disconnected_targets(
             surface,
             layer_surface,
             input_region,
+            xdg_surface,
+            xdg_toplevel,
             egl_window,
             ..
         } = native_target;
@@ -3568,13 +4278,35 @@ fn remove_disconnected_targets(
         );
 
 
-        layer_surface.destroy();
+        if let Some(layer_surface) =
+            layer_surface
+        {
+            layer_surface.destroy();
+        }
+
+
+        if let Some(xdg_toplevel) =
+            xdg_toplevel
+        {
+            xdg_toplevel.destroy();
+        }
+
+
+        if let Some(xdg_surface) =
+            xdg_surface
+        {
+            xdg_surface.destroy();
+        }
 
 
         surface.destroy();
 
 
-        input_region.destroy();
+        if let Some(input_region) =
+            input_region
+        {
+            input_region.destroy();
+        }
 
 
         state

@@ -253,18 +253,93 @@ impl WallpaperBackend for WaylandWallpaperBackend {
         running: Arc<AtomicBool>,
         control: WallpaperRuntimeControl,
     ) -> Result<(), String> {
-        println!(
-            "Starting native Wayland/EGL mirror wallpaper renderer..."
-        );
+        match runtime.display_format {
+            crate::manage_configuration::WallpaperDisplayFormat::FullScreen => {
+                println!(
+                    "Wallpaper display format: Full-screen"
+                );
 
-        crate::wayland_wallpaper::run_egl_background_surface(
-            shader_manager,
-            wallpaper_directory,
-            shader_interval,
-            runtime,
-            running,
-            control,
-        )?;
+
+                println!(
+                    "Starting native Wayland/EGL mirror wallpaper renderer..."
+                );
+
+
+                crate::wayland_wallpaper::run_egl_background_surface(
+                    shader_manager,
+                    wallpaper_directory,
+                    shader_interval,
+                    runtime,
+                    running,
+                    control,
+                )?;
+            }
+
+            crate::manage_configuration::WallpaperDisplayFormat::Windowed => {
+                println!(
+                    "Wallpaper display format: Windowed"
+                );
+
+
+                println!(
+                    "Starting native Wayland/EGL Windowed wallpaper renderer..."
+                );
+
+
+                let fallback_shader_manager =
+                    shader_manager.clone();
+
+
+                let fallback_control =
+                    control.clone();
+
+
+                let fallback_running =
+                    running.clone();
+
+
+                if let Err(error) =
+                    crate::wayland_wallpaper::run_egl_windowed_surface(
+                        shader_manager,
+                        wallpaper_directory,
+                        shader_interval,
+                        runtime,
+                        running,
+                        control,
+                    )
+                {
+                    println!(
+                        "Unable to create the Windowed Wayland wallpaper presentation:"
+                    );
+
+
+                    println!(
+                        "    {}",
+                        error
+                    );
+
+
+                    println!(
+                        "Falling back to Full-screen wallpaper presentation for this run."
+                    );
+
+
+                    println!(
+                        "The persisted Wallpaper Display Format remains Windowed."
+                    );
+
+
+                    crate::wayland_wallpaper::run_egl_background_surface(
+                        fallback_shader_manager,
+                        wallpaper_directory,
+                        shader_interval,
+                        runtime,
+                        fallback_running,
+                        fallback_control,
+                    )?;
+                }
+            }
+        }
 
         println!();
 

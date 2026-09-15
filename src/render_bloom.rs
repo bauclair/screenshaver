@@ -461,27 +461,17 @@ void main()
 
     // Live Audio Bloom modulation. The analyzer publishes already-normalized
     // and attack/release-smoothed energy for the three frequency bands.
-    //
-    // The Control Center Ctrl diagnostic deliberately excites only the bass
-    // band. This makes Frequency Mapping inversion visually unambiguous:
-    // with inversion disabled, the normal bass-associated hue region blooms;
-    // with inversion enabled, that same test energy is routed to the
-    // treble-associated hue region. Midrange and treble are zero during the
-    // diagnostic so blur/compositing cannot conceal the mapping reversal.
-    // Ordinary Audio Bloom continues to use the live analyzer values below.
-    float bassEnergy;
-    float midEnergy;
-    float highEnergy;
+    // These values drive ordinary Audio Bloom. The Control Center diagnostic
+    // bypasses audio-band participation later so Ctrl can show the raw Bloom
+    // Threshold extraction.
+    float bassEnergy =
+        clamp(uAudioBands.x, 0.0, 1.0);
 
-    if (uDiagnostic != 0) {
-        bassEnergy = 1.0;
-        midEnergy = 0.0;
-        highEnergy = 0.0;
-    } else {
-        bassEnergy = clamp(uAudioBands.x, 0.0, 1.0);
-        midEnergy = clamp(uAudioBands.y, 0.0, 1.0);
-        highEnergy = clamp(uAudioBands.z, 0.0, 1.0);
-    }
+    float midEnergy =
+        clamp(uAudioBands.y, 0.0, 1.0);
+
+    float highEnergy =
+        clamp(uAudioBands.z, 0.0, 1.0);
 
     // The historical band windows remain unchanged. Inversion changes the hue
     // coordinate presented to those windows, which reverses the complete
@@ -543,16 +533,35 @@ void main()
             energy
         );
 
-    float response =
-        energy
-            * smoothstep(
-                effectiveThreshold,
+    float response;
+
+    if (uDiagnostic != 0) {
+        // Control Center Bloom Threshold diagnostic. Show the raw Audio Bloom
+        // color-participation extraction at the configured threshold without
+        // live audio energy or frequency-band gating. This makes Ctrl a direct
+        // preview of the Bloom Threshold slider while leaving ordinary Audio
+        // Bloom behavior unchanged.
+        response =
+            smoothstep(
+                uThreshold,
                 min(
-                    effectiveThreshold + 0.35,
+                    uThreshold + 0.35,
                     2.0001
                 ),
                 colorStrength
             );
+    } else {
+        response =
+            energy
+                * smoothstep(
+                    effectiveThreshold,
+                    min(
+                        effectiveThreshold + 0.35,
+                        2.0001
+                    ),
+                    colorStrength
+                );
+    }
 
     vec3 bloomColor =
         boostSaturation(

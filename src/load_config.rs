@@ -145,6 +145,9 @@ pub struct ShaderPolicy {
     pub bloom_intensity:
         Option<f32>,
 
+    pub bloom_saturation:
+        Option<f32>,
+
     pub bloom_threshold:
         Option<f32>,
 
@@ -623,6 +626,9 @@ pub(crate) struct PostprocessProfile {
     pub bloom_intensity:
         f32,
 
+    pub bloom_saturation:
+        f32,
+
     pub bloom_threshold:
         f32,
 
@@ -669,6 +675,9 @@ impl Default for PostprocessProfile {
 
             bloom_intensity:
                 crate::render_bloom::BLOOM_INTENSITY_DEFAULT,
+
+            bloom_saturation:
+                crate::render_bloom::BLOOM_SATURATION_DEFAULT,
 
             bloom_threshold:
                 crate::render_bloom::BLOOM_THRESHOLD_DEFAULT,
@@ -827,6 +836,17 @@ impl PostprocessPolicy {
                         self.global_profile.bloom_intensity
                     ),
 
+            bloom_saturation:
+                shader_policy
+                    .and_then(
+                        |shader_policy| {
+                            shader_policy.bloom_saturation
+                        }
+                    )
+                    .unwrap_or(
+                        self.global_profile.bloom_saturation
+                    ),
+
             bloom_threshold:
                 shader_policy
                     .and_then(
@@ -892,6 +912,9 @@ pub struct Config {
         crate::parse_subtitle_placement::SubtitlePlacement,
 
     pub show_splash: bool,
+
+    pub wallpaper_display_format:
+        crate::manage_configuration::WallpaperDisplayFormat,
 
     pub mode: String,
 
@@ -1354,6 +1377,9 @@ pub fn load_config(
 
             show_splash:
                 app_defaults.show_splash,
+
+            wallpaper_display_format:
+                app_defaults.wallpaper_display_format,
 
             mode:
                 screensaver_mode,
@@ -1903,6 +1929,7 @@ fn load_database_policy_table(
         render_scale: Option<f64>,
         audiovisual_effect: String,
         bloom_intensity: f64,
+        bloom_saturation: f64,
         bloom_threshold: f64,
         bloom_frequency_rotation: f64,
         bloom_frequency_invert: i64,
@@ -1955,6 +1982,7 @@ fn load_database_policy_table(
                      p.render_scale,
                      p.audiovisual_effect,
                      p.bloom_intensity,
+                     p.bloom_saturation,
                      p.bloom_threshold,
                      p.bloom_frequency_rotation,
                      p.bloom_frequency_invert,
@@ -2006,13 +2034,14 @@ fn load_database_policy_table(
                             render_scale: row.get(14)?,
                             audiovisual_effect: row.get(15)?,
                             bloom_intensity: row.get(16)?,
-                            bloom_threshold: row.get(17)?,
-                            bloom_frequency_rotation: row.get(18)?,
-                            bloom_frequency_invert: row.get(19)?,
-                            invert_colors: row.get(20)?,
-                            flip_horizontal: row.get(21)?,
-                            flip_vertical: row.get(22)?,
-                            hue_rotation: row.get(23)?,
+                            bloom_saturation: row.get(17)?,
+                            bloom_threshold: row.get(18)?,
+                            bloom_frequency_rotation: row.get(19)?,
+                            bloom_frequency_invert: row.get(20)?,
+                            invert_colors: row.get(21)?,
+                            flip_horizontal: row.get(22)?,
+                            flip_vertical: row.get(23)?,
+                            hue_rotation: row.get(24)?,
                         }
                     )
                 },
@@ -2244,6 +2273,13 @@ fn load_database_policy_table(
 
         tokens.push(
             format!(
+                "bloom_saturation:{}",
+                row.bloom_saturation,
+            )
+        );
+
+        tokens.push(
+            format!(
                 "bloom_threshold:{}",
                 row.bloom_threshold,
             )
@@ -2396,6 +2432,7 @@ fn parse_policy_specification(
     let mut render_scale = None;
     let mut bloom = None;
     let mut bloom_intensity = None;
+    let mut bloom_saturation = None;
     let mut bloom_threshold = None;
     let mut bloom_frequency_rotation = None;
     let mut bloom_frequency_invert = None;
@@ -2673,6 +2710,25 @@ fn parse_policy_specification(
                     );
             }
 
+            "bloom_saturation" => {
+                if bloom_saturation.is_some() {
+                    return Err(duplicate_policy_property(
+                        &shader,
+                        target,
+                        "bloom_saturation",
+                    ));
+                }
+
+                bloom_saturation =
+                    Some(
+                        parse_policy_bloom_saturation(
+                            &shader,
+                            value,
+                            target.table_name(),
+                        )?
+                    );
+            }
+
             "bloom_threshold" => {
                 if bloom_threshold.is_some() {
                     return Err(duplicate_policy_property(
@@ -2789,7 +2845,7 @@ fn parse_policy_specification(
             other => {
                 return Err(
                     format!(
-                        "Unknown policy property '{}' for '{}' in [{}]; supported properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision, render_scale, bloom, bloom_intensity, bloom_threshold, bloom_frequency_rotation, bloom_frequency_invert, invert_colors, flip_horizontal, flip_vertical, hue_rotation",
+                        "Unknown policy property '{}' for '{}' in [{}]; supported properties: texture, palette, fps, speed, anti_aliasing, dithering, color_precision, render_scale, bloom, bloom_intensity, bloom_saturation, bloom_threshold, bloom_frequency_rotation, bloom_frequency_invert, invert_colors, flip_horizontal, flip_vertical, hue_rotation",
                         other,
                         shader,
                         target.table_name(),
@@ -2810,6 +2866,7 @@ fn parse_policy_specification(
         && render_scale.is_none()
         && bloom.is_none()
         && bloom_intensity.is_none()
+        && bloom_saturation.is_none()
         && bloom_threshold.is_none()
         && bloom_frequency_rotation.is_none()
         && bloom_frequency_invert.is_none()
@@ -2844,6 +2901,7 @@ fn parse_policy_specification(
             render_scale,
             bloom,
             bloom_intensity,
+            bloom_saturation,
             bloom_threshold,
             bloom_frequency_rotation,
             bloom_frequency_invert,
@@ -3023,6 +3081,21 @@ fn format_shader_policy_diagnostic(
             }
         );
 
+    let bloom_saturation = shader_policy.bloom_saturation
+        .map(
+            |saturation| {
+                format!(
+                    "{:.3}",
+                    saturation,
+                )
+            }
+        )
+        .unwrap_or_else(
+            || {
+                "<global>".to_string()
+            }
+        );
+
     let bloom_threshold = shader_policy.bloom_threshold
         .map(
             |threshold| {
@@ -3058,7 +3131,7 @@ fn format_shader_policy_diagnostic(
         .unwrap_or_else(|| "<global>".to_string());
 
     format!(
-        "[CONFIG] {} shader={} source={} texture={} palette={} fps={} speed={} anti_aliasing={} dithering={} color_precision={} render_scale={} bloom={} bloom_intensity={} bloom_threshold={} bloom_frequency_rotation={} bloom_frequency_invert={}",
+        "[CONFIG] {} shader={} source={} texture={} palette={} fps={} speed={} anti_aliasing={} dithering={} color_precision={} render_scale={} bloom={} bloom_intensity={} bloom_saturation={} bloom_threshold={} bloom_frequency_rotation={} bloom_frequency_invert={}",
         table_name,
         shader_policy.shader,
         source_path,
@@ -3072,6 +3145,7 @@ fn format_shader_policy_diagnostic(
         render_scale,
         bloom,
         bloom_intensity,
+        bloom_saturation,
         bloom_threshold,
         bloom_frequency_rotation,
         bloom_frequency_invert,
@@ -3534,6 +3608,48 @@ fn parse_policy_hue_rotation(
             )?;
 
     crate::postprocess_shader::validate_hue_rotation(parsed)
+}
+
+
+fn parse_policy_bloom_saturation(
+    shader: &str,
+    value: &str,
+    table_name: &str,
+) -> Result<f32, String> {
+
+    let saturation =
+        value
+            .trim()
+            .parse::<f32>()
+            .map_err(
+                |_| {
+                    format!(
+                        "Invalid bloom_saturation '{}' for '{}' in [{}]; expected a number from {:.2} through {:.2}",
+                        value,
+                        shader,
+                        table_name,
+                        crate::render_bloom::BLOOM_SATURATION_MIN,
+                        crate::render_bloom::BLOOM_SATURATION_MAX,
+                    )
+                }
+            )?;
+
+
+    crate::render_bloom::validate_bloom_saturation(
+        saturation
+    )
+    .map_err(
+        |_| {
+            format!(
+                "bloom_saturation {} for '{}' in [{}] is outside the supported range {:.2}-{:.2}",
+                saturation,
+                shader,
+                table_name,
+                crate::render_bloom::BLOOM_SATURATION_MIN,
+                crate::render_bloom::BLOOM_SATURATION_MAX,
+            )
+        }
+    )
 }
 
 

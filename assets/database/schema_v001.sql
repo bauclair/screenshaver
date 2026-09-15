@@ -284,6 +284,13 @@ CREATE TABLE shader_policies (
     bloom_intensity        REAL NOT NULL
                            DEFAULT 1.0,
 
+    bloom_saturation       REAL NOT NULL
+                           DEFAULT 1.0
+                           CHECK (
+                               bloom_saturation
+                                   BETWEEN 1.0 AND 2.0
+                           ),
+
     bloom_threshold        REAL NOT NULL
                            DEFAULT 0.80,
 
@@ -478,6 +485,18 @@ CREATE TABLE app_defaults (
     wallpaper_notifications INTEGER NOT NULL
                             DEFAULT 1
                             CHECK (wallpaper_notifications IN (0, 1)),
+
+    -- Wallpaper presentation format. This is an application-level wallpaper
+    -- setting, not a per-policy property. Screensaver presentation is
+    -- unaffected and remains full-screen.
+    wallpaper_display_format TEXT NOT NULL
+                             DEFAULT 'full_screen'
+                             CHECK (
+                                 wallpaper_display_format IN (
+                                     'full_screen',
+                                     'windowed'
+                                 )
+                             ),
 
     rendered_fps            INTEGER NOT NULL
                             DEFAULT 30
@@ -757,6 +776,7 @@ COMMIT;
 --      Their explicit visual defaults are:
 --        audiovisual_effect = 'off'
 --        bloom_intensity  = 1.0
+--        bloom_saturation = 1.0
 --        bloom_threshold  = 0.80
 --        bloom_frequency_rotation = 0.0
 --        bloom_frequency_invert   = 0

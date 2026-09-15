@@ -1626,6 +1626,8 @@ fn main() {
 
     let wallpaper_runtime =
         crate::define_wallpaper::WallpaperRuntime {
+            display_format:
+                cfg.wallpaper_display_format,
             monitor_mode:
                 cfg.wallpaper.monitor_mode,
             notifications:

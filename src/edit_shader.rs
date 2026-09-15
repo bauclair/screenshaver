@@ -2749,7 +2749,7 @@ fn run_paths(
         initial_postprocess_profile;
 
     let mut live_bloom_saturation =
-        crate::render_bloom::BLOOM_SATURATION_DEFAULT;
+        live_postprocess_profile.bloom_saturation;
 
 
     let mut render_scale =
@@ -3379,6 +3379,10 @@ fn run_paths(
                                                     active.path.as_path()
                                                 ),
                                             );
+
+                                    live_bloom_saturation =
+                                        live_postprocess_profile
+                                            .bloom_saturation;
 
                                     render_scale =
                                         live_postprocess_profile
@@ -4999,6 +5003,10 @@ fn run_paths(
                         live_postprocess_profile =
                             new_live_postprocess_profile;
 
+                        live_bloom_saturation =
+                            live_postprocess_profile
+                                .bloom_saturation;
+
                         render_scale =
                             live_postprocess_profile.render_scale;
 
@@ -5359,6 +5367,10 @@ fn run_paths(
                             active.path.as_path()
                         ),
                     );
+
+                live_bloom_saturation =
+                    live_postprocess_profile
+                        .bloom_saturation;
 
                 postprocess.set_profile(
                     live_postprocess_profile
@@ -5722,6 +5734,9 @@ fn run_paths(
                     selected_bloom_intensity;
 
                 live_bloom_saturation =
+                    selected_bloom_saturation;
+
+                live_postprocess_profile.bloom_saturation =
                     selected_bloom_saturation;
 
                 postprocess.set_bloom_saturation(
@@ -6167,6 +6182,11 @@ fn run_paths(
                             Some(
                                 live_postprocess_profile
                                     .bloom_intensity
+                            ),
+
+                        bloom_saturation:
+                            Some(
+                                live_bloom_saturation
                             ),
 
                         bloom_threshold:
@@ -7778,6 +7798,8 @@ fn bulk_policy_patch_from_editor_output(
                     changes.bloom,
                 bloom_intensity:
                     changes.bloom_intensity,
+                bloom_saturation:
+                    changes.bloom_saturation,
                 bloom_threshold:
                     changes.bloom_threshold,
                 bloom_frequency_rotation:
@@ -7820,6 +7842,9 @@ fn bulk_policy_patch_from_editor_output(
                 bloom_intensity:
                     changes.bloom_intensity
                         .then_some(editor_output.bloom_intensity),
+                bloom_saturation:
+                    changes.bloom_saturation
+                        .then_some(editor_output.bloom_saturation),
                 bloom_threshold:
                     changes.bloom_threshold
                         .then_some(editor_output.bloom_threshold),
@@ -7958,6 +7983,11 @@ fn bulk_policy_definition_from_editor_output(
         bloom_intensity:
             Some(
                 editor_output.bloom_intensity
+            ),
+
+        bloom_saturation:
+            Some(
+                editor_output.bloom_saturation
             ),
 
         bloom_threshold:
@@ -10020,6 +10050,7 @@ fn save_control_configuration(
             screensaver_subtitles: control.subtitles,
             subtitle_placement: control.subtitle_placement.clone(),
             wallpaper_notifications: control.notifications,
+            wallpaper_display_format: control.wallpaper_display_format,
             rendered_fps: control.rendered_fps,
             anti_aliasing: control.anti_aliasing.clone(),
             dithering: control.dithering.clone(),
