@@ -38,6 +38,12 @@ const EDIT_WINDOW_SCALE_MAX: f32 =
 const EDIT_TABBED_CONTENT_HEIGHT: f32 =
     338.0;
 
+pub const STARTING_OFFSET_MIN: f32 =
+    0.0;
+
+pub const STARTING_OFFSET_MAX: f32 =
+    10.0;
+
 
 // First Textures-tab thumbnail sizing experiment.  The Control Center itself
 // remains fixed-size; this is only an upper bound on the preview image.
@@ -697,6 +703,7 @@ pub struct BulkEditChanges {
     pub policy_target: bool,
     pub fps: bool,
     pub animation_speed: bool,
+    pub starting_offset: bool,
     pub render_scale: bool,
     pub texture: bool,
     pub palette: bool,
@@ -721,6 +728,7 @@ impl BulkEditChanges {
         self.policy_target
             || self.fps
             || self.animation_speed
+            || self.starting_offset
             || self.render_scale
             || self.texture
             || self.palette
@@ -746,6 +754,12 @@ impl BulkEditChanges {
 pub struct EditorOutput {
     pub fps: u32,
     pub animation_speed: f32,
+    pub starting_offset_seconds: f32,
+
+    // Transient Control Center interaction state. True only while the
+    // Starting Offset slider is actively being dragged.
+    pub starting_offset_dragging: bool,
+
     pub render_scale: f32,
     pub policy_target: Option<PolicyTarget>,
     pub texture: TextureSelection,
@@ -799,6 +813,7 @@ pub struct EditorOutput {
 struct EditorConfiguration {
     fps: u32,
     animation_speed: f32,
+    starting_offset_seconds: f32,
     render_scale: f32,
     policy_target: Option<PolicyTarget>,
     texture: TextureSelection,
@@ -824,6 +839,7 @@ impl EditorConfiguration {
     fn new(
         fps: u32,
         animation_speed: f32,
+        starting_offset_seconds: f32,
         render_scale: f32,
         policy_target: Option<PolicyTarget>,
         texture: TextureSelection,
@@ -849,6 +865,10 @@ impl EditorConfiguration {
             animation_speed:
                 normalize_editor_float(
                     animation_speed
+                ),
+            starting_offset_seconds:
+                normalize_starting_offset(
+                    starting_offset_seconds
                 ),
             render_scale:
                 normalize_editor_float(
@@ -899,6 +919,8 @@ impl EditorConfiguration {
                 self.fps != baseline.fps,
             animation_speed:
                 (self.animation_speed - baseline.animation_speed).abs() > 0.0001,
+            starting_offset:
+                (self.starting_offset_seconds - baseline.starting_offset_seconds).abs() > 0.0001,
             render_scale:
                 (self.render_scale - baseline.render_scale).abs() > 0.0001,
             texture:
@@ -947,6 +969,12 @@ impl EditorConfiguration {
             || (
                 self.animation_speed
                     - other.animation_speed
+            )
+                .abs()
+                > 0.0001
+            || (
+                self.starting_offset_seconds
+                    - other.starting_offset_seconds
             )
                 .abs()
                 > 0.0001
@@ -1071,6 +1099,9 @@ pub struct EditWindowOverlay {
     displayed_animation_speed:
         Option<f32>,
 
+    displayed_starting_offset_seconds:
+        Option<f32>,
+
     displayed_render_scale:
         Option<f32>,
 
@@ -1187,6 +1218,9 @@ pub struct EditWindowOverlay {
     bulk_animation_speed_selected:
         bool,
 
+    bulk_starting_offset_selected:
+        bool,
+
     bulk_render_scale_selected:
         bool,
 
@@ -1255,6 +1289,9 @@ pub struct EditWindowOverlay {
         Option<SliderDragState>,
 
     animation_speed_drag_state:
+        Option<SliderDragState>,
+
+    starting_offset_drag_state:
         Option<SliderDragState>,
 
     render_scale_drag_state:
@@ -1455,6 +1492,9 @@ impl EditWindowOverlay {
                 displayed_animation_speed:
                     None,
 
+                displayed_starting_offset_seconds:
+                    None,
+
                 displayed_render_scale:
                     None,
 
@@ -1573,6 +1613,9 @@ impl EditWindowOverlay {
                 bulk_animation_speed_selected:
                     false,
 
+                bulk_starting_offset_selected:
+                    false,
+
                 bulk_render_scale_selected:
                     false,
 
@@ -1640,6 +1683,9 @@ impl EditWindowOverlay {
                     None,
 
                 animation_speed_drag_state:
+                    None,
+
+                starting_offset_drag_state:
                     None,
 
                 render_scale_drag_state:
@@ -2014,6 +2060,7 @@ impl EditWindowOverlay {
         window: &sdl2::video::Window,
         resolved_fps: u32,
         resolved_animation_speed: f32,
+        resolved_starting_offset_seconds: f32,
         resolved_render_scale: f32,
         resolved_anti_aliasing: AntiAliasingSelection,
         resolved_dithering: DitheringSelection,
@@ -2260,6 +2307,15 @@ impl EditWindowOverlay {
                     )
                 );
 
+        let mut displayed_starting_offset_seconds =
+            self.displayed_starting_offset_seconds
+                .unwrap_or(
+                    resolved_starting_offset_seconds.clamp(
+                        STARTING_OFFSET_MIN,
+                        STARTING_OFFSET_MAX,
+                    )
+                );
+
         let mut displayed_render_scale =
             self.displayed_render_scale
                 .unwrap_or(
@@ -2275,6 +2331,9 @@ impl EditWindowOverlay {
 
         let mut animation_speed_drag_state =
             self.animation_speed_drag_state;
+
+        let mut starting_offset_drag_state =
+            self.starting_offset_drag_state;
 
         let mut bloom_intensity_drag_state =
             self.bloom_intensity_drag_state;
@@ -2368,6 +2427,9 @@ impl EditWindowOverlay {
 
         let mut bulk_animation_speed_selected =
             self.bulk_animation_speed_selected;
+
+        let mut bulk_starting_offset_selected =
+            false;
 
         let mut bulk_render_scale_selected =
             self.bulk_render_scale_selected;
@@ -2585,6 +2647,7 @@ impl EditWindowOverlay {
                         EditorConfiguration::new(
                             displayed_fps,
                             displayed_animation_speed,
+                            displayed_starting_offset_seconds,
                             displayed_render_scale,
                             policy_target,
                             texture,
@@ -2713,6 +2776,7 @@ impl EditWindowOverlay {
                         EditorConfiguration::new(
                             displayed_fps,
                             displayed_animation_speed,
+                            displayed_starting_offset_seconds,
                             displayed_render_scale,
                             policy_target,
                             texture,
@@ -2997,6 +3061,7 @@ impl EditWindowOverlay {
                                 EditorConfiguration::new(
                                     displayed_fps,
                                     displayed_animation_speed,
+                                    displayed_starting_offset_seconds,
                                     displayed_render_scale,
                                     policy_target,
                                     texture,
@@ -3229,12 +3294,15 @@ impl EditWindowOverlay {
                                                         shift_held,
                                                         &mut displayed_fps,
                                                         &mut displayed_animation_speed,
+                                                        &mut displayed_starting_offset_seconds,
                                                         &mut displayed_render_scale,
                                                         &mut fps_drag_state,
                                                         &mut animation_speed_drag_state,
+                                                        &mut starting_offset_drag_state,
                                                         &mut render_scale_drag_state,
                                                         &mut bulk_fps_selected,
                                                         &mut bulk_animation_speed_selected,
+                                                        &mut bulk_starting_offset_selected,
                                                         &mut bulk_render_scale_selected,
                                                         bulk_edit_baseline,
                                                         &mut hover_help_message,
@@ -3448,6 +3516,7 @@ impl EditWindowOverlay {
                                 &mut cancel_requested,
                                 &mut displayed_fps,
                                 &mut displayed_animation_speed,
+                                &mut displayed_starting_offset_seconds,
                                 &mut displayed_render_scale,
                                 &mut policy_target,
                                 &mut policy_target_change_requested,
@@ -3469,6 +3538,7 @@ impl EditWindowOverlay {
                                 baseline_configuration,
                                 &mut fps_drag_state,
                                 &mut animation_speed_drag_state,
+                                &mut starting_offset_drag_state,
                                 &mut render_scale_drag_state,
                                 &mut bloom_threshold_drag_state,
                                 &mut status_message,
@@ -3553,6 +3623,7 @@ impl EditWindowOverlay {
                         EditorConfiguration::new(
                             displayed_fps,
                             displayed_animation_speed,
+                            displayed_starting_offset_seconds,
                             displayed_render_scale,
                             policy_target,
                             texture,
@@ -3757,6 +3828,7 @@ impl EditWindowOverlay {
             EditorConfiguration::new(
                 displayed_fps,
                 displayed_animation_speed,
+                displayed_starting_offset_seconds,
                 displayed_render_scale,
                 policy_target,
                 texture,
@@ -3813,6 +3885,8 @@ impl EditWindowOverlay {
             bulk_edit_mode && bulk_fps_selected;
         bulk_edit_changes.animation_speed =
             bulk_edit_mode && bulk_animation_speed_selected;
+        bulk_edit_changes.starting_offset =
+            false;
         bulk_edit_changes.render_scale =
             bulk_edit_mode && bulk_render_scale_selected;
         bulk_edit_changes.bloom_intensity =
@@ -3860,6 +3934,11 @@ impl EditWindowOverlay {
                 displayed_animation_speed
             );
 
+        self.displayed_starting_offset_seconds =
+            Some(
+                displayed_starting_offset_seconds
+            );
+
         self.displayed_render_scale =
             Some(
                 displayed_render_scale
@@ -3870,6 +3949,9 @@ impl EditWindowOverlay {
 
         self.animation_speed_drag_state =
             animation_speed_drag_state;
+
+        self.starting_offset_drag_state =
+            starting_offset_drag_state;
 
         self.render_scale_drag_state =
             render_scale_drag_state;
@@ -3968,6 +4050,8 @@ impl EditWindowOverlay {
             bulk_fps_selected;
         self.bulk_animation_speed_selected =
             bulk_animation_speed_selected;
+        self.bulk_starting_offset_selected =
+            bulk_starting_offset_selected;
         self.bulk_render_scale_selected =
             bulk_render_scale_selected;
         self.bulk_bloom_intensity_selected =
@@ -4013,6 +4097,12 @@ impl EditWindowOverlay {
 
             animation_speed:
                 displayed_animation_speed,
+
+            starting_offset_seconds:
+                displayed_starting_offset_seconds,
+
+            starting_offset_dragging:
+                starting_offset_drag_state.is_some(),
 
             render_scale:
                 displayed_render_scale,
@@ -4091,6 +4181,7 @@ impl EditWindowOverlay {
                     EditorConfiguration::new(
                         displayed_fps,
                         displayed_animation_speed,
+                        displayed_starting_offset_seconds,
                         displayed_render_scale,
                         policy_target,
                         texture,
@@ -4423,6 +4514,7 @@ impl EditWindowOverlay {
         &mut self,
         fps: u32,
         animation_speed: f32,
+        starting_offset_seconds: f32,
         render_scale: f32,
         policy_target: Option<PolicyTarget>,
         anti_aliasing: AntiAliasingSelection,
@@ -4457,6 +4549,16 @@ impl EditWindowOverlay {
             Some(
                 normalize_editor_float(
                     animation_speed
+                )
+            );
+
+        self.displayed_starting_offset_seconds =
+            Some(
+                normalize_starting_offset(
+                    starting_offset_seconds.clamp(
+                        STARTING_OFFSET_MIN,
+                        STARTING_OFFSET_MAX,
+                    )
                 )
             );
 
@@ -4552,6 +4654,9 @@ impl EditWindowOverlay {
         self.animation_speed_drag_state =
             None;
 
+        self.starting_offset_drag_state =
+            None;
+
         self.render_scale_drag_state =
             None;
 
@@ -4578,6 +4683,8 @@ impl EditWindowOverlay {
                         .unwrap_or(fps),
                     self.displayed_animation_speed
                         .unwrap_or(animation_speed),
+                    self.displayed_starting_offset_seconds
+                        .unwrap_or(starting_offset_seconds),
                     self.displayed_render_scale
                         .unwrap_or(render_scale),
                     self.policy_target,
@@ -4647,6 +4754,7 @@ impl EditWindowOverlay {
 
         self.bulk_fps_selected = false;
         self.bulk_animation_speed_selected = false;
+        self.bulk_starting_offset_selected = false;
         self.bulk_render_scale_selected = false;
         self.bulk_bloom_intensity_selected = false;
         self.bulk_bloom_saturation_selected = false;
@@ -4702,6 +4810,11 @@ impl EditWindowOverlay {
         self.displayed_animation_speed =
             Some(
                 baseline.animation_speed
+            );
+
+        self.displayed_starting_offset_seconds =
+            Some(
+                baseline.starting_offset_seconds
             );
 
         self.displayed_render_scale =
@@ -4780,6 +4893,9 @@ impl EditWindowOverlay {
         self.animation_speed_drag_state =
             None;
 
+        self.starting_offset_drag_state =
+            None;
+
         self.render_scale_drag_state =
             None;
 
@@ -4797,6 +4913,7 @@ impl EditWindowOverlay {
 
         self.bulk_fps_selected = false;
         self.bulk_animation_speed_selected = false;
+        self.bulk_starting_offset_selected = false;
         self.bulk_render_scale_selected = false;
         self.bulk_bloom_intensity_selected = false;
         self.bulk_bloom_saturation_selected = false;
@@ -4820,10 +4937,12 @@ impl EditWindowOverlay {
         if let (
             Some(fps),
             Some(animation_speed),
+            Some(starting_offset_seconds),
             Some(render_scale),
         ) = (
             self.displayed_fps,
             self.displayed_animation_speed,
+            self.displayed_starting_offset_seconds,
             self.displayed_render_scale,
         ) {
             self.initial_configuration =
@@ -4831,6 +4950,7 @@ impl EditWindowOverlay {
                     EditorConfiguration::new(
                         fps,
                         animation_speed,
+                        starting_offset_seconds,
                         render_scale,
                         self.policy_target,
                         self.texture,
@@ -4877,6 +4997,16 @@ fn normalize_editor_float(
     (value * 100.0)
         .round()
         / 100.0
+}
+
+
+fn normalize_starting_offset(
+    value: f32,
+) -> f32 {
+
+    (value * 1000.0)
+        .round()
+        / 1000.0
 }
 
 
@@ -5417,6 +5547,7 @@ fn draw_compact_action_row(
     cancel_requested: &mut bool,
     displayed_fps: &mut u32,
     displayed_animation_speed: &mut f32,
+    displayed_starting_offset_seconds: &mut f32,
     displayed_render_scale: &mut f32,
     policy_target: &mut Option<PolicyTarget>,
     policy_target_change_requested: &mut Option<PolicyTarget>,
@@ -5438,6 +5569,7 @@ fn draw_compact_action_row(
     baseline_configuration: EditorConfiguration,
     fps_drag_state: &mut Option<SliderDragState>,
     animation_speed_drag_state: &mut Option<SliderDragState>,
+    starting_offset_drag_state: &mut Option<SliderDragState>,
     render_scale_drag_state: &mut Option<SliderDragState>,
     bloom_threshold_drag_state: &mut Option<SliderDragState>,
     status_message: &mut String,
@@ -5528,6 +5660,8 @@ fn draw_compact_action_row(
                     baseline_configuration.fps;
                 *displayed_animation_speed =
                     baseline_configuration.animation_speed;
+                *displayed_starting_offset_seconds =
+                    baseline_configuration.starting_offset_seconds;
                 *displayed_render_scale =
                     baseline_configuration.render_scale;
                 *policy_target =
@@ -5569,6 +5703,8 @@ fn draw_compact_action_row(
                 *fps_drag_state =
                     None;
                 *animation_speed_drag_state =
+                    None;
+                *starting_offset_drag_state =
                     None;
                 *render_scale_drag_state =
                     None;
@@ -8086,12 +8222,15 @@ fn draw_render_panel(
     shift_held: bool,
     displayed_fps: &mut u32,
     displayed_animation_speed: &mut f32,
+    displayed_starting_offset_seconds: &mut f32,
     displayed_render_scale: &mut f32,
     fps_drag_state: &mut Option<SliderDragState>,
     animation_speed_drag_state: &mut Option<SliderDragState>,
+    starting_offset_drag_state: &mut Option<SliderDragState>,
     render_scale_drag_state: &mut Option<SliderDragState>,
     bulk_fps_selected: &mut bool,
     bulk_animation_speed_selected: &mut bool,
+    bulk_starting_offset_selected: &mut bool,
     bulk_render_scale_selected: &mut bool,
     bulk_edit_baseline: Option<EditorConfiguration>,
     hover_help_message: &mut Option<&'static str>,
@@ -8246,6 +8385,106 @@ fn draw_render_panel(
                     metrics.scale,
                 );
             }
+
+            let starting_offset_display =
+                format!(
+                    "{:.3}s",
+                    *displayed_starting_offset_seconds,
+                );
+
+            let starting_offset_response =
+                if bulk_edit_mode {
+                    draw_slider_label_cell(
+                        ui,
+                        "Starting Offset",
+                        label_width,
+                    );
+
+                    let response =
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(
+                                slider_width,
+                                ui.spacing().interact_size.y,
+                            ),
+                            egui::Layout::left_to_right(
+                                egui::Align::Center
+                            ),
+                            |ui| {
+                                ui.set_width(
+                                    slider_width
+                                );
+
+                                ui.add_enabled_ui(
+                                    false,
+                                    |ui| {
+                                        draw_fine_slider(
+                                            ui,
+                                            displayed_starting_offset_seconds,
+                                            STARTING_OFFSET_MIN,
+                                            STARTING_OFFSET_MAX,
+                                            shift_held,
+                                            metrics.scale,
+                                            starting_offset_drag_state,
+                                        )
+                                    },
+                                )
+                                .inner
+                            },
+                        )
+                        .inner;
+
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(
+                            value_width,
+                            ui.spacing().interact_size.y,
+                        ),
+                        egui::Layout::left_to_right(
+                            egui::Align::Center
+                        ),
+                        |ui| {
+                            ui.add_enabled(
+                                false,
+                                egui::Label::new(
+                                    &starting_offset_display
+                                ),
+                            );
+                        },
+                    );
+
+                    ui.end_row();
+
+                    response
+                } else {
+                    draw_aligned_slider_grid_row(
+                        ui,
+                        "Starting Offset",
+                        &starting_offset_display,
+                        displayed_starting_offset_seconds,
+                        STARTING_OFFSET_MIN,
+                        STARTING_OFFSET_MAX,
+                        shift_held,
+                        metrics,
+                        label_width,
+                        slider_width,
+                        value_width,
+                        starting_offset_drag_state,
+                        false,
+                        false,
+                        "",
+                        "",
+                    )
+                    .0
+                };
+
+            update_hover_help(
+                &starting_offset_response,
+                hover_help_message,
+                if bulk_edit_mode {
+                    "Starting Offset is not available during Bulk Edit."
+                } else {
+                    "Drag to choose where the shader begins. Hold Shift while dragging for 10x finer adjustment."
+                },
+            );
 
             let (scale_response, scale_value_response) =
                 draw_aligned_slider_grid_row(

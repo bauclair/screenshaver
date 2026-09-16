@@ -1081,6 +1081,13 @@ impl PostprocessPipeline {
     }
 
 
+    pub(crate) fn scene_framebuffer(
+        &self,
+    ) -> u32 {
+        self.scene_target.framebuffer
+    }
+
+
     #[allow(dead_code)]
     pub(crate) fn scene_texture(
         &self,

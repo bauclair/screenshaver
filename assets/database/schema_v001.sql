@@ -256,6 +256,18 @@ CREATE TABLE shader_policies (
 
     animation_speed        REAL,
 
+    -- Native shader-time position at which this policy begins rendering.
+    -- 0.0 means begin at the shader's natural starting point.
+    --
+    -- The Control Center may impose a practical UI maximum, but the database
+    -- intentionally stores any non-negative value so that the UI range can be
+    -- extended later without requiring a schema change.
+    starting_offset        REAL NOT NULL
+                           DEFAULT 0.0
+                           CHECK (
+                               starting_offset >= 0.0
+                           ),
+
     anti_aliasing          TEXT,
 
     dithering              TEXT,

@@ -596,6 +596,12 @@ impl FrameRenderEngine {
             );
         }
 
+        let time =
+            self.start_time
+                .elapsed()
+                .as_secs_f32()
+                * self.animation_speed;
+
 
         unsafe {
             if self.output_policy
@@ -650,12 +656,6 @@ impl FrameRenderEngine {
             gl::BindVertexArray(
                 self.vao
             );
-
-            let time =
-                self.start_time
-                    .elapsed()
-                    .as_secs_f32()
-                    * self.animation_speed;
 
             let time_location =
                 gl::GetUniformLocation(

@@ -1107,7 +1107,8 @@ fn validate_default_policy(
         connection
             .query_row(
                 "SELECT policy_id,
-                        policy_name_key
+                        policy_name_key,
+                        starting_offset
                  FROM shader_policies
                  WHERE shader_id = ?1
                    AND policy_target = ?2
@@ -1122,6 +1123,7 @@ fn validate_default_policy(
                         (
                             row.get::<_, i64>(0)?,
                             row.get::<_, String>(1)?,
+                            row.get::<_, f64>(2)?,
                         )
                     )
                 },
@@ -1140,6 +1142,7 @@ fn validate_default_policy(
     let (
         fallback_policy_id,
         stored_name_key,
+        starting_offset,
     ) = fallback;
 
     // During fresh initialization the canonical fallback names should still be
@@ -1155,6 +1158,17 @@ fn validate_default_policy(
                 fallback_policy_id,
                 stored_name_key,
                 policy_name_key,
+            )
+        );
+    }
+
+    if starting_offset != 0.0 {
+        return Err(
+            format!(
+                "Default-policy validation failed: protected {} fallback policy ID {} has starting_offset {}, expected 0.0",
+                policy_target,
+                fallback_policy_id,
+                starting_offset,
             )
         );
     }

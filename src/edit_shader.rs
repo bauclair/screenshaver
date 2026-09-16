@@ -1046,6 +1046,7 @@ fn run_empty_session(
                 &window,
                 crate::define_constants::DEFAULT_RENDER_FPS,
                 crate::define_constants::SCREENSAVER_SPEED_DEFAULT,
+                0.0,
                 crate::define_constants::RENDER_SCALE_DEFAULT,
                 crate::editor_layout::AntiAliasingSelection::Fxaa,
                 crate::editor_layout::DitheringSelection::Subtle,
@@ -2380,6 +2381,7 @@ fn run_paths(
         mut texture_policy,
         mut postprocess_policy,
         mut animation_speed,
+        mut starting_offset_seconds,
     ) =
         editor_policy_context_for_path(
             &config,
@@ -2389,6 +2391,16 @@ fn run_paths(
             requested_initial_policy_name.as_deref(),
             command_line_animation_speed,
         );
+
+
+    // Starting Offset is native shader-time. It selects the point on the
+    // shader timeline at which preview playback begins; Animation Speed only
+    // controls advancement after that point.
+    let mut preview_starting_offset_seconds =
+        starting_offset_seconds;
+
+    let mut starting_offset_scrubbing =
+        false;
 
 
     let initial_policy_exists =
@@ -2787,6 +2799,7 @@ fn run_paths(
     edit_window.initialize_configuration(
         configured_fps,
         animation_speed,
+        starting_offset_seconds,
         render_scale,
         initial_editor_target,
         anti_aliasing_selection_from_method(
@@ -2970,6 +2983,7 @@ fn run_paths(
                         &window,
                         configured_fps,
                         animation_speed,
+                        starting_offset_seconds,
                         render_scale,
                         anti_aliasing_selection_from_method(
                             live_postprocess_profile
@@ -3261,6 +3275,7 @@ fn run_paths(
                                 restored_texture_policy,
                                 restored_postprocess_policy,
                                 restored_animation_speed,
+                                restored_starting_offset_seconds,
                             ) =
                                 editor_policy_context_for_path(
                                     &config,
@@ -3298,6 +3313,15 @@ fn run_paths(
 
                             animation_speed =
                                 restored_animation_speed;
+
+                            starting_offset_seconds =
+                                restored_starting_offset_seconds;
+
+                            preview_starting_offset_seconds =
+                                starting_offset_seconds;
+
+                            starting_offset_scrubbing =
+                                false;
 
 
                             configured_fps =
@@ -3614,17 +3638,26 @@ fn run_paths(
 
 
             let elapsed =
-                active.start_time
-                    .elapsed()
-                    .as_secs_f32()
-                    * animation_speed;
+                if starting_offset_scrubbing {
+                    preview_starting_offset_seconds
+                } else {
+                    preview_starting_offset_seconds
+                        + active.start_time
+                            .elapsed()
+                            .as_secs_f32()
+                            * animation_speed
+                };
 
 
             let delta =
-                active.previous_frame
-                    .elapsed()
-                    .as_secs_f32()
-                    * animation_speed;
+                if starting_offset_scrubbing {
+                    0.0
+                } else {
+                    active.previous_frame
+                        .elapsed()
+                        .as_secs_f32()
+                        * animation_speed
+                };
 
 
             // Demand playback capture while the live preview uses either
@@ -4042,6 +4075,7 @@ fn run_paths(
                     &window,
                     configured_fps,
                     animation_speed,
+                    starting_offset_seconds,
                     render_scale,
                     anti_aliasing_selection_from_method(
                         live_postprocess_profile
@@ -4791,6 +4825,7 @@ fn run_paths(
                     new_texture_policy,
                     new_postprocess_policy,
                     new_animation_speed,
+                    new_starting_offset_seconds,
                 ) =
                     editor_policy_context_for_path(
                         &config,
@@ -4991,6 +5026,15 @@ fn run_paths(
                         animation_speed =
                             new_animation_speed;
 
+                        starting_offset_seconds =
+                            new_starting_offset_seconds;
+
+                        preview_starting_offset_seconds =
+                            starting_offset_seconds;
+
+                        starting_offset_scrubbing =
+                            false;
+
                         configured_fps =
                             new_configured_fps;
 
@@ -5039,6 +5083,7 @@ fn run_paths(
                         edit_window.initialize_configuration(
                             configured_fps,
                             animation_speed,
+                            starting_offset_seconds,
                             render_scale,
                             new_editor_target,
                             anti_aliasing_selection_from_method(
@@ -5158,6 +5203,7 @@ fn run_paths(
                         edit_window.initialize_configuration(
                             configured_fps,
                             animation_speed,
+                            starting_offset_seconds,
                             render_scale,
                             editor_output.policy_target,
                             anti_aliasing_selection_from_method(
@@ -5321,6 +5367,7 @@ fn run_paths(
                     texture_policy,
                     postprocess_policy,
                     animation_speed,
+                    starting_offset_seconds,
                 ) =
                     editor_policy_context_for_path(
                         &config,
@@ -5477,6 +5524,7 @@ fn run_paths(
                 edit_window.initialize_configuration(
                     configured_fps,
                     animation_speed,
+                    starting_offset_seconds,
                     render_scale,
                     Some(
                         requested_target
@@ -5529,6 +5577,12 @@ fn run_paths(
 
             let selected_animation_speed =
                 editor_output.animation_speed;
+
+            let selected_starting_offset_seconds =
+                editor_output.starting_offset_seconds;
+
+            let selected_starting_offset_dragging =
+                editor_output.starting_offset_dragging;
 
             let selected_render_scale =
                 editor_output.render_scale;
@@ -5622,6 +5676,42 @@ fn run_paths(
                     )
                 );
             }
+
+
+            let starting_offset_changed =
+                (
+                    selected_starting_offset_seconds
+                        - preview_starting_offset_seconds
+                )
+                    .abs()
+                    > f32::EPSILON;
+
+            let starting_offset_drag_released =
+                starting_offset_scrubbing
+                    && !selected_starting_offset_dragging;
+
+
+            if starting_offset_changed
+                || starting_offset_drag_released
+            {
+                preview_starting_offset_seconds =
+                    selected_starting_offset_seconds;
+
+                // Re-anchor real elapsed time at the selected native
+                // shader-time position. While dragging, the render loop below
+                // ignores elapsed real time and displays this exact frame.
+                // On release, this reset makes playback resume continuously
+                // from the final selected offset.
+                active.start_time =
+                    Instant::now();
+
+                active.previous_frame =
+                    Instant::now();
+            }
+
+
+            starting_offset_scrubbing =
+                selected_starting_offset_dragging;
 
 
             let selected_anti_aliasing_method =
@@ -6140,6 +6230,11 @@ fn run_paths(
                                 animation_speed
                             ),
 
+                        starting_offset_seconds:
+                            Some(
+                                editor_output.starting_offset_seconds
+                            ),
+
                         render_scale:
                             Some(
                                 render_scale
@@ -6587,6 +6682,7 @@ fn run_paths(
                                         edit_window.initialize_configuration(
                                             configured_fps,
                                             animation_speed,
+                                            starting_offset_seconds,
                                             render_scale,
                                             Some(
                                                 destination_target
@@ -7112,6 +7208,7 @@ fn editor_policy_context_for_path(
     crate::load_config::TexturePolicy,
     crate::load_config::PostprocessPolicy,
     f32,
+    f32,
 ) {
 
     let (
@@ -7325,12 +7422,23 @@ fn editor_policy_context_for_path(
             );
 
 
+    let starting_offset_seconds =
+        matching_policy
+            .map(
+                |policy| {
+                    policy.starting_offset_seconds
+                }
+            )
+            .unwrap_or(0.0);
+
+
     (
         global_rendered_fps,
         fps_policy_entries,
         texture_policy,
         postprocess_policy,
         animation_speed,
+        starting_offset_seconds,
     )
 }
 
@@ -7786,6 +7894,8 @@ fn bulk_policy_patch_from_editor_output(
                     changes.fps,
                 speed:
                     changes.animation_speed,
+                starting_offset:
+                    changes.starting_offset,
                 render_scale:
                     changes.render_scale,
                 anti_aliasing:
@@ -7824,6 +7934,9 @@ fn bulk_policy_patch_from_editor_output(
                 speed:
                     changes.animation_speed
                         .then_some(editor_output.animation_speed),
+                starting_offset_seconds:
+                    changes.starting_offset
+                        .then_some(editor_output.starting_offset_seconds),
                 render_scale:
                     changes.render_scale
                         .then_some(editor_output.render_scale),
@@ -7950,6 +8063,11 @@ fn bulk_policy_definition_from_editor_output(
         speed:
             Some(
                 editor_output.animation_speed
+            ),
+
+        starting_offset_seconds:
+            Some(
+                editor_output.starting_offset_seconds
             ),
 
         render_scale:

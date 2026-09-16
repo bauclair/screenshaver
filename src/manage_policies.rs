@@ -181,6 +181,9 @@ pub struct PolicyDefinition {
     pub speed:
         Option<f32>,
 
+    pub starting_offset_seconds:
+        Option<f32>,
+
     pub render_scale:
         Option<f32>,
 
@@ -290,6 +293,7 @@ pub struct BulkPolicyFieldMask {
     pub palette: bool,
     pub fps: bool,
     pub speed: bool,
+    pub starting_offset: bool,
     pub render_scale: bool,
     pub anti_aliasing: bool,
     pub dithering: bool,
@@ -331,6 +335,7 @@ impl PolicyDefinition {
             && self.palette.is_none()
             && self.fps.is_none()
             && self.speed.is_none()
+            && self.starting_offset_seconds.is_none()
             && self.render_scale.is_none()
             && self.anti_aliasing.is_none()
             && self.dithering.is_none()
@@ -484,20 +489,20 @@ pub fn clone_policy_by_id(
     struct CloneSource {
         shader_id: i64, policy_target: String, texture_mode: Option<String>, texture_family: Option<String>,
         texture_primitives: Option<i64>, palette_mode: Option<String>, palette_color: Option<String>,
-        rendered_fps: Option<i64>, animation_speed: Option<f64>, anti_aliasing: Option<String>, dithering: Option<String>,
+        rendered_fps: Option<i64>, animation_speed: Option<f64>, starting_offset_seconds: f64, anti_aliasing: Option<String>, dithering: Option<String>,
         color_precision: Option<String>, render_scale: Option<f64>, audiovisual_effect: Option<String>, bloom_intensity: Option<f64>,
         bloom_saturation: Option<f64>, bloom_threshold: Option<f64>, bloom_frequency_rotation: Option<f64>, bloom_frequency_invert: Option<i64>, invert_colors: Option<i64>, flip_horizontal: Option<i64>, flip_vertical: Option<i64>, hue_rotation: Option<f64>,
     }
 
     let source = transaction.query_row(
-        "SELECT shader_id, policy_target, texture_mode, texture_family, texture_primitives, palette_mode, palette_color, rendered_fps, animation_speed, anti_aliasing, dithering, color_precision, render_scale, audiovisual_effect, bloom_intensity, bloom_saturation, bloom_threshold, bloom_frequency_rotation, bloom_frequency_invert, invert_colors, flip_horizontal, flip_vertical, hue_rotation FROM shader_policies WHERE policy_id = ?1",
+        "SELECT shader_id, policy_target, texture_mode, texture_family, texture_primitives, palette_mode, palette_color, rendered_fps, animation_speed, starting_offset, anti_aliasing, dithering, color_precision, render_scale, audiovisual_effect, bloom_intensity, bloom_saturation, bloom_threshold, bloom_frequency_rotation, bloom_frequency_invert, invert_colors, flip_horizontal, flip_vertical, hue_rotation FROM shader_policies WHERE policy_id = ?1",
         [source_policy_id],
-        |row| Ok(CloneSource { shader_id: row.get(0)?, policy_target: row.get(1)?, texture_mode: row.get(2)?, texture_family: row.get(3)?, texture_primitives: row.get(4)?, palette_mode: row.get(5)?, palette_color: row.get(6)?, rendered_fps: row.get(7)?, animation_speed: row.get(8)?, anti_aliasing: row.get(9)?, dithering: row.get(10)?, color_precision: row.get(11)?, render_scale: row.get(12)?, audiovisual_effect: row.get(13)?, bloom_intensity: row.get(14)?, bloom_saturation: row.get(15)?, bloom_threshold: row.get(16)?, bloom_frequency_rotation: row.get(17)?, bloom_frequency_invert: row.get(18)?, invert_colors: row.get(19)?, flip_horizontal: row.get(20)?, flip_vertical: row.get(21)?, hue_rotation: row.get(22)? }),
+        |row| Ok(CloneSource { shader_id: row.get(0)?, policy_target: row.get(1)?, texture_mode: row.get(2)?, texture_family: row.get(3)?, texture_primitives: row.get(4)?, palette_mode: row.get(5)?, palette_color: row.get(6)?, rendered_fps: row.get(7)?, animation_speed: row.get(8)?, starting_offset_seconds: row.get(9)?, anti_aliasing: row.get(10)?, dithering: row.get(11)?, color_precision: row.get(12)?, render_scale: row.get(13)?, audiovisual_effect: row.get(14)?, bloom_intensity: row.get(15)?, bloom_saturation: row.get(16)?, bloom_threshold: row.get(17)?, bloom_frequency_rotation: row.get(18)?, bloom_frequency_invert: row.get(19)?, invert_colors: row.get(20)?, flip_horizontal: row.get(21)?, flip_vertical: row.get(22)?, hue_rotation: row.get(23)? }),
     ).map_err(|error| format!("Unable to read source policy ID {} before cloning: {}", source_policy_id, error))?;
 
     let inserted = transaction.execute(
-        "INSERT INTO shader_policies (policy_name, policy_name_key, shader_id, policy_target, texture_mode, texture_family, texture_primitives, palette_mode, palette_color, rendered_fps, animation_speed, anti_aliasing, dithering, color_precision, render_scale, audiovisual_effect, bloom_intensity, bloom_saturation, bloom_threshold, bloom_frequency_rotation, bloom_frequency_invert, invert_colors, flip_horizontal, flip_vertical, hue_rotation) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)",
-        rusqlite::params![destination_name, destination_key, source.shader_id, source.policy_target, source.texture_mode, source.texture_family, source.texture_primitives, source.palette_mode, source.palette_color, source.rendered_fps, source.animation_speed, source.anti_aliasing, source.dithering, source.color_precision, source.render_scale, source.audiovisual_effect, source.bloom_intensity, source.bloom_saturation, source.bloom_threshold, source.bloom_frequency_rotation, source.bloom_frequency_invert, source.invert_colors, source.flip_horizontal, source.flip_vertical, source.hue_rotation],
+        "INSERT INTO shader_policies (policy_name, policy_name_key, shader_id, policy_target, texture_mode, texture_family, texture_primitives, palette_mode, palette_color, rendered_fps, animation_speed, starting_offset, anti_aliasing, dithering, color_precision, render_scale, audiovisual_effect, bloom_intensity, bloom_saturation, bloom_threshold, bloom_frequency_rotation, bloom_frequency_invert, invert_colors, flip_horizontal, flip_vertical, hue_rotation) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)",
+        rusqlite::params![destination_name, destination_key, source.shader_id, source.policy_target, source.texture_mode, source.texture_family, source.texture_primitives, source.palette_mode, source.palette_color, source.rendered_fps, source.animation_speed, source.starting_offset_seconds, source.anti_aliasing, source.dithering, source.color_precision, source.render_scale, source.audiovisual_effect, source.bloom_intensity, source.bloom_saturation, source.bloom_threshold, source.bloom_frequency_rotation, source.bloom_frequency_invert, source.invert_colors, source.flip_horizontal, source.flip_vertical, source.hue_rotation],
     ).map_err(|error| format!("Unable to clone policy ID {} as '{}': {}", source_policy_id, destination_name, error))?;
     if inserted != 1 { return Err(format!("Expected to clone one policy ID {}, cloned {}", source_policy_id, inserted)); }
     let new_policy_id = transaction.last_insert_rowid();
@@ -661,6 +666,7 @@ pub fn add_policy_for_source(
                  palette_color,
                  rendered_fps,
                  animation_speed,
+                 starting_offset,
                  anti_aliasing,
                  dithering,
                  color_precision,
@@ -678,8 +684,8 @@ pub fn add_policy_for_source(
              )
              VALUES (
                  ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
-                 ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20,
-                 ?21, ?22, ?23, ?24, ?25
+                 COALESCE(?12, 0.0), ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20,
+                 ?21, ?22, ?23, ?24, ?25, ?26
              )",
             rusqlite::params![
                 policy_name,
@@ -693,6 +699,7 @@ pub fn add_policy_for_source(
                 values.palette_color,
                 values.rendered_fps,
                 values.animation_speed,
+                values.starting_offset,
                 values.anti_aliasing,
                 values.dithering,
                 values.color_precision,
@@ -767,8 +774,8 @@ pub fn replace_policy_by_id(
     validate_properties(target, &properties)?;
     let values = database_policy_values(&properties)?;
     let changed = connection.execute(
-        "UPDATE shader_policies SET texture_mode = ?1, texture_family = ?2, texture_primitives = ?3, palette_mode = ?4, palette_color = ?5, rendered_fps = ?6, animation_speed = ?7, anti_aliasing = ?8, dithering = ?9, color_precision = ?10, render_scale = ?11, audiovisual_effect = ?12, bloom_intensity = ?13, bloom_saturation = ?14, bloom_threshold = ?15, bloom_frequency_rotation = ?16, bloom_frequency_invert = ?17, invert_colors = ?18, flip_horizontal = ?19, flip_vertical = ?20, hue_rotation = ?21 WHERE policy_id = ?22",
-        rusqlite::params![values.texture_mode, values.texture_family, values.texture_primitives, values.palette_mode, values.palette_color, values.rendered_fps, values.animation_speed, values.anti_aliasing, values.dithering, values.color_precision, values.render_scale, values.audiovisual_effect, values.bloom_intensity, values.bloom_saturation, values.bloom_threshold, values.bloom_frequency_rotation, values.bloom_frequency_invert, values.invert_colors, values.flip_horizontal, values.flip_vertical, values.hue_rotation, policy_id],
+        "UPDATE shader_policies SET texture_mode = ?1, texture_family = ?2, texture_primitives = ?3, palette_mode = ?4, palette_color = ?5, rendered_fps = ?6, animation_speed = ?7, starting_offset = COALESCE(?8, starting_offset), anti_aliasing = ?9, dithering = ?10, color_precision = ?11, render_scale = ?12, audiovisual_effect = ?13, bloom_intensity = ?14, bloom_saturation = ?15, bloom_threshold = ?16, bloom_frequency_rotation = ?17, bloom_frequency_invert = ?18, invert_colors = ?19, flip_horizontal = ?20, flip_vertical = ?21, hue_rotation = ?22 WHERE policy_id = ?23",
+        rusqlite::params![values.texture_mode, values.texture_family, values.texture_primitives, values.palette_mode, values.palette_color, values.rendered_fps, values.animation_speed, values.starting_offset, values.anti_aliasing, values.dithering, values.color_precision, values.render_scale, values.audiovisual_effect, values.bloom_intensity, values.bloom_saturation, values.bloom_threshold, values.bloom_frequency_rotation, values.bloom_frequency_invert, values.invert_colors, values.flip_horizontal, values.flip_vertical, values.hue_rotation, policy_id],
     ).map_err(|error| format!("Unable to update policy ID {} ('{}'): {}", policy_id, stored_name, error))?;
     match changed { 1 => Ok(()), 0 => Err(format!("Policy ID {} no longer exists", policy_id)), count => Err(format!("Policy ID {} unexpectedly matched {} rows", policy_id, count)) }
 }
@@ -931,21 +938,22 @@ pub fn replace_policy_for_source(
                      palette_color = ?5,
                      rendered_fps = ?6,
                      animation_speed = ?7,
-                     anti_aliasing = ?8,
-                     dithering = ?9,
-                     color_precision = ?10,
-                     render_scale = ?11,
-                     audiovisual_effect = ?12,
-                     bloom_intensity = ?13,
-                     bloom_saturation = ?14,
-                     bloom_threshold = ?15,
-                     bloom_frequency_rotation = ?16,
-                     bloom_frequency_invert = ?17,
-                     invert_colors = ?18,
-                     flip_horizontal = ?19,
-                     flip_vertical = ?20,
-                     hue_rotation = ?21
-                 WHERE policy_id = ?22",
+                     starting_offset = COALESCE(?8, starting_offset),
+                     anti_aliasing = ?9,
+                     dithering = ?10,
+                     color_precision = ?11,
+                     render_scale = ?12,
+                     audiovisual_effect = ?13,
+                     bloom_intensity = ?14,
+                     bloom_saturation = ?15,
+                     bloom_threshold = ?16,
+                     bloom_frequency_rotation = ?17,
+                     bloom_frequency_invert = ?18,
+                     invert_colors = ?19,
+                     flip_horizontal = ?20,
+                     flip_vertical = ?21,
+                     hue_rotation = ?22
+                 WHERE policy_id = ?23",
                 rusqlite::params![
                     values.texture_mode,
                     values.texture_family,
@@ -954,6 +962,7 @@ pub fn replace_policy_for_source(
                     values.palette_color,
                     values.rendered_fps,
                     values.animation_speed,
+                    values.starting_offset,
                     values.anti_aliasing,
                     values.dithering,
                     values.color_precision,
@@ -1093,6 +1102,7 @@ pub fn patch_policies_by_id(
         macro_rules! update_one { ($flag:expr,$column:literal,$value:expr) => { if $flag { transaction.execute(concat!("UPDATE shader_policies SET ",$column," = ?1 WHERE policy_id = ?2"), rusqlite::params![$value, patch.policy_id]).map_err(|e| format!("Unable to update {} for policy ID {}: {}", $column, patch.policy_id,e))?; policy_changed=true; } }; }
         update_one!(patch.fields.fps, "rendered_fps", values.rendered_fps);
         update_one!(patch.fields.speed, "animation_speed", values.animation_speed);
+        update_one!(patch.fields.starting_offset, "starting_offset", values.starting_offset);
         update_one!(patch.fields.render_scale, "render_scale", values.render_scale);
         update_one!(patch.fields.anti_aliasing, "anti_aliasing", values.anti_aliasing);
         update_one!(patch.fields.dithering, "dithering", values.dithering);
@@ -1769,6 +1779,9 @@ struct DatabasePolicyValues {
     animation_speed:
         Option<f64>,
 
+    starting_offset:
+        Option<f64>,
+
     anti_aliasing:
         Option<String>,
 
@@ -2153,6 +2166,12 @@ fn database_policy_values(
 
             animation_speed:
                 properties.speed
+                    .map(
+                        f64::from
+                    ),
+
+            starting_offset:
+                properties.starting_offset_seconds
                     .map(
                         f64::from
                     ),
@@ -2543,6 +2562,22 @@ fn validate_properties(
                     fps,
                     crate::define_constants::MIN_RENDER_FPS,
                     crate::define_constants::MAX_RENDER_FPS,
+                )
+            );
+        }
+    }
+
+
+    if let Some(starting_offset_seconds) =
+        properties.starting_offset_seconds
+    {
+        if !starting_offset_seconds.is_finite()
+            || starting_offset_seconds < 0.0
+        {
+            return Err(
+                format!(
+                    "Starting Offset {} is invalid; it must be a finite non-negative value",
+                    starting_offset_seconds,
                 )
             );
         }

@@ -119,6 +119,11 @@ pub struct ShaderPolicy {
     pub animation_speed:
         Option<f32>,
 
+    // Native shader-time position at which this policy begins.
+    // This value is independent of animation_speed.
+    pub starting_offset_seconds:
+        f32,
+
     pub anti_aliasing:
         Option<
             crate::render_fxaa::AntiAliasingMethod
@@ -1923,6 +1928,7 @@ fn load_database_policy_table(
         palette_color: Option<String>,
         rendered_fps: Option<i64>,
         animation_speed: Option<f64>,
+        starting_offset_seconds: f64,
         anti_aliasing: Option<String>,
         dithering: Option<String>,
         color_precision: Option<String>,
@@ -1976,6 +1982,7 @@ fn load_database_policy_table(
                      p.palette_color,
                      p.rendered_fps,
                      p.animation_speed,
+                     p.starting_offset,
                      p.anti_aliasing,
                      p.dithering,
                      p.color_precision,
@@ -2028,20 +2035,21 @@ fn load_database_policy_table(
                             palette_color: row.get(8)?,
                             rendered_fps: row.get(9)?,
                             animation_speed: row.get(10)?,
-                            anti_aliasing: row.get(11)?,
-                            dithering: row.get(12)?,
-                            color_precision: row.get(13)?,
-                            render_scale: row.get(14)?,
-                            audiovisual_effect: row.get(15)?,
-                            bloom_intensity: row.get(16)?,
-                            bloom_saturation: row.get(17)?,
-                            bloom_threshold: row.get(18)?,
-                            bloom_frequency_rotation: row.get(19)?,
-                            bloom_frequency_invert: row.get(20)?,
-                            invert_colors: row.get(21)?,
-                            flip_horizontal: row.get(22)?,
-                            flip_vertical: row.get(23)?,
-                            hue_rotation: row.get(24)?,
+                            starting_offset_seconds: row.get(11)?,
+                            anti_aliasing: row.get(12)?,
+                            dithering: row.get(13)?,
+                            color_precision: row.get(14)?,
+                            render_scale: row.get(15)?,
+                            audiovisual_effect: row.get(16)?,
+                            bloom_intensity: row.get(17)?,
+                            bloom_saturation: row.get(18)?,
+                            bloom_threshold: row.get(19)?,
+                            bloom_frequency_rotation: row.get(20)?,
+                            bloom_frequency_invert: row.get(21)?,
+                            invert_colors: row.get(22)?,
+                            flip_horizontal: row.get(23)?,
+                            flip_vertical: row.get(24)?,
+                            hue_rotation: row.get(25)?,
                         }
                     )
                 },
@@ -2349,7 +2357,7 @@ fn load_database_policy_table(
             };
 
 
-        policies.push(
+        let mut policy =
             parse_policy_specification(
                 row.policy_id,
                 row.policy_name,
@@ -2357,7 +2365,13 @@ fn load_database_policy_table(
                 source_path,
                 &tokens.join(" "),
                 target,
-            )?
+            )?;
+
+        policy.starting_offset_seconds =
+            row.starting_offset_seconds as f32;
+
+        policies.push(
+            policy
         );
     }
 
@@ -2895,6 +2909,8 @@ fn parse_policy_specification(
             shader_palette,
             rendered_fps,
             animation_speed,
+            starting_offset_seconds:
+                0.0,
             anti_aliasing,
             dithering,
             color_precision,
