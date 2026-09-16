@@ -134,6 +134,11 @@ pub fn validate_initialization(
         )?;
 
 
+    validate_empty_playlists(
+        connection
+    )?;
+
+
     validate_runtime_targets(
         connection,
         default_screensaver_policy_id,
@@ -257,10 +262,12 @@ fn validate_required_tables(
     connection: &Connection,
 ) -> Result<(), String> {
 
-    const REQUIRED_TABLES: [&str; 8] = [
+    const REQUIRED_TABLES: [&str; 10] = [
         "schema_metadata",
         "shaders",
         "shader_policies",
+        "playlists",
+        "playlist_members",
         "runtime_targets",
         "app_defaults",
         "target_defaults",
@@ -1179,6 +1186,53 @@ fn validate_default_policy(
 }
 
 
+fn validate_empty_playlists(
+    connection: &Connection,
+) -> Result<(), String> {
+
+    for table_name in [
+        "playlists",
+        "playlist_members",
+    ] {
+        let row_count: i64 =
+            connection
+                .query_row(
+                    &format!(
+                        "SELECT COUNT(*) FROM {}",
+                        table_name,
+                    ),
+                    [],
+                    |row| {
+                        row.get(0)
+                    },
+                )
+                .map_err(
+                    |error| {
+                        format!(
+                            "Unable to count {} rows during initialization validation: {}",
+                            table_name,
+                            error,
+                        )
+                    }
+                )?;
+
+
+        if row_count != 0 {
+            return Err(
+                format!(
+                    "Playlist initialization validation failed: expected 0 rows in {}, found {}",
+                    table_name,
+                    row_count,
+                )
+            );
+        }
+    }
+
+
+    Ok(())
+}
+
+
 fn validate_runtime_targets(
     connection: &Connection,
     expected_screensaver_policy_id: i64,
@@ -1231,9 +1285,11 @@ fn validate_runtime_targets(
             display_mode,
             interval_seconds,
             single_policy_id,
+            playlist_id,
             selected_policy_target,
         ): (
             String,
+            Option<i64>,
             Option<i64>,
             Option<i64>,
             Option<String>,
@@ -1244,6 +1300,7 @@ fn validate_runtime_targets(
                          rt.display_mode,
                          rt.interval_seconds,
                          rt.single_policy_id,
+                         rt.playlist_id,
                          p.policy_target
                      FROM runtime_targets AS rt
                      LEFT JOIN shader_policies AS p
@@ -1257,6 +1314,7 @@ fn validate_runtime_targets(
                                 row.get(1)?,
                                 row.get(2)?,
                                 row.get(3)?,
+                                row.get(4)?,
                             )
                         )
                     },
@@ -1275,6 +1333,7 @@ fn validate_runtime_targets(
         if display_mode != "single"
             || interval_seconds.is_some()
             || single_policy_id != Some(expected_policy_id)
+            || playlist_id.is_some()
             || selected_policy_target.as_deref() != Some(target)
         {
             return Err(

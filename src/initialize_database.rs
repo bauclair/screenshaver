@@ -877,13 +877,15 @@ fn create_runtime_targets(
                      target,
                      display_mode,
                      interval_seconds,
-                     single_policy_id
+                     single_policy_id,
+                     playlist_id
                  )
                  VALUES (
                      ?1,
                      'single',
                      NULL,
-                     ?2
+                     ?2,
+                     NULL
                  )"
             )
             .map_err(
