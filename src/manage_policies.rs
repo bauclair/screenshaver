@@ -1137,19 +1137,89 @@ pub fn delete_policy_by_id(
     _config_path: &Path,
     policy_id: i64,
 ) -> Result<(), String> {
-    let connection = crate::open_database::open()
+    let mut connection = crate::open_database::open()
         .map_err(|error| format!("Unable to open database while deleting policy ID {}: {}", policy_id, error))?;
-    let stored_name: String = connection.query_row(
+    let transaction = connection.transaction()
+        .map_err(|error| format!("Unable to begin policy-delete transaction for policy ID {}: {}", policy_id, error))?;
+
+    let stored_name: String = transaction.query_row(
         "SELECT policy_name FROM shader_policies WHERE policy_id = ?1",
         [policy_id],
         |row| row.get(0),
     ).map_err(|error| format!("Unable to locate policy ID {} before deletion: {}", policy_id, error))?;
-    if is_protected_default_policy_in_connection(&connection, policy_id)? {
+
+    if is_protected_default_policy_in_connection(&transaction, policy_id)? {
         return Err(format!("Protected fallback policy '{}' cannot be deleted", stored_name));
     }
-    let deleted = connection.execute("DELETE FROM shader_policies WHERE policy_id = ?1", [policy_id])
-        .map_err(|error| format!("Unable to delete policy ID {} ('{}'): {}", policy_id, stored_name, error))?;
-    match deleted { 1 => Ok(()), 0 => Err(format!("Policy ID {} does not exist", policy_id)), count => Err(format!("Deleting policy ID {} unexpectedly removed {} rows", policy_id, count)) }
+
+    let affected_playlist_ids = {
+        let mut statement = transaction.prepare(
+            "SELECT playlist_id
+             FROM playlist_members
+             WHERE policy_id = ?1
+             ORDER BY playlist_id"
+        ).map_err(|error| format!(
+            "Unable to prepare playlist-membership lookup before deleting policy ID {}: {}",
+            policy_id,
+            error,
+        ))?;
+
+        let rows = statement.query_map(
+            [policy_id],
+            |row| row.get::<_, i64>(0),
+        ).map_err(|error| format!(
+            "Unable to query playlist memberships before deleting policy ID {}: {}",
+            policy_id,
+            error,
+        ))?;
+
+        let mut playlist_ids = Vec::new();
+        for row in rows {
+            playlist_ids.push(
+                row.map_err(|error| format!(
+                    "Unable to decode playlist membership before deleting policy ID {}: {}",
+                    policy_id,
+                    error,
+                ))?
+            );
+        }
+        playlist_ids
+    };
+
+    let deleted = transaction.execute(
+        "DELETE FROM shader_policies WHERE policy_id = ?1",
+        [policy_id],
+    ).map_err(|error| format!(
+        "Unable to delete policy ID {} ('{}'): {}",
+        policy_id,
+        stored_name,
+        error,
+    ))?;
+
+    if deleted != 1 {
+        return Err(
+            if deleted == 0 {
+                format!("Policy ID {} does not exist", policy_id)
+            } else {
+                format!("Deleting policy ID {} unexpectedly removed {} rows", policy_id, deleted)
+            }
+        );
+    }
+
+    for playlist_id in affected_playlist_ids {
+        crate::manage_playlists::compact_playlist_positions_in_connection(
+            &transaction,
+            playlist_id,
+        )?;
+    }
+
+    transaction.commit()
+        .map_err(|error| format!(
+            "Unable to commit deletion of policy ID {} ('{}'): {}",
+            policy_id,
+            stored_name,
+            error,
+        ))
 }
 
 pub fn reconcile_shader_move_from_source(

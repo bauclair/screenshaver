@@ -10099,6 +10099,7 @@ fn save_control_configuration(
         display: &str,
         interval_seconds: u64,
         single_policy_id: Option<i64>,
+        playlist_id: Option<i64>,
     ) -> Result<String, String> {
         match display.trim().to_ascii_lowercase().as_str() {
             "ordered" => crate::manage_configuration::format_rotation_mode(
@@ -10117,6 +10118,23 @@ fn save_control_configuration(
                             .to_string()
                     })?;
                 Ok(format!("single:{}", policy_id))
+            }
+            "playlist" => {
+                let playlist_id = playlist_id
+                    .filter(|playlist_id| *playlist_id > 0)
+                    .ok_or_else(|| {
+                        "Playlist display mode requires a playlist selection."
+                            .to_string()
+                    })?;
+
+                if interval_seconds == 0 {
+                    return Err(
+                        "Playlist display mode requires a positive interval."
+                            .to_string()
+                    );
+                }
+
+                Ok(format!("playlist:{}:{}", playlist_id, interval_seconds))
             }
             other => Err(format!("Unsupported display mode '{}'.", other)),
         }
@@ -10145,12 +10163,14 @@ fn save_control_configuration(
         &control.screensaver_display,
         control.screensaver_interval_seconds,
         control.screensaver_single_policy_id,
+        control.screensaver_playlist_id,
     )?;
 
     let wallpaper_mode = build_mode(
         &control.wallpaper_display,
         control.wallpaper_interval_seconds,
         control.wallpaper_single_policy_id,
+        control.wallpaper_playlist_id,
     )?;
 
     let (screensaver_texture_mode, screensaver_texture_family) =

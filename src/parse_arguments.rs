@@ -10,6 +10,8 @@ pub enum Command {
 
     Version,
 
+    TestPlaylists,
+
     Control {
         shader_name: Option<String>,
     },
@@ -98,6 +100,20 @@ pub fn parse() -> Result<Command, String> {
 
             Ok(
                 Command::Version
+            )
+        }
+
+
+        "--test-playlists" => {
+
+            require_no_extra_arguments(
+                &args,
+                "--test-playlists",
+            )?;
+
+
+            Ok(
+                Command::TestPlaylists
             )
         }
 
@@ -331,6 +347,9 @@ pub fn print_help() {
                  values below 60 seconds are stored as 60 seconds.\n\
          \n\
          Temporary development/setup options:\n\
+         \n\
+             --test-playlists\n\
+                 Run developer Playlist database-management tests and exit.\n\
          \n\
              --construct-lock-screen-kde\n\
                  Construct/install the KDE lock-screen integration.\n\

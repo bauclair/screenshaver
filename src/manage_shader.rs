@@ -12,6 +12,10 @@ pub enum ShaderMode {
     Random,
 
     Ordered,
+
+    Playlist(
+        i64
+    ),
 }
 
 
@@ -330,11 +334,22 @@ impl ShaderManager {
         mode: ShaderMode,
     ) -> Self {
 
-        Self::from_shader_entries_for_target(
-            mode,
-            Self::load_shader_entries(),
-            OrderedTarget::Screensaver,
-        )
+        match mode {
+            ShaderMode::Playlist(playlist_id) => {
+                Self::from_playlist_for_target(
+                    playlist_id,
+                    OrderedTarget::Screensaver,
+                )
+            }
+
+            other_mode => {
+                Self::from_shader_entries_for_target(
+                    other_mode,
+                    Self::load_shader_entries(),
+                    OrderedTarget::Screensaver,
+                )
+            }
+        }
     }
 
 
@@ -346,11 +361,22 @@ impl ShaderManager {
     ) -> Self {
 
         let mut manager =
-            Self::from_shader_entries_for_target(
-                mode,
-                Self::load_shader_entries(),
-                OrderedTarget::Screensaver,
-            );
+            match mode {
+                ShaderMode::Playlist(playlist_id) => {
+                    Self::from_playlist_for_target(
+                        playlist_id,
+                        OrderedTarget::Screensaver,
+                    )
+                }
+
+                other_mode => {
+                    Self::from_shader_entries_for_target(
+                        other_mode,
+                        Self::load_shader_entries(),
+                        OrderedTarget::Screensaver,
+                    )
+                }
+            };
 
 
         if manager.shaders.iter()
@@ -364,7 +390,7 @@ impl ShaderManager {
 
             if matches!(
                 manager.mode,
-                ShaderMode::Ordered
+                ShaderMode::Ordered | ShaderMode::Playlist(_)
             ) {
                 if let Some(position) =
                     manager.shaders.iter()
@@ -399,6 +425,113 @@ impl ShaderManager {
 
 
         manager
+    }
+
+
+    /// Create a Playlist-mode manager for one runtime target. Playlist order is
+    /// authoritative and must not pass through the alphabetical Ordered-mode sort.
+    fn from_playlist_for_target(
+        playlist_id: i64,
+        target: OrderedTarget,
+    ) -> Self {
+
+        Self::from_playlist_entries_for_target(
+            playlist_id,
+            target,
+            Self::load_shader_entries(),
+        )
+    }
+
+
+    /// Create a Playlist-mode manager from a caller-supplied target-specific
+    /// set of renderable entries. This is used by wallpaper runtime so the
+    /// Playlist resolver can impose canonical Playlist order without replacing
+    /// wallpaper-specific shader discovery.
+    fn from_playlist_entries_for_target(
+        playlist_id: i64,
+        target: OrderedTarget,
+        available_entries: Vec<ShaderEntry>,
+    ) -> Self {
+
+        let target_name =
+            match target {
+                OrderedTarget::Screensaver => "screensaver",
+                OrderedTarget::Wallpaper => "wallpaper",
+            };
+
+        let mut playlist_entries =
+            Vec::new();
+
+        match crate::manage_playlists::playlist_render_policies(
+            playlist_id,
+            target_name,
+        ) {
+            Ok(members) => {
+                for member in members {
+                    if let Some(entry) =
+                        available_entries
+                            .iter()
+                            .find(
+                                |entry| {
+                                    entry.policy_id == member.policy_id
+                                }
+                            )
+                    {
+                        playlist_entries.push(
+                            entry.clone()
+                        );
+                    } else {
+                        log_warning(
+                            &format!(
+                                "[PLAYLIST] Playlist ID {} references {} policy_id={} ('{}'), but that policy is not currently renderable; skipping it",
+                                playlist_id,
+                                target_name,
+                                member.policy_id,
+                                member.policy_name,
+                            )
+                        );
+                    }
+                }
+            }
+
+            Err(error) => {
+                log_error(
+                    &format!(
+                        "[PLAYLIST] Unable to resolve playlist ID {} for {} rendering: {}",
+                        playlist_id,
+                        target_name,
+                        error,
+                    )
+                );
+            }
+        }
+
+        if playlist_entries.is_empty() {
+            log_warning(
+                &format!(
+                    "[PLAYLIST] Playlist ID {} has no renderable {} policies",
+                    playlist_id,
+                    target_name,
+                )
+            );
+        } else {
+            log_information(
+                &format!(
+                    "[PLAYLIST] Resolved playlist ID {} to {} renderable {} policy/policies in canonical Playlist order",
+                    playlist_id,
+                    playlist_entries.len(),
+                    target_name,
+                )
+            );
+        }
+
+        Self {
+            shaders: playlist_entries,
+            index: 0,
+            mode: ShaderMode::Playlist(playlist_id),
+            resume_shader: None,
+            ordered_target: Some(target),
+        }
     }
 
 
@@ -511,6 +644,15 @@ impl ShaderManager {
         shaders: Vec<ShaderEntry>,
         target: OrderedTarget,
     ) -> Self {
+
+        if let ShaderMode::Playlist(playlist_id) = mode {
+            return Self::from_playlist_entries_for_target(
+                playlist_id,
+                target,
+                shaders,
+            );
+        }
+
         let mut manager =
             Self::from_shader_entries(
                 mode,
@@ -1048,6 +1190,12 @@ impl ShaderManager {
 
 
             ShaderMode::Ordered => {
+
+                self.ordered_shader_entry()
+            }
+
+
+            ShaderMode::Playlist(_) => {
 
                 self.ordered_shader_entry()
             }

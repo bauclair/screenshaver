@@ -11,6 +11,8 @@ pub enum ModeType {
 
     Ordered,
 
+    Playlist,
+
     Single,
 
     Invalid,
@@ -49,32 +51,33 @@ pub fn parse_mode(input: &str) -> ParsedMode {
 
     let pieces: Vec<&str> = input.split(':').collect();
 
-    if pieces.len() != 2 {
+    let (mode, argument) =
+        match pieces.as_slice() {
 
-        diagnostics.push(
-            "[PARSE_MODE] Invalid format".to_string()
-        );
+            ["random", interval] =>
+                (ModeType::Random, (*interval).to_string()),
 
-        return ParsedMode {
+            ["ordered", interval] =>
+                (ModeType::Ordered, (*interval).to_string()),
 
-            mode: ModeType::Invalid,
+            ["single", selector] =>
+                (ModeType::Single, (*selector).to_string()),
 
-            argument: String::new(),
+            ["playlist", playlist_id, _interval] =>
+                (ModeType::Playlist, (*playlist_id).to_string()),
 
-            diagnostics,
+            _ => {
+                diagnostics.push(
+                    "[PARSE_MODE] Invalid format".to_string()
+                );
+
+                return ParsedMode {
+                    mode: ModeType::Invalid,
+                    argument: String::new(),
+                    diagnostics,
+                };
+            }
         };
-    }
-
-    let mode = match pieces[0] {
-
-        "random" => ModeType::Random,
-
-        "ordered" => ModeType::Ordered,
-
-        "single" => ModeType::Single,
-
-        _ => ModeType::Invalid,
-    };
 
     diagnostics.push(format!(
         "[PARSE_MODE] mode = {:?}",
@@ -83,15 +86,12 @@ pub fn parse_mode(input: &str) -> ParsedMode {
 
     diagnostics.push(format!(
         "[PARSE_MODE] argument = {}",
-        pieces[1]
+        argument
     ));
 
     ParsedMode {
-
         mode,
-
-        argument: pieces[1].to_string(),
-
+        argument,
         diagnostics,
     }
 }

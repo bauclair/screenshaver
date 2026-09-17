@@ -746,8 +746,10 @@ pub fn load_runtime_mode(
         display_mode,
         interval_seconds,
         single_policy_id,
+        playlist_id,
     ): (
         String,
+        Option<i64>,
         Option<i64>,
         Option<i64>,
     ) =
@@ -756,7 +758,8 @@ pub fn load_runtime_mode(
                 "SELECT
                      display_mode,
                      interval_seconds,
-                     single_policy_id
+                     single_policy_id,
+                     playlist_id
                  FROM runtime_targets
                  WHERE target = ?1",
                 [target],
@@ -766,6 +769,7 @@ pub fn load_runtime_mode(
                             row.get(0)?,
                             row.get(1)?,
                             row.get(2)?,
+                            row.get(3)?,
                         )
                     )
                 },
@@ -819,6 +823,43 @@ pub fn load_runtime_mode(
                 format!(
                     "single:{}",
                     policy_id,
+                )
+            )
+        }
+
+        "playlist" => {
+            let playlist_id =
+                playlist_id
+                    .ok_or_else(
+                        || {
+                            format!(
+                                "{} runtime target is Playlist but has no selected playlist",
+                                target,
+                            )
+                        }
+                    )?;
+
+            let interval =
+                interval_seconds
+                    .filter(
+                        |value| {
+                            *value > 0
+                        }
+                    )
+                    .ok_or_else(
+                        || {
+                            format!(
+                                "{} runtime target Playlist mode has no valid interval",
+                                target,
+                            )
+                        }
+                    )?;
+
+            Ok(
+                format!(
+                    "playlist:{}:{}",
+                    playlist_id,
+                    interval,
                 )
             )
         }
@@ -952,14 +993,52 @@ fn write_runtime_modes(
         }
 
 
+        if let Some(playlist_id) =
+            runtime.playlist_id
+        {
+            let matching_count: i64 =
+                transaction
+                    .query_row(
+                        "SELECT COUNT(*)
+                         FROM playlists
+                         WHERE playlist_id = ?1",
+                        [playlist_id],
+                        |row| {
+                            row.get(0)
+                        },
+                    )
+                    .map_err(
+                        |error| {
+                            format!(
+                                "Unable to validate selected {} Playlist ID {}: {}",
+                                runtime.target,
+                                playlist_id,
+                                error,
+                            )
+                        }
+                    )?;
+
+            if matching_count != 1 {
+                return Err(
+                    format!(
+                        "Selected {} Playlist ID {} does not exist",
+                        runtime.target,
+                        playlist_id,
+                    )
+                );
+            }
+        }
+
+
         let changed =
             transaction
                 .execute(
                     "UPDATE runtime_targets
                      SET display_mode = ?1,
                          interval_seconds = ?2,
-                         single_policy_id = ?3
-                     WHERE target = ?4",
+                         single_policy_id = ?3,
+                         playlist_id = ?4
+                     WHERE target = ?5",
                     rusqlite::params![
                         runtime.display_mode,
                         runtime.interval_seconds
@@ -980,6 +1059,7 @@ fn write_runtime_modes(
                                 }
                             )?,
                         runtime.single_policy_id,
+                        runtime.playlist_id,
                         runtime.target,
                     ],
                 )
@@ -1023,6 +1103,7 @@ struct ParsedRuntimeMode<'a> {
     display_mode: &'a str,
     interval_seconds: Option<u64>,
     single_policy_id: Option<i64>,
+    playlist_id: Option<i64>,
 }
 
 
@@ -1081,6 +1162,8 @@ fn parse_runtime_mode<'a>(
                         None,
                     single_policy_id:
                         Some(policy_id),
+                    playlist_id:
+                        None,
                 }
             )
         }
@@ -1114,6 +1197,71 @@ fn parse_runtime_mode<'a>(
                         Some(interval_seconds),
                     single_policy_id:
                         None,
+                    playlist_id:
+                        None,
+                }
+            )
+        }
+
+        "playlist" => {
+            let mut arguments =
+                argument.splitn(
+                    2,
+                    ':'
+                );
+
+            let playlist_id =
+                arguments
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    .parse::<i64>()
+                    .ok()
+                    .filter(
+                        |value| {
+                            *value > 0
+                        }
+                    )
+                    .ok_or_else(
+                        || {
+                            format!(
+                                "{} Playlist mode requires a valid playlist selection",
+                                target,
+                            )
+                        }
+                    )?;
+
+            let interval_seconds =
+                arguments
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    .parse::<u64>()
+                    .ok()
+                    .filter(
+                        |value| {
+                            *value > 0
+                        }
+                    )
+                    .ok_or_else(
+                        || {
+                            format!(
+                                "{} Playlist mode requires a positive interval",
+                                target,
+                            )
+                        }
+                    )?;
+
+            Ok(
+                ParsedRuntimeMode {
+                    target,
+                    display_mode,
+                    interval_seconds:
+                        Some(interval_seconds),
+                    single_policy_id:
+                        None,
+                    playlist_id:
+                        Some(playlist_id),
                 }
             )
         }
@@ -1337,6 +1485,54 @@ pub fn parse_rotation_mode(
         }
 
 
+        "playlist" => {
+            let mut arguments =
+                argument
+                    .unwrap_or("")
+                    .splitn(
+                        2,
+                        ':'
+                    );
+
+            let playlist_id =
+                arguments
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    .parse::<i64>()
+                    .ok()
+                    .filter(
+                        |playlist_id| {
+                            *playlist_id > 0
+                        }
+                    );
+
+            let interval_seconds =
+                arguments
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    .parse::<u64>()
+                    .ok()
+                    .filter(
+                        |interval_seconds| {
+                            *interval_seconds > 0
+                        }
+                    );
+
+            if playlist_id.is_none() || interval_seconds.is_none() {
+                return Err(
+                    "Playlist display mode requires a valid playlist ID and interval"
+                        .to_string()
+                );
+            }
+
+            Ok(
+                None
+            )
+        }
+
+
         _ => {
             Err(
                 format!(
@@ -1551,10 +1747,54 @@ fn validate_mode_string(
         }
 
 
+        "playlist" => {
+            let mut arguments =
+                argument.splitn(
+                    2,
+                    ':'
+                );
+
+            let valid_playlist_id =
+                arguments
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    .parse::<i64>()
+                    .ok()
+                    .is_some_and(
+                        |playlist_id| {
+                            playlist_id > 0
+                        }
+                    );
+
+            let valid_interval =
+                arguments
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    .parse::<u64>()
+                    .ok()
+                    .is_some_and(
+                        |interval_seconds| {
+                            interval_seconds > 0
+                        }
+                    );
+
+            if !valid_playlist_id || !valid_interval {
+                return Err(
+                    format!(
+                        "{} playlist mode requires a valid playlist selection and positive interval",
+                        field_name,
+                    )
+                );
+            }
+        }
+
+
         _ => {
             return Err(
                 format!(
-                    "{} contains unsupported mode '{}'; expected single, random, or ordered",
+                    "{} contains unsupported mode '{}'; expected single, random, ordered, or playlist",
                     field_name,
                     mode_name,
                 )

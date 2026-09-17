@@ -16,6 +16,7 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum QbeField {
     PolicyName,
+    PlaylistName,
     ShaderFilename,
     ShaderType,
     PolicyTarget,
@@ -37,6 +38,7 @@ impl QbeField {
 
     pub const ALL: &'static [Self] = &[
         Self::PolicyName,
+        Self::PlaylistName,
         Self::ShaderFilename,
         Self::ShaderType,
         Self::PolicyTarget,
@@ -61,6 +63,9 @@ impl QbeField {
         match self {
             Self::PolicyName =>
                 "Policy Name",
+
+            Self::PlaylistName =>
+                "Playlist Name",
 
             Self::ShaderFilename =>
                 "Shader Filename",
@@ -206,6 +211,7 @@ pub enum QbeValueKind {
     Decimal,
     ShaderType,
     PolicyTarget,
+    PlaylistName,
     TextureName,
     PaletteName,
     Status,
@@ -457,6 +463,10 @@ const ENUM_OPERATORS: &[QbeOperator] = &[
     QbeOperator::Ne,
 ];
 
+const BOOLEAN_OPERATORS: &[QbeOperator] = &[
+    QbeOperator::Is,
+];
+
 const CONTEXTUAL_RESOURCE_OPERATORS: &[QbeOperator] = &[
     QbeOperator::Is,
     QbeOperator::Eq,
@@ -475,6 +485,9 @@ pub const fn operators_for(
         | QbeField::ShaderFilename =>
             TEXT_OPERATORS,
 
+        QbeField::PlaylistName =>
+            TEXT_OPERATORS,
+
         QbeField::RenderedFps
         | QbeField::AnimationSpeed
         | QbeField::RenderScale =>
@@ -490,9 +503,11 @@ pub const fn operators_for(
         | QbeField::AntiAliasing
         | QbeField::Dithering
         | QbeField::ColorPrecision
-        | QbeField::BloomMode
-        | QbeField::BloomFrequencyInvert =>
+        | QbeField::BloomMode =>
             ENUM_OPERATORS,
+
+        QbeField::BloomFrequencyInvert =>
+            BOOLEAN_OPERATORS,
     }
 }
 
@@ -554,6 +569,13 @@ pub const fn value_kind_for(
             _,
         ) => {
             QbeValueKind::PolicyTarget
+        }
+
+        (
+            QbeField::PlaylistName,
+            _,
+        ) => {
+            QbeValueKind::PlaylistName
         }
 
         (
@@ -973,6 +995,14 @@ fn build_clause_sql(
         }
 
 
+        QbeField::PlaylistName => {
+            build_playlist_name_clause(
+                operator,
+                value,
+            )
+        }
+
+
         QbeField::ShaderFilename => {
             build_text_column_clause(
                 "s.filename",
@@ -1118,10 +1148,28 @@ fn build_clause_sql(
 
         QbeField::BloomFrequencyInvert => {
             let enabled = parse_boolean(value)?;
-            build_integer_column_clause(
-                "p.bloom_frequency_invert",
-                operator,
-                if enabled { "1" } else { "0" },
+
+            if operator != QbeOperator::Is {
+                return Err(
+                    QbeParseError::Validation(
+                        QbeValidationError::FirstOperatorInvalid
+                    )
+                );
+            }
+
+            Ok(
+                ClauseSql {
+                    sql:
+                        "p.bloom_frequency_invert = ?"
+                            .to_string(),
+
+                    parameters:
+                        vec![
+                            QbeSqlParameter::Integer(
+                                if enabled { 1 } else { 0 }
+                            )
+                        ],
+                }
             )
         }
     }
@@ -1355,6 +1403,102 @@ fn numeric_sql_operator(
             )
         }
     }
+}
+
+
+fn build_playlist_name_clause(
+    operator: QbeOperator,
+    value: &str,
+) -> Result<ClauseSql, QbeParseError> {
+
+    let (
+        comparison_sql,
+        parameter,
+        negate_exists,
+    ) =
+        match operator {
+            QbeOperator::Eq => {
+                (
+                    "LOWER(pl_qbe.playlist_name) = LOWER(?)",
+                    value.to_string(),
+                    false,
+                )
+            }
+
+            QbeOperator::Ne => {
+                (
+                    "LOWER(pl_qbe.playlist_name) = LOWER(?)",
+                    value.to_string(),
+                    true,
+                )
+            }
+
+            QbeOperator::Like => {
+                (
+                    "LOWER(pl_qbe.playlist_name) LIKE LOWER(?)",
+                    format!(
+                        "%{}%",
+                        value,
+                    ),
+                    false,
+                )
+            }
+
+            QbeOperator::NotLike => {
+                (
+                    "LOWER(pl_qbe.playlist_name) LIKE LOWER(?)",
+                    format!(
+                        "%{}%",
+                        value,
+                    ),
+                    true,
+                )
+            }
+
+            _ => {
+                return Err(
+                    QbeParseError::Validation(
+                        QbeValidationError::FirstOperatorInvalid
+                    )
+                );
+            }
+        };
+
+
+    let exists_sql =
+        format!(
+            "EXISTS (
+                 SELECT 1
+                 FROM playlist_members AS pm_qbe
+                 JOIN playlists AS pl_qbe
+                   ON pl_qbe.playlist_id = pm_qbe.playlist_id
+                 WHERE pm_qbe.policy_id = p.policy_id
+                   AND {}
+             )",
+            comparison_sql,
+        );
+
+
+    Ok(
+        ClauseSql {
+            sql:
+                if negate_exists {
+                    format!(
+                        "NOT ({})",
+                        exists_sql,
+                    )
+                } else {
+                    exists_sql
+                },
+
+            parameters:
+                vec![
+                    QbeSqlParameter::Text(
+                        parameter
+                    )
+                ],
+        }
+    )
 }
 
 

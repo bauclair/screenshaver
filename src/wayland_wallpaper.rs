@@ -2827,7 +2827,8 @@ fn render_mirror_frames(
 
 
     if let Err(error) =
-        texture_manager.prepare_for_shader_with_path(
+        texture_manager.prepare_for_policy_with_path(
+            active_shader.policy_id,
             &active_shader.shader_name,
             Some(
                 active_shader.source_path.as_path()
@@ -2859,7 +2860,8 @@ fn render_mirror_frames(
 
     let mut animation_speed =
         runtime.animation_speed_policy
-            .animation_speed_for_shader(
+            .animation_speed_for_policy(
+                active_shader.policy_id,
                 &active_shader.shader_name,
                 Some(
                     active_shader.source_path.as_path()
@@ -2869,7 +2871,8 @@ fn render_mirror_frames(
 
 
     let mut rendered_fps =
-        runtime.fps_policy.rendered_fps_for_shader(
+        runtime.fps_policy.rendered_fps_for_policy(
+            active_shader.policy_id,
             &active_shader.shader_name,
             Some(
                 active_shader.source_path.as_path()
@@ -2968,7 +2971,8 @@ fn render_mirror_frames(
 
 
         let postprocess_profile =
-            runtime.postprocess_policy.profile_for_shader(
+            runtime.postprocess_policy.profile_for_policy(
+                active_shader.policy_id,
                 &active_shader.shader_name,
                 Some(
                     active_shader.source_path.as_path()
@@ -2993,7 +2997,8 @@ fn render_mirror_frames(
     let mut audio_required =
         matches!(
             runtime.postprocess_policy
-                .profile_for_shader(
+                .profile_for_policy(
+                    active_shader.policy_id,
                     &active_shader.shader_name,
                     Some(
                         active_shader.source_path.as_path()
@@ -3134,7 +3139,8 @@ fn render_mirror_frames(
                         reload.texture_policy.clone()
                     );
 
-                match replacement_texture_manager.prepare_for_shader_with_path(
+                match replacement_texture_manager.prepare_for_policy_with_path(
+                    current_shader.policy_id,
                     &current_shader.shader_name,
                     Some(
                         current_shader.source_path.as_path()
@@ -3144,7 +3150,8 @@ fn render_mirror_frames(
                     Ok(()) => {
                         let replacement_profile =
                             reload.postprocess_policy
-                                .profile_for_shader(
+                                .profile_for_policy(
+                                    current_shader.policy_id,
                                     &current_shader.shader_name,
                                     Some(
                                         current_shader.source_path.as_path()
@@ -3193,7 +3200,8 @@ fn render_mirror_frames(
 
                             animation_speed =
                                 reload.animation_speed_policy
-                                    .animation_speed_for_shader(
+                                    .animation_speed_for_policy(
+                                        current_shader.policy_id,
                                         &current_shader.shader_name,
                                         Some(
                                             current_shader.source_path.as_path()
@@ -3203,7 +3211,8 @@ fn render_mirror_frames(
 
                             rendered_fps =
                                 reload.fps_policy
-                                    .rendered_fps_for_shader(
+                                    .rendered_fps_for_policy(
+                                        current_shader.policy_id,
                                         &current_shader.shader_name,
                                         Some(
                                             current_shader.source_path.as_path()
@@ -3365,7 +3374,8 @@ fn render_mirror_frames(
                                 if let Err(
                                     error
                                 ) =
-                                    next_texture_manager.prepare_for_shader_with_path(
+                                    next_texture_manager.prepare_for_policy_with_path(
+                                        next_shader.policy_id,
                                         &next_shader.shader_name,
                                         Some(
                                             next_shader.source_path.as_path()
@@ -3503,7 +3513,8 @@ fn render_mirror_frames(
 
                                 animation_speed =
                                     runtime.animation_speed_policy
-                                        .animation_speed_for_shader(
+                                        .animation_speed_for_policy(
+                                            next_shader.policy_id,
                                             &next_shader.shader_name,
                                             Some(
                                                 next_shader.source_path.as_path()
@@ -3513,7 +3524,8 @@ fn render_mirror_frames(
 
 
                                 rendered_fps =
-                                    runtime.fps_policy.rendered_fps_for_shader(
+                                    runtime.fps_policy.rendered_fps_for_policy(
+                                        next_shader.policy_id,
                                         &next_shader.shader_name,
                                         Some(
                                             next_shader.source_path.as_path()
@@ -3538,7 +3550,8 @@ fn render_mirror_frames(
 
                                 let postprocess_profile =
                                     runtime.postprocess_policy
-                                        .profile_for_shader(
+                                        .profile_for_policy(
+                                            current_shader.policy_id,
                                             &current_shader.shader_name,
                                             Some(
                                                 current_shader.source_path.as_path()

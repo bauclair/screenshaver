@@ -1421,6 +1421,8 @@ fn draw_target_page(
                 &mut configuration.screensaver_interval_seconds,
                 &mut configuration.screensaver_single_policy_id,
                 &mut configuration.screensaver_single_policy_name,
+                &mut configuration.screensaver_playlist_id,
+                &mut configuration.screensaver_playlist_name,
                 policy_rows,
                 Some(
                     &mut configuration.screensaver_idle_timeout_value
@@ -1465,6 +1467,8 @@ fn draw_target_page(
                 &mut configuration.wallpaper_interval_seconds,
                 &mut configuration.wallpaper_single_policy_id,
                 &mut configuration.wallpaper_single_policy_name,
+                &mut configuration.wallpaper_playlist_id,
+                &mut configuration.wallpaper_playlist_name,
                 policy_rows,
                 None,
                 None,
@@ -1493,6 +1497,8 @@ fn draw_target_grid(
     interval_seconds: &mut u64,
     single_policy_id: &mut Option<i64>,
     single_policy_name: &mut String,
+    playlist_id: &mut Option<i64>,
+    playlist_name: &mut String,
     policy_rows: &[PolicyDisplayRow],
     idle_timeout_value: Option<&mut i64>,
     idle_timeout_unit: Option<&mut String>,
@@ -1603,6 +1609,7 @@ fn draw_target_grid(
                         "ordered",
                         "random",
                         "single",
+                        "playlist",
                     ] {
                         ui.selectable_value(
                             display_mode,
@@ -1729,6 +1736,127 @@ fn draw_target_grid(
                                     }
                                 },
                             );
+                    },
+                );
+
+
+                ui.end_row();
+            } else if display_mode.as_str()
+                == "playlist"
+            {
+                ui.label(
+                    "Playlist:"
+                );
+
+
+                let displayed_playlist =
+                    if playlist_id.is_none()
+                        || playlist_name
+                            .trim()
+                            .is_empty()
+                    {
+                        "<select playlist>"
+                            .to_string()
+                    } else {
+                        playlist_name
+                            .clone()
+                    };
+
+
+                ui.menu_button(
+                    displayed_playlist,
+                    |ui| {
+                        match crate::manage_playlists::list_playlists() {
+                            Ok(playlists) => {
+                                if playlists.is_empty() {
+                                    ui.add_enabled(
+                                        false,
+                                        egui::Button::new(
+                                            "No playlists available"
+                                        ),
+                                    );
+                                } else {
+                                    egui::ScrollArea::vertical()
+                                        .max_height(
+                                            320.0
+                                        )
+                                        .show(
+                                            ui,
+                                            |ui| {
+                                                for playlist in playlists {
+                                                    let response =
+                                                        ui.selectable_label(
+                                                            *playlist_id
+                                                                == Some(playlist.playlist_id),
+                                                            playlist.playlist_name
+                                                                .as_str(),
+                                                        );
+
+                                                    if response.clicked() {
+                                                        *playlist_id =
+                                                            Some(
+                                                                playlist.playlist_id
+                                                            );
+
+                                                        *playlist_name =
+                                                            playlist.playlist_name
+                                                                .clone();
+
+                                                        *status_message =
+                                                            format!(
+                                                                "{} playlist selected: {}.",
+                                                                target_name(
+                                                                    target
+                                                                ),
+                                                                playlist.playlist_name,
+                                                            );
+
+                                                        ui.close();
+                                                    }
+                                                }
+                                            },
+                                        );
+                                }
+                            }
+
+                            Err(error) => {
+                                ui.add_enabled(
+                                    false,
+                                    egui::Button::new(
+                                        "Unable to load playlists"
+                                    ),
+                                )
+                                .on_hover_text(
+                                    error
+                                );
+                            }
+                        }
+                    },
+                );
+
+
+                ui.end_row();
+
+
+                ui.label(
+                    "Interval:"
+                );
+
+
+                ui.horizontal(
+                    |ui| {
+                        ui.add(
+                            egui::DragValue::new(
+                                interval_seconds
+                            )
+                            .clamp_range(
+                                1..=86400
+                            ),
+                        );
+
+                        ui.label(
+                            "seconds"
+                        );
                     },
                 );
 

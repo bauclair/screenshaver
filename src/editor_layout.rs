@@ -78,6 +78,7 @@ pub enum PolicyTarget {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum EditorTab {
     Policies,
+    Playlists,
     Rendering,
     Textures,
     PostProcessing,
@@ -90,6 +91,12 @@ enum PolicySortColumn {
     Status,
     Texture,
     PolicyType,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PlaylistSortColumn {
+    PolicyName,
+    PolicyTarget,
 }
 
 
@@ -309,6 +316,8 @@ pub struct ControlConfiguration {
     pub screensaver_interval_seconds: u64,
     pub screensaver_single_policy_id: Option<i64>,
     pub screensaver_single_policy_name: String,
+    pub screensaver_playlist_id: Option<i64>,
+    pub screensaver_playlist_name: String,
     pub screensaver_idle_timeout_value: i64,
     pub screensaver_idle_timeout_unit: String,
     pub screensaver_animation_speed: f64,
@@ -323,6 +332,8 @@ pub struct ControlConfiguration {
     pub wallpaper_interval_seconds: u64,
     pub wallpaper_single_policy_id: Option<i64>,
     pub wallpaper_single_policy_name: String,
+    pub wallpaper_playlist_id: Option<i64>,
+    pub wallpaper_playlist_name: String,
     pub wallpaper_animation_speed: f64,
     pub wallpaper_global_texture: String,
     pub wallpaper_texture_primitives: i64,
@@ -336,15 +347,28 @@ pub struct ControlConfiguration {
 
 impl ControlConfiguration {
     pub fn from_config(config: &crate::load_config::Config) -> Self {
-        let (screensaver_display, screensaver_interval_seconds, screensaver_single_policy_id) =
-            split_display_mode(&config.mode);
-        let (wallpaper_display, wallpaper_interval_seconds, wallpaper_single_policy_id) =
-            split_display_mode(&config.wallpaper_mode);
+        let (
+            screensaver_display,
+            screensaver_interval_seconds,
+            screensaver_single_policy_id,
+            screensaver_playlist_id,
+        ) = split_display_mode(&config.mode);
+        let (
+            wallpaper_display,
+            wallpaper_interval_seconds,
+            wallpaper_single_policy_id,
+            wallpaper_playlist_id,
+        ) = split_display_mode(&config.wallpaper_mode);
 
         let screensaver_single_policy_name =
             policy_name_for_id(&config.screensaver_policies, screensaver_single_policy_id);
         let wallpaper_single_policy_name =
             policy_name_for_id(&config.wallpaper_policies, wallpaper_single_policy_id);
+
+        let screensaver_playlist_name =
+            playlist_name_for_id(screensaver_playlist_id);
+        let wallpaper_playlist_name =
+            playlist_name_for_id(wallpaper_playlist_id);
 
         let app_defaults = crate::manage_configuration::load_app_defaults().ok();
         let screensaver_defaults =
@@ -387,6 +411,8 @@ impl ControlConfiguration {
             screensaver_interval_seconds,
             screensaver_single_policy_id,
             screensaver_single_policy_name,
+            screensaver_playlist_id,
+            screensaver_playlist_name,
             screensaver_idle_timeout_value: screensaver_defaults.as_ref().and_then(|d| d.idle_timeout_value).unwrap_or(10),
             screensaver_idle_timeout_unit: screensaver_defaults.as_ref().and_then(|d| d.idle_timeout_unit.clone()).unwrap_or_else(|| "minutes".to_string()),
             screensaver_animation_speed: screensaver_defaults.as_ref().map(|d| d.animation_speed).unwrap_or(1.0),
@@ -409,6 +435,8 @@ impl ControlConfiguration {
             wallpaper_interval_seconds,
             wallpaper_single_policy_id,
             wallpaper_single_policy_name,
+            wallpaper_playlist_id,
+            wallpaper_playlist_name,
             wallpaper_animation_speed: wallpaper_defaults.as_ref().map(|d| d.animation_speed).unwrap_or(0.03),
             wallpaper_global_texture: target_texture(
                 wallpaper_defaults.as_ref(),
@@ -455,41 +483,64 @@ fn policy_name_for_id(
 }
 
 
+fn playlist_name_for_id(
+    playlist_id: Option<i64>,
+) -> String {
+    let Some(playlist_id) = playlist_id else {
+        return String::new();
+    };
+
+    crate::manage_playlists::list_playlists()
+        .ok()
+        .and_then(
+            |playlists| {
+                playlists
+                    .into_iter()
+                    .find(
+                        |playlist| {
+                            playlist.playlist_id == playlist_id
+                        }
+                    )
+            }
+        )
+        .map(
+            |playlist| {
+                playlist.playlist_name
+            }
+        )
+        .unwrap_or_default()
+}
+
+
 fn split_display_mode(
     mode: &str,
-) -> (String, u64, Option<i64>) {
+) -> (String, u64, Option<i64>, Option<i64>) {
 
     const DEFAULT_INTERVAL_SECONDS: u64 =
         600;
 
-    let mut parts =
-        mode.splitn(
-            2,
-            ':'
-        );
+    let parts: Vec<&str> =
+        mode.split(':').collect();
 
     let name =
         parts
-            .next()
-            .unwrap_or(
-                "random"
-            )
+            .first()
+            .copied()
+            .unwrap_or("random")
             .trim()
             .to_ascii_lowercase();
-
-    let argument =
-        parts
-            .next()
-            .unwrap_or("")
-            .trim();
 
     match name.as_str() {
         "ordered"
         | "random" => (
             name,
-            argument
-                .parse::<u64>()
-                .ok()
+            parts
+                .get(1)
+                .and_then(
+                    |value| {
+                        value.trim().parse::<u64>().ok()
+                    }
+                )
                 .filter(
                     |value| {
                         *value > 0
@@ -499,14 +550,52 @@ fn split_display_mode(
                     DEFAULT_INTERVAL_SECONDS
                 ),
             None,
+            None,
         ),
 
         "single" => (
             "single".to_string(),
             DEFAULT_INTERVAL_SECONDS,
-            argument
-                .parse::<i64>()
-                .ok()
+            parts
+                .get(1)
+                .and_then(
+                    |value| {
+                        value.trim().parse::<i64>().ok()
+                    }
+                )
+                .filter(
+                    |value| {
+                        *value > 0
+                    }
+                ),
+            None,
+        ),
+
+        "playlist" => (
+            "playlist".to_string(),
+            parts
+                .get(2)
+                .and_then(
+                    |value| {
+                        value.trim().parse::<u64>().ok()
+                    }
+                )
+                .filter(
+                    |value| {
+                        *value > 0
+                    }
+                )
+                .unwrap_or(
+                    DEFAULT_INTERVAL_SECONDS
+                ),
+            None,
+            parts
+                .get(1)
+                .and_then(
+                    |value| {
+                        value.trim().parse::<i64>().ok()
+                    }
+                )
                 .filter(
                     |value| {
                         *value > 0
@@ -517,6 +606,7 @@ fn split_display_mode(
         _ => (
             "random".to_string(),
             DEFAULT_INTERVAL_SECONDS,
+            None,
             None,
         ),
     }
@@ -664,6 +754,36 @@ struct PendingPolicyRename {
     row: PolicyRowReference,
     policy_name: String,
     validation_message: String,
+}
+
+
+#[derive(Clone, Debug)]
+struct PendingPlaylistCreate {
+    playlist_name: String,
+    description: String,
+    validation_message: String,
+}
+
+
+#[derive(Clone, Debug)]
+struct PendingPlaylistEdit {
+    playlist_id: i64,
+    playlist_name: String,
+    description: String,
+    validation_message: String,
+}
+
+
+#[derive(Clone, Debug)]
+struct PendingPlaylistDelete {
+    playlist_id: i64,
+    playlist_name: String,
+}
+
+#[derive(Clone, Debug)]
+struct PendingPlaylistAddPolicy {
+    playlist_id: i64,
+    policy_id: Option<i64>,
 }
 
 
@@ -1171,6 +1291,36 @@ pub struct EditWindowOverlay {
     active_tab:
         EditorTab,
 
+    selected_playlist_id:
+        Option<i64>,
+
+    pending_playlist_create:
+        Option<PendingPlaylistCreate>,
+
+    pending_playlist_edit:
+        Option<PendingPlaylistEdit>,
+
+    pending_playlist_delete:
+        Option<PendingPlaylistDelete>,
+
+    selected_playlist_policy_id:
+        Option<i64>,
+
+    playlist_sort_primary:
+        Option<PlaylistSortColumn>,
+
+    playlist_sort_primary_ascending:
+        bool,
+
+    playlist_sort_secondary:
+        Option<PlaylistSortColumn>,
+
+    playlist_sort_secondary_ascending:
+        bool,
+
+    pending_playlist_add_policy:
+        Option<PendingPlaylistAddPolicy>,
+
     policy_sort_column:
         PolicySortColumn,
 
@@ -1573,6 +1723,36 @@ impl EditWindowOverlay {
 
                 active_tab:
                     EditorTab::Policies,
+
+                selected_playlist_id:
+                    None,
+
+                pending_playlist_create:
+                    None,
+
+                pending_playlist_edit:
+                    None,
+
+                pending_playlist_delete:
+                    None,
+
+                selected_playlist_policy_id:
+                    None,
+
+                playlist_sort_primary:
+                    None,
+
+                playlist_sort_primary_ascending:
+                    true,
+
+                playlist_sort_secondary:
+                    None,
+
+                playlist_sort_secondary_ascending:
+                    true,
+
+                pending_playlist_add_policy:
+                    None,
 
                 policy_sort_column:
                     PolicySortColumn::Filename,
@@ -2680,6 +2860,36 @@ impl EditWindowOverlay {
         let mut active_tab =
             self.active_tab;
 
+        let mut selected_playlist_id =
+            self.selected_playlist_id;
+
+        let mut selected_playlist_policy_id =
+            self.selected_playlist_policy_id;
+
+        let mut playlist_sort_primary =
+            self.playlist_sort_primary;
+
+        let mut playlist_sort_primary_ascending =
+            self.playlist_sort_primary_ascending;
+
+        let mut playlist_sort_secondary =
+            self.playlist_sort_secondary;
+
+        let mut playlist_sort_secondary_ascending =
+            self.playlist_sort_secondary_ascending;
+
+        let mut pending_playlist_add_policy =
+            self.pending_playlist_add_policy.clone();
+
+        let mut pending_playlist_create =
+            self.pending_playlist_create.clone();
+
+        let mut pending_playlist_edit =
+            self.pending_playlist_edit.clone();
+
+        let mut pending_playlist_delete =
+            self.pending_playlist_delete.clone();
+
         let mut policy_sort_column =
             self.policy_sort_column;
 
@@ -3284,6 +3494,27 @@ impl EditWindowOverlay {
                                             );
                                         }
 
+                                        EditorTab::Playlists => {
+                                            draw_playlists_tab(
+                                                ui,
+                                                metrics,
+                                                policy_rows,
+                                                &mut selected_policy_row,
+                                                &mut selected_playlist_id,
+                                                &mut selected_playlist_policy_id,
+                                                &mut playlist_sort_primary,
+                                                &mut playlist_sort_primary_ascending,
+                                                &mut playlist_sort_secondary,
+                                                &mut playlist_sort_secondary_ascending,
+                                                &mut pending_playlist_create,
+                                                &mut pending_playlist_edit,
+                                                &mut pending_playlist_delete,
+                                                &mut pending_playlist_add_policy,
+                                                &mut policy_row_command_requested,
+                                                &mut status_message,
+                                            );
+                                        }
+
                                         EditorTab::Rendering => {
                                             ui.add_enabled_ui(
                                                 policy_controls_enabled,
@@ -3453,6 +3684,8 @@ impl EditWindowOverlay {
                                         && active_tab
                                             != EditorTab::Policies
                                         && active_tab
+                                            != EditorTab::Playlists
+                                        && active_tab
                                             != EditorTab::Config
                                         && hover_help_message.is_none()
                                     {
@@ -3598,6 +3831,38 @@ impl EditWindowOverlay {
                         context,
                         &mut pending_policy_rename,
                         &mut rename_policy_requested,
+                    );
+
+
+                    draw_playlist_create_modal(
+                        context,
+                        &mut pending_playlist_create,
+                        &mut selected_playlist_id,
+                        &mut status_message,
+                    );
+
+
+                    draw_playlist_edit_modal(
+                        context,
+                        &mut pending_playlist_edit,
+                        &mut status_message,
+                    );
+
+
+                    draw_playlist_delete_modal(
+                        context,
+                        &mut pending_playlist_delete,
+                        &mut selected_playlist_id,
+                        &mut status_message,
+                    );
+
+
+                    draw_playlist_add_policy_modal(
+                        context,
+                        policy_rows,
+                        &mut pending_playlist_add_policy,
+                        &mut selected_playlist_policy_id,
+                        &mut status_message,
                     );
 
 
@@ -3777,6 +4042,36 @@ impl EditWindowOverlay {
 
         self.active_tab =
             active_tab;
+
+        self.selected_playlist_id =
+            selected_playlist_id;
+
+        self.selected_playlist_policy_id =
+            selected_playlist_policy_id;
+
+        self.playlist_sort_primary =
+            playlist_sort_primary;
+
+        self.playlist_sort_primary_ascending =
+            playlist_sort_primary_ascending;
+
+        self.playlist_sort_secondary =
+            playlist_sort_secondary;
+
+        self.playlist_sort_secondary_ascending =
+            playlist_sort_secondary_ascending;
+
+        self.pending_playlist_add_policy =
+            pending_playlist_add_policy;
+
+        self.pending_playlist_create =
+            pending_playlist_create;
+
+        self.pending_playlist_edit =
+            pending_playlist_edit;
+
+        self.pending_playlist_delete =
+            pending_playlist_delete;
 
         self.policy_sort_column =
             policy_sort_column;
@@ -5038,6 +5333,10 @@ fn draw_editor_tab_bar(
                 (
                     EditorTab::Policies,
                     "Policies",
+                ),
+                (
+                    EditorTab::Playlists,
+                    "Playlists",
                 ),
                 (
                     EditorTab::Rendering,
@@ -8203,6 +8502,1313 @@ fn policy_target_name(
 
 
 // ======================== END POLICIES TAB ==================
+
+// ============================================================
+// PLAYLISTS TAB
+// ============================================================
+// The first Playlist UI increment intentionally exposes only the master list.
+// Membership editing and persistent member ordering will be added after this
+// inventory/selection surface has been validated in the Control Center.
+
+fn update_playlist_sort_selection(
+    column: PlaylistSortColumn,
+    shift: bool,
+    primary: &mut Option<PlaylistSortColumn>,
+    primary_ascending: &mut bool,
+    secondary: &mut Option<PlaylistSortColumn>,
+    secondary_ascending: &mut bool,
+) {
+    if shift {
+        if *primary == Some(column) {
+            *primary_ascending = !*primary_ascending;
+            return;
+        }
+
+        if *secondary == Some(column) {
+            *secondary_ascending = !*secondary_ascending;
+            return;
+        }
+
+        if primary.is_none() {
+            *primary = Some(column);
+            *primary_ascending = true;
+            *secondary = None;
+            *secondary_ascending = true;
+        } else {
+            *secondary = Some(column);
+            *secondary_ascending = true;
+        }
+
+        return;
+    }
+
+    if *primary == Some(column) {
+        *primary_ascending = !*primary_ascending;
+    } else {
+        *primary = Some(column);
+        *primary_ascending = true;
+    }
+
+    *secondary = None;
+    *secondary_ascending = true;
+}
+
+
+fn compare_playlist_members(
+    left: &crate::manage_playlists::PlaylistMember,
+    right: &crate::manage_playlists::PlaylistMember,
+    column: PlaylistSortColumn,
+) -> std::cmp::Ordering {
+    match column {
+        PlaylistSortColumn::PolicyName => left
+            .policy_name
+            .to_lowercase()
+            .cmp(&right.policy_name.to_lowercase())
+            .then_with(|| left.policy_name.cmp(&right.policy_name)),
+
+        PlaylistSortColumn::PolicyTarget => left
+            .policy_target
+            .to_lowercase()
+            .cmp(&right.policy_target.to_lowercase())
+            .then_with(|| left.policy_target.cmp(&right.policy_target)),
+    }
+}
+
+
+fn sorted_playlist_policy_ids(
+    members: &[crate::manage_playlists::PlaylistMember],
+    primary: Option<PlaylistSortColumn>,
+    primary_ascending: bool,
+    secondary: Option<PlaylistSortColumn>,
+    secondary_ascending: bool,
+) -> Vec<i64> {
+    let mut sorted = members.to_vec();
+
+    sorted.sort_by(|left, right| {
+        let mut ordering = primary
+            .map(|column| compare_playlist_members(left, right, column))
+            .unwrap_or(std::cmp::Ordering::Equal);
+
+        if !primary_ascending {
+            ordering = ordering.reverse();
+        }
+
+        if ordering == std::cmp::Ordering::Equal {
+            if let Some(column) = secondary {
+                ordering = compare_playlist_members(left, right, column);
+                if !secondary_ascending {
+                    ordering = ordering.reverse();
+                }
+            }
+        }
+
+        ordering
+            .then_with(|| left.position.cmp(&right.position))
+            .then_with(|| left.policy_id.cmp(&right.policy_id))
+    });
+
+    sorted
+        .into_iter()
+        .map(|member| member.policy_id)
+        .collect()
+}
+
+
+fn draw_playlists_tab(
+    ui: &mut egui::Ui,
+    metrics: EditorMetrics,
+    policy_rows: &[PolicyDisplayRow],
+    selected_policy_row: &mut Option<PolicyRowReference>,
+    selected_playlist_id: &mut Option<i64>,
+    selected_playlist_policy_id: &mut Option<i64>,
+    playlist_sort_primary: &mut Option<PlaylistSortColumn>,
+    playlist_sort_primary_ascending: &mut bool,
+    playlist_sort_secondary: &mut Option<PlaylistSortColumn>,
+    playlist_sort_secondary_ascending: &mut bool,
+    pending_playlist_create: &mut Option<PendingPlaylistCreate>,
+    pending_playlist_edit: &mut Option<PendingPlaylistEdit>,
+    pending_playlist_delete: &mut Option<PendingPlaylistDelete>,
+    pending_playlist_add_policy: &mut Option<PendingPlaylistAddPolicy>,
+    command_requested: &mut Option<(PolicyRowReference, PolicyRowCommand)>,
+    status_message: &mut String,
+) {
+    let playlists = match crate::manage_playlists::list_playlists() {
+        Ok(playlists) => playlists,
+        Err(error) => {
+            *status_message = format!("Unable to load playlists: {}", error);
+            ui.label("Unable to load the Playlist inventory.");
+            return;
+        }
+    };
+
+    if let Some(selected_id) = *selected_playlist_id {
+        if !playlists
+            .iter()
+            .any(|playlist| playlist.playlist_id == selected_id)
+        {
+            *selected_playlist_id = None;
+            *selected_playlist_policy_id = None;
+        }
+    }
+
+    let selected_playlist = selected_playlist_id.and_then(|selected_id| {
+        playlists
+            .iter()
+            .find(|playlist| playlist.playlist_id == selected_id)
+    });
+
+    let members = if let Some(selected_id) = *selected_playlist_id {
+        match crate::manage_playlists::playlist_members(selected_id) {
+            Ok(members) => members,
+            Err(error) => {
+                *status_message =
+                    format!("Unable to load playlist policies: {}", error);
+                Vec::new()
+            }
+        }
+    } else {
+        Vec::new()
+    };
+
+    if let Some(policy_id) = *selected_playlist_policy_id {
+        if !members
+            .iter()
+            .any(|member| member.policy_id == policy_id)
+        {
+            *selected_playlist_policy_id = None;
+        }
+    }
+
+    let available_width = ui.available_width();
+    let available_height = ui.available_height();
+    let separator_allowance = 18.0 * metrics.scale;
+    let master_width = (available_width * 0.30)
+        .clamp(150.0 * metrics.scale, 220.0 * metrics.scale);
+    let detail_width =
+        (available_width - master_width - separator_allowance)
+            .max(260.0 * metrics.scale);
+
+    ui.horizontal(|ui| {
+        ui.allocate_ui_with_layout(
+            egui::vec2(master_width, available_height),
+            egui::Layout::top_down(egui::Align::Min),
+            |ui| {
+                ui.label(
+                    egui::RichText::new("Playlist Name")
+                        .strong(),
+                );
+                ui.add_space(metrics.row_gap);
+
+                if playlists.is_empty() {
+                    ui.label("No playlists have been created.");
+                } else {
+                    egui::ScrollArea::vertical()
+                        .id_source("playlist_master_scroll")
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            for playlist in &playlists {
+                                let selected =
+                                    *selected_playlist_id
+                                        == Some(playlist.playlist_id);
+
+                                let response = ui
+                                    .allocate_ui_with_layout(
+                                        egui::vec2(
+                                            ui.available_width(),
+                                            0.0,
+                                        ),
+                                        egui::Layout::left_to_right(
+                                            egui::Align::Center,
+                                        ),
+                                        |ui| {
+                                            ui.add(
+                                                egui::SelectableLabel::new(
+                                                    selected,
+                                                    &playlist.playlist_name,
+                                                ),
+                                            )
+                                        },
+                                    )
+                                    .inner;
+
+                                if response.clicked() {
+                                    if *selected_playlist_id
+                                        != Some(playlist.playlist_id)
+                                    {
+                                        *selected_playlist_policy_id = None;
+                                        *playlist_sort_primary = None;
+                                        *playlist_sort_secondary = None;
+                                    }
+
+                                    *selected_playlist_id =
+                                        Some(playlist.playlist_id);
+                                    *status_message = format!(
+                                        "Selected playlist '{}'.",
+                                        playlist.playlist_name,
+                                    );
+                                }
+
+                                if response.double_clicked() {
+                                    *selected_playlist_id =
+                                        Some(playlist.playlist_id);
+                                    *selected_playlist_policy_id = None;
+                                    *pending_playlist_edit =
+                                        Some(PendingPlaylistEdit {
+                                            playlist_id:
+                                                playlist.playlist_id,
+                                            playlist_name:
+                                                playlist.playlist_name.clone(),
+                                            description:
+                                                playlist
+                                                    .description
+                                                    .clone()
+                                                    .unwrap_or_default(),
+                                            validation_message:
+                                                String::new(),
+                                        });
+                                }
+                            }
+                        });
+                }
+            },
+        );
+
+        ui.separator();
+
+        ui.allocate_ui_with_layout(
+            egui::vec2(detail_width, available_height),
+            egui::Layout::top_down(egui::Align::Min),
+            |ui| {
+                // Playlist-record controls stay fixed at the top of the Detail pane.
+                ui.horizontal(|ui| {
+                    if ui.button("New Playlist").clicked() {
+                        *pending_playlist_create =
+                            Some(PendingPlaylistCreate {
+                                playlist_name: String::new(),
+                                description: String::new(),
+                                validation_message: String::new(),
+                            });
+                    }
+
+                    if ui
+                        .add_enabled(
+                            selected_playlist.is_some(),
+                            egui::Button::new("Edit Playlist Info"),
+                        )
+                        .clicked()
+                    {
+                        if let Some(playlist) = selected_playlist {
+                            *pending_playlist_edit =
+                                Some(PendingPlaylistEdit {
+                                    playlist_id: playlist.playlist_id,
+                                    playlist_name:
+                                        playlist.playlist_name.clone(),
+                                    description:
+                                        playlist
+                                            .description
+                                            .clone()
+                                            .unwrap_or_default(),
+                                    validation_message: String::new(),
+                                });
+                        }
+                    }
+
+                    if ui
+                        .add_enabled(
+                            selected_playlist.is_some(),
+                            egui::Button::new("Delete Playlist"),
+                        )
+                        .clicked()
+                    {
+                        if let Some(playlist) = selected_playlist {
+                            *pending_playlist_delete =
+                                Some(PendingPlaylistDelete {
+                                    playlist_id: playlist.playlist_id,
+                                    playlist_name:
+                                        playlist.playlist_name.clone(),
+                                });
+                        }
+                    }
+                });
+
+                ui.add_space(8.0 * metrics.scale);
+
+                // Description is a single context-sensitive field for the selected playlist.
+                ui.label(
+                    egui::RichText::new("Description")
+                        .strong(),
+                );
+
+                let description = selected_playlist
+                    .and_then(|playlist| playlist.description.as_deref())
+                    .unwrap_or("");
+
+                ui.add(
+                    egui::Label::new(description)
+                        .wrap(),
+                );
+
+                ui.add_space(8.0 * metrics.scale);
+
+                let selected_id = *selected_playlist_id;
+                let selected_name = selected_playlist
+                    .map(|playlist| playlist.playlist_name.as_str())
+                    .unwrap_or("Selected Playlist");
+
+                let selected_member =
+                    selected_playlist_policy_id.and_then(|policy_id| {
+                        members
+                            .iter()
+                            .find(|member| member.policy_id == policy_id)
+                    });
+
+                let can_move_up = selected_member
+                    .map(|member| member.position > 1)
+                    .unwrap_or(false);
+                let can_move_down = selected_member
+                    .map(|member| {
+                        (member.position as usize) < members.len()
+                    })
+                    .unwrap_or(false);
+
+                // Reserve room for the stationary membership-control row at the bottom.
+                let bottom_controls_height =
+                    34.0 * metrics.scale;
+                let list_height =
+                    (ui.available_height() - bottom_controls_height)
+                        .max(40.0 * metrics.scale);
+
+                ui.allocate_ui_with_layout(
+                    egui::vec2(ui.available_width(), list_height),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |ui| {
+                        if selected_id.is_none() {
+                            ui.label(
+                                "Select a playlist to view its policies.",
+                            );
+                            return;
+                        }
+
+                        if members.is_empty() {
+                            ui.label(
+                                "This playlist contains no policies.",
+                            );
+                            return;
+                        }
+
+                        let target_width = 110.0 * metrics.scale;
+                        let policy_name_width =
+                            (ui.available_width()
+                                - target_width
+                                - 8.0 * metrics.scale)
+                                .max(150.0 * metrics.scale);
+
+                        egui::ScrollArea::vertical()
+                            .id_source("playlist_detail_scroll")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                egui::Grid::new("playlist_detail_grid")
+                                    .num_columns(2)
+                                    .striped(true)
+                                    .spacing(egui::vec2(
+                                        8.0 * metrics.scale,
+                                        4.0 * metrics.scale,
+                                    ))
+                                    .show(ui, |ui| {
+                                        for (width, heading, column) in [
+                                            (
+                                                policy_name_width,
+                                                "Policy Name",
+                                                PlaylistSortColumn::PolicyName,
+                                            ),
+                                            (
+                                                target_width,
+                                                "Policy Target",
+                                                PlaylistSortColumn::PolicyTarget,
+                                            ),
+                                        ] {
+                                            ui.allocate_ui_with_layout(
+                                                egui::vec2(width, 0.0),
+                                                egui::Layout::left_to_right(
+                                                    egui::Align::Center,
+                                                ),
+                                                |ui| {
+                                                    let mut label = heading.to_string();
+
+                                                    if *playlist_sort_primary == Some(column) {
+                                                        label.push_str(
+                                                            if *playlist_sort_primary_ascending {
+                                                                " ▲"
+                                                            } else {
+                                                                " ▼"
+                                                            },
+                                                        );
+                                                    } else if *playlist_sort_secondary == Some(column) {
+                                                        label.push_str(
+                                                            if *playlist_sort_secondary_ascending {
+                                                                " △"
+                                                            } else {
+                                                                " ▽"
+                                                            },
+                                                        );
+                                                    }
+
+                                                    let response = ui.add(
+                                                        egui::Button::new(
+                                                            egui::RichText::new(label).strong(),
+                                                        )
+                                                        .frame(false),
+                                                    );
+
+                                                    if response.clicked() {
+                                                        let shift = ui.input(|input| {
+                                                            input.modifiers.shift
+                                                        });
+
+                                                        update_playlist_sort_selection(
+                                                            column,
+                                                            shift,
+                                                            playlist_sort_primary,
+                                                            playlist_sort_primary_ascending,
+                                                            playlist_sort_secondary,
+                                                            playlist_sort_secondary_ascending,
+                                                        );
+
+                                                        let ordered_policy_ids =
+                                                            sorted_playlist_policy_ids(
+                                                                &members,
+                                                                *playlist_sort_primary,
+                                                                *playlist_sort_primary_ascending,
+                                                                *playlist_sort_secondary,
+                                                                *playlist_sort_secondary_ascending,
+                                                            );
+
+                                                        if let Some(playlist_id) = selected_id {
+                                                            match crate::manage_playlists::replace_member_order(
+                                                                playlist_id,
+                                                                &ordered_policy_ids,
+                                                            ) {
+                                                                Ok(()) => {
+                                                                    *status_message = if shift {
+                                                                        format!(
+                                                                            "Sorted playlist '{}' by compound criteria.",
+                                                                            selected_name,
+                                                                        )
+                                                                    } else {
+                                                                        format!(
+                                                                            "Sorted playlist '{}' by {}.",
+                                                                            selected_name,
+                                                                            heading,
+                                                                        )
+                                                                    };
+                                                                }
+                                                                Err(error) => {
+                                                                    *status_message = format!(
+                                                                        "Unable to sort playlist: {}",
+                                                                        error,
+                                                                    );
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+
+                                                    response.on_hover_text(
+                                                        "Click to sort and persist playlist order. Shift-click adds or changes a secondary sort key.",
+                                                    );
+                                                },
+                                            );
+                                        }
+                                        ui.end_row();
+
+                                        for member in &members {
+                                            let selected =
+                                                *selected_playlist_policy_id
+                                                    == Some(member.policy_id);
+                                            let shader_path = policy_rows
+                                                .iter()
+                                                .find(|row| {
+                                                    row.policy_id
+                                                        == member.policy_id
+                                                })
+                                                .map(|row| {
+                                                    row.full_path.as_str()
+                                                })
+                                                .unwrap_or(
+                                                    member
+                                                        .shader_filename
+                                                        .as_str(),
+                                                );
+
+                                            let response = ui
+                                                .allocate_ui_with_layout(
+                                                    egui::vec2(
+                                                        policy_name_width,
+                                                        0.0,
+                                                    ),
+                                                    egui::Layout::left_to_right(
+                                                        egui::Align::Center,
+                                                    ),
+                                                    |ui| {
+                                                        ui.add(
+                                                            egui::SelectableLabel::new(
+                                                                selected,
+                                                                &member.policy_name,
+                                                            ),
+                                                        )
+                                                    },
+                                                )
+                                                .inner
+                                                .on_hover_text(format!(
+                                                    "Shader Filename: {}\nPath: {}",
+                                                    member.shader_filename,
+                                                    shader_path,
+                                                ));
+
+                                            if response.clicked() {
+                                                *selected_playlist_policy_id =
+                                                    Some(member.policy_id);
+
+                                                *status_message = format!(
+                                                    "Selected policy '{}' in playlist '{}'.",
+                                                    member.policy_name,
+                                                    selected_name,
+                                                );
+                                            }
+
+                                            let row = policy_rows
+                                                .iter()
+                                                .find(|row| {
+                                                    row.policy_id
+                                                        == member.policy_id
+                                                });
+
+                                            let row_reference = row.map(|row| {
+                                                PolicyRowReference {
+                                                    policy_id: row.policy_id,
+                                                    policy_key: row.policy_key.clone(),
+                                                    filename: row.filename.clone(),
+                                                    full_path: row.full_path.clone(),
+                                                    policy_target: row.policy_target,
+                                                    unassigned: row.unassigned,
+                                                }
+                                            });
+
+                                            if response.double_clicked() {
+                                                if let (Some(row), Some(row_reference)) =
+                                                    (row, row_reference.as_ref())
+                                                {
+                                                    *selected_playlist_policy_id =
+                                                        Some(member.policy_id);
+                                                    *selected_policy_row =
+                                                        Some(row_reference.clone());
+
+                                                    if row.shader_renderable() {
+                                                        *command_requested = Some((
+                                                            row_reference.clone(),
+                                                            PolicyRowCommand::Edit,
+                                                        ));
+                                                    }
+                                                }
+                                            }
+
+                                            response.context_menu(|ui| {
+                                                let edit_enabled = row
+                                                    .map(|row| row.shader_renderable())
+                                                    .unwrap_or(false);
+
+                                                if ui
+                                                    .add_enabled(
+                                                        edit_enabled,
+                                                        egui::Button::new(
+                                                            "Edit Policy..."
+                                                        ),
+                                                    )
+                                                    .clicked()
+                                                {
+                                                    if let Some(row_reference) =
+                                                        row_reference.as_ref()
+                                                    {
+                                                        *selected_playlist_policy_id =
+                                                            Some(member.policy_id);
+                                                        *selected_policy_row =
+                                                            Some(row_reference.clone());
+                                                        *command_requested = Some((
+                                                            row_reference.clone(),
+                                                            PolicyRowCommand::Edit,
+                                                        ));
+                                                    }
+
+                                                    ui.close();
+                                                }
+                                            });
+
+                                            ui.allocate_ui_with_layout(
+                                                egui::vec2(
+                                                    target_width,
+                                                    0.0,
+                                                ),
+                                                egui::Layout::left_to_right(
+                                                    egui::Align::Center,
+                                                ),
+                                                |ui| {
+                                                    ui.label(
+                                                        &member.policy_target,
+                                                    );
+                                                },
+                                            );
+                                            ui.end_row();
+                                        }
+                                    });
+                            });
+                    },
+                );
+
+                // Membership controls stay fixed at the bottom of the Detail pane.
+                ui.horizontal(|ui| {
+                    let can_add = selected_id.is_some();
+                    if ui
+                        .add_enabled(
+                            can_add,
+                            egui::Button::new("Add Policy"),
+                        )
+                        .clicked()
+                    {
+                        if let Some(playlist_id) = selected_id {
+                            *playlist_sort_primary = None;
+                            *playlist_sort_secondary = None;
+
+                            let first_available = policy_rows
+                                .iter()
+                                .find(|row| {
+                                    !members.iter().any(|member| {
+                                        member.policy_id == row.policy_id
+                                    })
+                                })
+                                .map(|row| row.policy_id);
+
+                            *pending_playlist_add_policy =
+                                Some(PendingPlaylistAddPolicy {
+                                    playlist_id,
+                                    policy_id: first_available,
+                                });
+                        }
+                    }
+
+                    if ui
+                        .add_enabled(
+                            selected_member.is_some(),
+                            egui::Button::new("Remove Policy"),
+                        )
+                        .clicked()
+                    {
+                        if let (Some(playlist_id), Some(member)) =
+                            (selected_id, selected_member)
+                        {
+                            match crate::manage_playlists::remove_policy(
+                                playlist_id,
+                                member.policy_id,
+                            ) {
+                                Ok(true) => {
+                                    *status_message = format!(
+                                        "Removed policy '{}' from playlist '{}'.",
+                                        member.policy_name,
+                                        selected_name,
+                                    );
+                                    *selected_playlist_policy_id = None;
+                                    *playlist_sort_primary = None;
+                                    *playlist_sort_secondary = None;
+                                }
+                                Ok(false) => {
+                                    *status_message = format!(
+                                        "Policy '{}' was not present in playlist '{}'.",
+                                        member.policy_name,
+                                        selected_name,
+                                    );
+                                    *selected_playlist_policy_id = None;
+                                }
+                                Err(error) => {
+                                    *status_message = format!(
+                                        "Unable to remove policy from playlist: {}",
+                                        error,
+                                    );
+                                }
+                            }
+                        }
+                    }
+
+                    if ui
+                        .add_enabled(
+                            can_move_up,
+                            egui::Button::new("Move Up"),
+                        )
+                        .clicked()
+                    {
+                        if let (Some(playlist_id), Some(member)) =
+                            (selected_id, selected_member)
+                        {
+                            let new_position =
+                                (member.position - 1) as usize;
+                            *playlist_sort_primary = None;
+                            *playlist_sort_secondary = None;
+                            match crate::manage_playlists::move_policy(
+                                playlist_id,
+                                member.policy_id,
+                                new_position,
+                            ) {
+                                Ok(()) => {
+                                    *status_message = format!(
+                                        "Moved policy '{}' up.",
+                                        member.policy_name,
+                                    );
+                                }
+                                Err(error) => {
+                                    *status_message = format!(
+                                        "Unable to move policy: {}",
+                                        error,
+                                    );
+                                }
+                            }
+                        }
+                    }
+
+                    if ui
+                        .add_enabled(
+                            can_move_down,
+                            egui::Button::new("Move Down"),
+                        )
+                        .clicked()
+                    {
+                        if let (Some(playlist_id), Some(member)) =
+                            (selected_id, selected_member)
+                        {
+                            let new_position =
+                                (member.position + 1) as usize;
+                            *playlist_sort_primary = None;
+                            *playlist_sort_secondary = None;
+                            match crate::manage_playlists::move_policy(
+                                playlist_id,
+                                member.policy_id,
+                                new_position,
+                            ) {
+                                Ok(()) => {
+                                    *status_message = format!(
+                                        "Moved policy '{}' down.",
+                                        member.policy_name,
+                                    );
+                                }
+                                Err(error) => {
+                                    *status_message = format!(
+                                        "Unable to move policy: {}",
+                                        error,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                });
+            },
+        );
+    });
+}
+
+
+fn draw_playlist_add_policy_modal(
+    context: &egui::Context,
+    policy_rows: &[PolicyDisplayRow],
+    pending_add: &mut Option<PendingPlaylistAddPolicy>,
+    selected_playlist_policy_id: &mut Option<i64>,
+    status_message: &mut String,
+) {
+    let Some(add) = pending_add.as_mut() else {
+        return;
+    };
+
+    let existing_policy_ids = crate::manage_playlists::playlist_members(add.playlist_id)
+        .map(|members| members.into_iter().map(|member| member.policy_id).collect::<std::collections::HashSet<_>>())
+        .unwrap_or_default();
+
+    let available_rows: Vec<&PolicyDisplayRow> = policy_rows.iter()
+        .filter(|row| !existing_policy_ids.contains(&row.policy_id))
+        .collect();
+
+    if add.policy_id.is_none() {
+        add.policy_id = available_rows.first().map(|row| row.policy_id);
+    }
+
+    let selected_label = add.policy_id
+        .and_then(|policy_id| available_rows.iter().find(|row| row.policy_id == policy_id).copied())
+        .map(|row| format!("{} — {}", row.policy_key, row.filename))
+        .unwrap_or_else(|| "No policies available".to_string());
+
+    let mut keep_open = true;
+    let mut add_clicked = false;
+    let mut cancel_clicked = false;
+
+    egui::Window::new("Add Policy to Playlist")
+        .id(egui::Id::new("editor_add_policy_to_playlist"))
+        .order(egui::Order::Foreground)
+        .collapsible(false)
+        .resizable(false)
+        .movable(false)
+        .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+        .open(&mut keep_open)
+        .show(context, |ui| {
+            ui.label("Select an existing shader policy to add to this playlist.");
+            ui.add_space(8.0);
+
+            egui::ComboBox::from_label("Policy")
+                .selected_text(selected_label)
+                .width(360.0)
+                .show_ui(ui, |ui| {
+                    for row in &available_rows {
+                        ui.selectable_value(
+                            &mut add.policy_id,
+                            Some(row.policy_id),
+                            format!("{} — {}", row.policy_key, row.filename),
+                        );
+                    }
+                });
+
+            if available_rows.is_empty() {
+                ui.add_space(6.0);
+                ui.label("All available policies are already members of this playlist.");
+            }
+
+            ui.add_space(12.0);
+            ui.horizontal(|ui| {
+                if ui.add_enabled(add.policy_id.is_some(), egui::Button::new("Add")).clicked() {
+                    add_clicked = true;
+                }
+                if ui.button("Cancel").clicked() {
+                    cancel_clicked = true;
+                }
+            });
+        });
+
+    if add_clicked {
+        if let Some(policy_id) = add.policy_id {
+            match crate::manage_playlists::add_policy(add.playlist_id, policy_id) {
+                Ok(true) => {
+                    let policy_name = policy_rows.iter()
+                        .find(|row| row.policy_id == policy_id)
+                        .map(|row| row.policy_key.as_str())
+                        .unwrap_or("Selected policy");
+                    *selected_playlist_policy_id = Some(policy_id);
+                    *status_message = format!("Added policy '{}' to playlist.", policy_name);
+                    *pending_add = None;
+                }
+                Ok(false) => {
+                    *status_message = "That policy is already a member of the playlist.".to_string();
+                    *pending_add = None;
+                }
+                Err(error) => {
+                    *status_message = format!("Unable to add policy to playlist: {}", error);
+                }
+            }
+        }
+    } else if cancel_clicked || !keep_open {
+        *pending_add = None;
+    }
+}
+
+fn draw_playlist_create_modal(
+    context: &egui::Context,
+    pending_create: &mut Option<PendingPlaylistCreate>,
+    selected_playlist_id: &mut Option<i64>,
+    status_message: &mut String,
+) {
+    let Some(create) =
+        pending_create.as_mut()
+    else {
+        return;
+    };
+
+    let mut keep_open = true;
+    let mut create_clicked = false;
+    let mut cancel_clicked = false;
+
+    egui::Window::new(
+        "New Playlist"
+    )
+    .id(
+        egui::Id::new(
+            "editor_create_playlist"
+        )
+    )
+    .order(
+        egui::Order::Foreground
+    )
+    .collapsible(false)
+    .resizable(false)
+    .movable(false)
+    .anchor(
+        egui::Align2::CENTER_CENTER,
+        egui::Vec2::ZERO,
+    )
+    .open(
+        &mut keep_open
+    )
+    .show(
+        context,
+        |ui| {
+            ui.label(
+                "Create a playlist for grouping shader policies."
+            );
+
+            ui.add_space(8.0);
+
+            ui.label(
+                "Playlist Name:"
+            );
+
+            let name_response =
+                ui.add(
+                    egui::TextEdit::singleline(
+                        &mut create.playlist_name
+                    )
+                    .desired_width(320.0)
+                );
+
+            if name_response.changed() {
+                create.validation_message.clear();
+            }
+
+            ui.add_space(8.0);
+
+            ui.label(
+                "Description (optional):"
+            );
+
+            let description_response =
+                ui.add(
+                    egui::TextEdit::multiline(
+                        &mut create.description
+                    )
+                    .desired_width(320.0)
+                    .desired_rows(3)
+                );
+
+            if description_response.changed() {
+                create.validation_message.clear();
+            }
+
+            if !create.validation_message.is_empty() {
+                ui.add_space(6.0);
+                ui.label(
+                    &create.validation_message
+                );
+            }
+
+            ui.add_space(12.0);
+
+            ui.horizontal(
+                |ui| {
+                    if ui.button(
+                        "Create"
+                    )
+                    .clicked()
+                    {
+                        create_clicked = true;
+                    }
+
+                    if ui.button(
+                        "Cancel"
+                    )
+                    .clicked()
+                    {
+                        cancel_clicked = true;
+                    }
+                },
+            );
+        },
+    );
+
+    if create_clicked {
+        let playlist_name =
+            create.playlist_name.clone();
+
+        let description =
+            if create.description.trim().is_empty() {
+                None
+            } else {
+                Some(
+                    create.description.as_str()
+                )
+            };
+
+        match crate::manage_playlists::create_playlist(
+            &playlist_name,
+            description,
+        ) {
+            Ok(playlist_id) => {
+                *selected_playlist_id =
+                    Some(playlist_id);
+
+                *status_message =
+                    format!(
+                        "Created playlist '{}'.",
+                        playlist_name.trim(),
+                    );
+
+                *pending_create = None;
+            }
+
+            Err(error) => {
+                create.validation_message =
+                    error;
+            }
+        }
+    } else if cancel_clicked
+        || !keep_open
+    {
+        *pending_create = None;
+    }
+}
+
+
+fn draw_playlist_edit_modal(
+    context: &egui::Context,
+    pending_edit: &mut Option<PendingPlaylistEdit>,
+    status_message: &mut String,
+) {
+    let Some(edit) =
+        pending_edit.as_mut()
+    else {
+        return;
+    };
+
+    let mut keep_open = true;
+    let mut save_clicked = false;
+    let mut cancel_clicked = false;
+
+    egui::Window::new(
+        "Edit Playlist Info"
+    )
+    .id(
+        egui::Id::new(
+            "editor_edit_playlist_info"
+        )
+    )
+    .order(egui::Order::Foreground)
+    .collapsible(false)
+    .resizable(false)
+    .movable(false)
+    .anchor(
+        egui::Align2::CENTER_CENTER,
+        egui::Vec2::ZERO,
+    )
+    .open(&mut keep_open)
+    .show(
+        context,
+        |ui| {
+            ui.label(
+                "Edit the playlist name and description. Playlist membership and policy order are unchanged."
+            );
+
+            ui.add_space(8.0);
+            ui.label("Playlist Name:");
+
+            let name_response =
+                ui.add(
+                    egui::TextEdit::singleline(
+                        &mut edit.playlist_name
+                    )
+                    .desired_width(320.0)
+                );
+
+            if name_response.changed() {
+                edit.validation_message.clear();
+            }
+
+            ui.add_space(8.0);
+            ui.label("Description (optional):");
+
+            let description_response =
+                ui.add(
+                    egui::TextEdit::multiline(
+                        &mut edit.description
+                    )
+                    .desired_width(320.0)
+                    .desired_rows(3)
+                );
+
+            if description_response.changed() {
+                edit.validation_message.clear();
+            }
+
+            if !edit.validation_message.is_empty() {
+                ui.add_space(6.0);
+                ui.label(&edit.validation_message);
+            }
+
+            ui.add_space(12.0);
+
+            ui.horizontal(
+                |ui| {
+                    if ui.button("Save").clicked() {
+                        save_clicked = true;
+                    }
+
+                    if ui.button("Cancel").clicked() {
+                        cancel_clicked = true;
+                    }
+                },
+            );
+        },
+    );
+
+    if save_clicked {
+        let playlist_id = edit.playlist_id;
+        let playlist_name = edit.playlist_name.clone();
+        let description_owned = edit.description.clone();
+        let description =
+            if description_owned.trim().is_empty() {
+                None
+            } else {
+                Some(description_owned.as_str())
+            };
+
+        match crate::manage_playlists::rename_playlist(
+            playlist_id,
+            &playlist_name,
+        ) {
+            Ok(()) => {
+                match crate::manage_playlists::update_playlist_description(
+                    playlist_id,
+                    description,
+                ) {
+                    Ok(()) => {
+                        *status_message =
+                            format!(
+                                "Updated playlist '{}'.",
+                                playlist_name.trim(),
+                            );
+
+                        *pending_edit = None;
+                    }
+
+                    Err(error) => {
+                        edit.validation_message = error;
+                    }
+                }
+            }
+
+            Err(error) => {
+                edit.validation_message = error;
+            }
+        }
+    } else if cancel_clicked
+        || !keep_open
+    {
+        *pending_edit = None;
+    }
+}
+
+
+fn draw_playlist_delete_modal(
+    context: &egui::Context,
+    pending_delete: &mut Option<PendingPlaylistDelete>,
+    selected_playlist_id: &mut Option<i64>,
+    status_message: &mut String,
+) {
+    let Some(delete) =
+        pending_delete.as_ref()
+    else {
+        return;
+    };
+
+    let playlist_id = delete.playlist_id;
+    let playlist_name = delete.playlist_name.clone();
+    let mut keep_open = true;
+    let mut delete_clicked = false;
+    let mut cancel_clicked = false;
+
+    egui::Window::new(
+        "Delete Playlist"
+    )
+    .id(
+        egui::Id::new(
+            "editor_delete_playlist"
+        )
+    )
+    .order(egui::Order::Foreground)
+    .collapsible(false)
+    .resizable(false)
+    .movable(false)
+    .anchor(
+        egui::Align2::CENTER_CENTER,
+        egui::Vec2::ZERO,
+    )
+    .open(&mut keep_open)
+    .show(
+        context,
+        |ui| {
+            ui.label(
+                "Delete this playlist?"
+            );
+
+            ui.add_space(6.0);
+            ui.strong(&playlist_name);
+            ui.add_space(8.0);
+
+            ui.label(
+                "Shader policies and shader files will not be deleted."
+            );
+
+            ui.add_space(14.0);
+
+            ui.horizontal(
+                |ui| {
+                    if ui.button("Delete").clicked() {
+                        delete_clicked = true;
+                    }
+
+                    if ui.button("Cancel").clicked() {
+                        cancel_clicked = true;
+                    }
+                },
+            );
+        },
+    );
+
+    if delete_clicked {
+        match crate::manage_playlists::delete_playlist(
+            playlist_id
+        ) {
+            Ok(()) => {
+                if *selected_playlist_id == Some(playlist_id) {
+                    *selected_playlist_id = None;
+                }
+
+                *status_message =
+                    format!(
+                        "Deleted playlist '{}'.",
+                        playlist_name,
+                    );
+
+                *pending_delete = None;
+            }
+
+            Err(error) => {
+                *status_message =
+                    format!(
+                        "Unable to delete playlist '{}': {}",
+                        playlist_name,
+                        error,
+                    );
+
+                *pending_delete = None;
+            }
+        }
+    } else if cancel_clicked
+        || !keep_open
+    {
+        *pending_delete = None;
+    }
+}
+
+
+// ======================== END PLAYLISTS TAB =================
 
 // ============================================================
 // RENDERING TAB

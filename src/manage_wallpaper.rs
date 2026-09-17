@@ -264,10 +264,85 @@ pub fn run(
             }
 
 
+            crate::parse_mode::ModeType::Playlist => {
+
+                let playlist_id =
+                    parsed_mode.argument
+                        .parse::<i64>()
+                        .map_err(
+                            |error| {
+                                format!(
+                                    "Invalid wallpaper Playlist ID '{}' in mode '{}': {}",
+                                    parsed_mode.argument,
+                                    configured_mode,
+                                    error,
+                                )
+                            }
+                        )?;
+
+                if playlist_id <= 0 {
+                    return Err(
+                        format!(
+                            "Invalid wallpaper Playlist ID '{}' in mode '{}'; expected a positive integer",
+                            playlist_id,
+                            configured_mode,
+                        )
+                    );
+                }
+
+                let interval_text =
+                    configured_mode
+                        .split(':')
+                        .nth(2)
+                        .ok_or_else(
+                            || {
+                                format!(
+                                    "Invalid wallpaper Playlist mode '{}'; expected playlist:<playlist_id>:<seconds>",
+                                    configured_mode,
+                                )
+                            }
+                        )?;
+
+                let interval_seconds =
+                    interval_text
+                        .parse::<u64>()
+                        .map_err(
+                            |error| {
+                                format!(
+                                    "Invalid wallpaper Playlist interval '{}' in mode '{}': {}",
+                                    interval_text,
+                                    configured_mode,
+                                    error,
+                                )
+                            }
+                        )?;
+
+                if interval_seconds == 0 {
+                    return Err(
+                        format!(
+                            "Invalid wallpaper Playlist interval in mode '{}'; expected a positive number of seconds",
+                            configured_mode,
+                        )
+                    );
+                }
+
+                (
+                    crate::manage_shader::ShaderMode::Playlist(
+                        playlist_id
+                    ),
+                    Some(
+                        std::time::Duration::from_secs(
+                            interval_seconds
+                        )
+                    ),
+                )
+            }
+
+
             crate::parse_mode::ModeType::Invalid => {
                 return Err(
                     format!(
-                        "Invalid wallpaper mode '{}'; expected single:<shader>, random:<seconds>, or ordered:<seconds>",
+                        "Invalid wallpaper mode '{}'; expected single:<shader>, random:<seconds>, ordered:<seconds>, or playlist:<playlist_id>:<seconds>",
                         configured_mode,
                     )
                 );

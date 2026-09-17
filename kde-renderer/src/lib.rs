@@ -39,6 +39,8 @@ mod manage_shader;
 mod manage_textures;
 #[path = "../../src/manage_policies.rs"]
 mod manage_policies;
+#[path = "../../src/manage_playlists.rs"]
+mod manage_playlists;
 
 #[path = "../../src/classify_shader.rs"]
 mod classify_shader;

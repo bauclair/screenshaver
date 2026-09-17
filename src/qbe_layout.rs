@@ -270,14 +270,12 @@ fn draw_operator_combo(
         ui.add_enabled_ui(
             false,
             |ui| {
-                egui::ComboBox::from_id_source(
-                    id
-                )
-                .selected_text("")
-                .width(width)
-                .show_ui(
-                    ui,
-                    |_ui| {}
+                ui.add_sized(
+                    [
+                        width,
+                        ui.spacing().interact_size.y,
+                    ],
+                    egui::Button::new(""),
                 );
             },
         );
@@ -286,38 +284,109 @@ fn draw_operator_combo(
     };
 
 
-    ui.add_enabled_ui(
-        true,
-        |ui| {
-            egui::ComboBox::from_id_source(
-                id
+    let operators =
+        crate::parse_qbe::operators_for(
+            field
+        );
+
+
+    let selected_text =
+        clause.operator
+            .map(
+                |operator| operator.label()
             )
-            .selected_text(
-                clause.operator
-                    .map(
-                        |operator| operator.label()
-                    )
-                    .unwrap_or("")
+            .unwrap_or("");
+
+
+    // egui ComboBox constrains its internal ScrollArea before popup
+    // placement is finalized. For the QBE operator selector we instead
+    // use egui 0.33's Popup API directly. Popup positioning can try an
+    // above-the-widget alternative when the full operator list does not
+    // fit below, so five- and six-entry operator menus remain fully
+    // visible rather than becoming short scrolling menus.
+    let popup_id =
+        ui.make_persistent_id(
+            (
+                id,
+                "popup",
             )
-            .width(width)
-            .show_ui(
-                ui,
-                |ui| {
-                    for operator in
-                        crate::parse_qbe::operators_for(
-                            field
-                        )
-                    {
-                        ui.selectable_value(
-                            &mut clause.operator,
-                            Some(*operator),
-                            operator.label(),
-                        );
-                    }
-                },
-            );
-        },
-    );
+        );
+
+
+    let button_response =
+        ui.add_sized(
+            [
+                width,
+                ui.spacing().interact_size.y,
+            ],
+            egui::Button::new(
+                if selected_text.is_empty() {
+                    " "
+                } else {
+                    selected_text
+                }
+            ),
+        );
+
+
+    let toggle =
+        if button_response.clicked() {
+            Some(
+                egui::SetOpenCommand::Toggle
+            )
+        } else {
+            None
+        };
+
+
+    let popup_response =
+        egui::Popup::new(
+            popup_id,
+            ui.ctx().clone(),
+            &button_response,
+            button_response.layer_id,
+        )
+        .open_memory(toggle)
+        .close_behavior(
+            egui::PopupCloseBehavior::CloseOnClick
+        )
+        .align(
+            egui::RectAlign::BOTTOM_START
+        )
+        .align_alternatives(
+            &[
+                egui::RectAlign::TOP_START,
+            ]
+        )
+        .width(width)
+        .layout(
+            egui::Layout::top_down_justified(
+                egui::Align::Min
+            )
+        )
+        .show(
+            |ui| {
+                ui.set_min_width(width);
+
+                for operator in operators {
+                    ui.selectable_value(
+                        &mut clause.operator,
+                        Some(*operator),
+                        operator.label(),
+                    );
+                }
+            },
+        );
+
+
+    if popup_response.is_some()
+        && clause.operator != previous_operator
+    {
+        egui::Popup::close_id(
+            ui.ctx(),
+            popup_id,
+        );
+    }
 
 
     if clause.operator != previous_operator {
@@ -327,7 +396,6 @@ fn draw_operator_combo(
 
     clause.normalize_after_operator_change();
 }
-
 
 fn draw_conditional_combo(
     ui: &mut egui::Ui,
@@ -457,6 +525,17 @@ fn draw_value_control(
         }
 
 
+        crate::parse_qbe::QbeValueKind::PlaylistName => {
+            draw_string_value_combo(
+                ui,
+                id,
+                width,
+                &mut clause.value,
+                &lookup_values.playlist_names,
+            );
+        }
+
+
         crate::parse_qbe::QbeValueKind::TextureName => {
             draw_string_value_combo(
                 ui,
@@ -546,8 +625,9 @@ fn draw_value_control(
                 &mut clause.value,
                 &[
                     "Off",
-                    "Highlight",
-                    "Audio",
+                    "Audio Bloom",
+                    "Spectral Bloom",
+                    "Loudness Bloom",
                 ],
             );
         }
@@ -585,6 +665,7 @@ fn draw_value_combo(
         value.as_str()
     )
     .width(width)
+    .height(360.0)
     .show_ui(
         ui,
         |ui| {
@@ -614,6 +695,7 @@ fn draw_string_value_combo(
         value.as_str()
     )
     .width(width)
+    .height(480.0)
     .show_ui(
         ui,
         |ui| {
@@ -643,6 +725,7 @@ fn draw_palette_value_combo(
         value.as_str()
     )
     .width(width)
+    .height(480.0)
     .show_ui(
         ui,
         |ui| {

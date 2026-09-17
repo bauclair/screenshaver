@@ -112,6 +112,9 @@ mod create_wayland_lock_context;
 mod display_lock_authentication;
 mod authenticate_user;
 
+mod manage_playlists;
+mod test_playlists;
+
 use std::sync::Arc;
 use std::sync::atomic::{
     AtomicBool,
@@ -378,6 +381,7 @@ fn main() {
         crate::parse_arguments::Command::Run
         | crate::parse_arguments::Command::Start
         | crate::parse_arguments::Command::Control { .. }
+        | crate::parse_arguments::Command::TestPlaylists
         | crate::parse_arguments::Command::ResetIdleTimeout { .. } => {}
     }
 
@@ -572,6 +576,40 @@ fn main() {
                 return;
             }
         };
+
+
+    // --test-playlists is a temporary developer command. Run it only after
+    // the database has been prepared, and before shader reconciliation or
+    // normal runtime/configuration startup.
+    if let crate::parse_arguments::Command::TestPlaylists = &command {
+
+        match crate::test_playlists::run() {
+
+            Ok(()) => {
+                println!(
+                    "[PLAYLIST TEST] All Playlist database-management tests passed."
+                );
+            }
+
+            Err(error) => {
+                eprintln!(
+                    "[PLAYLIST TEST] FAILED: {}",
+                    error
+                );
+
+                std::process::exit(
+                    1
+                );
+            }
+        }
+
+
+        drop(
+            database_connection
+        );
+
+        return;
+    }
 
 
     // --reset-idle-timeout is a recovery command.  Handle it after the
@@ -859,6 +897,7 @@ fn main() {
         crate::parse_arguments::Command::Stop
         | crate::parse_arguments::Command::Help
         | crate::parse_arguments::Command::Version
+        | crate::parse_arguments::Command::TestPlaylists
         | crate::parse_arguments::Command::ConstructLockScreenKde
         | crate::parse_arguments::Command::ConstructLockScreenXfce
         | crate::parse_arguments::Command::ResetIdleTimeout { .. } => {
@@ -1409,6 +1448,43 @@ fn main() {
             }
 
 
+            "playlist" => {
+
+                let interval_source =
+                    cfg.mode
+                        .split(':')
+                        .nth(2)
+                        .unwrap_or("60");
+
+
+                let result =
+                    crate::parse_interval::parse_interval(
+                        interval_source
+                    );
+
+
+                if cfg.debug_log {
+
+                    crate::logger::debug(
+                        &logfile,
+                        "[MAIN] === PLAYLIST INTERVAL PARSE ===",
+                    );
+
+
+                    for line in &result.diagnostics {
+
+                        crate::logger::debug(
+                            &logfile,
+                            line,
+                        );
+                    }
+                }
+
+
+                result
+            }
+
+
             _ => {
 
                 crate::parse_interval::ParsedInterval {
@@ -1940,6 +2016,20 @@ fn main() {
                         }
                         "ordered" => {
                             crate::manage_shader::ShaderMode::Ordered
+                        }
+                        "playlist" => {
+                            let playlist_id =
+                                parsed_mode
+                                    .argument
+                                    .trim()
+                                    .parse::<i64>()
+                                    .ok()
+                                    .filter(|playlist_id| *playlist_id > 0)
+                                    .unwrap_or(0);
+
+                            crate::manage_shader::ShaderMode::Playlist(
+                                playlist_id
+                            )
                         }
                         _ => {
                             crate::manage_shader::ShaderMode::Single(

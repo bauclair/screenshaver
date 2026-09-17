@@ -22,6 +22,7 @@ pub struct QbeLookupValues {
     pub texture_names: Vec<String>,
     pub palette_choices: Vec<QbePaletteChoice>,
     pub shader_types: Vec<String>,
+    pub playlist_names: Vec<String>,
 }
 
 
@@ -54,6 +55,11 @@ pub fn load_qbe_lookup_values(
 
             shader_types:
                 load_shader_types_from_connection(
+                    &connection
+                )?,
+
+            playlist_names:
+                load_playlist_names_from_connection(
                     &connection
                 )?,
         }
@@ -120,6 +126,93 @@ pub fn load_shader_types(
 
     load_shader_types_from_connection(
         &connection
+    )
+}
+
+
+pub fn load_playlist_names(
+) -> Result<Vec<String>, String> {
+
+    let connection =
+        crate::open_database::open()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to open database while loading QBE Playlist Name values: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    load_playlist_names_from_connection(
+        &connection
+    )
+}
+
+
+fn load_playlist_names_from_connection(
+    connection: &rusqlite::Connection,
+) -> Result<Vec<String>, String> {
+
+    let mut statement =
+        connection
+            .prepare(
+                "SELECT playlist_name
+                 FROM playlists
+                 ORDER BY lower(playlist_name),
+                          playlist_id"
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to prepare QBE Playlist Name query: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    let rows =
+        statement
+            .query_map(
+                [],
+                |row| {
+                    row.get::<_, String>(
+                        0
+                    )
+                },
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to query QBE Playlist Name choices: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    let mut values =
+        Vec::new();
+
+
+    for row in rows {
+        values.push(
+            row.map_err(
+                |error| {
+                    format!(
+                        "Unable to decode QBE Playlist Name row: {}",
+                        error,
+                    )
+                }
+            )?
+        );
+    }
+
+
+    Ok(
+        values
     )
 }
 
