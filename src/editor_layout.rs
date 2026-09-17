@@ -787,6 +787,13 @@ struct PendingPlaylistAddPolicy {
 }
 
 
+#[derive(Clone, Debug)]
+struct PendingPolicyAddToPlaylist {
+    row: PolicyRowReference,
+    playlist_id: Option<i64>,
+}
+
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum BulkBooleanSelection {
     #[default]
@@ -1414,6 +1421,9 @@ pub struct EditWindowOverlay {
     pending_policy_rename:
         Option<PendingPolicyRename>,
 
+    pending_policy_add_to_playlist:
+        Option<PendingPolicyAddToPlaylist>,
+
     qbe_state:
         crate::qbe_layout::QbeLayoutState,
 
@@ -1836,6 +1846,9 @@ impl EditWindowOverlay {
                     None,
 
                 pending_policy_rename:
+                    None,
+
+                pending_policy_add_to_playlist:
                     None,
 
                 qbe_state:
@@ -2929,6 +2942,9 @@ impl EditWindowOverlay {
         let mut pending_policy_rename =
             self.pending_policy_rename.clone();
 
+        let mut pending_policy_add_to_playlist =
+            self.pending_policy_add_to_playlist.clone();
+
         let mut policy_row_command_requested:
             Option<(PolicyRowReference, PolicyRowCommand)> =
             None;
@@ -3485,6 +3501,7 @@ impl EditWindowOverlay {
                                                 &mut bulk_selected_policy_rows,
                                                 &mut pending_policy_navigation,
                                                 &mut pending_confirmation,
+                                                &mut pending_policy_add_to_playlist,
                                                 &mut policy_row_command_requested,
                                                 &mut qbe_state,
                                                 &mut qbe_policy_ids,
@@ -3831,6 +3848,13 @@ impl EditWindowOverlay {
                         context,
                         &mut pending_policy_rename,
                         &mut rename_policy_requested,
+                    );
+
+
+                    draw_policy_add_to_playlist_modal(
+                        context,
+                        &mut pending_policy_add_to_playlist,
+                        &mut status_message,
                     );
 
 
@@ -4215,6 +4239,9 @@ impl EditWindowOverlay {
 
         self.pending_policy_rename =
             pending_policy_rename;
+
+        self.pending_policy_add_to_playlist =
+            pending_policy_add_to_playlist;
 
         self.control_configuration =
             control_configuration.clone();
@@ -6212,6 +6239,8 @@ fn draw_policies_tab(
     bulk_selected_rows: &mut Vec<PolicyRowReference>,
     pending_navigation: &mut Option<PolicyNavigation>,
     pending_confirmation: &mut Option<PendingConfirmation>,
+    pending_policy_add_to_playlist:
+        &mut Option<PendingPolicyAddToPlaylist>,
     command_requested:
         &mut Option<(PolicyRowReference, PolicyRowCommand)>,
     qbe_state:
@@ -7153,6 +7182,29 @@ fn draw_policies_tab(
                                                                 row_reference.clone(),
                                                                 PolicyRowCommand::RenamePolicy,
                                                             )
+                                                        );
+
+                                                    ui.close();
+                                                }
+
+                                                if ui.button(
+                                                    "Add to Playlist..."
+                                                )
+                                                .clicked()
+                                                {
+                                                    *selected_row =
+                                                        Some(
+                                                            row_reference.clone()
+                                                        );
+
+                                                    *pending_policy_add_to_playlist =
+                                                        Some(
+                                                            PendingPolicyAddToPlaylist {
+                                                                row:
+                                                                    row_reference.clone(),
+                                                                playlist_id:
+                                                                    None,
+                                                            }
                                                         );
 
                                                     ui.close();
@@ -8850,6 +8902,10 @@ fn draw_playlists_tab(
 
                 ui.add_space(8.0 * metrics.scale);
 
+                ui.separator();
+
+                ui.add_space(8.0 * metrics.scale);
+
                 let selected_id = *selected_playlist_id;
                 let selected_name = selected_playlist
                     .map(|playlist| playlist.playlist_name.as_str())
@@ -9140,6 +9196,53 @@ fn draw_playlists_tab(
 
                                                     ui.close();
                                                 }
+
+                                                if ui
+                                                    .button(
+                                                        "Remove Policy"
+                                                    )
+                                                    .clicked()
+                                                {
+                                                    if let Some(playlist_id) =
+                                                        *selected_playlist_id
+                                                    {
+                                                        match crate::manage_playlists::remove_policy(
+                                                            playlist_id,
+                                                            member.policy_id,
+                                                        ) {
+                                                            Ok(true) => {
+                                                                *status_message =
+                                                                    format!(
+                                                                        "Removed policy '{}' from playlist.",
+                                                                        member.policy_name,
+                                                                    );
+
+                                                                if *selected_playlist_policy_id
+                                                                    == Some(member.policy_id)
+                                                                {
+                                                                    *selected_playlist_policy_id =
+                                                                        None;
+                                                                }
+                                                            }
+
+                                                            Ok(false) => {
+                                                                *status_message =
+                                                                    "Policy is no longer a member of this playlist."
+                                                                        .to_string();
+                                                            }
+
+                                                            Err(error) => {
+                                                                *status_message =
+                                                                    format!(
+                                                                        "Unable to remove policy from playlist: {}",
+                                                                        error,
+                                                                    );
+                                                            }
+                                                        }
+                                                    }
+
+                                                    ui.close();
+                                                }
                                             });
 
                                             ui.allocate_ui_with_layout(
@@ -9309,6 +9412,275 @@ fn draw_playlists_tab(
             },
         );
     });
+}
+
+
+fn draw_policy_add_to_playlist_modal(
+    context: &egui::Context,
+    pending_add: &mut Option<PendingPolicyAddToPlaylist>,
+    status_message: &mut String,
+) {
+    let Some(add) = pending_add.as_mut() else {
+        return;
+    };
+
+    let playlists =
+        crate::manage_playlists::list_playlists()
+            .unwrap_or_default();
+
+    let existing_playlist_ids =
+        crate::manage_playlists::playlists_for_policy(
+            add.row.policy_id
+        )
+        .map(
+            |memberships| {
+                memberships
+                    .into_iter()
+                    .map(
+                        |playlist| {
+                            playlist.playlist_id
+                        }
+                    )
+                    .collect::<std::collections::HashSet<_>>()
+            }
+        )
+        .unwrap_or_default();
+
+    let available_playlists: Vec<&crate::manage_playlists::PlaylistSummary> =
+        playlists
+            .iter()
+            .filter(
+                |playlist| {
+                    !existing_playlist_ids.contains(
+                        &playlist.playlist_id
+                    )
+                }
+            )
+            .collect();
+
+    if add.playlist_id.is_none() {
+        add.playlist_id =
+            available_playlists
+                .first()
+                .map(
+                    |playlist| {
+                        playlist.playlist_id
+                    }
+                );
+    }
+
+    let selected_label =
+        add.playlist_id
+            .and_then(
+                |playlist_id| {
+                    available_playlists
+                        .iter()
+                        .find(
+                            |playlist| {
+                                playlist.playlist_id
+                                    == playlist_id
+                            }
+                        )
+                        .copied()
+                }
+            )
+            .map(
+                |playlist| {
+                    playlist.playlist_name.clone()
+                }
+            )
+            .unwrap_or_else(
+                || {
+                    "No playlists available"
+                        .to_string()
+                }
+            );
+
+    let mut keep_open =
+        true;
+
+    let mut add_clicked =
+        false;
+
+    let mut cancel_clicked =
+        false;
+
+    egui::Window::new(
+        "Add to Playlist"
+    )
+    .id(
+        egui::Id::new(
+            "editor_policy_add_to_playlist"
+        )
+    )
+    .order(
+        egui::Order::Foreground
+    )
+    .collapsible(false)
+    .resizable(false)
+    .movable(false)
+    .anchor(
+        egui::Align2::CENTER_CENTER,
+        egui::Vec2::ZERO,
+    )
+    .open(
+        &mut keep_open
+    )
+    .show(
+        context,
+        |ui| {
+            ui.label(
+                format!(
+                    "Add policy '{}' to an existing playlist.",
+                    add.row.policy_key,
+                )
+            );
+
+            ui.add_space(
+                8.0
+            );
+
+            egui::ComboBox::from_label(
+                "Playlist"
+            )
+            .selected_text(
+                selected_label
+            )
+            .width(
+                320.0
+            )
+            .show_ui(
+                ui,
+                |ui| {
+                    for playlist in &available_playlists {
+                        ui.selectable_value(
+                            &mut add.playlist_id,
+                            Some(
+                                playlist.playlist_id
+                            ),
+                            &playlist.playlist_name,
+                        );
+                    }
+                }
+            );
+
+            if playlists.is_empty() {
+                ui.add_space(
+                    6.0
+                );
+
+                ui.label(
+                    "No playlists have been created."
+                );
+            } else if available_playlists.is_empty() {
+                ui.add_space(
+                    6.0
+                );
+
+                ui.label(
+                    "This policy is already a member of every playlist."
+                );
+            }
+
+            ui.add_space(
+                12.0
+            );
+
+            ui.horizontal(
+                |ui| {
+                    if ui.add_enabled(
+                        add.playlist_id.is_some(),
+                        egui::Button::new(
+                            "Add"
+                        ),
+                    )
+                    .clicked()
+                    {
+                        add_clicked =
+                            true;
+                    }
+
+                    if ui.button(
+                        "Cancel"
+                    )
+                    .clicked()
+                    {
+                        cancel_clicked =
+                            true;
+                    }
+                }
+            );
+        }
+    );
+
+    if add_clicked {
+        if let Some(playlist_id) =
+            add.playlist_id
+        {
+            let playlist_name =
+                playlists
+                    .iter()
+                    .find(
+                        |playlist| {
+                            playlist.playlist_id
+                                == playlist_id
+                        }
+                    )
+                    .map(
+                        |playlist| {
+                            playlist.playlist_name.clone()
+                        }
+                    )
+                    .unwrap_or_else(
+                        || {
+                            "selected playlist"
+                                .to_string()
+                        }
+                    );
+
+            match crate::manage_playlists::add_policy(
+                playlist_id,
+                add.row.policy_id,
+            ) {
+                Ok(true) => {
+                    *status_message =
+                        format!(
+                            "Added policy '{}' to playlist '{}'.",
+                            add.row.policy_key,
+                            playlist_name,
+                        );
+
+                    *pending_add =
+                        None;
+                }
+
+                Ok(false) => {
+                    *status_message =
+                        format!(
+                            "Policy '{}' is already a member of playlist '{}'.",
+                            add.row.policy_key,
+                            playlist_name,
+                        );
+
+                    *pending_add =
+                        None;
+                }
+
+                Err(error) => {
+                    *status_message =
+                        format!(
+                            "Unable to add policy to playlist: {}",
+                            error,
+                        );
+                }
+            }
+        }
+    } else if cancel_clicked
+        || !keep_open
+    {
+        *pending_add =
+            None;
+    }
 }
 
 

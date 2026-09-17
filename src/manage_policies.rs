@@ -383,7 +383,7 @@ pub fn retarget_policy_by_id(
     }
 
     let changed = transaction.execute(
-        "UPDATE shader_policies SET policy_target = ?1 WHERE policy_id = ?2",
+        "UPDATE shader_policies SET policy_target = ?1, policy_modified_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE policy_id = ?2",
         rusqlite::params![destination_target.name(), policy_id],
     ).map_err(|error| format!("Unable to change Policy Target for policy ID {} ('{}'): {}", policy_id, stored_name, error))?;
 
@@ -424,12 +424,12 @@ pub fn assign_unassigned_policies_by_id(
             let desired_name = format!("{} ({})", filename, destination_target.name());
             let desired_key = database_policy_name_key(&desired_name)?;
             transaction.execute(
-                "UPDATE shader_policies SET policy_target = ?1, policy_name = ?2, policy_name_key = ?3 WHERE policy_id = ?4 AND policy_target = 'unassigned'",
+                "UPDATE shader_policies SET policy_target = ?1, policy_name = ?2, policy_name_key = ?3, policy_modified_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE policy_id = ?4 AND policy_target = 'unassigned'",
                 rusqlite::params![destination_target.name(), desired_name, desired_key, policy_id],
             )
         } else {
             transaction.execute(
-                "UPDATE shader_policies SET policy_target = ?1 WHERE policy_id = ?2 AND policy_target = 'unassigned'",
+                "UPDATE shader_policies SET policy_target = ?1, policy_modified_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE policy_id = ?2 AND policy_target = 'unassigned'",
                 rusqlite::params![destination_target.name(), policy_id],
             )
         }.map_err(|error| format!("Unable to assign policy ID {} ('{}'): {}", policy_id, stored_name, error))?;
@@ -501,7 +501,7 @@ pub fn clone_policy_by_id(
     ).map_err(|error| format!("Unable to read source policy ID {} before cloning: {}", source_policy_id, error))?;
 
     let inserted = transaction.execute(
-        "INSERT INTO shader_policies (policy_name, policy_name_key, shader_id, policy_target, texture_mode, texture_family, texture_primitives, palette_mode, palette_color, rendered_fps, animation_speed, starting_offset, anti_aliasing, dithering, color_precision, render_scale, audiovisual_effect, bloom_intensity, bloom_saturation, bloom_threshold, bloom_frequency_rotation, bloom_frequency_invert, invert_colors, flip_horizontal, flip_vertical, hue_rotation) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)",
+        "INSERT INTO shader_policies (policy_created_at, policy_modified_at, policy_name, policy_name_key, shader_id, policy_target, texture_mode, texture_family, texture_primitives, palette_mode, palette_color, rendered_fps, animation_speed, starting_offset, anti_aliasing, dithering, color_precision, render_scale, audiovisual_effect, bloom_intensity, bloom_saturation, bloom_threshold, bloom_frequency_rotation, bloom_frequency_invert, invert_colors, flip_horizontal, flip_vertical, hue_rotation) VALUES (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)",
         rusqlite::params![destination_name, destination_key, source.shader_id, source.policy_target, source.texture_mode, source.texture_family, source.texture_primitives, source.palette_mode, source.palette_color, source.rendered_fps, source.animation_speed, source.starting_offset_seconds, source.anti_aliasing, source.dithering, source.color_precision, source.render_scale, source.audiovisual_effect, source.bloom_intensity, source.bloom_saturation, source.bloom_threshold, source.bloom_frequency_rotation, source.bloom_frequency_invert, source.invert_colors, source.flip_horizontal, source.flip_vertical, source.hue_rotation],
     ).map_err(|error| format!("Unable to clone policy ID {} as '{}': {}", source_policy_id, destination_name, error))?;
     if inserted != 1 { return Err(format!("Expected to clone one policy ID {}, cloned {}", source_policy_id, inserted)); }
@@ -655,6 +655,8 @@ pub fn add_policy_for_source(
     transaction
         .execute(
             "INSERT INTO shader_policies (
+                 policy_created_at,
+                 policy_modified_at,
                  policy_name,
                  policy_name_key,
                  shader_id,
@@ -683,6 +685,8 @@ pub fn add_policy_for_source(
                  hue_rotation
              )
              VALUES (
+                 strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
+                 strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
                  ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
                  COALESCE(?12, 0.0), ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20,
                  ?21, ?22, ?23, ?24, ?25, ?26
@@ -753,7 +757,7 @@ pub fn rename_policy_by_id(
     let connection = crate::open_database::open()
         .map_err(|error| format!("Unable to open database while renaming policy ID {}: {}", policy_id, error))?;
     let changed = connection.execute(
-        "UPDATE shader_policies SET policy_name = ?1, policy_name_key = ?2 WHERE policy_id = ?3",
+        "UPDATE shader_policies SET policy_name = ?1, policy_name_key = ?2, policy_modified_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE policy_id = ?3",
         rusqlite::params![destination_name, destination_key, policy_id],
     ).map_err(|error| format!("Unable to rename policy ID {} as '{}': {}", policy_id, destination_name, error))?;
     match changed { 1 => Ok(()), 0 => Err(format!("Policy ID {} no longer exists", policy_id)), count => Err(format!("Policy ID {} unexpectedly matched {} rows", policy_id, count)) }
@@ -774,7 +778,7 @@ pub fn replace_policy_by_id(
     validate_properties(target, &properties)?;
     let values = database_policy_values(&properties)?;
     let changed = connection.execute(
-        "UPDATE shader_policies SET texture_mode = ?1, texture_family = ?2, texture_primitives = ?3, palette_mode = ?4, palette_color = ?5, rendered_fps = ?6, animation_speed = ?7, starting_offset = COALESCE(?8, starting_offset), anti_aliasing = ?9, dithering = ?10, color_precision = ?11, render_scale = ?12, audiovisual_effect = ?13, bloom_intensity = ?14, bloom_saturation = ?15, bloom_threshold = ?16, bloom_frequency_rotation = ?17, bloom_frequency_invert = ?18, invert_colors = ?19, flip_horizontal = ?20, flip_vertical = ?21, hue_rotation = ?22 WHERE policy_id = ?23",
+        "UPDATE shader_policies SET texture_mode = ?1, texture_family = ?2, texture_primitives = ?3, palette_mode = ?4, palette_color = ?5, rendered_fps = ?6, animation_speed = ?7, starting_offset = COALESCE(?8, starting_offset), anti_aliasing = ?9, dithering = ?10, color_precision = ?11, render_scale = ?12, audiovisual_effect = ?13, bloom_intensity = ?14, bloom_saturation = ?15, bloom_threshold = ?16, bloom_frequency_rotation = ?17, bloom_frequency_invert = ?18, invert_colors = ?19, flip_horizontal = ?20, flip_vertical = ?21, hue_rotation = ?22, policy_modified_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE policy_id = ?23",
         rusqlite::params![values.texture_mode, values.texture_family, values.texture_primitives, values.palette_mode, values.palette_color, values.rendered_fps, values.animation_speed, values.starting_offset, values.anti_aliasing, values.dithering, values.color_precision, values.render_scale, values.audiovisual_effect, values.bloom_intensity, values.bloom_saturation, values.bloom_threshold, values.bloom_frequency_rotation, values.bloom_frequency_invert, values.invert_colors, values.flip_horizontal, values.flip_vertical, values.hue_rotation, policy_id],
     ).map_err(|error| format!("Unable to update policy ID {} ('{}'): {}", policy_id, stored_name, error))?;
     match changed { 1 => Ok(()), 0 => Err(format!("Policy ID {} no longer exists", policy_id)), count => Err(format!("Policy ID {} unexpectedly matched {} rows", policy_id, count)) }
@@ -952,7 +956,8 @@ pub fn replace_policy_for_source(
                      invert_colors = ?19,
                      flip_horizontal = ?20,
                      flip_vertical = ?21,
-                     hue_rotation = ?22
+                     hue_rotation = ?22,
+                     policy_modified_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
                  WHERE policy_id = ?23",
                 rusqlite::params![
                     values.texture_mode,
@@ -1125,7 +1130,15 @@ pub fn patch_policies_by_id(
                 policy_changed=true;
             }
         }
-        if policy_changed { changed_policies += 1; }
+        if policy_changed {
+            transaction.execute(
+                "UPDATE shader_policies
+                 SET policy_modified_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+                 WHERE policy_id = ?1",
+                [patch.policy_id],
+            ).map_err(|error| format!("Unable to update Modified timestamp for policy ID {}: {}", patch.policy_id, error))?;
+            changed_policies += 1;
+        }
     }
     transaction.commit().map_err(|error| format!("Unable to commit Bulk Edit transaction: {}", error))?;
     Ok(changed_policies)

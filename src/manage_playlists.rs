@@ -119,11 +119,17 @@ pub fn create_playlist(
     connection
         .execute(
             "INSERT INTO playlists (
+                 playlist_created_at,
+                 playlist_modified_at,
                  playlist_name,
                  playlist_name_key,
                  description
              )
-             VALUES (?1, ?2, ?3)",
+             VALUES (
+                 strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
+                 strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
+                 ?1, ?2, ?3
+             )",
             params![
                 playlist_name,
                 playlist_name_key,
@@ -200,7 +206,8 @@ pub fn rename_playlist(
             .execute(
                 "UPDATE playlists
                  SET playlist_name = ?1,
-                     playlist_name_key = ?2
+                     playlist_name_key = ?2,
+                     playlist_modified_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
                  WHERE playlist_id = ?3",
                 params![
                     playlist_name,
@@ -264,7 +271,8 @@ pub fn update_playlist_description(
         connection
             .execute(
                 "UPDATE playlists
-                 SET description = ?1
+                 SET description = ?1,
+                     playlist_modified_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
                  WHERE playlist_id = ?2",
                 params![
                     description,
@@ -924,6 +932,14 @@ pub fn add_policies(
     }
 
 
+    if result.added > 0 {
+        touch_playlist_modified_at(
+            &transaction,
+            playlist_id,
+        )?;
+    }
+
+
     transaction
         .commit()
         .map_err(
@@ -1120,6 +1136,12 @@ pub fn replace_member_order(
     )?;
 
 
+    touch_playlist_modified_at(
+        &transaction,
+        playlist_id,
+    )?;
+
+
     transaction
         .commit()
         .map_err(
@@ -1308,6 +1330,46 @@ pub(crate) fn compact_playlist_positions_in_connection(
         connection,
         playlist_id,
         &policy_ids,
+    )?;
+
+
+    touch_playlist_modified_at(
+        connection,
+        playlist_id,
+    )
+}
+
+
+fn touch_playlist_modified_at(
+    connection: &Connection,
+    playlist_id: i64,
+) -> Result<(), String> {
+
+    let changed =
+        connection
+            .execute(
+                "UPDATE playlists
+                 SET playlist_modified_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+                 WHERE playlist_id = ?1",
+                [playlist_id],
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to update Modified timestamp for playlist ID {}: {}",
+                        playlist_id,
+                        error,
+                    )
+                }
+            )?;
+
+
+    expect_one_changed(
+        changed,
+        &format!(
+            "update Modified timestamp for playlist ID {}",
+            playlist_id,
+        ),
     )
 }
 

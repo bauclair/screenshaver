@@ -577,12 +577,16 @@ fn insert_default_policy(
     connection
         .execute(
             "INSERT INTO shader_policies (
+                 policy_created_at,
+                 policy_modified_at,
                  policy_name,
                  policy_name_key,
                  shader_id,
                  policy_target
              )
              VALUES (
+                 strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
+                 strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
                  ?1,
                  ?2,
                  ?3,

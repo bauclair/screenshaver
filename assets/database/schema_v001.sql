@@ -10,6 +10,7 @@
 --   * NULL means "inherit the applicable global value" only where documented.
 --   * Physical shader files remain authoritative source assets.
 --   * Derived runtime data is regenerable from those physical source assets.
+--   * Creation/modification metadata uses canonical UTC timestamps to seconds.
 --
 -- IMPORTANT:
 -- This file creates the database structure only.
@@ -57,6 +58,20 @@ CREATE TABLE schema_metadata (
 CREATE TABLE shaders (
     shader_id              INTEGER NOT NULL
                            PRIMARY KEY AUTOINCREMENT,
+
+    -- Immutable UTC timestamp recording when this physical shader was first
+    -- added to this local Screenshaver database.
+    -- Canonical representation: YYYY-MM-DDTHH:MM:SSZ
+    shader_added_at        TEXT NOT NULL
+                           CHECK (
+                               length(shader_added_at) = 20
+                               AND substr(shader_added_at, 5, 1) = '-'
+                               AND substr(shader_added_at, 8, 1) = '-'
+                               AND substr(shader_added_at, 11, 1) = 'T'
+                               AND substr(shader_added_at, 14, 1) = ':'
+                               AND substr(shader_added_at, 17, 1) = ':'
+                               AND substr(shader_added_at, 20, 1) = 'Z'
+                           ),
 
     -- Complete Linux filename, including extension.
     -- BINARY collation preserves case-sensitive filesystem semantics.
@@ -182,6 +197,36 @@ CREATE TABLE shaders (
 CREATE TABLE shader_policies (
     policy_id              INTEGER NOT NULL
                            PRIMARY KEY AUTOINCREMENT,
+
+    -- Immutable UTC timestamp recording when this policy was created in this
+    -- local Screenshaver database.
+    -- Canonical representation: YYYY-MM-DDTHH:MM:SSZ
+    policy_created_at      TEXT NOT NULL
+                           CHECK (
+                               length(policy_created_at) = 20
+                               AND substr(policy_created_at, 5, 1) = '-'
+                               AND substr(policy_created_at, 8, 1) = '-'
+                               AND substr(policy_created_at, 11, 1) = 'T'
+                               AND substr(policy_created_at, 14, 1) = ':'
+                               AND substr(policy_created_at, 17, 1) = ':'
+                               AND substr(policy_created_at, 20, 1) = 'Z'
+                           ),
+
+    -- UTC timestamp recording the most recent persisted configuration change
+    -- to this policy. It is initialized to policy_created_at and changes only
+    -- when the policy itself is modified; playlist membership does not modify
+    -- this timestamp.
+    -- Canonical representation: YYYY-MM-DDTHH:MM:SSZ
+    policy_modified_at     TEXT NOT NULL
+                           CHECK (
+                               length(policy_modified_at) = 20
+                               AND substr(policy_modified_at, 5, 1) = '-'
+                               AND substr(policy_modified_at, 8, 1) = '-'
+                               AND substr(policy_modified_at, 11, 1) = 'T'
+                               AND substr(policy_modified_at, 14, 1) = ':'
+                               AND substr(policy_modified_at, 17, 1) = ':'
+                               AND substr(policy_modified_at, 20, 1) = 'Z'
+                           ),
 
     -- User-visible Policy Name. The displayed spelling/capitalization is
     -- preserved exactly (after Rust trims leading/trailing whitespace).
@@ -411,6 +456,36 @@ CREATE INDEX idx_shader_policies_name_target
 CREATE TABLE playlists (
     playlist_id            INTEGER NOT NULL
                            PRIMARY KEY AUTOINCREMENT,
+
+    -- Immutable UTC timestamp recording when this playlist was created in this
+    -- local Screenshaver database.
+    -- Canonical representation: YYYY-MM-DDTHH:MM:SSZ
+    playlist_created_at    TEXT NOT NULL
+                           CHECK (
+                               length(playlist_created_at) = 20
+                               AND substr(playlist_created_at, 5, 1) = '-'
+                               AND substr(playlist_created_at, 8, 1) = '-'
+                               AND substr(playlist_created_at, 11, 1) = 'T'
+                               AND substr(playlist_created_at, 14, 1) = ':'
+                               AND substr(playlist_created_at, 17, 1) = ':'
+                               AND substr(playlist_created_at, 20, 1) = 'Z'
+                           ),
+
+    -- UTC timestamp recording the most recent persisted change to the
+    -- playlist definition or contents. It is initialized to
+    -- playlist_created_at and is updated when the playlist is renamed, its
+    -- description changes, membership changes, or member order changes.
+    -- Canonical representation: YYYY-MM-DDTHH:MM:SSZ
+    playlist_modified_at   TEXT NOT NULL
+                           CHECK (
+                               length(playlist_modified_at) = 20
+                               AND substr(playlist_modified_at, 5, 1) = '-'
+                               AND substr(playlist_modified_at, 8, 1) = '-'
+                               AND substr(playlist_modified_at, 11, 1) = 'T'
+                               AND substr(playlist_modified_at, 14, 1) = ':'
+                               AND substr(playlist_modified_at, 17, 1) = ':'
+                               AND substr(playlist_modified_at, 20, 1) = 'Z'
+                           ),
 
     -- User-visible Playlist Name. Displayed spelling/capitalization is
     -- preserved exactly after Rust trims leading/trailing whitespace.

@@ -1291,6 +1291,7 @@ fn apply_mutations(
                 transaction
                     .execute(
                         "INSERT INTO shaders (
+                             shader_added_at,
                              filename,
                              source_path,
                              shader_type,
@@ -1305,6 +1306,7 @@ fn apply_mutations(
                              shader_inputs_json
                          )
                          VALUES (
+                             strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
                              ?1,
                              ?2,
                              ?3,
@@ -1397,6 +1399,7 @@ fn apply_mutations(
                 transaction
                     .execute(
                         "INSERT INTO shaders (
+                             shader_added_at,
                              filename,
                              source_path,
                              shader_type,
@@ -1411,6 +1414,7 @@ fn apply_mutations(
                              shader_inputs_json
                          )
                          VALUES (
+                             strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
                              ?1,
                              ?2,
                              'unknown',

@@ -77,6 +77,11 @@ pub fn validate_startup(
     )?;
 
 
+    validate_object_timestamps(
+        connection
+    )?;
+
+
     Ok(())
 }
 
@@ -143,6 +148,11 @@ pub fn validate_initialization(
         connection,
         default_screensaver_policy_id,
         default_wallpaper_policy_id,
+    )?;
+
+
+    validate_object_timestamps(
+        connection
     )?;
 
 
@@ -395,6 +405,94 @@ fn validate_foreign_keys(
                 foreign_key_violation_count,
             )
         );
+    }
+
+
+    Ok(())
+}
+
+
+fn validate_object_timestamps(
+    connection: &Connection,
+) -> Result<(), String> {
+
+    let invalid_shader_timestamps: i64 =
+        connection
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM shaders
+                 WHERE shader_added_at IS NULL
+                    OR length(shader_added_at) <> 20
+                    OR substr(shader_added_at, 5, 1) <> '-'
+                    OR substr(shader_added_at, 8, 1) <> '-'
+                    OR substr(shader_added_at, 11, 1) <> 'T'
+                    OR substr(shader_added_at, 14, 1) <> ':'
+                    OR substr(shader_added_at, 17, 1) <> ':'
+                    OR substr(shader_added_at, 20, 1) <> 'Z'",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|error| format!("Unable to validate shader Added timestamps: {}", error))?;
+
+    if invalid_shader_timestamps != 0 {
+        return Err(format!(
+            "Database timestamp validation failed: {} shader row(s) have invalid shader_added_at values",
+            invalid_shader_timestamps,
+        ));
+    }
+
+
+    let invalid_policy_timestamps: i64 =
+        connection
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM shader_policies
+                 WHERE policy_created_at IS NULL
+                    OR policy_modified_at IS NULL
+                    OR length(policy_created_at) <> 20
+                    OR length(policy_modified_at) <> 20
+                    OR substr(policy_created_at, 11, 1) <> 'T'
+                    OR substr(policy_created_at, 20, 1) <> 'Z'
+                    OR substr(policy_modified_at, 11, 1) <> 'T'
+                    OR substr(policy_modified_at, 20, 1) <> 'Z'
+                    OR policy_modified_at < policy_created_at",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|error| format!("Unable to validate policy Created/Modified timestamps: {}", error))?;
+
+    if invalid_policy_timestamps != 0 {
+        return Err(format!(
+            "Database timestamp validation failed: {} policy row(s) have invalid Created/Modified timestamps",
+            invalid_policy_timestamps,
+        ));
+    }
+
+
+    let invalid_playlist_timestamps: i64 =
+        connection
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM playlists
+                 WHERE playlist_created_at IS NULL
+                    OR playlist_modified_at IS NULL
+                    OR length(playlist_created_at) <> 20
+                    OR length(playlist_modified_at) <> 20
+                    OR substr(playlist_created_at, 11, 1) <> 'T'
+                    OR substr(playlist_created_at, 20, 1) <> 'Z'
+                    OR substr(playlist_modified_at, 11, 1) <> 'T'
+                    OR substr(playlist_modified_at, 20, 1) <> 'Z'
+                    OR playlist_modified_at < playlist_created_at",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|error| format!("Unable to validate playlist Created/Modified timestamps: {}", error))?;
+
+    if invalid_playlist_timestamps != 0 {
+        return Err(format!(
+            "Database timestamp validation failed: {} playlist row(s) have invalid Created/Modified timestamps",
+            invalid_playlist_timestamps,
+        ));
     }
 
 
