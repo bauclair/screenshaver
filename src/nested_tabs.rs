@@ -25,18 +25,20 @@ enum ConfigurationNestedTab {
     Screensaver,
     Wallpaper,
     Rendering,
+    DataIo,
 }
 
 
 impl ConfigurationNestedTab {
     const ALL: [
         ConfigurationNestedTab;
-        4
+        5
     ] = [
         ConfigurationNestedTab::Appearance,
         ConfigurationNestedTab::Screensaver,
         ConfigurationNestedTab::Wallpaper,
         ConfigurationNestedTab::Rendering,
+        ConfigurationNestedTab::DataIo,
     ];
 
 
@@ -48,6 +50,7 @@ impl ConfigurationNestedTab {
             ConfigurationNestedTab::Screensaver => "Screensaver",
             ConfigurationNestedTab::Wallpaper => "Wallpaper",
             ConfigurationNestedTab::Rendering => "Rendering",
+            ConfigurationNestedTab::DataIo => "Data I/O",
         }
     }
 }
@@ -91,6 +94,7 @@ pub fn draw_configuration(
     policy_rows: &[PolicyDisplayRow],
     save_requested: &mut bool,
     status_message: &mut String,
+    export_destination_browse_requested: &mut Option<std::path::PathBuf>,
 ) {
     let Some(configuration) =
         configuration.as_mut()
@@ -211,6 +215,13 @@ pub fn draw_configuration(
                                         configuration,
                                     );
                                 }
+
+                                ConfigurationNestedTab::DataIo => {
+                                    draw_data_io_shell(
+                                        ui,
+                                        export_destination_browse_requested,
+                                    );
+                                }
                             }
                         },
                     );
@@ -319,6 +330,57 @@ pub fn draw_configuration(
                 );
             }
         );
+}
+
+
+fn draw_data_io_shell(
+    ui: &mut egui::Ui,
+    export_destination_browse_requested: &mut Option<std::path::PathBuf>,
+) {
+    ui.heading(
+        "Data I/O"
+    );
+
+    ui.add_space(
+        8.0
+    );
+
+    ui.label(
+        "Import or export portable Screenshaver data."
+    );
+
+    ui.add_space(
+        12.0
+    );
+
+    ui.horizontal(
+        |ui| {
+            let _ =
+                ui.button(
+                    "Import..."
+                );
+
+            ui.add_space(
+                8.0
+            );
+
+            if ui.button(
+                "Export..."
+            )
+            .clicked()
+            {
+                crate::export_data::open(
+                    ui.ctx()
+                );
+            }
+        },
+    );
+
+
+    crate::export_data::draw(
+        ui.ctx(),
+        export_destination_browse_requested,
+    );
 }
 
 

@@ -115,6 +115,9 @@ mod authenticate_user;
 mod manage_playlists;
 mod test_playlists;
 
+mod import_data;
+mod export_data;
+
 use std::sync::Arc;
 use std::sync::atomic::{
     AtomicBool,

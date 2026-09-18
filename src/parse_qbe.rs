@@ -17,6 +17,11 @@
 pub enum QbeField {
     PolicyName,
     PlaylistName,
+    ShaderAddedDate,
+    PolicyCreatedDate,
+    PolicyModifiedDate,
+    PlaylistCreatedDate,
+    PlaylistModifiedDate,
     ShaderFilename,
     ShaderType,
     PolicyTarget,
@@ -39,6 +44,11 @@ impl QbeField {
     pub const ALL: &'static [Self] = &[
         Self::PolicyName,
         Self::PlaylistName,
+        Self::ShaderAddedDate,
+        Self::PolicyCreatedDate,
+        Self::PolicyModifiedDate,
+        Self::PlaylistCreatedDate,
+        Self::PlaylistModifiedDate,
         Self::ShaderFilename,
         Self::ShaderType,
         Self::PolicyTarget,
@@ -66,6 +76,21 @@ impl QbeField {
 
             Self::PlaylistName =>
                 "Playlist Name",
+
+            Self::ShaderAddedDate =>
+                "Shader Added Date",
+
+            Self::PolicyCreatedDate =>
+                "Policy Created Date",
+
+            Self::PolicyModifiedDate =>
+                "Policy Modified Date",
+
+            Self::PlaylistCreatedDate =>
+                "Playlist Created Date",
+
+            Self::PlaylistModifiedDate =>
+                "Playlist Modified Date",
 
             Self::ShaderFilename =>
                 "Shader Filename",
@@ -209,6 +234,7 @@ pub enum QbeValueKind {
     Text,
     Integer,
     Decimal,
+    Date,
     ShaderType,
     PolicyTarget,
     PlaylistName,
@@ -490,7 +516,12 @@ pub const fn operators_for(
 
         QbeField::RenderedFps
         | QbeField::AnimationSpeed
-        | QbeField::RenderScale =>
+        | QbeField::RenderScale
+        | QbeField::ShaderAddedDate
+        | QbeField::PolicyCreatedDate
+        | QbeField::PolicyModifiedDate
+        | QbeField::PlaylistCreatedDate
+        | QbeField::PlaylistModifiedDate =>
             NUMERIC_OPERATORS,
 
         QbeField::Texture
@@ -584,6 +615,18 @@ pub const fn value_kind_for(
         ) => {
             QbeValueKind::Status
         }
+
+        (
+            QbeField::ShaderAddedDate
+            | QbeField::PolicyCreatedDate
+            | QbeField::PolicyModifiedDate
+            | QbeField::PlaylistCreatedDate
+            | QbeField::PlaylistModifiedDate,
+            _,
+        ) => {
+            QbeValueKind::Date
+        }
+
 
         (
             QbeField::RenderedFps,
@@ -803,6 +846,7 @@ pub enum QbeParseError {
     InvalidBoolean(String),
     InvalidInteger(String),
     InvalidDecimal(String),
+    InvalidDate(String),
     InvalidShaderType(String),
     InvalidPolicyTarget(String),
     InvalidStatus(String),
@@ -838,6 +882,12 @@ impl QbeParseError {
             Self::InvalidDecimal(value) =>
                 format!(
                     "QBE value '{}' is not a valid decimal number.",
+                    value,
+                ),
+
+            Self::InvalidDate(value) =>
+                format!(
+                    "QBE date '{}' must be a valid date in MM/DD/YYYY format.",
                     value,
                 ),
 
@@ -928,23 +978,31 @@ pub fn build_sql(
                     "compound QBE must have a conditional"
                 );
 
-        let second =
-            build_clause_sql(
-                &state.second
-            )?;
+        if conditional == QbeConditional::And
+            && is_playlist_field(state.first.field.expect("validated first field"))
+            && is_playlist_field(state.second.field.expect("validated second field"))
+        {
+            let correlated = build_correlated_playlist_compound(&state.first, &state.second)?;
+            where_clause = correlated.sql;
+            parameters = correlated.parameters;
+        } else {
+            let second =
+                build_clause_sql(
+                    &state.second
+                )?;
 
+            where_clause =
+                format!(
+                    "({}) {} ({})",
+                    where_clause,
+                    conditional.label(),
+                    second.sql,
+                );
 
-        where_clause =
-            format!(
-                "({}) {} ({})",
-                where_clause,
-                conditional.label(),
-                second.sql,
+            parameters.extend(
+                second.parameters
             );
-
-        parameters.extend(
-            second.parameters
-        );
+        }
     }
 
 
@@ -964,6 +1022,57 @@ struct ClauseSql {
     parameters: Vec<QbeSqlParameter>,
 }
 
+
+fn is_playlist_field(field: QbeField) -> bool {
+    matches!(field, QbeField::PlaylistName | QbeField::PlaylistCreatedDate | QbeField::PlaylistModifiedDate)
+}
+
+fn build_playlist_inner_condition(clause: &QbeClause) -> Result<(String, Vec<QbeSqlParameter>, bool), QbeParseError> {
+    let field = clause.field.ok_or(QbeValidationError::FirstFieldMissing)?;
+    let operator = clause.operator.ok_or(QbeValidationError::FirstOperatorMissing)?;
+    let value = clause.value.trim();
+    match field {
+        QbeField::PlaylistName => {
+            let (comparison, parameter, negate) = match operator {
+                QbeOperator::Eq => ("LOWER(pl_qbe.playlist_name) = LOWER(?)", value.to_string(), false),
+                QbeOperator::Ne => ("LOWER(pl_qbe.playlist_name) = LOWER(?)", value.to_string(), true),
+                QbeOperator::Like => ("LOWER(pl_qbe.playlist_name) LIKE LOWER(?)", format!("%{}%", value), false),
+                QbeOperator::NotLike => ("LOWER(pl_qbe.playlist_name) LIKE LOWER(?)", format!("%{}%", value), true),
+                _ => return Err(QbeParseError::Validation(QbeValidationError::FirstOperatorInvalid)),
+            };
+            Ok((comparison.to_string(), vec![QbeSqlParameter::Text(parameter)], negate))
+        }
+        QbeField::PlaylistCreatedDate | QbeField::PlaylistModifiedDate => {
+            let column = if field == QbeField::PlaylistCreatedDate { "pl_qbe.playlist_created_at" } else { "pl_qbe.playlist_modified_at" };
+            let canonical = parse_qbe_date(value)?;
+            let op = numeric_sql_operator(operator)?;
+            Ok((format!("date({}, 'localtime') {} ?", column, op), vec![QbeSqlParameter::Text(canonical)], false))
+        }
+        _ => unreachable!("playlist correlation called with non-playlist field"),
+    }
+}
+
+fn build_correlated_playlist_compound(first: &QbeClause, second: &QbeClause) -> Result<ClauseSql, QbeParseError> {
+    let (first_sql, mut parameters, first_negate) = build_playlist_inner_condition(first)?;
+    let (second_sql, second_parameters, second_negate) = build_playlist_inner_condition(second)?;
+    parameters.extend(second_parameters);
+    // Negative playlist-name operators retain their existing "no matching playlist" semantics.
+    // Correlation is only meaningful when both conditions describe one candidate playlist row.
+    if first_negate || second_negate {
+        let a = build_clause_sql(first)?;
+        let b = build_clause_sql(second)?;
+        let mut p = a.parameters;
+        p.extend(b.parameters);
+        return Ok(ClauseSql { sql: format!("({}) AND ({})", a.sql, b.sql), parameters: p });
+    }
+    Ok(ClauseSql {
+        sql: format!(
+            "EXISTS (\n                 SELECT 1\n                 FROM playlist_members AS pm_qbe\n                 JOIN playlists AS pl_qbe\n                   ON pl_qbe.playlist_id = pm_qbe.playlist_id\n                 WHERE pm_qbe.policy_id = p.policy_id\n                   AND ({})\n                   AND ({})\n             )",
+            first_sql, second_sql,
+        ),
+        parameters,
+    })
+}
 
 fn build_clause_sql(
     clause: &QbeClause,
@@ -1000,6 +1109,27 @@ fn build_clause_sql(
                 operator,
                 value,
             )
+        }
+
+
+        QbeField::ShaderAddedDate => {
+            build_date_column_clause("s.shader_added_at", operator, value)
+        }
+
+        QbeField::PolicyCreatedDate => {
+            build_date_column_clause("p.policy_created_at", operator, value)
+        }
+
+        QbeField::PolicyModifiedDate => {
+            build_date_column_clause("p.policy_modified_at", operator, value)
+        }
+
+        QbeField::PlaylistCreatedDate => {
+            build_playlist_date_clause("pl_qbe.playlist_created_at", operator, value)
+        }
+
+        QbeField::PlaylistModifiedDate => {
+            build_playlist_date_clause("pl_qbe.playlist_modified_at", operator, value)
         }
 
 
@@ -1405,6 +1535,63 @@ fn numeric_sql_operator(
     }
 }
 
+
+fn parse_qbe_date(value: &str) -> Result<String, QbeParseError> {
+    let parts: Vec<&str> = value.split('/').collect();
+    if parts.len() != 3 {
+        return Err(QbeParseError::InvalidDate(value.to_string()));
+    }
+    let month = parts[0].parse::<u32>().ok();
+    let day = parts[1].parse::<u32>().ok();
+    let year = parts[2].parse::<i32>().ok();
+    let (Some(month), Some(day), Some(year)) = (month, day, year) else {
+        return Err(QbeParseError::InvalidDate(value.to_string()));
+    };
+    if parts[2].len() != 4 || year < 1 || month < 1 || month > 12 {
+        return Err(QbeParseError::InvalidDate(value.to_string()));
+    }
+    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let max_day = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if leap => 29,
+        2 => 28,
+        _ => 0,
+    };
+    if day < 1 || day > max_day {
+        return Err(QbeParseError::InvalidDate(value.to_string()));
+    }
+    Ok(format!("{:04}-{:02}-{:02}", year, month, day))
+}
+
+fn build_date_column_clause(
+    column: &str,
+    operator: QbeOperator,
+    value: &str,
+) -> Result<ClauseSql, QbeParseError> {
+    let canonical = parse_qbe_date(value)?;
+    let sql_operator = numeric_sql_operator(operator)?;
+    Ok(ClauseSql {
+        sql: format!("date({}, 'localtime') {} ?", column, sql_operator),
+        parameters: vec![QbeSqlParameter::Text(canonical)],
+    })
+}
+
+fn build_playlist_date_clause(
+    column: &str,
+    operator: QbeOperator,
+    value: &str,
+) -> Result<ClauseSql, QbeParseError> {
+    let canonical = parse_qbe_date(value)?;
+    let sql_operator = numeric_sql_operator(operator)?;
+    Ok(ClauseSql {
+        sql: format!(
+            "EXISTS (\n                 SELECT 1\n                 FROM playlist_members AS pm_qbe\n                 JOIN playlists AS pl_qbe\n                   ON pl_qbe.playlist_id = pm_qbe.playlist_id\n                 WHERE pm_qbe.policy_id = p.policy_id\n                   AND date({}, 'localtime') {} ?\n             )",
+            column, sql_operator,
+        ),
+        parameters: vec![QbeSqlParameter::Text(canonical)],
+    })
+}
 
 fn build_playlist_name_clause(
     operator: QbeOperator,

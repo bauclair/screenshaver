@@ -635,7 +635,8 @@ fn draw_value_control(
 
         crate::parse_qbe::QbeValueKind::Text
         | crate::parse_qbe::QbeValueKind::Integer
-        | crate::parse_qbe::QbeValueKind::Decimal => {
+        | crate::parse_qbe::QbeValueKind::Decimal
+        | crate::parse_qbe::QbeValueKind::Date => {
             ui.add_sized(
                 [
                     width,

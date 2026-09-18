@@ -26,6 +26,12 @@ pub struct PlaylistSummary {
 
     pub member_count:
         i64,
+
+    pub playlist_created_local:
+        String,
+
+    pub playlist_modified_local:
+        String,
 }
 
 
@@ -382,7 +388,9 @@ pub fn list_playlists(
                      pl.playlist_id,
                      pl.playlist_name,
                      pl.description,
-                     COUNT(pm.policy_id)
+                     COUNT(pm.policy_id),
+                     strftime('%m/%d/%Y %H:%M:%S', pl.playlist_created_at, 'localtime'),
+                     strftime('%m/%d/%Y %H:%M:%S', pl.playlist_modified_at, 'localtime')
                  FROM playlists AS pl
                  LEFT JOIN playlist_members AS pm
                    ON pm.playlist_id = pl.playlist_id
@@ -424,6 +432,12 @@ pub fn list_playlists(
 
                             member_count:
                                 row.get(3)?,
+
+                            playlist_created_local:
+                                row.get(4)?,
+
+                            playlist_modified_local:
+                                row.get(5)?,
                         }
                     )
                 },
@@ -657,6 +671,8 @@ pub fn playlists_for_policy(
                      pl.playlist_id,
                      pl.playlist_name,
                      pl.description,
+                     strftime('%m/%d/%Y %H:%M:%S', pl.playlist_created_at, 'localtime'),
+                     strftime('%m/%d/%Y %H:%M:%S', pl.playlist_modified_at, 'localtime'),
                      (
                          SELECT COUNT(*)
                          FROM playlist_members AS all_members
@@ -699,7 +715,13 @@ pub fn playlists_for_policy(
                                 row.get(2)?,
 
                             member_count:
+                                row.get(5)?,
+
+                            playlist_created_local:
                                 row.get(3)?,
+
+                            playlist_modified_local:
+                                row.get(4)?,
                         }
                     )
                 },

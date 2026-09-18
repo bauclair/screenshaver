@@ -23,16 +23,16 @@ use sdl2::mouse::MouseButton;
 const EDIT_WINDOW_REFERENCE_WIDTH: f32 =
     645.0;
 
-const EDIT_WINDOW_REFERENCE_HEIGHT_PIXELS: f32 =
+pub(crate) const EDIT_WINDOW_REFERENCE_HEIGHT_PIXELS: f32 =
     658.0;
 
-const EDIT_WINDOW_REFERENCE_DISPLAY_HEIGHT: f32 =
+pub(crate) const EDIT_WINDOW_REFERENCE_DISPLAY_HEIGHT: f32 =
     1080.0;
 
-const EDIT_WINDOW_SCALE_MIN: f32 =
+pub(crate) const EDIT_WINDOW_SCALE_MIN: f32 =
     0.80;
 
-const EDIT_WINDOW_SCALE_MAX: f32 =
+pub(crate) const EDIT_WINDOW_SCALE_MAX: f32 =
     1.80;
 
 const EDIT_TABBED_CONTENT_HEIGHT: f32 =
@@ -639,6 +639,45 @@ pub struct PolicyDisplayRow {
     pub texture: bool,
     pub policy_target: PolicyTarget,
     pub unassigned: bool,
+    pub shader_added_local: String,
+    pub policy_created_local: String,
+    pub policy_modified_local: String,
+}
+
+fn display_local_timestamp(value: &str) -> String {
+    let Some((date, time)) = value.split_once(' ') else {
+        return value.to_string();
+    };
+
+    let mut parts = time.split(':');
+    let Some(hour_text) = parts.next() else {
+        return value.to_string();
+    };
+    let Some(minute) = parts.next() else {
+        return value.to_string();
+    };
+    let Some(second) = parts.next() else {
+        return value.to_string();
+    };
+
+    let Ok(hour) = hour_text.parse::<u32>() else {
+        return value.to_string();
+    };
+
+    if hour > 23 {
+        return value.to_string();
+    }
+
+    let suffix = if hour < 12 { "AM" } else { "PM" };
+    let display_hour = match hour % 12 {
+        0 => 12,
+        other => other,
+    };
+
+    format!(
+        "{} {}:{}:{} {}",
+        date, display_hour, minute, second, suffix,
+    )
 }
 
 impl PolicyDisplayRow {
@@ -914,6 +953,7 @@ pub struct EditorOutput {
     pub cancel_requested: bool,
     pub delete_requested: bool,
     pub browse_shader_requested: bool,
+    pub export_destination_browse_requested: Option<PathBuf>,
     pub bulk_create_browse_requested: bool,
     pub bulk_create_requested:
         Option<BulkCreateRequest>,
@@ -2816,6 +2856,9 @@ impl EditWindowOverlay {
         let mut browse_shader_requested =
             false;
 
+        let mut export_destination_browse_requested =
+            None;
+
         let mut bulk_create_browse_requested =
             false;
 
@@ -3691,6 +3734,7 @@ impl EditWindowOverlay {
                                                         policy_rows,
                                                         &mut control_configuration_save_requested,
                                                         &mut status_message,
+                                                        &mut export_destination_browse_requested,
                                                     );
                                                 },
                                             );
@@ -4480,6 +4524,8 @@ impl EditWindowOverlay {
 
             browse_shader_requested,
 
+            export_destination_browse_requested,
+
             bulk_create_browse_requested,
 
             bulk_create_requested,
@@ -4829,6 +4875,17 @@ impl EditWindowOverlay {
     ) {
         self.status_message =
             message.into();
+    }
+
+
+    pub fn set_export_destination(
+        &self,
+        destination: &std::path::Path,
+    ) {
+        crate::export_data::set_destination(
+            &self.context,
+            destination,
+        );
     }
 
 
@@ -6981,10 +7038,13 @@ fn draw_policies_tab(
                                 )
                                 .on_hover_text(
                                     format!(
-                                        "Policy Name: {}\nShader: {}\nPath: {}",
+                                        "Policy Name: {}\nShader: {}\nPath: {}\nShader Added: {}\nPolicy Created: {}\nPolicy Modified: {}",
                                         row.policy_key,
                                         row.filename,
                                         row.full_path,
+                                        display_local_timestamp(&row.shader_added_local),
+                                        display_local_timestamp(&row.policy_created_local),
+                                        display_local_timestamp(&row.policy_modified_local),
                                     )
                                 );
 
@@ -8781,7 +8841,12 @@ fn draw_playlists_tab(
                                             )
                                         },
                                     )
-                                    .inner;
+                                    .inner
+                                    .on_hover_text(format!(
+                                        "Playlist Created: {}\nPlaylist Modified: {}",
+                                        display_local_timestamp(&playlist.playlist_created_local),
+                                        display_local_timestamp(&playlist.playlist_modified_local),
+                                    ));
 
                                 if response.clicked() {
                                     if *selected_playlist_id
@@ -9114,11 +9179,29 @@ fn draw_playlists_tab(
                                                     },
                                                 )
                                                 .inner
-                                                .on_hover_text(format!(
-                                                    "Shader Filename: {}\nPath: {}",
-                                                    member.shader_filename,
-                                                    shader_path,
-                                                ));
+                                                .on_hover_text(
+                                                    if let Some(row) = policy_rows
+                                                        .iter()
+                                                        .find(|row| row.policy_id == member.policy_id)
+                                                    {
+                                                        format!(
+                                                            "Policy Name: {}\nShader: {}\nPath: {}\nShader Added: {}\nPolicy Created: {}\nPolicy Modified: {}",
+                                                            member.policy_name,
+                                                            member.shader_filename,
+                                                            shader_path,
+                                                            display_local_timestamp(&row.shader_added_local),
+                                                            display_local_timestamp(&row.policy_created_local),
+                                                            display_local_timestamp(&row.policy_modified_local),
+                                                        )
+                                                    } else {
+                                                        format!(
+                                                            "Policy Name: {}\nShader: {}\nPath: {}",
+                                                            member.policy_name,
+                                                            member.shader_filename,
+                                                            shader_path,
+                                                        )
+                                                    }
+                                                );
 
                                             if response.clicked() {
                                                 *selected_playlist_policy_id =

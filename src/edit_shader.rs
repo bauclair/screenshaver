@@ -996,7 +996,38 @@ fn run_empty_session(
         None;
 
 
+    let mut fullscreen_restore_requested_at:
+        Option<Instant> =
+        None;
+
+
     'edit_session: loop {
+
+        if fullscreen_restore_requested_at
+            .is_some_and(
+                |requested_at| {
+                    requested_at.elapsed()
+                        >= FILE_DIALOG_FULLSCREEN_RESTORE_DELAY
+                }
+            )
+        {
+            if let Err(error) =
+                restore_editor_fullscreen(
+                    &mut window
+                )
+            {
+                log_warning(
+                    &format!(
+                        "[EDIT_SHADER] Deferred fullscreen restoration failed: {}",
+                        error,
+                    )
+                );
+            }
+
+            fullscreen_restore_requested_at =
+                None;
+        }
+
 
         for event in
             event_pump.poll_iter()
@@ -1075,6 +1106,15 @@ fn run_empty_session(
                 &policy_display_rows,
                 Some(&config),
             );
+
+        process_export_destination_browse_request(
+            &edit_window,
+            editor_output
+                .export_destination_browse_requested
+                .as_ref(),
+            &mut window,
+            &mut fullscreen_restore_requested_at,
+        );
 
         process_policy_rename_ui(
             &mut edit_window,
@@ -2123,6 +2163,58 @@ fn run_empty_session(
 }
 
 
+fn process_export_destination_browse_request(
+    edit_window: &crate::editor_layout::EditWindowOverlay,
+    request: Option<&PathBuf>,
+    window: &mut sdl2::video::Window,
+    fullscreen_restore_requested_at: &mut Option<Instant>,
+) {
+    let Some(starting_directory) = request else {
+        return;
+    };
+
+    let mut dialog =
+        rfd::FileDialog::new()
+            .set_parent(&*window);
+
+    if starting_directory.is_dir() {
+        dialog =
+            dialog.set_directory(
+                starting_directory
+            );
+    }
+
+    let selected_directory =
+        dialog.pick_folder();
+
+    if let Err(error) =
+        restore_editor_fullscreen(
+            window
+        )
+    {
+        log_warning(
+            &format!(
+                "[EDIT_SHADER] Immediate fullscreen restoration failed after export destination selection: {}",
+                error,
+            )
+        );
+    }
+
+    *fullscreen_restore_requested_at =
+        Some(
+            Instant::now()
+        );
+
+    if let Some(selected_directory) =
+        selected_directory
+    {
+        edit_window.set_export_destination(
+            &selected_directory
+        );
+    }
+}
+
+
 fn restore_editor_fullscreen(
     window: &mut sdl2::video::Window,
 ) -> Result<(), String> {
@@ -3032,6 +3124,16 @@ fn run_paths(
                         &policy_display_rows,
                         Some(&config),
                     );
+
+
+                process_export_destination_browse_request(
+                    &edit_window,
+                    editor_output
+                        .export_destination_browse_requested
+                        .as_ref(),
+                    &mut window,
+                    &mut fullscreen_restore_requested_at,
+                );
 
 
                 // The active shader has intentionally been unloaded during
@@ -4129,6 +4231,15 @@ fn run_paths(
                     &policy_display_rows,
                     Some(&config),
                 );
+
+            process_export_destination_browse_request(
+                &edit_window,
+                editor_output
+                    .export_destination_browse_requested
+                    .as_ref(),
+                &mut window,
+                &mut fullscreen_restore_requested_at,
+            );
 
             process_policy_rename_ui(
                 &mut edit_window,
@@ -8695,7 +8806,10 @@ fn load_database_policy_display_rows(
                      s.validation_status,
                      s.validation_reason,
                      s.validation_message,
-                     p.policy_target
+                     p.policy_target,
+                     strftime('%m/%d/%Y %H:%M:%S', s.shader_added_at, 'localtime'),
+                     strftime('%m/%d/%Y %H:%M:%S', p.policy_created_at, 'localtime'),
+                     strftime('%m/%d/%Y %H:%M:%S', p.policy_modified_at, 'localtime')
                  FROM shader_policies AS p
                  JOIN shaders AS s
                    ON s.shader_id = p.shader_id
@@ -8729,6 +8843,9 @@ fn load_database_policy_display_rows(
                             row.get::<_, Option<String>>(6)?,
                             row.get::<_, Option<String>>(7)?,
                             row.get::<_, String>(8)?,
+                            row.get::<_, String>(9)?,
+                            row.get::<_, String>(10)?,
+                            row.get::<_, String>(11)?,
                         )
                     )
                 },
@@ -8759,6 +8876,9 @@ fn load_database_policy_display_rows(
             validation_reason,
             validation_message,
             policy_target,
+            shader_added_local,
+            policy_created_local,
+            policy_modified_local,
         ) =
             query_row.map_err(
                 |error| {
@@ -8840,6 +8960,12 @@ fn load_database_policy_display_rows(
                 unassigned:
                     policy_target
                         == crate::editor_layout::PolicyTarget::Unassigned,
+
+                shader_added_local,
+
+                policy_created_local,
+
+                policy_modified_local,
             }
         );
     }
