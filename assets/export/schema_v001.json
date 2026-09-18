@@ -1,0 +1,125 @@
+{
+  "schema_name": "Screenshaver Export Schema",
+  "format": "screenshaver-export",
+  "format_version": 1,
+  "archive": {
+    "manifest": "manifest.json",
+    "shader_directory": "shaders",
+    "metadata_files": [
+      "policies.tsv",
+      "shaders.tsv",
+      "playlists.tsv",
+      "playlist_members.tsv"
+    ]
+  },
+  "integrity": {
+    "algorithm": "sha256",
+    "package_canonicalization": "screenshaver-package-v1",
+    "package_hash_excludes": [
+      "manifest.json"
+    ]
+  },
+  "datasets": {
+    "policies": {
+      "file": "policies.tsv",
+      "columns": [
+        "policy_export_id",
+        "policy_name",
+        "policy_target",
+        "shader_export_id",
+        "shader_filename",
+        "texture_mode",
+        "texture_family",
+        "texture_primitives",
+        "palette_mode",
+        "palette_color",
+        "rendered_fps",
+        "animation_speed_mode",
+        "animation_speed",
+        "starting_offset",
+        "anti_aliasing",
+        "dithering",
+        "color_precision",
+        "render_scale",
+        "audiovisual_effect",
+        "bloom_intensity",
+        "bloom_saturation",
+        "bloom_threshold",
+        "bloom_frequency_rotation",
+        "bloom_frequency_invert",
+        "invert_colors",
+        "flip_horizontal",
+        "flip_vertical",
+        "hue_rotation"
+      ],
+      "relationships": {
+        "shader_export_id": "shaders.shader_export_id"
+      }
+    },
+    "shaders": {
+      "file": "shaders.tsv",
+      "columns": [
+        "shader_export_id",
+        "filename",
+        "archive_path",
+        "sha256"
+      ]
+    },
+    "playlists": {
+      "file": "playlists.tsv",
+      "columns": [
+        "playlist_export_id",
+        "playlist_name",
+        "description"
+      ]
+    },
+    "playlist_members": {
+      "file": "playlist_members.tsv",
+      "columns": [
+        "playlist_export_id",
+        "policy_export_id",
+        "position"
+      ],
+      "relationships": {
+        "playlist_export_id": "playlists.playlist_export_id",
+        "policy_export_id": "policies.policy_export_id"
+      }
+    }
+  },
+  "enums": {
+    "policy_target": [
+      "screensaver",
+      "wallpaper",
+      "unassigned"
+    ],
+    "texture_mode": [
+      "specific",
+      "random",
+      "inherit_target"
+    ],
+    "palette_mode": [
+      "specific",
+      "random",
+      "inherit_target"
+    ],
+    "animation_speed_mode": [
+      "explicit",
+      "inherit_target"
+    ],
+    "boolean": [
+      "true",
+      "false"
+    ]
+  },
+  "encoding": {
+    "text": "utf-8",
+    "tsv_delimiter": "\\t",
+    "record_terminator": "\\n",
+    "escape": {
+      "\\": "\\\\",
+      "\\t": "\\t",
+      "\\r": "\\r",
+      "\\n": "\\n"
+    }
+  }
+}

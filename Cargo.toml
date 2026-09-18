@@ -33,6 +33,7 @@ egui_glow = "0.33"
 glow = "0.16"
 rfd = "0.17.2"
 sha2 = "0.10"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 libpulse-binding = "2.30.1"
 rustfft = "6.4"
 rusqlite = { version = "0.40.1", features = ["bundled"] }
