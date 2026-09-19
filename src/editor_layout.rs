@@ -954,6 +954,7 @@ pub struct EditorOutput {
     pub delete_requested: bool,
     pub browse_shader_requested: bool,
     pub export_destination_browse_requested: Option<PathBuf>,
+    pub import_archive_browse_requested: Option<PathBuf>,
     pub bulk_create_browse_requested: bool,
     pub bulk_create_requested:
         Option<BulkCreateRequest>,
@@ -2859,6 +2860,9 @@ impl EditWindowOverlay {
         let mut export_destination_browse_requested =
             None;
 
+        let mut import_archive_browse_requested =
+            None;
+
         let mut bulk_create_browse_requested =
             false;
 
@@ -3735,6 +3739,7 @@ impl EditWindowOverlay {
                                                         &mut control_configuration_save_requested,
                                                         &mut status_message,
                                                         &mut export_destination_browse_requested,
+                                                        &mut import_archive_browse_requested,
                                                     );
                                                 },
                                             );
@@ -4526,6 +4531,8 @@ impl EditWindowOverlay {
 
             export_destination_browse_requested,
 
+            import_archive_browse_requested,
+
             bulk_create_browse_requested,
 
             bulk_create_requested,
@@ -4885,6 +4892,17 @@ impl EditWindowOverlay {
         crate::export_data::set_destination(
             &self.context,
             destination,
+        );
+    }
+
+
+    pub fn set_import_archive(
+        &self,
+        archive: &std::path::Path,
+    ) {
+        crate::import_data::set_archive(
+            &self.context,
+            archive,
         );
     }
 

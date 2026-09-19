@@ -95,6 +95,7 @@ pub fn draw_configuration(
     save_requested: &mut bool,
     status_message: &mut String,
     export_destination_browse_requested: &mut Option<std::path::PathBuf>,
+    import_archive_browse_requested: &mut Option<std::path::PathBuf>,
 ) {
     let Some(configuration) =
         configuration.as_mut()
@@ -220,6 +221,7 @@ pub fn draw_configuration(
                                     draw_data_io_shell(
                                         ui,
                                         export_destination_browse_requested,
+                                        import_archive_browse_requested,
                                     );
                                 }
                             }
@@ -336,6 +338,7 @@ pub fn draw_configuration(
 fn draw_data_io_shell(
     ui: &mut egui::Ui,
     export_destination_browse_requested: &mut Option<std::path::PathBuf>,
+    import_archive_browse_requested: &mut Option<std::path::PathBuf>,
 ) {
     ui.heading(
         "Data I/O"
@@ -355,10 +358,15 @@ fn draw_data_io_shell(
 
     ui.horizontal(
         |ui| {
-            let _ =
-                ui.button(
-                    "Import..."
+            if ui.button(
+                "Import..."
+            )
+            .clicked()
+            {
+                crate::import_data::open(
+                    ui.ctx()
                 );
+            }
 
             ui.add_space(
                 8.0
@@ -380,6 +388,11 @@ fn draw_data_io_shell(
     crate::export_data::draw(
         ui.ctx(),
         export_destination_browse_requested,
+    );
+
+    crate::import_data::draw(
+        ui.ctx(),
+        import_archive_browse_requested,
     );
 }
 
