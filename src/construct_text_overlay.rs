@@ -794,3 +794,296 @@ fn composite_text(
     }
 }
 
+
+// -----------------------------------------------------------------------------
+// Experimental synchronized-lyrics marquee used by --test-lyrics.
+// This is intentionally separate from the normal description/FPS capsule.
+// -----------------------------------------------------------------------------
+
+const LYRICS_BASE_FONT_SIZE: f32 = 28.0;
+const LYRICS_MIN_FONT_SIZE: f32 = 16.0;
+const LYRICS_MAX_FONT_SIZE: f32 = 56.0;
+const LYRICS_BASELINE_WIDTH: f32 = 1920.0;
+const LYRICS_BASELINE_HEIGHT: f32 = 1080.0;
+const LYRICS_BACKGROUND_RGBA: [u8; 4] = [0, 0, 0, 255];
+const LYRICS_CONTEXT_COLOR: Color = Color::RGBA(155, 155, 150, 230);
+const LYRICS_CURRENT_COLOR: Color = Color::RGBA(250, 250, 242, 255);
+
+pub fn construct_lyrics_panel(
+    previous: Option<&str>,
+    current: Option<&str>,
+    next: Option<&str>,
+    output_width: u32,
+    output_height: u32,
+) -> Result<ConstructedTextOverlay, String> {
+    if output_width == 0 || output_height == 0 {
+        return Err("Cannot construct a lyrics panel for a zero-sized viewport".to_string());
+    }
+
+    let viewport_scale =
+        (output_width as f32 / LYRICS_BASELINE_WIDTH)
+            .min(output_height as f32 / LYRICS_BASELINE_HEIGHT)
+            .clamp(0.60, 2.0);
+
+    let requested_font_size =
+        (LYRICS_BASE_FONT_SIZE * viewport_scale)
+            .round()
+            .clamp(LYRICS_MIN_FONT_SIZE, LYRICS_MAX_FONT_SIZE) as u16;
+
+    let panel_width = output_width.max(1);
+    let outer_padding = ((requested_font_size as f32 * 0.55).round() as u32).max(8);
+    let column_padding = ((requested_font_size as f32 * 0.60).round() as u32).max(8);
+    let padding_y = ((requested_font_size as f32 * 0.38).round() as u32).max(5);
+
+    let ttf_context = sdl2::ttf::init()
+        .map_err(|error| format!("Unable to initialize SDL_ttf for lyrics: {}", error))?;
+    let font_path = locate_subtitle_font()?;
+
+    // The highlighted lyric is never truncated. If an unusually long current
+    // lyric would exceed the viewport, reduce only the marquee font size until
+    // the complete highlighted line fits between the outer margins.
+    let current_text = current.unwrap_or("").trim();
+    let available_current_width = panel_width.saturating_sub(outer_padding.saturating_mul(2)).max(1);
+    let mut font_size = requested_font_size;
+    if !current_text.is_empty() {
+        loop {
+            let mut probe_font = ttf_context
+                .load_font(&font_path, font_size)
+                .map_err(|error| format!("Unable to load current-lyrics font '{}': {}", font_path.display(), error))?;
+            probe_font.set_style(FontStyle::BOLD);
+            let (text_width, _) = probe_font
+                .size_of(current_text)
+                .map_err(|error| format!("Unable to measure current lyrics text: {}", error))?;
+
+            if text_width <= available_current_width || font_size <= LYRICS_MIN_FONT_SIZE as u16 {
+                break;
+            }
+            font_size -= 1;
+        }
+    }
+
+    let normal_font = ttf_context
+        .load_font(&font_path, font_size)
+        .map_err(|error| format!("Unable to load lyrics font '{}': {}", font_path.display(), error))?;
+
+    let mut current_font = ttf_context
+        .load_font(&font_path, font_size)
+        .map_err(|error| format!("Unable to load current-lyrics font '{}': {}", font_path.display(), error))?;
+    current_font.set_style(FontStyle::BOLD);
+
+    let render_line =
+        |font: &sdl2::ttf::Font<'_, '_>, text: Option<&str>, color: Color|
+         -> Result<Option<sdl2::surface::Surface<'static>>, String> {
+            let text = text.unwrap_or("").trim();
+            if text.is_empty() {
+                return Ok(None);
+            }
+
+            font.render(text)
+                .blended(color)
+                .map_err(|error| format!("Unable to render lyrics text: {}", error))?
+                .convert_format(PixelFormatEnum::RGBA32)
+                .map(Some)
+                .map_err(|error| format!("Unable to convert lyrics text surface: {}", error))
+        };
+
+    let surfaces = [
+        render_line(&normal_font, previous, LYRICS_CONTEXT_COLOR)?,
+        render_line(&current_font, current, LYRICS_CURRENT_COLOR)?,
+        render_line(&normal_font, next, LYRICS_CONTEXT_COLOR)?,
+    ];
+
+    let fallback_line_height = normal_font.height().max(1) as u32;
+    let line_height = surfaces
+        .iter()
+        .filter_map(|surface| surface.as_ref().map(|surface| surface.height()))
+        .max()
+        .unwrap_or(fallback_line_height)
+        .max(fallback_line_height);
+
+    // No feathering: the texture is exactly one lyric row plus modest vertical
+    // padding, with a single hard boundary against the shader above it.
+    let panel_height = line_height
+        .saturating_add(padding_y.saturating_mul(2))
+        .min(output_height)
+        .max(1);
+
+    let byte_count = usize::try_from(panel_width)
+        .ok()
+        .and_then(|w| usize::try_from(panel_height).ok().and_then(|h| w.checked_mul(h)))
+        .and_then(|pixels| pixels.checked_mul(4))
+        .ok_or_else(|| "Lyrics panel dimensions overflow".to_string())?;
+
+    let mut pixels = vec![0_u8; byte_count];
+    draw_solid_background(&mut pixels, panel_width, panel_height, LYRICS_BACKGROUND_RGBA);
+
+    let text_y = padding_y;
+
+    // Reserve the complete centered current lyric first. It is allowed to grow
+    // beyond the middle third. Previous/next lyrics retain their nominal thirds,
+    // but are clipped further whenever necessary so they can never cover the
+    // highlighted lyric.
+    let current_bounds = surfaces[1].as_ref().map(|surface| {
+        let start = panel_width.saturating_sub(surface.width()) / 2;
+        let end = start.saturating_add(surface.width()).min(panel_width);
+        (start, end)
+    });
+
+    // Previous lyric: nominal left third, truncated at both the column padding
+    // and the protected highlighted-lyric region.
+    if let Some(surface) = surfaces[0].as_ref() {
+        let column_end = panel_width / 3;
+        let content_start = column_padding.min(column_end);
+        let mut content_end = column_end.saturating_sub(column_padding).max(content_start);
+        if let Some((current_start, _)) = current_bounds {
+            content_end = content_end.min(current_start.saturating_sub(column_padding));
+        }
+        let line_y = text_y.saturating_add(line_height.saturating_sub(surface.height()) / 2);
+        composite_surface_centered_clipped(
+            &mut pixels, panel_width, panel_height, surface,
+            content_start, content_end.max(content_start), line_y,
+        )?;
+    }
+
+    // Next lyric: nominal right third, with the same protection around the
+    // complete highlighted lyric.
+    if let Some(surface) = surfaces[2].as_ref() {
+        let column_start = (panel_width as u64 * 2 / 3) as u32;
+        let mut content_start = column_start.saturating_add(column_padding).min(panel_width);
+        let content_end = panel_width.saturating_sub(column_padding).max(content_start);
+        if let Some((_, current_end)) = current_bounds {
+            content_start = content_start.max(current_end.saturating_add(column_padding).min(panel_width));
+        }
+        let line_y = text_y.saturating_add(line_height.saturating_sub(surface.height()) / 2);
+        composite_surface_centered_clipped(
+            &mut pixels, panel_width, panel_height, surface,
+            content_start.min(content_end), content_end, line_y,
+        )?;
+    }
+
+    // Draw the highlighted lyric last and without horizontal clipping. It is
+    // always centered and always shown in full.
+    if let Some(surface) = surfaces[1].as_ref() {
+        let line_y = text_y.saturating_add(line_height.saturating_sub(surface.height()) / 2);
+        composite_surface_centered_full(
+            &mut pixels, panel_width, panel_height, surface, line_y,
+        )?;
+    }
+
+    Ok(ConstructedTextOverlay {
+        width: panel_width,
+        height: panel_height,
+        pixels,
+    })
+}
+
+fn composite_surface_centered_clipped(
+    destination: &mut [u8],
+    destination_width: u32,
+    destination_height: u32,
+    surface: &sdl2::surface::Surface<'_>,
+    clip_start_x: u32,
+    clip_end_x: u32,
+    offset_y: u32,
+) -> Result<(), String> {
+    if clip_end_x <= clip_start_x {
+        return Ok(());
+    }
+
+    let source = surface
+        .without_lock()
+        .ok_or_else(|| "Unable to access rendered lyrics pixels".to_string())?;
+    let source_pitch = usize::try_from(surface.pitch())
+        .map_err(|_| "Lyrics surface pitch cannot be represented as usize".to_string())?;
+
+    let available_width = clip_end_x - clip_start_x;
+    let visible_width = surface.width().min(available_width);
+    let source_start_x = surface.width().saturating_sub(visible_width) / 2;
+    let destination_start_x = clip_start_x + available_width.saturating_sub(visible_width) / 2;
+
+    for y in 0..surface.height() {
+        let destination_y = offset_y.saturating_add(y);
+        if destination_y >= destination_height { continue; }
+        for visible_x in 0..visible_width {
+            let source_x = source_start_x + visible_x;
+            let destination_x = destination_start_x + visible_x;
+            if destination_x >= destination_width || destination_x >= clip_end_x { continue; }
+            blend_lyrics_pixel(destination, destination_width, source, source_pitch,
+                source_x, y, destination_x, destination_y);
+        }
+    }
+    Ok(())
+}
+
+fn composite_surface_centered_full(
+    destination: &mut [u8],
+    destination_width: u32,
+    destination_height: u32,
+    surface: &sdl2::surface::Surface<'_>,
+    offset_y: u32,
+) -> Result<(), String> {
+    let source = surface
+        .without_lock()
+        .ok_or_else(|| "Unable to access rendered lyrics pixels".to_string())?;
+    let source_pitch = usize::try_from(surface.pitch())
+        .map_err(|_| "Lyrics surface pitch cannot be represented as usize".to_string())?;
+    let destination_start_x = destination_width.saturating_sub(surface.width()) / 2;
+
+    for y in 0..surface.height() {
+        let destination_y = offset_y.saturating_add(y);
+        if destination_y >= destination_height { continue; }
+        for source_x in 0..surface.width() {
+            let destination_x = destination_start_x.saturating_add(source_x);
+            if destination_x >= destination_width { continue; }
+            blend_lyrics_pixel(destination, destination_width, source, source_pitch,
+                source_x, y, destination_x, destination_y);
+        }
+    }
+    Ok(())
+}
+
+fn blend_lyrics_pixel(
+    destination: &mut [u8],
+    destination_width: u32,
+    source: &[u8],
+    source_pitch: usize,
+    source_x: u32,
+    source_y: u32,
+    destination_x: u32,
+    destination_y: u32,
+) {
+    let source_index = source_y as usize * source_pitch + source_x as usize * 4;
+    let destination_index =
+        ((destination_y as usize * destination_width as usize) + destination_x as usize) * 4;
+
+    let alpha = source[source_index + 3] as f32 / 255.0;
+    let inverse = 1.0 - alpha;
+    for channel in 0..3 {
+        destination[destination_index + channel] = (
+            source[source_index + channel] as f32 * alpha
+                + destination[destination_index + channel] as f32 * inverse
+        ).round().clamp(0.0, 255.0) as u8;
+    }
+    let destination_alpha = destination[destination_index + 3] as f32 / 255.0;
+    destination[destination_index + 3] =
+        ((alpha + destination_alpha * inverse) * 255.0)
+            .round().clamp(0.0, 255.0) as u8;
+}
+
+fn draw_solid_background(
+    pixels: &mut [u8],
+    width: u32,
+    height: u32,
+    rgba: [u8; 4],
+) {
+    for y in 0..height {
+        for x in 0..width {
+            let index = ((y * width + x) * 4) as usize;
+            if index + 3 >= pixels.len() { continue; }
+            pixels[index] = rgba[0];
+            pixels[index + 1] = rgba[1];
+            pixels[index + 2] = rgba[2];
+            pixels[index + 3] = rgba[3];
+        }
+    }
+}

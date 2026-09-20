@@ -19,6 +19,8 @@ pub enum Command {
 
     TestPlaylists,
 
+    TestLyrics,
+
     Control {
         shader_name: Option<String>,
     },
@@ -129,6 +131,20 @@ pub fn parse() -> Result<Command, String> {
 
             Ok(
                 Command::TestPlaylists
+            )
+        }
+
+
+        "--test-lyrics" => {
+
+            require_no_extra_arguments(
+                &args,
+                "--test-lyrics",
+            )?;
+
+
+            Ok(
+                Command::TestLyrics
             )
         }
 
@@ -445,6 +461,9 @@ pub fn print_help() {
          \n\
              --test-playlists\n\
                  Run developer Playlist database-management tests and exit.\n\
+         \n\
+             --test-lyrics\n\
+                 Discover MPRIS media players and report current playback metadata.\n\
          \n\
              --construct-lock-screen-kde\n\
                  Construct/install the KDE lock-screen integration.\n\

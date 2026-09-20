@@ -114,6 +114,7 @@ mod authenticate_user;
 
 mod manage_playlists;
 mod test_playlists;
+mod test_lyrics;
 
 mod import_data;
 mod export_data;
@@ -242,6 +243,30 @@ fn main() {
 
                     std::process::exit(
                         2
+                    );
+                }
+            }
+
+
+            return;
+        }
+
+
+        crate::parse_arguments::Command::TestLyrics => {
+
+            match crate::test_lyrics::run() {
+
+                Ok(()) => {}
+
+                Err(error) => {
+
+                    eprintln!(
+                        "[LYRICS TEST] FAILED: {}",
+                        error
+                    );
+
+                    std::process::exit(
+                        1
                     );
                 }
             }
@@ -950,6 +975,7 @@ fn main() {
         | crate::parse_arguments::Command::CompareDatabases { .. }
         | crate::parse_arguments::Command::Version
         | crate::parse_arguments::Command::TestPlaylists
+        | crate::parse_arguments::Command::TestLyrics
         | crate::parse_arguments::Command::ConstructLockScreenKde
         | crate::parse_arguments::Command::ConstructLockScreenXfce
         | crate::parse_arguments::Command::ResetIdleTimeout { .. } => {
