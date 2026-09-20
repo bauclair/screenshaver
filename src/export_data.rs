@@ -3503,7 +3503,17 @@ fn draw_results_page(
 
     match state.export_result.as_ref() {
         Some(Ok(result)) => {
-            ui.strong("Export completed successfully.");
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new("Export:")
+                        .strong()
+                );
+                ui.label(
+                    egui::RichText::new("PASSED")
+                        .color(egui::Color32::GREEN)
+                        .strong()
+                );
+            });
             ui.add_space(8.0);
             ui.label(
                 format!(
@@ -3523,7 +3533,17 @@ fn draw_results_page(
         }
 
         Some(Err(error)) => {
-            ui.strong("Export failed.");
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new("Export:")
+                        .strong()
+                );
+                ui.label(
+                    egui::RichText::new("FAILED")
+                        .color(egui::Color32::RED)
+                        .strong()
+                );
+            });
             ui.add_space(8.0);
             ui.label(error);
             ui.add_space(8.0);

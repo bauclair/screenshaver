@@ -117,6 +117,7 @@ mod test_playlists;
 
 mod import_data;
 mod export_data;
+mod compare_databases;
 
 use std::sync::Arc;
 use std::sync::atomic::{
@@ -198,6 +199,53 @@ fn main() {
         crate::parse_arguments::Command::Version => {
 
             crate::parse_arguments::print_version();
+
+            return;
+        }
+
+
+        crate::parse_arguments::Command::CompareDatabases {
+            database_a,
+            database_b,
+            exclude_metadata,
+            exclude_local_config,
+        } => {
+
+            match crate::compare_databases::compare(
+                database_a,
+                database_b,
+                *exclude_metadata,
+                *exclude_local_config,
+            ) {
+                Ok(summary) => {
+                    if summary.differences == 0 {
+                        println!(
+                            "No differences found."
+                        );
+                    } else {
+                        println!(
+                            "\nComparison complete: {} difference(s) found.",
+                            summary.differences,
+                        );
+
+                        std::process::exit(
+                            1
+                        );
+                    }
+                }
+
+                Err(error) => {
+                    eprintln!(
+                        "[DATABASE COMPARE] {}",
+                        error
+                    );
+
+                    std::process::exit(
+                        2
+                    );
+                }
+            }
+
 
             return;
         }
@@ -899,6 +947,7 @@ fn main() {
 
         crate::parse_arguments::Command::Stop
         | crate::parse_arguments::Command::Help
+        | crate::parse_arguments::Command::CompareDatabases { .. }
         | crate::parse_arguments::Command::Version
         | crate::parse_arguments::Command::TestPlaylists
         | crate::parse_arguments::Command::ConstructLockScreenKde

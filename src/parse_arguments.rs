@@ -10,6 +10,13 @@ pub enum Command {
 
     Version,
 
+    CompareDatabases {
+        database_a: String,
+        database_b: String,
+        exclude_metadata: bool,
+        exclude_local_config: bool,
+    },
+
     TestPlaylists,
 
     Control {
@@ -104,6 +111,14 @@ pub fn parse() -> Result<Command, String> {
         }
 
 
+        "--compare-databases" => {
+
+            parse_compare_databases(
+                &args[1..]
+            )
+        }
+
+
         "--test-playlists" => {
 
             require_no_extra_arguments(
@@ -179,6 +194,80 @@ pub fn parse() -> Result<Command, String> {
             )
         }
     }
+}
+
+
+fn parse_compare_databases(
+    args: &[String],
+) -> Result<Command, String> {
+
+    let mut exclude_metadata = false;
+    let mut exclude_local_config = false;
+    let mut database_paths = Vec::new();
+
+    for argument in args {
+        if argument == "--exclude-metadata" {
+            if exclude_metadata {
+                return Err(
+                    "--compare-databases accepts --exclude-metadata only once"
+                        .to_string()
+                );
+            }
+
+            exclude_metadata = true;
+            continue;
+        }
+
+        if argument == "--exclude-local-config" {
+            if exclude_local_config {
+                return Err(
+                    "--compare-databases accepts --exclude-local-config only once"
+                        .to_string()
+                );
+            }
+
+            exclude_local_config = true;
+            continue;
+        }
+
+        if argument.starts_with('-') {
+            return Err(
+                format!(
+                    "Unknown --compare-databases option: {}",
+                    argument
+                )
+            );
+        }
+
+        let value = argument.trim();
+
+        if value.is_empty() {
+            return Err(
+                "--compare-databases requires two valid database paths"
+                    .to_string()
+            );
+        }
+
+        database_paths.push(
+            value.to_string()
+        );
+    }
+
+    if database_paths.len() != 2 {
+        return Err(
+            "--compare-databases requires exactly two database paths, with optional --exclude-metadata and/or --exclude-local-config"
+                .to_string()
+        );
+    }
+
+    Ok(
+        Command::CompareDatabases {
+            database_a: database_paths[0].clone(),
+            database_b: database_paths[1].clone(),
+            exclude_metadata,
+            exclude_local_config,
+        }
+    )
 }
 
 
@@ -345,6 +434,12 @@ pub fn print_help() {
                  Reset the database-backed screensaver idle timeout and exit.\n\
                  Examples: 60s, 2m, 1h. When screen locking is enabled,\n\
                  values below 60 seconds are stored as 60 seconds.\n\
+         \n\
+             --compare-databases <DATABASE_A> <DATABASE_B> [--exclude-metadata] [--exclude-local-config]\n\
+                 Perform a comprehensive, read-only comparison of two Screenshaver databases.\n\
+                 --exclude-metadata compares portable semantic data without local IDs/timestamps.\n\
+                 --exclude-local-config omits runtime targets and application/target defaults.\n\
+                 The two exclusion options may be used independently or together.\n\
          \n\
          Temporary development/setup options:\n\
          \n\

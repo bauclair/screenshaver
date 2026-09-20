@@ -14,17 +14,15 @@ use rusqlite::OptionalExtension;
 enum ImportStage {
     SelectArchive,
     InspectArchive,
-    SelectContents,
     ResolveConflicts,
     Review,
     Results,
 }
 
 impl ImportStage {
-    const ALL: [Self; 6] = [
+    const ALL: [Self; 5] = [
         Self::SelectArchive,
         Self::InspectArchive,
-        Self::SelectContents,
         Self::ResolveConflicts,
         Self::Review,
         Self::Results,
@@ -34,7 +32,6 @@ impl ImportStage {
         match self {
             Self::SelectArchive => "Select Archive",
             Self::InspectArchive => "Inspect Archive",
-            Self::SelectContents => "Select Import Contents",
             Self::ResolveConflicts => "Resolve Conflicts",
             Self::Review => "Review & Confirm",
             Self::Results => "Results",
@@ -49,8 +46,11 @@ struct ImportWizardState {
     archive_path: String,
     inspection: Option<ArchiveInspection>,
     package: Option<ValidatedPackage>,
-    selection: ImportSelection,
     conflicts: Option<ConflictReport>,
+    proposed_plan: Option<ProposedImportPlan>,
+    import_result: Option<ImportExecutionResult>,
+    resolutions: BTreeMap<(String, u64), ConflictResolution>,
+    conflict_rename_stamp: Option<String>,
 }
 
 impl Default for ImportWizardState {
@@ -61,8 +61,11 @@ impl Default for ImportWizardState {
             archive_path: String::new(),
             inspection: None,
             package: None,
-            selection: ImportSelection::default(),
             conflicts: None,
+            proposed_plan: None,
+            import_result: None,
+            resolutions: BTreeMap::new(),
+            conflict_rename_stamp: None,
         }
     }
 }
@@ -84,9 +87,9 @@ impl ImportWizardState {
         match stage {
             ImportStage::SelectArchive => true,
             ImportStage::InspectArchive => self.archive_selected(),
-            ImportStage::SelectContents => self.inspection_passed() && self.package.is_some(),
             ImportStage::ResolveConflicts => self.conflicts.is_some(),
-            _ => false,
+            ImportStage::Review => self.proposed_plan.is_some() && self.conflicts.is_some(),
+            ImportStage::Results => self.import_result.is_some(),
         }
     }
 }
@@ -231,6 +234,7 @@ struct PackagePolicy {
 struct PackageShader {
     export_id: u64,
     filename: String,
+    archive_path: String,
     sha256: String,
 }
 
@@ -256,27 +260,6 @@ struct ValidatedPackage {
     memberships: Vec<PackageMembership>,
 }
 
-#[derive(Clone, Debug, Default)]
-struct ImportSelection {
-    policy_ids: BTreeSet<u64>,
-    shader_ids: BTreeSet<u64>,
-    playlist_ids: BTreeSet<u64>,
-}
-
-impl ImportSelection {
-    fn from_package(package: &ValidatedPackage) -> Self {
-        Self {
-            policy_ids: package.policies.iter().map(|item| item.export_id).collect(),
-            shader_ids: package.shaders.iter().map(|item| item.export_id).collect(),
-            playlist_ids: package.playlists.iter().map(|item| item.export_id).collect(),
-        }
-    }
-
-    fn selected_count(&self) -> usize {
-        self.policy_ids.len() + self.shader_ids.len() + self.playlist_ids.len()
-    }
-}
-
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ConflictKind {
@@ -296,9 +279,15 @@ impl ConflictKind {
 }
 
 #[derive(Clone, Debug)]
+struct ConflictResolution {
+    renamed_name: String,
+}
+
+#[derive(Clone, Debug)]
 struct ConflictItem {
     kind: ConflictKind,
     object_type: &'static str,
+    package_id: u64,
     name: String,
     detail: String,
 }
@@ -308,11 +297,89 @@ struct ConflictReport {
     items: Vec<ConflictItem>,
     shader_local_ids: BTreeMap<u64, i64>,
     policy_local_ids: BTreeMap<u64, i64>,
+    playlist_local_ids: BTreeMap<u64, i64>,
+    shader_kinds: BTreeMap<u64, ConflictKind>,
+    policy_kinds: BTreeMap<u64, ConflictKind>,
+    playlist_kinds: BTreeMap<u64, ConflictKind>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ProposedDestination {
+    Existing(i64),
+    New,
+    Unresolved,
+}
+
+impl ProposedDestination {
+    fn label(self, object_type: &str) -> String {
+        match self {
+            Self::Existing(id) => format!("Keep Existing {} ID {}", object_type, id),
+            Self::New => format!("Import new {}", object_type),
+            Self::Unresolved => "Unresolved conflict".to_string(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct ProposedPolicyPlan {
+    package_id: u64,
+    name: String,
+    destination: ProposedDestination,
+    shader_package_id: u64,
+    shader_destination: ProposedDestination,
+}
+
+#[derive(Clone, Debug)]
+struct ProposedPlaylistMember {
+    position: u64,
+    policy_package_id: u64,
+    policy_name: String,
+    policy_destination: ProposedDestination,
+}
+
+#[derive(Clone, Debug)]
+struct ProposedPlaylistPlan {
+    package_id: u64,
+    name: String,
+    destination: ProposedDestination,
+    members: Vec<ProposedPlaylistMember>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct ProposedImportPlan {
+    policies: Vec<ProposedPolicyPlan>,
+    playlists: Vec<ProposedPlaylistPlan>,
+    unresolved_dependencies: usize,
 }
 
 impl ConflictReport {
     fn count(&self, kind: ConflictKind) -> usize {
         self.items.iter().filter(|item| item.kind == kind).count()
+    }
+}
+
+#[derive(Clone, Debug)]
+struct ImportExecutionResult {
+    success: bool,
+    detail: String,
+    backup_path: Option<PathBuf>,
+    shaders_created: usize,
+    policies_created: usize,
+    playlists_created: usize,
+    memberships_created: usize,
+}
+
+impl ImportExecutionResult {
+    fn failure(detail: impl Into<String>, backup_path: Option<PathBuf>) -> Self {
+        Self {
+            success: false,
+            detail: detail.into(),
+            backup_path,
+            shaders_created: 0,
+            policies_created: 0,
+            playlists_created: 0,
+            memberships_created: 0,
+        }
     }
 }
 
@@ -342,8 +409,11 @@ pub fn set_archive(ctx: &egui::Context, archive: &Path) {
             state.archive_path = archive.to_string_lossy().into_owned();
             state.inspection = None;
             state.package = None;
-            state.selection = ImportSelection::default();
             state.conflicts = None;
+            state.proposed_plan = None;
+            state.import_result = None;
+            state.resolutions.clear();
+            state.conflict_rename_stamp = None;
             state.stage = ImportStage::SelectArchive;
             data.insert_temp(id, state);
         }
@@ -403,17 +473,14 @@ pub fn draw(
                             ImportStage::InspectArchive => {
                                 draw_inspection(ui, &state);
                             }
-                            ImportStage::SelectContents => {
-                                draw_select_contents(ui, &state);
-                            }
                             ImportStage::ResolveConflicts => {
-                                draw_conflict_report(ui, &state);
+                                draw_conflict_report(ui, &mut state);
                             }
                             ImportStage::Review => {
-                                placeholder(ui, "Review & Confirm");
+                                draw_review(ui, &state);
                             }
                             ImportStage::Results => {
-                                placeholder(ui, "Results");
+                                draw_results(ui, &state);
                             }
                         }
                     });
@@ -445,17 +512,18 @@ fn draw_stage_rail(ui: &mut egui::Ui, state: &mut ImportWizardState) {
                 if stage == ImportStage::InspectArchive && state.inspection.is_none() {
                     let (inspection, package) =
                         inspect_archive(Path::new(state.archive_path.trim()));
-                    if inspection.passed {
-                        if let Some(ref package) = package {
-                            state.selection = ImportSelection::from_package(package);
-                        }
-                    }
                     state.inspection = Some(inspection);
                     state.package = package;
                 }
                 if stage == ImportStage::ResolveConflicts && state.conflicts.is_none() {
                     if let Some(package) = state.package.as_ref() {
-                        state.conflicts = Some(discover_conflicts(package));
+                        let conflicts = discover_conflicts(package);
+                        state.conflict_rename_stamp = local_import_name_stamp().ok();
+                        state.resolutions = state.conflict_rename_stamp.as_deref()
+                            .map(|stamp| generate_automatic_conflict_resolutions(package, &conflicts, stamp))
+                            .unwrap_or_default();
+                        state.conflicts = Some(conflicts);
+                        refresh_resolved_plan(state);
                     }
                 }
                 state.stage = stage;
@@ -513,13 +581,25 @@ fn draw_inspection(ui: &mut egui::Ui, state: &ImportWizardState) {
         return;
     };
 
-    ui.label(
-        egui::RichText::new(format!(
-            "Archive Inspection: {}",
-            if result.passed { "PASSED" } else { "FAILED" }
-        ))
-        .strong(),
-    );
+    ui.horizontal(|ui| {
+        ui.label(
+            egui::RichText::new("Archive Inspection:")
+                .strong()
+        );
+        ui.label(
+            egui::RichText::new(
+                if result.passed { "PASSED" } else { "FAILED" }
+            )
+            .color(
+                if result.passed {
+                    egui::Color32::GREEN
+                } else {
+                    egui::Color32::RED
+                }
+            )
+            .strong()
+        );
+    });
 
     ui.add_space(8.0);
     egui::Grid::new("screenshaver_import_inspection_summary")
@@ -558,6 +638,13 @@ fn draw_inspection(ui: &mut egui::Ui, state: &ImportWizardState) {
                             ui.label(
                                 egui::RichText::new(
                                     if check.passed { "PASS" } else { "FAIL" }
+                                )
+                                .color(
+                                    if check.passed {
+                                        egui::Color32::GREEN
+                                    } else {
+                                        egui::Color32::RED
+                                    }
                                 )
                                 .strong()
                             );
@@ -608,89 +695,6 @@ fn summary(ui: &mut egui::Ui, label: &str, value: String) {
     ui.end_row();
 }
 
-fn draw_select_contents(ui: &mut egui::Ui, state: &ImportWizardState) {
-    ui.heading("Select Import Contents");
-    ui.add_space(8.0);
-
-    ui.label(
-        "The validated archive defines the import set. Required shaders, policies, playlists, \
-and playlist relationships are preserved as exported and cannot be independently deselected."
-    );
-
-    ui.add_space(10.0);
-
-    let Some(package) = state.package.as_ref() else {
-        ui.label("No validated package is available.");
-        return;
-    };
-
-    ui.label(
-        egui::RichText::new(format!(
-            "{} package objects selected automatically",
-            state.selection.selected_count()
-        ))
-        .strong()
-    );
-
-    ui.add_space(8.0);
-
-    egui::ScrollArea::vertical()
-        .id_source("screenshaver_import_select_contents_scroll")
-        .auto_shrink([false, false])
-        .max_height(ui.available_height().max(120.0))
-        .show(ui, |ui| {
-            content_section(ui, "Policies", package.policies.len());
-            for policy in &package.policies {
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(egui::RichText::new(&policy.name).strong());
-                    ui.label(format!(
-                        "[{}] — requires shader package ID {}",
-                        policy.target,
-                        policy.shader_export_id
-                    ));
-                });
-            }
-
-            ui.add_space(12.0);
-            content_section(ui, "Shaders", package.shaders.len());
-            for shader in &package.shaders {
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(egui::RichText::new(&shader.filename).strong());
-                    ui.label(format!("package ID {}", shader.export_id));
-                });
-            }
-
-            ui.add_space(12.0);
-            content_section(ui, "Playlists", package.playlists.len());
-            for playlist in &package.playlists {
-                let members = package.memberships.iter()
-                    .filter(|member| playlist.export_id == member.playlist_export_id)
-                    .count();
-
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(egui::RichText::new(&playlist.name).strong());
-                    ui.label(format!("{} members", members));
-                });
-
-                if !playlist.description.trim().is_empty() {
-                    ui.add(
-                        egui::Label::new(&playlist.description)
-                            .wrap()
-                    );
-                }
-            }
-        });
-
-    ui.add_space(6.0);
-    ui.label(
-        egui::RichText::new(
-            "This page is a read-only confirmation of the sender-defined package scope. \
-No Screenshaver data has been changed."
-        )
-        .weak()
-    );
-}
-
 fn content_section(ui: &mut egui::Ui, label: &str, count: usize) {
     ui.label(
         egui::RichText::new(format!("{} ({})", label, count))
@@ -700,22 +704,23 @@ fn content_section(ui: &mut egui::Ui, label: &str, count: usize) {
 }
 
 
-fn draw_conflict_report(ui: &mut egui::Ui, state: &ImportWizardState) {
+fn draw_conflict_report(ui: &mut egui::Ui, state: &mut ImportWizardState) {
     ui.heading("Resolve Conflicts");
     ui.add_space(8.0);
-    ui.label("Screenshaver compared the validated package with this installation. This checkpoint is read-only; no resolution choices are active yet.");
+    ui.label(
+        "Import is additive and non-destructive. Genuine name conflicts are resolved automatically by renaming the imported object; existing recipient objects are never modified or discarded."
+    );
     ui.add_space(10.0);
 
     let Some(report) = state.conflicts.as_ref() else {
         ui.label("Conflict discovery has not been run.");
         return;
     };
+    let items = report.items.clone();
 
     ui.label(egui::RichText::new(format!(
-        "{} new, {} reusable/identical, {} conflicts",
-        report.count(ConflictKind::New),
-        report.count(ConflictKind::Duplicate),
-        report.count(ConflictKind::Conflict),
+        "{} new, {} duplicates, {} conflicts",
+        report.count(ConflictKind::New), report.count(ConflictKind::Duplicate), report.count(ConflictKind::Conflict),
     )).strong());
     ui.add_space(8.0);
 
@@ -724,30 +729,197 @@ fn draw_conflict_report(ui: &mut egui::Ui, state: &ImportWizardState) {
         .auto_shrink([false, false])
         .max_height(ui.available_height().max(120.0))
         .show(ui, |ui| {
-            for item in &report.items {
-                ui.horizontal_top(|ui| {
-                    ui.allocate_ui_with_layout(
-                        egui::vec2(72.0, 20.0),
-                        egui::Layout::left_to_right(egui::Align::Min),
-                        |ui| { ui.label(egui::RichText::new(item.kind.label()).strong()); },
-                    );
-                    let width = ui.available_width().max(120.0);
-                    ui.allocate_ui_with_layout(
-                        egui::vec2(width, 0.0),
-                        egui::Layout::top_down(egui::Align::Min),
-                        |ui| {
+            for kind in [ConflictKind::Conflict, ConflictKind::Duplicate, ConflictKind::New] {
+                for item in items.iter().filter(|item| item.kind == kind) {
+                    ui.horizontal_top(|ui| {
+                        ui.allocate_ui_with_layout(egui::vec2(72.0, 20.0), egui::Layout::left_to_right(egui::Align::Min), |ui| {
+                            ui.label(egui::RichText::new(item.kind.label()).strong());
+                        });
+                        let width = ui.available_width().max(120.0);
+                        ui.allocate_ui_with_layout(egui::vec2(width, 0.0), egui::Layout::top_down(egui::Align::Min), |ui| {
                             ui.set_max_width(width);
                             ui.label(egui::RichText::new(format!("{}: {}", item.object_type, item.name)).strong());
                             ui.add(egui::Label::new(&item.detail).wrap());
-                        },
-                    );
-                });
-                ui.add_space(6.0);
+                            if item.kind == ConflictKind::Conflict {
+                                let key = (item.object_type.to_string(), item.package_id);
+                                if let Some(resolution) = state.resolutions.get(&key) {
+                                    ui.label(egui::RichText::new(format!(
+                                        "Automatic resolution: Rename → {}",
+                                        resolution.renamed_name
+                                    )).strong());
+                                } else {
+                                    ui.label(egui::RichText::new("Automatic rename could not be generated; Import is blocked.").strong());
+                                }
+                            }
+                        });
+                    });
+                    ui.add_space(8.0);
+                }
+            }
+
+            if let Some(plan) = state.proposed_plan.as_ref() {
+                ui.separator();
+                ui.add_space(8.0);
+                ui.label(egui::RichText::new("Proposed Dependency Plan").strong());
+                if plan.unresolved_dependencies == 0 && unresolved_conflict_count(state) == 0 {
+                    ui.label("All package objects and dependencies have deterministic destinations.");
+                } else {
+                    ui.label(format!(
+                        "{} conflict rename(s) could not be generated; {} dependency reference(s) remain unresolved.",
+                        unresolved_conflict_count(state), plan.unresolved_dependencies
+                    ));
+                }
             }
         });
 
     ui.add_space(6.0);
-    ui.label(egui::RichText::new("No database rows or shader files have been changed.").weak());
+    ui.label(egui::RichText::new(
+        "This report is read-only. No database rows or shader files have been changed."
+    ).weak());
+}
+
+fn unresolved_conflict_count(state: &ImportWizardState) -> usize {
+    state.conflicts.as_ref().map(|report| report.items.iter().filter(|item| {
+        item.kind == ConflictKind::Conflict
+            && !state.resolutions.contains_key(&(item.object_type.to_string(), item.package_id))
+    }).count()).unwrap_or(0)
+}
+
+fn local_import_name_stamp() -> Result<String, String> {
+    let connection = crate::open_database::open()?;
+    connection.query_row(
+        "SELECT strftime('%Y%m%d-%H%M', 'now', 'localtime')",
+        [],
+        |row| row.get::<_, String>(0),
+    ).map_err(|error| format!("Unable to determine local Import timestamp: {}", error))
+}
+
+fn generate_automatic_conflict_resolutions(
+    package: &ValidatedPackage,
+    report: &ConflictReport,
+    import_stamp: &str,
+) -> BTreeMap<(String, u64), ConflictResolution> {
+    let mut resolutions = BTreeMap::new();
+    for item in report.items.iter().filter(|item| item.kind == ConflictKind::Conflict) {
+        // A synthetic receiving-installation error is not a package object and
+        // therefore cannot be resolved by renaming.
+        if !matches!(item.object_type, "Shader" | "Policy" | "Playlist") {
+            continue;
+        }
+        if let Ok(name) = deterministic_import_name(package, &resolutions, item, import_stamp) {
+            resolutions.insert(
+                (item.object_type.to_string(), item.package_id),
+                ConflictResolution { renamed_name: name },
+            );
+        }
+    }
+    resolutions
+}
+
+fn deterministic_import_name(
+    package: &ValidatedPackage,
+    resolutions: &BTreeMap<(String,u64), ConflictResolution>,
+    item: &ConflictItem,
+    import_stamp: &str,
+) -> Result<String,String> {
+    let connection = crate::open_database::open()?;
+    let (stem, extension) = if item.object_type == "Shader" {
+        let path = Path::new(&item.name);
+        let ext = path.extension().and_then(|v| v.to_str()).map(|v| format!(".{}", v)).unwrap_or_default();
+        let stem = path.file_stem().and_then(|v| v.to_str()).unwrap_or(&item.name).to_string();
+        (stem, ext)
+    } else { (item.name.clone(), String::new()) };
+
+    for ordinal in 1..10000_u32 {
+        let suffix = if ordinal == 1 {
+            format!(" ({})", import_stamp)
+        } else {
+            format!(" ({} {})", import_stamp, ordinal)
+        };
+        let candidate_stem = if item.object_type == "Policy" || item.object_type == "Playlist" {
+            let max_stem_chars = 128_usize.saturating_sub(suffix.chars().count());
+            stem.chars().take(max_stem_chars).collect::<String>()
+        } else {
+            stem.clone()
+        };
+        let candidate = format!("{}{}{}", candidate_stem, suffix, extension);
+        let key = candidate.trim().to_lowercase();
+        let db_exists = match item.object_type {
+            "Policy" => connection.query_row("SELECT EXISTS(SELECT 1 FROM shader_policies WHERE policy_name_key=?1)", [&key], |r| r.get::<_,i64>(0)).unwrap_or(1) != 0,
+            "Playlist" => connection.query_row("SELECT EXISTS(SELECT 1 FROM playlists WHERE playlist_name_key=?1)", [&key], |r| r.get::<_,i64>(0)).unwrap_or(1) != 0,
+            "Shader" => {
+                let managed = crate::locate_paths::shader_dir().to_string_lossy().to_string();
+                connection.query_row("SELECT EXISTS(SELECT 1 FROM shaders WHERE source_path=?1 AND lower(filename)=?2)", rusqlite::params![managed, key], |r| r.get::<_,i64>(0)).unwrap_or(1) != 0
+                    || crate::locate_paths::shader_dir().join(&candidate).exists()
+            }
+            _ => true,
+        };
+        let package_exists = match item.object_type {
+            "Policy" => package.policies.iter().any(|v| v.export_id != item.package_id && v.name.trim().eq_ignore_ascii_case(&candidate)),
+            "Playlist" => package.playlists.iter().any(|v| v.export_id != item.package_id && v.name.trim().eq_ignore_ascii_case(&candidate)),
+            "Shader" => package.shaders.iter().any(|v| v.export_id != item.package_id && v.filename.eq_ignore_ascii_case(&candidate)),
+            _ => true,
+        };
+        let reserved = resolutions.values().any(|r| r.renamed_name.eq_ignore_ascii_case(&candidate));
+        if !db_exists && !package_exists && !reserved { return Ok(candidate); }
+    }
+    Err(format!("Unable to generate a unique imported name for '{}'.", item.name))
+}
+
+fn resolved_package_and_report(
+    package: &ValidatedPackage,
+    report: &ConflictReport,
+    resolutions: &BTreeMap<(String,u64), ConflictResolution>,
+) -> Result<(ValidatedPackage, ConflictReport), String> {
+    let mut package = package.clone();
+    let mut report = report.clone();
+    for item in report.items.clone().into_iter().filter(|i| i.kind == ConflictKind::Conflict) {
+        if !matches!(item.object_type, "Shader" | "Policy" | "Playlist") {
+            return Err(format!("{}: {}", item.name, item.detail));
+        }
+        let key = (item.object_type.to_string(), item.package_id);
+        let resolution = resolutions.get(&key)
+            .ok_or_else(|| format!("{} '{}' has no deterministic imported rename.", item.object_type, item.name))?;
+        let name = resolution.renamed_name.clone();
+        match item.object_type {
+            "Shader" => {
+                package.shaders.iter_mut().find(|v| v.export_id == item.package_id)
+                    .ok_or("Missing package shader.")?.filename = name;
+                report.shader_kinds.insert(item.package_id, ConflictKind::New);
+                report.shader_local_ids.remove(&item.package_id);
+            }
+            "Policy" => {
+                package.policies.iter_mut().find(|v| v.export_id == item.package_id)
+                    .ok_or("Missing package policy.")?.name = name;
+                report.policy_kinds.insert(item.package_id, ConflictKind::New);
+                report.policy_local_ids.remove(&item.package_id);
+            }
+            "Playlist" => {
+                package.playlists.iter_mut().find(|v| v.export_id == item.package_id)
+                    .ok_or("Missing package playlist.")?.name = name;
+                report.playlist_kinds.insert(item.package_id, ConflictKind::New);
+                report.playlist_local_ids.remove(&item.package_id);
+            }
+            _ => unreachable!(),
+        }
+    }
+    for item in &mut report.items {
+        if item.kind == ConflictKind::Conflict
+            && resolutions.contains_key(&(item.object_type.to_string(), item.package_id))
+        {
+            item.kind = ConflictKind::New;
+        }
+    }
+    Ok((package, report))
+}
+
+fn refresh_resolved_plan(state: &mut ImportWizardState) {
+    if let (Some(package), Some(report)) = (state.package.as_ref(), state.conflicts.as_ref()) {
+        state.proposed_plan = match resolved_package_and_report(package, report, &state.resolutions) {
+            Ok((resolved_package, resolved_report)) => Some(build_proposed_import_plan(&resolved_package, &resolved_report)),
+            Err(_) => Some(build_proposed_import_plan(package, report)),
+        };
+    }
 }
 
 #[derive(Debug)]
@@ -769,6 +941,7 @@ fn discover_conflicts(package: &ValidatedPackage) -> ConflictReport {
             items: vec![ConflictItem {
                 kind: ConflictKind::Conflict,
                 object_type: "Receiving installation",
+                package_id: 0,
                 name: "Conflict discovery unavailable".to_string(),
                 detail: error,
             }],
@@ -796,9 +969,11 @@ fn discover_conflicts_inner(package: &ValidatedPackage) -> Result<ConflictReport
 
         if let Some((local_id, local_name)) = matches.first() {
             report.shader_local_ids.insert(shader.export_id, *local_id);
+            report.shader_kinds.insert(shader.export_id, ConflictKind::Duplicate);
             report.items.push(ConflictItem {
                 kind: ConflictKind::Duplicate,
                 object_type: "Shader",
+                package_id: shader.export_id,
                 name: shader.filename.clone(),
                 detail: if local_name == &shader.filename {
                     "Identical shader content is already installed under the same filename.".into()
@@ -815,11 +990,14 @@ fn discover_conflicts_inner(package: &ValidatedPackage) -> Result<ConflictReport
             |row| Ok((row.get(0)?, row.get(1)?)),
         ).optional().map_err(|e| format!("Unable to check shader filename '{}': {}", shader.filename, e))?;
 
-        report.items.push(if same_name.is_some() {
-            ConflictItem { kind: ConflictKind::Conflict, object_type: "Shader", name: shader.filename.clone(),
+        let kind = if same_name.is_some() { ConflictKind::Conflict } else { ConflictKind::New };
+        if let Some((local_id, _)) = same_name { report.shader_local_ids.insert(shader.export_id, local_id); }
+        report.shader_kinds.insert(shader.export_id, kind);
+        report.items.push(if kind == ConflictKind::Conflict {
+            ConflictItem { kind, object_type: "Shader", package_id: shader.export_id, name: shader.filename.clone(),
                 detail: "The filename already exists in the managed shader inventory, but its content differs from the imported shader.".into() }
         } else {
-            ConflictItem { kind: ConflictKind::New, object_type: "Shader", name: shader.filename.clone(),
+            ConflictItem { kind, object_type: "Shader", package_id: shader.export_id, name: shader.filename.clone(),
                 detail: "No installed shader has this content or managed filename.".into() }
         });
     }
@@ -838,18 +1016,23 @@ fn discover_conflicts_inner(package: &ValidatedPackage) -> Result<ConflictReport
           .collect::<Result<Vec<_>,_>>().map_err(|e| format!("Unable to decode Policy Name lookup: {}", e))?;
 
         if rows.is_empty() {
-            report.items.push(ConflictItem { kind: ConflictKind::New, object_type:"Policy", name:policy.name.clone(), detail:format!("No {} policy with this Policy Name exists.", policy.target) });
+            report.policy_kinds.insert(policy.export_id, ConflictKind::New);
+            report.items.push(ConflictItem { kind: ConflictKind::New, object_type:"Policy", package_id: policy.export_id, name:policy.name.clone(), detail:format!("No {} policy with this Policy Name exists.", policy.target) });
         } else if rows.len() == 1 {
             let local = &rows[0];
             let expected_shader = report.shader_local_ids.get(&policy.shader_export_id).copied();
             if expected_shader == Some(local.shader_id) && policy_values_match(policy, local)? {
                 report.policy_local_ids.insert(policy.export_id, local.policy_id);
-                report.items.push(ConflictItem { kind:ConflictKind::Duplicate, object_type:"Policy", name:policy.name.clone(), detail:"An existing policy has the same target, shader content, and rendering configuration.".into() });
+                report.policy_kinds.insert(policy.export_id, ConflictKind::Duplicate);
+                report.items.push(ConflictItem { kind:ConflictKind::Duplicate, object_type:"Policy", package_id: policy.export_id, name:policy.name.clone(), detail:"An existing policy has the same target, shader content, and rendering configuration.".into() });
             } else {
-                report.items.push(ConflictItem { kind:ConflictKind::Conflict, object_type:"Policy", name:policy.name.clone(), detail:"The Policy Name already exists for this target, but its shader or rendering configuration differs.".into() });
+                report.policy_local_ids.insert(policy.export_id, local.policy_id);
+                report.policy_kinds.insert(policy.export_id, ConflictKind::Conflict);
+                report.items.push(ConflictItem { kind:ConflictKind::Conflict, object_type:"Policy", package_id: policy.export_id, name:policy.name.clone(), detail:"The Policy Name already exists for this target, but its shader or rendering configuration differs.".into() });
             }
         } else {
-            report.items.push(ConflictItem { kind:ConflictKind::Conflict, object_type:"Policy", name:policy.name.clone(), detail:"More than one receiving policy unexpectedly matches this Policy Name and target.".into() });
+            report.policy_kinds.insert(policy.export_id, ConflictKind::Conflict);
+            report.items.push(ConflictItem { kind:ConflictKind::Conflict, object_type:"Policy", package_id: policy.export_id, name:policy.name.clone(), detail:"More than one receiving policy unexpectedly matches this Policy Name and target.".into() });
         }
     }
 
@@ -862,7 +1045,8 @@ fn discover_conflicts_inner(package: &ValidatedPackage) -> Result<ConflictReport
             [key], |r| Ok((r.get(0)?, r.get(1)?))
         ).optional().map_err(|e| format!("Unable to query playlist '{}': {}", playlist.name, e))?;
         let Some((playlist_id, local_description)) = found else {
-            report.items.push(ConflictItem { kind:ConflictKind::New, object_type:"Playlist", name:playlist.name.clone(), detail:"No receiving playlist has this name.".into() });
+            report.playlist_kinds.insert(playlist.export_id, ConflictKind::New);
+            report.items.push(ConflictItem { kind:ConflictKind::New, object_type:"Playlist", package_id: playlist.export_id, name:playlist.name.clone(), detail:"No receiving playlist has this name.".into() });
             continue;
         };
 
@@ -878,13 +1062,100 @@ fn discover_conflicts_inner(package: &ValidatedPackage) -> Result<ConflictReport
         let local_description_trimmed = local_description.as_deref().map(str::trim).filter(|v| !v.is_empty());
 
         if all_resolved && expected_members == local_members && imported_description == local_description_trimmed {
-            report.items.push(ConflictItem { kind:ConflictKind::Duplicate, object_type:"Playlist", name:playlist.name.clone(), detail:"An existing playlist has the same description and resolved policy membership in the same canonical order.".into() });
+            report.playlist_local_ids.insert(playlist.export_id, playlist_id);
+            report.playlist_kinds.insert(playlist.export_id, ConflictKind::Duplicate);
+            report.items.push(ConflictItem { kind:ConflictKind::Duplicate, object_type:"Playlist", package_id: playlist.export_id, name:playlist.name.clone(), detail:"An existing playlist has the same description and resolved policy membership in the same canonical order.".into() });
         } else {
-            report.items.push(ConflictItem { kind:ConflictKind::Conflict, object_type:"Playlist", name:playlist.name.clone(), detail:"The playlist name already exists, but its description or resolved membership differs.".into() });
+            report.playlist_local_ids.insert(playlist.export_id, playlist_id);
+            report.playlist_kinds.insert(playlist.export_id, ConflictKind::Conflict);
+            report.items.push(ConflictItem { kind:ConflictKind::Conflict, object_type:"Playlist", package_id: playlist.export_id, name:playlist.name.clone(), detail:"The playlist name already exists, but its description or resolved membership differs.".into() });
         }
     }
 
     Ok(report)
+}
+
+fn proposed_destination(
+    package_id: u64,
+    kinds: &BTreeMap<u64, ConflictKind>,
+    local_ids: &BTreeMap<u64, i64>,
+) -> ProposedDestination {
+    match kinds.get(&package_id).copied() {
+        Some(ConflictKind::Duplicate) => local_ids.get(&package_id)
+            .copied()
+            .map(ProposedDestination::Existing)
+            .unwrap_or(ProposedDestination::Unresolved),
+        Some(ConflictKind::New) => ProposedDestination::New,
+        Some(ConflictKind::Conflict) | None => ProposedDestination::Unresolved,
+    }
+}
+
+fn build_proposed_import_plan(
+    package: &ValidatedPackage,
+    conflicts: &ConflictReport,
+) -> ProposedImportPlan {
+    let mut plan = ProposedImportPlan::default();
+
+    for policy in &package.policies {
+        let destination = proposed_destination(
+            policy.export_id,
+            &conflicts.policy_kinds,
+            &conflicts.policy_local_ids,
+        );
+        let shader_destination = proposed_destination(
+            policy.shader_export_id,
+            &conflicts.shader_kinds,
+            &conflicts.shader_local_ids,
+        );
+        if shader_destination == ProposedDestination::Unresolved {
+            plan.unresolved_dependencies += 1;
+        }
+        plan.policies.push(ProposedPolicyPlan {
+            package_id: policy.export_id,
+            name: policy.name.clone(),
+            destination,
+            shader_package_id: policy.shader_export_id,
+            shader_destination,
+        });
+    }
+
+    for playlist in &package.playlists {
+        let destination = proposed_destination(
+            playlist.export_id,
+            &conflicts.playlist_kinds,
+            &conflicts.playlist_local_ids,
+        );
+        let mut members = Vec::new();
+        for membership in package.memberships.iter()
+            .filter(|member| member.playlist_export_id == playlist.export_id)
+        {
+            let policy = package.policies.iter()
+                .find(|policy| policy.export_id == membership.policy_export_id);
+            let policy_destination = proposed_destination(
+                membership.policy_export_id,
+                &conflicts.policy_kinds,
+                &conflicts.policy_local_ids,
+            );
+            if policy_destination == ProposedDestination::Unresolved {
+                plan.unresolved_dependencies += 1;
+            }
+            members.push(ProposedPlaylistMember {
+                position: membership.position,
+                policy_package_id: membership.policy_export_id,
+                policy_name: policy.map(|policy| policy.name.clone())
+                    .unwrap_or_else(|| format!("Policy {}", membership.policy_export_id)),
+                policy_destination,
+            });
+        }
+        plan.playlists.push(ProposedPlaylistPlan {
+            package_id: playlist.export_id,
+            name: playlist.name.clone(),
+            destination,
+            members,
+        });
+    }
+
+    plan
 }
 
 fn policy_values_match(policy: &PackagePolicy, local: &LocalPolicyValues) -> Result<bool, String> {
@@ -969,27 +1240,113 @@ fn policy_values_match(policy: &PackagePolicy, local: &LocalPolicyValues) -> Res
         && close(local.hue_rotation, f64v("hue_rotation")?))
 }
 
-fn placeholder(ui: &mut egui::Ui, heading: &str) {
-    ui.heading(heading);
+fn draw_review(ui: &mut egui::Ui, state: &ImportWizardState) {
+    ui.heading("Review & Confirm");
     ui.add_space(8.0);
-    ui.label(egui::RichText::new("This stage is not active yet.").weak());
+    ui.label("Screenshaver is ready to apply the validated, dependency-resolved package to this installation.");
+    ui.add_space(10.0);
+
+    let Some(package) = state.package.as_ref() else {
+        ui.label("No validated package is available.");
+        return;
+    };
+    let Some(conflicts) = state.conflicts.as_ref() else {
+        ui.label("Conflict discovery is unavailable.");
+        return;
+    };
+
+    let (resolved_package, resolved_conflicts) = match resolved_package_and_report(package, conflicts, &state.resolutions) {
+        Ok(value) => value,
+        Err(_) => (package.clone(), conflicts.clone()),
+    };
+    let unresolved_dependencies = state.proposed_plan.as_ref()
+        .map(|plan| plan.unresolved_dependencies)
+        .unwrap_or(0);
+    let conflict_count = unresolved_conflict_count(state);
+    let conflicts = &resolved_conflicts;
+    let package = &resolved_package;
+    if conflict_count != 0 || unresolved_dependencies != 0 {
+        ui.label(egui::RichText::new(format!(
+            "Import is blocked: {} conflict(s), {} unresolved dependency reference(s).",
+            conflict_count, unresolved_dependencies
+        )).strong());
+        ui.label(
+            "Review is available for inspection, but Import will remain disabled if any deterministic rename or dependency destination cannot be generated."
+        );
+        ui.add_space(10.0);
+    }
+
+    let new_shaders = conflicts.shader_kinds.values().filter(|&&kind| kind == ConflictKind::New).count();
+    let duplicate_shaders = conflicts.shader_kinds.values().filter(|&&kind| kind == ConflictKind::Duplicate).count();
+    let new_policies = conflicts.policy_kinds.values().filter(|&&kind| kind == ConflictKind::New).count();
+    let duplicate_policies = conflicts.policy_kinds.values().filter(|&&kind| kind == ConflictKind::Duplicate).count();
+    let new_playlists = conflicts.playlist_kinds.values().filter(|&&kind| kind == ConflictKind::New).count();
+    let duplicate_playlists = conflicts.playlist_kinds.values().filter(|&&kind| kind == ConflictKind::Duplicate).count();
+
+    egui::Grid::new("screenshaver_import_review_summary")
+        .num_columns(2)
+        .spacing(egui::vec2(12.0, 4.0))
+        .show(ui, |ui| {
+            summary(ui, "Shaders:", format!("{} import, {} identical already present", new_shaders, duplicate_shaders));
+            summary(ui, "Policies:", format!("{} import, {} identical already present", new_policies, duplicate_policies));
+            summary(ui, "Playlists:", format!("{} import, {} identical already present", new_playlists, duplicate_playlists));
+            summary(ui, "Playlist memberships:", package.memberships.len().to_string());
+        });
+
+    ui.add_space(12.0);
+    ui.label(egui::RichText::new("Before Import").strong());
+    ui.label("Screenshaver will create and verify a permanent timestamped backup of screenshaver.db before making persistent changes.");
+    ui.add_space(8.0);
+    ui.label(egui::RichText::new("Import behavior").strong());
+    ui.label("New and automatically renamed shader files will be installed in the managed shader folder, policies will be restored with their exported rendering settings, and playlists will be reconstructed in canonical order. Existing recipient objects are never modified. Truly identical duplicate objects are reused by imported dependencies.");
+    ui.add_space(8.0);
+    ui.label(egui::RichText::new("screenshaver.toml will not be changed.").strong());
+}
+
+fn draw_results(ui: &mut egui::Ui, state: &ImportWizardState) {
+    ui.heading("Results");
+    ui.add_space(8.0);
+    let Some(result) = state.import_result.as_ref() else {
+        ui.label("No Import result is available.");
+        return;
+    };
+    ui.label(egui::RichText::new(if result.success { "Import completed successfully." } else { "Import failed." }).strong());
+    ui.add_space(10.0);
+    if result.success {
+        egui::Grid::new("screenshaver_import_results_summary")
+            .num_columns(2)
+            .spacing(egui::vec2(12.0, 4.0))
+            .show(ui, |ui| {
+                summary(ui, "Shaders created:", result.shaders_created.to_string());
+                summary(ui, "Policies created:", result.policies_created.to_string());
+                summary(ui, "Playlists created:", result.playlists_created.to_string());
+                summary(ui, "Memberships created:", result.memberships_created.to_string());
+            });
+    }
+    ui.add_space(10.0);
+    ui.add(egui::Label::new(&result.detail).wrap());
+    if let Some(path) = result.backup_path.as_ref() {
+        ui.add_space(8.0);
+        ui.label(egui::RichText::new("Pre-Import database backup:").strong());
+        ui.add(egui::Label::new(path.display().to_string()).wrap());
+    }
 }
 
 fn draw_navigation(ui: &mut egui::Ui, state: &mut ImportWizardState) {
     ui.horizontal(|ui| {
         if ui.add_enabled(
-            matches!(state.stage, ImportStage::InspectArchive | ImportStage::SelectContents | ImportStage::ResolveConflicts),
+            matches!(state.stage, ImportStage::InspectArchive | ImportStage::ResolveConflicts | ImportStage::Review),
             egui::Button::new("< Back"),
         ).clicked() {
             state.stage = match state.stage {
-                ImportStage::ResolveConflicts => ImportStage::SelectContents,
-                ImportStage::SelectContents => ImportStage::InspectArchive,
+                ImportStage::Review => ImportStage::ResolveConflicts,
+                ImportStage::ResolveConflicts => ImportStage::InspectArchive,
                 _ => ImportStage::SelectArchive,
             };
         }
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.button("Cancel").clicked() {
+            if ui.button(if state.stage == ImportStage::Results { "Close" } else { "Cancel" }).clicked() {
                 state.open = false;
             }
 
@@ -997,38 +1354,410 @@ fn draw_navigation(ui: &mut egui::Ui, state: &mut ImportWizardState) {
             let next_enabled = match state.stage {
                 ImportStage::SelectArchive => state.archive_selected(),
                 ImportStage::InspectArchive => state.inspection_passed() && state.package.is_some(),
-                ImportStage::SelectContents => state.package.is_some(),
-                _ => false,
+                // Review remains available even when conflicts exist so the user can
+                // inspect the complete proposed operation. Persistent Import itself is
+                // blocked until every conflict/dependency is resolved.
+                ImportStage::ResolveConflicts => state.proposed_plan.as_ref().map(|p| p.unresolved_dependencies == 0).unwrap_or(false) && unresolved_conflict_count(state) == 0,
+                // Review may invoke Import whenever a validated package, conflict report,
+                // and proposed dependency plan are present. execute_clean_import() performs
+                // the authoritative inspection/conflict/dependency checks again immediately
+                // before any backup or persistent change, and refuses execution if anything
+                // is unresolved. This avoids a stale UI-derived gate disabling an otherwise
+                // valid clean Import while preserving the execution safety boundary.
+                ImportStage::Review => state.package.is_some()
+                    && state.conflicts.is_some()
+                    && state.proposed_plan.as_ref().map(|p| p.unresolved_dependencies == 0).unwrap_or(false)
+                    && unresolved_conflict_count(state) == 0,
+                ImportStage::Results => false,
             };
+            let button_text = if state.stage == ImportStage::Review { "Import" } else { "Next >" };
 
-            if ui.add_enabled(next_enabled, egui::Button::new("Next >")).clicked() {
+            if ui.add_enabled(next_enabled, egui::Button::new(button_text)).clicked() {
                 match state.stage {
                     ImportStage::SelectArchive => {
-                        let (inspection, package) =
-                            inspect_archive(Path::new(state.archive_path.trim()));
-                        if inspection.passed {
-                            if let Some(ref package) = package {
-                                state.selection = ImportSelection::from_package(package);
-                            }
-                        }
+                        let (inspection, package) = inspect_archive(Path::new(state.archive_path.trim()));
                         state.inspection = Some(inspection);
                         state.package = package;
                         state.stage = ImportStage::InspectArchive;
                     }
                     ImportStage::InspectArchive => {
-                        state.stage = ImportStage::SelectContents;
-                    }
-                    ImportStage::SelectContents => {
                         if let Some(package) = state.package.as_ref() {
-                            state.conflicts = Some(discover_conflicts(package));
+                            let conflicts = discover_conflicts(package);
+                            state.conflict_rename_stamp = local_import_name_stamp().ok();
+                            state.resolutions = state.conflict_rename_stamp.as_deref()
+                                .map(|stamp| generate_automatic_conflict_resolutions(package, &conflicts, stamp))
+                                .unwrap_or_default();
+                            state.conflicts = Some(conflicts);
+                            refresh_resolved_plan(state);
                             state.stage = ImportStage::ResolveConflicts;
                         }
                     }
-                    _ => {}
+                    ImportStage::ResolveConflicts => state.stage = ImportStage::Review,
+                    ImportStage::Review => {
+                        state.import_result = Some(execute_clean_import(Path::new(state.archive_path.trim()), &state.resolutions, state.conflict_rename_stamp.as_deref()));
+                        state.stage = ImportStage::Results;
+                    }
+                    ImportStage::Results => {}
                 }
             }
         });
     });
+}
+
+fn execute_clean_import(
+    archive_path: &Path,
+    resolutions: &BTreeMap<(String,u64), ConflictResolution>,
+    conflict_rename_stamp: Option<&str>,
+) -> ImportExecutionResult {
+    // Re-inspect immediately before execution so an archive changed after the
+    // Review page cannot be imported using stale validation results.
+    let (inspection, package) = inspect_archive(archive_path);
+    if !inspection.passed {
+        return ImportExecutionResult::failure(
+            "The archive no longer passes inspection. No Import changes were made.",
+            None,
+        );
+    }
+    let Some(package) = package else {
+        return ImportExecutionResult::failure("Validated package is unavailable.", None);
+    };
+
+    let discovered = discover_conflicts(&package);
+    let has_conflicts = discovered.items.iter().any(|item| item.kind == ConflictKind::Conflict);
+    let rename_stamp = match (has_conflicts, conflict_rename_stamp) {
+        (true, Some(stamp)) => stamp,
+        (true, None) => return ImportExecutionResult::failure(
+            "The Import conflict timestamp is unavailable. No Import changes were made.",
+            None,
+        ),
+        (false, _) => "",
+    };
+    let refreshed_resolutions = generate_automatic_conflict_resolutions(&package, &discovered, rename_stamp);
+    for (key, resolution) in resolutions {
+        match refreshed_resolutions.get(key) {
+            Some(refreshed) if refreshed.renamed_name == resolution.renamed_name => {}
+            Some(refreshed) => return ImportExecutionResult::failure(
+                format!("The receiving installation changed after Review: '{}' is no longer the deterministic destination name (now '{}'). No Import changes were made.", resolution.renamed_name, refreshed.renamed_name),
+                None,
+            ),
+            None => return ImportExecutionResult::failure(
+                "The receiving installation changed after Review and the conflict set is no longer the same. No Import changes were made.",
+                None,
+            ),
+        }
+    }
+    if refreshed_resolutions.len() != resolutions.len() {
+        return ImportExecutionResult::failure(
+            "The receiving installation changed after Review and new conflicts were discovered. No Import changes were made.",
+            None,
+        );
+    }
+    let (package, conflicts) = match resolved_package_and_report(&package, &discovered, &refreshed_resolutions) {
+        Ok(value) => value,
+        Err(error) => return ImportExecutionResult::failure(format!("Import conflict resolution is incomplete or stale: {} No Import changes were made.", error), None),
+    };
+    let conflict_items = conflicts.items.iter()
+        .filter(|item| item.kind == ConflictKind::Conflict)
+        .map(|item| format!("{} '{}': {}", item.object_type, item.name, item.detail))
+        .collect::<Vec<_>>();
+    if !conflict_items.is_empty() {
+        return ImportExecutionResult::failure(
+            format!(
+                "Execution-time conflict discovery found {} unresolved conflict(s):\n\n{}\n\nNo Import changes were made.",
+                conflict_items.len(),
+                conflict_items.join("\n")
+            ),
+            None,
+        );
+    }
+    let plan = build_proposed_import_plan(&package, &conflicts);
+    if plan.unresolved_dependencies != 0 {
+        let mut unresolved = Vec::new();
+        for policy in &plan.policies {
+            if policy.destination == ProposedDestination::Unresolved {
+                unresolved.push(format!("Policy '{}' (package ID {}) has an unresolved destination.", policy.name, policy.package_id));
+            }
+            if policy.shader_destination == ProposedDestination::Unresolved {
+                unresolved.push(format!(
+                    "Policy '{}' (package ID {}) requires unresolved shader package ID {}.",
+                    policy.name, policy.package_id, policy.shader_package_id
+                ));
+            }
+        }
+        for playlist in &plan.playlists {
+            if playlist.destination == ProposedDestination::Unresolved {
+                unresolved.push(format!("Playlist '{}' (package ID {}) has an unresolved destination.", playlist.name, playlist.package_id));
+            }
+            for member in &playlist.members {
+                if member.policy_destination == ProposedDestination::Unresolved {
+                    unresolved.push(format!(
+                        "Playlist '{}' member {} '{}' requires unresolved policy package ID {}.",
+                        playlist.name, member.position, member.policy_name, member.policy_package_id
+                    ));
+                }
+            }
+        }
+        return ImportExecutionResult::failure(
+            format!(
+                "Execution-time dependency validation found {} unresolved dependency reference(s):\n\n{}\n\nNo Import changes were made.",
+                plan.unresolved_dependencies,
+                unresolved.join("\n")
+            ),
+            None,
+        );
+    }
+
+    let database_path = crate::locate_paths::database_path();
+    let backup_path = match create_verified_database_backup(&database_path) {
+        Ok(path) => path,
+        Err(error) => return ImportExecutionResult::failure(error, None),
+    };
+
+    match execute_clean_import_after_backup(archive_path, &package, &conflicts) {
+        Ok(mut result) => {
+            result.backup_path = Some(backup_path);
+            result
+        }
+        Err(error) => {
+            let restore = restore_database_backup(&database_path, &backup_path);
+            let detail = match restore {
+                Ok(()) => format!("{} The pre-Import database was restored. Newly installed shader files were removed where possible.", error),
+                Err(restore_error) => format!("{} DATABASE RESTORE ALSO FAILED: {}. The verified backup remains at '{}'.", error, restore_error, backup_path.display()),
+            };
+            ImportExecutionResult::failure(detail, Some(backup_path))
+        }
+    }
+}
+
+fn create_verified_database_backup(database_path: &Path) -> Result<PathBuf, String> {
+    let connection = crate::open_database::open()?;
+    let stamp: String = connection.query_row(
+        "SELECT strftime('%Y%m%d-%H%M%S', 'now', 'localtime')",
+        [],
+        |row| row.get(0),
+    ).map_err(|error| format!("Unable to determine pre-Import backup timestamp: {}", error))?;
+
+    let base_name = database_path.file_name().and_then(|value| value.to_str()).unwrap_or("screenshaver.db");
+    let parent = database_path.parent().unwrap_or_else(|| Path::new("."));
+    let mut ordinal = 1_u32;
+    let backup_path = loop {
+        let suffix = if ordinal == 1 { String::new() } else { format!("({})", ordinal) };
+        let candidate = parent.join(format!("{}.{}{}", base_name, stamp, suffix));
+        if !candidate.exists() { break candidate; }
+        ordinal += 1;
+    };
+
+    // VACUUM INTO is SQLite's consistent snapshot operation. The destination is
+    // generated locally rather than from archive data; quote it defensively.
+    let quoted = backup_path.to_string_lossy().replace('\'', "''");
+    connection.execute_batch(&format!("VACUUM INTO '{}';", quoted))
+        .map_err(|error| format!("Unable to create pre-Import database backup '{}': {}", backup_path.display(), error))?;
+    drop(connection);
+
+    let verify = rusqlite::Connection::open_with_flags(
+        &backup_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    ).map_err(|error| format!("Unable to open pre-Import database backup for verification: {}", error))?;
+    let integrity: String = verify.query_row("PRAGMA integrity_check", [], |row| row.get(0))
+        .map_err(|error| format!("Unable to verify pre-Import database backup: {}", error))?;
+    if integrity != "ok" {
+        return Err(format!("Pre-Import database backup failed integrity verification: {}", integrity));
+    }
+    Ok(backup_path)
+}
+
+fn restore_database_backup(database_path: &Path, backup_path: &Path) -> Result<(), String> {
+    std::fs::copy(backup_path, database_path)
+        .map_err(|error| format!("Unable to restore '{}' from '{}': {}", database_path.display(), backup_path.display(), error))?;
+    let verify = rusqlite::Connection::open_with_flags(database_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|error| format!("Unable to open restored database: {}", error))?;
+    let integrity: String = verify.query_row("PRAGMA integrity_check", [], |row| row.get(0))
+        .map_err(|error| format!("Unable to verify restored database: {}", error))?;
+    if integrity == "ok" { Ok(()) } else { Err(format!("Restored database integrity_check returned '{}'.", integrity)) }
+}
+
+fn execute_clean_import_after_backup(
+    archive_path: &Path,
+    package: &ValidatedPackage,
+    conflicts: &ConflictReport,
+) -> Result<ImportExecutionResult, String> {
+    let shader_dir = crate::locate_paths::shader_dir();
+    std::fs::create_dir_all(&shader_dir)
+        .map_err(|error| format!("Unable to create managed shader directory '{}': {}", shader_dir.display(), error))?;
+
+    let mut created_files = Vec::<PathBuf>::new();
+    let operation = (|| -> Result<ImportExecutionResult, String> {
+        let file = std::fs::File::open(archive_path)
+            .map_err(|error| format!("Unable to reopen Import archive: {}", error))?;
+        let mut zip = zip::ZipArchive::new(file)
+            .map_err(|error| format!("Unable to reopen Import ZIP: {}", error))?;
+
+        for shader in package.shaders.iter().filter(|shader| conflicts.shader_kinds.get(&shader.export_id) == Some(&ConflictKind::New)) {
+            let destination = shader_dir.join(&shader.filename);
+            if destination.exists() {
+                return Err(format!("Refusing to overwrite unexpected existing shader file '{}'.", destination.display()));
+            }
+            let mut entry = zip.by_name(&shader.archive_path)
+                .map_err(|error| format!("Unable to read shader payload '{}': {}", shader.archive_path, error))?;
+            let mut bytes = Vec::new();
+            entry.read_to_end(&mut bytes)
+                .map_err(|error| format!("Unable to read shader payload '{}': {}", shader.archive_path, error))?;
+            if sha256_hex(&bytes) != shader.sha256 {
+                return Err(format!("Shader '{}' changed after inspection; SHA-256 no longer matches.", shader.filename));
+            }
+            std::fs::write(&destination, &bytes)
+                .map_err(|error| format!("Unable to install shader '{}': {}", destination.display(), error))?;
+            created_files.push(destination);
+        }
+        drop(zip);
+
+        let mut connection = crate::open_database::open()?;
+        crate::reconcile_shaders::reconcile(&mut connection)
+            .map_err(|error| format!("Unable to reconcile imported shader files: {}", error))?;
+
+        let managed_source = shader_dir.to_string_lossy().to_string();
+        let mut shader_map = conflicts.shader_local_ids.clone();
+        for shader in package.shaders.iter().filter(|shader| conflicts.shader_kinds.get(&shader.export_id) == Some(&ConflictKind::New)) {
+            let local_id: i64 = connection.query_row(
+                "SELECT shader_id FROM shaders WHERE source_path = ?1 AND filename = ?2 AND source_hash = ?3 ORDER BY shader_id LIMIT 1",
+                rusqlite::params![&managed_source, &shader.filename, &shader.sha256],
+                |row| row.get(0),
+            ).map_err(|error| format!("Imported shader '{}' was not registered as expected: {}", shader.filename, error))?;
+            shader_map.insert(shader.export_id, local_id);
+        }
+
+        let transaction = connection.transaction()
+            .map_err(|error| format!("Unable to begin Import database transaction: {}", error))?;
+        let mut policy_map = conflicts.policy_local_ids.clone();
+        let mut policies_created = 0_usize;
+
+        for policy in package.policies.iter().filter(|policy| conflicts.policy_kinds.get(&policy.export_id) == Some(&ConflictKind::New)) {
+            let shader_id = shader_map.get(&policy.shader_export_id).copied()
+                .ok_or_else(|| format!("Policy '{}' has no resolved destination shader.", policy.name))?;
+            let policy_id = insert_imported_policy(&transaction, policy, shader_id)?;
+            policy_map.insert(policy.export_id, policy_id);
+            policies_created += 1;
+        }
+
+        let mut playlist_map = conflicts.playlist_local_ids.clone();
+        let mut playlists_created = 0_usize;
+        for playlist in package.playlists.iter().filter(|playlist| conflicts.playlist_kinds.get(&playlist.export_id) == Some(&ConflictKind::New)) {
+            let name = playlist.name.trim();
+            let key = import_name_key(name)?;
+            let description = if playlist.description.trim().is_empty() { None } else { Some(playlist.description.trim()) };
+            transaction.execute(
+                "INSERT INTO playlists (playlist_created_at, playlist_modified_at, playlist_name, playlist_name_key, description) VALUES (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?1, ?2, ?3)",
+                rusqlite::params![name, key, description],
+            ).map_err(|error| format!("Unable to import playlist '{}': {}", playlist.name, error))?;
+            playlist_map.insert(playlist.export_id, transaction.last_insert_rowid());
+            playlists_created += 1;
+        }
+
+        let mut memberships_created = 0_usize;
+        for membership in &package.memberships {
+            let playlist_kind = conflicts.playlist_kinds.get(&membership.playlist_export_id).copied();
+            if playlist_kind != Some(ConflictKind::New) {
+                // A duplicate playlist already contains the identical canonical
+                // membership set and therefore needs no database mutation.
+                continue;
+            }
+            let playlist_id = playlist_map.get(&membership.playlist_export_id).copied()
+                .ok_or_else(|| format!("Playlist package ID {} has no destination mapping.", membership.playlist_export_id))?;
+            let policy_id = policy_map.get(&membership.policy_export_id).copied()
+                .ok_or_else(|| format!("Policy package ID {} has no destination mapping for playlist membership.", membership.policy_export_id))?;
+            transaction.execute(
+                "INSERT INTO playlist_members (playlist_id, policy_id, position) VALUES (?1, ?2, ?3)",
+                rusqlite::params![playlist_id, policy_id, membership.position as i64],
+            ).map_err(|error| format!("Unable to restore playlist membership at position {}: {}", membership.position, error))?;
+            memberships_created += 1;
+        }
+
+        transaction.commit().map_err(|error| format!("Unable to commit Import database transaction: {}", error))?;
+
+        Ok(ImportExecutionResult {
+            success: true,
+            detail: "The validated package was imported successfully. Genuine conflicts were preserved additively under deterministic imported names; existing recipient objects were not modified. Truly identical duplicates were reused, and imported dependencies were mapped to their destination identities. screenshaver.toml was not changed.".to_string(),
+            backup_path: None,
+            shaders_created: created_files.len(),
+            policies_created,
+            playlists_created,
+            memberships_created,
+        })
+    })();
+
+    if operation.is_err() {
+        for path in created_files.iter().rev() {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+    operation
+}
+
+fn insert_imported_policy(
+    transaction: &rusqlite::Transaction<'_>,
+    policy: &PackagePolicy,
+    shader_id: i64,
+) -> Result<i64, String> {
+    let v = &policy.values;
+    let get = |name: &str| v.get(name).map(String::as_str)
+        .ok_or_else(|| format!("Imported policy '{}' lacks '{}'.", policy.name, name));
+    let parse_i64 = |name: &str| -> Result<i64, String> {
+        let value = get(name)?;
+        value.parse::<i64>().map_err(|_| format!("Invalid integer '{}' in imported policy field '{}'.", value, name))
+    };
+    let parse_f64 = |name: &str| -> Result<f64, String> {
+        let value = get(name)?;
+        value.parse::<f64>().map_err(|_| format!("Invalid number '{}' in imported policy field '{}'.", value, name))
+    };
+    let parse_bool = |name: &str| -> Result<i64, String> {
+        match get(name)? { "true" => Ok(1), "false" => Ok(0), value => Err(format!("Invalid boolean '{}' in imported policy field '{}'.", value, name)) }
+    };
+
+    let texture_mode = get("texture_mode")?;
+    let (db_texture_mode, texture_family, texture_primitives): (Option<&str>, Option<&str>, Option<i64>) = match texture_mode {
+        "specific" => (Some("specific"), Some(get("texture_family")?), Some(parse_i64("texture_primitives")?)),
+        "random" => (Some("random"), None, None),
+        "inherit_target" => (None, None, None),
+        other => return Err(format!("Unsupported imported texture mode '{}'.", other)),
+    };
+    let palette_mode = get("palette_mode")?;
+    let (db_palette_mode, palette_color): (Option<&str>, Option<&str>) = match palette_mode {
+        "specific" => (Some("specific"), Some(get("palette_color")?)),
+        "random" => (Some("random"), None),
+        "inherit_target" => (None, None),
+        other => return Err(format!("Unsupported imported palette mode '{}'.", other)),
+    };
+    let animation_speed = match get("animation_speed_mode")? {
+        "explicit" => Some(parse_f64("animation_speed")?),
+        "inherit_target" => None,
+        other => return Err(format!("Unsupported imported animation speed mode '{}'.", other)),
+    };
+
+    let name = policy.name.trim();
+    let key = import_name_key(name)?;
+    transaction.execute(
+        "INSERT INTO shader_policies (policy_created_at, policy_modified_at, policy_name, policy_name_key, shader_id, policy_target, texture_mode, texture_family, texture_primitives, palette_mode, palette_color, rendered_fps, animation_speed, starting_offset, anti_aliasing, dithering, color_precision, render_scale, audiovisual_effect, bloom_intensity, bloom_saturation, bloom_threshold, bloom_frequency_rotation, bloom_frequency_invert, invert_colors, flip_horizontal, flip_vertical, hue_rotation) VALUES (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)",
+        rusqlite::params![
+            name, key, shader_id, &policy.target, db_texture_mode, texture_family, texture_primitives,
+            db_palette_mode, palette_color, parse_i64("rendered_fps")?, animation_speed,
+            parse_f64("starting_offset")?, get("anti_aliasing")?, get("dithering")?, get("color_precision")?,
+            parse_f64("render_scale")?, get("audiovisual_effect")?, parse_f64("bloom_intensity")?,
+            parse_f64("bloom_saturation")?, parse_f64("bloom_threshold")?, parse_f64("bloom_frequency_rotation")?,
+            parse_bool("bloom_frequency_invert")?, parse_bool("invert_colors")?, parse_bool("flip_horizontal")?,
+            parse_bool("flip_vertical")?, parse_f64("hue_rotation")?,
+        ],
+    ).map_err(|error| format!("Unable to import policy '{}': {}", policy.name, error))?;
+    Ok(transaction.last_insert_rowid())
+}
+
+fn import_name_key(name: &str) -> Result<String, String> {
+    let trimmed = name.trim();
+    let length = trimmed.chars().count();
+    if !(1..=128).contains(&length) {
+        return Err(format!("Imported name must contain between 1 and 128 characters; found {}.", length));
+    }
+    let key = trimmed.chars().flat_map(|character| character.to_lowercase()).collect::<String>();
+    if key.is_empty() { Err("Imported name produced an empty comparison key.".into()) } else { Ok(key) }
 }
 
 fn starting_directory(archive_path: &str) -> PathBuf {
@@ -1385,6 +2114,7 @@ fn build_validated_package(
 
     let shader_id = column(&schema.datasets.shaders, "shader_export_id")?;
     let shader_filename = column(&schema.datasets.shaders, "filename")?;
+    let shader_archive_path = column(&schema.datasets.shaders, "archive_path")?;
     let shader_hash = column(&schema.datasets.shaders, "sha256")?;
 
     let playlist_id = column(&schema.datasets.playlists, "playlist_export_id")?;
@@ -1410,6 +2140,7 @@ fn build_validated_package(
         Ok(PackageShader {
             export_id: positive_id(&row[shader_id], "shader_export_id")?,
             filename: row[shader_filename].clone(),
+            archive_path: row[shader_archive_path].clone(),
             sha256: row[shader_hash].clone(),
         })
     }).collect::<Result<Vec<_>, String>>()?;

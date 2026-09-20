@@ -54,6 +54,18 @@
       ],
       "relationships": {
         "shader_export_id": "shaders.shader_export_id"
+      },
+      "inheritance_encoding": {
+        "texture_mode": "inherit_target means database texture_mode is NULL; texture_family and texture_primitives are empty",
+        "palette_mode": "inherit_target means database palette_mode is NULL; palette_color is empty",
+        "animation_speed_mode": "inherit_target means database animation_speed is NULL; animation_speed is empty",
+        "empty_fields_mean_database_null": [
+          "rendered_fps",
+          "anti_aliasing",
+          "dithering",
+          "color_precision",
+          "render_scale"
+        ]
       }
     },
     "shaders": {

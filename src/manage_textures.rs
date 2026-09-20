@@ -20,6 +20,7 @@ use crate::generate_textures::{
     TextureFamily,
 };
 use crate::load_config::{
+    PolicySelection,
     TexturePolicyEntry,
     TexturePolicy,
 };
@@ -189,7 +190,7 @@ fn resolve_texture_selection(
             }
 
             None => {
-                if let Some(texture) =
+                if let Some(selection) =
                     shader_policy
                         .and_then(
                             |texture_policy| {
@@ -197,10 +198,23 @@ fn resolve_texture_selection(
                             }
                         )
                 {
-                    (
-                        texture,
-                        "shader policy",
-                    )
+                    match selection {
+                        PolicySelection::Specific(texture) => {
+                            (
+                                texture,
+                                "shader policy",
+                            )
+                        }
+
+                        PolicySelection::Random => {
+                            (
+                                random_texture_specification(
+                                    &mut state
+                                ),
+                                "shader-policy random",
+                            )
+                        }
+                    }
                 } else if let Some(texture) =
                     policy.global_texture
                 {
@@ -249,7 +263,7 @@ fn resolve_texture_selection(
             }
 
             None => {
-                if let Some(palette) =
+                if let Some(selection) =
                     shader_policy
                         .and_then(
                             |texture_policy| {
@@ -257,10 +271,23 @@ fn resolve_texture_selection(
                             }
                         )
                 {
-                    (
-                        palette,
-                        "shader policy",
-                    )
+                    match selection {
+                        PolicySelection::Specific(palette) => {
+                            (
+                                palette,
+                                "shader policy",
+                            )
+                        }
+
+                        PolicySelection::Random => {
+                            (
+                                random_palette(
+                                    &mut state
+                                ),
+                                "shader-policy random",
+                            )
+                        }
+                    }
                 } else if let Some(palette) =
                     policy.global_palette
                 {

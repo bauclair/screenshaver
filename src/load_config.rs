@@ -85,6 +85,19 @@ struct RawToml {
 #[derive(
     Debug,
     Clone,
+    Copy,
+)]
+pub enum PolicySelection<T> {
+
+    Random,
+
+    Specific(T),
+}
+
+
+#[derive(
+    Debug,
+    Clone,
 )]
 pub struct ShaderPolicy {
 
@@ -105,12 +118,16 @@ pub struct ShaderPolicy {
 
     pub shader_texture:
         Option<
-            crate::parse_texture_specification::TextureSpecification
+            PolicySelection<
+                crate::parse_texture_specification::TextureSpecification
+            >
         >,
 
     pub shader_palette:
         Option<
-            crate::palettes::PaletteColor
+            PolicySelection<
+                crate::palettes::PaletteColor
+            >
         >,
 
     pub rendered_fps:
@@ -481,12 +498,16 @@ pub struct TexturePolicyEntry {
 
     pub shader_texture:
         Option<
-            crate::parse_texture_specification::TextureSpecification
+            PolicySelection<
+                crate::parse_texture_specification::TextureSpecification
+            >
         >,
 
     pub shader_palette:
         Option<
-            crate::palettes::PaletteColor
+            PolicySelection<
+                crate::palettes::PaletteColor
+            >
         >,
 }
 
@@ -3028,11 +3049,31 @@ fn format_shader_policy_diagnostic(
 
     let texture = shader_policy.shader_texture
         .as_ref()
-        .map(format_texture_specification)
+        .map(
+            |selection| {
+                match selection {
+                    PolicySelection::Random =>
+                        "random".to_string(),
+
+                    PolicySelection::Specific(texture) =>
+                        format_texture_specification(texture),
+                }
+            }
+        )
         .unwrap_or_else(|| "<global>".to_string());
 
     let palette = shader_policy.shader_palette
-        .map(|palette| palette.to_string())
+        .map(
+            |selection| {
+                match selection {
+                    PolicySelection::Random =>
+                        "random".to_string(),
+
+                    PolicySelection::Specific(palette) =>
+                        palette.to_string(),
+                }
+            }
+        )
         .unwrap_or_else(|| "<global>".to_string());
 
     let fps = shader_policy.rendered_fps
@@ -4294,7 +4335,9 @@ fn parse_shader_texture(
     value: &str,
     table_name: &str,
 ) -> Result<
-    crate::parse_texture_specification::TextureSpecification,
+    PolicySelection<
+        crate::parse_texture_specification::TextureSpecification
+    >,
     String,
 > {
 
@@ -4304,16 +4347,20 @@ fn parse_shader_texture(
             .to_ascii_lowercase();
 
 
-    if normalized.is_empty()
-        || normalized
-            == "random"
-    {
+    if normalized.is_empty() {
         return Err(
             format!(
-                "[{}] policy for '{}' requires a specific texture; 'random' is not permitted",
+                "[{}] policy for '{}' requires a texture value",
                 table_name,
                 shader,
             )
+        );
+    }
+
+
+    if normalized == "random" {
+        return Ok(
+            PolicySelection::Random
         );
     }
 
@@ -4336,17 +4383,20 @@ fn parse_shader_texture(
 
 
     Ok(
-        texture
+        PolicySelection::Specific(
+            texture
+        )
     )
 }
-
 
 fn parse_shader_palette(
     shader: &str,
     value: &str,
     table_name: &str,
 ) -> Result<
-    crate::palettes::PaletteColor,
+    PolicySelection<
+        crate::palettes::PaletteColor
+    >,
     String,
 > {
 
@@ -4356,13 +4406,10 @@ fn parse_shader_palette(
             .to_ascii_lowercase();
 
 
-    if normalized.is_empty()
-        || normalized
-            == "random"
-    {
+    if normalized.is_empty() {
         return Err(
             format!(
-                "[{}] policy for '{}' requires a specific palette; 'random' is not permitted",
+                "[{}] policy for '{}' requires a palette value",
                 table_name,
                 shader,
             )
@@ -4370,8 +4417,18 @@ fn parse_shader_palette(
     }
 
 
+    if normalized == "random" {
+        return Ok(
+            PolicySelection::Random
+        );
+    }
+
+
     crate::palettes::PaletteColor::parse_hex(
         &normalized
+    )
+    .map(
+        PolicySelection::Specific
     )
     .map_err(
         |error| {
