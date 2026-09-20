@@ -652,6 +652,13 @@ CREATE TABLE app_defaults (
                             DEFAULT 1
                             CHECK (wallpaper_notifications IN (0, 1)),
 
+    -- Application-level synchronized-lyrics presentation switch. Lyrics are
+    -- currently presented by Windowpaper; the setting is kept application-wide
+    -- so the source/presentation subsystem can be reused without policy changes.
+    lyrics_enabled          INTEGER NOT NULL
+                            DEFAULT 0
+                            CHECK (lyrics_enabled IN (0, 1)),
+
     -- Wallpaper presentation format. This is an application-level wallpaper
     -- setting, not a per-policy property. Screensaver presentation is
     -- unaffected and remains full-screen.

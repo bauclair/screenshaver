@@ -687,6 +687,74 @@ fn locate_subtitle_font() -> Result<PathBuf, String> {
     )
 }
 
+fn locate_lyrics_font(bold: bool) -> Result<PathBuf, String> {
+    let environment_variable = if bold {
+        "SCREENSHAVER_LYRICS_BOLD_FONT"
+    } else {
+        "SCREENSHAVER_LYRICS_FONT"
+    };
+
+    if let Ok(value) = std::env::var(environment_variable) {
+        let path = PathBuf::from(value);
+        if path.is_file() {
+            return Ok(path);
+        }
+    }
+
+    let fontconfig_pattern = if bold {
+        "DejaVu Sans Condensed:style=Bold"
+    } else {
+        "DejaVu Sans Condensed:style=Book"
+    };
+
+    if let Ok(output) = Command::new("fc-match")
+        .args(["-f", "%{file}\n", fontconfig_pattern])
+        .output()
+    {
+        if output.status.success() {
+            if let Some(value) = String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .map(str::trim)
+                .find(|line| !line.is_empty())
+            {
+                let path = PathBuf::from(value);
+                if path.is_file() {
+                    return Ok(path);
+                }
+            }
+        }
+    }
+
+    let candidates: &[&str] = if bold {
+        &[
+            "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf",
+            "/usr/share/fonts/dejavu/DejaVuSansCondensed-Bold.ttf",
+            "/usr/share/fonts/TTF/DejaVuSansCondensed-Bold.ttf",
+            "/usr/local/share/fonts/DejaVuSansCondensed-Bold.ttf",
+        ]
+    } else {
+        &[
+            "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed.ttf",
+            "/usr/share/fonts/dejavu/DejaVuSansCondensed.ttf",
+            "/usr/share/fonts/TTF/DejaVuSansCondensed.ttf",
+            "/usr/local/share/fonts/DejaVuSansCondensed.ttf",
+        ]
+    };
+
+    for value in candidates {
+        let path = PathBuf::from(value);
+        if path.is_file() {
+            return Ok(path);
+        }
+    }
+
+    Err(format!(
+        "Unable to locate {}; set {} to the corresponding TTF file",
+        if bold { "DejaVu Sans Condensed Bold" } else { "DejaVu Sans Condensed" },
+        environment_variable,
+    ))
+}
+
 fn draw_capsule_background(pixels: &mut [u8], width: u32, height: u32) {
     let radius = height as f32 / 2.0;
     let left_center = radius;
@@ -800,14 +868,14 @@ fn composite_text(
 // This is intentionally separate from the normal description/FPS capsule.
 // -----------------------------------------------------------------------------
 
-const LYRICS_BASE_FONT_SIZE: f32 = 28.0;
+const LYRICS_BASE_FONT_SIZE: f32 = 24.0;
 const LYRICS_MIN_FONT_SIZE: f32 = 16.0;
-const LYRICS_MAX_FONT_SIZE: f32 = 56.0;
+const LYRICS_MAX_FONT_SIZE: f32 = 28.0;
 const LYRICS_BASELINE_WIDTH: f32 = 1920.0;
 const LYRICS_BASELINE_HEIGHT: f32 = 1080.0;
 const LYRICS_BACKGROUND_RGBA: [u8; 4] = [0, 0, 0, 255];
 const LYRICS_CONTEXT_COLOR: Color = Color::RGBA(155, 155, 150, 230);
-const LYRICS_CURRENT_COLOR: Color = Color::RGBA(250, 250, 242, 255);
+const LYRICS_CURRENT_COLOR: Color = Color::RGBA(255, 95, 31, 255);
 
 pub fn construct_lyrics_panel(
     previous: Option<&str>,
@@ -837,7 +905,8 @@ pub fn construct_lyrics_panel(
 
     let ttf_context = sdl2::ttf::init()
         .map_err(|error| format!("Unable to initialize SDL_ttf for lyrics: {}", error))?;
-    let font_path = locate_subtitle_font()?;
+    let normal_font_path = locate_lyrics_font(false)?;
+    let bold_font_path = locate_lyrics_font(true)?;
 
     // The highlighted lyric is never truncated. If an unusually long current
     // lyric would exceed the viewport, reduce only the marquee font size until
@@ -848,9 +917,8 @@ pub fn construct_lyrics_panel(
     if !current_text.is_empty() {
         loop {
             let mut probe_font = ttf_context
-                .load_font(&font_path, font_size)
-                .map_err(|error| format!("Unable to load current-lyrics font '{}': {}", font_path.display(), error))?;
-            probe_font.set_style(FontStyle::BOLD);
+                .load_font(&bold_font_path, font_size)
+                .map_err(|error| format!("Unable to load current-lyrics font '{}': {}", bold_font_path.display(), error))?;
             let (text_width, _) = probe_font
                 .size_of(current_text)
                 .map_err(|error| format!("Unable to measure current lyrics text: {}", error))?;
@@ -863,13 +931,12 @@ pub fn construct_lyrics_panel(
     }
 
     let normal_font = ttf_context
-        .load_font(&font_path, font_size)
-        .map_err(|error| format!("Unable to load lyrics font '{}': {}", font_path.display(), error))?;
+        .load_font(&normal_font_path, font_size)
+        .map_err(|error| format!("Unable to load lyrics font '{}': {}", normal_font_path.display(), error))?;
 
     let mut current_font = ttf_context
-        .load_font(&font_path, font_size)
-        .map_err(|error| format!("Unable to load current-lyrics font '{}': {}", font_path.display(), error))?;
-    current_font.set_style(FontStyle::BOLD);
+        .load_font(&bold_font_path, font_size)
+        .map_err(|error| format!("Unable to load current-lyrics font '{}': {}", bold_font_path.display(), error))?;
 
     let render_line =
         |font: &sdl2::ttf::Font<'_, '_>, text: Option<&str>, color: Color|

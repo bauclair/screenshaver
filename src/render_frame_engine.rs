@@ -118,6 +118,14 @@ pub(crate) struct FrameRenderEngine {
     subtitle_overlay:
         Option<crate::display_overlay::OpenGlOverlay>,
     overlay_output_size: (u32, u32),
+    lyrics_state:
+        Option<crate::manage_lyrics::SharedLyricsState>,
+    lyrics_overlay:
+        Option<crate::display_overlay::OpenGlOverlay>,
+    lyrics_overlay_state:
+        crate::manage_lyrics::LyricsState,
+    lyrics_overlay_output_size:
+        (u32, u32),
     fps_policy: RenderFpsPolicy,
     postprocess_policy:
         crate::load_config::PostprocessPolicy,
@@ -176,6 +184,7 @@ impl FrameRenderEngine {
             subtitles,
             true,
             subtitle_placement,
+            None,
             output_width,
             output_height,
         )
@@ -199,6 +208,8 @@ impl FrameRenderEngine {
         subtitles: bool,
         subtitle_placement:
             crate::parse_subtitle_placement::SubtitlePlacement,
+        lyrics_state:
+            Option<crate::manage_lyrics::SharedLyricsState>,
         output_width: u32,
         output_height: u32,
     ) -> Result<Self, String> {
@@ -217,6 +228,7 @@ impl FrameRenderEngine {
             subtitles,
             false,
             subtitle_placement,
+            lyrics_state,
             output_width,
             output_height,
         )
@@ -241,6 +253,8 @@ impl FrameRenderEngine {
         render_fps_warning_overlay: bool,
         subtitle_placement:
             crate::parse_subtitle_placement::SubtitlePlacement,
+        lyrics_state:
+            Option<crate::manage_lyrics::SharedLyricsState>,
         output_width: u32,
         output_height: u32,
     ) -> Result<Self, String> {
@@ -384,6 +398,13 @@ impl FrameRenderEngine {
                         output_width,
                         output_height,
                     ),
+                lyrics_state,
+                lyrics_overlay:
+                    None,
+                lyrics_overlay_state:
+                    crate::manage_lyrics::LyricsState::default(),
+                lyrics_overlay_output_size:
+                    (0, 0),
                 fps_policy,
                 postprocess_policy,
                 audio_bands,
@@ -904,6 +925,12 @@ impl FrameRenderEngine {
                 None;
         }
 
+        self.display_lyrics_overlay(
+            width,
+            height,
+        );
+
+
         let mut events =
             FrameRenderEvents::default();
 
@@ -924,6 +951,83 @@ impl FrameRenderEngine {
         }
 
         events
+    }
+
+
+    fn display_lyrics_overlay(
+        &mut self,
+        width: u32,
+        height: u32,
+    ) {
+        let Some(shared_state) =
+            self.lyrics_state.as_ref()
+        else {
+            self.lyrics_overlay = None;
+            return;
+        };
+
+        let state =
+            shared_state
+                .lock()
+                .map(
+                    |state| state.clone()
+                )
+                .unwrap_or_default();
+
+        if state.current.is_none() {
+            self.lyrics_overlay = None;
+            self.lyrics_overlay_state = state;
+            return;
+        }
+
+        let current_size =
+            (width, height);
+
+        if self.lyrics_overlay.is_none()
+            || self.lyrics_overlay_state != state
+            || self.lyrics_overlay_output_size != current_size
+        {
+            match crate::construct_text_overlay::construct_lyrics_panel(
+                state.previous.as_deref(),
+                state.current.as_deref(),
+                state.next.as_deref(),
+                width,
+                height,
+            )
+            .and_then(
+                |constructed| {
+                    crate::display_overlay::OpenGlOverlay::new_from_constructed(
+                        constructed,
+                        crate::parse_subtitle_placement::parse(None).placement,
+                    )
+                }
+            ) {
+                Ok(overlay) => {
+                    self.lyrics_overlay = Some(overlay);
+                    self.lyrics_overlay_state = state;
+                    self.lyrics_overlay_output_size = current_size;
+                }
+
+                Err(error) => {
+                    log_warning(
+                        &format!(
+                            "[LYRICS] Unable to build synchronized lyrics overlay: {}",
+                            error,
+                        )
+                    );
+                    self.lyrics_overlay = None;
+                }
+            }
+        }
+
+        if let Some(overlay) =
+            self.lyrics_overlay.as_ref()
+        {
+            overlay.display_bottom_edge(
+                width,
+                height,
+            );
+        }
     }
 
 

@@ -189,6 +189,7 @@ pub struct AppDefaults {
     pub screensaver_subtitles: bool,
     pub subtitle_placement: String,
     pub wallpaper_notifications: bool,
+    pub lyrics_enabled: bool,
     pub wallpaper_display_format: WallpaperDisplayFormat,
     pub rendered_fps: i64,
     pub anti_aliasing: String,
@@ -238,6 +239,7 @@ pub fn load_app_defaults() -> Result<AppDefaults, String> {
                  screensaver_subtitles,
                  subtitle_placement,
                  wallpaper_notifications,
+                 lyrics_enabled,
                  wallpaper_display_format,
                  rendered_fps,
                  anti_aliasing,
@@ -258,14 +260,16 @@ pub fn load_app_defaults() -> Result<AppDefaults, String> {
                             row.get(2)?,
                         wallpaper_notifications:
                             row.get::<_, i64>(3)? != 0,
+                        lyrics_enabled:
+                            row.get::<_, i64>(4)? != 0,
                         wallpaper_display_format:
                             WallpaperDisplayFormat::parse_database_value(
-                                &row.get::<_, String>(4)?
+                                &row.get::<_, String>(5)?
                             )
                             .map_err(
                                 |error| {
                                     rusqlite::Error::FromSqlConversionFailure(
-                                        4,
+                                        5,
                                         rusqlite::types::Type::Text,
                                         Box::new(
                                             std::io::Error::new(
@@ -277,15 +281,15 @@ pub fn load_app_defaults() -> Result<AppDefaults, String> {
                                 }
                             )?,
                         rendered_fps:
-                            row.get(5)?,
-                        anti_aliasing:
                             row.get(6)?,
-                        dithering:
+                        anti_aliasing:
                             row.get(7)?,
-                        color_precision:
+                        dithering:
                             row.get(8)?,
-                        render_scale:
+                        color_precision:
                             row.get(9)?,
+                        render_scale:
+                            row.get(10)?,
                     }
                 )
             },
@@ -585,18 +589,20 @@ pub fn save_app_defaults(
                      screensaver_subtitles = ?2,
                      subtitle_placement = ?3,
                      wallpaper_notifications = ?4,
-                     wallpaper_display_format = ?5,
-                     rendered_fps = ?6,
-                     anti_aliasing = ?7,
-                     dithering = ?8,
-                     color_precision = ?9,
-                     render_scale = ?10
+                     lyrics_enabled = ?5,
+                     wallpaper_display_format = ?6,
+                     rendered_fps = ?7,
+                     anti_aliasing = ?8,
+                     dithering = ?9,
+                     color_precision = ?10,
+                     render_scale = ?11
                  WHERE defaults_id = 1",
                 rusqlite::params![
                     defaults.show_splash,
                     defaults.screensaver_subtitles,
                     defaults.subtitle_placement,
                     defaults.wallpaper_notifications,
+                    defaults.lyrics_enabled,
                     defaults.wallpaper_display_format.database_value(),
                     defaults.rendered_fps,
                     defaults.anti_aliasing,

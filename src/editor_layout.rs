@@ -326,6 +326,7 @@ pub struct ControlConfiguration {
     pub screensaver_global_palette: String,
     pub wallpaper_enabled: bool,
     pub notifications: bool,
+    pub lyrics_enabled: bool,
     pub wallpaper_display_format:
         crate::manage_configuration::WallpaperDisplayFormat,
     pub wallpaper_display: String,
@@ -427,6 +428,7 @@ impl ControlConfiguration {
             ),
             wallpaper_enabled: config.wallpaper_enabled,
             notifications: app_defaults.as_ref().map(|d| d.wallpaper_notifications).unwrap_or(config.wallpaper.notifications),
+            lyrics_enabled: app_defaults.as_ref().map(|d| d.lyrics_enabled).unwrap_or(config.lyrics_enabled),
             wallpaper_display_format: app_defaults
                 .as_ref()
                 .map(|d| d.wallpaper_display_format)

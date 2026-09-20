@@ -665,6 +665,7 @@ impl WallpaperBackend for X11WallpaperBackend {
                     runtime.audio_bands.clone(),
                     false,
                     parsed_subtitle_placement.placement,
+                    runtime.lyrics_state.clone(),
                     wallpaper_window.width as u32,
                     wallpaper_window.height as u32,
                 )?;

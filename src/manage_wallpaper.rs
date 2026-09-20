@@ -482,11 +482,61 @@ pub fn run(
     backend.report_capabilities();
 
 
+    // Lyrics are currently a Windowpaper-only feature. Keep the manager at
+    // this common lifecycle level so MPRIS/provider logic remains independent
+    // of the native Wayland and X11 presentation backends.
+    let _lyrics_manager =
+        if runtime.lyrics_enabled
+            && runtime.display_format
+                == crate::manage_configuration::WallpaperDisplayFormat::Windowed
+        {
+            match crate::manage_lyrics::LyricsManager::start() {
+                Ok(manager) => {
+                    println!(
+                        "Synchronized lyrics manager: enabled for Windowpaper"
+                    );
+                    Some(manager)
+                }
+
+                Err(error) => {
+                    eprintln!(
+                        "[LYRICS] Unable to start synchronized lyrics manager; Windowpaper will continue without lyrics: {}",
+                        error,
+                    );
+
+                    crate::logger::warning(
+                        &crate::locate_paths::runtime_log_path(),
+                        &format!(
+                            "[LYRICS] Unable to start synchronized lyrics manager; Windowpaper will continue without lyrics: {}",
+                            error,
+                        ),
+                    );
+
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+
+    let mut presentation_runtime =
+        runtime.clone();
+
+    presentation_runtime.lyrics_state =
+        _lyrics_manager
+            .as_ref()
+            .map(
+                |manager| {
+                    manager.shared_state()
+                }
+            );
+
     backend.run(
         shader_manager,
         &wallpaper_directory,
         shader_interval,
-        runtime,
+        &presentation_runtime,
         running,
         control,
     )?;

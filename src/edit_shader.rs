@@ -10397,6 +10397,7 @@ fn save_control_configuration(
             screensaver_subtitles: control.subtitles,
             subtitle_placement: control.subtitle_placement.clone(),
             wallpaper_notifications: control.notifications,
+            lyrics_enabled: control.lyrics_enabled,
             wallpaper_display_format: control.wallpaper_display_format,
             rendered_fps: control.rendered_fps,
             anti_aliasing: control.anti_aliasing.clone(),

@@ -25,6 +25,7 @@ enum ConfigurationNestedTab {
     Screensaver,
     Wallpaper,
     Rendering,
+    Lyrics,
     DataIo,
 }
 
@@ -32,12 +33,13 @@ enum ConfigurationNestedTab {
 impl ConfigurationNestedTab {
     const ALL: [
         ConfigurationNestedTab;
-        5
+        6
     ] = [
         ConfigurationNestedTab::Appearance,
         ConfigurationNestedTab::Screensaver,
         ConfigurationNestedTab::Wallpaper,
         ConfigurationNestedTab::Rendering,
+        ConfigurationNestedTab::Lyrics,
         ConfigurationNestedTab::DataIo,
     ];
 
@@ -50,6 +52,7 @@ impl ConfigurationNestedTab {
             ConfigurationNestedTab::Screensaver => "Screensaver",
             ConfigurationNestedTab::Wallpaper => "Wallpaper",
             ConfigurationNestedTab::Rendering => "Rendering",
+            ConfigurationNestedTab::Lyrics => "Lyrics",
             ConfigurationNestedTab::DataIo => "Data I/O",
         }
     }
@@ -212,6 +215,13 @@ pub fn draw_configuration(
 
                                 ConfigurationNestedTab::Rendering => {
                                     draw_rendering_placeholders(
+                                        ui,
+                                        configuration,
+                                    );
+                                }
+
+                                ConfigurationNestedTab::Lyrics => {
+                                    draw_lyrics(
                                         ui,
                                         configuration,
                                     );
@@ -1628,7 +1638,7 @@ fn draw_target_grid(
                         }
 
                         crate::manage_configuration::WallpaperDisplayFormat::Windowed => {
-                            "Windowed"
+                            "Windowpaper"
                         }
                     }
                 )
@@ -1647,7 +1657,7 @@ fn draw_target_grid(
                         ui.selectable_value(
                             wallpaper_display_format,
                             crate::manage_configuration::WallpaperDisplayFormat::Windowed,
-                            "Windowed",
+                            "Windowpaper",
                         );
                     },
                 );
@@ -2149,6 +2159,28 @@ fn draw_target_grid(
                 ),
             );
     }
+}
+
+
+fn draw_lyrics(
+    ui: &mut egui::Ui,
+    configuration: &mut ControlConfiguration,
+) {
+    ui.heading(
+        "Lyrics"
+    );
+
+    ui.add_space(
+        8.0
+    );
+
+    ui.checkbox(
+        &mut configuration.lyrics_enabled,
+        "Display synchronized song lyrics",
+    )
+    .on_hover_text(
+        "Displays synchronized lyrics for the currently playing MPRIS track when lyrics are available."
+    );
 }
 
 

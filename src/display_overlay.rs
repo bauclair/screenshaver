@@ -321,7 +321,7 @@ impl OpenGlOverlay {
     }
 
 
-    fn new_from_constructed(
+    pub(crate) fn new_from_constructed(
         overlay:
             crate::construct_text_overlay::ConstructedTextOverlay,
 
@@ -599,6 +599,36 @@ impl OpenGlOverlay {
             gl::Disable(
                 gl::BLEND
             );
+        }
+    }
+
+
+    pub fn display_bottom_edge(
+        &self,
+        output_width: u32,
+        output_height: u32,
+    ) {
+        if output_width == 0
+            || output_height == 0
+        {
+            return;
+        }
+
+        unsafe {
+            gl::Enable(gl::BLEND);
+            gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+            gl::UseProgram(self.program);
+            set_vec2(self.program, "uViewport", output_width as f32, output_height as f32);
+            set_vec2(self.program, "uOrigin", 0.0, 0.0);
+            set_vec2(self.program, "uSize", self.width as f32, self.height as f32);
+            gl::ActiveTexture(gl::TEXTURE7);
+            gl::BindTexture(gl::TEXTURE_2D, self.texture);
+            set_int(self.program, "uOverlay", 7);
+            gl::BindVertexArray(self.vao);
+            gl::DrawArrays(gl::TRIANGLE_STRIP, 0, 4);
+            gl::BindTexture(gl::TEXTURE_2D, 0);
+            gl::ActiveTexture(gl::TEXTURE0);
+            gl::Disable(gl::BLEND);
         }
     }
 

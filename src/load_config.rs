@@ -939,6 +939,8 @@ pub struct Config {
 
     pub show_splash: bool,
 
+    pub lyrics_enabled: bool,
+
     pub wallpaper_display_format:
         crate::manage_configuration::WallpaperDisplayFormat,
 
@@ -1403,6 +1405,9 @@ pub fn load_config(
 
             show_splash:
                 app_defaults.show_splash,
+
+            lyrics_enabled:
+                app_defaults.lyrics_enabled,
 
             wallpaper_display_format:
                 app_defaults.wallpaper_display_format,

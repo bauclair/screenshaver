@@ -47,3 +47,5 @@ xkbcommon = "0.9"
 pam = "0.8"
 pam_unix = "0.3.1"
 zeroize = "1.8"
+mpris = "2.1"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }

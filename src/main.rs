@@ -80,6 +80,7 @@ mod control_wallpaper;
 mod locate_wallpaper;
 mod manage_wallpaper;
 mod manage_wallpaper_runtime;
+mod manage_lyrics;
 mod notify_wallpaper;
 mod render_wallpaper;
 mod wayland_wallpaper;
@@ -1786,6 +1787,10 @@ fn main() {
                 cfg.wallpaper.monitor_mode,
             notifications:
                 cfg.wallpaper.notifications,
+            lyrics_enabled:
+                cfg.lyrics_enabled,
+            lyrics_state:
+                None,
             texture_policy:
                 cfg.wallpaper_texture_policy,
             fps_policy:

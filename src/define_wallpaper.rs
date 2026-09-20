@@ -87,6 +87,12 @@ pub struct WallpaperRuntime {
     pub notifications:
         bool,
 
+    pub lyrics_enabled:
+        bool,
+
+    pub lyrics_state:
+        Option<crate::manage_lyrics::SharedLyricsState>,
+
     pub texture_policy:
         crate::load_config::TexturePolicy,
 
