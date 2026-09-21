@@ -1885,27 +1885,37 @@ fn main() {
                 let active_wallpaper =
                     tray_status.active_wallpaper();
 
-                if active_wallpaper.is_some() {
-                    wallpaper_control.request_pause_after_first_frame(
-                        running.as_ref()
-                    );
-                }
+                let wallpaper_pause_acquired =
+                    if active_wallpaper.is_some() {
+                        wallpaper_control.request_pause_after_first_frame(
+                            running.as_ref()
+                        )
+                    } else {
+                        true
+                    };
 
                 let edit_result =
-                    match active_wallpaper {
-                        Some(active_wallpaper) => {
-                            crate::edit_shader::run_wallpaper_only(
-                                active_wallpaper.path,
-                                active_wallpaper.policy_id,
-                                audio_bands.clone(),
-                            )
-                        }
+                    if !wallpaper_pause_acquired {
+                        Err(
+                            "Timed out waiting for the active wallpaper renderer to acknowledge suspension; Control Center was not opened."
+                                .to_string()
+                        )
+                    } else {
+                        match active_wallpaper {
+                            Some(active_wallpaper) => {
+                                crate::edit_shader::run_wallpaper_only_prepaused(
+                                    active_wallpaper.path,
+                                    active_wallpaper.policy_id,
+                                    audio_bands.clone(),
+                                )
+                            }
 
-                        None => {
-                            crate::edit_shader::run(
-                                None,
-                                audio_bands.clone(),
-                            )
+                            None => {
+                                crate::edit_shader::run(
+                                    None,
+                                    audio_bands.clone(),
+                                )
+                            }
                         }
                     };
 

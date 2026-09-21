@@ -754,6 +754,7 @@ pub fn run(
                 None,
                 None,
                 audio_bands,
+                true,
             )
         }
 
@@ -799,6 +800,38 @@ pub fn run_wallpaper_only(
         ),
         None,
         audio_bands,
+        true,
+    )
+}
+
+
+// The resident tray runtime has already positively paused its own wallpaper
+// renderer before entering this path. Do not issue a second cross-process
+// pause request; doing so would wait for a new acknowledgement that cannot be
+// produced while the renderer is already suspended.
+pub fn run_wallpaper_only_prepaused(
+    shader_path: PathBuf,
+    policy_id: i64,
+    audio_bands:
+        Option<crate::audio_backend::SharedAudioBands>,
+) -> Result<(), String> {
+    run_paths(
+        vec![shader_path],
+        None,
+        None,
+        None,
+        None,
+        None,
+        EditorTargetRestriction::Unrestricted,
+        Some(
+            crate::editor_layout::PolicyTarget::Wallpaper
+        ),
+        Some(
+            policy_id
+        ),
+        None,
+        audio_bands,
+        false,
     )
 }
 
@@ -825,6 +858,7 @@ pub fn run_screensaver_only(
         ),
         None,
         audio_bands,
+        false,
     )
 }
 
@@ -840,7 +874,7 @@ fn run_empty_session(
     );
 
     let wallpaper_pause_guard =
-        crate::control_wallpaper::WallpaperPauseGuard::acquire();
+        crate::control_wallpaper::WallpaperPauseGuard::acquire()?;
 
     let config_result =
         crate::load_config::load_config(
@@ -2164,6 +2198,7 @@ fn run_empty_session(
             policy_id,
             policy_name,
             audio_bands,
+            false,
         );
     }
 
@@ -2342,6 +2377,7 @@ fn run_paths(
     requested_initial_policy_name: Option<String>,
     audio_bands:
         Option<crate::audio_backend::SharedAudioBands>,
+    acquire_wallpaper_pause: bool,
 ) -> Result<(), String> {
 
     if shader_paths.is_empty() {
@@ -2679,11 +2715,12 @@ fn run_paths(
 
 
     let _wallpaper_pause_guard =
-        if target_restriction
-            == EditorTargetRestriction::Unrestricted
+        if acquire_wallpaper_pause
+            && target_restriction
+                == EditorTargetRestriction::Unrestricted
         {
             Some(
-                crate::control_wallpaper::WallpaperPauseGuard::acquire()
+                crate::control_wallpaper::WallpaperPauseGuard::acquire()?
             )
         } else {
             None

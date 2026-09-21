@@ -1638,7 +1638,7 @@ fn draw_target_grid(
                         }
 
                         crate::manage_configuration::WallpaperDisplayFormat::Windowed => {
-                            "Windowpaper"
+                            "Windowshader"
                         }
                     }
                 )
@@ -1657,7 +1657,7 @@ fn draw_target_grid(
                         ui.selectable_value(
                             wallpaper_display_format,
                             crate::manage_configuration::WallpaperDisplayFormat::Windowed,
-                            "Windowpaper",
+                            "Windowshader",
                         );
                     },
                 );
@@ -2176,10 +2176,10 @@ fn draw_lyrics(
 
     ui.checkbox(
         &mut configuration.lyrics_enabled,
-        "Display synchronized song lyrics",
+        "Display synchronized song lyrics (windowshader only)",
     )
     .on_hover_text(
-        "Displays synchronized lyrics for the currently playing MPRIS track when lyrics are available."
+        "Displays synchronized lyrics for the currently playing song over the windowshader. Lyrics are obtained automatically when available."
     );
 }
 

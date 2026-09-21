@@ -548,6 +548,26 @@ impl FrameRenderEngine {
     }
 
 
+    #[cfg(not(feature = "kde-host"))]
+    pub(crate) fn reset_after_pause(
+        &mut self,
+    ) {
+        self.fps_warning_state =
+            FpsWarningState::Normal;
+
+        self.fps_blink_visible =
+            true;
+
+        self.last_fps_blink =
+            Instant::now();
+
+        self.frame_times.clear();
+
+        self.last_frame =
+            Instant::now();
+    }
+
+
     pub(crate) fn limit_fps(
         &mut self,
     ) {

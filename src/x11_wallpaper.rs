@@ -526,6 +526,10 @@ fn run_window_loop(
             continue;
         }
 
+        if paused {
+            engine.reset_after_pause();
+        }
+
         let status =
             render_shared_engine_frame(
                 display,

@@ -43,14 +43,16 @@ pub struct WallpaperPauseGuard {
 
 impl WallpaperPauseGuard {
 
-    pub fn acquire() -> Self {
+    pub fn acquire() -> Result<Self, String> {
 
         let pause_was_requested =
-            request_pause();
+            request_pause()?;
 
-        Self {
-            pause_was_requested,
-        }
+        Ok(
+            Self {
+                pause_was_requested,
+            }
+        )
     }
 }
 
@@ -138,10 +140,12 @@ pub(crate) fn set_runtime_active(
 }
 
 
-fn request_pause() -> bool {
+fn request_pause() -> Result<bool, String> {
 
     if !runtime_is_active() {
-        return false;
+        return Ok(
+            false
+        );
     }
 
 
@@ -156,20 +160,67 @@ fn request_pause() -> bool {
         );
 
 
-    if write_marker(
+    write_marker(
         PAUSE_REQUEST_FILE
     )
-    .is_err()
-    {
-        return false;
+    .map_err(
+        |error| {
+            format!(
+                "Unable to request exclusive renderer ownership from the active wallpaper renderer: {}",
+                error,
+            )
+        }
+    )?;
+
+
+    if wait_for_marker(
+        PAUSE_ACK_FILE
+    ) {
+        return Ok(
+            true
+        );
     }
 
 
-    wait_for_marker(
-        PAUSE_ACK_FILE
+    // Never allow a second renderer to start merely because the pause
+    // acknowledgement was slow or missing. Withdraw the request so a renderer
+    // that notices it late is not left suspended after acquisition fails.
+    let _ =
+        remove_marker(
+            PAUSE_REQUEST_FILE
+        );
+
+    let _ =
+        remove_marker(
+            PAUSE_ACK_FILE
+        );
+
+    let _ =
+        remove_marker(
+            RESUME_ACK_FILE
+        );
+
+
+    if !runtime_is_active() {
+        return Ok(
+            false
+        );
+    }
+
+
+    let message =
+        format!(
+            "Timed out after {} ms waiting for the active wallpaper renderer to acknowledge suspension; refusing to start a second renderer",
+            CONTROL_WAIT.as_millis(),
+        );
+
+    log_warning(
+        &message
     );
 
-    true
+    Err(
+        message
+    )
 }
 
 
@@ -218,14 +269,14 @@ fn runtime_is_active() -> bool {
 
 fn wait_for_marker(
     name: &str,
-) {
+) -> bool {
 
     let Some(path) =
         control_path(
             name
         )
     else {
-        return;
+        return false;
     };
 
 
@@ -238,13 +289,16 @@ fn wait_for_marker(
         < deadline
     {
         if path.exists() {
-            return;
+            return true;
         }
 
         std::thread::sleep(
             POLL_INTERVAL
         );
     }
+
+
+    path.exists()
 }
 
 
