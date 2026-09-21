@@ -1736,7 +1736,7 @@ pub fn run_egl_windowed_surface(
 
 
     xdg_toplevel.set_title(
-        "Screenshaver Windowpaper"
+        "Screenshaver Windowshader"
             .to_string()
     );
 
