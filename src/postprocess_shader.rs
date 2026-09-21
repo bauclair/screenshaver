@@ -37,6 +37,18 @@ pub(crate) enum PostprocessMethod {
     Fxaa,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct PostprocessGpuTimings {
+    pub(crate) primary_ms: f64,
+    pub(crate) bloom_extraction_ms: f64,
+    pub(crate) bloom_blur_horizontal_ms: f64,
+    pub(crate) bloom_blur_vertical_ms: f64,
+    pub(crate) bloom_composite_ms: f64,
+    pub(crate) dithering_ms: f64,
+    pub(crate) total_ms: f64,
+}
+
+
 impl PostprocessMethod {
     pub(crate) fn name(
         self,
@@ -552,6 +564,254 @@ impl PostprocessPipeline {
             );
         }
     }
+
+    /// Benchmark-only timing path. Production rendering continues to use
+    /// `present_scene_to_framebuffer()`.
+    pub(crate) fn benchmark_present_scene_timed_to_framebuffer(
+        &self,
+        output_framebuffer: u32,
+    ) -> Result<PostprocessGpuTimings, String> {
+        const QUERY_COUNT: usize = 7;
+        let mut queries = [0_u32; QUERY_COUNT];
+
+        unsafe {
+            gl::GenQueries(QUERY_COUNT as i32, queries.as_mut_ptr());
+        }
+
+        if queries.iter().any(|query| *query == 0) {
+            unsafe {
+                gl::DeleteQueries(QUERY_COUNT as i32, queries.as_ptr());
+            }
+            return Err(
+                "OpenGL could not allocate post-processing benchmark timer queries"
+                    .to_string()
+            );
+        }
+
+        let result = (|| -> Result<PostprocessGpuTimings, String> {
+            prepare_fullscreen_pass();
+
+            unsafe {
+                gl::QueryCounter(queries[0], gl::TIMESTAMP);
+            }
+
+            if self.bloom_mode.is_enabled() {
+                self.scratch_target.bind(
+                    self.output_width,
+                    self.output_height,
+                );
+                self.render_primary_pass(
+                    self.scene_target.texture
+                );
+
+                unsafe {
+                    gl::QueryCounter(queries[1], gl::TIMESTAMP);
+                }
+
+                self.bloom_target_a.bind(
+                    self.bloom_width,
+                    self.bloom_height,
+                );
+
+                unsafe {
+                    gl::ClearColor(0.0, 0.0, 0.0, 1.0);
+                    gl::Clear(gl::COLOR_BUFFER_BIT);
+                }
+
+                self.render_bloom_extraction(
+                    self.scratch_target.texture,
+                    false,
+                );
+
+                unsafe {
+                    gl::QueryCounter(queries[2], gl::TIMESTAMP);
+                }
+
+                self.bloom_target_b.bind(
+                    self.bloom_width,
+                    self.bloom_height,
+                );
+                self.bloom.render_blur(
+                    self.bloom_target_a.texture,
+                    1.0 / self.bloom_width as f32,
+                    0.0,
+                );
+
+                unsafe {
+                    gl::QueryCounter(queries[3], gl::TIMESTAMP);
+                }
+
+                self.bloom_target_a.bind(
+                    self.bloom_width,
+                    self.bloom_height,
+                );
+                self.bloom.render_blur(
+                    self.bloom_target_b.texture,
+                    0.0,
+                    1.0 / self.bloom_height as f32,
+                );
+
+                unsafe {
+                    gl::QueryCounter(queries[4], gl::TIMESTAMP);
+                }
+
+                if self.dithering_level.is_enabled() {
+                    self.composite_target.bind(
+                        self.output_width,
+                        self.output_height,
+                    );
+                    self.bloom.render_composite(
+                        self.scratch_target.texture,
+                        self.bloom_target_a.texture,
+                        self.bloom_intensity,
+                        self.bloom_saturation,
+                        matches!(
+                            self.bloom_mode,
+                            crate::render_bloom::BloomMode::Spectral
+                                | crate::render_bloom::BloomMode::Loudness
+                        ),
+                    );
+
+                    unsafe {
+                        gl::QueryCounter(queries[5], gl::TIMESTAMP);
+                    }
+
+                    bind_output_framebuffer(
+                        output_framebuffer,
+                        self.output_width,
+                        self.output_height,
+                    );
+                    self.dithering.render(
+                        self.composite_target.texture,
+                        self.dithering_level,
+                    );
+                } else {
+                    bind_output_framebuffer(
+                        output_framebuffer,
+                        self.output_width,
+                        self.output_height,
+                    );
+                    self.bloom.render_composite(
+                        self.scratch_target.texture,
+                        self.bloom_target_a.texture,
+                        self.bloom_intensity,
+                        self.bloom_saturation,
+                        matches!(
+                            self.bloom_mode,
+                            crate::render_bloom::BloomMode::Spectral
+                                | crate::render_bloom::BloomMode::Loudness
+                        ),
+                    );
+
+                    unsafe {
+                        gl::QueryCounter(queries[5], gl::TIMESTAMP);
+                    }
+                }
+
+                unsafe {
+                    gl::QueryCounter(queries[6], gl::TIMESTAMP);
+                    gl::Finish();
+                }
+            } else if self.dithering_level.is_enabled() {
+                self.scratch_target.bind(
+                    self.output_width,
+                    self.output_height,
+                );
+                self.render_primary_pass(
+                    self.scene_target.texture
+                );
+
+                unsafe {
+                    gl::QueryCounter(queries[1], gl::TIMESTAMP);
+                    for index in 2..=5 {
+                        gl::QueryCounter(queries[index], gl::TIMESTAMP);
+                    }
+                }
+
+                bind_output_framebuffer(
+                    output_framebuffer,
+                    self.output_width,
+                    self.output_height,
+                );
+                self.dithering.render(
+                    self.scratch_target.texture,
+                    self.dithering_level,
+                );
+
+                unsafe {
+                    gl::QueryCounter(queries[6], gl::TIMESTAMP);
+                    gl::Finish();
+                }
+            } else {
+                bind_output_framebuffer(
+                    output_framebuffer,
+                    self.output_width,
+                    self.output_height,
+                );
+                self.render_primary_pass(
+                    self.scene_target.texture
+                );
+
+                unsafe {
+                    gl::QueryCounter(queries[1], gl::TIMESTAMP);
+                    for index in 2..=6 {
+                        gl::QueryCounter(queries[index], gl::TIMESTAMP);
+                    }
+                    gl::Finish();
+                }
+            }
+
+            let mut timestamps = [0_u64; QUERY_COUNT];
+
+            unsafe {
+                for index in 0..QUERY_COUNT {
+                    gl::GetQueryObjectui64v(
+                        queries[index],
+                        gl::QUERY_RESULT,
+                        &mut timestamps[index],
+                    );
+                }
+            }
+
+            let elapsed_ms = |start: usize, end: usize| -> f64 {
+                timestamps[end]
+                    .saturating_sub(timestamps[start]) as f64
+                    / 1_000_000.0
+            };
+
+            Ok(PostprocessGpuTimings {
+                primary_ms: elapsed_ms(0, 1),
+                bloom_extraction_ms:
+                    if self.bloom_mode.is_enabled() {
+                        elapsed_ms(1, 2)
+                    } else { 0.0 },
+                bloom_blur_horizontal_ms:
+                    if self.bloom_mode.is_enabled() {
+                        elapsed_ms(2, 3)
+                    } else { 0.0 },
+                bloom_blur_vertical_ms:
+                    if self.bloom_mode.is_enabled() {
+                        elapsed_ms(3, 4)
+                    } else { 0.0 },
+                bloom_composite_ms:
+                    if self.bloom_mode.is_enabled() {
+                        elapsed_ms(4, 5)
+                    } else { 0.0 },
+                dithering_ms:
+                    if self.dithering_level.is_enabled() {
+                        elapsed_ms(5, 6)
+                    } else { 0.0 },
+                total_ms: elapsed_ms(0, 6),
+            })
+        })();
+
+        unsafe {
+            gl::DeleteQueries(QUERY_COUNT as i32, queries.as_ptr());
+        }
+
+        result
+    }
+
 
     fn render_bloom_extraction(
         &self,

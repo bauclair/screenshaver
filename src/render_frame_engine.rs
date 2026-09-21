@@ -138,6 +138,7 @@ pub(crate) struct FrameRenderEngine {
     fps_blink_visible: bool,
     last_fps_blink: Instant,
     frame_times: FrameTimeWindow,
+    gpu_timer_queries: [u32; 2],
     target_frame_time: Duration,
     last_frame: Instant,
 }
@@ -366,7 +367,27 @@ impl FrameRenderEngine {
             );
         }
 
-        // Selection alone must not advance persistent Ordered state. At this
+                let mut gpu_timer_queries =
+            [0_u32; 2];
+
+        unsafe {
+            gl::GenQueries(
+                2,
+                gpu_timer_queries.as_mut_ptr(),
+            );
+        }
+
+        if gpu_timer_queries[0] == 0
+            || gpu_timer_queries[1] == 0
+        {
+            return Err(
+                "Unable to allocate OpenGL GPU timer queries for FPS monitoring"
+                    .to_string()
+            );
+        }
+
+
+// Selection alone must not advance persistent Ordered state. At this
         // point loading, compilation, texture preparation, overlay creation,
         // and post-processing setup have all succeeded, so this policy is the
         // renderer's accepted active shader.
@@ -419,6 +440,7 @@ impl FrameRenderEngine {
                     Instant::now(),
                 frame_times:
                     FrameTimeWindow::new(),
+                gpu_timer_queries,
                 target_frame_time:
                     Duration::from_secs_f64(
                         1.0
@@ -597,9 +619,6 @@ impl FrameRenderEngine {
         let program =
             self.active_shader.program;
 
-        let shader_render_start =
-            Instant::now();
-
         if let Err(error) =
             self.postprocess.resize(
                 width,
@@ -613,6 +632,13 @@ impl FrameRenderEngine {
                     height,
                     error,
                 )
+            );
+        }
+
+        unsafe {
+            gl::QueryCounter(
+                self.gpu_timer_queries[0],
+                gl::TIMESTAMP,
             );
         }
 
@@ -757,12 +783,48 @@ impl FrameRenderEngine {
                 output_framebuffer
             );
 
+        let mut gpu_start_ns =
+            0_u64;
+        let mut gpu_end_ns =
+            0_u64;
+
         unsafe {
+            gl::QueryCounter(
+                self.gpu_timer_queries[1],
+                gl::TIMESTAMP,
+            );
+
+            // The production renderer already synchronizes here. Because both
+            // timestamps are complete after glFinish(), retrieving the query
+            // results does not add another frame synchronization point.
             gl::Finish();
+
+            gl::GetQueryObjectui64v(
+                self.gpu_timer_queries[0],
+                gl::QUERY_RESULT,
+                &mut gpu_start_ns,
+            );
+
+            gl::GetQueryObjectui64v(
+                self.gpu_timer_queries[1],
+                gl::QUERY_RESULT,
+                &mut gpu_end_ns,
+            );
         }
 
+        let gpu_elapsed_ns =
+            gpu_end_ns.saturating_sub(
+                gpu_start_ns
+            );
+
+        let gpu_elapsed =
+            Duration::from_secs_f64(
+                gpu_elapsed_ns as f64
+                    / 1_000_000_000.0
+            );
+
         self.frame_times.record(
-            shader_render_start.elapsed(),
+            gpu_elapsed,
             self.configured_fps,
         ).warning_state
     }
@@ -1352,6 +1414,15 @@ impl Drop for FrameRenderEngine {
                 gl::DeleteVertexArrays(
                     1,
                     &self.vao,
+                );
+            }
+
+            if self.gpu_timer_queries[0] != 0
+                || self.gpu_timer_queries[1] != 0
+            {
+                gl::DeleteQueries(
+                    2,
+                    self.gpu_timer_queries.as_ptr(),
                 );
             }
         }

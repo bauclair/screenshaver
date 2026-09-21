@@ -5,6 +5,12 @@ use std::time::{Duration, Instant};
 /// performance.
 pub const FPS_AVERAGE_WINDOW: Duration = Duration::from_secs(5);
 
+/// Minimum amount of continuous GPU timing history required before a shader
+/// can enter Warning or Critical state. This prevents startup/resume/resize
+/// transients from producing a performance notification from only one or two
+/// frames.
+pub const FPS_CLASSIFICATION_WARMUP: Duration = Duration::from_secs(1);
+
 /// Blink interval used by renderers that visually flash a critical FPS
 /// warning. Renderers that do not display an overlay may ignore this value.
 pub const FPS_CRITICAL_BLINK_INTERVAL: Duration = Duration::from_millis(500);
@@ -142,13 +148,27 @@ impl FrameTimeWindow {
         let safe_configured_fps = configured_fps.max(1);
         let ideal_seconds = 1.0 / safe_configured_fps as f64;
 
-        let warning_state = if average_seconds > ideal_seconds * 2.0 {
-            FpsWarningState::Critical
-        } else if average_seconds > ideal_seconds * 1.5 {
-            FpsWarningState::Warning
-        } else {
-            FpsWarningState::Normal
-        };
+        let observation_span =
+            match (
+                self.samples.front(),
+                self.samples.back(),
+            ) {
+                (Some((oldest, _)), Some((newest, _))) => {
+                    newest.duration_since(*oldest)
+                }
+                _ => Duration::ZERO,
+            };
+
+        let warning_state =
+            if observation_span < FPS_CLASSIFICATION_WARMUP {
+                FpsWarningState::Normal
+            } else if average_seconds > ideal_seconds * 2.0 {
+                FpsWarningState::Critical
+            } else if average_seconds > ideal_seconds * 1.5 {
+                FpsWarningState::Warning
+            } else {
+                FpsWarningState::Normal
+            };
 
         let average_fps = if average_seconds > 0.0 {
             (1.0 / average_seconds)
@@ -191,18 +211,43 @@ mod tests {
     }
 
     #[test]
-    fn slow_frame_time_is_reported_as_warning() {
+    fn isolated_slow_frame_does_not_trigger_warning() {
         let mut window = FrameTimeWindow::new();
         let status = window.record(Duration::from_millis(55), 30);
+
+        assert_eq!(status.warning_state, FpsWarningState::Normal);
+        assert_eq!(status.average_fps, 18);
+    }
+
+    #[test]
+    fn sustained_slow_gpu_time_is_reported_as_warning() {
+        let mut window = FrameTimeWindow::new();
+        let start = Instant::now();
+
+        window.record_at(start, Duration::from_millis(55), 30);
+
+        let status = window.record_at(
+            start + FPS_CLASSIFICATION_WARMUP,
+            Duration::from_millis(55),
+            30,
+        );
 
         assert_eq!(status.warning_state, FpsWarningState::Warning);
         assert_eq!(status.average_fps, 18);
     }
 
     #[test]
-    fn very_slow_frame_time_is_reported_as_critical() {
+    fn sustained_very_slow_gpu_time_is_reported_as_critical() {
         let mut window = FrameTimeWindow::new();
-        let status = window.record(Duration::from_millis(70), 30);
+        let start = Instant::now();
+
+        window.record_at(start, Duration::from_millis(70), 30);
+
+        let status = window.record_at(
+            start + FPS_CLASSIFICATION_WARMUP,
+            Duration::from_millis(70),
+            30,
+        );
 
         assert_eq!(status.warning_state, FpsWarningState::Critical);
         assert_eq!(status.average_fps, 14);

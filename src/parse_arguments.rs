@@ -21,6 +21,10 @@ pub enum Command {
 
     TestLyrics,
 
+    BenchmarkRender {
+        shader_path: String,
+    },
+
     Control {
         shader_name: Option<String>,
     },
@@ -145,6 +149,14 @@ pub fn parse() -> Result<Command, String> {
 
             Ok(
                 Command::TestLyrics
+            )
+        }
+
+
+        "--benchmark-render" => {
+
+            parse_benchmark_render(
+                &args[1..]
             )
         }
 
@@ -282,6 +294,38 @@ fn parse_compare_databases(
             database_b: database_paths[1].clone(),
             exclude_metadata,
             exclude_local_config,
+        }
+    )
+}
+
+
+fn parse_benchmark_render(
+    args: &[String],
+) -> Result<Command, String> {
+
+    if args.len() != 1 {
+        return Err(
+            "--benchmark-render requires exactly one shader filename or path"
+                .to_string()
+        );
+    }
+
+    let shader_path =
+        args[0].trim();
+
+    if shader_path.is_empty()
+        || shader_path.starts_with('-')
+    {
+        return Err(
+            "--benchmark-render requires a valid shader filename or path"
+                .to_string()
+        );
+    }
+
+    Ok(
+        Command::BenchmarkRender {
+            shader_path:
+                shader_path.to_string(),
         }
     )
 }
@@ -457,13 +501,17 @@ pub fn print_help() {
                  --exclude-local-config omits runtime targets and application/target defaults.\n\
                  The two exclusion options may be used independently or together.\n\
          \n\
+             --benchmark-render <SHADER_PATH>\n\
+                 Benchmark a shader using Screenshaver rendering-path variants.\n\
+                 Reports FPS, low-FPS, and frame-time statistics for comparison.\n\
+         \n\
          Temporary development/setup options:\n\
          \n\
              --test-playlists\n\
                  Run developer Playlist database-management tests and exit.\n\
          \n\
              --test-lyrics\n\
-                 Discover MPRIS media players and report current playback metadata.\n\
+                 Run the synchronized-lyrics development test and exit.\n\
          \n\
              --construct-lock-screen-kde\n\
                  Construct/install the KDE lock-screen integration.\n\

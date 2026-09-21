@@ -116,6 +116,7 @@ mod authenticate_user;
 mod manage_playlists;
 mod test_playlists;
 mod test_lyrics;
+mod test_render_benchmark;
 
 mod import_data;
 mod export_data;
@@ -459,6 +460,7 @@ fn main() {
         | crate::parse_arguments::Command::Start
         | crate::parse_arguments::Command::Control { .. }
         | crate::parse_arguments::Command::TestPlaylists
+        | crate::parse_arguments::Command::BenchmarkRender { .. }
         | crate::parse_arguments::Command::ResetIdleTimeout { .. } => {}
     }
 
@@ -919,6 +921,44 @@ fn main() {
 
 
     match command {
+
+        crate::parse_arguments::Command::BenchmarkRender {
+            shader_path,
+        } => {
+
+            match crate::test_render_benchmark::run(
+                &shader_path,
+                &cfg,
+            ) {
+                Ok(()) => {}
+
+                Err(error) => {
+                    eprintln!(
+                        "[RENDER BENCHMARK] FAILED: {}",
+                        error
+                    );
+
+                    crate::logger::error(
+                        &logfile,
+                        &format!(
+                            "[RENDER_BENCHMARK] {}",
+                            error,
+                        ),
+                    );
+
+                    std::process::exit(
+                        1
+                    );
+                }
+            }
+
+            drop(
+                database_connection
+            );
+
+            return;
+        }
+
 
         crate::parse_arguments::Command::Control {
             shader_name,

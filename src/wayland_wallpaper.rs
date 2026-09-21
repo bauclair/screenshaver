@@ -2933,6 +2933,22 @@ fn render_mirror_frames(
     );
 
 
+    // FPS Warning/CRITICAL must measure GPU rendering work rather than CPU
+    // wall-clock time.  This is especially important for Windowshader: a
+    // compositor may throttle or defer a non-visible xdg_toplevel while its
+    // workspace is inactive.  CPU elapsed time across that lifecycle event is
+    // not evidence that the shader itself is slow.
+    let mut performance_queries =
+        [0_u32; 2];
+
+    unsafe {
+        gl::GenQueries(
+            2,
+            performance_queries.as_mut_ptr(),
+        );
+    }
+
+
     let mut postprocess_pipelines =
         HashMap::with_capacity(
             native_targets.len()
@@ -3708,8 +3724,12 @@ fn render_mirror_frames(
                 start_time.elapsed();
 
 
-            let shader_render_start =
-                Instant::now();
+            unsafe {
+                gl::QueryCounter(
+                    performance_queries[0],
+                    gl::TIMESTAMP,
+                );
+            }
 
 
             crate::audio_backend::set_audio_required(
@@ -4018,6 +4038,23 @@ fn render_mirror_frames(
                 }
 
 
+                // Finish measuring Screenshaver's GPU work before handing
+                // the completed frame to the Wayland compositor.  An
+                // xdg_toplevel on an inactive workspace may block for seconds
+                // in eglSwapBuffers(); that presentation wait is not shader
+                // rendering cost.
+                unsafe {
+                    gl::QueryCounter(
+                        performance_queries[1],
+                        gl::TIMESTAMP,
+                    );
+                }
+
+
+                let presentation_started =
+                    Instant::now();
+
+
                 if unsafe {
                     eglSwapBuffers(
                         display,
@@ -4030,6 +4067,23 @@ fn render_mirror_frames(
                             "eglSwapBuffers"
                         )
                     );
+                }
+
+
+                let presentation_duration =
+                    presentation_started.elapsed();
+
+
+                // A long compositor wait breaks continuous presentation.
+                // Begin a new rolling performance epoch instead of carrying
+                // samples from before the hidden/inactive interval forward.
+                if presentation_duration
+                    >= Duration::from_millis(250)
+                {
+                    frame_times.clear();
+
+                    fps_warning_state =
+                        crate::fps_monitor::FpsWarningState::Normal;
                 }
             }
 
@@ -4049,13 +4103,46 @@ fn render_mirror_frames(
 
 
             unsafe {
+                // Preserve the existing synchronization behavior.  The end
+                // timestamp was issued before eglSwapBuffers(), so any
+                // compositor presentation stall is excluded from the GPU
+                // performance sample.
                 gl::Finish();
             }
 
 
+            let mut gpu_start_ns =
+                0_u64;
+
+            let mut gpu_end_ns =
+                0_u64;
+
+            unsafe {
+                gl::GetQueryObjectui64v(
+                    performance_queries[0],
+                    gl::QUERY_RESULT,
+                    &mut gpu_start_ns,
+                );
+
+                gl::GetQueryObjectui64v(
+                    performance_queries[1],
+                    gl::QUERY_RESULT,
+                    &mut gpu_end_ns,
+                );
+            }
+
+
+            let gpu_render_duration =
+                Duration::from_nanos(
+                    gpu_end_ns.saturating_sub(
+                        gpu_start_ns
+                    )
+                );
+
+
             let performance_status =
                 frame_times.record(
-                    shader_render_start.elapsed(),
+                    gpu_render_duration,
                     rendered_fps,
                 );
 
@@ -4162,6 +4249,11 @@ fn render_mirror_frames(
         gl::DeleteVertexArrays(
             1,
             &vao,
+        );
+
+        gl::DeleteQueries(
+            2,
+            performance_queries.as_ptr(),
         );
 
         gl::DeleteProgram(
