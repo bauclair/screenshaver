@@ -747,6 +747,9 @@ struct ExportManifest {
     shader_count: usize,
     playlist_count: usize,
     package_sha256: String,
+    backup: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    database_snapshot: Option<String>,
     files: ExportManifestFiles,
 }
 
@@ -1196,6 +1199,7 @@ fn write_zip_text(
 
 fn create_export_archive(
     state: &ExportWizardState,
+    full_backup: bool,
 ) -> Result<ExportSuccess, String> {
     use std::io::{Read, Write};
 
@@ -1227,10 +1231,17 @@ fn create_export_archive(
     let shaders =
         state.included_shaders();
     let included_playlist_ids =
-        state.included_playlists()
-            .into_iter()
-            .map(|(playlist_id, _)| playlist_id)
-            .collect::<std::collections::HashSet<_>>();
+        if full_backup {
+            state.playlists
+                .iter()
+                .map(|playlist| playlist.playlist_id)
+                .collect::<std::collections::HashSet<_>>()
+        } else {
+            state.included_playlists()
+                .into_iter()
+                .map(|(playlist_id, _)| playlist_id)
+                .collect::<std::collections::HashSet<_>>()
+        };
     let playlists =
         state.playlists
             .iter()
@@ -1319,6 +1330,33 @@ fn create_export_archive(
         );
     }
 
+    const DATABASE_ARCHIVE_PATH: &str = "backup/screenshaver.db";
+    let database_snapshot =
+        if full_backup {
+            Some(create_database_snapshot_bytes(destination_folder)?)
+        } else {
+            None
+        };
+
+    if let Some(bytes) = database_snapshot.as_ref() {
+        package_payloads.push(
+            (DATABASE_ARCHIVE_PATH, bytes.as_slice())
+        );
+    }
+
+    let managed_shader_payloads =
+        if full_backup {
+            load_all_managed_shader_payloads()?
+        } else {
+            Vec::new()
+        };
+
+    for (archive_name, bytes) in &managed_shader_payloads {
+        package_payloads.push(
+            (archive_name.as_str(), bytes.as_slice())
+        );
+    }
+
     let package_sha256 =
         package_sha256(&package_payloads);
 
@@ -1348,6 +1386,24 @@ fn create_export_archive(
         },
     );
 
+    if let Some(bytes) = database_snapshot.as_ref() {
+        manifest_files.insert(
+            DATABASE_ARCHIVE_PATH.to_string(),
+            ExportManifestFileIntegrity {
+                sha256: sha256_hex(bytes),
+            },
+        );
+    }
+
+    for (archive_name, bytes) in &managed_shader_payloads {
+        manifest_files.insert(
+            archive_name.clone(),
+            ExportManifestFileIntegrity {
+                sha256: sha256_hex(bytes),
+            },
+        );
+    }
+
     let manifest =
         ExportManifest {
             format: schema.format.clone(),
@@ -1368,6 +1424,9 @@ fn create_export_archive(
             playlist_count:
                 playlists.len(),
             package_sha256,
+            backup: full_backup,
+            database_snapshot:
+                full_backup.then(|| DATABASE_ARCHIVE_PATH.to_string()),
             files: manifest_files,
         };
 
@@ -1446,6 +1505,28 @@ fn create_export_archive(
                     .compression_method(
                         zip::CompressionMethod::Deflated
                     );
+
+            if let Some(bytes) = database_snapshot.as_ref() {
+                zip.start_file(
+                    DATABASE_ARCHIVE_PATH,
+                    options,
+                )
+                .map_err(|error| format!("Unable to add database snapshot to backup archive: {}", error))?;
+
+                zip.write_all(bytes)
+                    .map_err(|error| format!("Unable to write database snapshot to backup archive: {}", error))?;
+            }
+
+            for (archive_name, bytes) in &managed_shader_payloads {
+                zip.start_file(
+                    archive_name,
+                    options,
+                )
+                .map_err(|error| format!("Unable to add managed shader '{}' to backup archive: {}", archive_name, error))?;
+
+                zip.write_all(bytes)
+                    .map_err(|error| format!("Unable to write managed shader '{}' to backup archive: {}", archive_name, error))?;
+            }
 
             let mut buffer = [0_u8; 64 * 1024];
 
@@ -1558,6 +1639,134 @@ fn create_export_archive(
         }
     )
 }
+
+fn load_all_managed_shader_payloads(
+) -> Result<Vec<(String, Vec<u8>)>, String> {
+    let shader_directory = crate::locate_paths::shader_dir();
+    let mut payloads = Vec::new();
+
+    if !shader_directory.exists() {
+        return Ok(payloads);
+    }
+
+    let entries = std::fs::read_dir(&shader_directory)
+        .map_err(|error| format!("Unable to enumerate managed shader directory '{}': {}", shader_directory.display(), error))?;
+
+    for entry in entries {
+        let entry = entry.map_err(|error| format!("Unable to read managed shader directory entry: {}", error))?;
+        let file_type = entry.file_type()
+            .map_err(|error| format!("Unable to inspect managed shader entry '{}': {}", entry.path().display(), error))?;
+
+        if !file_type.is_file() {
+            continue;
+        }
+
+        let filename = entry.file_name().to_string_lossy().to_string();
+        let archive_name = format!("backup/managed-shaders/{}", filename);
+        let bytes = std::fs::read(entry.path())
+            .map_err(|error| format!("Unable to read managed shader '{}' for full backup: {}", entry.path().display(), error))?;
+
+        payloads.push((archive_name, bytes));
+    }
+
+    payloads.sort_by(|left, right| left.0.cmp(&right.0));
+    Ok(payloads)
+}
+
+
+fn create_database_snapshot_bytes(
+    temporary_directory: &std::path::Path,
+) -> Result<Vec<u8>, String> {
+    let temporary_path =
+        temporary_directory.join(".screenshaver-backup-database.tmp");
+
+    if temporary_path.exists() {
+        std::fs::remove_file(&temporary_path)
+            .map_err(|error| format!("Unable to remove stale database snapshot '{}': {}", temporary_path.display(), error))?;
+    }
+
+    let connection = crate::open_database::open()
+        .map_err(|error| format!("Unable to open database for backup snapshot: {}", error))?;
+
+    let quoted = temporary_path.to_string_lossy().replace('\'', "''");
+    let result = connection.execute_batch(
+        &format!("VACUUM INTO '{}';", quoted)
+    );
+
+    if let Err(error) = result {
+        let _ = std::fs::remove_file(&temporary_path);
+        return Err(format!("Unable to create consistent database snapshot: {}", error));
+    }
+
+    let verify = rusqlite::Connection::open_with_flags(
+        &temporary_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .map_err(|error| format!("Unable to open database snapshot for verification: {}", error))?;
+
+    let integrity: String = verify.query_row(
+        "PRAGMA integrity_check",
+        [],
+        |row| row.get(0),
+    )
+    .map_err(|error| format!("Unable to verify database snapshot: {}", error))?;
+
+    if integrity != "ok" {
+        let _ = std::fs::remove_file(&temporary_path);
+        return Err(format!("Database snapshot failed integrity verification: {}", integrity));
+    }
+
+    drop(verify);
+
+    let bytes = std::fs::read(&temporary_path)
+        .map_err(|error| format!("Unable to read verified database snapshot '{}': {}", temporary_path.display(), error));
+
+    let _ = std::fs::remove_file(&temporary_path);
+    bytes
+}
+
+
+pub fn create_full_backup() -> Result<std::path::PathBuf, String> {
+    let backup_directory = crate::locate_paths::backup_dir();
+    std::fs::create_dir_all(&backup_directory)
+        .map_err(|error| format!("Unable to create backup directory '{}': {}", backup_directory.display(), error))?;
+
+    let mut state = ExportWizardState::default();
+    state.reset_for_open();
+
+    if let Some(error) = state.selection_error.as_ref() {
+        return Err(format!("Unable to prepare full backup selection: {}", error));
+    }
+    if let Some(error) = state.portable_policy_error.as_ref() {
+        return Err(format!("Unable to resolve full backup policies: {}", error));
+    }
+
+    // Full backup is deliberately non-interactive: every policy and every
+    // playlist is included. Shader files are derived from the complete policy
+    // set using the same portable export machinery as the Export Wizard.
+    state.export_focus = ExportSelectionRoot::Policies;
+    state.selected_policy_ids = state.policies.iter().map(|policy| policy.policy_id).collect();
+    state.selected_shader_ids = state.shaders.iter().map(|shader| shader.shader_id).collect();
+    state.selected_playlist_ids = state.playlists.iter().map(|playlist| playlist.playlist_id).collect();
+    state.refresh_portable_policies();
+
+    let stamp = std::process::Command::new("date")
+        .arg("+%Y%m%d-%H%M%S")
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "Unable to determine backup filename timestamp.".to_string())?;
+
+    state.destination = backup_directory.to_string_lossy().to_string();
+    state.export_filename = format!("{}.zip", stamp);
+
+    create_export_archive(&state, true)
+        .map(|result| result.path)
+}
+
 
 fn default_export_destination_folder() -> String {
     std::env::var_os("HOME")
@@ -3594,7 +3803,7 @@ fn draw_navigation(
                             state.execution_started = true;
 
                             let result =
-                                create_export_archive(state);
+                                create_export_archive(state, false);
 
                             state.export_result =
                                 Some(result);

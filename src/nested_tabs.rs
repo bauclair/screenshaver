@@ -230,6 +230,7 @@ pub fn draw_configuration(
                                 ConfigurationNestedTab::DataIo => {
                                     draw_data_io_shell(
                                         ui,
+                                        status_message,
                                         export_destination_browse_requested,
                                         import_archive_browse_requested,
                                     );
@@ -347,6 +348,7 @@ pub fn draw_configuration(
 
 fn draw_data_io_shell(
     ui: &mut egui::Ui,
+    status_message: &mut String,
     export_destination_browse_requested: &mut Option<std::path::PathBuf>,
     import_archive_browse_requested: &mut Option<std::path::PathBuf>,
 ) {
@@ -359,12 +361,24 @@ fn draw_data_io_shell(
     );
 
     ui.label(
-        "Import or export portable Screenshaver data."
+        "Create recovery backups or import/export portable Screenshaver data."
     );
 
     ui.add_space(
         12.0
     );
+
+    crate::manage_backup::draw_controls(
+        ui,
+        status_message,
+    );
+
+    ui.add_space(12.0);
+    ui.separator();
+    ui.add_space(12.0);
+
+    ui.label(egui::RichText::new("Portable Data").strong());
+    ui.add_space(6.0);
 
     ui.horizontal(
         |ui| {

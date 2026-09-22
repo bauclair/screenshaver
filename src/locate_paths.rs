@@ -53,3 +53,17 @@ pub fn database_path() -> PathBuf {
     screenshaver_dir()
         .join("screenshaver.db")
 }
+
+
+pub fn screenshaver_data_dir() -> PathBuf {
+    home_dir()
+        .join(".local")
+        .join("share")
+        .join("screenshaver")
+}
+
+
+pub fn backup_dir() -> PathBuf {
+    screenshaver_data_dir()
+        .join("backups")
+}

@@ -120,6 +120,7 @@ mod test_render_benchmark;
 
 mod import_data;
 mod export_data;
+mod manage_backup;
 mod compare_databases;
 
 use std::sync::Arc;
@@ -534,6 +535,12 @@ fn main() {
     );
 
 
+    if let Err(error) = crate::manage_backup::ensure_directory() {
+        eprintln!("[MAIN] BACKUP DIRECTORY ERROR: {}", error);
+        std::process::exit(1);
+    }
+
+
     let logfile =
         crate::locate_paths::runtime_log_path();
 
@@ -819,6 +826,27 @@ fn main() {
                     "[POLICY] Unable to offer new-policy assignment: {}",
                     error,
                 ),
+            );
+        }
+    }
+
+
+    // Automatic backup runs only after database preparation, shader
+    // reconciliation, and required policy assignment have completed. A failed
+    // backup never advances app_defaults.last_backup, so the next startup can
+    // retry it.
+    match crate::manage_backup::run_scheduled_backup_if_due() {
+        Ok(Some(path)) => {
+            crate::logger::information(
+                &logfile,
+                &format!("[BACKUP] Automatic full backup created: {}", path.display()),
+            );
+        }
+        Ok(None) => {}
+        Err(error) => {
+            crate::logger::warning(
+                &logfile,
+                &format!("[BACKUP] Automatic full backup failed: {}", error),
             );
         }
     }

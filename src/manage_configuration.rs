@@ -1911,3 +1911,110 @@ fn section_table_mut<'a>(
             }
         )
 }
+
+
+//
+// ------------------------------------------------------------
+// Full-backup scheduling
+// ------------------------------------------------------------
+//
+
+#[derive(Debug, Clone)]
+pub struct BackupSettings {
+    pub automatic_backups: bool,
+    pub backup_interval_days: i64,
+    pub last_backup: String,
+}
+
+
+pub fn load_backup_settings() -> Result<BackupSettings, String> {
+    let connection = crate::open_database::open()
+        .map_err(|error| format!("Unable to open database while loading backup settings: {}", error))?;
+
+    connection.query_row(
+        "SELECT automatic_backups, backup_interval_days, last_backup
+         FROM app_defaults
+         WHERE defaults_id = 1",
+        [],
+        |row| {
+            Ok(BackupSettings {
+                automatic_backups: row.get::<_, i64>(0)? != 0,
+                backup_interval_days: row.get(1)?,
+                last_backup: row.get(2)?,
+            })
+        },
+    )
+    .map_err(|error| format!("Unable to load backup settings: {}", error))
+}
+
+
+pub fn save_backup_settings(
+    automatic_backups: bool,
+    backup_interval_days: i64,
+) -> Result<(), String> {
+    if backup_interval_days < 1 {
+        return Err("Backup interval must be at least one day.".to_string());
+    }
+
+    let connection = crate::open_database::open()
+        .map_err(|error| format!("Unable to open database while saving backup settings: {}", error))?;
+
+    let changed = connection.execute(
+        "UPDATE app_defaults
+         SET automatic_backups = ?1,
+             backup_interval_days = ?2
+         WHERE defaults_id = 1",
+        rusqlite::params![automatic_backups, backup_interval_days],
+    )
+    .map_err(|error| format!("Unable to save backup settings: {}", error))?;
+
+    if changed != 1 {
+        return Err(format!("Unable to save backup settings: expected one row, updated {}", changed));
+    }
+
+    Ok(())
+}
+
+
+pub fn mark_backup_completed() -> Result<String, String> {
+    let connection = crate::open_database::open()
+        .map_err(|error| format!("Unable to open database while recording backup completion: {}", error))?;
+
+    let timestamp: String = connection.query_row(
+        "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', 'now')",
+        [],
+        |row| row.get(0),
+    )
+    .map_err(|error| format!("Unable to determine backup completion time: {}", error))?;
+
+    let changed = connection.execute(
+        "UPDATE app_defaults SET last_backup = ?1 WHERE defaults_id = 1",
+        [&timestamp],
+    )
+    .map_err(|error| format!("Unable to record backup completion time: {}", error))?;
+
+    if changed != 1 {
+        return Err(format!("Unable to record backup completion time: expected one row, updated {}", changed));
+    }
+
+    Ok(timestamp)
+}
+
+
+pub fn automatic_backup_due() -> Result<bool, String> {
+    let connection = crate::open_database::open()
+        .map_err(|error| format!("Unable to open database while checking backup schedule: {}", error))?;
+
+    connection.query_row(
+        "SELECT CASE
+             WHEN automatic_backups = 0 THEN 0
+             WHEN datetime('now') >= datetime(last_backup, '+' || backup_interval_days || ' days') THEN 1
+             ELSE 0
+         END
+         FROM app_defaults
+         WHERE defaults_id = 1",
+        [],
+        |row| Ok(row.get::<_, i64>(0)? != 0),
+    )
+    .map_err(|error| format!("Unable to evaluate automatic backup schedule: {}", error))
+}

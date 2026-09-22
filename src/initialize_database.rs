@@ -437,7 +437,10 @@ fn create_app_defaults(
                  anti_aliasing,
                  dithering,
                  color_precision,
-                 render_scale
+                 render_scale,
+                 automatic_backups,
+                 backup_interval_days,
+                 last_backup
              )
              VALUES (
                  1,
@@ -451,7 +454,10 @@ fn create_app_defaults(
                  'fxaa',
                  'subtle',
                  'auto',
-                 1.0
+                 1.0,
+                 1,
+                 7,
+                 strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
              )",
             [],
         )

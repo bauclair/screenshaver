@@ -709,7 +709,20 @@ CREATE TABLE app_defaults (
                             DEFAULT 1.0
                             CHECK (
                                 render_scale BETWEEN 0.25 AND 2.0
-                            )
+                            ),
+
+    -- Full Screenshaver backup scheduling. last_backup is the authoritative
+    -- scheduling reference, not the contents or mtimes of the backup folder.
+    automatic_backups       INTEGER NOT NULL
+                            DEFAULT 1
+                            CHECK (automatic_backups IN (0, 1)),
+
+    backup_interval_days    INTEGER NOT NULL
+                            DEFAULT 7
+                            CHECK (backup_interval_days >= 1),
+
+    last_backup             TEXT NOT NULL
+                            DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
 
