@@ -21,7 +21,13 @@ pub enum Command {
 
     TestLyrics,
 
+    TestVocalDetection,
+
     BenchmarkRender {
+        shader_path: String,
+    },
+
+    TestAudioMotion {
         shader_path: String,
     },
 
@@ -153,9 +159,31 @@ pub fn parse() -> Result<Command, String> {
         }
 
 
+        "--test-vocal-detection" => {
+
+            require_no_extra_arguments(
+                &args,
+                "--test-vocal-detection",
+            )?;
+
+
+            Ok(
+                Command::TestVocalDetection
+            )
+        }
+
+
         "--benchmark-render" => {
 
             parse_benchmark_render(
+                &args[1..]
+            )
+        }
+
+
+        "--test-audio-motion" => {
+
+            parse_test_audio_motion(
                 &args[1..]
             )
         }
@@ -324,6 +352,38 @@ fn parse_benchmark_render(
 
     Ok(
         Command::BenchmarkRender {
+            shader_path:
+                shader_path.to_string(),
+        }
+    )
+}
+
+
+fn parse_test_audio_motion(
+    args: &[String],
+) -> Result<Command, String> {
+
+    if args.len() != 1 {
+        return Err(
+            "--test-audio-motion requires exactly one shader filename or path"
+                .to_string()
+        );
+    }
+
+    let shader_path =
+        args[0].trim();
+
+    if shader_path.is_empty()
+        || shader_path.starts_with('-')
+    {
+        return Err(
+            "--test-audio-motion requires a valid shader filename or path"
+                .to_string()
+        );
+    }
+
+    Ok(
+        Command::TestAudioMotion {
             shader_path:
                 shader_path.to_string(),
         }
@@ -507,11 +567,18 @@ pub fn print_help() {
          \n\
          Temporary development/setup options:\n\
          \n\
+             --test-audio-motion <SHADER_PATH>\n\
+                  Run the experimental audio-motion shader harness.\n\
+                  Press Esc or close the test window to exit.\n\
+         \n\
              --test-playlists\n\
                  Run developer Playlist database-management tests and exit.\n\
          \n\
              --test-lyrics\n\
                  Run the synchronized-lyrics development test and exit.\n\
+         \n\
+             --test-vocal-detection\n\
+                 Load and inspect the experimental singing-voice ONNX model, then exit.\n\
          \n\
              --construct-lock-screen-kde\n\
                  Construct/install the KDE lock-screen integration.\n\

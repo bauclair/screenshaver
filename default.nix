@@ -14,6 +14,7 @@
 , xorg
 , cmake
 , qt6
+, onnxruntime
 }:
 
 rustPlatform.buildRustPackage rec {
@@ -37,6 +38,8 @@ rustPlatform.buildRustPackage rec {
   LIBCLANG_PATH = "${llvmPackages.libclang.lib}/lib";
   LLVM_CONFIG_PATH = "${llvmPackages.llvm}/bin/llvm-config";
 
+  SCREENSHAVER_ONNXRUNTIME_DYLIB = "${onnxruntime}/lib/libonnxruntime.so";
+
   BINDGEN_EXTRA_CLANG_ARGS = "-I${pam}/include -I${stdenv.cc.libc.dev}/include";
 
   buildInputs = [
@@ -53,6 +56,7 @@ rustPlatform.buildRustPackage rec {
     xorg.libXScrnSaver
     qt6.qtbase
     qt6.qtdeclarative
+    onnxruntime
   ];
 
 

@@ -1801,6 +1801,8 @@ impl BloomRenderer {
                     pseudo_frequency_hz,
 
                 loudness,
+
+                ..crate::analyze_audio::AudioBands::default()
             };
 
         self.render_spectral_colors(

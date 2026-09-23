@@ -22,8 +22,18 @@ pub struct LyricsState {
 
 pub type SharedLyricsState = Arc<Mutex<LyricsState>>;
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct VocalTimingState {
+    pub available: bool,
+    pub active: bool,
+    pub current_line: Option<String>,
+}
+
+pub type SharedVocalTimingState = Arc<Mutex<VocalTimingState>>;
+
 pub struct LyricsManager {
     state: SharedLyricsState,
+    vocal_timing_state: SharedVocalTimingState,
     running: Arc<AtomicBool>,
     worker: Option<JoinHandle<()>>,
 }
@@ -40,14 +50,16 @@ impl LyricsManager {
         })?;
 
         let state = Arc::new(Mutex::new(LyricsState::default()));
+        let vocal_timing_state = Arc::new(Mutex::new(VocalTimingState::default()));
         let running = Arc::new(AtomicBool::new(true));
         let worker_state = Arc::clone(&state);
+        let worker_vocal_timing_state = Arc::clone(&vocal_timing_state);
         let worker_running = Arc::clone(&running);
 
         let worker = thread::Builder::new()
             .name("screenshaver-lyrics".to_string())
             .spawn(move || {
-                run_worker(worker_state, worker_running);
+                run_worker(worker_state, worker_vocal_timing_state, worker_running);
             })
             .map_err(|error| format!("Unable to start lyrics worker: {}", error))?;
 
@@ -55,6 +67,7 @@ impl LyricsManager {
 
         Ok(Self {
             state,
+            vocal_timing_state,
             running,
             worker: Some(worker),
         })
@@ -66,6 +79,17 @@ impl LyricsManager {
 
     pub fn current_state(&self) -> LyricsState {
         self.state
+            .lock()
+            .map(|state| state.clone())
+            .unwrap_or_default()
+    }
+
+    pub fn shared_vocal_timing_state(&self) -> SharedVocalTimingState {
+        Arc::clone(&self.vocal_timing_state)
+    }
+
+    pub fn current_vocal_timing_state(&self) -> VocalTimingState {
+        self.vocal_timing_state
             .lock()
             .map(|state| state.clone())
             .unwrap_or_default()
@@ -154,14 +178,27 @@ struct SynchronizedLine {
     text: String,
 }
 
-fn run_worker(state: Arc<Mutex<LyricsState>>, running: Arc<AtomicBool>) {
+#[derive(Debug, Clone)]
+struct VocalInterval {
+    start: Duration,
+    end: Duration,
+    text: String,
+}
+
+fn run_worker(
+    state: Arc<Mutex<LyricsState>>,
+    vocal_timing_state: Arc<Mutex<VocalTimingState>>,
+    running: Arc<AtomicBool>,
+) {
     let mut last_position_poll = Instant::now() - POSITION_POLL_INTERVAL;
     let mut last_metadata_poll = Instant::now() - METADATA_POLL_INTERVAL;
     let mut last_player_scan = Instant::now() - PLAYER_SCAN_INTERVAL;
     let mut active_player: Option<Player> = None;
     let mut current_track: Option<TrackInformation> = None;
     let mut synchronized_lines: Vec<SynchronizedLine> = Vec::new();
+    let mut vocal_intervals: Vec<VocalInterval> = Vec::new();
     let mut last_line_index: Option<usize> = None;
+    let mut last_vocal_interval_index: Option<usize> = None;
 
     while running.load(Ordering::SeqCst) {
         if let Some(player) = active_player.as_ref() {
@@ -175,8 +212,11 @@ fn run_worker(state: Arc<Mutex<LyricsState>>, running: Arc<AtomicBool>) {
                     active_player = None;
                     current_track = None;
                     synchronized_lines.clear();
+                    vocal_intervals.clear();
                     last_line_index = None;
+                    last_vocal_interval_index = None;
                     publish_state(&state, LyricsState::default());
+                    publish_vocal_timing_state(&vocal_timing_state, VocalTimingState::default());
                     last_player_scan = Instant::now() - PLAYER_SCAN_INTERVAL;
                 }
                 Err(error) => {
@@ -187,8 +227,11 @@ fn run_worker(state: Arc<Mutex<LyricsState>>, running: Arc<AtomicBool>) {
                     active_player = None;
                     current_track = None;
                     synchronized_lines.clear();
+                    vocal_intervals.clear();
                     last_line_index = None;
+                    last_vocal_interval_index = None;
                     publish_state(&state, LyricsState::default());
+                    publish_vocal_timing_state(&vocal_timing_state, VocalTimingState::default());
                     last_player_scan = Instant::now() - PLAYER_SCAN_INTERVAL;
                 }
             }
@@ -199,18 +242,28 @@ fn run_worker(state: Arc<Mutex<LyricsState>>, running: Arc<AtomicBool>) {
 
             match find_playing_player() {
                 Ok(Some(player)) => match load_player_track(&player) {
-                    Ok((track, lines)) => {
+                    Ok((track, lines, intervals)) => {
                         log_information(&format!(
                             "[LYRICS] Following MPRIS player '{}' for '{}' by '{}'",
                             player.identity(), track.identity.title, track.identity.artist
                         ));
                         current_track = Some(track);
                         synchronized_lines = lines;
+                        vocal_intervals = intervals;
                         last_line_index = None;
+                        last_vocal_interval_index = None;
                         active_player = Some(player);
                         last_metadata_poll = Instant::now();
                         last_position_poll = Instant::now() - POSITION_POLL_INTERVAL;
                         publish_state(&state, LyricsState::default());
+                        publish_vocal_timing_state(
+                            &vocal_timing_state,
+                            VocalTimingState {
+                                available: !vocal_intervals.is_empty(),
+                                active: false,
+                                current_line: None,
+                            },
+                        );
                     }
                     Err(error) => {
                         log_warning(&format!("[LYRICS] Playing player could not be used: {}", error));
@@ -245,8 +298,27 @@ fn run_worker(state: Arc<Mutex<LyricsState>>, running: Arc<AtomicBool>) {
                                     Vec::new()
                                 }
                             };
+                            vocal_intervals = match retrieve_lrcmux_vocal_intervals(track) {
+                                Ok(intervals) => intervals,
+                                Err(error) => {
+                                    log_warning(&format!(
+                                        "[AUDIO MOTION] LRCMUX vocal timing unavailable: {}",
+                                        error
+                                    ));
+                                    Vec::new()
+                                }
+                            };
                             last_line_index = None;
+                            last_vocal_interval_index = None;
                             publish_state(&state, LyricsState::default());
+                            publish_vocal_timing_state(
+                                &vocal_timing_state,
+                                VocalTimingState {
+                                    available: !vocal_intervals.is_empty(),
+                                    active: false,
+                                    current_line: None,
+                                },
+                            );
                         }
                     }
                     Err(error) => log_warning(&format!(
@@ -267,6 +339,16 @@ fn run_worker(state: Arc<Mutex<LyricsState>>, running: Arc<AtomicBool>) {
                         last_line_index = active;
                         publish_line_state(&state, &synchronized_lines, active);
                     }
+
+                    let vocal_active = find_active_vocal_interval(&vocal_intervals, position);
+                    if vocal_active != last_vocal_interval_index {
+                        last_vocal_interval_index = vocal_active;
+                        publish_vocal_interval_state(
+                            &vocal_timing_state,
+                            &vocal_intervals,
+                            vocal_active,
+                        );
+                    }
                 }
             }
         }
@@ -275,6 +357,7 @@ fn run_worker(state: Arc<Mutex<LyricsState>>, running: Arc<AtomicBool>) {
     }
 
     publish_state(&state, LyricsState::default());
+    publish_vocal_timing_state(&vocal_timing_state, VocalTimingState::default());
 }
 
 fn publish_line_state(
@@ -305,6 +388,35 @@ fn publish_state(state: &Arc<Mutex<LyricsState>>, next_state: LyricsState) {
     }
 }
 
+fn publish_vocal_timing_state(
+    state: &Arc<Mutex<VocalTimingState>>,
+    next_state: VocalTimingState,
+) {
+    if let Ok(mut state) = state.lock() {
+        *state = next_state;
+    }
+}
+
+fn publish_vocal_interval_state(
+    state: &Arc<Mutex<VocalTimingState>>,
+    intervals: &[VocalInterval],
+    active: Option<usize>,
+) {
+    let current_line =
+        active
+            .and_then(|index| intervals.get(index))
+            .map(|interval| interval.text.clone());
+
+    publish_vocal_timing_state(
+        state,
+        VocalTimingState {
+            available: !intervals.is_empty(),
+            active: active.is_some(),
+            current_line,
+        },
+    );
+}
+
 fn find_playing_player() -> Result<Option<Player>, String> {
     let finder = PlayerFinder::new().map_err(|error| {
         format!(
@@ -331,7 +443,9 @@ fn find_playing_player() -> Result<Option<Player>, String> {
     Ok(None)
 }
 
-fn load_player_track(player: &Player) -> Result<(TrackInformation, Vec<SynchronizedLine>), String> {
+fn load_player_track(
+    player: &Player,
+) -> Result<(TrackInformation, Vec<SynchronizedLine>, Vec<VocalInterval>), String> {
     let track = read_track_information(player)?;
     let lines = match retrieve_synchronized_lines(&track) {
         Ok(lines) => lines,
@@ -341,7 +455,21 @@ fn load_player_track(player: &Player) -> Result<(TrackInformation, Vec<Synchroni
         }
     };
 
-    Ok((track, lines))
+    // Audio Motion deliberately uses LRCMUX only.  Its explicit start/end
+    // intervals let the test gate vocal emphasis without guessing where a
+    // lyric line stops.  Failure here does not affect ordinary lyric display.
+    let vocal_intervals = match retrieve_lrcmux_vocal_intervals(&track) {
+        Ok(intervals) => intervals,
+        Err(error) => {
+            log_warning(&format!(
+                "[AUDIO MOTION] LRCMUX vocal timing unavailable: {}",
+                error
+            ));
+            Vec::new()
+        }
+    };
+
+    Ok((track, lines, vocal_intervals))
 }
 
 fn read_track_information(player: &Player) -> Result<TrackInformation, String> {
@@ -478,6 +606,50 @@ fn retrieve_lrcmux_synchronized_lines(
     Ok(synchronized_lines)
 }
 
+
+fn retrieve_lrcmux_vocal_intervals(
+    track: &TrackInformation,
+) -> Result<Vec<VocalInterval>, String> {
+    let result = query_lrcmux(
+        &track.identity.title,
+        &track.identity.artist,
+        &track.identity.album,
+        track.duration,
+    )?;
+
+    let synchronization_level = result.meta.level.clone();
+    let mut intervals = Vec::with_capacity(result.lines.len());
+
+    for line in result.lines {
+        if line.end <= line.start || line.text.trim().is_empty() {
+            continue;
+        }
+
+        intervals.push(VocalInterval {
+            start: Duration::from_millis(line.start),
+            end: Duration::from_millis(line.end),
+            text: line.text,
+        });
+    }
+
+    intervals.sort_by_key(|interval| interval.start);
+
+    if intervals.is_empty() {
+        return Err(format!(
+            "LRCMUX returned no usable start/end vocal intervals for '{}' by '{}'.",
+            track.identity.title, track.identity.artist
+        ));
+    }
+
+    log_information(&format!(
+        "[AUDIO MOTION] LRCMUX vocal timing ready: synchronization='{}' intervals={}",
+        synchronization_level,
+        intervals.len()
+    ));
+
+    Ok(intervals)
+}
+
 fn parse_synchronized_lyrics(lyrics: &str) -> Result<Vec<SynchronizedLine>, String> {
     let mut lines = Vec::new();
 
@@ -536,6 +708,27 @@ fn find_active_line(lines: &[SynchronizedLine], position: Duration) -> Option<us
         Err(0) => None,
         Err(index) => Some(index - 1),
     }
+}
+
+fn find_active_vocal_interval(
+    intervals: &[VocalInterval],
+    position: Duration,
+) -> Option<usize> {
+    if intervals.is_empty() || position < intervals[0].start {
+        return None;
+    }
+
+    let candidate =
+        match intervals.binary_search_by_key(&position, |interval| interval.start) {
+            Ok(index) => index,
+            Err(0) => return None,
+            Err(index) => index - 1,
+        };
+
+    intervals
+        .get(candidate)
+        .filter(|interval| position >= interval.start && position < interval.end)
+        .map(|_| candidate)
 }
 
 fn query_lrclib(

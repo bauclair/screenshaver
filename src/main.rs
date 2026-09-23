@@ -117,6 +117,8 @@ mod manage_playlists;
 mod test_playlists;
 mod test_lyrics;
 mod test_render_benchmark;
+mod test_audio_motion;
+mod test_vocal_detection;
 
 mod import_data;
 mod export_data;
@@ -265,6 +267,30 @@ fn main() {
 
                     eprintln!(
                         "[LYRICS TEST] FAILED: {}",
+                        error
+                    );
+
+                    std::process::exit(
+                        1
+                    );
+                }
+            }
+
+
+            return;
+        }
+
+
+        crate::parse_arguments::Command::TestVocalDetection => {
+
+            match crate::test_vocal_detection::run() {
+
+                Ok(()) => {}
+
+                Err(error) => {
+
+                    eprintln!(
+                        "[VOCAL DETECTION TEST] FAILED: {}",
                         error
                     );
 
@@ -462,6 +488,7 @@ fn main() {
         | crate::parse_arguments::Command::Control { .. }
         | crate::parse_arguments::Command::TestPlaylists
         | crate::parse_arguments::Command::BenchmarkRender { .. }
+        | crate::parse_arguments::Command::TestAudioMotion { .. }
         | crate::parse_arguments::Command::ResetIdleTimeout { .. } => {}
     }
 
@@ -950,6 +977,44 @@ fn main() {
 
     match command {
 
+        crate::parse_arguments::Command::TestAudioMotion {
+            shader_path,
+        } => {
+
+            match crate::test_audio_motion::run(
+                &shader_path,
+                &cfg,
+            ) {
+                Ok(()) => {}
+
+                Err(error) => {
+                    eprintln!(
+                        "[AUDIO MOTION TEST] FAILED: {}",
+                        error
+                    );
+
+                    crate::logger::error(
+                        &logfile,
+                        &format!(
+                            "[AUDIO_MOTION_TEST] {}",
+                            error,
+                        ),
+                    );
+
+                    std::process::exit(
+                        1
+                    );
+                }
+            }
+
+            drop(
+                database_connection
+            );
+
+            return;
+        }
+
+
         crate::parse_arguments::Command::BenchmarkRender {
             shader_path,
         } => {
@@ -1045,6 +1110,7 @@ fn main() {
         | crate::parse_arguments::Command::Version
         | crate::parse_arguments::Command::TestPlaylists
         | crate::parse_arguments::Command::TestLyrics
+        | crate::parse_arguments::Command::TestVocalDetection
         | crate::parse_arguments::Command::ConstructLockScreenKde
         | crate::parse_arguments::Command::ConstructLockScreenXfce
         | crate::parse_arguments::Command::ResetIdleTimeout { .. } => {
