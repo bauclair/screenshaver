@@ -299,6 +299,7 @@ pub struct BulkPolicyFieldMask {
     pub dithering: bool,
     pub color_precision: bool,
     pub bloom: bool,
+    pub audio_motion: bool,
     pub bloom_intensity: bool,
     pub bloom_saturation: bool,
     pub bloom_threshold: bool,
@@ -322,6 +323,8 @@ pub struct BulkPolicyPatch {
     pub policy_key: String,
     pub properties: PolicyDefinition,
     pub fields: BulkPolicyFieldMask,
+    pub audio_motion_effect:
+        Option<crate::render_audio_motion::AudioMotionEffect>,
 }
 
 
@@ -1113,6 +1116,42 @@ pub fn patch_policies_by_id(
         update_one!(patch.fields.dithering, "dithering", values.dithering);
         update_one!(patch.fields.color_precision, "color_precision", values.color_precision);
         update_one!(patch.fields.bloom, "audiovisual_effect", values.audiovisual_effect);
+
+        if patch.fields.audio_motion {
+            let effect =
+                patch.audio_motion_effect
+                    .ok_or_else(
+                        || {
+                            format!(
+                                "Bulk Edit marked Audio Motion changed for policy ID {}, but no Audio Motion effect was supplied",
+                                patch.policy_id,
+                            )
+                        }
+                    )?;
+
+            transaction.execute(
+                "UPDATE shader_policies
+                 SET audio_motion_effect = ?1
+                 WHERE policy_id = ?2",
+                rusqlite::params![
+                    effect.database_name(),
+                    patch.policy_id,
+                ],
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to update Audio Motion for policy ID {}: {}",
+                        patch.policy_id,
+                        error,
+                    )
+                }
+            )?;
+
+            policy_changed =
+                true;
+        }
+
         update_one!(patch.fields.bloom_intensity, "bloom_intensity", values.bloom_intensity);
         update_one!(patch.fields.bloom_saturation, "bloom_saturation", values.bloom_saturation);
         update_one!(patch.fields.bloom_threshold, "bloom_threshold", values.bloom_threshold);
@@ -2984,4 +3023,44 @@ fn paths_refer_to_same_source(
             left == right
         }
     }
+}
+
+
+pub fn set_audio_motion_effect_by_id(
+    policy_id: i64,
+    effect: crate::render_audio_motion::AudioMotionEffect,
+) -> Result<(), String> {
+    let connection = crate::open_database::open()
+        .map_err(|error| format!("Unable to open database while saving Audio Motion for policy ID {}: {}", policy_id, error))?;
+    let changed = connection.execute(
+        "UPDATE shader_policies SET audio_motion_effect = ?1, policy_modified_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE policy_id = ?2",
+        rusqlite::params![effect.database_name(), policy_id],
+    ).map_err(|error| format!("Unable to save Audio Motion for policy ID {}: {}", policy_id, error))?;
+    match changed {
+        1 => Ok(()),
+        0 => Err(format!("Policy ID {} no longer exists while saving Audio Motion", policy_id)),
+        count => Err(format!("Policy ID {} unexpectedly matched {} rows while saving Audio Motion", policy_id, count)),
+    }
+}
+
+pub fn set_audio_motion_effect_for_source(
+    _config_path: &Path,
+    target: PolicyTarget,
+    shader: &str,
+    source_path: &Path,
+    effect: crate::render_audio_motion::AudioMotionEffect,
+) -> Result<(), String> {
+    let shader = normalized_shader_name(shader)?;
+    let source = canonical_or_absolute(source_path)?
+        .to_string_lossy()
+        .to_string();
+    let connection = crate::open_database::open()
+        .map_err(|error| format!("Unable to open database while saving Audio Motion for '{}': {}", shader, error))?;
+    let policy_id: i64 = connection.query_row(
+        "SELECT p.policy_id FROM shader_policies p JOIN shaders s ON s.shader_id = p.shader_id WHERE lower(s.filename) = lower(?1) AND p.policy_target = ?2 AND s.source_path = ?3 ORDER BY p.policy_id LIMIT 1",
+        rusqlite::params![shader, target.name(), source],
+        |row| row.get(0),
+    ).map_err(|error| format!("Unable to locate {} policy for '{}' while saving Audio Motion: {}", target.name(), shader, error))?;
+    drop(connection);
+    set_audio_motion_effect_by_id(policy_id, effect)
 }

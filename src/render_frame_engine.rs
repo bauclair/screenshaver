@@ -132,6 +132,9 @@ pub(crate) struct FrameRenderEngine {
     audio_bands:
         Option<crate::audio_backend::SharedAudioBands>,
     audio_required: bool,
+    audio_motion_effect: crate::render_audio_motion::AudioMotionEffect,
+    audio_motion_state: crate::render_audio_motion::AudioMotionState,
+    audio_motion_lyrics_manager: Option<crate::manage_lyrics::LyricsManager>,
     output_policy: FrameOutputPolicy,
     configured_fps: u32,
     fps_warning_state: FpsWarningState,
@@ -344,7 +347,23 @@ impl FrameRenderEngine {
             matches!(
                 postprocess_profile.bloom.name(),
                 "audio" | "spectral" | "loudness"
-            );
+            ) || postprocess_profile.audio_motion.is_enabled();
+
+        let audio_motion_lyrics_manager =
+            if postprocess_profile.audio_motion.is_enabled() {
+                match crate::manage_lyrics::LyricsManager::start() {
+                    Ok(manager) => Some(manager),
+                    Err(error) => {
+                        crate::logger::warning(
+                            &crate::locate_paths::runtime_log_path(),
+                            &format!("[AUDIO_MOTION] LRCMUX timing unavailable; using ungated spectrum: {}", error),
+                        );
+                        None
+                    }
+                }
+            } else {
+                None
+            };
 
         let postprocess =
             crate::postprocess_shader::PostprocessPipeline::new(
@@ -430,6 +449,9 @@ impl FrameRenderEngine {
                 postprocess_policy,
                 audio_bands,
                 audio_required,
+                audio_motion_effect: postprocess_profile.audio_motion,
+                audio_motion_state: crate::render_audio_motion::AudioMotionState::default(),
+                audio_motion_lyrics_manager,
                 output_policy,
                 configured_fps,
                 fps_warning_state:
@@ -514,7 +536,17 @@ impl FrameRenderEngine {
             matches!(
                 replacement_postprocess_profile.bloom.name(),
                 "audio" | "spectral" | "loudness"
-            );
+            ) || replacement_postprocess_profile.audio_motion.is_enabled();
+
+        self.audio_motion_effect = replacement_postprocess_profile.audio_motion;
+        if self.audio_motion_effect.is_enabled() && self.audio_motion_lyrics_manager.is_none() {
+            self.audio_motion_lyrics_manager = crate::manage_lyrics::LyricsManager::start().ok();
+        }
+        if !self.audio_motion_effect.is_enabled() {
+            self.audio_motion_lyrics_manager = None;
+            self.audio_motion_state.reset();
+            self.postprocess.set_audio_motion_scale(1.0);
+        }
 
         replacement_texture_manager.configure_program(
             self.active_shader.program
@@ -879,6 +911,21 @@ impl FrameRenderEngine {
         self.postprocess.set_audio_bands(
             current_audio_bands
         );
+
+        if self.audio_motion_effect.is_enabled() {
+            let spectrum = crate::analyze_audio::shared_audio_motion_spectrum()
+                .read().ok().map(|value| *value).unwrap_or_default();
+            let vocal_timing = crate::manage_lyrics::shared_audio_motion_vocal_timing_state()
+                .lock().ok().map(|value| value.clone()).unwrap_or_default();
+            let scale = self.audio_motion_state.update(
+                spectrum,
+                self.target_frame_time.as_secs_f32(),
+                &vocal_timing,
+            );
+            self.postprocess.set_audio_motion_scale(scale);
+        } else {
+            self.postprocess.set_audio_motion_scale(1.0);
+        }
 
         let shader_changed =
             self.maybe_switch_shader(
@@ -1303,7 +1350,15 @@ impl FrameRenderEngine {
                     matches!(
                         new_postprocess_profile.bloom.name(),
                         "audio" | "spectral" | "loudness"
-                    );
+                    ) || new_postprocess_profile.audio_motion.is_enabled();
+                self.audio_motion_effect = new_postprocess_profile.audio_motion;
+                if self.audio_motion_effect.is_enabled() && self.audio_motion_lyrics_manager.is_none() {
+                    self.audio_motion_lyrics_manager = crate::manage_lyrics::LyricsManager::start().ok();
+                }
+                if !self.audio_motion_effect.is_enabled() {
+                    self.audio_motion_lyrics_manager = None;
+                    self.audio_motion_state.reset();
+                }
 
                 self.active_shader =
                     new_shader;

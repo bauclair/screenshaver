@@ -3019,20 +3019,42 @@ fn render_mirror_frames(
             HashMap::new();
 
 
+    let initial_postprocess_profile =
+        runtime.postprocess_policy
+            .profile_for_policy(
+                active_shader.policy_id,
+                &active_shader.shader_name,
+                Some(
+                    active_shader.source_path.as_path()
+                ),
+            );
+
+
     let mut audio_required =
         matches!(
-            runtime.postprocess_policy
-                .profile_for_policy(
-                    active_shader.policy_id,
-                    &active_shader.shader_name,
-                    Some(
-                        active_shader.source_path.as_path()
-                    ),
-                )
-                .bloom
-                .name(),
+            initial_postprocess_profile.bloom.name(),
             "audio" | "spectral" | "loudness"
-        );
+        ) || initial_postprocess_profile.audio_motion.is_enabled();
+
+
+    let mut audio_motion_effect =
+        initial_postprocess_profile.audio_motion;
+
+
+    let mut audio_motion_state =
+        crate::render_audio_motion::AudioMotionState::default();
+
+
+    let mut audio_motion_lyrics_manager =
+        if audio_motion_effect.is_enabled() {
+            crate::manage_lyrics::LyricsManager::start().ok()
+        } else {
+            None
+        };
+
+
+    let mut last_audio_motion_update =
+        Instant::now();
 
 
     let mut i_time =
@@ -3221,7 +3243,33 @@ fn render_mirror_frames(
                                 matches!(
                                     replacement_profile.bloom.name(),
                                     "audio" | "spectral" | "loudness"
-                                );
+                                ) || replacement_profile.audio_motion.is_enabled();
+
+                            audio_motion_effect =
+                                replacement_profile.audio_motion;
+
+                            if audio_motion_effect.is_enabled()
+                                && audio_motion_lyrics_manager.is_none()
+                            {
+                                audio_motion_lyrics_manager =
+                                    crate::manage_lyrics::LyricsManager::start().ok();
+                            }
+
+                            if !audio_motion_effect.is_enabled() {
+                                audio_motion_lyrics_manager = None;
+                                audio_motion_state.reset();
+
+                                for pipeline in
+                                    postprocess_pipelines.values_mut()
+                                {
+                                    pipeline.set_audio_motion_scale(
+                                        1.0
+                                    );
+                                }
+                            }
+
+                            last_audio_motion_update =
+                                Instant::now();
 
                             animation_speed =
                                 reload.animation_speed_policy
@@ -3588,7 +3636,31 @@ fn render_mirror_frames(
                                     matches!(
                                         postprocess_profile.bloom.name(),
                                         "audio" | "spectral" | "loudness"
-                                    );
+                                    ) || postprocess_profile.audio_motion.is_enabled();
+
+
+                                audio_motion_effect =
+                                    postprocess_profile.audio_motion;
+
+
+                                if audio_motion_effect.is_enabled()
+                                    && audio_motion_lyrics_manager.is_none()
+                                {
+                                    audio_motion_lyrics_manager =
+                                        crate::manage_lyrics::LyricsManager::start().ok();
+                                }
+
+
+                                if !audio_motion_effect.is_enabled() {
+                                    audio_motion_lyrics_manager =
+                                        None;
+
+                                    audio_motion_state.reset();
+                                }
+
+
+                                last_audio_motion_update =
+                                    Instant::now();
 
 
                                 for pipeline in
@@ -3753,6 +3825,48 @@ fn render_mirror_frames(
                     .unwrap_or_default();
 
 
+            let audio_motion_scale =
+                if audio_motion_effect.is_enabled() {
+                    let now =
+                        Instant::now();
+
+                    let frame_seconds =
+                        now.duration_since(
+                            last_audio_motion_update
+                        )
+                        .as_secs_f32();
+
+                    last_audio_motion_update =
+                        now;
+
+                    let spectrum =
+                        crate::analyze_audio::shared_audio_motion_spectrum()
+                            .read()
+                            .ok()
+                            .map(
+                                |value| *value
+                            )
+                            .unwrap_or_default();
+
+                    let vocal_timing =
+                        crate::manage_lyrics::shared_audio_motion_vocal_timing_state()
+                            .lock()
+                            .ok()
+                            .map(
+                                |value| value.clone()
+                            )
+                            .unwrap_or_default();
+
+                    audio_motion_state.update(
+                        spectrum,
+                        frame_seconds,
+                        &vocal_timing,
+                    )
+                } else {
+                    1.0
+                };
+
+
             for (
                 egl_target,
                 native_target,
@@ -3796,6 +3910,11 @@ fn render_mirror_frames(
 
                 postprocess.set_audio_bands(
                     current_audio_bands
+                );
+
+
+                postprocess.set_audio_motion_scale(
+                    audio_motion_scale
                 );
 
 

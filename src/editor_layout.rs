@@ -880,6 +880,7 @@ pub struct BulkEditChanges {
     pub dithering: bool,
     pub color_precision: bool,
     pub bloom: bool,
+    pub audio_motion: bool,
     pub bloom_intensity: bool,
     pub bloom_saturation: bool,
     pub bloom_threshold: bool,
@@ -905,6 +906,7 @@ impl BulkEditChanges {
             || self.dithering
             || self.color_precision
             || self.bloom
+            || self.audio_motion
             || self.bloom_intensity
             || self.bloom_saturation
             || self.bloom_threshold
@@ -937,6 +939,7 @@ pub struct EditorOutput {
     pub dithering: DitheringSelection,
     pub color_precision: ColorPrecisionSelection,
     pub bloom: BloomSelection,
+    pub audio_motion: crate::render_audio_motion::AudioMotionEffect,
     pub bloom_intensity: f32,
     pub bloom_saturation: f32,
     pub bloom_threshold: f32,
@@ -993,6 +996,7 @@ struct EditorConfiguration {
     dithering: DitheringSelection,
     color_precision: ColorPrecisionSelection,
     bloom: BloomSelection,
+    audio_motion: crate::render_audio_motion::AudioMotionEffect,
     bloom_intensity: f32,
     bloom_saturation: f32,
     bloom_threshold: f32,
@@ -1019,6 +1023,7 @@ impl EditorConfiguration {
         dithering: DitheringSelection,
         color_precision: ColorPrecisionSelection,
         bloom: BloomSelection,
+        audio_motion: crate::render_audio_motion::AudioMotionEffect,
         bloom_intensity: f32,
         bloom_saturation: f32,
         bloom_threshold: f32,
@@ -1052,6 +1057,7 @@ impl EditorConfiguration {
             dithering,
             color_precision,
             bloom,
+            audio_motion,
             bloom_intensity:
                 normalize_editor_float(
                     bloom_intensity
@@ -1107,6 +1113,8 @@ impl EditorConfiguration {
                 self.color_precision != baseline.color_precision,
             bloom:
                 self.bloom != baseline.bloom,
+            audio_motion:
+                self.audio_motion != baseline.audio_motion,
             bloom_intensity:
                 (self.bloom_intensity - baseline.bloom_intensity).abs() > 0.0001,
             bloom_saturation:
@@ -1170,6 +1178,8 @@ impl EditorConfiguration {
                 != other.color_precision
             || self.bloom
                 != other.bloom
+            || self.audio_motion
+                != other.audio_motion
             || (self.bloom_intensity
                 - other.bloom_intensity)
                 .abs()
@@ -1311,6 +1321,9 @@ pub struct EditWindowOverlay {
     bloom:
         BloomSelection,
 
+    audio_motion:
+        crate::render_audio_motion::AudioMotionEffect,
+
     bloom_intensity:
         f32,
 
@@ -1447,6 +1460,9 @@ pub struct EditWindowOverlay {
         bool,
 
     bulk_bloom_selected:
+        bool,
+
+    bulk_audio_motion_selected:
         bool,
 
     bulk_hue_rotation_selected:
@@ -1752,6 +1768,9 @@ impl EditWindowOverlay {
                 bloom:
                     BloomSelection::Off,
 
+                audio_motion:
+                    crate::render_audio_motion::AudioMotionEffect::Off,
+
                 bloom_intensity:
                     crate::render_bloom::BLOOM_INTENSITY_DEFAULT,
                 bloom_saturation:
@@ -1874,6 +1893,9 @@ impl EditWindowOverlay {
                     false,
 
                 bulk_bloom_selected:
+                    false,
+
+                bulk_audio_motion_selected:
                     false,
 
                 bulk_hue_rotation_selected:
@@ -2302,6 +2324,7 @@ impl EditWindowOverlay {
         resolved_dithering: DitheringSelection,
         resolved_color_precision: ColorPrecisionSelection,
         resolved_bloom: BloomSelection,
+        resolved_audio_motion: crate::render_audio_motion::AudioMotionEffect,
         resolved_bloom_intensity: f32,
         resolved_bloom_saturation: f32,
         resolved_bloom_threshold: f32,
@@ -2616,6 +2639,9 @@ impl EditWindowOverlay {
         let mut bloom =
             self.bloom;
 
+        let mut audio_motion =
+            self.audio_motion;
+
         let mut bloom_intensity =
             self.bloom_intensity;
 
@@ -2693,6 +2719,9 @@ impl EditWindowOverlay {
 
         let mut bulk_bloom_selected =
             self.bulk_bloom_selected;
+
+        let mut bulk_audio_motion_selected =
+            self.bulk_audio_motion_selected;
 
         let mut bulk_hue_rotation_selected =
             self.bulk_hue_rotation_selected;
@@ -2784,6 +2813,9 @@ impl EditWindowOverlay {
 
             bloom =
                 resolved_bloom;
+
+            audio_motion =
+                resolved_audio_motion;
 
             bloom_intensity =
                 resolved_bloom_intensity;
@@ -2899,6 +2931,7 @@ impl EditWindowOverlay {
                             dithering,
                             color_precision,
                             bloom,
+                            audio_motion,
                             bloom_intensity,
                             bloom_saturation,
                             bloom_threshold,
@@ -3061,6 +3094,7 @@ impl EditWindowOverlay {
                             dithering,
                             color_precision,
                             bloom,
+                            audio_motion,
                             bloom_intensity,
                             bloom_saturation,
                             bloom_threshold,
@@ -3108,6 +3142,7 @@ impl EditWindowOverlay {
                 bulk_dithering_selected = false;
                 bulk_color_precision_selected = false;
                 bulk_bloom_selected = false;
+                bulk_audio_motion_selected = false;
                 bulk_hue_rotation_selected = false;
 
                 status_message =
@@ -3157,6 +3192,9 @@ impl EditWindowOverlay {
 
                 bloom =
                     suspended_baseline.bloom;
+
+                audio_motion =
+                    suspended_baseline.audio_motion;
 
                 bloom_intensity =
                     suspended_baseline.bloom_intensity;
@@ -3235,6 +3273,7 @@ impl EditWindowOverlay {
                 bulk_dithering_selected = false;
                 bulk_color_precision_selected = false;
                 bulk_bloom_selected = false;
+                bulk_audio_motion_selected = false;
                 bulk_hue_rotation_selected = false;
             }
 
@@ -3346,6 +3385,7 @@ impl EditWindowOverlay {
                                     dithering,
                                     color_precision,
                                     bloom,
+                                    audio_motion,
                                     bloom_intensity,
                                     bloom_saturation,
                                     bloom_threshold,
@@ -3451,6 +3491,18 @@ impl EditWindowOverlay {
                                 bulk_edit_mode && bulk_color_precision_selected;
                             pending_bulk_changes.bloom =
                                 bulk_edit_mode && bulk_bloom_selected;
+                            pending_bulk_changes.audio_motion =
+                                bulk_edit_mode
+                                    && (
+                                        bulk_audio_motion_selected
+                                            || bulk_edit_baseline
+                                                .is_some_and(
+                                                    |baseline| {
+                                                        audio_motion
+                                                            != baseline.audio_motion
+                                                    }
+                                                )
+                                    );
                             pending_bulk_changes.hue_rotation =
                                 bulk_edit_mode && bulk_hue_rotation_selected;
 
@@ -3701,6 +3753,8 @@ impl EditWindowOverlay {
                                                         &mut hue_rotation,
                                                         &mut hue_rotation_drag_state,
                                                         &mut bloom,
+                                                        &mut audio_motion,
+                                                        &mut bulk_audio_motion_selected,
                                                         &mut bloom_intensity,
                                                         &mut bloom_intensity_drag_state,
                                                         &mut bloom_saturation,
@@ -3973,6 +4027,7 @@ impl EditWindowOverlay {
                             dithering,
                             color_precision,
                             bloom,
+                            audio_motion,
                             bloom_intensity,
                             bloom_saturation,
                             bloom_threshold,
@@ -4208,6 +4263,7 @@ impl EditWindowOverlay {
                 dithering,
                 color_precision,
                 bloom,
+                audio_motion,
                 bloom_intensity,
                 bloom_saturation,
                 bloom_threshold,
@@ -4275,6 +4331,18 @@ impl EditWindowOverlay {
             bulk_edit_mode && bulk_color_precision_selected;
         bulk_edit_changes.bloom =
             bulk_edit_mode && bulk_bloom_selected;
+        bulk_edit_changes.audio_motion =
+            bulk_edit_mode
+                && (
+                    bulk_audio_motion_selected
+                        || bulk_edit_baseline
+                            .is_some_and(
+                                |baseline| {
+                                    audio_motion
+                                        != baseline.audio_motion
+                                }
+                            )
+                );
         bulk_edit_changes.hue_rotation =
             bulk_edit_mode && bulk_hue_rotation_selected;
 
@@ -4380,6 +4448,9 @@ impl EditWindowOverlay {
         self.bloom =
             bloom;
 
+        self.audio_motion =
+            audio_motion;
+
         self.bloom_intensity =
             bloom_intensity;
 
@@ -4443,6 +4514,8 @@ impl EditWindowOverlay {
             bulk_color_precision_selected;
         self.bulk_bloom_selected =
             bulk_bloom_selected;
+        self.bulk_audio_motion_selected =
+            bulk_audio_motion_selected;
         self.bulk_hue_rotation_selected =
             bulk_hue_rotation_selected;
 
@@ -4495,6 +4568,8 @@ impl EditWindowOverlay {
             color_precision,
 
             bloom,
+
+            audio_motion,
 
             bloom_intensity,
 
@@ -4568,6 +4643,7 @@ impl EditWindowOverlay {
                         dithering,
                         color_precision,
                         bloom,
+                        audio_motion,
                         bloom_intensity,
                         bloom_saturation,
                         bloom_threshold,
@@ -4920,6 +4996,7 @@ impl EditWindowOverlay {
         dithering: DitheringSelection,
         color_precision: ColorPrecisionSelection,
         bloom: BloomSelection,
+        audio_motion: crate::render_audio_motion::AudioMotionEffect,
         bloom_intensity: f32,
         bloom_saturation: f32,
         bloom_threshold: f32,
@@ -4982,6 +5059,9 @@ impl EditWindowOverlay {
 
         self.bloom =
             bloom;
+
+        self.audio_motion =
+            audio_motion;
 
         self.bloom_intensity =
             bloom_intensity.clamp(
@@ -5094,6 +5174,7 @@ impl EditWindowOverlay {
                     self.dithering,
                     self.color_precision,
                     self.bloom,
+                    self.audio_motion,
                     self.bloom_intensity,
                     self.bloom_saturation,
                     self.bloom_threshold,
@@ -5163,6 +5244,7 @@ impl EditWindowOverlay {
         self.bulk_dithering_selected = false;
         self.bulk_color_precision_selected = false;
         self.bulk_bloom_selected = false;
+        self.bulk_audio_motion_selected = false;
         self.bulk_hue_rotation_selected = false;
 
         self.bulk_selected_policy_rows.clear();
@@ -5263,6 +5345,9 @@ impl EditWindowOverlay {
         self.bloom =
             baseline.bloom;
 
+        self.audio_motion =
+            baseline.audio_motion;
+
         self.bloom_intensity =
             baseline.bloom_intensity;
 
@@ -5322,6 +5407,7 @@ impl EditWindowOverlay {
         self.bulk_dithering_selected = false;
         self.bulk_color_precision_selected = false;
         self.bulk_bloom_selected = false;
+        self.bulk_audio_motion_selected = false;
         self.bulk_hue_rotation_selected = false;
     }
 
@@ -5359,6 +5445,7 @@ impl EditWindowOverlay {
                         self.dithering,
                         self.color_precision,
                         self.bloom,
+                        self.audio_motion,
                         self.bloom_intensity,
                         self.bloom_saturation,
                         self.bloom_threshold,

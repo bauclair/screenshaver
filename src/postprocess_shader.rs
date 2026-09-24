@@ -28,6 +28,7 @@ use crate::render_dithering::{
     DitheringRenderer,
 };
 use crate::render_bloom::BloomRenderer;
+use crate::render_audio_motion::AudioMotionRenderer;
 use crate::render_fxaa::FxaaRenderer;
 use crate::render_passthrough::PassthroughRenderer;
 
@@ -158,9 +159,12 @@ pub(crate) struct PostprocessPipeline {
     fxaa: FxaaRenderer,
     dithering: DitheringRenderer,
     bloom: BloomRenderer,
+    audio_motion: AudioMotionRenderer,
     method: PostprocessMethod,
     dithering_level: DitheringLevel,
     bloom_mode: crate::render_bloom::BloomMode,
+    audio_motion_effect: crate::render_audio_motion::AudioMotionEffect,
+    audio_motion_scale: f32,
     bloom_intensity: f32,
     bloom_saturation: f32,
     bloom_threshold: f32,
@@ -224,6 +228,9 @@ impl PostprocessPipeline {
         let bloom =
             BloomRenderer::new()?;
 
+        let audio_motion =
+            AudioMotionRenderer::new()?;
+
         let requested_precision =
             profile.color_precision;
 
@@ -282,6 +289,7 @@ impl PostprocessPipeline {
                 fxaa,
                 dithering,
                 bloom,
+                audio_motion,
                 method:
                     method_for_profile(
                         profile
@@ -290,6 +298,10 @@ impl PostprocessPipeline {
                     profile.dithering,
                 bloom_mode:
                     profile.bloom,
+                audio_motion_effect:
+                    profile.audio_motion,
+                audio_motion_scale:
+                    1.0,
                 bloom_intensity:
                     crate::render_bloom::validate_bloom_intensity(
                         profile.bloom_intensity
@@ -346,6 +358,11 @@ impl PostprocessPipeline {
         self.audio_bands =
             bands;
     }
+
+    pub(crate) fn set_audio_motion_scale(&mut self, scale: f32) {
+        self.audio_motion_scale = scale.max(1.0);
+    }
+
 
 
     /// Executes the current post-processing plan and presents it to
@@ -862,6 +879,35 @@ impl PostprocessPipeline {
         &self,
         input_texture: u32,
     ) {
+        if self.audio_motion_effect.is_enabled() {
+            let mut destination_framebuffer = 0_i32;
+            unsafe {
+                gl::GetIntegerv(gl::FRAMEBUFFER_BINDING, &mut destination_framebuffer);
+            }
+
+            self.composite_target.bind(self.output_width, self.output_height);
+            self.render_primary_pass_base(input_texture);
+
+            bind_output_framebuffer(
+                destination_framebuffer.max(0) as u32,
+                self.output_width,
+                self.output_height,
+            );
+            self.audio_motion.render(
+                self.composite_target.texture,
+                self.output_width,
+                self.output_height,
+                self.audio_motion_scale,
+            );
+        } else {
+            self.render_primary_pass_base(input_texture);
+        }
+    }
+
+    fn render_primary_pass_base(
+        &self,
+        input_texture: u32,
+    ) {
         match self.method {
             PostprocessMethod::Passthrough => {
                 self.passthrough.render(
@@ -1024,6 +1070,9 @@ impl PostprocessPipeline {
 
         self.bloom_mode =
             profile.bloom;
+
+        self.audio_motion_effect =
+            profile.audio_motion;
 
         self.bloom_intensity =
             bloom_intensity;

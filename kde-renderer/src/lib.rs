@@ -101,6 +101,9 @@ mod display_overlay;
 #[path = "../../src/fps_monitor.rs"]
 mod fps_monitor;
 
+#[path = "../../src/render_audio_motion.rs"]
+mod render_audio_motion;
+
 #[path = "../../src/postprocess_shader.rs"]
 mod postprocess_shader;
 #[path = "../../src/render_passthrough.rs"]

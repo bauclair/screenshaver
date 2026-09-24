@@ -164,6 +164,9 @@ pub struct ShaderPolicy {
             crate::render_bloom::BloomMode
         >,
 
+    pub audio_motion:
+        Option<crate::render_audio_motion::AudioMotionEffect>,
+
     pub bloom_intensity:
         Option<f32>,
 
@@ -649,6 +652,9 @@ pub(crate) struct PostprocessProfile {
     pub bloom:
         crate::render_bloom::BloomMode,
 
+    pub audio_motion:
+        crate::render_audio_motion::AudioMotionEffect,
+
     pub bloom_intensity:
         f32,
 
@@ -698,6 +704,9 @@ impl Default for PostprocessProfile {
 
             bloom:
                 crate::render_bloom::BloomMode::Off,
+
+            audio_motion:
+                crate::render_audio_motion::AudioMotionEffect::Off,
 
             bloom_intensity:
                 crate::render_bloom::BLOOM_INTENSITY_DEFAULT,
@@ -839,6 +848,11 @@ impl PostprocessPolicy {
                     .unwrap_or(
                         self.global_profile.render_scale
                     ),
+
+            audio_motion:
+                shader_policy
+                    .and_then(|shader_policy| shader_policy.audio_motion)
+                    .unwrap_or(self.global_profile.audio_motion),
 
             bloom:
                 shader_policy
@@ -1960,6 +1974,7 @@ fn load_database_policy_table(
         color_precision: Option<String>,
         render_scale: Option<f64>,
         audiovisual_effect: String,
+        audio_motion_effect: String,
         bloom_intensity: f64,
         bloom_saturation: f64,
         bloom_threshold: f64,
@@ -1993,6 +2008,9 @@ fn load_database_policy_table(
             )?;
 
 
+    ensure_audio_motion_column(&connection)?;
+
+
     let mut statement =
         connection
             .prepare(
@@ -2014,6 +2032,7 @@ fn load_database_policy_table(
                      p.color_precision,
                      p.render_scale,
                      p.audiovisual_effect,
+                     p.audio_motion_effect,
                      p.bloom_intensity,
                      p.bloom_saturation,
                      p.bloom_threshold,
@@ -2067,15 +2086,16 @@ fn load_database_policy_table(
                             color_precision: row.get(14)?,
                             render_scale: row.get(15)?,
                             audiovisual_effect: row.get(16)?,
-                            bloom_intensity: row.get(17)?,
-                            bloom_saturation: row.get(18)?,
-                            bloom_threshold: row.get(19)?,
-                            bloom_frequency_rotation: row.get(20)?,
-                            bloom_frequency_invert: row.get(21)?,
-                            invert_colors: row.get(22)?,
-                            flip_horizontal: row.get(23)?,
-                            flip_vertical: row.get(24)?,
-                            hue_rotation: row.get(25)?,
+                            audio_motion_effect: row.get(17)?,
+                            bloom_intensity: row.get(18)?,
+                            bloom_saturation: row.get(19)?,
+                            bloom_threshold: row.get(20)?,
+                            bloom_frequency_rotation: row.get(21)?,
+                            bloom_frequency_invert: row.get(22)?,
+                            invert_colors: row.get(23)?,
+                            flip_horizontal: row.get(24)?,
+                            flip_vertical: row.get(25)?,
+                            hue_rotation: row.get(26)?,
                         }
                     )
                 },
@@ -2291,6 +2311,13 @@ fn load_database_policy_table(
 
         tokens.push(
             format!(
+                "audio_motion:{}",
+                row.audio_motion_effect,
+            )
+        );
+
+        tokens.push(
+            format!(
                 "bloom:{}",
                 database_audiovisual_effect_bloom_token(
                     &row.audiovisual_effect
@@ -2471,6 +2498,7 @@ fn parse_policy_specification(
     let mut color_precision = None;
     let mut render_scale = None;
     let mut bloom = None;
+    let mut audio_motion = None;
     let mut bloom_intensity = None;
     let mut bloom_saturation = None;
     let mut bloom_threshold = None;
@@ -2712,6 +2740,16 @@ fn parse_policy_specification(
                     );
             }
 
+            "audio_motion" => {
+                if audio_motion.is_some() {
+                    return Err(duplicate_policy_property(&shader, target, "audio_motion"));
+                }
+                audio_motion = Some(
+                    crate::render_audio_motion::AudioMotionEffect::parse(value)
+                        .map_err(|error| format!("Invalid audio_motion value '{}' for '{}' in [{}]: {}", value, shader, target.table_name(), error))?
+                );
+            }
+
             "bloom" => {
                 if bloom.is_some() {
                     return Err(duplicate_policy_property(
@@ -2941,6 +2979,7 @@ fn parse_policy_specification(
             dithering,
             color_precision,
             render_scale,
+            audio_motion,
             bloom,
             bloom_intensity,
             bloom_saturation,
@@ -4537,5 +4576,22 @@ fn enforce_screen_lock_screensaver_timeout(
             })?;
     }
 
+    Ok(())
+}
+
+
+fn ensure_audio_motion_column(connection: &rusqlite::Connection) -> Result<(), String> {
+    let mut statement = connection.prepare("PRAGMA table_info(shader_policies)")
+        .map_err(|error| format!("Unable to inspect shader_policies for Audio Motion migration: {}", error))?;
+    let names = statement.query_map([], |row| row.get::<_, String>(1))
+        .map_err(|error| format!("Unable to query shader_policies columns: {}", error))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("Unable to read shader_policies columns: {}", error))?;
+    if !names.iter().any(|name| name == "audio_motion_effect") {
+        connection.execute(
+            "ALTER TABLE shader_policies ADD COLUMN audio_motion_effect TEXT NOT NULL DEFAULT 'off' CHECK (audio_motion_effect IN ('off','woofer_from_hell'))",
+            [],
+        ).map_err(|error| format!("Unable to migrate shader_policies for Audio Motion: {}", error))?;
+    }
     Ok(())
 }

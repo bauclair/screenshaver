@@ -96,6 +96,7 @@ mod render_passthrough;
 mod render_fxaa;
 mod render_dithering;
 mod render_bloom;
+mod render_audio_motion;
 mod select_render_precision;
 
 mod initialize_database;
@@ -118,7 +119,6 @@ mod test_playlists;
 mod test_lyrics;
 mod test_render_benchmark;
 mod test_audio_motion;
-mod test_vocal_detection;
 
 mod import_data;
 mod export_data;
@@ -267,30 +267,6 @@ fn main() {
 
                     eprintln!(
                         "[LYRICS TEST] FAILED: {}",
-                        error
-                    );
-
-                    std::process::exit(
-                        1
-                    );
-                }
-            }
-
-
-            return;
-        }
-
-
-        crate::parse_arguments::Command::TestVocalDetection => {
-
-            match crate::test_vocal_detection::run() {
-
-                Ok(()) => {}
-
-                Err(error) => {
-
-                    eprintln!(
-                        "[VOCAL DETECTION TEST] FAILED: {}",
                         error
                     );
 
@@ -1110,7 +1086,6 @@ fn main() {
         | crate::parse_arguments::Command::Version
         | crate::parse_arguments::Command::TestPlaylists
         | crate::parse_arguments::Command::TestLyrics
-        | crate::parse_arguments::Command::TestVocalDetection
         | crate::parse_arguments::Command::ConstructLockScreenKde
         | crate::parse_arguments::Command::ConstructLockScreenXfce
         | crate::parse_arguments::Command::ResetIdleTimeout { .. } => {

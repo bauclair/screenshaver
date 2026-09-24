@@ -338,6 +338,17 @@ CREATE TABLE shader_policies (
                                )
                            ),
 
+    -- Independent per-policy Audio Motion effect. Audio Motion may be
+    -- combined with any Audiovisual effect.
+    audio_motion_effect    TEXT NOT NULL
+                           DEFAULT 'off'
+                           CHECK (
+                               audio_motion_effect IN (
+                                   'off',
+                                   'woofer_from_hell'
+                               )
+                           ),
+
     bloom_intensity        REAL NOT NULL
                            DEFAULT 1.0,
 

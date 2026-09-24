@@ -21,8 +21,6 @@ pub enum Command {
 
     TestLyrics,
 
-    TestVocalDetection,
-
     BenchmarkRender {
         shader_path: String,
     },
@@ -155,20 +153,6 @@ pub fn parse() -> Result<Command, String> {
 
             Ok(
                 Command::TestLyrics
-            )
-        }
-
-
-        "--test-vocal-detection" => {
-
-            require_no_extra_arguments(
-                &args,
-                "--test-vocal-detection",
-            )?;
-
-
-            Ok(
-                Command::TestVocalDetection
             )
         }
 
@@ -576,9 +560,6 @@ pub fn print_help() {
          \n\
              --test-lyrics\n\
                  Run the synchronized-lyrics development test and exit.\n\
-         \n\
-             --test-vocal-detection\n\
-                 Load and inspect the experimental singing-voice ONNX model, then exit.\n\
          \n\
              --construct-lock-screen-kde\n\
                  Construct/install the KDE lock-screen integration.\n\

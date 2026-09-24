@@ -2,7 +2,7 @@ use mpris::{PlaybackStatus, Player, PlayerFinder};
 use serde::Deserialize;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
+    Arc, Mutex, OnceLock,
 };
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -31,6 +31,11 @@ pub struct VocalTimingState {
 
 pub type SharedVocalTimingState = Arc<Mutex<VocalTimingState>>;
 
+pub fn shared_audio_motion_vocal_timing_state() -> SharedVocalTimingState {
+    static SHARED: OnceLock<SharedVocalTimingState> = OnceLock::new();
+    Arc::clone(SHARED.get_or_init(|| Arc::new(Mutex::new(VocalTimingState::default()))))
+}
+
 pub struct LyricsManager {
     state: SharedLyricsState,
     vocal_timing_state: SharedVocalTimingState,
@@ -50,7 +55,7 @@ impl LyricsManager {
         })?;
 
         let state = Arc::new(Mutex::new(LyricsState::default()));
-        let vocal_timing_state = Arc::new(Mutex::new(VocalTimingState::default()));
+        let vocal_timing_state = shared_audio_motion_vocal_timing_state();
         let running = Arc::new(AtomicBool::new(true));
         let worker_state = Arc::clone(&state);
         let worker_vocal_timing_state = Arc::clone(&vocal_timing_state);

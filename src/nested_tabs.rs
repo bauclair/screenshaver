@@ -64,17 +64,19 @@ enum PostProcessingNestedTab {
     VisualQuality,
     ImageTransforms,
     Audiovisual,
+    AudioMotion,
 }
 
 
 impl PostProcessingNestedTab {
     const ALL: [
         PostProcessingNestedTab;
-        3
+        4
     ] = [
         PostProcessingNestedTab::VisualQuality,
         PostProcessingNestedTab::ImageTransforms,
         PostProcessingNestedTab::Audiovisual,
+        PostProcessingNestedTab::AudioMotion,
     ];
 
 
@@ -85,6 +87,7 @@ impl PostProcessingNestedTab {
             PostProcessingNestedTab::VisualQuality => "Visual Quality",
             PostProcessingNestedTab::ImageTransforms => "Image Transforms",
             PostProcessingNestedTab::Audiovisual => "Audiovisual",
+            PostProcessingNestedTab::AudioMotion => "Audio Motion",
         }
     }
 }
@@ -496,6 +499,8 @@ pub fn draw_post_processing(
     hue_rotation: &mut f32,
     hue_rotation_drag_state: &mut Option<crate::editor_layout::SliderDragState>,
     bloom: &mut BloomSelection,
+    audio_motion: &mut crate::render_audio_motion::AudioMotionEffect,
+    bulk_audio_motion_selected: &mut bool,
     bloom_intensity: &mut f32,
     bloom_intensity_drag_state: &mut Option<crate::editor_layout::SliderDragState>,
     bloom_saturation: &mut f32,
@@ -628,6 +633,16 @@ pub fn draw_post_processing(
                                         bulk_bloom_frequency_invert,
                                     );
                                 }
+
+                                PostProcessingNestedTab::AudioMotion => {
+                                    draw_post_processing_audio_motion(
+                                        ui,
+                                        scale,
+                                        audio_motion,
+                                        bulk_edit_mode,
+                                        bulk_audio_motion_selected,
+                                    );
+                                }
                             }
                         },
                     );
@@ -653,6 +668,53 @@ const POST_PROCESSING_CONTROL_WIDTH: f32 =
 
 const POST_PROCESSING_SLIDER_WIDTH: f32 =
     240.0;
+
+
+fn draw_post_processing_audio_motion(
+    ui: &mut egui::Ui,
+    scale: f32,
+    audio_motion: &mut crate::render_audio_motion::AudioMotionEffect,
+    bulk_edit_mode: bool,
+    bulk_audio_motion_selected: &mut bool,
+) {
+    ui.heading("Audio Motion");
+    ui.add_space(8.0);
+
+    ui.horizontal(|ui| {
+        ui.label("Audio Motion Effect:")
+            .on_hover_text("Selects an audio-driven full-frame motion effect. Woofer from Hell uses LRCMUX vocal timing and the existing audio spectrum to drive an inverse-cone loudspeaker deformation.");
+
+        let selected_text = if bulk_edit_mode && !*bulk_audio_motion_selected {
+            "Unchanged"
+        } else {
+            audio_motion.display_name()
+        };
+
+        let response = egui::ComboBox::from_id_source("post_processing_audio_motion_effect")
+            .selected_text(selected_text)
+            .width(POST_PROCESSING_CONTROL_WIDTH)
+            .show_ui(ui, |ui| {
+                if bulk_edit_mode {
+                    if ui.selectable_label(!*bulk_audio_motion_selected, "Unchanged").clicked() {
+                        *bulk_audio_motion_selected = false;
+                    }
+                    ui.separator();
+                }
+
+                if ui.selectable_value(audio_motion, crate::render_audio_motion::AudioMotionEffect::Off, "Off").clicked() && bulk_edit_mode {
+                    *bulk_audio_motion_selected = true;
+                }
+                if ui.selectable_value(audio_motion, crate::render_audio_motion::AudioMotionEffect::WooferFromHell, "Woofer from Hell").clicked() && bulk_edit_mode {
+                    *bulk_audio_motion_selected = true;
+                }
+            })
+            .response;
+
+        if bulk_edit_mode && *bulk_audio_motion_selected {
+            crate::editor_theme::paint_bulk_edit_border(ui, response.rect, scale);
+        }
+    });
+}
 
 
 fn draw_post_processing_visual_quality(
