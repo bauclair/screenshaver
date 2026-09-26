@@ -8,121 +8,118 @@ use sdl2::video::GLProfile;
 const TEST_WIDTH: u32 = 1280;
 const TEST_HEIGHT: u32 = 720;
 
-// Experimental values only. The rendering shader always advances normally.
+// Experimental mirrored multi-channel FFT deformation.
 //
-// This version treats the completed shader image like a loudspeaker cone.
-// Bass energy drives a centered zoom toward the viewer. Attack is fast so
-// bass hits register promptly; release is slower so the image settles back
-// naturally. Midrange and treble do not participate in this experiment.
+// The completed shader image is the visualization: no FFT line or bars are
+// drawn over it. Each logarithmic FFT channel locally deforms the image at its
+// horizontal position. The same deformation is mirrored above and below the
+// vertical center.
 const SHADER_SPEED: f32 = 1.0;
-// Broad-spectrum transient detector. Any band can kick the cone when its
-// normalized level rises sharply from one analyzer update to the next.
-// Prioritized continuous three-band cone controller.
-//
-// Midrange has musical priority: as meaningful midrange energy appears, it
-// smoothly suppresses bass and treble and becomes the main cone driver.
-// With midrange absent, bass receives the greatest excursion authority.
-// Treble remains a deliberately subtle fallback influence.
-// Direct transient response for Audio Motion. Musical attacks set outward
-// displacement immediately; only inward release is smoothed.
-// Direct Audio Motion response. Attacks are applied immediately; only the
-// inward return is smoothed. A small bounded continuous component keeps
-// sustained passages alive without allowing them to hold the cone open.
-const TRANSIENT_BASELINE_RISE_SECONDS: f32 = 0.18;
-const TRANSIENT_BASELINE_FALL_SECONDS: f32 = 0.08;
-const TRANSIENT_NOISE_FLOOR: f32 = 0.006;
-const TRANSIENT_GAIN: f32 = 4.50;
-const TRANSIENT_DISPLACEMENT_GAIN: f32 = 1.00;
-const CONTINUOUS_DISPLACEMENT_GAIN: f32 = 0.10;
-const RELEASE_SECONDS: f32 = 0.075;
-const MAX_DISPLACEMENT: f32 = 1.0;
-const MAX_SCALE_EXPANSION: f32 = 2.20;
-const DIAGNOSTIC_INTERVAL: Duration = Duration::from_millis(100);
+const TRACE_CHANNELS: usize = crate::analyze_audio::AUDIO_MOTION_TRACE_CHANNELS;
 
-// LRCMUX-controlled complementary spectral selection.  These are genuine
-// FFT-derived measurements supplied by analyze_audio.rs, not approximations
-// made from the three Audio Bloom bands.
-//
-// vocals OFF  -> NOTCH 1-3 kHz -> use energy outside 1-3 kHz
-// vocals ON   -> BANDPASS 1-3 kHz -> use energy inside 1-3 kHz
-// no LRCMUX timing -> BYPASS -> use the stronger complementary measurement
-const MOTION_NOISE_FLOOR: f32 = 0.035;
-const MOTION_RESPONSE_CURVE: f32 = 0.90;
-const FILTER_TRANSITION_ATTACK: f32 = 0.32;
-const FILTER_TRANSITION_RELEASE: f32 = 0.20;
+// Proof-of-concept display range. The shared analyzer remains untouched;
+// this harness remaps its logarithmic 20 Hz..20 kHz trace so all 48 displayed
+// channels span 100 Hz..12 kHz.
+const SOURCE_TRACE_MIN_HZ: f32 = 20.0;
+const SOURCE_TRACE_MAX_HZ: f32 = 20_000.0;
+const TEST_TRACE_MIN_HZ: f32 = 100.0;
+const TEST_TRACE_MAX_HZ: f32 = 3_800.0;
 
-const BASS_SCALE_FRAGMENT_SHADER: &str = r#"#version 330 core
+// Per-channel visual peak compression.
+//
+// Once a frequency channel rises above the observable threshold, compress its
+// dynamic range aggressively toward 90% of the available channel height.
+// This is intentionally not frame normalization: each of the 48 frequencies
+// is treated independently, so simultaneous observable peaks can all approach
+// the same visual height.
+//
+// Values below the threshold remain zero so silence and background noise are
+// not promoted into visible full-height motion.
+const TRACE_COMPRESSED_PEAK: f32 = 0.90;
+const TRACE_COMPRESSION_THRESHOLD: f32 = 0.025;
+const TRACE_COMPRESSION_CURVE: f32 = 0.12;
+const TRACE_GAIN: f32 = 0.34;
+const TRACE_NOISE_FLOOR: f32 = 0.045;
+const TRACE_RESPONSE_CURVE: f32 = 0.80;
+const TRACE_RELEASE_SECONDS: f32 = 0.085;
+const TRACE_SPATIAL_WIDTH: f32 = 0.105;
+const DIAGNOSTIC_INTERVAL: Duration = Duration::from_millis(250);
+
+const MIRRORED_FFT_FRAGMENT_SHADER: &str = r#"#version 330 core
 out vec4 FragColor;
 
 uniform sampler2D uScene;
 uniform vec2 uResolution;
-uniform float uScale;
+uniform float uSpectrum[48];
+uniform float uTraceGain;
+uniform float uSpatialWidth;
+
+float spectrumAt(float x) {
+    float p = clamp(x, 0.0, 1.0) * 47.0;
+    int i0 = int(floor(p));
+    int i1 = min(i0 + 1, 47);
+    float f = fract(p);
+
+    // Smooth interpolation avoids visible 48-column steps.
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(uSpectrum[i0], uSpectrum[i1], f);
+}
 
 void main() {
     vec2 uv = gl_FragCoord.xy / uResolution;
-    vec2 centered = uv - vec2(0.5);
 
-    // Measure radius in aspect-correct coordinates so the deformation is
-    // circular rather than elliptical on a widescreen display.
-    float aspect = uResolution.x / uResolution.y;
-    vec2 conePosition = centered;
-    conePosition.x *= aspect;
+    float amplitude = spectrumAt(uv.x);
+    float excursion = amplitude * uTraceGain;
 
-    float radius = length(conePosition);
+    // Distance from the horizontal center. The upper and lower halves use the
+    // same field, producing a perfect vertical mirror.
+    float side = uv.y >= 0.5 ? 1.0 : -1.0;
+    float distanceFromCenter = abs(uv.y - 0.5);
 
-    // The nearest screen edge is radius 0.5 in these coordinates. The cone
-    // is strongest at its center and becomes stationary at that boundary.
-    float normalizedRadius =
-        clamp(radius / 0.5, 0.0, 1.0);
+    // The instantaneous FFT peak at this X coordinate lives this far from the
+    // centerline. Pixels around that peak are what deform most strongly.
+    float peakDistance = excursion;
 
-    // Inverse image of a loudspeaker cone: the center protrudes maximally,
-    // then the apparent depth falls away nonlinearly toward the anchored
-    // surround. Strong impulses sharpen the central bulge instead of merely
-    // performing a uniform zoom.
-    float coneWeight =
-        1.0 - smoothstep(
-            0.0,
-            1.0,
-            normalizedRadius
-        );
+    // Localized ridge around the FFT contour. This is deliberately not a
+    // centerline translation: the image under each peak is pulled into that
+    // peak while regions away from the contour progressively remain anchored.
+    float distanceFromPeak = abs(distanceFromCenter - peakDistance);
+    float ridge = exp(
+        -(distanceFromPeak * distanceFromPeak)
+        / max(2.0 * uSpatialWidth * uSpatialWidth, 0.000001)
+    );
 
-    float expansion =
-        max(uScale - 1.0, 0.0);
+    // Give the material between the center and the peak enough coupling to
+    // stretch naturally into the ridge instead of tearing or producing a
+    // narrow optical line.
+    float interior = 1.0 - smoothstep(
+        0.0,
+        max(peakDistance + uSpatialWidth, 0.0001),
+        distanceFromCenter
+    );
 
-    // As excursion grows, concentrate more deformation into the inner cone.
-    float coneExponent =
-        mix(
-            0.90,
-            2.60,
-            clamp(expansion / 4.0, 0.0, 1.0)
-        );
+    float influence = max(ridge, interior * 0.58);
 
-    coneWeight =
-        pow(coneWeight, coneExponent);
+    // Feather the mirror junction around the vertical center.  The original
+    // version switched displacement direction abruptly at y=0.5, which made
+    // the join read as a sharp horizontal seam.  This blend keeps displacement
+    // exactly zero at the center and smoothly reaches full mirrored motion
+    // outside a narrow transition zone.
+    float centerFeatherWidth = max(uSpatialWidth * 0.72, 0.025);
+    float centerFeather = smoothstep(
+        0.0,
+        centerFeatherWidth,
+        distanceFromCenter
+    );
 
-    // A quadratic term makes extreme bass impulses increasingly nonlinear:
-    // the center appears to thrust out of the screen while the edge remains
-    // at unity scale.
-    float localExpansion =
-        expansion * coneWeight
-        + 0.35 * expansion * expansion * coneWeight * coneWeight;
+    // Inverse-map the displaced image. Upper and lower motion remain exact
+    // mirrors, but the center junction now merges continuously.
+    float displacement = excursion * influence * centerFeather;
+    vec2 sampleUv = uv;
+    sampleUv.y -= side * displacement;
 
-    float localScale =
-        1.0 + localExpansion;
-
-    vec2 sampleUv =
-        centered / localScale
-        + vec2(0.5);
-
-    sampleUv =
-        clamp(
-            sampleUv,
-            vec2(0.001),
-            vec2(0.999)
-        );
-
-    FragColor =
-        texture(uScene, sampleUv);
+    sampleUv = clamp(sampleUv, vec2(0.001), vec2(0.999));
+    FragColor = texture(uScene, sampleUv);
 }
 "#;
 
@@ -130,172 +127,140 @@ struct AudioCaptureGuard;
 
 impl Drop for AudioCaptureGuard {
     fn drop(&mut self) {
-        crate::audio_backend::set_audio_required(
-            false
-        );
+        crate::audio_backend::set_audio_required(false);
     }
 }
 
-struct PrioritizedConeState {
+struct MirroredFftState {
     shader_time: f32,
-    displacement: f32,
-    scale: f32,
+    channels: [f32; TRACE_CHANNELS],
     last_diagnostic: Instant,
-    filter_blend: f32,
-    transient_baseline: f32,
 }
 
-impl PrioritizedConeState {
+impl MirroredFftState {
+    fn remap_test_frequency_range(
+        spectrum: crate::analyze_audio::AudioMotionFftTrace,
+    ) -> [f32; TRACE_CHANNELS] {
+        let mut remapped = [0.0_f32; TRACE_CHANNELS];
+
+        let source_log_span =
+            (SOURCE_TRACE_MAX_HZ / SOURCE_TRACE_MIN_HZ).ln();
+        let test_log_span =
+            (TEST_TRACE_MAX_HZ / TEST_TRACE_MIN_HZ).ln();
+
+        for output_index in 0..TRACE_CHANNELS {
+            let output_fraction =
+                output_index as f32 / (TRACE_CHANNELS - 1) as f32;
+
+            let frequency =
+                TEST_TRACE_MIN_HZ
+                    * (test_log_span * output_fraction).exp();
+
+            let source_fraction =
+                (frequency / SOURCE_TRACE_MIN_HZ).ln()
+                    / source_log_span;
+
+            let source_position =
+                source_fraction.clamp(0.0, 1.0)
+                    * (TRACE_CHANNELS - 1) as f32;
+
+            let source_low = source_position.floor() as usize;
+            let source_high = (source_low + 1).min(TRACE_CHANNELS - 1);
+            let blend = source_position - source_low as f32;
+
+            remapped[output_index] =
+                spectrum.channels[source_low]
+                    + (spectrum.channels[source_high]
+                        - spectrum.channels[source_low])
+                        * blend;
+        }
+
+        remapped
+    }
+
     fn new() -> Self {
         Self {
             shader_time: 0.0,
-            displacement: 0.0,
-            scale: 1.0,
+            channels: [0.0; TRACE_CHANNELS],
             last_diagnostic: Instant::now(),
-            filter_blend: 0.0,
-            transient_baseline: 0.0,
         }
     }
 
-    fn normalized_motion(value: f32) -> f32 {
-        (
-            (value.clamp(0.0, 1.0) - MOTION_NOISE_FLOOR)
-                / (1.0 - MOTION_NOISE_FLOOR)
-        )
-        .clamp(0.0, 1.0)
-        .powf(MOTION_RESPONSE_CURVE)
+    fn normalized(value: f32) -> f32 {
+        ((value.clamp(0.0, 1.0) - TRACE_NOISE_FLOOR)
+            / (1.0 - TRACE_NOISE_FLOOR))
+            .clamp(0.0, 1.0)
+            .powf(TRACE_RESPONSE_CURVE)
     }
 
     fn update(
         &mut self,
-        spectrum: crate::analyze_audio::AudioMotionSpectrum,
+        spectrum: crate::analyze_audio::AudioMotionFftTrace,
         frame_seconds: f32,
-        vocal_timing: &crate::manage_lyrics::VocalTimingState,
     ) {
         self.shader_time += frame_seconds * SHADER_SPEED;
 
-        // 0.0 selects the 1-3 kHz NOTCH result (outside energy).
-        // 1.0 selects the 1-3 kHz BANDPASS result (inside energy).
-        // Without LRCMUX timing, bypass lyric gating and use whichever
-        // complementary measurement currently carries more energy.
-        let filter_target = if vocal_timing.available {
-            if vocal_timing.active { 1.0_f32 } else { 0.0_f32 }
-        } else {
-            self.filter_blend
-        };
-
-        let nominal_frames = (frame_seconds * 60.0).max(0.0);
-        let filter_base_alpha = if filter_target > self.filter_blend {
-            FILTER_TRANSITION_ATTACK
-        } else {
-            FILTER_TRANSITION_RELEASE
-        };
-        let filter_alpha =
-            1.0 - (1.0 - filter_base_alpha).powf(nominal_frames);
-
-        self.filter_blend +=
-            (filter_target - self.filter_blend) * filter_alpha;
-        self.filter_blend = self.filter_blend.clamp(0.0, 1.0);
-
-        let inside = Self::normalized_motion(spectrum.inside_1k_3k);
-        let outside = Self::normalized_motion(spectrum.outside_1k_3k);
-
-        let selected = if vocal_timing.available {
-            outside + (inside - outside) * self.filter_blend
-        } else {
-            inside.max(outside)
-        }
-        .clamp(0.0, 1.0);
-
-        // Track sustained selected energy with a short adaptive baseline.
-        // Positive excursions above that baseline are attacks. The attack path
-        // is intentionally unsmoothed: a new musical event may move the cone
-        // outward immediately on this update.
         let dt = frame_seconds.clamp(0.0, 1.0 / 30.0);
-
-        let baseline_seconds =
-            if selected > self.transient_baseline {
-                TRANSIENT_BASELINE_RISE_SECONDS
-            } else {
-                TRANSIENT_BASELINE_FALL_SECONDS
-            };
-
-        let baseline_alpha =
-            if baseline_seconds > 0.0 {
-                1.0 - (-dt / baseline_seconds).exp()
-            } else {
-                1.0
-            };
-
-        self.transient_baseline +=
-            (selected - self.transient_baseline) * baseline_alpha;
-        self.transient_baseline = self.transient_baseline.clamp(0.0, 1.0);
-
-        let transient_raw =
-            (selected - self.transient_baseline).max(0.0);
-
-        let transient =
-            ((transient_raw - TRANSIENT_NOISE_FLOOR).max(0.0)
-                * TRANSIENT_GAIN)
-                .clamp(0.0, 1.0);
-
-        let transient_displacement =
-            transient * TRANSIENT_DISPLACEMENT_GAIN;
-
-        let continuous_displacement =
-            selected * CONTINUOUS_DISPLACEMENT_GAIN;
-
-        let target_displacement =
-            (transient_displacement + continuous_displacement)
-                .clamp(0.0, MAX_DISPLACEMENT);
-
-        if target_displacement >= self.displacement {
-            // No attack interpolation. Preserve the immediacy and some of the
-            // natural jitter of rapidly changing musical attacks.
-            self.displacement = target_displacement;
+        let release_alpha = if TRACE_RELEASE_SECONDS > 0.0 {
+            1.0 - (-dt / TRACE_RELEASE_SECONDS).exp()
         } else {
-            // Smooth only the return toward the current target. This prevents
-            // harsh frame-to-frame collapse without damping the next attack.
-            let release_alpha =
-                if RELEASE_SECONDS > 0.0 {
-                    1.0 - (-dt / RELEASE_SECONDS).exp()
+            1.0
+        };
+
+        let remapped =
+            Self::remap_test_frequency_range(
+                spectrum
+            );
+
+        for index in 0..TRACE_CHANNELS {
+            let level =
+                Self::normalized(
+                    remapped[index]
+                );
+
+            let target =
+                if level >= TRACE_COMPRESSION_THRESHOLD {
+                    // Rebase the observable range to 0..1, then apply a very
+                    // shallow power curve. The exponent below 1.0 strongly
+                    // compresses differences between audible/observable peaks:
+                    // even modest peaks are lifted close to the 90% ceiling,
+                    // while stronger peaks retain a small amount of contour.
+                    let observable =
+                        (
+                            (level - TRACE_COMPRESSION_THRESHOLD)
+                                / (1.0 - TRACE_COMPRESSION_THRESHOLD)
+                        )
+                        .clamp(0.0, 1.0);
+
+                    TRACE_COMPRESSED_PEAK
+                        * observable.powf(
+                            TRACE_COMPRESSION_CURVE
+                        )
                 } else {
-                    1.0
+                    0.0
                 };
 
-            self.displacement +=
-                (target_displacement - self.displacement) * release_alpha;
+            if target >= self.channels[index] {
+                // Preserve fast musical attacks.
+                self.channels[index] = target;
+            } else {
+                self.channels[index] +=
+                    (target - self.channels[index]) * release_alpha;
+            }
+
+            self.channels[index] = self.channels[index].clamp(0.0, 1.0);
         }
 
-        self.displacement =
-            self.displacement.clamp(0.0, MAX_DISPLACEMENT);
-
-        self.scale = 1.0 + self.displacement * MAX_SCALE_EXPANSION;
-
         if self.last_diagnostic.elapsed() >= DIAGNOSTIC_INTERVAL {
+            let peak = self.channels.iter().copied().fold(0.0_f32, f32::max);
+            let active = self.channels.iter().filter(|&&v| v > 0.05).count();
             println!(
-                "[AUDIO MOTION] lrcmux={} vocal={} filter={} blend={:.3} spectrum=(inside_1_3k:{:.3},outside_1_3k:{:.3}) selected={:.3} baseline={:.3} transient_raw={:.3} transient={:.3} transient_disp={:.3} continuous_disp={:.3} target={:.3} displacement={:.3} scale={:.4} shader_time={:.2}",
-                if vocal_timing.available { "READY" } else { "NONE" },
-                if vocal_timing.active { "ACTIVE" } else { "OFF" },
-                if !vocal_timing.available {
-                    "BYPASS"
-                } else if vocal_timing.active {
-                    "BANDPASS_1-3KHZ"
-                } else {
-                    "NOTCH_1-3KHZ"
-                },
-                self.filter_blend,
-                spectrum.inside_1k_3k,
-                spectrum.outside_1k_3k,
-                selected,
-                self.transient_baseline,
-                transient_raw,
-                transient,
-                transient_displacement,
-                continuous_displacement,
-                target_displacement,
-                self.displacement,
-                self.scale,
+                "[AUDIO MOTION FFT] channels={} active={} peak={:.3} gain={:.3} width={:.3} shader_time={:.2}",
+                TRACE_CHANNELS,
+                active,
+                peak,
+                TRACE_GAIN,
+                TRACE_SPATIAL_WIDTH,
                 self.shader_time,
             );
             self.last_diagnostic = Instant::now();
@@ -372,27 +337,28 @@ pub fn run(
     println!("Shader: {}", shader_path.display());
     println!("Processed shader: {}", shader_name);
     println!("Test size: {}x{}", TEST_WIDTH, TEST_HEIGHT);
-    println!("Effect: LRCMUX-controlled 1-3 kHz spectral notch/bandpass inverse-cone deformation");
-    println!("Vocal timing: LRCMUX start/end intervals only");
-    println!("Shader animation speed: {:.2}", SHADER_SPEED);
-    println!("Vocal spectral range: 1.0-3.0 kHz");
-    println!("Lyrics inactive: NOTCH 1-3 kHz (motion uses outside energy)");
-    println!("Lyrics active: BANDPASS 1-3 kHz (motion uses inside energy)");
-    println!("No LRCMUX timing: BYPASS lyric gating");
-    println!("Motion noise floor: {:.3}", MOTION_NOISE_FLOOR);
-    println!("Motion response curve: {:.2}", MOTION_RESPONSE_CURVE);
-    println!("Transient baseline rise: {:.3}s", TRANSIENT_BASELINE_RISE_SECONDS);
-    println!("Transient baseline fall: {:.3}s", TRANSIENT_BASELINE_FALL_SECONDS);
-    println!("Transient noise floor: {:.3}", TRANSIENT_NOISE_FLOOR);
-    println!("Transient gain: {:.2}", TRANSIENT_GAIN);
-    println!("Transient displacement gain: {:.2}", TRANSIENT_DISPLACEMENT_GAIN);
-    println!("Continuous displacement gain: {:.2}", CONTINUOUS_DISPLACEMENT_GAIN);
-    println!("Release time: {:.3}s", RELEASE_SECONDS);
-    println!("Attack smoothing: NONE (immediate outward response)");
+    println!("Effect: mirrored multi-channel FFT shader deformation");
+    println!("FFT channels: {} logarithmic buckets", TRACE_CHANNELS);
     println!(
-        "Maximum center scale: {:.1}% plus inverse-cone deformation",
-        (1.0 + MAX_SCALE_EXPANSION) * 100.0
+        "FFT display range: {:.0} Hz..{:.0} Hz",
+        TEST_TRACE_MIN_HZ,
+        TEST_TRACE_MAX_HZ,
     );
+    println!(
+        "FFT compressed peak ceiling: {:.0}%",
+        TRACE_COMPRESSED_PEAK * 100.0,
+    );
+    println!(
+        "FFT compression threshold: {:.3}",
+        TRACE_COMPRESSION_THRESHOLD,
+    );
+    println!(
+        "FFT compression curve: {:.3}",
+        TRACE_COMPRESSION_CURVE,
+    );
+    println!("Trace gain: {:.3}", TRACE_GAIN);
+    println!("Trace spatial width: {:.3}", TRACE_SPATIAL_WIDTH);
+    println!("No FFT line or bars are drawn; the shader image itself is deformed.");
     println!();
     println!("Play audio to exercise motion. Press Esc or close the window to exit.");
     println!();
@@ -496,10 +462,10 @@ pub fn run(
     let postprocess_program =
         crate::compile_shader::build_program(
             crate::define_constants::VERTEX_SHADER,
-            BASS_SCALE_FRAGMENT_SHADER,
+            MIRRORED_FFT_FRAGMENT_SHADER,
         )
         .map_err(|error| {
-            format!("Audio Motion bass-scale post-process shader compilation failed: {}", error)
+            format!("Audio Motion mirrored-FFT post-process shader compilation failed: {}", error)
         })?;
 
     let mut scene_fbo = 0_u32;
@@ -573,10 +539,22 @@ pub fn run(
             b"uResolution\0",
         );
 
-    let scale_value_location =
+    let spectrum_location =
         uniform_location(
             postprocess_program,
-            b"uScale\0",
+            b"uSpectrum[0]\0",
+        );
+
+    let trace_gain_location =
+        uniform_location(
+            postprocess_program,
+            b"uTraceGain\0",
+        );
+
+    let spatial_width_location =
+        uniform_location(
+            postprocess_program,
+            b"uSpatialWidth\0",
         );
 
     let mut texture_manager =
@@ -602,17 +580,6 @@ pub fn run(
     let _audio_capture_guard =
         AudioCaptureGuard;
 
-    let lyrics_manager =
-        crate::manage_lyrics::LyricsManager::start()
-            .map_err(|error| {
-                format!(
-                    "Unable to start LRCMUX timing for Audio Motion test: {}",
-                    error
-                )
-            })?;
-
-    let vocal_timing_state =
-        lyrics_manager.shared_vocal_timing_state();
 
     let mut event_pump =
         sdl.event_pump()
@@ -625,8 +592,8 @@ pub fn run(
                 }
             )?;
 
-    let mut bass_scale =
-        PrioritizedConeState::new();
+    let mut fft_state =
+        MirroredFftState::new();
 
     let mut previous_frame =
         Instant::now();
@@ -670,26 +637,19 @@ pub fn run(
             now;
 
         let spectrum =
-            crate::analyze_audio::shared_audio_motion_spectrum()
+            crate::analyze_audio::shared_audio_motion_fft_trace()
                 .read()
                 .ok()
                 .map(|spectrum| *spectrum)
                 .unwrap_or_default();
 
-        let vocal_timing =
-            vocal_timing_state
-                .lock()
-                .map(|state| state.clone())
-                .unwrap_or_default();
-
-        bass_scale.update(
+        fft_state.update(
             spectrum,
             frame_seconds,
-            &vocal_timing,
         );
 
         let shader_time =
-            bass_scale.shader_time;
+            fft_state.shader_time;
 
         texture_manager
             .update_animations()
@@ -806,10 +766,25 @@ pub fn run(
                 );
             }
 
-            if scale_value_location != -1 {
+            if spectrum_location != -1 {
+                gl::Uniform1fv(
+                    spectrum_location,
+                    TRACE_CHANNELS as i32,
+                    fft_state.channels.as_ptr(),
+                );
+            }
+
+            if trace_gain_location != -1 {
                 gl::Uniform1f(
-                    scale_value_location,
-                    bass_scale.scale,
+                    trace_gain_location,
+                    TRACE_GAIN,
+                );
+            }
+
+            if spatial_width_location != -1 {
+                gl::Uniform1f(
+                    spatial_width_location,
+                    TRACE_SPATIAL_WIDTH,
                 );
             }
 
@@ -852,7 +827,7 @@ pub fn run(
     texture_manager.delete_all();
 
     println!();
-    println!("Direct transient spectral Audio Motion test ended.");
+    println!("Mirrored multi-channel FFT Audio Motion test ended.");
 
     Ok(())
 }

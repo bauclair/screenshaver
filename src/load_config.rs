@@ -4589,7 +4589,7 @@ fn ensure_audio_motion_column(connection: &rusqlite::Connection) -> Result<(), S
         .map_err(|error| format!("Unable to read shader_policies columns: {}", error))?;
     if !names.iter().any(|name| name == "audio_motion_effect") {
         connection.execute(
-            "ALTER TABLE shader_policies ADD COLUMN audio_motion_effect TEXT NOT NULL DEFAULT 'off' CHECK (audio_motion_effect IN ('off','woofer_from_hell'))",
+            "ALTER TABLE shader_policies ADD COLUMN audio_motion_effect TEXT NOT NULL DEFAULT 'off' CHECK (audio_motion_effect IN ('off','woofer_from_hell','fft_mirror_warp'))",
             [],
         ).map_err(|error| format!("Unable to migrate shader_policies for Audio Motion: {}", error))?;
     }

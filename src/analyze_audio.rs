@@ -40,9 +40,16 @@ const AUDIO_MOTION_MAX_HZ: f32 = 20_000.0;
 // used by Audio Bloom.
 const SPECTRAL_BUCKET_COUNT: usize = 48;
 
+// Experimental multi-channel Audio Motion trace. Keep this independent of
+// AudioMotionSpectrum so the locked Woofer from Hell path is unchanged.
+pub const AUDIO_MOTION_TRACE_CHANNELS: usize = SPECTRAL_BUCKET_COUNT;
+
 const SPECTRAL_REFERENCE_ATTACK: f32 = 0.08;
 const SPECTRAL_REFERENCE_RELEASE: f32 = 0.004;
 const SPECTRAL_REFERENCE_FLOOR: f32 = 0.000_001;
+const AUDIO_MOTION_TRACE_MIN_HZ: f32 = 100.0;
+const AUDIO_MOTION_TRACE_MAX_HZ: f32 = 3_800.0;
+const AUDIO_MOTION_TRACE_RELEASE_SECONDS: f32 = 0.050;
 
 const SPECTRAL_ENVELOPE_ATTACK: f32 = 0.45;
 const SPECTRAL_ENVELOPE_RELEASE: f32 = 0.04;
@@ -158,6 +165,23 @@ pub struct AudioAnalyzer {
     spectral_smoothed:
         [f32; SPECTRAL_BUCKET_COUNT],
 
+    // FFT Mirror Warp uses the same normalized 48-band spectrum as Spectral
+    // Bloom, but has its own temporal response: instantaneous attack and a
+    // short 50 ms release.
+    audio_motion_trace_smoothed:
+        [f32; SPECTRAL_BUCKET_COUNT],
+
+    // One common absolute-energy reference for all 48 FFT Mirror Warp bars.
+    // Unlike Spectral Bloom's per-bucket adaptive references, this lets a
+    // bucket's target actually fall when its real FFT energy falls.
+    audio_motion_trace_reference:
+        f32,
+
+    // Temporary FFT Mirror Warp diagnostic state. Prints one representative
+    // bucket at a low rate so we can identify where a peak is being held.
+    audio_motion_diag_counter:
+        u32,
+
     spectral_dominant_bucket:
         Option<usize>,
 
@@ -246,6 +270,15 @@ impl AudioAnalyzer {
 
             spectral_smoothed:
                 [0.0; SPECTRAL_BUCKET_COUNT],
+
+            audio_motion_trace_smoothed:
+                [0.0; SPECTRAL_BUCKET_COUNT],
+
+            audio_motion_trace_reference:
+                SPECTRAL_REFERENCE_FLOOR,
+
+            audio_motion_diag_counter:
+                0,
 
             spectral_dominant_bucket:
                 None,
@@ -614,6 +647,14 @@ impl AudioAnalyzer {
         let mut spectral_bins =
             [0_u32; SPECTRAL_BUCKET_COUNT];
 
+        // FFT Mirror Warp has its own 48 logarithmic buckets spanning exactly
+        // 100 Hz..3.8 kHz. This is independent of Spectral Bloom and Woofer.
+        let mut audio_motion_trace_power =
+            [0.0_f32; SPECTRAL_BUCKET_COUNT];
+
+        let mut audio_motion_trace_bins =
+            [0_u32; SPECTRAL_BUCKET_COUNT];
+
         for bin in
             1..=(FFT_SIZE / 2)
         {
@@ -665,6 +706,21 @@ impl AudioAnalyzer {
                     1;
             }
 
+            if frequency >= AUDIO_MOTION_TRACE_MIN_HZ
+                && frequency <= AUDIO_MOTION_TRACE_MAX_HZ
+            {
+                let bucket =
+                    audio_motion_trace_bucket_index(
+                        frequency
+                    );
+
+                audio_motion_trace_power[bucket] +=
+                    power;
+
+                audio_motion_trace_bins[bucket] +=
+                    1;
+            }
+
 
             if frequency >= BASS_MIN_HZ
                 && frequency < BASS_MAX_HZ
@@ -704,6 +760,11 @@ impl AudioAnalyzer {
             band_rms(audio_motion_outside_power, audio_motion_outside_bins),
         );
 
+
+        self.update_audio_motion_fft_trace(
+            &audio_motion_trace_power,
+            &audio_motion_trace_bins,
+        );
 
         let dominant_frequency_hz =
             self.update_spectral_dominant(
@@ -860,6 +921,110 @@ impl AudioAnalyzer {
     }
 
 
+    fn update_audio_motion_fft_trace(
+        &mut self,
+        bucket_power: &[f32; SPECTRAL_BUCKET_COUNT],
+        bucket_bins: &[u32; SPECTRAL_BUCKET_COUNT],
+    ) {
+        let mut raw_level =
+            [0.0_f32; SPECTRAL_BUCKET_COUNT];
+
+        let mut strongest_raw =
+            0.0_f32;
+
+        for bucket in 0..SPECTRAL_BUCKET_COUNT {
+            raw_level[bucket] =
+                band_rms(
+                    bucket_power[bucket],
+                    bucket_bins[bucket],
+                );
+
+            strongest_raw =
+                strongest_raw.max(
+                    raw_level[bucket]
+                );
+        }
+
+        let release_alpha =
+            1.0 - (-(1.0 / 60.0) / AUDIO_MOTION_TRACE_RELEASE_SECONDS).exp();
+
+        if strongest_raw <= SPECTRAL_REFERENCE_FLOOR {
+            for bucket in 0..SPECTRAL_BUCKET_COUNT {
+                self.audio_motion_trace_smoothed[bucket] +=
+                    (0.0 - self.audio_motion_trace_smoothed[bucket])
+                        * release_alpha;
+            }
+
+            if let Ok(mut trace) = shared_audio_motion_fft_trace().write() {
+                trace.channels = self.audio_motion_trace_smoothed;
+            }
+
+            return;
+        }
+
+        let absolute_floor =
+            strongest_raw
+                * SPECTRAL_RELATIVE_FLOOR;
+
+        // Preserve the baseline FFT Mirror Warp dynamics: one common absolute
+        // reference, immediate rise for a new peak, and slow reference decay.
+        if strongest_raw > self.audio_motion_trace_reference {
+            self.audio_motion_trace_reference = strongest_raw;
+        } else {
+            self.audio_motion_trace_reference +=
+                (strongest_raw - self.audio_motion_trace_reference) * 0.0025;
+        }
+
+        self.audio_motion_trace_reference =
+            self.audio_motion_trace_reference.max(SPECTRAL_REFERENCE_FLOOR);
+
+        const AUDIO_MOTION_DIAG_BUCKET: usize = 24;
+        let mut audio_motion_diag_target = 0.0_f32;
+
+        for bucket in 0..SPECTRAL_BUCKET_COUNT {
+            let target =
+                if bucket_bins[bucket] > 0
+                    && raw_level[bucket] >= absolute_floor
+                {
+                    (raw_level[bucket] / self.audio_motion_trace_reference)
+                        .clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+
+            if bucket == AUDIO_MOTION_DIAG_BUCKET {
+                audio_motion_diag_target = target;
+            }
+
+            if target >= self.audio_motion_trace_smoothed[bucket] {
+                self.audio_motion_trace_smoothed[bucket] = target;
+            } else {
+                self.audio_motion_trace_smoothed[bucket] +=
+                    (target - self.audio_motion_trace_smoothed[bucket])
+                        * release_alpha;
+            }
+        }
+
+        self.audio_motion_diag_counter =
+            self.audio_motion_diag_counter.wrapping_add(1);
+
+        if self.audio_motion_diag_counter % 10 == 0 {
+            eprintln!(
+                "[FFT-MOTION-DIAG] bucket={} raw={:.8} reference={:.8} target={:.5} analyzer_trace={:.5}",
+                AUDIO_MOTION_DIAG_BUCKET,
+                raw_level[AUDIO_MOTION_DIAG_BUCKET],
+                self.audio_motion_trace_reference,
+                audio_motion_diag_target,
+                self.audio_motion_trace_smoothed[AUDIO_MOTION_DIAG_BUCKET],
+            );
+        }
+
+        if let Ok(mut trace) = shared_audio_motion_fft_trace().write() {
+            trace.channels = self.audio_motion_trace_smoothed;
+        }
+    }
+
+
     fn update_spectral_dominant(
         &mut self,
         bucket_power: &[f32; SPECTRAL_BUCKET_COUNT],
@@ -938,8 +1103,12 @@ impl AudioAnalyzer {
                     self.spectral_smoothed[bucket],
                     normalized,
                 );
-        }
 
+            // Audio Motion deliberately does NOT use `normalized` here.
+            // That value is normalized against a separate adaptive reference
+            // for every Spectral Bloom bucket and can therefore remain high
+            // after the real FFT energy has fallen.
+        }
 
         let mut challenger_bucket =
             0_usize;
@@ -1107,6 +1276,29 @@ impl AudioAnalyzer {
     Clone,
     Copy,
     Debug,
+)]
+pub struct AudioMotionFftTrace {
+    pub channels: [f32; AUDIO_MOTION_TRACE_CHANNELS],
+}
+
+impl Default for AudioMotionFftTrace {
+    fn default() -> Self {
+        Self {
+            channels: [0.0; AUDIO_MOTION_TRACE_CHANNELS],
+        }
+    }
+}
+
+pub fn shared_audio_motion_fft_trace() -> &'static RwLock<AudioMotionFftTrace> {
+    static SHARED: OnceLock<RwLock<AudioMotionFftTrace>> = OnceLock::new();
+    SHARED.get_or_init(|| RwLock::new(AudioMotionFftTrace::default()))
+}
+
+
+#[derive(
+    Clone,
+    Copy,
+    Debug,
     Default,
 )]
 pub struct AudioMotionSpectrum {
@@ -1175,6 +1367,37 @@ fn smooth_loudness(
             0.0,
             1.0,
         )
+}
+
+
+fn audio_motion_trace_bucket_index(
+    frequency_hz: f32,
+) -> usize {
+    let position =
+        (
+            frequency_hz
+                .clamp(
+                    AUDIO_MOTION_TRACE_MIN_HZ,
+                    AUDIO_MOTION_TRACE_MAX_HZ,
+                )
+                / AUDIO_MOTION_TRACE_MIN_HZ
+        )
+            .ln()
+        / (
+            AUDIO_MOTION_TRACE_MAX_HZ
+                / AUDIO_MOTION_TRACE_MIN_HZ
+        )
+            .ln();
+
+    (
+        position
+            * SPECTRAL_BUCKET_COUNT as f32
+    )
+        .floor()
+        .clamp(
+            0.0,
+            (SPECTRAL_BUCKET_COUNT - 1) as f32,
+        ) as usize
 }
 
 

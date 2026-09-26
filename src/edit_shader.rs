@@ -2973,12 +2973,19 @@ fn run_paths(
             )?;
 
             let _audio_motion_lyrics_manager =
-            crate::manage_lyrics::LyricsManager::start()
-            .map_err(|error| {
-                log_warning(&format!("[AUDIO_MOTION] LRCMUX timing unavailable in Control Center; using ungated spectrum: {}", error));
-                error
-            })
-            .ok();
+            if matches!(
+                live_postprocess_profile.audio_motion,
+                crate::render_audio_motion::AudioMotionEffect::WooferFromHell
+            ) {
+                crate::manage_lyrics::LyricsManager::start()
+                .map_err(|error| {
+                    log_warning(&format!("[AUDIO_MOTION] LRCMUX timing unavailable in Control Center; using ungated spectrum: {}", error));
+                    error
+                })
+                .ok()
+            } else {
+                None
+            };
 
             let mut audio_motion_state =
             crate::render_audio_motion::AudioMotionState::default();
@@ -3928,20 +3935,32 @@ fn run_paths(
                             audio_motion_previous_frame.elapsed().as_secs_f32();
                             audio_motion_previous_frame = Instant::now();
 
-                            if live_postprocess_profile.audio_motion.is_enabled() {
-                                let spectrum = crate::analyze_audio::shared_audio_motion_spectrum()
-                                .read().ok().map(|value| *value).unwrap_or_default();
-                                let vocal_timing = crate::manage_lyrics::shared_audio_motion_vocal_timing_state()
-                                .lock().ok().map(|value| value.clone()).unwrap_or_default();
-                                let scale = audio_motion_state.update(
-                                    spectrum,
-                                    audio_motion_frame_seconds,
-                                    &vocal_timing,
-                                );
-                                postprocess.set_audio_motion_scale(scale);
-                            } else {
-                                audio_motion_state.reset();
-                                postprocess.set_audio_motion_scale(1.0);
+                            match live_postprocess_profile.audio_motion {
+                                crate::render_audio_motion::AudioMotionEffect::WooferFromHell => {
+                                    let spectrum = crate::analyze_audio::shared_audio_motion_spectrum()
+                                        .read().ok().map(|value| *value).unwrap_or_default();
+                                    let vocal_timing = crate::manage_lyrics::shared_audio_motion_vocal_timing_state()
+                                        .lock().ok().map(|value| value.clone()).unwrap_or_default();
+                                    let scale = audio_motion_state.update(
+                                        spectrum, audio_motion_frame_seconds, &vocal_timing);
+                                    postprocess.set_audio_motion_scale(scale);
+                                    postprocess.set_audio_motion_fft_trace(
+                                        [0.0; crate::analyze_audio::AUDIO_MOTION_TRACE_CHANNELS]);
+                                }
+                                crate::render_audio_motion::AudioMotionEffect::FftMirrorWarp => {
+                                    let spectrum = crate::analyze_audio::shared_audio_motion_fft_trace()
+                                        .read().ok().map(|value| *value).unwrap_or_default();
+                                    let trace = audio_motion_state.update_fft_mirror_warp(
+                                        spectrum, audio_motion_frame_seconds);
+                                    postprocess.set_audio_motion_scale(1.0);
+                                    postprocess.set_audio_motion_fft_trace(trace);
+                                }
+                                crate::render_audio_motion::AudioMotionEffect::Off => {
+                                    audio_motion_state.reset();
+                                    postprocess.set_audio_motion_scale(1.0);
+                                    postprocess.set_audio_motion_fft_trace(
+                                        [0.0; crate::analyze_audio::AUDIO_MOTION_TRACE_CHANNELS]);
+                                }
                             }
 
 

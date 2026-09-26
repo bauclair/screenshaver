@@ -144,6 +144,7 @@ pub(crate) struct FrameRenderEngine {
     gpu_timer_queries: [u32; 2],
     target_frame_time: Duration,
     last_frame: Instant,
+    audio_motion_previous_frame: Instant,
 }
 
 
@@ -350,7 +351,10 @@ impl FrameRenderEngine {
             ) || postprocess_profile.audio_motion.is_enabled();
 
         let audio_motion_lyrics_manager =
-            if postprocess_profile.audio_motion.is_enabled() {
+            if matches!(
+                postprocess_profile.audio_motion,
+                crate::render_audio_motion::AudioMotionEffect::WooferFromHell
+            ) {
                 match crate::manage_lyrics::LyricsManager::start() {
                     Ok(manager) => Some(manager),
                     Err(error) => {
@@ -470,6 +474,8 @@ impl FrameRenderEngine {
                     ),
                 last_frame:
                     Instant::now(),
+                audio_motion_previous_frame:
+                    Instant::now(),
             }
         )
     }
@@ -539,10 +545,16 @@ impl FrameRenderEngine {
             ) || replacement_postprocess_profile.audio_motion.is_enabled();
 
         self.audio_motion_effect = replacement_postprocess_profile.audio_motion;
-        if self.audio_motion_effect.is_enabled() && self.audio_motion_lyrics_manager.is_none() {
+        if matches!(
+            self.audio_motion_effect,
+            crate::render_audio_motion::AudioMotionEffect::WooferFromHell
+        ) && self.audio_motion_lyrics_manager.is_none() {
             self.audio_motion_lyrics_manager = crate::manage_lyrics::LyricsManager::start().ok();
         }
-        if !self.audio_motion_effect.is_enabled() {
+        if !matches!(
+            self.audio_motion_effect,
+            crate::render_audio_motion::AudioMotionEffect::WooferFromHell
+        ) {
             self.audio_motion_lyrics_manager = None;
             self.audio_motion_state.reset();
             self.postprocess.set_audio_motion_scale(1.0);
@@ -572,6 +584,9 @@ impl FrameRenderEngine {
                 1.0 / self.configured_fps as f64
             );
         self.last_frame =
+            Instant::now();
+
+        self.audio_motion_previous_frame =
             Instant::now();
 
         self.postprocess_policy =
@@ -618,6 +633,9 @@ impl FrameRenderEngine {
         self.frame_times.clear();
 
         self.last_frame =
+            Instant::now();
+
+        self.audio_motion_previous_frame =
             Instant::now();
     }
 
@@ -912,19 +930,40 @@ impl FrameRenderEngine {
             current_audio_bands
         );
 
-        if self.audio_motion_effect.is_enabled() {
-            let spectrum = crate::analyze_audio::shared_audio_motion_spectrum()
-                .read().ok().map(|value| *value).unwrap_or_default();
-            let vocal_timing = crate::manage_lyrics::shared_audio_motion_vocal_timing_state()
-                .lock().ok().map(|value| value.clone()).unwrap_or_default();
-            let scale = self.audio_motion_state.update(
-                spectrum,
-                self.target_frame_time.as_secs_f32(),
-                &vocal_timing,
-            );
-            self.postprocess.set_audio_motion_scale(scale);
-        } else {
-            self.postprocess.set_audio_motion_scale(1.0);
+        let audio_motion_frame_seconds =
+            self.audio_motion_previous_frame
+                .elapsed()
+                .as_secs_f32();
+
+        self.audio_motion_previous_frame =
+            Instant::now();
+
+        match self.audio_motion_effect {
+            crate::render_audio_motion::AudioMotionEffect::WooferFromHell => {
+                let spectrum = crate::analyze_audio::shared_audio_motion_spectrum()
+                    .read().ok().map(|value| *value).unwrap_or_default();
+                let vocal_timing = crate::manage_lyrics::shared_audio_motion_vocal_timing_state()
+                    .lock().ok().map(|value| value.clone()).unwrap_or_default();
+                let scale = self.audio_motion_state.update(
+                    spectrum, audio_motion_frame_seconds, &vocal_timing);
+                self.postprocess.set_audio_motion_scale(scale);
+                self.postprocess.set_audio_motion_fft_trace(
+                    [0.0; crate::analyze_audio::AUDIO_MOTION_TRACE_CHANNELS]);
+            }
+            crate::render_audio_motion::AudioMotionEffect::FftMirrorWarp => {
+                let spectrum = crate::analyze_audio::shared_audio_motion_fft_trace()
+                    .read().ok().map(|value| *value).unwrap_or_default();
+                let trace = self.audio_motion_state.update_fft_mirror_warp(
+                    spectrum, audio_motion_frame_seconds);
+                self.postprocess.set_audio_motion_scale(1.0);
+                self.postprocess.set_audio_motion_fft_trace(trace);
+            }
+            crate::render_audio_motion::AudioMotionEffect::Off => {
+                self.audio_motion_state.reset();
+                self.postprocess.set_audio_motion_scale(1.0);
+                self.postprocess.set_audio_motion_fft_trace(
+                    [0.0; crate::analyze_audio::AUDIO_MOTION_TRACE_CHANNELS]);
+            }
         }
 
         let shader_changed =
@@ -1352,10 +1391,16 @@ impl FrameRenderEngine {
                         "audio" | "spectral" | "loudness"
                     ) || new_postprocess_profile.audio_motion.is_enabled();
                 self.audio_motion_effect = new_postprocess_profile.audio_motion;
-                if self.audio_motion_effect.is_enabled() && self.audio_motion_lyrics_manager.is_none() {
+                if matches!(
+            self.audio_motion_effect,
+            crate::render_audio_motion::AudioMotionEffect::WooferFromHell
+        ) && self.audio_motion_lyrics_manager.is_none() {
                     self.audio_motion_lyrics_manager = crate::manage_lyrics::LyricsManager::start().ok();
                 }
-                if !self.audio_motion_effect.is_enabled() {
+                if !matches!(
+                    self.audio_motion_effect,
+                    crate::render_audio_motion::AudioMotionEffect::WooferFromHell
+                ) {
                     self.audio_motion_lyrics_manager = None;
                     self.audio_motion_state.reset();
                 }

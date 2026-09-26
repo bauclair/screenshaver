@@ -3046,7 +3046,10 @@ fn render_mirror_frames(
 
 
     let mut audio_motion_lyrics_manager =
-        if audio_motion_effect.is_enabled() {
+        if matches!(
+            audio_motion_effect,
+            crate::render_audio_motion::AudioMotionEffect::WooferFromHell
+        ) {
             crate::manage_lyrics::LyricsManager::start().ok()
         } else {
             None
@@ -3248,11 +3251,20 @@ fn render_mirror_frames(
                             audio_motion_effect =
                                 replacement_profile.audio_motion;
 
-                            if audio_motion_effect.is_enabled()
-                                && audio_motion_lyrics_manager.is_none()
+                            if matches!(
+                                audio_motion_effect,
+                                crate::render_audio_motion::AudioMotionEffect::WooferFromHell
+                            ) && audio_motion_lyrics_manager.is_none()
                             {
                                 audio_motion_lyrics_manager =
                                     crate::manage_lyrics::LyricsManager::start().ok();
+                            }
+
+                            if !matches!(
+                                audio_motion_effect,
+                                crate::render_audio_motion::AudioMotionEffect::WooferFromHell
+                            ) {
+                                audio_motion_lyrics_manager = None;
                             }
 
                             if !audio_motion_effect.is_enabled() {
@@ -3643,11 +3655,20 @@ fn render_mirror_frames(
                                     postprocess_profile.audio_motion;
 
 
-                                if audio_motion_effect.is_enabled()
-                                    && audio_motion_lyrics_manager.is_none()
+                                if matches!(
+                                    audio_motion_effect,
+                                    crate::render_audio_motion::AudioMotionEffect::WooferFromHell
+                                ) && audio_motion_lyrics_manager.is_none()
                                 {
                                     audio_motion_lyrics_manager =
                                         crate::manage_lyrics::LyricsManager::start().ok();
+                                }
+
+                                if !matches!(
+                                    audio_motion_effect,
+                                    crate::render_audio_motion::AudioMotionEffect::WooferFromHell
+                                ) {
+                                    audio_motion_lyrics_manager = None;
                                 }
 
 
@@ -3825,20 +3846,26 @@ fn render_mirror_frames(
                     .unwrap_or_default();
 
 
-            let audio_motion_scale =
-                if audio_motion_effect.is_enabled() {
-                    let now =
-                        Instant::now();
+            let now =
+                Instant::now();
 
-                    let frame_seconds =
-                        now.duration_since(
-                            last_audio_motion_update
-                        )
-                        .as_secs_f32();
+            let audio_motion_frame_seconds =
+                now.duration_since(
+                    last_audio_motion_update
+                )
+                .as_secs_f32();
 
-                    last_audio_motion_update =
-                        now;
+            last_audio_motion_update =
+                now;
 
+            let mut audio_motion_scale =
+                1.0_f32;
+
+            let mut audio_motion_fft_trace =
+                [0.0_f32; crate::analyze_audio::AUDIO_MOTION_TRACE_CHANNELS];
+
+            match audio_motion_effect {
+                crate::render_audio_motion::AudioMotionEffect::WooferFromHell => {
                     let spectrum =
                         crate::analyze_audio::shared_audio_motion_spectrum()
                             .read()
@@ -3857,14 +3884,35 @@ fn render_mirror_frames(
                             )
                             .unwrap_or_default();
 
-                    audio_motion_state.update(
-                        spectrum,
-                        frame_seconds,
-                        &vocal_timing,
-                    )
-                } else {
-                    1.0
-                };
+                    audio_motion_scale =
+                        audio_motion_state.update(
+                            spectrum,
+                            audio_motion_frame_seconds,
+                            &vocal_timing,
+                        );
+                }
+
+                crate::render_audio_motion::AudioMotionEffect::FftMirrorWarp => {
+                    let spectrum =
+                        crate::analyze_audio::shared_audio_motion_fft_trace()
+                            .read()
+                            .ok()
+                            .map(
+                                |value| *value
+                            )
+                            .unwrap_or_default();
+
+                    audio_motion_fft_trace =
+                        audio_motion_state.update_fft_mirror_warp(
+                            spectrum,
+                            audio_motion_frame_seconds,
+                        );
+                }
+
+                crate::render_audio_motion::AudioMotionEffect::Off => {
+                    audio_motion_state.reset();
+                }
+            }
 
 
             for (
@@ -3915,6 +3963,10 @@ fn render_mirror_frames(
 
                 postprocess.set_audio_motion_scale(
                     audio_motion_scale
+                );
+
+                postprocess.set_audio_motion_fft_trace(
+                    audio_motion_fft_trace
                 );
 
 

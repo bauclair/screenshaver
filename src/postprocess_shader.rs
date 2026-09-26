@@ -165,6 +165,7 @@ pub(crate) struct PostprocessPipeline {
     bloom_mode: crate::render_bloom::BloomMode,
     audio_motion_effect: crate::render_audio_motion::AudioMotionEffect,
     audio_motion_scale: f32,
+    audio_motion_fft_trace: [f32; crate::analyze_audio::AUDIO_MOTION_TRACE_CHANNELS],
     bloom_intensity: f32,
     bloom_saturation: f32,
     bloom_threshold: f32,
@@ -300,6 +301,7 @@ impl PostprocessPipeline {
                     profile.bloom,
                 audio_motion_effect:
                     profile.audio_motion,
+                audio_motion_fft_trace: [0.0; crate::analyze_audio::AUDIO_MOTION_TRACE_CHANNELS],
                 audio_motion_scale:
                     1.0,
                 bloom_intensity:
@@ -361,6 +363,13 @@ impl PostprocessPipeline {
 
     pub(crate) fn set_audio_motion_scale(&mut self, scale: f32) {
         self.audio_motion_scale = scale.max(1.0);
+    }
+
+    pub(crate) fn set_audio_motion_fft_trace(
+        &mut self,
+        spectrum: [f32; crate::analyze_audio::AUDIO_MOTION_TRACE_CHANNELS],
+    ) {
+        self.audio_motion_fft_trace = spectrum;
     }
 
 
@@ -897,7 +906,9 @@ impl PostprocessPipeline {
                 self.composite_target.texture,
                 self.output_width,
                 self.output_height,
+                self.audio_motion_effect,
                 self.audio_motion_scale,
+                &self.audio_motion_fft_trace,
             );
         } else {
             self.render_primary_pass_base(input_texture);
