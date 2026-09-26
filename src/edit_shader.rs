@@ -3946,6 +3946,7 @@ fn run_paths(
                                     postprocess.set_audio_motion_scale(scale);
                                     postprocess.set_audio_motion_fft_trace(
                                         [0.0; crate::analyze_audio::AUDIO_MOTION_TRACE_CHANNELS]);
+                                    postprocess.set_audio_motion_rotation_turns(0.0);
                                 }
                                 crate::render_audio_motion::AudioMotionEffect::FftMirrorWarp => {
                                     let spectrum = crate::analyze_audio::shared_audio_motion_fft_trace()
@@ -3954,12 +3955,24 @@ fn run_paths(
                                         spectrum, audio_motion_frame_seconds);
                                     postprocess.set_audio_motion_scale(1.0);
                                     postprocess.set_audio_motion_fft_trace(trace);
+                                    postprocess.set_audio_motion_rotation_turns(0.0);
+                                }
+                                crate::render_audio_motion::AudioMotionEffect::PolarPropeller => {
+                                    let spectrum = crate::analyze_audio::shared_audio_motion_fft_trace()
+                                        .read().ok().map(|value| *value).unwrap_or_default();
+                                    let trace = audio_motion_state.update_polar_propeller(
+                                        spectrum, audio_motion_frame_seconds);
+                                    postprocess.set_audio_motion_scale(1.0);
+                                    postprocess.set_audio_motion_fft_trace(trace);
+                                    postprocess.set_audio_motion_rotation_turns(
+                                        audio_motion_state.polar_rotation_turns());
                                 }
                                 crate::render_audio_motion::AudioMotionEffect::Off => {
                                     audio_motion_state.reset();
                                     postprocess.set_audio_motion_scale(1.0);
                                     postprocess.set_audio_motion_fft_trace(
                                         [0.0; crate::analyze_audio::AUDIO_MOTION_TRACE_CHANNELS]);
+                                    postprocess.set_audio_motion_rotation_turns(0.0);
                                 }
                             }
 

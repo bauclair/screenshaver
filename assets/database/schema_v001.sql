@@ -346,7 +346,8 @@ CREATE TABLE shader_policies (
                                audio_motion_effect IN (
                                    'off',
                                    'woofer_from_hell',
-                                   'fft_mirror_warp'
+                                   'fft_mirror_warp',
+                                   'polar_propeller'
                                )
                            ),
 

@@ -4,6 +4,7 @@ pub enum AudioMotionEffect {
     Off,
     WooferFromHell,
     FftMirrorWarp,
+    PolarPropeller,
 }
 
 impl AudioMotionEffect {
@@ -12,7 +13,8 @@ impl AudioMotionEffect {
             "off" => Ok(Self::Off),
             "woofer_from_hell" | "woofer-from-hell" | "woofer from hell" => Ok(Self::WooferFromHell),
             "fft_mirror_warp" | "fft-mirror-warp" | "fft mirror warp" => Ok(Self::FftMirrorWarp),
-            other => Err(format!("Unsupported Audio Motion effect '{}'; supported values: off, woofer_from_hell, fft_mirror_warp", other)),
+            "polar_propeller" | "polar-propeller" | "polar propeller" => Ok(Self::PolarPropeller),
+            other => Err(format!("Unsupported Audio Motion effect '{}'; supported values: off, woofer_from_hell, fft_mirror_warp, polar_propeller", other)),
         }
     }
 
@@ -21,6 +23,7 @@ impl AudioMotionEffect {
             Self::Off => "Off",
             Self::WooferFromHell => "Woofer from Hell",
             Self::FftMirrorWarp => "FFT Mirror Warp",
+            Self::PolarPropeller => "Polar Propeller",
         }
     }
 
@@ -29,6 +32,7 @@ impl AudioMotionEffect {
             Self::Off => "off",
             Self::WooferFromHell => "woofer_from_hell",
             Self::FftMirrorWarp => "fft_mirror_warp",
+            Self::PolarPropeller => "polar_propeller",
         }
     }
 
@@ -61,6 +65,11 @@ const FFT_TRACE_RESPONSE_CURVE: f32 = 0.80;
 const FFT_TRACE_RELEASE_SECONDS: f32 = 0.085;
 pub const FFT_TRACE_GAIN: f32 = 0.34;
 pub const FFT_TRACE_SPATIAL_WIDTH: f32 = 0.105;
+// Certified Polar Propeller rotation specification.
+pub const POLAR_MIN_RPM: f32 = 5.0;
+pub const POLAR_MAX_RPM: f32 = 100.0;
+pub const POLAR_MIN_HZ: f32 = 100.0;
+pub const POLAR_MAX_HZ: f32 = 3_800.0;
 
 #[derive(Clone, Copy, Debug)]
 pub struct AudioMotionState {
@@ -69,6 +78,7 @@ pub struct AudioMotionState {
     filter_blend: f32,
     transient_baseline: f32,
     fft_channels: [f32; crate::analyze_audio::AUDIO_MOTION_TRACE_CHANNELS],
+    polar_rotation_turns: f32,
 }
 
 impl Default for AudioMotionState {
@@ -79,6 +89,7 @@ impl Default for AudioMotionState {
             filter_blend: 0.0,
             transient_baseline: 0.0,
             fft_channels: [0.0; crate::analyze_audio::AUDIO_MOTION_TRACE_CHANNELS],
+            polar_rotation_turns: 0.0,
         }
     }
 }
@@ -229,6 +240,86 @@ impl AudioMotionState {
         self.fft_channels
     }
 
+    pub fn polar_rotation_turns(&self) -> f32 {
+        self.polar_rotation_turns
+    }
+
+    pub fn update_polar_propeller(
+        &mut self,
+        spectrum: crate::analyze_audio::AudioMotionFftTrace,
+        frame_seconds: f32,
+    ) -> [f32; crate::analyze_audio::AUDIO_MOTION_TRACE_CHANNELS] {
+        // Polar Propeller deliberately uses the exact certified FFT Mirror Warp
+        // conditioning/compression/envelope. Only the image geometry and
+        // frequency-driven rotation differ.
+        let channels =
+            self.update_fft_mirror_warp(
+                spectrum,
+                frame_seconds,
+            );
+
+        let log_span =
+            (POLAR_MAX_HZ / POLAR_MIN_HZ).ln();
+
+        let mut weighted_frequency =
+            0.0_f32;
+
+        let mut total_weight =
+            0.0_f32;
+
+        for index in
+            0..crate::analyze_audio::AUDIO_MOTION_TRACE_CHANNELS
+        {
+            let fraction =
+                index as f32
+                    / (crate::analyze_audio::AUDIO_MOTION_TRACE_CHANNELS - 1)
+                        as f32;
+
+            let frequency =
+                POLAR_MIN_HZ
+                    * (log_span * fraction).exp();
+
+            let weight =
+                channels[index];
+
+            weighted_frequency +=
+                frequency * weight;
+
+            total_weight +=
+                weight;
+        }
+
+        let average_frequency_hz =
+            if total_weight > 0.000001 {
+                (weighted_frequency / total_weight)
+                    .clamp(
+                        POLAR_MIN_HZ,
+                        POLAR_MAX_HZ,
+                    )
+            } else {
+                POLAR_MIN_HZ
+            };
+
+        let frequency_fraction =
+            ((average_frequency_hz - POLAR_MIN_HZ)
+                / (POLAR_MAX_HZ - POLAR_MIN_HZ))
+                .clamp(0.0, 1.0);
+
+        let rotation_rpm =
+            POLAR_MIN_RPM
+                + (POLAR_MAX_RPM - POLAR_MIN_RPM)
+                    * frequency_fraction;
+
+        self.polar_rotation_turns =
+            (self.polar_rotation_turns
+                + rotation_rpm
+                    * frame_seconds.max(0.0)
+                    / 60.0)
+                % 1.0;
+
+        channels
+    }
+
 }
 
 const FRAGMENT_SHADER: &str = r#"#version 330 core
@@ -240,6 +331,8 @@ uniform float uScale;
 uniform float uSpectrum[48];
 uniform float uTraceGain;
 uniform float uSpatialWidth;
+uniform float uRotationTurns;
+const float TAU = 6.28318530717958647692;
 
 float spectrumAt(float x) {
     float p = clamp(x, 0.0, 1.0) * 47.0;
@@ -274,6 +367,51 @@ void main() {
         return;
     }
 
+    if (uEffect == 3) {
+        // Certified Polar Propeller geometry: intentionally no aspect-ratio
+        // correction, so the radial field expands across the rectangular
+        // render surface.
+        vec2 centered = uv - vec2(0.5);
+        float radius = length(centered);
+        float angle = atan(centered.y, centered.x);
+        float angularPosition =
+            fract(angle / TAU + 1.0 + uRotationTurns);
+        float amplitude = spectrumAt(angularPosition);
+        float excursion = amplitude * uTraceGain;
+        float baseRadius = 0.055;
+        float peakRadius = baseRadius + excursion;
+        float distanceFromPeak = abs(radius - peakRadius);
+        float ridge = exp(
+            -(distanceFromPeak * distanceFromPeak)
+            / max(2.0 * uSpatialWidth * uSpatialWidth, 0.000001)
+        );
+        float interior = 1.0 - smoothstep(
+            0.0,
+            max(peakRadius + uSpatialWidth, 0.0001),
+            radius
+        );
+        float influence = max(ridge, interior * 0.58);
+        float centerFeatherWidth =
+            max(uSpatialWidth * 0.72, 0.025);
+        float centerFeather =
+            smoothstep(0.0, centerFeatherWidth, radius);
+        float displacement =
+            excursion * influence * centerFeather;
+        vec2 direction =
+            radius > 0.000001
+                ? centered / radius
+                : vec2(0.0);
+        vec2 sampleCentered =
+            centered - direction * displacement;
+        vec2 sampleUv =
+            sampleCentered + vec2(0.5);
+        sampleUv =
+            clamp(sampleUv, vec2(0.001), vec2(0.999));
+        FragColor =
+            texture(uScene, sampleUv);
+        return;
+    }
+
     vec2 centered = uv - vec2(0.5);
     float aspect = uResolution.x / uResolution.y;
     vec2 conePosition = centered;
@@ -302,6 +440,7 @@ pub struct AudioMotionRenderer {
     spectrum_location: i32,
     trace_gain_location: i32,
     spatial_width_location: i32,
+    rotation_turns_location: i32,
 }
 
 impl AudioMotionRenderer {
@@ -317,13 +456,15 @@ impl AudioMotionRenderer {
         let spectrum_location = uniform_location(program, "uSpectrum[0]")?;
         let trace_gain_location = uniform_location(program, "uTraceGain")?;
         let spatial_width_location = uniform_location(program, "uSpatialWidth")?;
-        Ok(Self { program, scene_location, resolution_location, effect_location, scale_location, spectrum_location, trace_gain_location, spatial_width_location })
+        let rotation_turns_location = uniform_location(program, "uRotationTurns")?;
+        Ok(Self { program, scene_location, resolution_location, effect_location, scale_location, spectrum_location, trace_gain_location, spatial_width_location, rotation_turns_location })
     }
 
     pub fn render(
         &self, source_texture: u32, width: u32, height: u32,
         effect: AudioMotionEffect, scale: f32,
         spectrum: &[f32; crate::analyze_audio::AUDIO_MOTION_TRACE_CHANNELS],
+        rotation_turns: f32,
     ) {
         unsafe {
             gl::UseProgram(self.program);
@@ -331,11 +472,20 @@ impl AudioMotionRenderer {
             gl::BindTexture(gl::TEXTURE_2D, source_texture);
             gl::Uniform1i(self.scene_location, 0);
             gl::Uniform2f(self.resolution_location, width as f32, height as f32);
-            gl::Uniform1i(self.effect_location, if matches!(effect, AudioMotionEffect::FftMirrorWarp) { 2 } else { 1 });
+            gl::Uniform1i(
+                self.effect_location,
+                match effect {
+                    AudioMotionEffect::FftMirrorWarp => 2,
+                    AudioMotionEffect::PolarPropeller => 3,
+                    AudioMotionEffect::WooferFromHell => 1,
+                    AudioMotionEffect::Off => 0,
+                },
+            );
             gl::Uniform1f(self.scale_location, scale.max(1.0));
             gl::Uniform1fv(self.spectrum_location, crate::analyze_audio::AUDIO_MOTION_TRACE_CHANNELS as i32, spectrum.as_ptr());
             gl::Uniform1f(self.trace_gain_location, FFT_TRACE_GAIN);
             gl::Uniform1f(self.spatial_width_location, FFT_TRACE_SPATIAL_WIDTH);
+            gl::Uniform1f(self.rotation_turns_location, rotation_turns.rem_euclid(1.0));
             gl::DrawArrays(gl::TRIANGLES, 0, 3);
             gl::BindTexture(gl::TEXTURE_2D, 0);
             gl::UseProgram(0);

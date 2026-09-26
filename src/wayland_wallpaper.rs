@@ -3909,6 +3909,23 @@ fn render_mirror_frames(
                         );
                 }
 
+                crate::render_audio_motion::AudioMotionEffect::PolarPropeller => {
+                    let spectrum =
+                        crate::analyze_audio::shared_audio_motion_fft_trace()
+                            .read()
+                            .ok()
+                            .map(
+                                |value| *value
+                            )
+                            .unwrap_or_default();
+
+                    audio_motion_fft_trace =
+                        audio_motion_state.update_polar_propeller(
+                            spectrum,
+                            audio_motion_frame_seconds,
+                        );
+                }
+
                 crate::render_audio_motion::AudioMotionEffect::Off => {
                     audio_motion_state.reset();
                 }
@@ -3967,6 +3984,9 @@ fn render_mirror_frames(
 
                 postprocess.set_audio_motion_fft_trace(
                     audio_motion_fft_trace
+                );
+                postprocess.set_audio_motion_rotation_turns(
+                    audio_motion_state.polar_rotation_turns()
                 );
 
 

@@ -682,7 +682,7 @@ fn draw_post_processing_audio_motion(
 
     ui.horizontal(|ui| {
         ui.label("Audio Motion Effect:")
-            .on_hover_text("Selects an audio-driven full-frame motion effect. Woofer from Hell uses LRCMUX vocal timing for inverse-cone motion. FFT Mirror Warp uses a mirrored 48-channel FFT trace to deform the shader image itself.");
+            .on_hover_text("Selects an audio-driven full-frame motion effect. Woofer from Hell uses LRCMUX vocal timing for inverse-cone motion. FFT Mirror Warp uses a mirrored 48-channel FFT trace. Polar Propeller uses the same 48-channel FFT response in a rotating radial deformation.");
 
         let selected_text = if bulk_edit_mode && !*bulk_audio_motion_selected {
             "Unchanged"
@@ -708,6 +708,9 @@ fn draw_post_processing_audio_motion(
                     *bulk_audio_motion_selected = true;
                 }
                 if ui.selectable_value(audio_motion, crate::render_audio_motion::AudioMotionEffect::FftMirrorWarp, "FFT Mirror Warp").clicked() && bulk_edit_mode {
+                    *bulk_audio_motion_selected = true;
+                }
+                if ui.selectable_value(audio_motion, crate::render_audio_motion::AudioMotionEffect::PolarPropeller, "Polar Propeller").clicked() && bulk_edit_mode {
                     *bulk_audio_motion_selected = true;
                 }
             })

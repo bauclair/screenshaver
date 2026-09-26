@@ -15,6 +15,10 @@ const TEST_HEIGHT: u32 = 720;
 // horizontal position. The same deformation is mirrored above and below the
 // vertical center.
 const SHADER_SPEED: f32 = 1.0;
+const POLAR_MIN_RPM: f32 = 5.0;
+const POLAR_MAX_RPM: f32 = 100.0;
+const POLAR_MIN_HZ: f32 = 100.0;
+const POLAR_MAX_HZ: f32 = 3_800.0;
 const TRACE_CHANNELS: usize = crate::analyze_audio::AUDIO_MOTION_TRACE_CHANNELS;
 
 // Proof-of-concept display range. The shared analyzer remains untouched;
@@ -45,79 +49,48 @@ const TRACE_RELEASE_SECONDS: f32 = 0.085;
 const TRACE_SPATIAL_WIDTH: f32 = 0.105;
 const DIAGNOSTIC_INTERVAL: Duration = Duration::from_millis(250);
 
-const MIRRORED_FFT_FRAGMENT_SHADER: &str = r#"#version 330 core
+const POLAR_FFT_FRAGMENT_SHADER: &str = r#"#version 330 core
 out vec4 FragColor;
-
 uniform sampler2D uScene;
 uniform vec2 uResolution;
 uniform float uSpectrum[48];
 uniform float uTraceGain;
 uniform float uSpatialWidth;
-
+uniform float uRotationTurns;
+const float TAU = 6.28318530717958647692;
 float spectrumAt(float x) {
-    float p = clamp(x, 0.0, 1.0) * 47.0;
-    int i0 = int(floor(p));
-    int i1 = min(i0 + 1, 47);
+    float p = fract(x) * 48.0;
+    int i0 = int(floor(p)) % 48;
+    int i1 = (i0 + 1) % 48;
     float f = fract(p);
-
-    // Smooth interpolation avoids visible 48-column steps.
     f = f * f * (3.0 - 2.0 * f);
     return mix(uSpectrum[i0], uSpectrum[i1], f);
 }
-
 void main() {
     vec2 uv = gl_FragCoord.xy / uResolution;
-
-    float amplitude = spectrumAt(uv.x);
+    // Deliberately leave normalized screen coordinates uncorrected for aspect
+    // ratio. The polar field therefore expands across the rectangular render
+    // surface instead of being constrained to geometrically circular space.
+    vec2 centered = uv - vec2(0.5);
+    float radius = length(centered);
+    float angle = atan(centered.y, centered.x);
+    float angularPosition = fract(angle / TAU + 1.0 + uRotationTurns);
+    float amplitude = spectrumAt(angularPosition);
     float excursion = amplitude * uTraceGain;
-
-    // Distance from the horizontal center. The upper and lower halves use the
-    // same field, producing a perfect vertical mirror.
-    float side = uv.y >= 0.5 ? 1.0 : -1.0;
-    float distanceFromCenter = abs(uv.y - 0.5);
-
-    // The instantaneous FFT peak at this X coordinate lives this far from the
-    // centerline. Pixels around that peak are what deform most strongly.
-    float peakDistance = excursion;
-
-    // Localized ridge around the FFT contour. This is deliberately not a
-    // centerline translation: the image under each peak is pulled into that
-    // peak while regions away from the contour progressively remain anchored.
-    float distanceFromPeak = abs(distanceFromCenter - peakDistance);
-    float ridge = exp(
-        -(distanceFromPeak * distanceFromPeak)
-        / max(2.0 * uSpatialWidth * uSpatialWidth, 0.000001)
-    );
-
-    // Give the material between the center and the peak enough coupling to
-    // stretch naturally into the ridge instead of tearing or producing a
-    // narrow optical line.
+    float baseRadius = 0.055;
+    float peakRadius = baseRadius + excursion;
+    float distanceFromPeak = abs(radius - peakRadius);
+    float ridge = exp(-(distanceFromPeak * distanceFromPeak)
+        / max(2.0 * uSpatialWidth * uSpatialWidth, 0.000001));
     float interior = 1.0 - smoothstep(
-        0.0,
-        max(peakDistance + uSpatialWidth, 0.0001),
-        distanceFromCenter
-    );
-
+        0.0, max(peakRadius + uSpatialWidth, 0.0001), radius);
     float influence = max(ridge, interior * 0.58);
-
-    // Feather the mirror junction around the vertical center.  The original
-    // version switched displacement direction abruptly at y=0.5, which made
-    // the join read as a sharp horizontal seam.  This blend keeps displacement
-    // exactly zero at the center and smoothly reaches full mirrored motion
-    // outside a narrow transition zone.
     float centerFeatherWidth = max(uSpatialWidth * 0.72, 0.025);
-    float centerFeather = smoothstep(
-        0.0,
-        centerFeatherWidth,
-        distanceFromCenter
-    );
-
-    // Inverse-map the displaced image. Upper and lower motion remain exact
-    // mirrors, but the center junction now merges continuously.
+    float centerFeather = smoothstep(0.0, centerFeatherWidth, radius);
     float displacement = excursion * influence * centerFeather;
-    vec2 sampleUv = uv;
-    sampleUv.y -= side * displacement;
-
+    vec2 direction = radius > 0.000001 ? centered / radius : vec2(0.0);
+    vec2 sampleCentered = centered - direction * displacement;
+    vec2 sampleUv = sampleCentered + vec2(0.5);
     sampleUv = clamp(sampleUv, vec2(0.001), vec2(0.999));
     FragColor = texture(uScene, sampleUv);
 }
@@ -131,13 +104,16 @@ impl Drop for AudioCaptureGuard {
     }
 }
 
-struct MirroredFftState {
+struct PolarFftState {
     shader_time: f32,
     channels: [f32; TRACE_CHANNELS],
+    rotation_turns: f32,
+    average_frequency_hz: f32,
+    rotation_rpm: f32,
     last_diagnostic: Instant,
 }
 
-impl MirroredFftState {
+impl PolarFftState {
     fn remap_test_frequency_range(
         spectrum: crate::analyze_audio::AudioMotionFftTrace,
     ) -> [f32; TRACE_CHANNELS] {
@@ -182,6 +158,9 @@ impl MirroredFftState {
         Self {
             shader_time: 0.0,
             channels: [0.0; TRACE_CHANNELS],
+            rotation_turns: 0.0,
+            average_frequency_hz: POLAR_MIN_HZ,
+            rotation_rpm: POLAR_MIN_RPM,
             last_diagnostic: Instant::now(),
         }
     }
@@ -251,16 +230,63 @@ impl MirroredFftState {
             self.channels[index] = self.channels[index].clamp(0.0, 1.0);
         }
 
+        // Compute the energy-weighted average frequency of the displayed
+        // logarithmic 100..3800 Hz FFT field. The already-conditioned channel
+        // amplitudes provide the weights, so quiet/noise-rejected channels do
+        // not pull the rotation speed around.
+        let log_span = (POLAR_MAX_HZ / POLAR_MIN_HZ).ln();
+        let mut weighted_frequency = 0.0_f32;
+        let mut total_weight = 0.0_f32;
+
+        for index in 0..TRACE_CHANNELS {
+            let fraction =
+                index as f32 / (TRACE_CHANNELS - 1) as f32;
+
+            let frequency =
+                POLAR_MIN_HZ * (log_span * fraction).exp();
+
+            let weight = self.channels[index];
+            weighted_frequency += frequency * weight;
+            total_weight += weight;
+        }
+
+        self.average_frequency_hz =
+            if total_weight > 0.000001 {
+                (weighted_frequency / total_weight)
+                    .clamp(POLAR_MIN_HZ, POLAR_MAX_HZ)
+            } else {
+                POLAR_MIN_HZ
+            };
+
+        let frequency_fraction =
+            ((self.average_frequency_hz - POLAR_MIN_HZ)
+                / (POLAR_MAX_HZ - POLAR_MIN_HZ))
+                .clamp(0.0, 1.0);
+
+        self.rotation_rpm =
+            POLAR_MIN_RPM
+                + (POLAR_MAX_RPM - POLAR_MIN_RPM)
+                    * frequency_fraction;
+
+        // Integrate angular velocity so changes in average frequency alter
+        // speed continuously without causing phase jumps.
+        self.rotation_turns =
+            (self.rotation_turns
+                + self.rotation_rpm * frame_seconds / 60.0)
+                % 1.0;
+
         if self.last_diagnostic.elapsed() >= DIAGNOSTIC_INTERVAL {
             let peak = self.channels.iter().copied().fold(0.0_f32, f32::max);
             let active = self.channels.iter().filter(|&&v| v > 0.05).count();
             println!(
-                "[AUDIO MOTION FFT] channels={} active={} peak={:.3} gain={:.3} width={:.3} shader_time={:.2}",
+                "[AUDIO MOTION FFT] channels={} active={} peak={:.3} gain={:.3} width={:.3} avg_hz={:.1} rpm={:.2} shader_time={:.2}",
                 TRACE_CHANNELS,
                 active,
                 peak,
                 TRACE_GAIN,
                 TRACE_SPATIAL_WIDTH,
+                self.average_frequency_hz,
+                self.rotation_rpm,
                 self.shader_time,
             );
             self.last_diagnostic = Instant::now();
@@ -337,7 +363,7 @@ pub fn run(
     println!("Shader: {}", shader_path.display());
     println!("Processed shader: {}", shader_name);
     println!("Test size: {}x{}", TEST_WIDTH, TEST_HEIGHT);
-    println!("Effect: mirrored multi-channel FFT shader deformation");
+    println!("Effect: polar multi-channel FFT shader deformation");
     println!("FFT channels: {} logarithmic buckets", TRACE_CHANNELS);
     println!(
         "FFT display range: {:.0} Hz..{:.0} Hz",
@@ -358,6 +384,13 @@ pub fn run(
     );
     println!("Trace gain: {:.3}", TRACE_GAIN);
     println!("Trace spatial width: {:.3}", TRACE_SPATIAL_WIDTH);
+    println!(
+        "Polar rotation: {:.1}..{:.1} RPM clockwise, mapped from {:.0}..{:.0} Hz average frequency",
+        POLAR_MIN_RPM,
+        POLAR_MAX_RPM,
+        POLAR_MIN_HZ,
+        POLAR_MAX_HZ,
+    );
     println!("No FFT line or bars are drawn; the shader image itself is deformed.");
     println!();
     println!("Play audio to exercise motion. Press Esc or close the window to exit.");
@@ -462,10 +495,10 @@ pub fn run(
     let postprocess_program =
         crate::compile_shader::build_program(
             crate::define_constants::VERTEX_SHADER,
-            MIRRORED_FFT_FRAGMENT_SHADER,
+            POLAR_FFT_FRAGMENT_SHADER,
         )
         .map_err(|error| {
-            format!("Audio Motion mirrored-FFT post-process shader compilation failed: {}", error)
+            format!("Audio Motion polar-FFT post-process shader compilation failed: {}", error)
         })?;
 
     let mut scene_fbo = 0_u32;
@@ -557,6 +590,12 @@ pub fn run(
             b"uSpatialWidth\0",
         );
 
+    let rotation_turns_location =
+        uniform_location(
+            postprocess_program,
+            b"uRotationTurns\0",
+        );
+
     let mut texture_manager =
         crate::manage_textures::TextureManager::new(
             config.texture_policy.clone()
@@ -593,7 +632,7 @@ pub fn run(
             )?;
 
     let mut fft_state =
-        MirroredFftState::new();
+        PolarFftState::new();
 
     let mut previous_frame =
         Instant::now();
@@ -788,6 +827,13 @@ pub fn run(
                 );
             }
 
+            if rotation_turns_location != -1 {
+                gl::Uniform1f(
+                    rotation_turns_location,
+                    fft_state.rotation_turns,
+                );
+            }
+
             gl::BindVertexArray(vao);
             gl::DrawArrays(gl::TRIANGLES, 0, 3);
         }
@@ -827,7 +873,7 @@ pub fn run(
     texture_manager.delete_all();
 
     println!();
-    println!("Mirrored multi-channel FFT Audio Motion test ended.");
+    println!("Polar multi-channel FFT Audio Motion test ended.");
 
     Ok(())
 }
