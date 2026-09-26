@@ -1,7 +1,7 @@
 use rusqlite::Connection;
 
 
-const CURRENT_SCHEMA_VERSION: i64 = 1;
+pub const CURRENT_SCHEMA_VERSION: i64 = 1;
 
 
 #[derive(
@@ -93,7 +93,7 @@ pub fn migrate(
      *   - validate the resulting schema before committing;
      *   - never skip an intermediate schema version.
      *
-     * CURRENT_SCHEMA_VERSION is 1, so this branch is unreachable today.
+     * This branch is unreachable while no older supported schema exists.
      */
 
     Err(

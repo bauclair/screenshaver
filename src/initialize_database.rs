@@ -969,18 +969,20 @@ fn insert_schema_metadata(
              )
              VALUES (
                  1,
-                 1,
                  ?1,
-                 ?1
+                 ?2,
+                 ?2
              )",
             params![
+                crate::migrate_database::CURRENT_SCHEMA_VERSION,
                 application_version,
             ],
         )
         .map_err(
             |error| {
                 format!(
-                    "Unable to finalize Schema Version 1 metadata: {}",
+                    "Unable to finalize Schema Version {} metadata: {}",
+                    crate::migrate_database::CURRENT_SCHEMA_VERSION,
                     error,
                 )
             }

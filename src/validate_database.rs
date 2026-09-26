@@ -3,7 +3,6 @@ use rusqlite::{
         Connection,
 };
 
-const EXPECTED_SCHEMA_VERSION: i64 = 1;
 const EXPECTED_RUNTIME_SOURCE_PREPARATION_VERSION: i64 = 1;
 
 
@@ -511,7 +510,7 @@ fn validate_schema_metadata(
                  FROM schema_metadata
                  WHERE metadata_id = 1
                    AND schema_version = ?1",
-                [EXPECTED_SCHEMA_VERSION],
+                [crate::migrate_database::CURRENT_SCHEMA_VERSION],
                 |row| {
                     row.get(
                         0
@@ -534,7 +533,7 @@ fn validate_schema_metadata(
         return Err(
             format!(
                 "Schema metadata validation failed: expected exactly one Schema Version {} metadata row",
-                EXPECTED_SCHEMA_VERSION,
+                crate::migrate_database::CURRENT_SCHEMA_VERSION,
             )
         );
     }

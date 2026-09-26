@@ -753,8 +753,6 @@ struct ExportManifest {
     files: ExportManifestFiles,
 }
 
-const DATABASE_SCHEMA_VERSION: u32 = 1;
-
 fn export_created_timestamp() -> String {
     std::process::Command::new("date")
         .arg("-u")
@@ -1412,7 +1410,7 @@ fn create_export_archive(
             screenshaver_version:
                 env!("CARGO_PKG_VERSION"),
             database_schema_version:
-                DATABASE_SCHEMA_VERSION,
+                crate::migrate_database::CURRENT_SCHEMA_VERSION as u32,
             created:
                 export_created_timestamp(),
             export_focus:
