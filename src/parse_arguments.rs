@@ -21,6 +21,8 @@ pub enum Command {
 
     TestLyrics,
 
+    TestSchemaReader,
+
     BenchmarkRender {
         shader_path: String,
     },
@@ -153,6 +155,20 @@ pub fn parse() -> Result<Command, String> {
 
             Ok(
                 Command::TestLyrics
+            )
+        }
+
+
+        "--test-schema-reader" => {
+
+            require_no_extra_arguments(
+                &args,
+                "--test-schema-reader",
+            )?;
+
+
+            Ok(
+                Command::TestSchemaReader
             )
         }
 
@@ -560,6 +576,10 @@ pub fn print_help() {
          \n\
              --test-lyrics\n\
                  Run the synchronized-lyrics development test and exit.\n\
+         \n\
+             --test-schema-reader\n\
+                 Read the Schema-1 database through the historical migration reader and exit.\n\
+                 Opens the database read-only and bypasses normal database preparation.\n\
          \n\
              --construct-lock-screen-kde\n\
                  Construct/install the KDE lock-screen integration.\n\

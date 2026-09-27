@@ -104,6 +104,8 @@ mod evaluate_database;
 mod open_database;
 mod validate_database;
 mod migrate_database;
+mod database_migration;
+mod test_schema_reader;
 mod hash_shader;
 
 mod qbe_layout;
@@ -252,6 +254,29 @@ fn main() {
                 }
             }
 
+
+            return;
+        }
+
+
+        crate::parse_arguments::Command::TestSchemaReader => {
+
+            match crate::test_schema_reader::run() {
+
+                Ok(()) => {}
+
+                Err(error) => {
+
+                    eprintln!(
+                        "[SCHEMA READER TEST] FAILED: {}",
+                        error
+                    );
+
+                    std::process::exit(
+                        1
+                    );
+                }
+            }
 
             return;
         }
@@ -1086,6 +1111,7 @@ fn main() {
         | crate::parse_arguments::Command::Version
         | crate::parse_arguments::Command::TestPlaylists
         | crate::parse_arguments::Command::TestLyrics
+        | crate::parse_arguments::Command::TestSchemaReader
         | crate::parse_arguments::Command::ConstructLockScreenKde
         | crate::parse_arguments::Command::ConstructLockScreenXfce
         | crate::parse_arguments::Command::ResetIdleTimeout { .. } => {
