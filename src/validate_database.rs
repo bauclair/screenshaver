@@ -3,6 +3,7 @@ use rusqlite::{
         Connection,
 };
 
+const EXPECTED_SCHEMA_VERSION: i64 = 1;
 const EXPECTED_RUNTIME_SOURCE_PREPARATION_VERSION: i64 = 1;
 
 
@@ -76,10 +77,47 @@ pub fn validate_startup(
     )?;
 
 
-    validate_object_timestamps(
+    Ok(())
+}
+
+
+#[derive(Debug, Clone, Copy)]
+pub struct ReconstructionExpectations {
+    pub require_factory_default: bool,
+}
+
+
+pub fn validate_reconstruction(
+    connection: &Connection,
+    expectations: ReconstructionExpectations,
+) -> Result<(), String> {
+
+    validate_startup(
         connection
     )?;
 
+    validate_integrity(
+        connection
+    )?;
+
+    if expectations.require_factory_default {
+        let default_shader_id =
+            validate_default_shader(
+                connection
+            )?;
+
+        validate_reconstructed_default_policy(
+            connection,
+            default_shader_id,
+            "screensaver",
+        )?;
+
+        validate_reconstructed_default_policy(
+            connection,
+            default_shader_id,
+            "wallpaper",
+        )?;
+    }
 
     Ok(())
 }
@@ -138,20 +176,10 @@ pub fn validate_initialization(
         )?;
 
 
-    validate_empty_playlists(
-        connection
-    )?;
-
-
     validate_runtime_targets(
         connection,
         default_screensaver_policy_id,
         default_wallpaper_policy_id,
-    )?;
-
-
-    validate_object_timestamps(
-        connection
     )?;
 
 
@@ -271,12 +299,10 @@ fn validate_required_tables(
     connection: &Connection,
 ) -> Result<(), String> {
 
-    const REQUIRED_TABLES: [&str; 10] = [
+    const REQUIRED_TABLES: [&str; 8] = [
         "schema_metadata",
         "shaders",
         "shader_policies",
-        "playlists",
-        "playlist_members",
         "runtime_targets",
         "app_defaults",
         "target_defaults",
@@ -411,94 +437,6 @@ fn validate_foreign_keys(
 }
 
 
-fn validate_object_timestamps(
-    connection: &Connection,
-) -> Result<(), String> {
-
-    let invalid_shader_timestamps: i64 =
-        connection
-            .query_row(
-                "SELECT COUNT(*)
-                 FROM shaders
-                 WHERE shader_added_at IS NULL
-                    OR length(shader_added_at) <> 20
-                    OR substr(shader_added_at, 5, 1) <> '-'
-                    OR substr(shader_added_at, 8, 1) <> '-'
-                    OR substr(shader_added_at, 11, 1) <> 'T'
-                    OR substr(shader_added_at, 14, 1) <> ':'
-                    OR substr(shader_added_at, 17, 1) <> ':'
-                    OR substr(shader_added_at, 20, 1) <> 'Z'",
-                [],
-                |row| row.get(0),
-            )
-            .map_err(|error| format!("Unable to validate shader Added timestamps: {}", error))?;
-
-    if invalid_shader_timestamps != 0 {
-        return Err(format!(
-            "Database timestamp validation failed: {} shader row(s) have invalid shader_added_at values",
-            invalid_shader_timestamps,
-        ));
-    }
-
-
-    let invalid_policy_timestamps: i64 =
-        connection
-            .query_row(
-                "SELECT COUNT(*)
-                 FROM shader_policies
-                 WHERE policy_created_at IS NULL
-                    OR policy_modified_at IS NULL
-                    OR length(policy_created_at) <> 20
-                    OR length(policy_modified_at) <> 20
-                    OR substr(policy_created_at, 11, 1) <> 'T'
-                    OR substr(policy_created_at, 20, 1) <> 'Z'
-                    OR substr(policy_modified_at, 11, 1) <> 'T'
-                    OR substr(policy_modified_at, 20, 1) <> 'Z'
-                    OR policy_modified_at < policy_created_at",
-                [],
-                |row| row.get(0),
-            )
-            .map_err(|error| format!("Unable to validate policy Created/Modified timestamps: {}", error))?;
-
-    if invalid_policy_timestamps != 0 {
-        return Err(format!(
-            "Database timestamp validation failed: {} policy row(s) have invalid Created/Modified timestamps",
-            invalid_policy_timestamps,
-        ));
-    }
-
-
-    let invalid_playlist_timestamps: i64 =
-        connection
-            .query_row(
-                "SELECT COUNT(*)
-                 FROM playlists
-                 WHERE playlist_created_at IS NULL
-                    OR playlist_modified_at IS NULL
-                    OR length(playlist_created_at) <> 20
-                    OR length(playlist_modified_at) <> 20
-                    OR substr(playlist_created_at, 11, 1) <> 'T'
-                    OR substr(playlist_created_at, 20, 1) <> 'Z'
-                    OR substr(playlist_modified_at, 11, 1) <> 'T'
-                    OR substr(playlist_modified_at, 20, 1) <> 'Z'
-                    OR playlist_modified_at < playlist_created_at",
-                [],
-                |row| row.get(0),
-            )
-            .map_err(|error| format!("Unable to validate playlist Created/Modified timestamps: {}", error))?;
-
-    if invalid_playlist_timestamps != 0 {
-        return Err(format!(
-            "Database timestamp validation failed: {} playlist row(s) have invalid Created/Modified timestamps",
-            invalid_playlist_timestamps,
-        ));
-    }
-
-
-    Ok(())
-}
-
-
 fn validate_schema_metadata(
     connection: &Connection,
 ) -> Result<(), String> {
@@ -510,7 +448,7 @@ fn validate_schema_metadata(
                  FROM schema_metadata
                  WHERE metadata_id = 1
                    AND schema_version = ?1",
-                [crate::migrate_database::CURRENT_SCHEMA_VERSION],
+                [EXPECTED_SCHEMA_VERSION],
                 |row| {
                     row.get(
                         0
@@ -533,7 +471,7 @@ fn validate_schema_metadata(
         return Err(
             format!(
                 "Schema metadata validation failed: expected exactly one Schema Version {} metadata row",
-                crate::migrate_database::CURRENT_SCHEMA_VERSION,
+                EXPECTED_SCHEMA_VERSION,
             )
         );
     }
@@ -1211,8 +1149,7 @@ fn validate_default_policy(
         connection
             .query_row(
                 "SELECT policy_id,
-                        policy_name_key,
-                        starting_offset
+                        policy_name_key
                  FROM shader_policies
                  WHERE shader_id = ?1
                    AND policy_target = ?2
@@ -1227,7 +1164,6 @@ fn validate_default_policy(
                         (
                             row.get::<_, i64>(0)?,
                             row.get::<_, String>(1)?,
-                            row.get::<_, f64>(2)?,
                         )
                     )
                 },
@@ -1246,7 +1182,6 @@ fn validate_default_policy(
     let (
         fallback_policy_id,
         stored_name_key,
-        starting_offset,
     ) = fallback;
 
     // During fresh initialization the canonical fallback names should still be
@@ -1266,67 +1201,51 @@ fn validate_default_policy(
         );
     }
 
-    if starting_offset != 0.0 {
-        return Err(
-            format!(
-                "Default-policy validation failed: protected {} fallback policy ID {} has starting_offset {}, expected 0.0",
-                policy_target,
-                fallback_policy_id,
-                starting_offset,
-            )
-        );
-    }
-
     Ok(
         fallback_policy_id
     )
 }
 
 
-fn validate_empty_playlists(
+fn validate_reconstructed_default_policy(
     connection: &Connection,
-) -> Result<(), String> {
+    expected_shader_id: i64,
+    policy_target: &str,
+) -> Result<i64, String> {
 
-    for table_name in [
-        "playlists",
-        "playlist_members",
-    ] {
-        let row_count: i64 =
-            connection
-                .query_row(
-                    &format!(
-                        "SELECT COUNT(*) FROM {}",
-                        table_name,
-                    ),
-                    [],
-                    |row| {
-                        row.get(0)
-                    },
-                )
-                .map_err(
-                    |error| {
-                        format!(
-                            "Unable to count {} rows during initialization validation: {}",
-                            table_name,
-                            error,
-                        )
-                    }
-                )?;
+    // During reconstruction the protected fallback policy is durable user
+    // data. Its name and rendering settings may legitimately differ from the
+    // fresh-install seed values. Protection is structural: the oldest policy
+    // for the managed default.glsl shader in each protected target.
+    let policy_id =
+        connection
+            .query_row(
+                "SELECT policy_id
+                 FROM shader_policies
+                 WHERE shader_id = ?1
+                   AND policy_target = ?2
+                 ORDER BY policy_id
+                 LIMIT 1",
+                rusqlite::params![
+                    expected_shader_id,
+                    policy_target,
+                ],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Reconstruction validation failed: required protected '{}' fallback policy for current default.glsl shader_id {} is missing: {}",
+                        policy_target,
+                        expected_shader_id,
+                        error,
+                    )
+                }
+            )?;
 
-
-        if row_count != 0 {
-            return Err(
-                format!(
-                    "Playlist initialization validation failed: expected 0 rows in {}, found {}",
-                    table_name,
-                    row_count,
-                )
-            );
-        }
-    }
-
-
-    Ok(())
+    Ok(
+        policy_id
+    )
 }
 
 
@@ -1382,11 +1301,9 @@ fn validate_runtime_targets(
             display_mode,
             interval_seconds,
             single_policy_id,
-            playlist_id,
             selected_policy_target,
         ): (
             String,
-            Option<i64>,
             Option<i64>,
             Option<i64>,
             Option<String>,
@@ -1397,7 +1314,6 @@ fn validate_runtime_targets(
                          rt.display_mode,
                          rt.interval_seconds,
                          rt.single_policy_id,
-                         rt.playlist_id,
                          p.policy_target
                      FROM runtime_targets AS rt
                      LEFT JOIN shader_policies AS p
@@ -1411,7 +1327,6 @@ fn validate_runtime_targets(
                                 row.get(1)?,
                                 row.get(2)?,
                                 row.get(3)?,
-                                row.get(4)?,
                             )
                         )
                     },
@@ -1430,7 +1345,6 @@ fn validate_runtime_targets(
         if display_mode != "single"
             || interval_seconds.is_some()
             || single_policy_id != Some(expected_policy_id)
-            || playlist_id.is_some()
             || selected_policy_target.as_deref() != Some(target)
         {
             return Err(

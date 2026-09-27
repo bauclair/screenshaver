@@ -84,6 +84,11 @@ pub fn prepare(database_path: &Path) -> Result<Connection, String> {
             &source_connection,
         )?;
 
+    let reconstruction_expectations =
+        reconstruction_expectations(
+            &migration_data
+        );
+
     let extraction_elapsed =
         timing.elapsed_milliseconds();
 
@@ -138,7 +143,8 @@ pub fn prepare(database_path: &Path) -> Result<Connection, String> {
 
     if let Err(error) =
         validate_reconstructed_database(
-            &staging_connection
+            &staging_connection,
+            reconstruction_expectations,
         )
     {
         drop(
@@ -203,7 +209,12 @@ pub fn prepare(database_path: &Path) -> Result<Connection, String> {
             &staging_path,
             &recovery_path,
             &timing.started_utc,
-            validate_reconstructed_database,
+            |connection| {
+                validate_reconstructed_database(
+                    connection,
+                    reconstruction_expectations,
+                )
+            },
         )?;
 
     let cutover_elapsed =
@@ -289,16 +300,34 @@ fn read_historical_database(
 }
 
 
+fn reconstruction_expectations(
+    data: &crate::database_migration::migration_data::MigrationData,
+) -> crate::validate_database::ReconstructionExpectations {
+
+    let require_factory_default =
+        data.shaders
+            .iter()
+            .any(
+                |shader| {
+                    shader.filename
+                        == "default.glsl"
+                }
+            );
+
+    crate::validate_database::ReconstructionExpectations {
+        require_factory_default,
+    }
+}
+
+
 fn validate_reconstructed_database(
     connection: &Connection,
+    expectations: crate::validate_database::ReconstructionExpectations,
 ) -> Result<(), String> {
 
-    crate::validate_database::validate_startup(
-        connection
-    )?;
-
-    crate::validate_database::validate_integrity(
-        connection
+    crate::validate_database::validate_reconstruction(
+        connection,
+        expectations,
     )?;
 
 
@@ -501,7 +530,10 @@ pub(crate) fn test_promote_staging(
             }
 
             validate_reconstructed_database(
-                connection
+                connection,
+                crate::validate_database::ReconstructionExpectations {
+                    require_factory_default: false,
+                },
             )
         },
     )
