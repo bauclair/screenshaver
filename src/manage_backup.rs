@@ -11,10 +11,12 @@ pub fn ensure_directory() -> Result<PathBuf, String> {
     let path = crate::locate_paths::backup_dir();
     std::fs::create_dir_all(&path)
         .map_err(|error| {
-            format!(
-                "Unable to create Screenshaver backup directory '{}': {}",
-                path.display(),
-                error,
+            crate::manage_localization::runtime_text_with_params(
+                "backup.directory_create_failed",
+                &[
+                    ("path", &path.display().to_string()),
+                    ("error", &error.to_string()),
+                ],
             )
         })?;
     Ok(path)
@@ -96,13 +98,26 @@ pub fn draw_controls(
         match load_state() {
             Ok(loaded) => state = loaded,
             Err(error) => {
-                ui.label(egui::RichText::new(format!("Backup configuration unavailable: {}", error)).strong());
+                ui.label(
+                    egui::RichText::new(
+                        crate::manage_localization::runtime_text_with_params(
+                            "backup.configuration_unavailable",
+                            &[("error", &error)],
+                        )
+                    )
+                    .strong()
+                );
                 return;
             }
         }
     }
 
-    ui.label(egui::RichText::new("Full Backups").strong());
+    ui.label(
+        egui::RichText::new(
+            crate::manage_localization::runtime_text("backup.heading")
+        )
+        .strong()
+    );
     ui.add_space(6.0);
 
     let old_enabled = state.automatic_backups;
@@ -111,7 +126,7 @@ pub fn draw_controls(
     ui.horizontal(|ui| {
         ui.checkbox(
             &mut state.automatic_backups,
-            "Make full Screenshaver backups every",
+            crate::manage_localization::runtime_text("backup.schedule_prefix"),
         );
 
         ui.add_enabled(
@@ -121,7 +136,9 @@ pub fn draw_controls(
                 .speed(1.0),
         );
 
-        ui.label("days");
+        ui.label(
+            crate::manage_localization::runtime_text("backup.days")
+        );
     });
 
     state.backup_interval_days = state.backup_interval_days.max(1);
@@ -134,7 +151,10 @@ pub fn draw_controls(
             state.backup_interval_days,
         ) {
             Ok(()) => {
-                *status_message = "Backup configuration saved.".to_string();
+                *status_message =
+                    crate::manage_localization::runtime_text(
+                        "backup.configuration_saved"
+                    );
             }
             Err(error) => {
                 state.automatic_backups = old_enabled;
@@ -146,39 +166,86 @@ pub fn draw_controls(
 
     ui.add_space(4.0);
     ui.label(
-        egui::RichText::new(format!("Last backup reference: {}", state.last_backup))
-            .weak(),
+        egui::RichText::new(
+            crate::manage_localization::runtime_text_with_params(
+                "backup.last_reference",
+                &[("reference", &state.last_backup)],
+            )
+        )
+        .weak(),
     );
     ui.label(
-        egui::RichText::new(format!("Backup folder: {}", crate::locate_paths::backup_dir().display()))
-            .weak(),
+        egui::RichText::new(
+            crate::manage_localization::runtime_text_with_params(
+                "backup.folder",
+                &[(
+                    "path",
+                    &crate::locate_paths::backup_dir()
+                        .display()
+                        .to_string(),
+                )],
+            )
+        )
+        .weak(),
     );
 
     ui.add_space(10.0);
     ui.horizontal(|ui| {
-        if ui.button("Backup Now").clicked() {
-            *status_message = "Creating full Screenshaver backup...".to_string();
+        if ui
+            .button(
+                crate::manage_localization::runtime_text(
+                    "backup.now"
+                )
+            )
+            .clicked()
+        {
+            *status_message =
+                crate::manage_localization::runtime_text(
+                    "backup.creating"
+                );
 
             match backup_now() {
                 Ok(path) => {
                     if let Ok(settings) = crate::manage_configuration::load_backup_settings() {
                         state.last_backup = settings.last_backup;
                     }
-                    let message = format!("Backup created: {}", path.display());
+                    let message =
+                        crate::manage_localization::runtime_text_with_params(
+                            "backup.created",
+                            &[(
+                                "path",
+                                &path.display().to_string(),
+                            )],
+                        );
                     *status_message = message.clone();
                     state.result_message = Some((true, message));
                 }
                 Err(error) => {
-                    let message = format!("Backup failed: {}", error);
+                    let message =
+                        crate::manage_localization::runtime_text_with_params(
+                            "backup.failed",
+                            &[("error", &error)],
+                        );
                     *status_message = message.clone();
                     state.result_message = Some((false, message));
                 }
             }
         }
 
-        let restore = ui.add_enabled(false, egui::Button::new("Restore from Backup"));
+        let restore =
+            ui.add_enabled(
+                false,
+                egui::Button::new(
+                    crate::manage_localization::runtime_text(
+                        "backup.restore"
+                    )
+                ),
+            );
+
         restore.on_disabled_hover_text(
-            "Restore from Backup will be enabled in the restore implementation phase."
+            crate::manage_localization::runtime_text(
+                "backup.restore_disabled"
+            )
         );
     });
 

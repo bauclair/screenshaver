@@ -49,7 +49,7 @@ impl ConfigurationNestedTab {
     ) -> String {
         match self {
             ConfigurationNestedTab::Appearance => {
-                "Appearance".to_string()
+                crate::manage_localization::runtime_text("tab.appearance")
             }
 
             ConfigurationNestedTab::Screensaver => {
@@ -65,15 +65,15 @@ impl ConfigurationNestedTab {
             }
 
             ConfigurationNestedTab::Rendering => {
-                "Rendering".to_string()
+                crate::manage_localization::runtime_text("tab.rendering")
             }
 
             ConfigurationNestedTab::Lyrics => {
-                "Lyrics".to_string()
+                crate::manage_localization::runtime_text("tab.lyrics")
             }
 
             ConfigurationNestedTab::DataIo => {
-                "Data I/O".to_string()
+                crate::manage_localization::runtime_text("tab.data_io")
             }
         }
     }
@@ -130,7 +130,7 @@ pub fn draw_configuration(
     else {
         ui.label(
             egui::RichText::new(
-                "Configuration is not available."
+                crate::manage_localization::runtime_text("config.unavailable")
             )
             .weak(),
         );
@@ -316,7 +316,7 @@ pub fn draw_configuration(
                     dirty
                         && !single_policy_missing,
                     egui::Button::new(
-                        "Save Configuration"
+                        crate::manage_localization::runtime_text("config.save")
                     ),
                 );
 
@@ -325,8 +325,7 @@ pub fn draw_configuration(
                     true;
 
                 *status_message =
-                    "Saving configuration..."
-                        .to_string();
+                    crate::manage_localization::runtime_text("config.saving");
             }
 
 
@@ -339,7 +338,7 @@ pub fn draw_configuration(
                 ui.add_enabled(
                     dirty,
                     egui::Button::new(
-                        "Cancel"
+                        crate::manage_localization::runtime_text("common.cancel")
                     ),
                 );
 
@@ -351,8 +350,7 @@ pub fn draw_configuration(
                         baseline.clone();
 
                     *status_message =
-                        "Configuration changes discarded."
-                            .to_string();
+                        crate::manage_localization::runtime_text("config.discarded");
                 }
             }
         },
@@ -378,7 +376,7 @@ fn draw_data_io_shell(
     import_archive_browse_requested: &mut Option<std::path::PathBuf>,
 ) {
     ui.heading(
-        "Data I/O"
+        crate::manage_localization::runtime_text("data_io.heading")
     );
 
     ui.add_space(
@@ -386,7 +384,7 @@ fn draw_data_io_shell(
     );
 
     ui.label(
-        "Create recovery backups or import/export portable Screenshaver data."
+        crate::manage_localization::runtime_text("data_io.description")
     );
 
     ui.add_space(
@@ -402,13 +400,13 @@ fn draw_data_io_shell(
     ui.separator();
     ui.add_space(12.0);
 
-    ui.label(egui::RichText::new("Portable Data").strong());
+    ui.label(egui::RichText::new(crate::manage_localization::runtime_text("data_io.portable_data")).strong());
     ui.add_space(6.0);
 
     ui.horizontal(
         |ui| {
             if ui.button(
-                "Import..."
+                crate::manage_localization::runtime_text("data_io.import")
             )
             .clicked()
             {
@@ -422,7 +420,7 @@ fn draw_data_io_shell(
             );
 
             if ui.button(
-                "Export..."
+                crate::manage_localization::runtime_text("data_io.export")
             )
             .clicked()
             {
@@ -834,7 +832,7 @@ fn draw_post_processing_visual_quality(
 
             ui.end_row();
 
-            ui.label("Dithering:")
+            ui.label(crate::manage_localization::runtime_text("rendering.dithering"))
                 .on_hover_text(
                     "Controls subtle dithering used to reduce visible color banding."
                 );
@@ -1336,7 +1334,7 @@ fn draw_bulk_boolean_row(
                         ui.selectable_value(
                             selection,
                             BulkBooleanSelection::True,
-                            "Enabled",
+                            crate::manage_localization::runtime_text("common.enabled"),
                         );
                         ui.selectable_value(
                             selection,
@@ -1541,30 +1539,44 @@ fn draw_appearance(
     ui: &mut egui::Ui,
     configuration: &mut ControlConfiguration,
 ) {
-    ui.heading("Appearance Defaults");
+    ui.heading(crate::manage_localization::runtime_text("appearance.heading"));
     ui.add_space(8.0);
 
-    ui.checkbox(&mut configuration.show_splash, "Show splash screen");
-    ui.checkbox(&mut configuration.subtitles, "Screensaver subtitles");
+    ui.checkbox(&mut configuration.show_splash, crate::manage_localization::runtime_text("appearance.show_splash"));
+    ui.checkbox(&mut configuration.subtitles, crate::manage_localization::runtime_text("appearance.screensaver_subtitles"));
     ui.add_space(5.0);
 
     egui::Grid::new("nested_config_grid_appearance")
         .num_columns(2)
         .spacing(egui::vec2(8.0, 6.0))
         .show(ui, |ui| {
-            ui.label("Subtitle placement:");
+            ui.label(crate::manage_localization::runtime_text("appearance.subtitle_placement"));
             egui::ComboBox::from_id_source("nested_config_subtitle_placement")
-                .selected_text(configuration.subtitle_placement.as_str())
+                .selected_text(
+                    match configuration.subtitle_placement.as_str() {
+                        "top:left" => crate::manage_localization::runtime_text("placement.top_left"),
+                        "top:center" => crate::manage_localization::runtime_text("placement.top_center"),
+                        "top:right" => crate::manage_localization::runtime_text("placement.top_right"),
+                        "bottom:left" => crate::manage_localization::runtime_text("placement.bottom_left"),
+                        "bottom:center" => crate::manage_localization::runtime_text("placement.bottom_center"),
+                        "bottom:right" => crate::manage_localization::runtime_text("placement.bottom_right"),
+                        _ => configuration.subtitle_placement.clone(),
+                    }
+                )
                 .width(190.0)
                 .show_ui(ui, |ui| {
-                    for choice in [
-                        "top:left", "top:center", "top:right",
-                        "bottom:left", "bottom:center", "bottom:right",
+                    for (choice, label_key) in [
+                        ("top:left", "placement.top_left"),
+                        ("top:center", "placement.top_center"),
+                        ("top:right", "placement.top_right"),
+                        ("bottom:left", "placement.bottom_left"),
+                        ("bottom:center", "placement.bottom_center"),
+                        ("bottom:right", "placement.bottom_right"),
                     ] {
                         ui.selectable_value(
                             &mut configuration.subtitle_placement,
                             choice.to_string(),
-                            choice,
+                            crate::manage_localization::runtime_text(label_key),
                         );
                     }
                 });
@@ -1572,7 +1584,7 @@ fn draw_appearance(
         });
 
     ui.add_space(5.0);
-    ui.checkbox(&mut configuration.notifications, "Wallpaper Notifications");
+    ui.checkbox(&mut configuration.notifications, crate::manage_localization::runtime_text("appearance.wallpaper_notifications"));
 }
 
 
@@ -1586,7 +1598,7 @@ fn draw_target_page(
     match target {
         PolicyTarget::Screensaver => {
             ui.heading(
-                "Screensaver Settings and Defaults"
+                crate::manage_localization::runtime_text("target.screensaver_settings")
             );
 
             ui.add_space(
@@ -1595,7 +1607,7 @@ fn draw_target_page(
 
             ui.checkbox(
                 &mut configuration.screensaver_enabled,
-                "Enabled",
+                crate::manage_localization::runtime_text("common.enabled"),
             );
 
             ui.add_space(
@@ -1630,7 +1642,7 @@ fn draw_target_page(
 
         PolicyTarget::Wallpaper => {
             ui.heading(
-                "Wallpaper Settings and Defaults"
+                crate::manage_localization::runtime_text("target.wallpaper_settings")
             );
 
             ui.add_space(
@@ -1639,7 +1651,7 @@ fn draw_target_page(
 
             ui.checkbox(
                 &mut configuration.wallpaper_enabled,
-                "Enabled",
+                crate::manage_localization::runtime_text("common.enabled"),
             );
 
             ui.add_space(
@@ -1726,10 +1738,10 @@ fn draw_target_grid(
             ) = wallpaper_display_format
             {
                 ui.label(
-                    "Display Format:"
+                    crate::manage_localization::runtime_text("target.display_format")
                 )
                 .on_hover_text(
-                    "Selects whether wallpaper is presented full-screen or in a normal desktop-managed window."
+                    crate::manage_localization::runtime_text("target.display_format_help")
                 );
 
                 egui::ComboBox::from_id_source(
@@ -1737,13 +1749,9 @@ fn draw_target_grid(
                 )
                 .selected_text(
                     match *wallpaper_display_format {
-                        crate::manage_configuration::WallpaperDisplayFormat::FullScreen => {
-                            "Full-screen"
-                        }
+                        crate::manage_configuration::WallpaperDisplayFormat::FullScreen => { crate::manage_localization::runtime_text("target.full_screen") }
 
-                        crate::manage_configuration::WallpaperDisplayFormat::Windowed => {
-                            "Windowshader"
-                        }
+                        crate::manage_configuration::WallpaperDisplayFormat::Windowed => { crate::manage_localization::runtime_text("target.windowshader") }
                     }
                 )
                 .width(
@@ -1755,13 +1763,13 @@ fn draw_target_grid(
                         ui.selectable_value(
                             wallpaper_display_format,
                             crate::manage_configuration::WallpaperDisplayFormat::FullScreen,
-                            "Full-screen",
+                            crate::manage_localization::runtime_text("target.full_screen"),
                         );
 
                         ui.selectable_value(
                             wallpaper_display_format,
                             crate::manage_configuration::WallpaperDisplayFormat::Windowed,
-                            "Windowshader",
+                            crate::manage_localization::runtime_text("target.windowshader"),
                         );
                     },
                 );
@@ -1771,7 +1779,7 @@ fn draw_target_grid(
 
 
             ui.label(
-                "Mode:"
+                crate::manage_localization::runtime_text("target.mode")
             );
 
 
@@ -1786,7 +1794,13 @@ fn draw_target_grid(
                 )
             )
             .selected_text(
-                display_mode.as_str()
+                match display_mode.as_str() {
+                    "ordered" => crate::manage_localization::runtime_text("mode.ordered"),
+                    "random" => crate::manage_localization::runtime_text("mode.random"),
+                    "single" => crate::manage_localization::runtime_text("mode.single"),
+                    "playlist" => crate::manage_localization::runtime_text("mode.playlist"),
+                    _ => display_mode.clone(),
+                }
             )
             .width(
                 CONTROL_WIDTH
@@ -1794,16 +1808,16 @@ fn draw_target_grid(
             .show_ui(
                 ui,
                 |ui| {
-                    for choice in [
-                        "ordered",
-                        "random",
-                        "single",
-                        "playlist",
+                    for (choice, label_key) in [
+                        ("ordered", "mode.ordered"),
+                        ("random", "mode.random"),
+                        ("single", "mode.single"),
+                        ("playlist", "mode.playlist"),
                     ] {
                         ui.selectable_value(
                             display_mode,
                             choice.to_string(),
-                            choice,
+                            crate::manage_localization::runtime_text(label_key),
                         );
                     }
                 },
@@ -1836,7 +1850,7 @@ fn draw_target_grid(
                 == "single"
             {
                 ui.label(
-                    "Policy:"
+                    crate::manage_localization::runtime_text("target.policy")
                 );
 
 
@@ -1846,7 +1860,7 @@ fn draw_target_grid(
                             .trim()
                             .is_empty()
                     {
-                        "<select policy>"
+                        crate::manage_localization::runtime_text("target.select_policy")
                             .to_string()
                     } else {
                         single_policy_name
@@ -1902,12 +1916,12 @@ fn draw_target_grid(
                                                     .clone();
 
                                             *status_message =
-                                                format!(
-                                                    "Single {} policy selected: {}.",
-                                                    target_name(
-                                                        target
-                                                    ),
-                                                    row.policy_key,
+                                                crate::manage_localization::runtime_text_with_params(
+                                                    "target.single_policy_selected",
+                                                    &[
+                                                        ("target", &target_name(target)),
+                                                        ("name", &row.policy_key),
+                                                    ],
                                                 );
 
                                             ui.close();
@@ -1919,7 +1933,7 @@ fn draw_target_grid(
                                         ui.add_enabled(
                                             false,
                                             egui::Button::new(
-                                                "No eligible policies"
+                                                crate::manage_localization::runtime_text("target.no_eligible_policies")
                                             ),
                                         );
                                     }
@@ -1934,7 +1948,7 @@ fn draw_target_grid(
                 == "playlist"
             {
                 ui.label(
-                    "Playlist:"
+                    crate::manage_localization::runtime_text("target.playlist")
                 );
 
 
@@ -1944,7 +1958,7 @@ fn draw_target_grid(
                             .trim()
                             .is_empty()
                     {
-                        "<select playlist>"
+                        crate::manage_localization::runtime_text("target.select_playlist")
                             .to_string()
                     } else {
                         playlist_name
@@ -1961,7 +1975,7 @@ fn draw_target_grid(
                                     ui.add_enabled(
                                         false,
                                         egui::Button::new(
-                                            "No playlists available"
+                                            crate::manage_localization::runtime_text("target.no_playlists")
                                         ),
                                     );
                                 } else {
@@ -1992,12 +2006,12 @@ fn draw_target_grid(
                                                                 .clone();
 
                                                         *status_message =
-                                                            format!(
-                                                                "{} playlist selected: {}.",
-                                                                target_name(
-                                                                    target
-                                                                ),
-                                                                playlist.playlist_name,
+                                                            crate::manage_localization::runtime_text_with_params(
+                                                                "target.playlist_selected",
+                                                                &[
+                                                                    ("target", &target_name(target)),
+                                                                    ("name", &playlist.playlist_name),
+                                                                ],
                                                             );
 
                                                         ui.close();
@@ -2012,7 +2026,7 @@ fn draw_target_grid(
                                 ui.add_enabled(
                                     false,
                                     egui::Button::new(
-                                        "Unable to load playlists"
+                                        crate::manage_localization::runtime_text("target.playlists_unavailable")
                                     ),
                                 )
                                 .on_hover_text(
@@ -2028,7 +2042,7 @@ fn draw_target_grid(
 
 
                 ui.label(
-                    "Interval:"
+                    crate::manage_localization::runtime_text("target.interval")
                 );
 
 
@@ -2044,7 +2058,7 @@ fn draw_target_grid(
                         );
 
                         ui.label(
-                            "seconds"
+                            crate::manage_localization::runtime_text("unit.seconds_lower")
                         );
                     },
                 );
@@ -2053,7 +2067,7 @@ fn draw_target_grid(
                 ui.end_row();
             } else {
                 ui.label(
-                    "Interval:"
+                    crate::manage_localization::runtime_text("target.interval")
                 );
 
 
@@ -2069,7 +2083,7 @@ fn draw_target_grid(
                         );
 
                         ui.label(
-                            "seconds"
+                            crate::manage_localization::runtime_text("unit.seconds_lower")
                         );
                     },
                 );
@@ -2087,7 +2101,7 @@ fn draw_target_grid(
                 idle_timeout_unit,
             ) {
                 ui.label(
-                    "Idle timeout:"
+                    crate::manage_localization::runtime_text("target.idle_timeout")
                 );
 
                 ui.horizontal(
@@ -2106,10 +2120,10 @@ fn draw_target_grid(
                         )
                         .selected_text(
                             match idle_timeout_unit.as_str() {
-                                "seconds" => "Seconds",
-                                "minutes" => "Minutes",
-                                "hours" => "Hours",
-                                _ => "Seconds",
+                                "seconds" => crate::manage_localization::runtime_text("unit.seconds"),
+                                "minutes" => crate::manage_localization::runtime_text("unit.minutes"),
+                                "hours" => crate::manage_localization::runtime_text("unit.hours"),
+                                _ => crate::manage_localization::runtime_text("unit.seconds"),
                             }
                         )
                         .width(
@@ -2124,21 +2138,21 @@ fn draw_target_grid(
                                 ) in [
                                     (
                                         "seconds",
-                                        "Seconds",
+                                        "unit.seconds",
                                     ),
                                     (
                                         "minutes",
-                                        "Minutes",
+                                        "unit.minutes",
                                     ),
                                     (
                                         "hours",
-                                        "Hours",
+                                        "unit.hours",
                                     ),
                                 ] {
                                     ui.selectable_value(
                                         idle_timeout_unit,
                                         value.to_string(),
-                                        label,
+                                        crate::manage_localization::runtime_text(label),
                                     );
                                 }
                             },
@@ -2151,7 +2165,7 @@ fn draw_target_grid(
 
 
             ui.label(
-                "Animation speed:"
+                crate::manage_localization::runtime_text("target.animation_speed")
             );
 
             ui.add(
@@ -2165,7 +2179,7 @@ fn draw_target_grid(
 
 
             ui.label(
-                "Texture:"
+                crate::manage_localization::runtime_text("target.texture")
             );
 
             egui::ComboBox::from_id_source(
@@ -2175,7 +2189,11 @@ fn draw_target_grid(
                 )
             )
             .selected_text(
-                global_texture.as_str()
+                if global_texture == "random" {
+                    crate::manage_localization::runtime_text("common.random")
+                } else {
+                    global_texture.clone()
+                }
             )
             .width(
                 CONTROL_WIDTH
@@ -2186,7 +2204,7 @@ fn draw_target_grid(
                     ui.selectable_value(
                         global_texture,
                         "random".to_string(),
-                        "random",
+                        crate::manage_localization::runtime_text("common.random"),
                     );
 
                     match texture_choices() {
@@ -2204,14 +2222,14 @@ fn draw_target_grid(
                             ui.add_enabled(
                                 false,
                                 egui::Button::new(
-                                    "Texture catalog unavailable"
+                                    crate::manage_localization::runtime_text("target.texture_catalog_unavailable")
                                 ),
                             );
 
                             *status_message =
-                                format!(
-                                    "Unable to load texture choices: {}",
-                                    error,
+                                crate::manage_localization::runtime_text_with_params(
+                                    "target.texture_choices_failed",
+                                    &[("error", &error)],
                                 );
                         }
                     }
@@ -2222,7 +2240,7 @@ fn draw_target_grid(
 
 
             ui.label(
-                "Palette:"
+                crate::manage_localization::runtime_text("target.palette")
             );
 
             draw_curated_palette_dropdown(
@@ -2237,7 +2255,7 @@ fn draw_target_grid(
 
 
             ui.label(
-                "Texture primitives:"
+                crate::manage_localization::runtime_text("target.texture_primitives")
             );
 
             ui.add(
@@ -2256,11 +2274,9 @@ fn draw_target_grid(
             .is_none()
     {
         *status_message =
-            format!(
-                "Select a shader policy for Single {} display mode.",
-                target_name(
-                    target
-                ),
+            crate::manage_localization::runtime_text_with_params(
+                "target.single_policy_required",
+                &[("target", &target_name(target))],
             );
     }
 }
@@ -2271,7 +2287,7 @@ fn draw_lyrics(
     configuration: &mut ControlConfiguration,
 ) {
     ui.heading(
-        "Lyrics"
+        crate::manage_localization::runtime_text("lyrics.heading")
     );
 
     ui.add_space(
@@ -2280,10 +2296,10 @@ fn draw_lyrics(
 
     ui.checkbox(
         &mut configuration.lyrics_enabled,
-        "Display synchronized song lyrics (windowshader only)",
+        crate::manage_localization::runtime_text("lyrics.display"),
     )
     .on_hover_text(
-        "Displays synchronized lyrics for the currently playing song over the windowshader. Lyrics are obtained automatically when available."
+        crate::manage_localization::runtime_text("lyrics.display_help")
     );
 }
 
@@ -2294,51 +2310,68 @@ fn draw_rendering_placeholders(
 ) {
     const CONTROL_WIDTH: f32 = 190.0;
 
-    ui.heading("Rendering Defaults");
+    ui.heading(crate::manage_localization::runtime_text("rendering.heading"));
     ui.add_space(8.0);
 
     egui::Grid::new("rendering_defaults")
         .num_columns(2)
         .spacing(egui::vec2(8.0, 6.0))
         .show(ui, |ui| {
-            ui.label("Rendered FPS:");
+            ui.label(crate::manage_localization::runtime_text("rendering.fps"));
             ui.add(egui::DragValue::new(&mut configuration.rendered_fps).clamp_range(16..=120));
             ui.end_row();
 
-            ui.label("Anti-aliasing:");
+            ui.label(crate::manage_localization::runtime_text("rendering.anti_aliasing"));
             egui::ComboBox::from_id_source("rendering_default_aa")
-                .selected_text(configuration.anti_aliasing.as_str())
+                .selected_text(match configuration.anti_aliasing.as_str() {
+                    "off" => crate::manage_localization::runtime_text("rendering.off"),
+                    "fxaa" => crate::manage_localization::runtime_text("rendering.fxaa"),
+                    _ => configuration.anti_aliasing.clone(),
+                })
                 .width(CONTROL_WIDTH)
                 .show_ui(ui, |ui| {
-                    for choice in ["off", "fxaa"] {
-                        ui.selectable_value(&mut configuration.anti_aliasing, choice.to_string(), choice);
+                    for (choice, key) in [("off", "rendering.off"), ("fxaa", "rendering.fxaa")] {
+                        ui.selectable_value(&mut configuration.anti_aliasing, choice.to_string(), crate::manage_localization::runtime_text(key));
                     }
                 });
             ui.end_row();
 
             ui.label("Dithering:");
             egui::ComboBox::from_id_source("rendering_default_dithering")
-                .selected_text(configuration.dithering.as_str())
+                .selected_text(match configuration.dithering.as_str() {
+                    "off" => crate::manage_localization::runtime_text("rendering.off"),
+                    "subtle" => crate::manage_localization::runtime_text("rendering.subtle"),
+                    _ => configuration.dithering.clone(),
+                })
                 .width(CONTROL_WIDTH)
                 .show_ui(ui, |ui| {
-                    for choice in ["off", "subtle"] {
-                        ui.selectable_value(&mut configuration.dithering, choice.to_string(), choice);
+                    for (choice, key) in [("off", "rendering.off"), ("subtle", "rendering.subtle")] {
+                        ui.selectable_value(&mut configuration.dithering, choice.to_string(), crate::manage_localization::runtime_text(key));
                     }
                 });
             ui.end_row();
 
-            ui.label("Color precision:");
+            ui.label(crate::manage_localization::runtime_text("rendering.color_precision"));
             egui::ComboBox::from_id_source("rendering_default_precision")
-                .selected_text(configuration.color_precision.as_str())
+                .selected_text(match configuration.color_precision.as_str() {
+                    "auto" => crate::manage_localization::runtime_text("rendering.auto"),
+                    "standard" => crate::manage_localization::runtime_text("rendering.standard"),
+                    "high" => crate::manage_localization::runtime_text("rendering.high"),
+                    _ => configuration.color_precision.clone(),
+                })
                 .width(CONTROL_WIDTH)
                 .show_ui(ui, |ui| {
-                    for choice in ["auto", "standard", "high"] {
-                        ui.selectable_value(&mut configuration.color_precision, choice.to_string(), choice);
+                    for (choice, key) in [
+                        ("auto", "rendering.auto"),
+                        ("standard", "rendering.standard"),
+                        ("high", "rendering.high"),
+                    ] {
+                        ui.selectable_value(&mut configuration.color_precision, choice.to_string(), crate::manage_localization::runtime_text(key));
                     }
                 });
             ui.end_row();
 
-            ui.label("Render scale:");
+            ui.label(crate::manage_localization::runtime_text("rendering.render_scale"));
             ui.add(
                 egui::DragValue::new(&mut configuration.render_scale)
                     .speed(0.05)
@@ -2449,7 +2482,7 @@ fn draw_curated_palette_dropdown(
 
     let selected_text =
         if global_palette.eq_ignore_ascii_case("random") {
-            "random".to_string()
+            crate::manage_localization::runtime_text("common.random")
         } else {
             choices
                 .as_ref()
@@ -2472,7 +2505,7 @@ fn draw_curated_palette_dropdown(
         let random_selected =
             global_palette.eq_ignore_ascii_case("random");
 
-        if ui.selectable_label(random_selected, "random").clicked() {
+        if ui.selectable_label(random_selected, crate::manage_localization::runtime_text("common.random")).clicked() {
             *global_palette = "random".to_string();
             ui.close();
         }
@@ -2497,10 +2530,12 @@ fn draw_curated_palette_dropdown(
 
                             if response.clicked() {
                                 *global_palette = entry.color_hex.clone();
-                                *status_message = format!(
-                                    "{} default palette selected: {}.",
-                                    target_name(target),
-                                    entry.description,
+                                *status_message = crate::manage_localization::runtime_text_with_params(
+                                    "target.palette_selected",
+                                    &[
+                                        ("target", &target_name(target)),
+                                        ("name", &entry.description),
+                                    ],
                                 );
                                 ui.close();
                             }
@@ -2511,11 +2546,11 @@ fn draw_curated_palette_dropdown(
             Err(error) => {
                 ui.add_enabled(
                     false,
-                    egui::Button::new("Curated palette unavailable"),
+                    egui::Button::new(crate::manage_localization::runtime_text("target.palette_unavailable")),
                 );
-                *status_message = format!(
-                    "Unable to load curated palette choices: {}",
-                    error,
+                *status_message = crate::manage_localization::runtime_text_with_params(
+                    "target.palette_choices_failed",
+                    &[("error", error)],
                 );
             }
         }
@@ -2606,10 +2641,10 @@ fn curated_palette_choice_button(
 
 fn target_name(
     target: PolicyTarget,
-) -> &'static str {
+) -> String {
     match target {
-        PolicyTarget::Screensaver => "screensaver",
-        PolicyTarget::Wallpaper => "wallpaper",
-        PolicyTarget::Unassigned => "unassigned",
+        PolicyTarget::Screensaver => crate::manage_localization::runtime_text("target.screensaver"),
+        PolicyTarget::Wallpaper => crate::manage_localization::runtime_text("target.wallpaper"),
+        PolicyTarget::Unassigned => "unassigned".to_string(),
     }
 }
