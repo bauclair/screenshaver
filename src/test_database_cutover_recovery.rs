@@ -214,6 +214,10 @@ fn run_cases(
         Expected::Ambiguous,
     )?;
 
+    test_newest_timestamp_wins(
+        root
+    )?;
+
 
     Ok(())
 }
@@ -275,8 +279,10 @@ fn run_case(
 
     let pre_migration_path =
         crate::migrate_database::pre_migration_path(
-            &database_path
-        );
+            &database_path,
+            1,
+            "20260927T120000Z",
+        )?;
 
 
     if live {
@@ -522,6 +528,95 @@ fn run_case(
             );
         }
     }
+
+
+    Ok(())
+}
+
+
+fn test_newest_timestamp_wins(
+    root: &Path,
+) -> Result<(), String> {
+
+    let directory =
+        root.join(
+            "09-newest-recovery"
+        );
+
+    fs::create_dir_all(
+        &directory
+    )
+    .map_err(
+        |error| {
+            format!(
+                "Unable to create newest-recovery test directory '{}': {}",
+                directory.display(),
+                error,
+            )
+        }
+    )?;
+
+
+    let database_path =
+        directory.join(
+            "screenshaver.db"
+        );
+
+    let older_path =
+        crate::migrate_database::pre_migration_path(
+            &database_path,
+            9,
+            "20260927T120000Z",
+        )?;
+
+    let newer_path =
+        crate::migrate_database::pre_migration_path(
+            &database_path,
+            1,
+            "20260927T130000Z",
+        )?;
+
+
+    write_marker(
+        &older_path,
+        b"SCREENSHAVER CUTOVER TEST: OLDER RECOVERY\n",
+    )?;
+
+    write_marker(
+        &newer_path,
+        b"SCREENSHAVER CUTOVER TEST: NEWER RECOVERY\n",
+    )?;
+
+
+    crate::migrate_database::recover_interrupted_cutover(
+        &database_path
+    )?;
+
+
+    require_bytes(
+        "09-newest-recovery",
+        "restored live",
+        &database_path,
+        b"SCREENSHAVER CUTOVER TEST: NEWER RECOVERY\n",
+    )?;
+
+    require_bytes(
+        "09-newest-recovery",
+        "older retained recovery",
+        &older_path,
+        b"SCREENSHAVER CUTOVER TEST: OLDER RECOVERY\n",
+    )?;
+
+    require_absent(
+        "09-newest-recovery",
+        "selected newer recovery",
+        &newer_path,
+    )?;
+
+
+    println!(
+        "[CUTOVER RECOVERY TEST] Verified: newest recovery timestamp wins regardless of schema number"
+    );
 
 
     Ok(())

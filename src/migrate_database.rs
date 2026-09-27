@@ -1,11 +1,55 @@
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::{
+    Instant,
+    SystemTime,
+    UNIX_EPOCH,
+};
 
 use rusqlite::{Connection, OpenFlags};
 
 
 pub const CURRENT_SCHEMA_VERSION: i64 = 1;
+
+
+#[derive(Debug, Clone)]
+pub struct MigrationTiming {
+    pub started_utc: String,
+    pub source_schema_version: i64,
+    pub destination_schema_version: i64,
+    started: Instant,
+}
+
+
+impl MigrationTiming {
+    pub fn start(
+        source_schema_version: i64,
+        destination_schema_version: i64,
+    ) -> Result<Self, String> {
+        Ok(
+            Self {
+                started_utc:
+                    current_utc_timestamp()?,
+
+                source_schema_version,
+                destination_schema_version,
+
+                started:
+                    Instant::now(),
+            }
+        )
+    }
+
+
+    pub fn elapsed_milliseconds(
+        &self,
+    ) -> u128 {
+        self.started
+            .elapsed()
+            .as_millis()
+    }
+}
 
 
 pub fn prepare(database_path: &Path) -> Result<Connection, String> {
@@ -53,68 +97,582 @@ pub fn prepare(database_path: &Path) -> Result<Connection, String> {
 }
 
 
-pub fn recover_interrupted_cutover(database_path: &Path) -> Result<(), String> {
-    let migrating_path = migrating_path(database_path);
-    let pre_migration_path = pre_migration_path(database_path);
+pub fn recover_interrupted_cutover(
+    database_path: &Path,
+) -> Result<(), String> {
+
+    let migrating_path =
+        migrating_path(
+            database_path
+        );
+
+    let recovery_paths =
+        discover_pre_migration_paths(
+            database_path
+        )?;
+
 
     if database_path.exists() {
-        // A live database wins. Retained .pre-migration state is normal after
-        // successful cutover. Any leftover staging database is disposable.
-        if migrating_path.exists() {
-            fs::remove_file(&migrating_path).map_err(|error| {
-                format!(
-                    "Unable to remove stale migration staging database '{}': {}",
-                    migrating_path.display(),
-                    error,
-                )
-            })?;
-        }
-        return Ok(());
-    }
 
-    if pre_migration_path.exists() {
-        fs::rename(&pre_migration_path, database_path).map_err(|error| {
-            format!(
-                "Unable to recover interrupted database migration by restoring '{}' to '{}': {}",
-                pre_migration_path.display(),
-                database_path.display(),
-                error,
+        // A live database wins. Retained pre-migration generations are normal
+        // after successful cutover. Any leftover staging database is disposable.
+        if migrating_path.exists() {
+            fs::remove_file(
+                &migrating_path
             )
-        })?;
-
-        if migrating_path.exists() {
-            fs::remove_file(&migrating_path).map_err(|error| {
-                format!(
-                    "Recovered the pre-migration database to '{}', but unable to remove stale staging database '{}': {}",
-                    database_path.display(),
-                    migrating_path.display(),
-                    error,
-                )
-            })?;
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to remove stale migration staging database '{}': {}",
+                        migrating_path.display(),
+                        error,
+                    )
+                }
+            )?;
         }
+
         return Ok(());
     }
+
+
+    if let Some(
+        recovery_path
+    ) =
+        newest_pre_migration_path(
+            &recovery_paths
+        )
+    {
+
+        fs::rename(
+            &recovery_path,
+            database_path,
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to recover interrupted database migration by restoring '{}' to '{}': {}",
+                    recovery_path.display(),
+                    database_path.display(),
+                    error,
+                )
+            }
+        )?;
+
+
+        if migrating_path.exists() {
+            fs::remove_file(
+                &migrating_path
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Recovered the pre-migration database to '{}', but unable to remove stale staging database '{}': {}",
+                        database_path.display(),
+                        migrating_path.display(),
+                        error,
+                    )
+                }
+            )?;
+        }
+
+        return Ok(());
+    }
+
 
     if migrating_path.exists() {
-        return Err(format!(
-            "Database migration state is ambiguous: '{}' exists, but neither '{}' nor '{}' exists. Refusing to promote the staging database or initialize a replacement database",
-            migrating_path.display(),
-            database_path.display(),
-            pre_migration_path.display(),
-        ));
+        return Err(
+            format!(
+                "Database migration state is ambiguous: '{}' exists, but '{}' does not exist and no timestamped pre-migration recovery database was found. Refusing to promote the staging database or initialize a replacement database",
+                migrating_path.display(),
+                database_path.display(),
+            )
+        );
     }
+
 
     Ok(())
 }
 
 
-pub fn migrating_path(database_path: &Path) -> PathBuf {
-    companion_path(database_path, ".migrating")
+pub fn migrating_path(
+    database_path: &Path,
+) -> PathBuf {
+
+    companion_path(
+        database_path,
+        ".migrating",
+    )
 }
 
 
-pub fn pre_migration_path(database_path: &Path) -> PathBuf {
-    companion_path(database_path, ".pre-migration")
+pub fn pre_migration_path(
+    database_path: &Path,
+    source_schema_version: i64,
+    timestamp_utc: &str,
+) -> Result<PathBuf, String> {
+
+    validate_timestamp(
+        timestamp_utc
+    )?;
+
+
+    Ok(
+        companion_path(
+            database_path,
+            &format!(
+                ".pre-migration-v{:03}-{}",
+                source_schema_version,
+                timestamp_utc,
+            ),
+        )
+    )
+}
+
+
+pub fn current_utc_timestamp() -> Result<String, String> {
+
+    let duration =
+        SystemTime::now()
+            .duration_since(
+                UNIX_EPOCH
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "System clock is before the Unix epoch: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    utc_timestamp_from_unix_seconds(
+        duration.as_secs()
+    )
+}
+
+
+fn discover_pre_migration_paths(
+    database_path: &Path,
+) -> Result<Vec<PathBuf>, String> {
+
+    let parent =
+        database_path
+            .parent()
+            .unwrap_or_else(
+                || Path::new(".")
+            );
+
+    let database_name =
+        database_path
+            .file_name()
+            .ok_or_else(
+                || {
+                    format!(
+                        "Database path '{}' has no filename",
+                        database_path.display(),
+                    )
+                }
+            )?
+            .to_string_lossy();
+
+    let prefix =
+        format!(
+            "{}.pre-migration-v",
+            database_name
+        );
+
+
+    let entries =
+        match fs::read_dir(
+            parent
+        ) {
+            Ok(entries) => entries,
+
+            Err(error)
+                if error.kind()
+                    == std::io::ErrorKind::NotFound =>
+            {
+                return Ok(
+                    Vec::new()
+                );
+            }
+
+            Err(error) => {
+                return Err(
+                    format!(
+                        "Unable to inspect database directory '{}' for migration recovery files: {}",
+                        parent.display(),
+                        error,
+                    )
+                );
+            }
+        };
+
+
+    let mut paths =
+        Vec::new();
+
+
+    for entry in entries {
+
+        let entry =
+            entry.map_err(
+                |error| {
+                    format!(
+                        "Unable to inspect an entry in database directory '{}': {}",
+                        parent.display(),
+                        error,
+                    )
+                }
+            )?;
+
+        let file_type =
+            entry.file_type()
+                .map_err(
+                    |error| {
+                        format!(
+                            "Unable to inspect migration recovery candidate '{}': {}",
+                            entry.path().display(),
+                            error,
+                        )
+                    }
+                )?;
+
+
+        if !file_type.is_file() {
+            continue;
+        }
+
+
+        let filename =
+            entry.file_name();
+
+        let filename =
+            filename.to_string_lossy();
+
+
+        if !filename.starts_with(
+            &prefix
+        ) {
+            continue;
+        }
+
+
+        if parse_recovery_filename(
+            &database_name,
+            &filename,
+        )
+        .is_some()
+        {
+            paths.push(
+                entry.path()
+            );
+        }
+    }
+
+
+    Ok(
+        paths
+    )
+}
+
+
+fn newest_pre_migration_path(
+    paths: &[PathBuf],
+) -> Option<PathBuf> {
+
+    paths
+        .iter()
+        .filter_map(
+            |path| {
+                let filename =
+                    path.file_name()?
+                        .to_string_lossy();
+
+                let timestamp =
+                    filename
+                        .rsplit_once('-')?
+                        .1
+                        .to_string();
+
+                Some(
+                    (
+                        timestamp,
+                        path.clone(),
+                    )
+                )
+            }
+        )
+        .max_by(
+            |left, right| {
+                left.0.cmp(
+                    &right.0
+                )
+            }
+        )
+        .map(
+            |(_, path)| path
+        )
+}
+
+
+fn parse_recovery_filename(
+    database_name: &str,
+    filename: &str,
+) -> Option<(i64, String)> {
+
+    let prefix =
+        format!(
+            "{}.pre-migration-v",
+            database_name
+        );
+
+    let remainder =
+        filename.strip_prefix(
+            &prefix
+        )?;
+
+    let (
+        schema_text,
+        timestamp,
+    ) =
+        remainder.split_once(
+            '-'
+        )?;
+
+
+    if schema_text.len()
+        != 3
+        || !schema_text
+            .chars()
+            .all(
+                |character| {
+                    character.is_ascii_digit()
+                }
+            )
+    {
+        return None;
+    }
+
+
+    let schema_version =
+        schema_text.parse::<i64>()
+            .ok()?;
+
+
+    if validate_timestamp(
+        timestamp
+    )
+    .is_err()
+    {
+        return None;
+    }
+
+
+    Some(
+        (
+            schema_version,
+            timestamp.to_string(),
+        )
+    )
+}
+
+
+fn validate_timestamp(
+    timestamp: &str,
+) -> Result<(), String> {
+
+    let bytes =
+        timestamp.as_bytes();
+
+
+    let valid =
+        bytes.len()
+            == 16
+        && bytes[8]
+            == b'T'
+        && bytes[15]
+            == b'Z'
+        && bytes
+            .iter()
+            .enumerate()
+            .all(
+                |(
+                    index,
+                    byte,
+                )| {
+                    index
+                        == 8
+                    || index
+                        == 15
+                    || byte.is_ascii_digit()
+                }
+            );
+
+
+    if !valid {
+        return Err(
+            format!(
+                "Invalid migration timestamp '{}'; expected YYYYMMDDTHHMMSSZ",
+                timestamp,
+            )
+        );
+    }
+
+
+    Ok(())
+}
+
+
+fn utc_timestamp_from_unix_seconds(
+    seconds: u64,
+) -> Result<String, String> {
+
+    let days =
+        seconds
+            / 86_400;
+
+    let seconds_of_day =
+        seconds
+            % 86_400;
+
+
+    let hour =
+        seconds_of_day
+            / 3_600;
+
+    let minute =
+        (
+            seconds_of_day
+                % 3_600
+        )
+            / 60;
+
+    let second =
+        seconds_of_day
+            % 60;
+
+
+    let (
+        year,
+        month,
+        day,
+    ) =
+        civil_date_from_unix_days(
+            i64::try_from(
+                days
+            )
+            .map_err(
+                |_| {
+                    "System timestamp is too large to format"
+                        .to_string()
+                }
+            )?
+        );
+
+
+    Ok(
+        format!(
+            "{:04}{:02}{:02}T{:02}{:02}{:02}Z",
+            year,
+            month,
+            day,
+            hour,
+            minute,
+            second,
+        )
+    )
+}
+
+
+// Gregorian civil-date conversion adapted from the standard era/day-of-era
+// decomposition.  Input day 0 is 1970-01-01.
+fn civil_date_from_unix_days(
+    unix_days: i64,
+) -> (
+    i64,
+    u64,
+    u64,
+) {
+
+    let z =
+        unix_days
+            + 719_468;
+
+    let era =
+        if z >= 0 {
+            z
+        } else {
+            z - 146_096
+        }
+            / 146_097;
+
+    let day_of_era =
+        z
+            - era
+                * 146_097;
+
+    let year_of_era =
+        (
+            day_of_era
+                - day_of_era / 1_460
+                + day_of_era / 36_524
+                - day_of_era / 146_096
+        )
+            / 365;
+
+    let mut year =
+        year_of_era
+            + era
+                * 400;
+
+    let day_of_year =
+        day_of_era
+            - (
+                365
+                    * year_of_era
+                + year_of_era / 4
+                - year_of_era / 100
+            );
+
+    let month_prime =
+        (
+            5
+                * day_of_year
+            + 2
+        )
+            / 153;
+
+    let day =
+        day_of_year
+            - (
+                153
+                    * month_prime
+                + 2
+            )
+                / 5
+            + 1;
+
+    let month =
+        month_prime
+            + if month_prime < 10 {
+                3
+            } else {
+                -9
+            };
+
+
+    if month <= 2 {
+        year += 1;
+    }
+
+
+    (
+        year,
+        month as u64,
+        day as u64,
+    )
 }
 
 
