@@ -37,7 +37,9 @@ pub enum Command {
 
     TestDatabaseCutoverRecovery,
 
-    TestMigrationCoordinator,
+    TestMigrationCoordinator {
+        database_path: Option<String>,
+    },
 
     BenchmarkRender {
         shader_path: String,
@@ -215,14 +217,8 @@ pub fn parse() -> Result<Command, String> {
 
         "--test-migration-coordinator" => {
 
-            require_no_extra_arguments(
-                &args,
-                "--test-migration-coordinator",
-            )?;
-
-
-            Ok(
-                Command::TestMigrationCoordinator
+            parse_test_migration_coordinator(
+                &args[1..]
             )
         }
 
@@ -493,6 +489,47 @@ fn parse_test_schema_migration_failures(
 
             work_directory:
                 work_directory.to_string(),
+        }
+    )
+}
+
+
+fn parse_test_migration_coordinator(
+    args: &[String],
+) -> Result<Command, String> {
+
+    if args.len() > 1 {
+        return Err(
+            "--test-migration-coordinator accepts at most one Schema-1 database path"
+                .to_string()
+        );
+    }
+
+    let database_path =
+        match args.first() {
+            Some(value) => {
+                let value = value.trim();
+
+                if value.is_empty()
+                    || value.starts_with('-')
+                {
+                    return Err(
+                        "--test-migration-coordinator accepts an optional Schema-1 database path"
+                            .to_string()
+                    );
+                }
+
+                Some(
+                    value.to_string()
+                )
+            }
+
+            None => None,
+        };
+
+    Ok(
+        Command::TestMigrationCoordinator {
+            database_path,
         }
     )
 }

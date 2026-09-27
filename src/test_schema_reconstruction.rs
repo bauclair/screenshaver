@@ -2,8 +2,8 @@
 //!
 //! This command opens a selected historical Schema-1 database read-only,
 //! translates it to MigrationData, reconstructs a separate current-schema
-//! database, reads that reconstructed database back through the Schema-1
-//! historical reader, and compares durable semantics.
+//! database, reads that reconstructed database back through the current Schema-2
+//! reader, and compares durable semantics.
 //!
 //! It deliberately bypasses normal Screenshaver database evaluation,
 //! initialization, shader reconciliation, and policy assignment.
@@ -124,7 +124,7 @@ pub fn run(
         )?;
 
     let reconstructed_data =
-        crate::database_migration::read_schema_v001::read(
+        crate::database_migration::read_schema_v002::read(
             &reconstructed_connection
         )?;
 
@@ -143,7 +143,7 @@ pub fn run(
     )?;
 
     println!(
-        "[SCHEMA RECONSTRUCTION TEST] PASS: durable Schema-1 semantics survived read -> MigrationData -> current-schema reconstruction -> read."
+        "[SCHEMA RECONSTRUCTION TEST] PASS: durable Schema-1 semantics survived read -> MigrationData -> Schema-2 reconstruction -> read."
     );
 
     println!(
@@ -361,7 +361,7 @@ fn test_factory_default_reconstruction(
                 )?;
 
             let reconstructed_data =
-                crate::database_migration::read_schema_v001::read(
+                crate::database_migration::read_schema_v002::read(
                     &reconstructed_connection
                 )?;
 

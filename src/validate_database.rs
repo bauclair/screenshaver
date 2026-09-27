@@ -3,7 +3,7 @@ use rusqlite::{
         Connection,
 };
 
-const EXPECTED_SCHEMA_VERSION: i64 = 1;
+const EXPECTED_SCHEMA_VERSION: i64 = 2;
 const EXPECTED_RUNTIME_SOURCE_PREPARATION_VERSION: i64 = 1;
 
 
@@ -138,6 +138,11 @@ pub fn validate_initialization(
 
 
     validate_curated_palette(
+        connection
+    )?;
+
+
+    validate_localization_catalog(
         connection
     )?;
 
@@ -299,7 +304,7 @@ fn validate_required_tables(
     connection: &Connection,
 ) -> Result<(), String> {
 
-    const REQUIRED_TABLES: [&str; 8] = [
+    const REQUIRED_TABLES: [&str; 13] = [
         "schema_metadata",
         "shaders",
         "shader_policies",
@@ -308,6 +313,11 @@ fn validate_required_tables(
         "target_defaults",
         "textures",
         "curated_palette",
+        "playlists",
+        "playlist_members",
+        "languages",
+        "translation_keys",
+        "translations",
     ];
 
 
@@ -607,6 +617,108 @@ fn validate_curated_palette(
         );
     }
 
+
+    Ok(())
+}
+
+
+fn validate_localization_catalog(
+    connection: &Connection,
+) -> Result<(), String> {
+    let language_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM languages",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|error| format!(
+            "Unable to validate localization language count: {}",
+            error,
+        ))?;
+
+    if language_count != crate::database_factory::FACTORY_LANGUAGES.len() as i64 {
+        return Err(format!(
+            "Localization catalog validation failed: expected {} languages, found {}",
+            crate::database_factory::FACTORY_LANGUAGES.len(),
+            language_count,
+        ));
+    }
+
+    for language in crate::database_factory::FACTORY_LANGUAGES {
+        let matching_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM languages
+                 WHERE locale = ?1
+                   AND english_name = ?2
+                   AND native_name = ?3
+                   AND text_direction = ?4
+                   AND enabled = 1",
+                params![
+                    language.locale,
+                    language.english_name,
+                    language.native_name,
+                    language.text_direction,
+                ],
+                |row| row.get(0),
+            )
+            .map_err(|error| format!(
+                "Unable to validate factory language '{}': {}",
+                language.locale,
+                error,
+            ))?;
+
+        if matching_count != 1 {
+            return Err(format!(
+                "Localization catalog validation failed for factory language '{}'",
+                language.locale,
+            ));
+        }
+    }
+
+    let key_count: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM translation_keys",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|error| format!(
+            "Unable to validate translation-key count: {}",
+            error,
+        ))?;
+
+    if key_count != crate::database_factory::FACTORY_TRANSLATION_KEYS.len() as i64 {
+        return Err(format!(
+            "Localization catalog validation failed: expected {} translation keys, found {}",
+            crate::database_factory::FACTORY_TRANSLATION_KEYS.len(),
+            key_count,
+        ));
+    }
+
+    for entry in crate::database_factory::FACTORY_TRANSLATION_KEYS {
+        let matching_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM translation_keys
+                 WHERE translation_key = ?1
+                   AND english_text = ?2
+                   AND translator_context = ?3",
+                params![entry.key, entry.english_text, entry.translator_context],
+                |row| row.get(0),
+            )
+            .map_err(|error| format!(
+                "Unable to validate factory translation key '{}': {}",
+                entry.key,
+                error,
+            ))?;
+
+        if matching_count != 1 {
+            return Err(format!(
+                "Localization catalog validation failed for translation key '{}'",
+                entry.key,
+            ));
+        }
+    }
 
     Ok(())
 }

@@ -178,6 +178,52 @@ SUCCESS?
 
 Migration must never modify the historical source database in place.
 
+### Reconstruction Validation Contract
+
+A reconstructed database must pass validation **before** the historical
+source database is renamed, replaced, or otherwise participates in cutover.
+Successful SQLite file creation alone is not sufficient evidence that a
+migration succeeded.
+
+The pre-cutover validation gate must establish, as applicable to the current
+schema:
+
+-   normal Screenshaver startup/structural validity;
+-   SQLite integrity and foreign-key integrity;
+-   the expected current database schema version;
+-   current-schema semantic invariants that are not completely expressed by
+    SQLite constraints; and
+-   migration-aware factory invariants required by the historical data being
+    reconstructed.
+
+The same semantic validation must be repeated after the staged database has
+been promoted to the live database filename. A post-promotion validation
+failure is a cutover failure: the failed promoted database should be retained
+for diagnostics when practical, and the preserved pre-migration database must
+be restored automatically.
+
+Migration validation must distinguish **fresh-install invariants** from
+**reconstruction invariants**. A migrated database may legitimately contain
+user-modified defaults, non-empty playlists, different runtime selections, or
+other durable state that would not match a freshly initialized database.
+Therefore fresh-initialization validation must not be used as a substitute for
+reconstruction validation.
+
+Factory validation is migration-aware. If historical `MigrationData` contains
+the managed `default.glsl` factory shader, the reconstructed database must
+contain exactly one valid current factory `default.glsl` runtime package and
+structurally identifiable protected fallback policies for both the
+Screensaver and Wallpaper targets. Those policies are durable configuration:
+their user-modifiable settings and relationships must survive migration even
+though the underlying factory shader runtime package is rebuilt from the
+current installation.
+
+A historical fixture that intentionally contains no `default.glsl` must not be
+made invalid merely to satisfy a fresh-install assumption. Reconstruction
+expectations are derived from the historical semantic data rather than from a
+global assumption that every historical test database contains every factory
+object.
+
 ------------------------------------------------------------------------
 
 ## Migration Defaults
@@ -702,6 +748,27 @@ reconstruction migration and must remain unchanged unless and until a
 separately constructed current-schema database has passed all required
 validation and an atomic cutover is performed.
 
+For Schema-1 reconstruction, validation must also preserve the ownership
+boundary between factory and durable state:
+
+-   texture and curated-palette catalogs are recreated from the current
+    executable;
+-   the managed `default.glsl` physical/runtime factory representation is
+    recreated from the current installation when that factory shader is
+    represented in the historical migration data;
+-   shader policies, including protected fallback policies, remain durable
+    configuration and retain their user-modifiable semantic settings;
+-   playlist and runtime-target references to those policies must be remapped
+    correctly; and
+-   derived shader runtime packages must not be treated as portable historical
+    user data.
+
+Before cutover, the reconstructed current-schema database must pass structural,
+integrity, schema-version, and applicable semantic/factory validation. The same
+semantic validation must pass again after promotion to the live filename.
+Failure at either stage must not cause the historical source database to be
+reinitialized.
+
 ------------------------------------------------------------------------
 
 ## Schema 1 Historical Fixture
@@ -819,7 +886,15 @@ A schema change is not considered complete until:
 5.  the Screenshaver application version has been incremented as
     required;
 6.  migration failure behavior has been verified to leave the source
-    database intact.
+    database intact;
+7.  reconstructed databases have been tested through the pre-cutover semantic
+    validation gate;
+8.  post-promotion semantic validation and automatic rollback behavior have
+    been tested; and
+9.  every new database object or field has an explicit ownership
+    classification as durable user/configuration data, factory/current-version
+    data, derived/regenerable state, provenance/diagnostic metadata, or
+    transient state as applicable.
 
 Changes that alter only developer-maintained catalog data, factory
 content, translations, or application defaults do not automatically

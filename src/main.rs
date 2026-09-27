@@ -373,9 +373,13 @@ fn main() {
         }
 
 
-        crate::parse_arguments::Command::TestMigrationCoordinator => {
+        crate::parse_arguments::Command::TestMigrationCoordinator {
+            database_path,
+        } => {
 
-            match crate::test_migration_coordinator::run() {
+            match crate::test_migration_coordinator::run(
+                database_path.as_deref()
+            ) {
 
                 Ok(()) => {}
 
@@ -1228,7 +1232,7 @@ fn main() {
         | crate::parse_arguments::Command::TestSchemaReconstruction { .. }
         | crate::parse_arguments::Command::TestSchemaMigrationFailures { .. }
         | crate::parse_arguments::Command::TestDatabaseCutoverRecovery
-        | crate::parse_arguments::Command::TestMigrationCoordinator
+        | crate::parse_arguments::Command::TestMigrationCoordinator { .. }
         | crate::parse_arguments::Command::ConstructLockScreenKde
         | crate::parse_arguments::Command::ConstructLockScreenXfce
         | crate::parse_arguments::Command::ResetIdleTimeout { .. } => {

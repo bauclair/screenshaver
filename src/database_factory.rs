@@ -252,3 +252,167 @@ pub(crate) fn register_default_shader(
 }
 
 
+
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct FactoryLanguage {
+    pub locale: &'static str,
+    pub english_name: &'static str,
+    pub native_name: &'static str,
+    pub text_direction: &'static str,
+}
+
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct FactoryTranslationKey {
+    pub key: &'static str,
+    pub english_text: &'static str,
+    pub translator_context: &'static str,
+}
+
+
+pub(crate) const FACTORY_LANGUAGES: &[FactoryLanguage] = &[
+    FactoryLanguage {
+        locale: "en-US",
+        english_name: "English (United States)",
+        native_name: "English (United States)",
+        text_direction: "ltr",
+    },
+];
+
+
+pub(crate) const FACTORY_TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
+    FactoryTranslationKey {
+        key: "app.name",
+        english_text: "Screenshaver",
+        translator_context: "Application name.",
+    },
+    FactoryTranslationKey {
+        key: "target.screensaver",
+        english_text: "Screensaver",
+        translator_context: "User-facing name of the screensaver runtime target.",
+    },
+    FactoryTranslationKey {
+        key: "target.wallpaper",
+        english_text: "Wallpaper",
+        translator_context: "User-facing name of the wallpaper runtime target.",
+    },
+];
+
+
+pub(crate) fn seed_localization_catalog(
+    connection: &mut Connection,
+) -> Result<(), String> {
+    let transaction =
+        connection
+            .transaction()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to begin localization-catalog transaction: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    {
+        let mut statement =
+            transaction
+                .prepare(
+                    "INSERT INTO languages (
+                         locale,
+                         english_name,
+                         native_name,
+                         text_direction,
+                         enabled
+                     )
+                     VALUES (?1, ?2, ?3, ?4, 1)"
+                )
+                .map_err(
+                    |error| {
+                        format!(
+                            "Unable to prepare language-catalog insert: {}",
+                            error,
+                        )
+                    }
+                )?;
+
+
+        for language in FACTORY_LANGUAGES {
+            statement
+                .execute(
+                    params![
+                        language.locale,
+                        language.english_name,
+                        language.native_name,
+                        language.text_direction,
+                    ]
+                )
+                .map_err(
+                    |error| {
+                        format!(
+                            "Unable to insert factory language '{}': {}",
+                            language.locale,
+                            error,
+                        )
+                    }
+                )?;
+        }
+    }
+
+
+    {
+        let mut statement =
+            transaction
+                .prepare(
+                    "INSERT INTO translation_keys (
+                         translation_key,
+                         english_text,
+                         translator_context
+                     )
+                     VALUES (?1, ?2, ?3)"
+                )
+                .map_err(
+                    |error| {
+                        format!(
+                            "Unable to prepare translation-key insert: {}",
+                            error,
+                        )
+                    }
+                )?;
+
+
+        for entry in FACTORY_TRANSLATION_KEYS {
+            statement
+                .execute(
+                    params![
+                        entry.key,
+                        entry.english_text,
+                        entry.translator_context,
+                    ]
+                )
+                .map_err(
+                    |error| {
+                        format!(
+                            "Unable to insert factory translation key '{}': {}",
+                            entry.key,
+                            error,
+                        )
+                    }
+                )?;
+        }
+    }
+
+
+    transaction
+        .commit()
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to commit localization factory catalog: {}",
+                    error,
+                )
+            }
+        )
+}

@@ -20,17 +20,32 @@ const ROLLBACK_TIMESTAMP: &str =
     "20260927T150000Z";
 
 
-pub fn run() -> Result<(), String> {
+pub fn run(
+    database_path: Option<&str>,
+) -> Result<(), String> {
+
+    let fixture_mode =
+        database_path.is_none();
 
     let fixture_path =
-        PathBuf::from(
-            FIXTURE_PATH
-        );
+        match database_path {
+            Some(path) => {
+                PathBuf::from(
+                    path
+                )
+            }
+
+            None => {
+                PathBuf::from(
+                    FIXTURE_PATH
+                )
+            }
+        };
 
     if !fixture_path.is_file() {
         return Err(
             format!(
-                "Permanent Schema-1 fixture does not exist: {}",
+                "Schema-1 source database does not exist: {}",
                 fixture_path.display(),
             )
         );
@@ -44,7 +59,8 @@ pub fn run() -> Result<(), String> {
         .map_err(
             |error| {
                 format!(
-                    "Unable to read permanent Schema-1 fixture: {}",
+                    "Unable to read Schema-1 source database '{}': {}",
+                    fixture_path.display(),
                     error,
                 )
             }
@@ -89,8 +105,17 @@ pub fn run() -> Result<(), String> {
 
 
     println!(
-        "[MIGRATION COORDINATOR TEST] Fixture: {}",
+        "[MIGRATION COORDINATOR TEST] Source: {}",
         fixture_path.display()
+    );
+
+    println!(
+        "[MIGRATION COORDINATOR TEST] Source type: {}",
+        if fixture_mode {
+            "permanent Schema-1 fixture"
+        } else {
+            "external Schema-1 database"
+        }
     );
 
     println!(
@@ -118,7 +143,8 @@ pub fn run() -> Result<(), String> {
         .map_err(
             |error| {
                 format!(
-                    "Unable to reread permanent fixture after coordinator test: {}",
+                    "Unable to reread Schema-1 source database '{}' after coordinator test: {}",
+                    fixture_path.display(),
                     error,
                 )
             }
@@ -129,8 +155,10 @@ pub fn run() -> Result<(), String> {
         != fixture_after
     {
         return Err(
-            "Permanent Schema-1 fixture changed during coordinator testing"
-                .to_string()
+            format!(
+                "Schema-1 source database changed during coordinator testing: {}",
+                fixture_path.display(),
+            )
         );
     }
 
@@ -159,7 +187,7 @@ pub fn run() -> Result<(), String> {
             Ok(()),
         ) => {
             println!(
-                "[MIGRATION COORDINATOR TEST] Verified: permanent Schema-1 fixture remained byte-for-byte unchanged"
+                "[MIGRATION COORDINATOR TEST] Verified: Schema-1 source database remained byte-for-byte unchanged"
             );
 
             println!(

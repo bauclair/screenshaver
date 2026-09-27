@@ -8,9 +8,9 @@ use rusqlite::{
 };
 
 
-const SCHEMA_V001: &str =
+const CURRENT_SCHEMA_SQL: &str =
     include_str!(
-        "../assets/database/schema_v001.sql"
+        "../assets/database/schema_v002.sql"
     );
 
 
@@ -112,12 +112,13 @@ fn initialize_contents(
 
     connection
         .execute_batch(
-            SCHEMA_V001
+            CURRENT_SCHEMA_SQL
         )
         .map_err(
             |error| {
                 format!(
-                    "Unable to initialize Schema Version 1 in '{}': {}",
+                    "Unable to initialize Schema Version {} in '{}': {}",
+                    crate::migrate_database::CURRENT_SCHEMA_VERSION,
                     database_path.display(),
                     error,
                 )
@@ -131,6 +132,11 @@ fn initialize_contents(
 
 
     seed_curated_palette(
+        connection
+    )?;
+
+
+    crate::database_factory::seed_localization_catalog(
         connection
     )?;
 

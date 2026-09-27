@@ -40,7 +40,7 @@ use super::migration_data::{
 
 const CURRENT_SCHEMA_SQL: &str =
     include_str!(
-        "../../assets/database/schema_v001.sql"
+        "../../assets/database/schema_v002.sql"
     );
 
 
@@ -347,7 +347,12 @@ fn seed_factory_catalogs(
                     error,
                 )
             }
-        )
+        )?;
+
+
+    crate::database_factory::seed_localization_catalog(
+        connection
+    )
 }
 
 
