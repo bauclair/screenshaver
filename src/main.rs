@@ -259,9 +259,13 @@ fn main() {
         }
 
 
-        crate::parse_arguments::Command::TestSchemaReader => {
+        crate::parse_arguments::Command::TestSchemaReader {
+            database_path,
+        } => {
 
-            match crate::test_schema_reader::run() {
+            match crate::test_schema_reader::run(
+                database_path.as_deref()
+            ) {
 
                 Ok(()) => {}
 
@@ -1111,7 +1115,7 @@ fn main() {
         | crate::parse_arguments::Command::Version
         | crate::parse_arguments::Command::TestPlaylists
         | crate::parse_arguments::Command::TestLyrics
-        | crate::parse_arguments::Command::TestSchemaReader
+        | crate::parse_arguments::Command::TestSchemaReader { .. }
         | crate::parse_arguments::Command::ConstructLockScreenKde
         | crate::parse_arguments::Command::ConstructLockScreenXfce
         | crate::parse_arguments::Command::ResetIdleTimeout { .. } => {

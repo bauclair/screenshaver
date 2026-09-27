@@ -1,15 +1,26 @@
 //! Developer diagnostic for the permanent Schema-1 historical reader.
 //!
 //! This command deliberately bypasses normal database evaluation.  It opens
-//! the existing Screenshaver database read-only, translates Schema 1 into
-//! MigrationData, prints a compact semantic summary, and exits.
+//! a selected Schema-1 database read-only, translates it into MigrationData,
+//! prints a compact semantic summary, and exits. With no explicit path, the
+//! normal Screenshaver database is used.
 
 use rusqlite::{Connection, OpenFlags};
 
 
-pub fn run() -> Result<(), String> {
+pub fn run(
+    database_path: Option<&str>,
+) -> Result<(), String> {
     let database_path =
-        crate::locate_paths::database_path();
+        match database_path {
+            Some(path) => {
+                std::path::PathBuf::from(path)
+            }
+
+            None => {
+                crate::locate_paths::database_path()
+            }
+        };
 
     if !database_path.exists() {
         return Err(

@@ -21,7 +21,9 @@ pub enum Command {
 
     TestLyrics,
 
-    TestSchemaReader,
+    TestSchemaReader {
+        database_path: Option<String>,
+    },
 
     BenchmarkRender {
         shader_path: String,
@@ -161,14 +163,8 @@ pub fn parse() -> Result<Command, String> {
 
         "--test-schema-reader" => {
 
-            require_no_extra_arguments(
-                &args,
-                "--test-schema-reader",
-            )?;
-
-
-            Ok(
-                Command::TestSchemaReader
+            parse_test_schema_reader(
+                &args[1..]
             )
         }
 
@@ -322,6 +318,43 @@ fn parse_compare_databases(
             database_b: database_paths[1].clone(),
             exclude_metadata,
             exclude_local_config,
+        }
+    )
+}
+
+
+fn parse_test_schema_reader(
+    args: &[String],
+) -> Result<Command, String> {
+
+    if args.len() > 1 {
+        return Err(
+            "--test-schema-reader accepts at most one database path"
+                .to_string()
+        );
+    }
+
+    let database_path =
+        match args.first() {
+            Some(value) => {
+                let value = value.trim();
+
+                if value.is_empty() || value.starts_with('-') {
+                    return Err(
+                        "--test-schema-reader accepts an optional database path"
+                            .to_string()
+                    );
+                }
+
+                Some(value.to_string())
+            }
+
+            None => None,
+        };
+
+    Ok(
+        Command::TestSchemaReader {
+            database_path,
         }
     )
 }
@@ -577,9 +610,10 @@ pub fn print_help() {
              --test-lyrics\n\
                  Run the synchronized-lyrics development test and exit.\n\
          \n\
-             --test-schema-reader\n\
-                 Read the Schema-1 database through the historical migration reader and exit.\n\
-                 Opens the database read-only and bypasses normal database preparation.\n\
+             --test-schema-reader [DATABASE_PATH]\n\
+                 Read a Schema-1 database through the historical migration reader and exit.\n\
+                 If DATABASE_PATH is omitted, use the normal Screenshaver database.\n\
+                 Opens the selected database read-only and bypasses normal database preparation.\n\
          \n\
              --construct-lock-screen-kde\n\
                  Construct/install the KDE lock-screen integration.\n\
