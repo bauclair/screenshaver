@@ -25,6 +25,11 @@ pub enum Command {
         database_path: Option<String>,
     },
 
+    TestSchemaReconstruction {
+        source_path: String,
+        destination_path: String,
+    },
+
     BenchmarkRender {
         shader_path: String,
     },
@@ -164,6 +169,14 @@ pub fn parse() -> Result<Command, String> {
         "--test-schema-reader" => {
 
             parse_test_schema_reader(
+                &args[1..]
+            )
+        }
+
+
+        "--test-schema-reconstruction" => {
+
+            parse_test_schema_reconstruction(
                 &args[1..]
             )
         }
@@ -355,6 +368,46 @@ fn parse_test_schema_reader(
     Ok(
         Command::TestSchemaReader {
             database_path,
+        }
+    )
+}
+
+
+fn parse_test_schema_reconstruction(
+    args: &[String],
+) -> Result<Command, String> {
+
+    if args.len() != 2 {
+        return Err(
+            "--test-schema-reconstruction requires exactly two database paths: SOURCE DESTINATION"
+                .to_string()
+        );
+    }
+
+    let source_path =
+        args[0].trim();
+
+    let destination_path =
+        args[1].trim();
+
+    if source_path.is_empty()
+        || source_path.starts_with('-')
+        || destination_path.is_empty()
+        || destination_path.starts_with('-')
+    {
+        return Err(
+            "--test-schema-reconstruction requires valid SOURCE and DESTINATION database paths"
+                .to_string()
+        );
+    }
+
+    Ok(
+        Command::TestSchemaReconstruction {
+            source_path:
+                source_path.to_string(),
+
+            destination_path:
+                destination_path.to_string(),
         }
     )
 }

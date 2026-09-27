@@ -11,3 +11,4 @@
 
 pub mod migration_data;
 pub mod read_schema_v001;
+pub mod write_current;
