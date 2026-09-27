@@ -312,6 +312,18 @@ pub(crate) const FACTORY_TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
         english_text: "Wallpaper",
         translator_context: "User-facing name of the wallpaper runtime target.",
     },
+
+    FactoryTranslationKey {
+        key: "backup.created",
+        english_text: "Backup created: {path}",
+        translator_context: "Status message shown after a backup is created. {path} is the backup path and must remain unchanged.",
+    },
+
+    FactoryTranslationKey {
+        key: "backup.failed",
+        english_text: "Backup failed: {error}",
+        translator_context: "Status message shown when backup creation fails. {error} is externally supplied error text and must remain unchanged.",
+    },
 ];
 
 
@@ -320,6 +332,12 @@ pub(crate) const FACTORY_TRANSLATIONS: &[FactoryTranslation] = &[
         locale: "es-US",
         key: "target.screensaver",
         translated_text: "Protector de pantalla",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.created",
+        translated_text: "Copia de seguridad creada: {path}",
     },
 ];
 

@@ -5,6 +5,8 @@ const ENGLISH_TEST_KEYS: &[&str] = &[
     "app.name",
     "target.screensaver",
     "target.wallpaper",
+    "backup.created",
+    "backup.failed",
 ];
 
 
@@ -12,6 +14,11 @@ pub fn run(
     connection: &Connection,
     configured_locale: &str,
 ) -> Result<(), String> {
+
+    crate::manage_localization::initialize_runtime(
+        connection,
+        configured_locale,
+    )?;
 
     let localization =
         crate::manage_localization::Localization::load(
@@ -210,6 +217,97 @@ pub fn run(
     println!(
         "[LOCALIZATION TEST] Verified: missing es-US keys fall back individually to canonical English"
     );
+
+    // Prove runtime parameter substitution using the catalog that main.rs
+    // initialized before entering this diagnostic.
+    //
+    // The path is intentionally mixed-content application data. It must be
+    // inserted verbatim and never translated.
+    let test_backup_path =
+        "/tmp/Screenshaver Backups/用户/backup-001";
+
+    let spanish_backup_created =
+        crate::manage_localization::runtime_text_with_params(
+            "backup.created",
+            &[
+                (
+                    "path",
+                    test_backup_path,
+                ),
+            ],
+        );
+
+    let expected_spanish_backup_created =
+        format!(
+            "Copia de seguridad creada: {}",
+            test_backup_path,
+        );
+
+    if spanish_backup_created
+        != expected_spanish_backup_created
+    {
+        return Err(
+            format!(
+                "Parameterized es-US backup.created returned unexpected text: '{}'",
+                spanish_backup_created,
+            )
+        );
+    }
+
+
+    // backup.failed deliberately has no es-US translation. The resolved
+    // runtime catalog must therefore use canonical English first, then apply
+    // the named {error} parameter without modifying the supplied error text.
+    let test_error =
+        "SQLite error / ruta 用户";
+
+    let fallback_backup_failed =
+        crate::manage_localization::runtime_text_with_params(
+            "backup.failed",
+            &[
+                (
+                    "error",
+                    test_error,
+                ),
+            ],
+        );
+
+    let expected_fallback_backup_failed =
+        format!(
+            "Backup failed: {}",
+            test_error,
+        );
+
+    if fallback_backup_failed
+        != expected_fallback_backup_failed
+    {
+        return Err(
+            format!(
+                "Parameterized English fallback for backup.failed returned unexpected text: '{}'",
+                fallback_backup_failed,
+            )
+        );
+    }
+
+
+    println!(
+        "[LOCALIZATION TEST] es-US backup.created = {}",
+        spanish_backup_created
+    );
+
+    println!(
+        "[LOCALIZATION TEST] es-US backup.failed fallback = {}",
+        fallback_backup_failed
+    );
+
+    println!(
+        "[LOCALIZATION TEST] Verified: named parameters preserve supplied Unicode text verbatim"
+    );
+
+    println!(
+        "[LOCALIZATION TEST] Verified: parameterized keys retain per-key canonical English fallback"
+    );
+
 
     println!(
         "[LOCALIZATION TEST] PASS"

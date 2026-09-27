@@ -141,6 +141,168 @@ pub fn runtime_text(
 }
 
 
+/// Resolve a runtime localization key and substitute named parameters.
+///
+/// Templates use `{name}` placeholders. Parameter names are deliberately
+/// independent of word order so translations may rearrange values naturally.
+///
+/// Unknown localization keys retain the existing visible `[key]` diagnostic.
+/// Unknown placeholders are also left visible in the returned text rather than
+/// silently disappearing, which makes incomplete developer catalog entries
+/// immediately apparent.
+pub fn runtime_text_with_params(
+    key: &str,
+    parameters: &[(&str, &str)],
+) -> String {
+
+    let template =
+        runtime_text(
+            key
+        );
+
+    format_named_parameters(
+        &template,
+        parameters,
+    )
+}
+
+
+/// Substitute `{name}` placeholders in already-localized text.
+///
+/// Literal braces may be written as `{{` and `}}`. A placeholder is replaced
+/// only when its exact name is present in `parameters`; otherwise the original
+/// `{name}` text is preserved as a visible development diagnostic.
+fn format_named_parameters(
+    template: &str,
+    parameters: &[(&str, &str)],
+) -> String {
+
+    let parameter_map:
+        HashMap<&str, &str> =
+            parameters
+                .iter()
+                .copied()
+                .collect();
+
+    let mut output =
+        String::with_capacity(
+            template.len()
+        );
+
+    let characters:
+        Vec<char> =
+            template
+                .chars()
+                .collect();
+
+    let mut index =
+        0usize;
+
+    while index < characters.len() {
+
+        match characters[index] {
+
+            '{' => {
+                if index + 1 < characters.len()
+                    && characters[index + 1] == '{'
+                {
+                    output.push(
+                        '{'
+                    );
+
+                    index += 2;
+                    continue;
+                }
+
+                let mut end =
+                    index + 1;
+
+                while end < characters.len()
+                    && characters[end] != '}'
+                {
+                    end += 1;
+                }
+
+                if end < characters.len() {
+
+                    let name:
+                        String =
+                            characters[
+                                index + 1..end
+                            ]
+                            .iter()
+                            .collect();
+
+                    if !name.is_empty() {
+
+                        if let Some(value) =
+                            parameter_map.get(
+                                name.as_str()
+                            )
+                        {
+                            output.push_str(
+                                value
+                            );
+
+                            index =
+                                end + 1;
+
+                            continue;
+                        }
+                    }
+
+                    output.extend(
+                        characters[
+                            index..=end
+                        ]
+                        .iter()
+                    );
+
+                    index =
+                        end + 1;
+
+                    continue;
+                }
+
+                output.push(
+                    '{'
+                );
+
+                index += 1;
+            }
+
+            '}' => {
+                if index + 1 < characters.len()
+                    && characters[index + 1] == '}'
+                {
+                    output.push(
+                        '}'
+                    );
+
+                    index += 2;
+                } else {
+                    output.push(
+                        '}'
+                    );
+
+                    index += 1;
+                }
+            }
+
+            character => {
+                output.push(
+                    character
+                );
+
+                index += 1;
+            }
+        }
+    }
+
+    output
+}
+
+
 #[derive(Debug, Clone)]
 pub struct Localization {
     requested_locale: String,
