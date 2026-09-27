@@ -137,6 +137,11 @@ pub fn run(
         &reconstructed_data,
     )?;
 
+    test_factory_default_reconstruction(
+        &source_data,
+        &destination_path,
+    )?;
+
     println!(
         "[SCHEMA RECONSTRUCTION TEST] PASS: durable Schema-1 semantics survived read -> MigrationData -> current-schema reconstruction -> read."
     );
@@ -289,6 +294,231 @@ fn membership_count(
 }
 
 
+fn test_factory_default_reconstruction(
+    source_data: &MigrationData,
+    destination_path: &Path,
+) -> Result<(), String> {
+
+    let mut factory_data =
+        source_data.clone();
+
+    let factory_shader =
+        factory_data.shaders
+            .first_mut()
+            .ok_or_else(
+                || {
+                    "Factory-default reconstruction test requires at least one fixture shader"
+                        .to_string()
+                }
+            )?;
+
+    factory_shader.filename =
+        "default.glsl".to_string();
+
+    factory_shader.source_path =
+        "/historical/factory/shaders".to_string();
+
+    let factory_destination =
+        destination_path
+            .with_extension(
+                "factory-default-test.db"
+            );
+
+    if factory_destination.exists() {
+        fs::remove_file(
+            &factory_destination
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to remove stale factory-default reconstruction test database '{}': {}",
+                    factory_destination.display(),
+                    error,
+                )
+            }
+        )?;
+    }
+
+    let result =
+        (|| -> Result<(), String> {
+            let connection =
+                crate::database_migration::write_current::write(
+                    &factory_destination,
+                    &factory_data,
+                )?;
+
+            verify_factory_default_runtime_package(
+                &connection
+            )?;
+
+            drop(
+                connection
+            );
+
+            let reconstructed_connection =
+                open_read_only(
+                    &factory_destination
+                )?;
+
+            let reconstructed_data =
+                crate::database_migration::read_schema_v001::read(
+                    &reconstructed_connection
+                )?;
+
+            compare_migration_data(
+                &factory_data,
+                &reconstructed_data,
+            )?;
+
+            println!(
+                "[SCHEMA RECONSTRUCTION TEST] Verified: historical default.glsl identity remapped to current factory shader"
+            );
+
+            println!(
+                "[SCHEMA RECONSTRUCTION TEST] Verified: policies, playlists, and runtime references survived factory-shader remapping"
+            );
+
+            Ok(())
+        })();
+
+    if factory_destination.exists() {
+        fs::remove_file(
+            &factory_destination
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to remove factory-default reconstruction test database '{}': {}",
+                    factory_destination.display(),
+                    error,
+                )
+            }
+        )?;
+    }
+
+    result
+}
+
+
+fn verify_factory_default_runtime_package(
+    connection: &Connection,
+) -> Result<(), String> {
+
+    let (
+        shader_type,
+        source_hash,
+        source_path,
+        file_status,
+        validation_status,
+        runtime_source_length,
+        preprocessor_version,
+        channel_usage_mask,
+        shader_inputs_json,
+    ): (
+        String,
+        String,
+        String,
+        String,
+        String,
+        i64,
+        i64,
+        i64,
+        String,
+    ) =
+        connection
+            .query_row(
+                "SELECT
+                     shader_type,
+                     source_hash,
+                     source_path,
+                     file_status,
+                     validation_status,
+                     length(preprocessed_source),
+                     preprocessor_version,
+                     channel_usage_mask,
+                     shader_inputs_json
+                 FROM shaders
+                 WHERE filename = 'default.glsl'",
+                [],
+                |row| {
+                    Ok(
+                        (
+                            row.get(0)?,
+                            row.get(1)?,
+                            row.get(2)?,
+                            row.get(3)?,
+                            row.get(4)?,
+                            row.get(5)?,
+                            row.get(6)?,
+                            row.get(7)?,
+                            row.get(8)?,
+                        )
+                    )
+                },
+            )
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to inspect reconstructed factory default.glsl runtime package: {}",
+                        error,
+                    )
+                }
+            )?;
+
+    let expected_source_path =
+        crate::locate_paths::shader_dir()
+            .to_string_lossy()
+            .to_string();
+
+    if shader_type != "native"
+        || source_hash.trim().is_empty()
+        || source_path != expected_source_path
+        || file_status != "present"
+        || validation_status != "valid"
+        || runtime_source_length <= 0
+        || preprocessor_version != 1
+        || channel_usage_mask < 0
+        || shader_inputs_json != "[]"
+    {
+        return Err(
+            format!(
+                "Reconstructed factory default.glsl does not contain the current runtime package: type='{}', hash_present={}, source_path='{}', file_status='{}', validation_status='{}', runtime_bytes={}, preprocessor_version={}, channel_usage_mask={}, shader_inputs_json='{}'",
+                shader_type,
+                !source_hash.trim().is_empty(),
+                source_path,
+                file_status,
+                validation_status,
+                runtime_source_length,
+                preprocessor_version,
+                channel_usage_mask,
+                shader_inputs_json,
+            )
+        );
+    }
+
+    println!(
+        "[SCHEMA RECONSTRUCTION TEST] Verified: default.glsl runtime package was rebuilt from the current installed factory shader"
+    );
+
+    Ok(())
+}
+
+
+fn shader_source_identity(
+    shader: &crate::database_migration::migration_data::MigrationShader,
+) -> String {
+
+    if shader.filename
+        == "default.glsl"
+    {
+        "<current-factory-default>"
+            .to_string()
+    } else {
+        shader.source_path.clone()
+    }
+}
+
+
 fn compare_migration_data(
     source: &MigrationData,
     reconstructed: &MigrationData,
@@ -340,7 +570,9 @@ fn compare_shaders(
                 |shader| {
                     (
                         shader.filename.clone(),
-                        shader.source_path.clone(),
+                        shader_source_identity(
+                            shader
+                        ),
                     )
                 }
             )
@@ -353,7 +585,9 @@ fn compare_shaders(
                 |shader| {
                     (
                         shader.filename.clone(),
-                        shader.source_path.clone(),
+                        shader_source_identity(
+                            shader
+                        ),
                     )
                 }
             )
@@ -440,7 +674,9 @@ fn policy_signature(
         format!(
             "{:?}|{:?}|{:?}|{}|{}|{}|{:?}|{:?}|{}|{:?}|{:?}|{:?}|{:?}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
             policy.policy_name,
-            shader.source_path,
+            shader_source_identity(
+                shader
+            ),
             shader.filename,
             policy_target(
                 policy.target

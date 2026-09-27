@@ -98,6 +98,12 @@ pub fn write(
                 &mut connection
             )?;
 
+            let factory_default_shader =
+                register_factory_default_shader_if_present(
+                    &mut connection,
+                    data,
+                )?;
+
             let transaction =
                 connection
                     .transaction()
@@ -114,6 +120,7 @@ pub fn write(
                 write_shaders(
                     &transaction,
                     data,
+                    factory_default_shader,
                 )?;
 
             let policy_ids =
@@ -344,13 +351,76 @@ fn seed_factory_catalogs(
 }
 
 
+fn register_factory_default_shader_if_present(
+    connection: &mut Connection,
+    data: &MigrationData,
+) -> Result<Option<(MigrationShaderId, i64)>, String> {
+
+    let default_shaders =
+        data.shaders
+            .iter()
+            .filter(
+                |shader| {
+                    shader.filename
+                        == "default.glsl"
+                }
+            )
+            .collect::<Vec<_>>();
+
+    match default_shaders.as_slice() {
+        [] => {
+            Ok(None)
+        }
+
+        [shader] => {
+            let destination_id =
+                crate::database_factory::register_default_shader(
+                    connection
+                )?;
+
+            Ok(
+                Some(
+                    (
+                        shader.migration_id,
+                        destination_id,
+                    )
+                )
+            )
+        }
+
+        _ => {
+            Err(
+                format!(
+                    "MigrationData contains {} default.glsl shader records; exactly one factory default shader is permitted",
+                    default_shaders.len(),
+                )
+            )
+        }
+    }
+}
+
+
 fn write_shaders(
     transaction: &rusqlite::Transaction<'_>,
     data: &MigrationData,
+    factory_default_shader: Option<(MigrationShaderId, i64)>,
 ) -> Result<HashMap<MigrationShaderId, i64>, String> {
 
     let mut ids =
         HashMap::new();
+
+    if let Some(
+        (
+            migration_id,
+            destination_id,
+        )
+    ) = factory_default_shader
+    {
+        ids.insert(
+            migration_id,
+            destination_id,
+        );
+    }
 
     let mut statement =
         transaction
@@ -396,6 +466,12 @@ fn write_shaders(
             )?;
 
     for shader in &data.shaders {
+        if shader.filename
+            == "default.glsl"
+        {
+            continue;
+        }
+
         statement
             .execute(
                 params![
@@ -433,6 +509,18 @@ fn write_shaders(
                 )
             );
         }
+    }
+
+    if ids.len()
+        != data.shaders.len()
+    {
+        return Err(
+            format!(
+                "MigrationData shader-ID mapping is incomplete: mapped {}, expected {}",
+                ids.len(),
+                data.shaders.len(),
+            )
+        );
     }
 
     Ok(
