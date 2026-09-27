@@ -124,6 +124,8 @@ mod authenticate_user;
 mod manage_playlists;
 mod test_playlists;
 mod test_lyrics;
+mod test_localization;
+mod manage_localization;
 mod test_render_benchmark;
 mod test_audio_motion;
 
@@ -605,6 +607,7 @@ fn main() {
         | crate::parse_arguments::Command::Start
         | crate::parse_arguments::Command::Control { .. }
         | crate::parse_arguments::Command::TestPlaylists
+        | crate::parse_arguments::Command::TestLocalization
         | crate::parse_arguments::Command::BenchmarkRender { .. }
         | crate::parse_arguments::Command::TestAudioMotion { .. }
         | crate::parse_arguments::Command::ResetIdleTimeout { .. } => {}
@@ -807,6 +810,85 @@ fn main() {
                 return;
             }
         };
+
+
+    // Localization catalogs are factory-owned current-executable data.
+    // Synchronize them on database-dependent startup so an application update
+    // can add or revise supported languages and translations without requiring
+    // a database schema migration.
+    if let Err(error) =
+        crate::database_factory::synchronize_localization_catalog(
+            &mut database_connection
+        )
+    {
+        eprintln!(
+            "[MAIN] LOCALIZATION CATALOG ERROR: {}",
+            error
+        );
+
+        crate::logger::error(
+            &logfile,
+            &format!(
+                "[LOCALIZATION] Unable to synchronize factory catalog: {}",
+                error,
+            ),
+        );
+
+        return;
+    }
+
+
+    // --test-localization exercises the Schema-2 localization catalog after
+    // normal database preparation, but before shader reconciliation or runtime
+    // startup.  Existing configuration files without [language] default to
+    // en-US.
+    if let crate::parse_arguments::Command::TestLocalization = &command {
+
+        let cfg_path =
+            crate::locate_paths::config_path();
+
+        let locale =
+            match crate::load_config::load_locale(
+                &cfg_path
+            ) {
+                Ok(locale) => locale,
+
+                Err(error) => {
+                    eprintln!(
+                        "[LOCALIZATION TEST] FAILED: {}",
+                        error
+                    );
+
+                    std::process::exit(
+                        1
+                    );
+                }
+            };
+
+        match crate::test_localization::run(
+            &database_connection,
+            &locale,
+        ) {
+            Ok(()) => {}
+
+            Err(error) => {
+                eprintln!(
+                    "[LOCALIZATION TEST] FAILED: {}",
+                    error
+                );
+
+                std::process::exit(
+                    1
+                );
+            }
+        }
+
+        drop(
+            database_connection
+        );
+
+        return;
+    }
 
 
     // --test-playlists is a temporary developer command. Run it only after
@@ -1034,6 +1116,31 @@ fn main() {
         result.config;
 
 
+    if let Err(error) =
+        crate::manage_localization::initialize_runtime(
+            &database_connection,
+            &cfg.locale,
+        )
+    {
+        eprintln!(
+            "[MAIN] LOCALIZATION ERROR: {}",
+            error
+        );
+
+
+        crate::logger::error(
+            &logfile,
+            &format!(
+                "[LOCALIZATION] Unable to initialize runtime localization: {}",
+                error,
+            ),
+        );
+
+
+        return;
+    }
+
+
     crate::logger::set_enabled(
         cfg.debug_log
     );
@@ -1228,6 +1335,7 @@ fn main() {
         | crate::parse_arguments::Command::Version
         | crate::parse_arguments::Command::TestPlaylists
         | crate::parse_arguments::Command::TestLyrics
+        | crate::parse_arguments::Command::TestLocalization
         | crate::parse_arguments::Command::TestSchemaReader { .. }
         | crate::parse_arguments::Command::TestSchemaReconstruction { .. }
         | crate::parse_arguments::Command::TestSchemaMigrationFailures { .. }

@@ -271,11 +271,26 @@ pub(crate) struct FactoryTranslationKey {
 }
 
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct FactoryTranslation {
+    pub locale: &'static str,
+    pub key: &'static str,
+    pub translated_text: &'static str,
+}
+
+
 pub(crate) const FACTORY_LANGUAGES: &[FactoryLanguage] = &[
     FactoryLanguage {
         locale: "en-US",
         english_name: "English (United States)",
         native_name: "English (United States)",
+        text_direction: "ltr",
+    },
+
+    FactoryLanguage {
+        locale: "es-US",
+        english_name: "Spanish (United States)",
+        native_name: "Español (Estados Unidos)",
         text_direction: "ltr",
     },
 ];
@@ -300,16 +315,36 @@ pub(crate) const FACTORY_TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
 ];
 
 
+pub(crate) const FACTORY_TRANSLATIONS: &[FactoryTranslation] = &[
+    FactoryTranslation {
+        locale: "es-US",
+        key: "target.screensaver",
+        translated_text: "Protector de pantalla",
+    },
+];
+
+
 pub(crate) fn seed_localization_catalog(
     connection: &mut Connection,
 ) -> Result<(), String> {
+
+    synchronize_localization_catalog(
+        connection
+    )
+}
+
+
+pub(crate) fn synchronize_localization_catalog(
+    connection: &mut Connection,
+) -> Result<(), String> {
+
     let transaction =
         connection
             .transaction()
             .map_err(
                 |error| {
                     format!(
-                        "Unable to begin localization-catalog transaction: {}",
+                        "Unable to begin localization-catalog synchronization transaction: {}",
                         error,
                     )
                 }
@@ -327,12 +362,17 @@ pub(crate) fn seed_localization_catalog(
                          text_direction,
                          enabled
                      )
-                     VALUES (?1, ?2, ?3, ?4, 1)"
+                     VALUES (?1, ?2, ?3, ?4, 1)
+                     ON CONFLICT(locale) DO UPDATE SET
+                         english_name = excluded.english_name,
+                         native_name = excluded.native_name,
+                         text_direction = excluded.text_direction,
+                         enabled = excluded.enabled"
                 )
                 .map_err(
                     |error| {
                         format!(
-                            "Unable to prepare language-catalog insert: {}",
+                            "Unable to prepare language-catalog synchronization: {}",
                             error,
                         )
                     }
@@ -352,7 +392,7 @@ pub(crate) fn seed_localization_catalog(
                 .map_err(
                     |error| {
                         format!(
-                            "Unable to insert factory language '{}': {}",
+                            "Unable to synchronize factory language '{}': {}",
                             language.locale,
                             error,
                         )
@@ -371,12 +411,15 @@ pub(crate) fn seed_localization_catalog(
                          english_text,
                          translator_context
                      )
-                     VALUES (?1, ?2, ?3)"
+                     VALUES (?1, ?2, ?3)
+                     ON CONFLICT(translation_key) DO UPDATE SET
+                         english_text = excluded.english_text,
+                         translator_context = excluded.translator_context"
                 )
                 .map_err(
                     |error| {
                         format!(
-                            "Unable to prepare translation-key insert: {}",
+                            "Unable to prepare translation-key synchronization: {}",
                             error,
                         )
                     }
@@ -395,7 +438,53 @@ pub(crate) fn seed_localization_catalog(
                 .map_err(
                     |error| {
                         format!(
-                            "Unable to insert factory translation key '{}': {}",
+                            "Unable to synchronize factory translation key '{}': {}",
+                            entry.key,
+                            error,
+                        )
+                    }
+                )?;
+        }
+    }
+
+
+    {
+        let mut statement =
+            transaction
+                .prepare(
+                    "INSERT INTO translations (
+                         locale,
+                         translation_key,
+                         translated_text
+                     )
+                     VALUES (?1, ?2, ?3)
+                     ON CONFLICT(locale, translation_key) DO UPDATE SET
+                         translated_text = excluded.translated_text"
+                )
+                .map_err(
+                    |error| {
+                        format!(
+                            "Unable to prepare translation synchronization: {}",
+                            error,
+                        )
+                    }
+                )?;
+
+
+        for entry in FACTORY_TRANSLATIONS {
+            statement
+                .execute(
+                    params![
+                        entry.locale,
+                        entry.key,
+                        entry.translated_text,
+                    ]
+                )
+                .map_err(
+                    |error| {
+                        format!(
+                            "Unable to synchronize factory translation '{}:{}': {}",
+                            entry.locale,
                             entry.key,
                             error,
                         )
@@ -410,7 +499,7 @@ pub(crate) fn seed_localization_catalog(
         .map_err(
             |error| {
                 format!(
-                    "Unable to commit localization factory catalog: {}",
+                    "Unable to commit localization factory catalog synchronization: {}",
                     error,
                 )
             }

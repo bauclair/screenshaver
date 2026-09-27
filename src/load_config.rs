@@ -27,6 +27,11 @@ fn default_screen_lock_enabled() -> bool {
     false
 }
 
+
+fn default_locale() -> String {
+    "en-US".to_string()
+}
+
 #[derive(Debug, Deserialize)]
 struct ScreensaverSection {
 
@@ -64,6 +69,24 @@ struct DebugSection {
 
 
 #[derive(Debug, Deserialize)]
+struct LanguageSection {
+
+    #[serde(default = "default_locale")]
+    locale: String,
+}
+
+
+impl Default for LanguageSection {
+
+    fn default() -> Self {
+        Self {
+            locale: default_locale(),
+        }
+    }
+}
+
+
+#[derive(Debug, Deserialize)]
 struct RawToml {
 
     screensaver: ScreensaverSection,
@@ -73,6 +96,9 @@ struct RawToml {
     locking: LockingSection,
 
     debug: DebugSection,
+
+    #[serde(default)]
+    language: LanguageSection,
 }
 
 
@@ -1018,6 +1044,8 @@ pub struct Config {
 
     pub screen_lock_enabled: bool,
 
+    pub locale: String,
+
     pub debug_log: bool,
 
     pub log_level: u8,
@@ -1045,6 +1073,45 @@ pub struct ConfigResult {
 // Load configuration file
 // ------------------------------------------------------------
 //
+
+pub fn load_locale(
+    path: &Path,
+) -> Result<String, String> {
+
+    let text =
+        fs::read_to_string(path)
+            .map_err(|err| {
+                format!(
+                    "Unable to read configuration file {} ({})",
+                    path.display(),
+                    err,
+                )
+            })?;
+
+    let raw: RawToml =
+        toml::from_str(&text)
+            .map_err(|err| {
+                format!(
+                    "Invalid TOML in {} ({})",
+                    path.display(),
+                    err,
+                )
+            })?;
+
+    let locale =
+        raw.language.locale.trim();
+
+    if locale.is_empty() {
+        Ok(
+            default_locale()
+        )
+    } else {
+        Ok(
+            locale.to_string()
+        )
+    }
+}
+
 
 pub fn load_config(
     path: &Path,
@@ -1494,6 +1561,13 @@ pub fn load_config(
             screen_lock_enabled:
                 raw.locking.screen_lock_enabled,
 
+            locale:
+                if raw.language.locale.trim().is_empty() {
+                    default_locale()
+                } else {
+                    raw.language.locale.trim().to_string()
+                },
+
             debug_log:
                 raw.debug.debug_log,
 
@@ -1531,6 +1605,11 @@ pub fn load_config(
             format!(
                 "[CONFIG] show_splash = {}",
                 config.show_splash,
+            ),
+
+            format!(
+                "[CONFIG] language.locale = {}",
+                config.locale,
             ),
 
             format!(

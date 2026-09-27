@@ -46,17 +46,39 @@ impl ConfigurationNestedTab {
 
     fn label(
         self,
-    ) -> &'static str {
+    ) -> String {
         match self {
-            ConfigurationNestedTab::Appearance => "Appearance",
-            ConfigurationNestedTab::Screensaver => "Screensaver",
-            ConfigurationNestedTab::Wallpaper => "Wallpaper",
-            ConfigurationNestedTab::Rendering => "Rendering",
-            ConfigurationNestedTab::Lyrics => "Lyrics",
-            ConfigurationNestedTab::DataIo => "Data I/O",
+            ConfigurationNestedTab::Appearance => {
+                "Appearance".to_string()
+            }
+
+            ConfigurationNestedTab::Screensaver => {
+                crate::manage_localization::runtime_text(
+                    "target.screensaver"
+                )
+            }
+
+            ConfigurationNestedTab::Wallpaper => {
+                crate::manage_localization::runtime_text(
+                    "target.wallpaper"
+                )
+            }
+
+            ConfigurationNestedTab::Rendering => {
+                "Rendering".to_string()
+            }
+
+            ConfigurationNestedTab::Lyrics => {
+                "Lyrics".to_string()
+            }
+
+            ConfigurationNestedTab::DataIo => {
+                "Data I/O".to_string()
+            }
         }
     }
 }
+
 
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -82,12 +104,12 @@ impl PostProcessingNestedTab {
 
     fn label(
         self,
-    ) -> &'static str {
+    ) -> String {
         match self {
-            PostProcessingNestedTab::VisualQuality => "Visual Quality",
-            PostProcessingNestedTab::ImageTransforms => "Image Transforms",
-            PostProcessingNestedTab::Audiovisual => "Audiovisual",
-            PostProcessingNestedTab::AudioMotion => "Audio Motion",
+            PostProcessingNestedTab::VisualQuality => "Visual Quality".to_string(),
+            PostProcessingNestedTab::ImageTransforms => "Image Transforms".to_string(),
+            PostProcessingNestedTab::Audiovisual => "Audiovisual".to_string(),
+            PostProcessingNestedTab::AudioMotion => "Audio Motion".to_string(),
         }
     }
 }
@@ -428,7 +450,7 @@ fn draw_nested_tab_rail<T>(
     ui: &mut egui::Ui,
     selected: &mut T,
     tabs: &[T],
-    label: impl Fn(T) -> &'static str,
+    label: impl Fn(T) -> String,
 )
 where
     T: Copy + PartialEq,

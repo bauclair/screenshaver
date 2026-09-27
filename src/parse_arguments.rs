@@ -21,6 +21,8 @@ pub enum Command {
 
     TestLyrics,
 
+    TestLocalization,
+
     TestSchemaReader {
         database_path: Option<String>,
     },
@@ -173,6 +175,20 @@ pub fn parse() -> Result<Command, String> {
 
             Ok(
                 Command::TestLyrics
+            )
+        }
+
+
+        "--test-localization" => {
+
+            require_no_extra_arguments(
+                &args,
+                "--test-localization",
+            )?;
+
+
+            Ok(
+                Command::TestLocalization
             )
         }
 
@@ -784,6 +800,9 @@ pub fn print_help() {
          \n\
              --test-lyrics\n\
                  Run the synchronized-lyrics development test and exit.\n\
+         \n\
+             --test-localization\n\
+                 Test locale selection, translation lookup, and English fallback.\n\
          \n\
              --test-schema-reader [DATABASE_PATH]\n\
                  Read a Schema-1 database through the historical migration reader and exit.\n\
