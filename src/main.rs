@@ -99,6 +99,7 @@ mod render_bloom;
 mod render_audio_motion;
 mod select_render_precision;
 
+mod database_factory;
 mod initialize_database;
 mod evaluate_database;
 mod open_database;
