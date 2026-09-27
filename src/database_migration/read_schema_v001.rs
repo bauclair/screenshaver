@@ -1115,9 +1115,10 @@ fn read_playlist_members(
     let mut members =
         Vec::new();
 
-    let mut expected_position =
-        1_i64;
-
+    // Schema 1 requires playlist positions to be positive and unique, but it
+    // does not require them to be contiguous.  Position is ordering metadata;
+    // MigrationData preserves the semantic member order rather than the
+    // historical numeric position values themselves.
     while let Some(row) =
         rows
             .next()
@@ -1144,7 +1145,7 @@ fn read_playlist_members(
                     }
                 )?;
 
-        let position: i64 =
+        let _position: i64 =
             row
                 .get(1)
                 .map_err(
@@ -1156,19 +1157,6 @@ fn read_playlist_members(
                         )
                     }
                 )?;
-
-        if position
-            != expected_position
-        {
-            return Err(
-                format!(
-                    "Schema-1 playlist {} has non-contiguous member ordering: expected position {}, found {}",
-                    source_playlist_id,
-                    expected_position,
-                    position,
-                )
-            );
-        }
 
         let migration_policy_id =
             policy_ids
@@ -1190,8 +1178,6 @@ fn read_playlist_members(
             migration_policy_id
         );
 
-        expected_position +=
-            1;
     }
 
     Ok(

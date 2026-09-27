@@ -30,6 +30,11 @@ pub enum Command {
         destination_path: String,
     },
 
+    TestSchemaMigrationFailures {
+        fixture_path: String,
+        work_directory: String,
+    },
+
     BenchmarkRender {
         shader_path: String,
     },
@@ -177,6 +182,14 @@ pub fn parse() -> Result<Command, String> {
         "--test-schema-reconstruction" => {
 
             parse_test_schema_reconstruction(
+                &args[1..]
+            )
+        }
+
+
+        "--test-schema-migration-failures" => {
+
+            parse_test_schema_migration_failures(
                 &args[1..]
             )
         }
@@ -408,6 +421,46 @@ fn parse_test_schema_reconstruction(
 
             destination_path:
                 destination_path.to_string(),
+        }
+    )
+}
+
+
+fn parse_test_schema_migration_failures(
+    args: &[String],
+) -> Result<Command, String> {
+
+    if args.len() != 2 {
+        return Err(
+            "--test-schema-migration-failures requires exactly two paths: FIXTURE WORK_DIRECTORY"
+                .to_string()
+        );
+    }
+
+    let fixture_path =
+        args[0].trim();
+
+    let work_directory =
+        args[1].trim();
+
+    if fixture_path.is_empty()
+        || fixture_path.starts_with('-')
+        || work_directory.is_empty()
+        || work_directory.starts_with('-')
+    {
+        return Err(
+            "--test-schema-migration-failures requires valid FIXTURE and WORK_DIRECTORY paths"
+                .to_string()
+        );
+    }
+
+    Ok(
+        Command::TestSchemaMigrationFailures {
+            fixture_path:
+                fixture_path.to_string(),
+
+            work_directory:
+                work_directory.to_string(),
         }
     )
 }

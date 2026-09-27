@@ -107,6 +107,7 @@ mod migrate_database;
 mod database_migration;
 mod test_schema_reader;
 mod test_schema_reconstruction;
+mod test_schema_migration_failures;
 mod hash_shader;
 
 mod qbe_layout;
@@ -303,6 +304,35 @@ fn main() {
 
                     eprintln!(
                         "[SCHEMA RECONSTRUCTION TEST] FAILED: {}",
+                        error
+                    );
+
+                    std::process::exit(
+                        1
+                    );
+                }
+            }
+
+            return;
+        }
+
+
+        crate::parse_arguments::Command::TestSchemaMigrationFailures {
+            fixture_path,
+            work_directory,
+        } => {
+
+            match crate::test_schema_migration_failures::run(
+                fixture_path,
+                work_directory,
+            ) {
+
+                Ok(()) => {}
+
+                Err(error) => {
+
+                    eprintln!(
+                        "[SCHEMA MIGRATION FAILURE TEST] FAILED: {}",
                         error
                     );
 
@@ -1147,6 +1177,7 @@ fn main() {
         | crate::parse_arguments::Command::TestLyrics
         | crate::parse_arguments::Command::TestSchemaReader { .. }
         | crate::parse_arguments::Command::TestSchemaReconstruction { .. }
+        | crate::parse_arguments::Command::TestSchemaMigrationFailures { .. }
         | crate::parse_arguments::Command::ConstructLockScreenKde
         | crate::parse_arguments::Command::ConstructLockScreenXfce
         | crate::parse_arguments::Command::ResetIdleTimeout { .. } => {
