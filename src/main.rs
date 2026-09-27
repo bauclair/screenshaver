@@ -109,6 +109,7 @@ mod test_schema_reader;
 mod test_schema_reconstruction;
 mod test_schema_migration_failures;
 mod test_database_cutover_recovery;
+mod test_migration_coordinator;
 mod hash_shader;
 
 mod qbe_layout;
@@ -366,6 +367,28 @@ fn main() {
                 }
             }
 
+
+            return;
+        }
+
+
+        crate::parse_arguments::Command::TestMigrationCoordinator => {
+
+            match crate::test_migration_coordinator::run() {
+
+                Ok(()) => {}
+
+                Err(error) => {
+                    eprintln!(
+                        "[MIGRATION COORDINATOR TEST] FAILED: {}",
+                        error
+                    );
+
+                    std::process::exit(
+                        1
+                    );
+                }
+            }
 
             return;
         }
@@ -1204,6 +1227,7 @@ fn main() {
         | crate::parse_arguments::Command::TestSchemaReconstruction { .. }
         | crate::parse_arguments::Command::TestSchemaMigrationFailures { .. }
         | crate::parse_arguments::Command::TestDatabaseCutoverRecovery
+        | crate::parse_arguments::Command::TestMigrationCoordinator
         | crate::parse_arguments::Command::ConstructLockScreenKde
         | crate::parse_arguments::Command::ConstructLockScreenXfce
         | crate::parse_arguments::Command::ResetIdleTimeout { .. } => {

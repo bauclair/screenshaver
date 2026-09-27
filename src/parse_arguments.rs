@@ -37,6 +37,8 @@ pub enum Command {
 
     TestDatabaseCutoverRecovery,
 
+    TestMigrationCoordinator,
+
     BenchmarkRender {
         shader_path: String,
     },
@@ -207,6 +209,20 @@ pub fn parse() -> Result<Command, String> {
 
             Ok(
                 Command::TestDatabaseCutoverRecovery
+            )
+        }
+
+
+        "--test-migration-coordinator" => {
+
+            require_no_extra_arguments(
+                &args,
+                "--test-migration-coordinator",
+            )?;
+
+
+            Ok(
+                Command::TestMigrationCoordinator
             )
         }
 
@@ -738,6 +754,7 @@ pub fn print_help() {
                  Opens the selected database read-only and bypasses normal database preparation.\n\
          \n\
              --test-database-cutover-recovery\n\
+             --test-migration-coordinator\n\
                   Exercise database migration cutover/recovery filesystem states and exit.\n\
                   Uses only a disposable temporary directory; the live database is not accessed.\n\
          \n\

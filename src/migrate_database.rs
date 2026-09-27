@@ -72,28 +72,557 @@ pub fn prepare(database_path: &Path) -> Result<Connection, String> {
         return Ok(connection);
     }
 
-    drop(source_connection);
+    let timing =
+        MigrationTiming::start(
+            schema_version,
+            CURRENT_SCHEMA_VERSION,
+        )?;
 
-    /*
-     * Future reconstruction dispatcher.
-     *
-     * Once Schema Version 2 exists, this branch will:
-     *   1. reopen the historical source READ ONLY;
-     *   2. dispatch directly to that released schema's historical reader;
-     *   3. extract durable semantics into MigrationData;
-     *   4. reconstruct CURRENT_SCHEMA_VERSION at screenshaver.db.migrating;
-     *   5. fully validate the staged database;
-     *   6. rename screenshaver.db to screenshaver.db.pre-migration;
-     *   7. rename screenshaver.db.migrating to screenshaver.db;
-     *   8. reopen and validate the new live database.
-     *
-     * Migration is reconstruction/ETL, not a serial ALTER chain.
-     */
-    Err(format!(
-        "No reconstruction migration path is implemented from database schema version {} to schema version {}",
+    let migration_data =
+        read_historical_database(
+            schema_version,
+            &source_connection,
+        )?;
+
+    let extraction_elapsed =
+        timing.elapsed_milliseconds();
+
+    drop(
+        source_connection
+    );
+
+
+    let staging_path =
+        migrating_path(
+            database_path
+        );
+
+    if staging_path.exists() {
+        fs::remove_file(
+            &staging_path
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to remove stale migration staging database '{}': {}",
+                    staging_path.display(),
+                    error,
+                )
+            }
+        )?;
+    }
+
+
+    let staging_connection =
+        match crate::database_migration::write_current::write(
+            &staging_path,
+            &migration_data,
+        ) {
+            Ok(connection) => connection,
+
+            Err(error) => {
+                return Err(
+                    format!(
+                        "Database reconstruction from schema {} to schema {} failed before cutover: {}",
+                        schema_version,
+                        CURRENT_SCHEMA_VERSION,
+                        error,
+                    )
+                );
+            }
+        };
+
+    let reconstruction_elapsed =
+        timing.elapsed_milliseconds();
+
+
+    if let Err(error) =
+        validate_reconstructed_database(
+            &staging_connection
+        )
+    {
+        drop(
+            staging_connection
+        );
+
+        let cleanup_result =
+            remove_if_exists(
+                &staging_path
+            );
+
+        return match cleanup_result {
+            Ok(()) => {
+                Err(
+                    format!(
+                        "Reconstructed staging database failed validation before cutover; original database remains untouched: {}",
+                        error,
+                    )
+                )
+            }
+
+            Err(cleanup_error) => {
+                Err(
+                    format!(
+                        "Reconstructed staging database failed validation before cutover: {}. Original database remains untouched, but staging cleanup also failed: {}",
+                        error,
+                        cleanup_error,
+                    )
+                )
+            }
+        };
+    }
+
+    let staged_validation_elapsed =
+        timing.elapsed_milliseconds();
+
+    drop(
+        staging_connection
+    );
+
+
+    let recovery_path =
+        pre_migration_path(
+            database_path,
+            schema_version,
+            &timing.started_utc,
+        )?;
+
+    if recovery_path.exists() {
+        return Err(
+            format!(
+                "Refusing database migration because recovery destination '{}' already exists",
+                recovery_path.display(),
+            )
+        );
+    }
+
+
+    let live_connection =
+        promote_staging_with_rollback(
+            database_path,
+            &staging_path,
+            &recovery_path,
+            &timing.started_utc,
+            validate_reconstructed_database,
+        )?;
+
+    let cutover_elapsed =
+        timing.elapsed_milliseconds();
+
+
+    let total_elapsed =
+        timing.elapsed_milliseconds();
+
+    println!(
+        "[DATABASE MIGRATION] Schema {} -> {} completed successfully",
         schema_version,
         CURRENT_SCHEMA_VERSION,
-    ))
+    );
+
+    println!(
+        "[DATABASE MIGRATION] Started UTC: {}",
+        timing.started_utc,
+    );
+
+    println!(
+        "[DATABASE MIGRATION] Historical extraction: {} ms",
+        extraction_elapsed,
+    );
+
+    println!(
+        "[DATABASE MIGRATION] Reconstruction: {} ms cumulative",
+        reconstruction_elapsed,
+    );
+
+    println!(
+        "[DATABASE MIGRATION] Staged validation: {} ms cumulative",
+        staged_validation_elapsed,
+    );
+
+    println!(
+        "[DATABASE MIGRATION] Cutover: {} ms cumulative",
+        cutover_elapsed,
+    );
+
+    println!(
+        "[DATABASE MIGRATION] Total elapsed: {} ms",
+        total_elapsed,
+    );
+
+    println!(
+        "[DATABASE MIGRATION] Recovery database retained: {}",
+        recovery_path.display(),
+    );
+
+
+    Ok(
+        live_connection
+    )
+}
+
+
+fn read_historical_database(
+    schema_version: i64,
+    connection: &Connection,
+) -> Result<
+    crate::database_migration::migration_data::MigrationData,
+    String,
+> {
+
+    match schema_version {
+
+        1 => {
+            crate::database_migration::read_schema_v001::read(
+                connection
+            )
+        }
+
+        _ => {
+            Err(
+                format!(
+                    "No historical database reader is available for schema version {}",
+                    schema_version,
+                )
+            )
+        }
+    }
+}
+
+
+fn validate_reconstructed_database(
+    connection: &Connection,
+) -> Result<(), String> {
+
+    crate::validate_database::validate_startup(
+        connection
+    )?;
+
+    crate::validate_database::validate_integrity(
+        connection
+    )?;
+
+
+    let schema_version =
+        read_schema_version(
+            connection
+        )?;
+
+    if schema_version
+        != CURRENT_SCHEMA_VERSION
+    {
+        return Err(
+            format!(
+                "Reconstructed database reports schema version {}; expected current schema version {}",
+                schema_version,
+                CURRENT_SCHEMA_VERSION,
+            )
+        );
+    }
+
+
+    Ok(())
+}
+
+
+fn open_existing_read_write(
+    database_path: &Path,
+) -> Result<Connection, String> {
+
+    let connection =
+        Connection::open_with_flags(
+            database_path,
+            OpenFlags::SQLITE_OPEN_READ_WRITE,
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to open existing database '{}': {}",
+                    database_path.display(),
+                    error,
+                )
+            }
+        )?;
+
+
+    crate::open_database::configure_connection(
+        &connection
+    )?;
+
+
+    Ok(
+        connection
+    )
+}
+
+
+fn promote_staging_with_rollback<F>(
+    database_path: &Path,
+    staging_path: &Path,
+    recovery_path: &Path,
+    timestamp_utc: &str,
+    final_validator: F,
+) -> Result<Connection, String>
+where
+    F: FnOnce(&Connection) -> Result<(), String>,
+{
+
+    fs::rename(
+        database_path,
+        recovery_path,
+    )
+    .map_err(
+        |error| {
+            format!(
+                "Unable to preserve source database '{}' as '{}': {}",
+                database_path.display(),
+                recovery_path.display(),
+                error,
+            )
+        }
+    )?;
+
+
+    if let Err(error) =
+        fs::rename(
+            staging_path,
+            database_path,
+        )
+    {
+        let rollback_result =
+            fs::rename(
+                recovery_path,
+                database_path,
+            );
+
+        return match rollback_result {
+            Ok(()) => {
+                Err(
+                    format!(
+                        "Unable to promote reconstructed database '{}' to '{}': {}. Original database was restored successfully",
+                        staging_path.display(),
+                        database_path.display(),
+                        error,
+                    )
+                )
+            }
+
+            Err(rollback_error) => {
+                Err(
+                    format!(
+                        "CRITICAL: unable to promote reconstructed database '{}' to '{}': {}. Automatic rollback from '{}' also failed: {}",
+                        staging_path.display(),
+                        database_path.display(),
+                        error,
+                        recovery_path.display(),
+                        rollback_error,
+                    )
+                )
+            }
+        };
+    }
+
+
+    let live_connection =
+        match open_existing_read_write(
+            database_path
+        ) {
+            Ok(connection) => connection,
+
+            Err(error) => {
+                rollback_after_promotion_failure(
+                    database_path,
+                    recovery_path,
+                    timestamp_utc,
+                    &format!(
+                        "Unable to reopen promoted database: {}",
+                        error,
+                    ),
+                )?;
+
+                return Err(
+                    "Promoted database could not be reopened; original database was restored"
+                        .to_string()
+                );
+            }
+        };
+
+
+    if let Err(error) =
+        final_validator(
+            &live_connection
+        )
+    {
+        drop(
+            live_connection
+        );
+
+        rollback_after_promotion_failure(
+            database_path,
+            recovery_path,
+            timestamp_utc,
+            &format!(
+                "Final promoted-database validation failed: {}",
+                error,
+            ),
+        )?;
+
+        return Err(
+            "Promoted database failed final validation; original database was restored"
+                .to_string()
+        );
+    }
+
+
+    Ok(
+        live_connection
+    )
+}
+
+
+pub(crate) fn test_promote_staging(
+    database_path: &Path,
+    staging_path: &Path,
+    recovery_path: &Path,
+    timestamp_utc: &str,
+    force_final_validation_failure: bool,
+) -> Result<Connection, String> {
+
+    promote_staging_with_rollback(
+        database_path,
+        staging_path,
+        recovery_path,
+        timestamp_utc,
+        |connection| {
+            if force_final_validation_failure {
+                return Err(
+                    "forced coordinator diagnostic final-validation failure"
+                        .to_string()
+                );
+            }
+
+            validate_reconstructed_database(
+                connection
+            )
+        },
+    )
+}
+
+
+fn rollback_after_promotion_failure(
+    database_path: &Path,
+    recovery_path: &Path,
+    timestamp_utc: &str,
+    failure_reason: &str,
+) -> Result<(), String> {
+
+    let failed_path =
+        failed_migration_path(
+            database_path,
+            timestamp_utc,
+        )?;
+
+
+    if failed_path.exists() {
+        return Err(
+            format!(
+                "CRITICAL: {}. Cannot roll back automatically because failed-migration evidence path '{}' already exists; recovery database remains at '{}'",
+                failure_reason,
+                failed_path.display(),
+                recovery_path.display(),
+            )
+        );
+    }
+
+
+    fs::rename(
+        database_path,
+        &failed_path,
+    )
+    .map_err(
+        |error| {
+            format!(
+                "CRITICAL: {}. Unable to preserve failed promoted database '{}' as '{}': {}. Recovery database remains at '{}'",
+                failure_reason,
+                database_path.display(),
+                failed_path.display(),
+                error,
+                recovery_path.display(),
+            )
+        }
+    )?;
+
+
+    fs::rename(
+        recovery_path,
+        database_path,
+    )
+    .map_err(
+        |error| {
+            format!(
+                "CRITICAL: {}. Failed promoted database was preserved as '{}', but unable to restore recovery database '{}' to '{}': {}",
+                failure_reason,
+                failed_path.display(),
+                recovery_path.display(),
+                database_path.display(),
+                error,
+            )
+        }
+    )?;
+
+
+    Err(
+        format!(
+            "{}; original database restored and failed promoted database retained at '{}'",
+            failure_reason,
+            failed_path.display(),
+        )
+    )
+}
+
+
+fn failed_migration_path(
+    database_path: &Path,
+    timestamp_utc: &str,
+) -> Result<PathBuf, String> {
+
+    validate_timestamp(
+        timestamp_utc
+    )?;
+
+
+    Ok(
+        companion_path(
+            database_path,
+            &format!(
+                ".failed-migration-{}",
+                timestamp_utc,
+            ),
+        )
+    )
+}
+
+
+fn remove_if_exists(
+    path: &Path,
+) -> Result<(), String> {
+
+    if !path.exists() {
+        return Ok(());
+    }
+
+
+    fs::remove_file(
+        path
+    )
+    .map_err(
+        |error| {
+            format!(
+                "Unable to remove migration staging database '{}': {}",
+                path.display(),
+                error,
+            )
+        }
+    )
 }
 
 
