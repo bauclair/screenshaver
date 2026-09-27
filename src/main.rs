@@ -108,6 +108,7 @@ mod database_migration;
 mod test_schema_reader;
 mod test_schema_reconstruction;
 mod test_schema_migration_failures;
+mod test_database_cutover_recovery;
 mod hash_shader;
 
 mod qbe_layout;
@@ -341,6 +342,30 @@ fn main() {
                     );
                 }
             }
+
+            return;
+        }
+
+
+        crate::parse_arguments::Command::TestDatabaseCutoverRecovery => {
+
+            match crate::test_database_cutover_recovery::run() {
+
+                Ok(()) => {}
+
+                Err(error) => {
+
+                    eprintln!(
+                        "[CUTOVER RECOVERY TEST] FAILED: {}",
+                        error
+                    );
+
+                    std::process::exit(
+                        1
+                    );
+                }
+            }
+
 
             return;
         }
@@ -1178,6 +1203,7 @@ fn main() {
         | crate::parse_arguments::Command::TestSchemaReader { .. }
         | crate::parse_arguments::Command::TestSchemaReconstruction { .. }
         | crate::parse_arguments::Command::TestSchemaMigrationFailures { .. }
+        | crate::parse_arguments::Command::TestDatabaseCutoverRecovery
         | crate::parse_arguments::Command::ConstructLockScreenKde
         | crate::parse_arguments::Command::ConstructLockScreenXfce
         | crate::parse_arguments::Command::ResetIdleTimeout { .. } => {

@@ -35,6 +35,8 @@ pub enum Command {
         work_directory: String,
     },
 
+    TestDatabaseCutoverRecovery,
+
     BenchmarkRender {
         shader_path: String,
     },
@@ -191,6 +193,20 @@ pub fn parse() -> Result<Command, String> {
 
             parse_test_schema_migration_failures(
                 &args[1..]
+            )
+        }
+
+
+        "--test-database-cutover-recovery" => {
+
+            require_no_extra_arguments(
+                &args,
+                "--test-database-cutover-recovery",
+            )?;
+
+
+            Ok(
+                Command::TestDatabaseCutoverRecovery
             )
         }
 
@@ -720,6 +736,10 @@ pub fn print_help() {
                  Read a Schema-1 database through the historical migration reader and exit.\n\
                  If DATABASE_PATH is omitted, use the normal Screenshaver database.\n\
                  Opens the selected database read-only and bypasses normal database preparation.\n\
+         \n\
+             --test-database-cutover-recovery\n\
+                  Exercise database migration cutover/recovery filesystem states and exit.\n\
+                  Uses only a disposable temporary directory; the live database is not accessed.\n\
          \n\
              --construct-lock-screen-kde\n\
                  Construct/install the KDE lock-screen integration.\n\
