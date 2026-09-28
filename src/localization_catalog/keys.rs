@@ -2766,4 +2766,741 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
         english_text: "Review the selected export focus, included policies, shaders and playlists, and destination before starting Export.",
         translator_context: "Export wizard Review page instruction shown before the user starts the export.",
     },
+    FactoryTranslationKey {
+        key: "edit.edit_shader_requires_a_shader_file_not_a_directory",
+        english_text: "--edit-shader requires a shader file, not a directory: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.bulk_edit_complete_policies_updated",
+        english_text: "Bulk Edit complete: {value1} policies updated.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.bulk_edit_complete_policies_updated_policy_target_was_preserved_for_protect",
+        english_text: "Bulk Edit complete: {value1} policies updated. Policy Target was preserved for {value2} protected default {value3}.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.bulk_edit_contains_no_changed_settings",
+        english_text: "Bulk Edit contains no changed settings.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.bulk_edit_could_not_suspend_the_active_shader_because_its_database_id_could",
+        english_text: "Bulk Edit could not suspend the active shader because its database ID could not be found.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.bulk_edit_could_not_suspend_the_active_shader",
+        english_text: "Bulk Edit could not suspend the active shader: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.bulk_edit_ended_but_the_previous_shader_could_not_be_reloaded",
+        english_text: "Bulk Edit ended, but the previous shader could not be reloaded: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.bulk_edit_ended_the_previously_loaded_shader_is_no_longer_available",
+        english_text: "Bulk Edit ended; the previously loaded shader is no longer available.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.bulk_policies_were_saved_but_configuration_reload_failed",
+        english_text: "Bulk policies were saved, but configuration reload failed.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.bulk_policy_creation_canceled",
+        english_text: "Bulk policy creation canceled.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.bulk_policy_creation_complete_created_already_existed",
+        english_text: "Bulk policy creation complete: {value1} created, {value2} already existed.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.bulk_policy_creation_failed",
+        english_text: "Bulk policy creation failed: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.bulk_policy_save_aborted",
+        english_text: "Bulk policy save aborted: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.configuration_save_failed",
+        english_text: "Configuration save failed.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.configuration_saved",
+        english_text: "Configuration saved.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.gl_shader_files",
+        english_text: "GL shader files",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.loaded_and_rendering",
+        english_text: "Loaded and rendering",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.loaded_existing_screensaver_policy_for_this_shader",
+        english_text: "Loaded existing Screensaver policy for this shader.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.loaded_existing_unassigned_policy_for_this_shader",
+        english_text: "Loaded existing Unassigned policy for this shader.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.loaded_existing_wallpaper_policy_for_this_shader",
+        english_text: "Loaded existing Wallpaper policy for this shader.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.loaded_existing_policy_for_this_shader",
+        english_text: "Loaded existing {value1} policy for this shader.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.loaded_shader_using_resolved_defaults_select_a_policy_target_to_create_a_po",
+        english_text: "Loaded shader using resolved defaults. Select a policy target to create a policy.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.loaded_shader_with_its_existing_screensaver_policy",
+        english_text: "Loaded shader with its existing Screensaver policy.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.loaded_shader_with_its_existing_unassigned_policy",
+        english_text: "Loaded shader with its existing Unassigned policy.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.loaded_shader_with_its_existing_wallpaper_policy",
+        english_text: "Loaded shader with its existing Wallpaper policy.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.new_unassigned_policy_is_ready_to_save",
+        english_text: "New Unassigned policy is ready to save.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.no_screensaver_policy_exists_loaded_screensaver_defaults",
+        english_text: "No Screensaver policy exists. Loaded Screensaver defaults.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.no_unassigned_policy_exists_loaded_defaults_for_a_new_unassigned_policy",
+        english_text: "No Unassigned policy exists. Loaded defaults for a new Unassigned policy.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.no_wallpaper_policy_exists_loaded_wallpaper_defaults",
+        english_text: "No Wallpaper policy exists. Loaded Wallpaper defaults.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.no_existing_shader_policy_found_select_a_policy_target_to_create_one",
+        english_text: "No existing shader policy found. Select a policy target to create one.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.no_policies_changed_policy_target_cannot_be_changed_for_protected_default",
+        english_text: "No policies changed. Policy Target cannot be changed for {value1} protected default {value2}.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.no_policy_target_was_selected_for_external_shader",
+        english_text: "No policy target was selected for external shader {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.no_shader_path_was_supplied_for_editing",
+        english_text: "No shader path was supplied for editing",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.no_usable_shaders_were_selected_for_policy_creation",
+        english_text: "No usable shaders were selected for policy creation.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.no_policy_exists_loaded_defaults",
+        english_text: "No {value1} policy exists. Loaded {value2} defaults.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.not_required",
+        english_text: "Not required",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.playlist_display_mode_requires_a_playlist_selection",
+        english_text: "Playlist display mode requires a playlist selection.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.playlist_display_mode_requires_a_positive_interval",
+        english_text: "Playlist display mode requires a positive interval.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.policies_were_created_but_configuration_reload_failed",
+        english_text: "Policies were created, but configuration reload failed.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.policy_has_unsupported_policy_target",
+        english_text: "Policy '{value1}' has unsupported policy_target '{value2}'",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.policy_cannot_be_opened_because_its_shader_is_not_renderable",
+        english_text: "Policy cannot be opened because its shader is not renderable: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.policy_cloned_as",
+        english_text: "Policy cloned as '{value1}'.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.policy_paths_could_not_be_updated_after_moving_the_shader_rollback_also_fai",
+        english_text: "Policy paths could not be updated after moving the shader: {value1}. Rollback also failed: {value2}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.policy_renamed_to",
+        english_text: "Policy renamed to '{value1}'.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.policy_saved_for",
+        english_text: "Policy saved for {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.policy_saved_but_audio_motion_could_not_be_saved",
+        english_text: "Policy saved, but Audio Motion could not be saved: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.policy_shader_file_is_unavailable",
+        english_text: "Policy shader file is unavailable: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.policy_was_cloned_but_configuration_reload_failed",
+        english_text: "Policy was cloned, but configuration reload failed: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.policy_was_renamed_but_configuration_reload_failed",
+        english_text: "Policy was renamed, but configuration reload failed: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.recent_files_were_cleared_for_this_session_but_the_history_file_could_not_b",
+        english_text: "Recent files were cleared for this session, but the history file could not be updated: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.recent_shader_file_no_longer_exists",
+        english_text: "Recent shader file no longer exists: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.recent_shader_file_history_cleared",
+        english_text: "Recent shader-file history cleared.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.refreshed_shader_from_disk",
+        english_text: "Refreshed shader from disk: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.sdl_initialization_failed",
+        english_text: "SDL initialization failed: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.sdl_video_initialization_failed",
+        english_text: "SDL video initialization failed: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.screensaver_target_enforced_by_shader_location_new_screensaver_policy_is_re",
+        english_text: "Screensaver target enforced by shader location. New Screensaver policy is ready to save.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.control_center",
+        english_text: "Screenshaver Control Center",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.export_archive",
+        english_text: "Screenshaver Export Archive",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.shader_has_file_status",
+        english_text: "Shader '{value1}' has file_status '{value2}'",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.shader_has_invalid_channel_usage_mask",
+        english_text: "Shader '{value1}' has invalid channel-usage mask {value2}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.shader_has_validation_status_expected",
+        english_text: "Shader '{value1}' has validation_status '{value2}'; expected 'valid'",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.shader_is_not_registered_in_the_database",
+        english_text: "Shader '{value1}' is not registered in the Screenshaver database",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.shader_is_rejected",
+        english_text: "Shader '{value1}' is rejected: {value2}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.shader_already_exists_in",
+        english_text: "Shader already exists in {value1}.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.shader_file_is_unavailable",
+        english_text: "Shader file is unavailable: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.shader_file_no_longer_exists",
+        english_text: "Shader file no longer exists: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.shader_filename_is_not_valid_utf_8",
+        english_text: "Shader filename is not valid UTF-8: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.shader_loaded_but_recent_file_history_could_not_be_saved",
+        english_text: "Shader loaded, but recent-file history could not be saved: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.shader_loading_canceled",
+        english_text: "Shader loading canceled.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.shader_move_was_rolled_back_because_policy_paths_could_not_be_updated",
+        english_text: "Shader move was rolled back because policy paths could not be updated: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.shader_moved_to",
+        english_text: "Shader moved to {value1}.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.shader_moved_to_policy_target_updated_to",
+        english_text: "Shader moved to {value1}. Policy target updated to {value2}.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.shader_moved_configuration_reload_failed",
+        english_text: "Shader moved; configuration reload failed.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.shader_path_has_no_valid_filename",
+        english_text: "Shader path has no valid filename: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.shader_was_not_deleted_because_its_associated_policy_could_not_be_deleted",
+        english_text: "Shader was not deleted because its associated policy could not be deleted: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.single_display_mode_requires_a_shader_policy_selection",
+        english_text: "Single display mode requires a shader policy selection.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.the_selected_policy_target_is_unavailable_in_the_current_editing_session",
+        english_text: "The selected policy target is unavailable in the current editing session.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.the_selected_shader_could_not_be_loaded_for_editing",
+        english_text: "The selected shader could not be loaded for editing",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.this_shader_cannot_use_a_screensaver_policy_in_the_current_editing_session",
+        english_text: "This shader cannot use a Screensaver policy in the current editing session.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.this_shader_cannot_use_a_wallpaper_policy_in_the_current_editing_session",
+        english_text: "This shader cannot use a Wallpaper policy in the current editing session.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.this_shader_cannot_use_an_unassigned_policy_in_the_current_editing_session",
+        english_text: "This shader cannot use an Unassigned policy in the current editing session.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.unable_to_clone_policy",
+        english_text: "Unable to clone policy: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.unable_to_create_control_center_state_folder",
+        english_text: "Unable to create Control Center state folder {value1}: {value2}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.unable_to_create_opengl_context",
+        english_text: "Unable to create OpenGL context: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.unable_to_create_sdl_event_pump",
+        english_text: "Unable to create SDL event pump: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.unable_to_create_destination_directory",
+        english_text: "Unable to create destination directory {value1} ({value2})",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.unable_to_create_edit_shader_opengl_context",
+        english_text: "Unable to create edit-shader OpenGL context: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.unable_to_create_edit_shader_sdl_event_pump",
+        english_text: "Unable to create edit-shader SDL event pump: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.unable_to_create_edit_shader_window",
+        english_text: "Unable to create edit-shader window: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.unable_to_decode_policy_list_database_row",
+        english_text: "Unable to decode Policy List database row: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.unable_to_delete_policy",
+        english_text: "Unable to delete policy: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.unable_to_load_shader",
+        english_text: "Unable to load shader: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.unable_to_move_shader_from_to",
+        english_text: "Unable to move shader from {value1} to {value2} ({value3})",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.unable_to_open_database_while_reading_shader_metadata_for",
+        english_text: "Unable to open database while reading shader metadata for '{value1}': {value2}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.unable_to_prepare_policy_list_database_query",
+        english_text: "Unable to prepare Policy List database query: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.unable_to_prepare_policy_clone",
+        english_text: "Unable to prepare policy clone: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.unable_to_query_policy_list_rows_from_database",
+        english_text: "Unable to query Policy List rows from database: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.unable_to_query_shader_id_for",
+        english_text: "Unable to query shader ID for '{value1}': {value2}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.unable_to_read_database_metadata_for",
+        english_text: "Unable to read database metadata for '{value1}': {value2}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.unable_to_refresh_shader",
+        english_text: "Unable to refresh shader: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.unable_to_rename_policy",
+        english_text: "Unable to rename policy: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.unable_to_resolve_shader_id",
+        english_text: "Unable to resolve shader_id {value1}: {value2}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.unable_to_restore_control_center_fullscreen_state",
+        english_text: "Unable to restore Screenshaver Control Center fullscreen state: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.unable_to_restore_the_previous_shader_after_bulk_edit",
+        english_text: "Unable to restore the previous shader after Bulk Edit: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.unable_to_save_bulk_policy_changes",
+        english_text: "Unable to save bulk policy changes: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.unable_to_save_policy",
+        english_text: "Unable to save policy: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.unable_to_serialize_control_center_state",
+        english_text: "Unable to serialize Control Center state: {value1}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.unable_to_write_control_center_state",
+        english_text: "Unable to write Control Center state {value1}: {value2}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.unsupported_display_mode",
+        english_text: "Unsupported display mode '{value1}'.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.valid_shader_has_no_channel_usage_metadata",
+        english_text: "Valid shader '{value1}' has no channel-usage metadata",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.wallpaper_target_enforced_by_shader_location_new_wallpaper_policy_is_ready",
+        english_text: "Wallpaper target enforced by shader location. New Wallpaper policy is ready to save.",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.shader_is_rejected_2",
+        english_text: "shader is rejected",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.policy_deleted_for",
+        english_text: "{value1} policy deleted for {value2}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.policy_was_deleted_but_the_shader_file_could_not_be_deleted",
+        english_text: "{value1} policy was deleted, but the shader file could not be deleted: {value2}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "edit.shader_and_associated_policy_deleted",
+        english_text: "{value1} shader and associated {value2} policy deleted: {value3}",
+        translator_context: "Control Center and shader-edit user-facing text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "target.unassigned",
+        english_text: "Unassigned",
+        translator_context: "User-facing name of the unassigned policy target.",
+    },
+    FactoryTranslationKey {
+        key: "edit.bulk_edit_no_changes_protected_default_one",
+        english_text: "No policies changed. Policy Target cannot be changed for {value1} protected default policy.",
+        translator_context: "Bulk Edit result when one protected default policy prevents a target change.",
+    },
+    FactoryTranslationKey {
+        key: "edit.bulk_edit_no_changes_protected_default_many",
+        english_text: "No policies changed. Policy Target cannot be changed for {value1} protected default policies.",
+        translator_context: "Bulk Edit result when multiple protected default policies prevent target changes.",
+    },
+    FactoryTranslationKey {
+        key: "edit.bulk_edit_complete_protected_default_one",
+        english_text: "Bulk Edit complete: {value1} policies updated. Policy Target was preserved for {value2} protected default policy.",
+        translator_context: "Bulk Edit result when one protected default policy preserves its target.",
+    },
+    FactoryTranslationKey {
+        key: "edit.bulk_edit_complete_protected_default_many",
+        english_text: "Bulk Edit complete: {value1} policies updated. Policy Target was preserved for {value2} protected default policies.",
+        translator_context: "Bulk Edit result when multiple protected default policies preserve their targets.",
+    },
+    FactoryTranslationKey {
+        key: "edit.select_policy_target_before_saving",
+        english_text: "Select a policy target before saving",
+        translator_context: "Control Center validation shown when saving without a selected policy target.",
+    },
+    FactoryTranslationKey {
+        key: "edit.delete_shader_from_policy_context_menu",
+        english_text: "Delete Shader is available from the Policies row context menu.",
+        translator_context: "Control Center guidance for deleting a shader from the Policy List.",
+    },
+    FactoryTranslationKey {
+        key: "edit.select_target_for_selected_unassigned_policies",
+        english_text: "Select Screensaver or Wallpaper as the Policy Target for the selected Unassigned policies.",
+        translator_context: "Bulk policy assignment validation message.",
+    },
+    FactoryTranslationKey {
+        key: "edit.required",
+        english_text: "Required",
+        translator_context: "Shader Information value indicating that texture input is required.",
+    },
+
+    FactoryTranslationKey {
+        key: "assign_shader_policies.all_screensavers",
+        english_text: "All Screensavers",
+        translator_context: "Assignment choice that creates a screensaver policy for every newly discovered policy-less managed shader.",
+    },
+    FactoryTranslationKey {
+        key: "assign_shader_policies.all_wallpapers",
+        english_text: "All Wallpapers",
+        translator_context: "Assignment choice that creates a wallpaper policy for every newly discovered policy-less managed shader.",
+    },
+    FactoryTranslationKey {
+        key: "assign_shader_policies.screensavers_and_wallpapers",
+        english_text: "Screensavers + Wallpapers",
+        translator_context: "Assignment choice that creates both screensaver and wallpaper policies for every newly discovered policy-less managed shader.",
+    },
+    FactoryTranslationKey {
+        key: "assign_shader_policies.all_unassigned",
+        english_text: "All Unassigned",
+        translator_context: "Assignment choice that creates an unassigned policy for every newly discovered policy-less managed shader.",
+    },
+    FactoryTranslationKey {
+        key: "assign_shader_policies.assignment_title",
+        english_text: "Assign New Shader Policies",
+        translator_context: "Title of the dialog shown when managed shaders without policies are discovered.",
+    },
+    FactoryTranslationKey {
+        key: "assign_shader_policies.assignment_message.singular",
+        english_text: "Screenshaver found {count} shader in the managed shaders folder that does not yet have a policy.\n\nChoose how a policy should be created for this shader.\n\nUnassigned policies cannot be rendered until their Policy Target is changed to Screensaver or Wallpaper.",
+        translator_context: "Assignment dialog message when exactly one policy-less managed shader is found. {count} is the numeric shader count.",
+    },
+    FactoryTranslationKey {
+        key: "assign_shader_policies.assignment_message.plural",
+        english_text: "Screenshaver found {count} shaders in the managed shaders folder that do not yet have a policy.\n\nChoose how policies should be created for these shaders.\n\nUnassigned policies cannot be rendered until their Policy Target is changed to Screensaver or Wallpaper.",
+        translator_context: "Assignment dialog message when multiple policy-less managed shaders are found. {count} is the numeric shader count.",
+    },
+    FactoryTranslationKey {
+        key: "assign_shader_policies.completion_title",
+        english_text: "Shader Policies Created",
+        translator_context: "Title of the confirmation dialog after policies are created for newly discovered shaders.",
+    },
+    FactoryTranslationKey {
+        key: "assign_shader_policies.completion_message.one_policy_one_shader",
+        english_text: "Screenshaver created {policy_count} shader policy for {shader_count} shader using \"{assignment}\".\n\nYou can review or change shader policies at any time by running:\n\nscreenshaver --control\n\nThis opens the Screenshaver Control Center.",
+        translator_context: "Completion message for one created policy and one shader. Counts are numeric; {assignment} is localized assignment-choice text; the command screenshaver --control must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "assign_shader_policies.completion_message.one_policy_many_shaders",
+        english_text: "Screenshaver created {policy_count} shader policy for {shader_count} shaders using \"{assignment}\".\n\nYou can review or change shader policies at any time by running:\n\nscreenshaver --control\n\nThis opens the Screenshaver Control Center.",
+        translator_context: "Completion message for one created policy and multiple shaders. Counts are numeric; {assignment} is localized assignment-choice text; the command screenshaver --control must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "assign_shader_policies.completion_message.many_policies_one_shader",
+        english_text: "Screenshaver created {policy_count} shader policies for {shader_count} shader using \"{assignment}\".\n\nYou can review or change shader policies at any time by running:\n\nscreenshaver --control\n\nThis opens the Screenshaver Control Center.",
+        translator_context: "Completion message for multiple created policies and one shader. Counts are numeric; {assignment} is localized assignment-choice text; the command screenshaver --control must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "assign_shader_policies.completion_message.many_policies_many_shaders",
+        english_text: "Screenshaver created {policy_count} shader policies for {shader_count} shaders using \"{assignment}\".\n\nYou can review or change shader policies at any time by running:\n\nscreenshaver --control\n\nThis opens the Screenshaver Control Center.",
+        translator_context: "Completion message for multiple created policies and multiple shaders. Counts are numeric; {assignment} is localized assignment-choice text; the command screenshaver --control must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "assign_shader_policies.error.prepare_query",
+        english_text: "Unable to prepare policy-less shader query: {error}",
+        translator_context: "Error preparing the database query for managed shaders that do not have policies. {error} is supplied database error text and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "assign_shader_policies.error.query_shaders",
+        english_text: "Unable to query policy-less shaders: {error}",
+        translator_context: "Error executing the database query for managed shaders that do not have policies. {error} is supplied database error text and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "assign_shader_policies.error.decode_row",
+        english_text: "Unable to decode policy-less shader row: {error}",
+        translator_context: "Error decoding a database row for a managed shader without policies. {error} is supplied database error text and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "assign_shader_policies.error.display_dialog",
+        english_text: "Unable to display new-policy assignment dialog: {error}",
+        translator_context: "Error displaying the new-policy assignment dialog. {error} is supplied SDL error text and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "assign_shader_policies.error.unknown_button",
+        english_text: "New-policy assignment dialog returned unknown button id {button_id}",
+        translator_context: "Error when the assignment dialog returns an unexpected button identifier. {button_id} is numeric and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "assign_shader_policies.error.begin_transaction",
+        english_text: "Unable to begin new-policy assignment transaction: {error}",
+        translator_context: "Error starting the database transaction used to create new shader policies. {error} is supplied database error text and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "assign_shader_policies.error.recheck_policies",
+        english_text: "Unable to recheck policies for '{filename}': {error}",
+        translator_context: "Error rechecking whether a shader already has policies before creating new ones. {filename} and {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "assign_shader_policies.error.commit_transaction",
+        english_text: "Unable to commit new-policy assignment transaction: {error}",
+        translator_context: "Error committing the database transaction used to create new shader policies. {error} is supplied database error text and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "assign_shader_policies.error.create_policy",
+        english_text: "Unable to create {target} policy for '{filename}': {error}",
+        translator_context: "Error creating a generated shader policy. {target} is the stored technical target token; {filename} and {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "assign_shader_policies.error.validate_policy_name",
+        english_text: "Unable to validate generated Policy Name '{policy_name}' for target {target}: {error}",
+        translator_context: "Error checking whether a generated Policy Name is available. {policy_name} is generated from user shader data; {target} is the stored technical target token; {error} is supplied database error text.",
+    },
+    FactoryTranslationKey {
+        key: "assign_shader_policies.error.generate_policy_name",
+        english_text: "Unable to generate an available suggested Policy Name for '{filename}' in target {target}",
+        translator_context: "Error after exhausting generated Policy Name candidates. {filename} is user shader data and {target} is the stored technical target token; both must remain unchanged.",
+    },
+
 ];

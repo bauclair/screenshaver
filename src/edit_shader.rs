@@ -28,6 +28,31 @@ use crate::parse_texture_specification::TextureSpecification;
 use crate::editor_layout::EditWindowOverlay;
 
 
+
+fn localized_edit_values(key: &str, values: &[String]) -> String {
+    let parameter_names = ["value1", "value2", "value3", "value4"];
+    let parameters = values
+        .iter()
+        .enumerate()
+        .filter_map(|(index, value)| {
+            parameter_names
+                .get(index)
+                .map(|name| (*name, value.as_str()))
+        })
+        .collect::<Vec<_>>();
+
+    crate::manage_localization::runtime_text_with_params(key, &parameters)
+}
+
+macro_rules! localized_edit {
+    ($key:expr) => {
+        crate::manage_localization::runtime_text($key)
+    };
+    ($key:expr, $($value:expr),+ $(,)?) => {{
+        localized_edit_values($key, &[$($value.to_string()),+])
+    }};
+}
+
 const FPS_AVERAGE_WINDOW: Duration =
 Duration::from_secs(5);
 
@@ -191,39 +216,46 @@ fn protected_bulk_target_skip_count(
 }
 
 
+fn localized_manage_policy_target_name(
+    target: &crate::manage_policies::PolicyTarget,
+) -> String {
+    match target {
+        crate::manage_policies::PolicyTarget::Screensaver =>
+            crate::manage_localization::runtime_text("target.screensaver"),
+        crate::manage_policies::PolicyTarget::Wallpaper =>
+            crate::manage_localization::runtime_text("target.wallpaper"),
+        crate::manage_policies::PolicyTarget::Unassigned =>
+            crate::manage_localization::runtime_text("target.unassigned"),
+    }
+}
+
 fn bulk_edit_completion_message(
     changed: usize,
     protected_target_skips: usize,
 ) -> String {
     if protected_target_skips == 0 {
-        return format!(
-            "Bulk Edit complete: {} policies updated.",
+        return localized_edit!(
+            "edit.bulk_edit_complete_policies_updated",
             changed,
         );
     }
 
     if changed == 0 {
-        return format!(
-            "No policies changed. Policy Target cannot be changed for {} protected default {}.",
-            protected_target_skips,
-            if protected_target_skips == 1 {
-                "policy"
-            } else {
-                "policies"
-            },
-        );
+        let key = if protected_target_skips == 1 {
+            "edit.bulk_edit_no_changes_protected_default_one"
+        } else {
+            "edit.bulk_edit_no_changes_protected_default_many"
+        };
+        return localized_edit!(key, protected_target_skips);
     }
 
-    format!(
-        "Bulk Edit complete: {} policies updated. Policy Target was preserved for {} protected default {}.",
-        changed,
-        protected_target_skips,
-        if protected_target_skips == 1 {
-            "policy"
-        } else {
-            "policies"
-        },
-    )
+    let key = if protected_target_skips == 1 {
+        "edit.bulk_edit_complete_protected_default_one"
+    } else {
+        "edit.bulk_edit_complete_protected_default_many"
+    };
+
+    localized_edit!(key, changed, protected_target_skips)
 }
 
 
@@ -305,10 +337,12 @@ fn process_policy_rename_ui(
                         edit_window.complete_policy_rename();
 
                         edit_window.set_status_message(
-                            format!(
-                                "Policy renamed to '{}'.",
+                            localized_edit!(
+"edit.policy_renamed_to",
+
                                 requested_name,
-                            )
+                            
+)
                         );
 
                         log_information(
@@ -322,10 +356,12 @@ fn process_policy_rename_ui(
 
                     Err(error) => {
                         edit_window.set_policy_rename_validation_message(
-                            format!(
-                                "Policy was renamed, but configuration reload failed: {}",
+                            localized_edit!(
+"edit.policy_was_renamed_but_configuration_reload_failed",
+
                                 error,
-                            )
+                            
+)
                         );
 
                         log_warning(
@@ -346,10 +382,12 @@ fn process_policy_rename_ui(
                 );
 
                 edit_window.set_status_message(
-                    format!(
-                        "Unable to rename policy: {}",
+                    localized_edit!(
+"edit.unable_to_rename_policy",
+
                         error,
-                    )
+                    
+)
                 );
 
                 log_warning(
@@ -462,10 +500,12 @@ fn process_policy_clone_ui(
                         edit_window.complete_policy_clone();
 
                         edit_window.set_status_message(
-                            format!(
-                                "Policy cloned as '{}'.",
+                            localized_edit!(
+"edit.policy_cloned_as",
+
                                 requested_name,
-                            )
+                            
+)
                         );
 
                         log_information(
@@ -479,10 +519,12 @@ fn process_policy_clone_ui(
 
                     Err(error) => {
                         edit_window.set_policy_clone_validation_message(
-                            format!(
-                                "Policy was cloned, but configuration reload failed: {}",
+                            localized_edit!(
+"edit.policy_was_cloned_but_configuration_reload_failed",
+
                                 error,
-                            )
+                            
+)
                         );
 
                         log_warning(
@@ -503,10 +545,12 @@ fn process_policy_clone_ui(
                 );
 
                 edit_window.set_status_message(
-                    format!(
-                        "Unable to clone policy: {}",
+                    localized_edit!(
+"edit.unable_to_clone_policy",
+
                         error,
-                    )
+                    
+)
                 );
 
                 log_warning(
@@ -553,10 +597,12 @@ fn process_policy_clone_ui(
 
             Err(error) => {
                 edit_window.set_status_message(
-                    format!(
-                        "Unable to prepare policy clone: {}",
+                    localized_edit!(
+"edit.unable_to_prepare_policy_clone",
+
                         error,
-                    )
+                    
+)
                 );
 
                 log_warning(
@@ -763,10 +809,12 @@ pub fn run(
         ) => {
 
             Err(
-                format!(
-                    "--edit-shader requires a shader file, not a directory: {}",
+                localized_edit!(
+"edit.edit_shader_requires_a_shader_file_not_a_directory",
+
                     path.display(),
-                )
+                
+)
             )
         }
     }
@@ -897,10 +945,12 @@ fn run_empty_session(
     sdl2::init()
     .map_err(
         |error| {
-            format!(
-                "SDL initialization failed: {}",
+            localized_edit!(
+"edit.sdl_initialization_failed",
+
                 error,
-            )
+            
+)
         }
     )?;
 
@@ -909,10 +959,12 @@ fn run_empty_session(
     sdl.video()
     .map_err(
         |error| {
-            format!(
-                "SDL video initialization failed: {}",
+            localized_edit!(
+"edit.sdl_video_initialization_failed",
+
                 error,
-            )
+            
+)
         }
     )?;
 
@@ -935,7 +987,7 @@ fn run_empty_session(
     let mut window =
     video
     .window(
-        "Screenshaver Control Center",
+        &localized_edit!("edit.control_center"),
         0,
         0,
     )
@@ -945,10 +997,12 @@ fn run_empty_session(
     .build()
     .map_err(
         |error| {
-            format!(
-                "Unable to create edit-shader window: {}",
+            localized_edit!(
+"edit.unable_to_create_edit_shader_window",
+
                 error,
-            )
+            
+)
         }
     )?;
 
@@ -958,10 +1012,12 @@ fn run_empty_session(
     .gl_create_context()
     .map_err(
         |error| {
-            format!(
-                "Unable to create edit-shader OpenGL context: {}",
+            localized_edit!(
+"edit.unable_to_create_edit_shader_opengl_context",
+
                 error,
-            )
+            
+)
         }
     )?;
 
@@ -1010,10 +1066,12 @@ fn run_empty_session(
     sdl.event_pump()
     .map_err(
         |error| {
-            format!(
-                "Unable to create edit-shader SDL event pump: {}",
+            localized_edit!(
+"edit.unable_to_create_edit_shader_sdl_event_pump",
+
                 error,
-            )
+            
+)
         }
     )?;
 
@@ -1205,7 +1263,7 @@ fn run_empty_session(
                                     edit_window.accept_control_configuration();
 
                                     edit_window.set_status_message(
-                                        "Configuration saved."
+                                        localized_edit!("edit.configuration_saved")
                                     );
 
                                     log_information(
@@ -1220,7 +1278,7 @@ fn run_empty_session(
                                     }
 
                                     edit_window.set_status_message(
-                                        "Configuration save failed."
+                                        localized_edit!("edit.configuration_save_failed")
                                     );
 
                                     log_warning(
@@ -1257,7 +1315,7 @@ fn run_empty_session(
                                 "[EDIT_SHADER] Bulk Edit save request contained an empty field-change mask; no database update was attempted"
                             );
                             edit_window.set_status_message(
-                                "Bulk Edit contains no changed settings."
+                                localized_edit!("edit.bulk_edit_contains_no_changed_settings")
                             );
                             continue;
                         }
@@ -1315,10 +1373,12 @@ fn run_empty_session(
                                 preparation_error
                                 {
                                     edit_window.set_status_message(
-                                        format!(
-                                            "Bulk policy save aborted: {}",
+                                        localized_edit!(
+"edit.bulk_policy_save_aborted",
+
                                             error,
-                                        )
+                                        
+)
                                     );
 
                                     log_warning(
@@ -1381,7 +1441,7 @@ fn run_empty_session(
 
                                             Err(error) => {
                                                 edit_window.set_status_message(
-                                                    "Bulk policies were saved, but configuration reload failed."
+                                                    localized_edit!("edit.bulk_policies_were_saved_but_configuration_reload_failed")
                                                 );
 
                                                 log_warning(
@@ -1396,10 +1456,12 @@ fn run_empty_session(
 
                                     Err(error) => {
                                         edit_window.set_status_message(
-                                            format!(
-                                                "Unable to save bulk policy changes: {}",
+                                            localized_edit!(
+"edit.unable_to_save_bulk_policy_changes",
+
                                                 error,
-                                            )
+                                            
+)
                                         );
 
                                         log_warning(
@@ -1426,7 +1488,7 @@ fn run_empty_session(
                             &window
                         )
                         .add_filter(
-                            "GL shader files",
+                            localized_edit!("edit.gl_shader_files"),
                             &[
                                 "glsl",
                                 "fs",
@@ -1456,7 +1518,7 @@ fn run_empty_session(
                             selected_paths
                             else {
                                 edit_window.set_status_message(
-                                    "Bulk policy creation canceled."
+                                    localized_edit!("edit.bulk_policy_creation_canceled")
                                 );
 
                                 continue;
@@ -1474,7 +1536,7 @@ fn run_empty_session(
 
                             if candidates.is_empty() {
                                 edit_window.set_status_message(
-                                    "No usable shaders were selected for policy creation."
+                                    localized_edit!("edit.no_usable_shaders_were_selected_for_policy_creation")
                                 );
 
                                 continue;
@@ -1514,11 +1576,13 @@ fn run_empty_session(
                                             edit_window.complete_bulk_policy_creation();
 
                                             edit_window.set_status_message(
-                                                format!(
-                                                    "Bulk policy creation complete: {} created, {} already existed.",
+                                                localized_edit!(
+"edit.bulk_policy_creation_complete_created_already_existed",
+
                                                     result.created,
                                                     result.skipped_existing,
-                                                )
+                                                
+)
                                             );
 
                                             log_information(
@@ -1532,7 +1596,7 @@ fn run_empty_session(
 
                                         Err(error) => {
                                             edit_window.set_status_message(
-                                                "Policies were created, but configuration reload failed."
+                                                localized_edit!("edit.policies_were_created_but_configuration_reload_failed")
                                             );
 
                                             log_warning(
@@ -1552,10 +1616,12 @@ fn run_empty_session(
                                     );
 
                                     edit_window.set_status_message(
-                                        format!(
-                                            "Bulk policy creation failed: {}",
+                                        localized_edit!(
+"edit.bulk_policy_creation_failed",
+
                                             error,
-                                        )
+                                        
+)
                                     );
 
                                     log_warning(
@@ -1596,7 +1662,7 @@ fn run_empty_session(
                                         &window
                                     )
                                     .add_filter(
-                                        "GL shader files",
+                                        localized_edit!("edit.gl_shader_files"),
                                         &[
                                             "glsl",
                                             "fs",
@@ -1630,7 +1696,7 @@ fn run_empty_session(
                                 selected_path
                                 else {
                                     edit_window.set_status_message(
-                                        "Shader loading canceled."
+                                        localized_edit!("edit.shader_loading_canceled")
                                     );
 
                                     continue;
@@ -1650,10 +1716,12 @@ fn run_empty_session(
                                     );
 
                                     edit_window.set_status_message(
-                                        format!(
-                                            "Shader file no longer exists: {}",
+                                        localized_edit!(
+"edit.shader_file_no_longer_exists",
+
                                             selected_path.display(),
-                                        )
+                                        
+)
                                     );
 
                                     continue;
@@ -1717,15 +1785,17 @@ fn run_empty_session(
                                                         );
 
                                                         edit_window.set_status_message(
-                                                            format!(
-                                                                "Shader moved to {}.",
+                                                            localized_edit!(
+"edit.shader_moved_to",
+
                                                                 destination_path
                                                                 .parent()
                                                                 .map(
                                                                     |path| path.display().to_string()
                                                                 )
                                                                 .unwrap_or_default(),
-                                                            )
+                                                            
+)
                                                         );
 
                                                         log_information(
@@ -1739,7 +1809,7 @@ fn run_empty_session(
 
                                                     Err(error) => {
                                                         edit_window.set_status_message(
-                                                            "Shader moved; configuration reload failed."
+                                                            localized_edit!("edit.shader_moved_configuration_reload_failed")
                                                         );
 
                                                         log_warning(
@@ -1835,11 +1905,13 @@ fn run_empty_session(
 
 
                                         edit_window.set_status_message(
-                                            format!(
-                                                "{} policy deleted for {}",
-                                                manage_target.name(),
+                                            localized_edit!(
+"edit.policy_deleted_for",
+
+                                                localized_manage_policy_target_name(&manage_target),
                                                     row.filename,
-                                            )
+                                            
+)
                                         );
 
 
@@ -1856,10 +1928,12 @@ fn run_empty_session(
                                     Err(error) => {
 
                                         edit_window.set_status_message(
-                                            format!(
-                                                "Unable to delete policy: {}",
+                                            localized_edit!(
+"edit.unable_to_delete_policy",
+
                                                 error,
-                                            )
+                                            
+)
                                         );
 
 
@@ -1915,10 +1989,12 @@ fn run_empty_session(
 
                                 if !shader_path.is_file() {
                                     edit_window.set_status_message(
-                                        format!(
-                                            "Shader file is unavailable: {}",
+                                        localized_edit!(
+"edit.shader_file_is_unavailable",
+
                                             shader_path.display(),
-                                        )
+                                        
+)
                                     );
 
 
@@ -1970,12 +2046,14 @@ fn run_empty_session(
 
 
                                                 edit_window.set_status_message(
-                                                    format!(
-                                                        "{} shader and associated {} policy deleted: {}",
-                                                        manage_target.name(),
-                                                            manage_target.name(),
+                                                    localized_edit!(
+"edit.shader_and_associated_policy_deleted",
+
+                                                        localized_manage_policy_target_name(&manage_target),
+                                                            localized_manage_policy_target_name(&manage_target),
                                                             row.filename,
-                                                    )
+                                                    
+)
                                                 );
 
 
@@ -1991,11 +2069,13 @@ fn run_empty_session(
 
                                             Err(error) => {
                                                 edit_window.set_status_message(
-                                                    format!(
-                                                        "{} policy was deleted, but the shader file could not be deleted: {}",
-                                                        manage_target.name(),
+                                                    localized_edit!(
+"edit.policy_was_deleted_but_the_shader_file_could_not_be_deleted",
+
+                                                        localized_manage_policy_target_name(&manage_target),
                                                             error,
-                                                    )
+                                                    
+)
                                                 );
 
 
@@ -2015,10 +2095,12 @@ fn run_empty_session(
 
                                     Err(error) => {
                                         edit_window.set_status_message(
-                                            format!(
-                                                "Shader was not deleted because its associated policy could not be deleted: {}",
+                                            localized_edit!(
+"edit.shader_was_not_deleted_because_its_associated_policy_could_not_be_deleted",
+
                                                 error,
-                                            )
+                                            
+)
                                         );
 
 
@@ -2066,10 +2148,12 @@ fn run_empty_session(
 
                                 if !selected_path.is_file() {
                                     edit_window.set_status_message(
-                                        format!(
-                                            "Policy shader file is unavailable: {}",
+                                        localized_edit!(
+"edit.policy_shader_file_is_unavailable",
+
                                             selected_path.display(),
-                                        )
+                                        
+)
                                     );
 
                                     continue;
@@ -2086,10 +2170,12 @@ fn run_empty_session(
                                         )
                                         {
                                             edit_window.set_status_message(
-                                                format!(
-                                                    "Policy cannot be opened because its shader is not renderable: {}",
+                                                localized_edit!(
+"edit.policy_cannot_be_opened_because_its_shader_is_not_renderable",
+
                                                     error,
-                                                )
+                                                
+)
                                             );
 
                                             log_warning(
@@ -2115,10 +2201,12 @@ fn run_empty_session(
                                         )
                                     {
                                         edit_window.set_status_message(
-                                            format!(
-                                                "Unable to refresh shader: {}",
+                                            localized_edit!(
+"edit.unable_to_refresh_shader",
+
                                                 error,
-                                            )
+                                            
+)
                                         );
 
                                         log_warning(
@@ -2306,7 +2394,7 @@ fn process_import_archive_browse_request(
     let mut dialog =
     rfd::FileDialog::new()
     .add_filter(
-        "Screenshaver Export Archive",
+        localized_edit!("edit.export_archive"),
         &["zip"],
     );
 
@@ -2358,10 +2446,12 @@ fn restore_editor_fullscreen(
     )
     .map_err(
         |error| {
-            format!(
-                "Unable to restore Screenshaver Control Center fullscreen state: {}",
+            localized_edit!(
+"edit.unable_to_restore_control_center_fullscreen_state",
+
                 error,
-            )
+            
+)
         }
     )?;
 
@@ -2415,7 +2505,7 @@ fn run_paths(
 
     if shader_paths.is_empty() {
         return Err(
-            "No shader path was supplied for editing"
+            localized_edit!("edit.no_shader_path_was_supplied_for_editing")
             .to_string()
         );
     }
@@ -2671,47 +2761,47 @@ fn run_paths(
                 Some(
                     crate::editor_layout::PolicyTarget::Wallpaper
                 ) if initial_policy_exists => {
-                    "Loaded existing Wallpaper policy for this shader."
+                    localized_edit!("edit.loaded_existing_wallpaper_policy_for_this_shader")
                     .to_string()
                 }
 
                 Some(
                     crate::editor_layout::PolicyTarget::Wallpaper
                 ) => {
-                    "Wallpaper target enforced by shader location. New Wallpaper policy is ready to save."
+                    localized_edit!("edit.wallpaper_target_enforced_by_shader_location_new_wallpaper_policy_is_ready")
                     .to_string()
                 }
 
                 Some(
                     crate::editor_layout::PolicyTarget::Screensaver
                 ) if initial_policy_exists => {
-                    "Loaded existing Screensaver policy for this shader."
+                    localized_edit!("edit.loaded_existing_screensaver_policy_for_this_shader")
                     .to_string()
                 }
 
                 Some(
                     crate::editor_layout::PolicyTarget::Screensaver
                 ) => {
-                    "Screensaver target enforced by shader location. New Screensaver policy is ready to save."
+                    localized_edit!("edit.screensaver_target_enforced_by_shader_location_new_screensaver_policy_is_re")
                     .to_string()
                 }
 
                 Some(
                     crate::editor_layout::PolicyTarget::Unassigned
                 ) if initial_policy_exists => {
-                    "Loaded existing Unassigned policy for this shader."
+                    localized_edit!("edit.loaded_existing_unassigned_policy_for_this_shader")
                     .to_string()
                 }
 
                 Some(
                     crate::editor_layout::PolicyTarget::Unassigned
                 ) => {
-                    "New Unassigned policy is ready to save."
+                    localized_edit!("edit.new_unassigned_policy_is_ready_to_save")
                     .to_string()
                 }
 
                 None => {
-                    "No existing shader policy found. Select a policy target to create one."
+                    localized_edit!("edit.no_existing_shader_policy_found_select_a_policy_target_to_create_one")
                     .to_string()
                 }
             };
@@ -2764,10 +2854,12 @@ fn run_paths(
             sdl2::init()
             .map_err(
                 |error| {
-                    format!(
-                        "SDL initialization failed: {}",
+                    localized_edit!(
+"edit.sdl_initialization_failed",
+
                         error,
-                    )
+                    
+)
                 }
             )?;
 
@@ -2776,10 +2868,12 @@ fn run_paths(
             sdl.video()
             .map_err(
                 |error| {
-                    format!(
-                        "SDL video initialization failed: {}",
+                    localized_edit!(
+"edit.sdl_video_initialization_failed",
+
                         error,
-                    )
+                    
+)
                 }
             )?;
 
@@ -2804,7 +2898,7 @@ fn run_paths(
             let mut window =
             video
             .window(
-                "Screenshaver Control Center",
+                &localized_edit!("edit.control_center"),
                 0,
                 0,
             )
@@ -2814,10 +2908,12 @@ fn run_paths(
             .build()
             .map_err(
                 |error| {
-                    format!(
-                        "Unable to create edit-shader window: {}",
+                    localized_edit!(
+"edit.unable_to_create_edit_shader_window",
+
                         error,
-                    )
+                    
+)
                 }
             )?;
 
@@ -2827,10 +2923,12 @@ fn run_paths(
             .gl_create_context()
             .map_err(
                 |error| {
-                    format!(
-                        "Unable to create OpenGL context: {}",
+                    localized_edit!(
+"edit.unable_to_create_opengl_context",
+
                         error,
-                    )
+                    
+)
                 }
             )?;
 
@@ -3099,10 +3197,12 @@ fn run_paths(
             sdl.event_pump()
             .map_err(
                 |error| {
-                    format!(
-                        "Unable to create SDL event pump: {}",
+                    localized_edit!(
+"edit.unable_to_create_sdl_event_pump",
+
                         error,
-                    )
+                    
+)
                 }
             )?;
 
@@ -3361,7 +3461,7 @@ fn run_paths(
                                             "[EDIT_SHADER] Bulk Edit save request contained an empty field-change mask while preview was suspended; no database update was attempted"
                                         );
                                         edit_window.set_status_message(
-                                            "Bulk Edit contains no changed settings."
+                                            localized_edit!("edit.bulk_edit_contains_no_changed_settings")
                                         );
                                     } else {
                                         let mut patches =
@@ -3417,10 +3517,12 @@ fn run_paths(
                                                 preparation_error
                                                 {
                                                     edit_window.set_status_message(
-                                                        format!(
-                                                            "Bulk policy save aborted: {}",
+                                                        localized_edit!(
+"edit.bulk_policy_save_aborted",
+
                                                             error,
-                                                        )
+                                                        
+)
                                                     );
 
                                                     log_warning(
@@ -3480,7 +3582,7 @@ fn run_paths(
 
                                                                 Err(error) => {
                                                                     edit_window.set_status_message(
-                                                                        "Bulk policies were saved, but configuration reload failed."
+                                                                        localized_edit!("edit.bulk_policies_were_saved_but_configuration_reload_failed")
                                                                     );
 
                                                                     log_warning(
@@ -3495,10 +3597,12 @@ fn run_paths(
 
                                                         Err(error) => {
                                                             edit_window.set_status_message(
-                                                                format!(
-                                                                    "Unable to save bulk policy changes: {}",
+                                                                localized_edit!(
+"edit.unable_to_save_bulk_policy_changes",
+
                                                                     error,
-                                                                )
+                                                                
+)
                                                             );
 
                                                             log_warning(
@@ -3721,10 +3825,12 @@ fn run_paths(
                                                     None;
 
                                                     edit_window.set_status_message(
-                                                        format!(
-                                                            "Bulk Edit ended, but the previous shader could not be reloaded: {}",
+                                                        localized_edit!(
+"edit.bulk_edit_ended_but_the_previous_shader_could_not_be_reloaded",
+
                                                             error,
-                                                        )
+                                                        
+)
                                                     );
 
                                                     log_warning(
@@ -3748,7 +3854,7 @@ fn run_paths(
                                             None;
 
                                             edit_window.set_status_message(
-                                                "Bulk Edit ended; the previously loaded shader is no longer available."
+                                                localized_edit!("edit.bulk_edit_ended_the_previously_loaded_shader_is_no_longer_available")
                                             );
 
                                             log_warning(
@@ -3763,10 +3869,12 @@ fn run_paths(
 
                                         Err(error) => {
                                             edit_window.set_status_message(
-                                                format!(
-                                                    "Unable to restore the previous shader after Bulk Edit: {}",
+                                                localized_edit!(
+"edit.unable_to_restore_the_previous_shader_after_bulk_edit",
+
                                                     error,
-                                                )
+                                                
+)
                                             );
 
                                             log_warning(
@@ -4373,13 +4481,13 @@ fn run_paths(
                                             if active.channel_usage
                                                 .uses_any_channel()
                                                 {
-                                                    "Required".to_string()
+                                                    localized_edit!("edit.required")
                                                 } else {
-                                                    "Not required".to_string()
+                                                    localized_edit!("edit.not_required").to_string()
                                                 },
 
                                                 status:
-                                                "Loaded and rendering".to_string(),
+                                                localized_edit!("edit.loaded_and_rendering").to_string(),
                                         };
 
 
@@ -4520,7 +4628,7 @@ fn run_paths(
 
                                                     Ok(None) => {
                                                         edit_window.set_status_message(
-                                                            "Bulk Edit could not suspend the active shader because its database ID could not be found."
+                                                            localized_edit!("edit.bulk_edit_could_not_suspend_the_active_shader_because_its_database_id_could")
                                                         );
 
                                                         log_warning(
@@ -4533,10 +4641,12 @@ fn run_paths(
 
                                                     Err(error) => {
                                                         edit_window.set_status_message(
-                                                            format!(
-                                                                "Bulk Edit could not suspend the active shader: {}",
+                                                            localized_edit!(
+"edit.bulk_edit_could_not_suspend_the_active_shader",
+
                                                                 error,
-                                                            )
+                                                            
+)
                                                         );
 
                                                         log_warning(
@@ -4588,7 +4698,7 @@ fn run_paths(
                                                                     edit_window.accept_control_configuration();
 
                                                                     edit_window.set_status_message(
-                                                                        "Configuration saved."
+                                                                        localized_edit!("edit.configuration_saved")
                                                                     );
 
                                                                     log_information(
@@ -4603,7 +4713,7 @@ fn run_paths(
                                                                     }
 
                                                                     edit_window.set_status_message(
-                                                                        "Configuration save failed."
+                                                                        localized_edit!("edit.configuration_save_failed")
                                                                     );
 
                                                                     log_warning(
@@ -4640,7 +4750,7 @@ fn run_paths(
                                                         &window
                                                     )
                                                     .add_filter(
-                                                        "GL shader files",
+                                                        localized_edit!("edit.gl_shader_files"),
                                                         &[
                                                             "glsl",
                                                             "fs",
@@ -4676,7 +4786,7 @@ fn run_paths(
                                                         selected_paths
                                                         else {
                                                             edit_window.set_status_message(
-                                                                "Bulk policy creation canceled."
+                                                                localized_edit!("edit.bulk_policy_creation_canceled")
                                                             );
 
                                                             continue;
@@ -4694,7 +4804,7 @@ fn run_paths(
 
                                                         if candidates.is_empty() {
                                                             edit_window.set_status_message(
-                                                                "No usable shaders were selected for policy creation."
+                                                                localized_edit!("edit.no_usable_shaders_were_selected_for_policy_creation")
                                                             );
 
                                                             continue;
@@ -4734,11 +4844,13 @@ fn run_paths(
                                                                         edit_window.complete_bulk_policy_creation();
 
                                                                         edit_window.set_status_message(
-                                                                            format!(
-                                                                                "Bulk policy creation complete: {} created, {} already existed.",
+                                                                            localized_edit!(
+"edit.bulk_policy_creation_complete_created_already_existed",
+
                                                                                 result.created,
                                                                                 result.skipped_existing,
-                                                                            )
+                                                                            
+)
                                                                         );
 
                                                                         log_information(
@@ -4752,7 +4864,7 @@ fn run_paths(
 
                                                                     Err(error) => {
                                                                         edit_window.set_status_message(
-                                                                            "Policies were created, but configuration reload failed."
+                                                                            localized_edit!("edit.policies_were_created_but_configuration_reload_failed")
                                                                         );
 
                                                                         log_warning(
@@ -4772,10 +4884,12 @@ fn run_paths(
                                                                 );
 
                                                                 edit_window.set_status_message(
-                                                                    format!(
-                                                                        "Bulk policy creation failed: {}",
+                                                                    localized_edit!(
+"edit.bulk_policy_creation_failed",
+
                                                                         error,
-                                                                    )
+                                                                    
+)
                                                                 );
 
                                                                 log_warning(
@@ -4799,16 +4913,18 @@ fn run_paths(
                                                         ) {
                                                             Ok(()) => {
                                                                 edit_window.set_status_message(
-                                                                    "Recent shader-file history cleared."
+                                                                    localized_edit!("edit.recent_shader_file_history_cleared")
                                                                 );
                                                             }
 
                                                             Err(error) => {
                                                                 edit_window.set_status_message(
-                                                                    format!(
-                                                                        "Recent files were cleared for this session, but the history file could not be updated: {}",
+                                                                    localized_edit!(
+"edit.recent_files_were_cleared_for_this_session_but_the_history_file_could_not_b",
+
                                                                         error,
-                                                                    )
+                                                                    
+)
                                                                 );
 
                                                                 log_warning(
@@ -4883,7 +4999,7 @@ fn run_paths(
                                                                     &window
                                                                 )
                                                                 .add_filter(
-                                                                    "GL shader files",
+                                                                    localized_edit!("edit.gl_shader_files"),
                                                                     &[
                                                                         "glsl",
                                                                         "fs",
@@ -4922,7 +5038,7 @@ fn run_paths(
                                                             selected_path
                                                             else {
                                                                 edit_window.set_status_message(
-                                                                    "Shader loading canceled."
+                                                                    localized_edit!("edit.shader_loading_canceled")
                                                                 );
 
                                                                 continue;
@@ -4932,10 +5048,12 @@ fn run_paths(
                                                             if !selected_path.is_file() {
                                                                 if policy_row_open_request.is_some() {
                                                                     edit_window.set_status_message(
-                                                                        format!(
-                                                                            "Policy shader file is unavailable: {}",
+                                                                        localized_edit!(
+"edit.policy_shader_file_is_unavailable",
+
                                                                             selected_path.display(),
-                                                                        )
+                                                                        
+)
                                                                     );
                                                                 } else {
                                                                     recent_shader_paths.retain(
@@ -4950,10 +5068,12 @@ fn run_paths(
                                                                     );
 
                                                                     edit_window.set_status_message(
-                                                                        format!(
-                                                                            "Recent shader file no longer exists: {}",
+                                                                        localized_edit!(
+"edit.recent_shader_file_no_longer_exists",
+
                                                                             selected_path.display(),
-                                                                        )
+                                                                        
+)
                                                                     );
                                                                 }
 
@@ -4977,10 +5097,12 @@ fn run_paths(
                                                                         )
                                                                         {
                                                                             edit_window.set_status_message(
-                                                                                format!(
-                                                                                    "Policy cannot be opened because its shader is not renderable: {}",
+                                                                                localized_edit!(
+"edit.policy_cannot_be_opened_because_its_shader_is_not_renderable",
+
                                                                                     error,
-                                                                                )
+                                                                                
+)
                                                                             );
 
                                                                             log_warning(
@@ -5229,61 +5351,61 @@ fn run_paths(
                                                                         Some(
                                                                             crate::editor_layout::PolicyTarget::Wallpaper
                                                                         ) if new_policy_exists => {
-                                                                            "Loaded shader with its existing Wallpaper policy."
+                                                                            localized_edit!("edit.loaded_shader_with_its_existing_wallpaper_policy")
                                                                             .to_string()
                                                                         }
 
                                                                         Some(
                                                                             crate::editor_layout::PolicyTarget::Wallpaper
                                                                         ) if new_managed_target.is_some() => {
-                                                                            "Wallpaper target enforced by shader location. New Wallpaper policy is ready to save."
+                                                                            localized_edit!("edit.wallpaper_target_enforced_by_shader_location_new_wallpaper_policy_is_ready")
                                                                             .to_string()
                                                                         }
 
                                                                         Some(
                                                                             crate::editor_layout::PolicyTarget::Wallpaper
                                                                         ) => {
-                                                                            "No Wallpaper policy exists. Loaded Wallpaper defaults."
+                                                                            localized_edit!("edit.no_wallpaper_policy_exists_loaded_wallpaper_defaults")
                                                                             .to_string()
                                                                         }
 
                                                                         Some(
                                                                             crate::editor_layout::PolicyTarget::Screensaver
                                                                         ) if new_policy_exists => {
-                                                                            "Loaded shader with its existing Screensaver policy."
+                                                                            localized_edit!("edit.loaded_shader_with_its_existing_screensaver_policy")
                                                                             .to_string()
                                                                         }
 
                                                                         Some(
                                                                             crate::editor_layout::PolicyTarget::Screensaver
                                                                         ) if new_managed_target.is_some() => {
-                                                                            "Screensaver target enforced by shader location. New Screensaver policy is ready to save."
+                                                                            localized_edit!("edit.screensaver_target_enforced_by_shader_location_new_screensaver_policy_is_re")
                                                                             .to_string()
                                                                         }
 
                                                                         Some(
                                                                             crate::editor_layout::PolicyTarget::Screensaver
                                                                         ) => {
-                                                                            "No Screensaver policy exists. Loaded Screensaver defaults."
+                                                                            localized_edit!("edit.no_screensaver_policy_exists_loaded_screensaver_defaults")
                                                                             .to_string()
                                                                         }
 
                                                                         Some(
                                                                             crate::editor_layout::PolicyTarget::Unassigned
                                                                         ) if new_policy_exists => {
-                                                                            "Loaded shader with its existing Unassigned policy."
+                                                                            localized_edit!("edit.loaded_shader_with_its_existing_unassigned_policy")
                                                                             .to_string()
                                                                         }
 
                                                                         Some(
                                                                             crate::editor_layout::PolicyTarget::Unassigned
                                                                         ) => {
-                                                                            "No Unassigned policy exists. Loaded defaults for a new Unassigned policy."
+                                                                            localized_edit!("edit.no_unassigned_policy_exists_loaded_defaults_for_a_new_unassigned_policy")
                                                                             .to_string()
                                                                         }
 
                                                                         None => {
-                                                                            "Loaded shader using resolved defaults. Select a policy target to create a policy."
+                                                                            localized_edit!("edit.loaded_shader_using_resolved_defaults_select_a_policy_target_to_create_a_po")
                                                                             .to_string()
                                                                         }
                                                                     };
@@ -5317,10 +5439,12 @@ fn run_paths(
                                                                             )
                                                                         {
                                                                             edit_window.set_status_message(
-                                                                                format!(
-                                                                                    "Unable to refresh shader: {}",
+                                                                                localized_edit!(
+"edit.unable_to_refresh_shader",
+
                                                                                     error,
-                                                                                )
+                                                                                
+)
                                                                             );
 
                                                                             log_warning(
@@ -5515,10 +5639,12 @@ fn run_paths(
                                                                                     );
 
                                                                                     edit_window.set_status_message(
-                                                                                        format!(
-                                                                                            "Shader loaded, but recent-file history could not be saved: {}",
+                                                                                        localized_edit!(
+"edit.shader_loaded_but_recent_file_history_could_not_be_saved",
+
                                                                                             error,
-                                                                                        )
+                                                                                        
+)
                                                                                     );
                                                                                 }
                                                                         }
@@ -5550,10 +5676,12 @@ fn run_paths(
                                                                             }
 
                                                                             edit_window.set_status_message(
-                                                                                format!(
-                                                                                    "Unable to load shader: {}",
+                                                                                localized_edit!(
+"edit.unable_to_load_shader",
+
                                                                                     error,
-                                                                                )
+                                                                                
+)
                                                                             );
 
                                                                             log_warning(
@@ -5580,10 +5708,12 @@ fn run_paths(
                                                                 )
                                                             {
                                                                 edit_window.set_status_message(
-                                                                    format!(
-                                                                        "Unable to refresh shader: {}",
+                                                                    localized_edit!(
+"edit.unable_to_refresh_shader",
+
                                                                         error,
-                                                                    )
+                                                                    
+)
                                                                 );
 
                                                                 log_warning(
@@ -5693,10 +5823,12 @@ fn run_paths(
                                                                                                                  false
                                                                                                              }
                                                                                                          },
-                                                                                                         format!(
-                                                                                                             "Refreshed shader from disk: {}",
+                                                                                                         localized_edit!(
+"edit.refreshed_shader_from_disk",
+
                                                                                                              active.shader_name,
-                                                                                                         ),
+                                                                                                         
+),
                                                                     );
 
                                                                     log_information(
@@ -5719,10 +5851,12 @@ fn run_paths(
                                                                     );
 
                                                                     edit_window.set_status_message(
-                                                                        format!(
-                                                                            "Unable to refresh shader: {}",
+                                                                        localized_edit!(
+"edit.unable_to_refresh_shader",
+
                                                                             error,
-                                                                        )
+                                                                        
+)
                                                                     );
 
                                                                     log_warning(
@@ -5761,15 +5895,15 @@ fn run_paths(
                                                                     edit_window.set_status_message(
                                                                         match requested_target {
                                                                             crate::editor_layout::PolicyTarget::Screensaver => {
-                                                                                "This shader cannot use a Screensaver policy in the current editing session."
+                                                                                localized_edit!("edit.this_shader_cannot_use_a_screensaver_policy_in_the_current_editing_session")
                                                                             }
 
                                                                             crate::editor_layout::PolicyTarget::Wallpaper => {
-                                                                                "This shader cannot use a Wallpaper policy in the current editing session."
+                                                                                localized_edit!("edit.this_shader_cannot_use_a_wallpaper_policy_in_the_current_editing_session")
                                                                             }
 
                                                                             crate::editor_layout::PolicyTarget::Unassigned => {
-                                                                                "This shader cannot use an Unassigned policy in the current editing session."
+                                                                                localized_edit!("edit.this_shader_cannot_use_an_unassigned_policy_in_the_current_editing_session")
                                                                             }
                                                                         }
                                                                     );
@@ -5933,33 +6067,39 @@ fn run_paths(
                                                                 );
 
 
+                                                                let target_log_name =
+                                                                match requested_target {
+                                                                    crate::editor_layout::PolicyTarget::Screensaver => "Screensaver",
+                                                                    crate::editor_layout::PolicyTarget::Wallpaper => "Wallpaper",
+                                                                    crate::editor_layout::PolicyTarget::Unassigned => "Unassigned",
+                                                                };
+
                                                                 let target_name =
                                                                 match requested_target {
-                                                                    crate::editor_layout::PolicyTarget::Screensaver => {
-                                                                        "Screensaver"
-                                                                    }
-
-                                                                    crate::editor_layout::PolicyTarget::Wallpaper => {
-                                                                        "Wallpaper"
-                                                                    }
-
-                                                                    crate::editor_layout::PolicyTarget::Unassigned => {
-                                                                        "Unassigned"
-                                                                    }
+                                                                    crate::editor_layout::PolicyTarget::Screensaver =>
+                                                                        crate::manage_localization::runtime_text("target.screensaver"),
+                                                                    crate::editor_layout::PolicyTarget::Wallpaper =>
+                                                                        crate::manage_localization::runtime_text("target.wallpaper"),
+                                                                    crate::editor_layout::PolicyTarget::Unassigned =>
+                                                                        crate::manage_localization::runtime_text("target.unassigned"),
                                                                 };
 
                                                                 let status_message =
                                                                 if target_policy_exists {
-                                                                    format!(
-                                                                        "Loaded existing {} policy for this shader.",
+                                                                    localized_edit!(
+"edit.loaded_existing_policy_for_this_shader",
+
                                                                         target_name,
-                                                                    )
+                                                                    
+)
                                                                 } else {
-                                                                    format!(
-                                                                        "No {} policy exists. Loaded {} defaults.",
+                                                                    localized_edit!(
+"edit.no_policy_exists_loaded_defaults",
+
                                                                         target_name,
                                                                         target_name,
-                                                                    )
+                                                                    
+)
                                                                 };
 
                                                                 edit_window.initialize_configuration(
@@ -6001,7 +6141,7 @@ fn run_paths(
                                                                 log_information(
                                                                     &format!(
                                                                         "[EDIT_SHADER] Policy target switched to {} ({})",
-                                                                             target_name,
+                                                                             target_log_name,
                                                                              if target_policy_exists {
                                                                                  "existing policy"
                                                                              } else {
@@ -6442,7 +6582,7 @@ fn run_paths(
                                                                                             "[EDIT_SHADER] Bulk Edit save request contained an empty field-change mask; no database update was attempted"
                                                                                         );
                                                                                         edit_window.set_status_message(
-                                                                                            "Bulk Edit contains no changed settings."
+                                                                                            localized_edit!("edit.bulk_edit_contains_no_changed_settings")
                                                                                         );
                                                                                         continue;
                                                                                     }
@@ -6500,10 +6640,12 @@ fn run_paths(
                                                                                             preparation_error
                                                                                             {
                                                                                                 edit_window.set_status_message(
-                                                                                                    format!(
-                                                                                                        "Bulk policy save aborted: {}",
+                                                                                                    localized_edit!(
+"edit.bulk_policy_save_aborted",
+
                                                                                                         error,
-                                                                                                    )
+                                                                                                    
+)
                                                                                                 );
 
                                                                                                 log_warning(
@@ -6566,7 +6708,7 @@ fn run_paths(
 
                                                                                                         Err(error) => {
                                                                                                             edit_window.set_status_message(
-                                                                                                                "Bulk policies were saved, but configuration reload failed."
+                                                                                                                localized_edit!("edit.bulk_policies_were_saved_but_configuration_reload_failed")
                                                                                                             );
 
                                                                                                             log_warning(
@@ -6581,10 +6723,12 @@ fn run_paths(
 
                                                                                                 Err(error) => {
                                                                                                     edit_window.set_status_message(
-                                                                                                        format!(
-                                                                                                            "Unable to save bulk policy changes: {}",
+                                                                                                        localized_edit!(
+"edit.unable_to_save_bulk_policy_changes",
+
                                                                                                             error,
-                                                                                                        )
+                                                                                                        
+)
                                                                                                     );
 
                                                                                                     log_warning(
@@ -6605,7 +6749,7 @@ fn run_paths(
                                                                                     selected_policy_target
                                                                                     else {
                                                                                         edit_window.set_status_message(
-                                                                                            "Select a policy target before saving"
+                                                                                            localized_edit!("edit.select_policy_target_before_saving")
                                                                                         );
 
                                                                                         continue;
@@ -6628,7 +6772,7 @@ fn run_paths(
 
                                                                                     if !selected_target_available {
                                                                                         edit_window.set_status_message(
-                                                                                            "The selected policy target is unavailable in the current editing session."
+                                                                                            localized_edit!("edit.the_selected_policy_target_is_unavailable_in_the_current_editing_session")
                                                                                         );
 
                                                                                         continue;
@@ -6938,10 +7082,12 @@ fn run_paths(
 
                                                                                                         if let Err(error) = audio_motion_save_result {
                                                                                                             edit_window.set_status_message(
-                                                                                                                format!(
-                                                                                                                    "Policy saved, but Audio Motion could not be saved: {}",
+                                                                                                                localized_edit!(
+"edit.policy_saved_but_audio_motion_could_not_be_saved",
+
                                                                                                                     error,
-                                                                                                                )
+                                                                                                                
+)
                                                                                                             );
                                                                                                             log_warning(
                                                                                                                 &format!(
@@ -7018,10 +7164,12 @@ fn run_paths(
                                                                                                         edit_window.accept_current_configuration();
 
                                                                                                         edit_window.set_status_message(
-                                                                                                            format!(
-                                                                                                                "Policy saved for {}",
-                                                                                                                manage_target.name(),
-                                                                                                            )
+                                                                                                            localized_edit!(
+"edit.policy_saved_for",
+
+                                                                                                                localized_manage_policy_target_name(&manage_target),
+                                                                                                            
+)
                                                                                                         );
 
                                                                                                         log_information(
@@ -7040,10 +7188,12 @@ fn run_paths(
                                                                                                     }
 
                                                                                                     edit_window.set_status_message(
-                                                                                                        format!(
-                                                                                                            "Unable to save policy: {}",
+                                                                                                        localized_edit!(
+"edit.unable_to_save_policy",
+
                                                                                                             error,
-                                                                                                        )
+                                                                                                        
+)
                                                                                                     );
 
                                                                                                     log_warning(
@@ -7209,8 +7359,9 @@ fn run_paths(
                                                                                                                     active.texture_manager
                                                                                                                     .active_specification_selection(),
                                                                                                                                                      true,
-                                                                                                                                                     format!(
-                                                                                                                                                         "Shader moved to {}. Policy target updated to {}.",
+                                                                                                                                                     localized_edit!(
+"edit.shader_moved_to_policy_target_updated_to",
+
                                                                                                                                                          destination_path
                                                                                                                                                          .parent()
                                                                                                                                                          .map(
@@ -7227,20 +7378,23 @@ fn run_paths(
                                                                                                                                                                  crate::editor_layout::PolicyTarget::Unassigned =>
                                                                                                                                                                  "Unassigned",
                                                                                                                                                              },
-                                                                                                                                                     ),
+                                                                                                                                                     
+),
                                                                                                                 );
 
 
                                                                                                                 edit_window.set_status_message(
-                                                                                                                    format!(
-                                                                                                                        "Shader moved to {}.",
+                                                                                                                    localized_edit!(
+"edit.shader_moved_to",
+
                                                                                                                         destination_path
                                                                                                                         .parent()
                                                                                                                         .map(
                                                                                                                             |path| path.display().to_string()
                                                                                                                         )
                                                                                                                         .unwrap_or_default(),
-                                                                                                                    )
+                                                                                                                    
+)
                                                                                                                 );
 
                                                                                                                 log_information(
@@ -7254,7 +7408,7 @@ fn run_paths(
 
                                                                                                             Err(error) => {
                                                                                                                 edit_window.set_status_message(
-                                                                                                                    "Shader moved; configuration reload failed."
+                                                                                                                    localized_edit!("edit.shader_moved_configuration_reload_failed")
                                                                                                                 );
 
                                                                                                                 log_warning(
@@ -7359,11 +7513,13 @@ fn run_paths(
                                                                                                         }
 
                                                                                                         edit_window.set_status_message(
-                                                                                                            format!(
-                                                                                                                "{} policy deleted for {}",
-                                                                                                                manage_target.name(),
+                                                                                                            localized_edit!(
+"edit.policy_deleted_for",
+
+                                                                                                                localized_manage_policy_target_name(&manage_target),
                                                                                                                     row.filename,
-                                                                                                            )
+                                                                                                            
+)
                                                                                                         );
 
                                                                                                         log_information(
@@ -7377,10 +7533,12 @@ fn run_paths(
 
                                                                                                     Err(error) => {
                                                                                                         edit_window.set_status_message(
-                                                                                                            format!(
-                                                                                                                "Unable to delete policy: {}",
+                                                                                                            localized_edit!(
+"edit.unable_to_delete_policy",
+
                                                                                                                 error,
-                                                                                                            )
+                                                                                                            
+)
                                                                                                         );
 
                                                                                                         log_warning(
@@ -7457,12 +7615,14 @@ fn run_paths(
                                                                                                                 }
 
                                                                                                                 edit_window.set_status_message(
-                                                                                                                    format!(
-                                                                                                                        "{} shader and associated {} policy deleted: {}",
-                                                                                                                        manage_target.name(),
-                                                                                                                            manage_target.name(),
+                                                                                                                    localized_edit!(
+"edit.shader_and_associated_policy_deleted",
+
+                                                                                                                        localized_manage_policy_target_name(&manage_target),
+                                                                                                                            localized_manage_policy_target_name(&manage_target),
                                                                                                                             row.filename,
-                                                                                                                    )
+                                                                                                                    
+)
                                                                                                                 );
 
                                                                                                                 log_information(
@@ -7476,11 +7636,13 @@ fn run_paths(
 
                                                                                                             Err(error) => {
                                                                                                                 edit_window.set_status_message(
-                                                                                                                    format!(
-                                                                                                                        "{} policy was deleted, but the shader file could not be deleted: {}",
-                                                                                                                        manage_target.name(),
+                                                                                                                    localized_edit!(
+"edit.policy_was_deleted_but_the_shader_file_could_not_be_deleted",
+
+                                                                                                                        localized_manage_policy_target_name(&manage_target),
                                                                                                                             error,
-                                                                                                                    )
+                                                                                                                    
+)
                                                                                                                 );
 
                                                                                                                 log_warning(
@@ -7498,10 +7660,12 @@ fn run_paths(
 
                                                                                                     Err(error) => {
                                                                                                         edit_window.set_status_message(
-                                                                                                            format!(
-                                                                                                                "Shader was not deleted because its associated policy could not be deleted: {}",
+                                                                                                            localized_edit!(
+"edit.shader_was_not_deleted_because_its_associated_policy_could_not_be_deleted",
+
                                                                                                                 error,
-                                                                                                            )
+                                                                                                            
+)
                                                                                                         );
 
                                                                                                         log_warning(
@@ -7537,7 +7701,7 @@ fn run_paths(
 
                                                                                     if editor_output.delete_requested {
                                                                                         edit_window.set_status_message(
-                                                                                            "Delete Shader is available from the Policies row context menu."
+                                                                                            localized_edit!("edit.delete_shader_from_policy_context_menu")
                                                                                         );
                                                                                     }
 
@@ -8005,10 +8169,12 @@ fn move_policy_shader(
 
     if !source_path.is_file() {
         return Err(
-            format!(
-                "Shader file is unavailable: {}",
+            localized_edit!(
+"edit.shader_file_is_unavailable",
+
                 source_path.display(),
-            )
+            
+)
         );
     }
 
@@ -8029,11 +8195,13 @@ fn move_policy_shader(
     )
     .map_err(
         |error| {
-            format!(
-                "Unable to create destination directory {} ({})",
+            localized_edit!(
+"edit.unable_to_create_destination_directory",
+
                     destination_directory.display(),
                     error,
-            )
+            
+)
         }
     )?;
 
@@ -8051,8 +8219,9 @@ fn move_policy_shader(
 
     if destination_path.exists() {
         return Err(
-            format!(
-                "Shader already exists in {}.",
+            localized_edit!(
+"edit.shader_already_exists_in",
+
                 match destination_target {
                     crate::editor_layout::PolicyTarget::Screensaver =>
                     "/screensavers",
@@ -8063,7 +8232,8 @@ fn move_policy_shader(
                     crate::editor_layout::PolicyTarget::Unassigned =>
                     "/shaders",
                 }
-            )
+            
+)
         );
     }
 
@@ -8073,12 +8243,14 @@ fn move_policy_shader(
     )
     .map_err(
         |error| {
-            format!(
-                "Unable to move shader from {} to {} ({})",
+            localized_edit!(
+"edit.unable_to_move_shader_from_to",
+
                     source_path.display(),
                     destination_path.display(),
                     error,
-            )
+            
+)
         }
     )?;
 
@@ -8111,17 +8283,21 @@ fn move_policy_shader(
             return Err(
                 match rollback_result {
                     Ok(()) =>
-                    format!(
-                        "Shader move was rolled back because policy paths could not be updated: {}",
+                    localized_edit!(
+"edit.shader_move_was_rolled_back_because_policy_paths_could_not_be_updated",
+
                         error,
-                    ),
+                    
+),
 
                     Err(rollback_error) =>
-                    format!(
-                        "Policy paths could not be updated after moving the shader: {}. Rollback also failed: {}",
+                    localized_edit!(
+"edit.policy_paths_could_not_be_updated_after_moving_the_shader_rollback_also_fai",
+
                         error,
                         rollback_error,
-                    ),
+                    
+),
                 }
             );
         }
@@ -8652,10 +8828,12 @@ fn create_bulk_policies(
             )
             .ok_or_else(
                 || {
-                    format!(
-                        "No policy target was selected for external shader {}",
+                    localized_edit!(
+"edit.no_policy_target_was_selected_for_external_shader",
+
                         candidate.path.display(),
-                    )
+                    
+)
                 }
             )?;
 
@@ -8686,10 +8864,12 @@ fn create_bulk_policies(
             )
             .ok_or_else(
                 || {
-                    format!(
-                        "Shader filename is not valid UTF-8: {}",
+                    localized_edit!(
+"edit.shader_filename_is_not_valid_utf_8",
+
                         candidate.path.display(),
-                    )
+                    
+)
                 }
             )?
             .to_string();
@@ -8859,7 +9039,7 @@ fn assign_selected_unassigned_policies(
         requested_target
         .ok_or_else(
             || {
-                "Select Screensaver or Wallpaper as the Policy Target for the selected Unassigned policies."
+                localized_edit!("edit.select_target_for_selected_unassigned_policies")
                 .to_string()
             }
         )?;
@@ -8946,10 +9126,12 @@ fn shader_requires_texture_for_bulk_edit(
     )
     .ok_or_else(
         || {
-            format!(
-                "Shader path has no valid filename: {}",
+            localized_edit!(
+"edit.shader_path_has_no_valid_filename",
+
                 shader_path.display(),
-            )
+            
+)
         }
     )?;
 
@@ -8968,11 +9150,13 @@ fn shader_requires_texture_for_bulk_edit(
     crate::open_database::open()
     .map_err(
         |error| {
-            format!(
-                "Unable to open database while reading shader metadata for '{}': {}",
+            localized_edit!(
+"edit.unable_to_open_database_while_reading_shader_metadata_for",
+
                 filename,
                 error,
-            )
+            
+)
         }
     )?;
 
@@ -9022,20 +9206,24 @@ fn shader_requires_texture_for_bulk_edit(
             rusqlite::Error::QueryReturnedNoRows
         ) => {
             return Err(
-                format!(
-                    "Shader '{}' is not registered in the Screenshaver database",
+                localized_edit!(
+"edit.shader_is_not_registered_in_the_database",
+
                     shader_path.display(),
-                )
+                
+)
             );
         }
 
         Err(error) => {
             return Err(
-                format!(
-                    "Unable to read database metadata for '{}': {}",
+                localized_edit!(
+"edit.unable_to_read_database_metadata_for",
+
                     shader_path.display(),
                         error,
-                )
+                
+)
             );
         }
     };
@@ -9043,11 +9231,13 @@ fn shader_requires_texture_for_bulk_edit(
 
     if file_status != "present" {
         return Err(
-            format!(
-                "Shader '{}' has file_status '{}'",
+            localized_edit!(
+"edit.shader_has_file_status",
+
                 filename,
                 file_status,
-            )
+            
+)
         );
     }
 
@@ -9060,28 +9250,32 @@ fn shader_requires_texture_for_bulk_edit(
         )
         .unwrap_or_else(
             || {
-                "shader is rejected"
+                localized_edit!("edit.shader_is_rejected_2")
                 .to_string()
             }
         );
 
         return Err(
-            format!(
-                "Shader '{}' is rejected: {}",
+            localized_edit!(
+"edit.shader_is_rejected",
+
                 filename,
                 reason,
-            )
+            
+)
         );
     }
 
 
     if validation_status != "valid" {
         return Err(
-            format!(
-                "Shader '{}' has validation_status '{}'; expected 'valid'",
+            localized_edit!(
+"edit.shader_has_validation_status_expected",
+
                 filename,
                 validation_status,
-            )
+            
+)
         );
     }
 
@@ -9090,10 +9284,12 @@ fn shader_requires_texture_for_bulk_edit(
     channel_usage_mask
     .ok_or_else(
         || {
-            format!(
-                "Valid shader '{}' has no channel-usage metadata",
+            localized_edit!(
+"edit.valid_shader_has_no_channel_usage_metadata",
+
                 filename,
-            )
+            
+)
         }
     )?;
 
@@ -9102,11 +9298,13 @@ fn shader_requires_texture_for_bulk_edit(
         &mask
     ) {
         return Err(
-            format!(
-                "Shader '{}' has invalid channel-usage mask {}",
+            localized_edit!(
+"edit.shader_has_invalid_channel_usage_mask",
+
                 filename,
                 mask,
-            )
+            
+)
         );
     }
 
@@ -9201,10 +9399,12 @@ fn load_database_policy_display_rows(
     )
     .map_err(
         |error| {
-            format!(
-                "Unable to prepare Policy List database query: {}",
+            localized_edit!(
+"edit.unable_to_prepare_policy_list_database_query",
+
                 error,
-            )
+            
+)
         }
     )?;
 
@@ -9234,10 +9434,12 @@ fn load_database_policy_display_rows(
     )
     .map_err(
         |error| {
-            format!(
-                "Unable to query Policy List rows from database: {}",
+            localized_edit!(
+"edit.unable_to_query_policy_list_rows_from_database",
+
                 error,
-            )
+            
+)
         }
     )?;
 
@@ -9264,10 +9466,12 @@ fn load_database_policy_display_rows(
         ) =
         query_row.map_err(
             |error| {
-                format!(
-                    "Unable to decode Policy List database row: {}",
+                localized_edit!(
+"edit.unable_to_decode_policy_list_database_row",
+
                     error,
-                )
+                
+)
             }
         )?;
 
@@ -9289,11 +9493,13 @@ fn load_database_policy_display_rows(
 
             other => {
                 return Err(
-                    format!(
-                        "Policy '{}' has unsupported policy_target '{}'",
+                    localized_edit!(
+"edit.policy_has_unsupported_policy_target",
+
                         policy_name,
                         other,
-                    )
+                    
+)
                 );
             }
         };
@@ -9414,10 +9620,12 @@ fn shader_id_for_control_center_path(
     )
     .ok_or_else(
         || {
-            format!(
-                "Shader path has no valid filename: {}",
+            localized_edit!(
+"edit.shader_path_has_no_valid_filename",
+
                 path.display(),
-            )
+            
+)
         }
     )?;
 
@@ -9470,11 +9678,13 @@ fn shader_id_for_control_center_path(
 
         Err(error) => {
             Err(
-                format!(
-                    "Unable to query shader ID for '{}': {}",
+                localized_edit!(
+"edit.unable_to_query_shader_id_for",
+
                     path.display(),
                         error,
-                )
+                
+)
             )
         }
     }
@@ -9579,11 +9789,13 @@ String,
 
         Err(error) => {
             return Err(
-                format!(
-                    "Unable to resolve shader_id {}: {}",
+                localized_edit!(
+"edit.unable_to_resolve_shader_id",
+
                     shader_id,
                     error,
-                )
+                
+)
             );
         }
     };
@@ -9737,7 +9949,7 @@ String,
 
 
         Err(
-            "The selected shader could not be loaded for editing"
+            localized_edit!("edit.the_selected_shader_could_not_be_loaded_for_editing")
             .to_string()
         )
 }
@@ -10252,11 +10464,13 @@ fn save_control_center_state(
             )
             .map_err(
                 |error| {
-                    format!(
-                        "Unable to create Control Center state folder {}: {}",
+                    localized_edit!(
+"edit.unable_to_create_control_center_state_folder",
+
                         parent.display(),
                             error,
-                    )
+                    
+)
                 }
             )?;
         }
@@ -10268,10 +10482,12 @@ fn save_control_center_state(
         )
         .map_err(
             |error| {
-                format!(
-                    "Unable to serialize Control Center state: {}",
+                localized_edit!(
+"edit.unable_to_serialize_control_center_state",
+
                     error,
-                )
+                
+)
             }
         )?;
 
@@ -10282,11 +10498,13 @@ fn save_control_center_state(
         )
         .map_err(
             |error| {
-                format!(
-                    "Unable to write Control Center state {}: {}",
+                localized_edit!(
+"edit.unable_to_write_control_center_state",
+
                     state_path.display(),
                         error,
-                )
+                
+)
             }
         )
 }
@@ -10734,7 +10952,7 @@ fn save_control_configuration(
                 let policy_id = single_policy_id
                 .filter(|policy_id| *policy_id > 0)
                 .ok_or_else(|| {
-                    "Single display mode requires a shader policy selection."
+                    localized_edit!("edit.single_display_mode_requires_a_shader_policy_selection")
                     .to_string()
                 })?;
                 Ok(format!("single:{}", policy_id))
@@ -10743,20 +10961,23 @@ fn save_control_configuration(
                 let playlist_id = playlist_id
                 .filter(|playlist_id| *playlist_id > 0)
                 .ok_or_else(|| {
-                    "Playlist display mode requires a playlist selection."
+                    localized_edit!("edit.playlist_display_mode_requires_a_playlist_selection")
                     .to_string()
                 })?;
 
                 if interval_seconds == 0 {
                     return Err(
-                        "Playlist display mode requires a positive interval."
+                        localized_edit!("edit.playlist_display_mode_requires_a_positive_interval")
                         .to_string()
                     );
                 }
 
                 Ok(format!("playlist:{}:{}", playlist_id, interval_seconds))
             }
-            other => Err(format!("Unsupported display mode '{}'.", other)),
+            other => Err(localized_edit!(
+"edit.unsupported_display_mode",
+ other
+)),
         }
     }
 

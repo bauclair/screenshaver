@@ -2759,4 +2759,741 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
         key: "export.review_instruction",
         translated_text: "Revise el enfoque de exportación seleccionado, las políticas, los shaders y las listas de reproducción incluidos, y el destino antes de iniciar la exportación.",
     },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.edit_shader_requires_a_shader_file_not_a_directory",
+        translated_text: "--edit-shader requiere un archivo de shader, no un directorio: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.bulk_edit_complete_policies_updated",
+        translated_text: "Edición masiva completada: {value1} políticas actualizadas.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.bulk_edit_complete_policies_updated_policy_target_was_preserved_for_protect",
+        translated_text: "Edición masiva completada: {value1} políticas actualizadas. Se conservó el destino de política para {value2} {value3} predeterminada protegida.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.bulk_edit_contains_no_changed_settings",
+        translated_text: "La edición masiva no contiene ajustes modificados.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.bulk_edit_could_not_suspend_the_active_shader_because_its_database_id_could",
+        translated_text: "La edición masiva no pudo suspender el shader activo porque no se encontró su ID de base de datos.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.bulk_edit_could_not_suspend_the_active_shader",
+        translated_text: "La edición masiva no pudo suspender el shader activo: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.bulk_edit_ended_but_the_previous_shader_could_not_be_reloaded",
+        translated_text: "La edición masiva finalizó, pero no se pudo volver a cargar el shader anterior: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.bulk_edit_ended_the_previously_loaded_shader_is_no_longer_available",
+        translated_text: "La edición masiva finalizó; el shader cargado anteriormente ya no está disponible.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.bulk_policies_were_saved_but_configuration_reload_failed",
+        translated_text: "Las políticas masivas se guardaron, pero no se pudo volver a cargar la configuración.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.bulk_policy_creation_canceled",
+        translated_text: "Se canceló la creación masiva de políticas.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.bulk_policy_creation_complete_created_already_existed",
+        translated_text: "Creación masiva de políticas completada: {value1} creadas, {value2} ya existían.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.bulk_policy_creation_failed",
+        translated_text: "Falló la creación masiva de políticas: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.bulk_policy_save_aborted",
+        translated_text: "Se canceló el guardado masivo de políticas: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.configuration_save_failed",
+        translated_text: "No se pudo guardar la configuración.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.configuration_saved",
+        translated_text: "Configuración guardada.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.gl_shader_files",
+        translated_text: "Archivos de shader GL",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.loaded_and_rendering",
+        translated_text: "Cargado y renderizando",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.loaded_existing_screensaver_policy_for_this_shader",
+        translated_text: "Se cargó la política de salvapantallas existente para este shader.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.loaded_existing_unassigned_policy_for_this_shader",
+        translated_text: "Se cargó la política sin asignar existente para este shader.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.loaded_existing_wallpaper_policy_for_this_shader",
+        translated_text: "Se cargó la política de fondo de pantalla existente para este shader.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.loaded_existing_policy_for_this_shader",
+        translated_text: "Se cargó la política {value1} existente para este shader.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.loaded_shader_using_resolved_defaults_select_a_policy_target_to_create_a_po",
+        translated_text: "Se cargó el shader usando los valores predeterminados resueltos. Seleccione un destino de política para crear una política.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.loaded_shader_with_its_existing_screensaver_policy",
+        translated_text: "Se cargó el shader con su política de salvapantallas existente.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.loaded_shader_with_its_existing_unassigned_policy",
+        translated_text: "Se cargó el shader con su política sin asignar existente.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.loaded_shader_with_its_existing_wallpaper_policy",
+        translated_text: "Se cargó el shader con su política de fondo de pantalla existente.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.new_unassigned_policy_is_ready_to_save",
+        translated_text: "La nueva política sin asignar está lista para guardarse.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.no_screensaver_policy_exists_loaded_screensaver_defaults",
+        translated_text: "No existe una política de salvapantallas. Se cargaron los valores predeterminados de salvapantallas.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.no_unassigned_policy_exists_loaded_defaults_for_a_new_unassigned_policy",
+        translated_text: "No existe una política sin asignar. Se cargaron los valores predeterminados para una nueva política sin asignar.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.no_wallpaper_policy_exists_loaded_wallpaper_defaults",
+        translated_text: "No existe una política de fondo de pantalla. Se cargaron los valores predeterminados de fondo de pantalla.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.no_existing_shader_policy_found_select_a_policy_target_to_create_one",
+        translated_text: "No se encontró una política de shader existente. Seleccione un destino de política para crear una.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.no_policies_changed_policy_target_cannot_be_changed_for_protected_default",
+        translated_text: "No se modificó ninguna política. El destino de política no puede cambiarse para {value1} {value2} predeterminada protegida.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.no_policy_target_was_selected_for_external_shader",
+        translated_text: "No se seleccionó un destino de política para el shader externo {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.no_shader_path_was_supplied_for_editing",
+        translated_text: "No se proporcionó una ruta de shader para editar",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.no_usable_shaders_were_selected_for_policy_creation",
+        translated_text: "No se seleccionaron shaders utilizables para crear políticas.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.no_policy_exists_loaded_defaults",
+        translated_text: "No existe una política {value1}. Se cargaron los valores predeterminados de {value2}.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.not_required",
+        translated_text: "No requerido",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.playlist_display_mode_requires_a_playlist_selection",
+        translated_text: "El modo de visualización Lista de reproducción requiere seleccionar una lista de reproducción.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.playlist_display_mode_requires_a_positive_interval",
+        translated_text: "El modo de visualización Lista de reproducción requiere un intervalo positivo.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.policies_were_created_but_configuration_reload_failed",
+        translated_text: "Se crearon las políticas, pero no se pudo volver a cargar la configuración.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.policy_has_unsupported_policy_target",
+        translated_text: "La política '{value1}' tiene un policy_target no compatible '{value2}'",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.policy_cannot_be_opened_because_its_shader_is_not_renderable",
+        translated_text: "La política no se puede abrir porque su shader no se puede renderizar: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.policy_cloned_as",
+        translated_text: "Política clonada como '{value1}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.policy_paths_could_not_be_updated_after_moving_the_shader_rollback_also_fai",
+        translated_text: "No se pudieron actualizar las rutas de las políticas después de mover el shader: {value1}. La reversión también falló: {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.policy_renamed_to",
+        translated_text: "Política renombrada a '{value1}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.policy_saved_for",
+        translated_text: "Política guardada para {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.policy_saved_but_audio_motion_could_not_be_saved",
+        translated_text: "La política se guardó, pero no se pudo guardar Movimiento de audio: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.policy_shader_file_is_unavailable",
+        translated_text: "El archivo de shader de la política no está disponible: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.policy_was_cloned_but_configuration_reload_failed",
+        translated_text: "La política se clonó, pero no se pudo volver a cargar la configuración: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.policy_was_renamed_but_configuration_reload_failed",
+        translated_text: "La política se renombró, pero no se pudo volver a cargar la configuración: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.recent_files_were_cleared_for_this_session_but_the_history_file_could_not_b",
+        translated_text: "Los archivos recientes se borraron para esta sesión, pero no se pudo actualizar el archivo de historial: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.recent_shader_file_no_longer_exists",
+        translated_text: "El archivo de shader reciente ya no existe: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.recent_shader_file_history_cleared",
+        translated_text: "Se borró el historial de archivos de shader recientes.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.refreshed_shader_from_disk",
+        translated_text: "Shader actualizado desde el disco: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.sdl_initialization_failed",
+        translated_text: "Falló la inicialización de SDL: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.sdl_video_initialization_failed",
+        translated_text: "Falló la inicialización de video SDL: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.screensaver_target_enforced_by_shader_location_new_screensaver_policy_is_re",
+        translated_text: "El destino Salvapantallas se impuso por la ubicación del shader. La nueva política de salvapantallas está lista para guardarse.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.control_center",
+        translated_text: "Centro de control de Screenshaver",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.export_archive",
+        translated_text: "Archivo de exportación de Screenshaver",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.shader_has_file_status",
+        translated_text: "El shader '{value1}' tiene file_status '{value2}'",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.shader_has_invalid_channel_usage_mask",
+        translated_text: "El shader '{value1}' tiene una máscara de uso de canales no válida {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.shader_has_validation_status_expected",
+        translated_text: "El shader '{value1}' tiene validation_status '{value2}'; se esperaba 'valid'",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.shader_is_not_registered_in_the_database",
+        translated_text: "El shader '{value1}' no está registrado en la base de datos de Screenshaver",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.shader_is_rejected",
+        translated_text: "El shader '{value1}' está rechazado: {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.shader_already_exists_in",
+        translated_text: "El shader ya existe en {value1}.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.shader_file_is_unavailable",
+        translated_text: "El archivo de shader no está disponible: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.shader_file_no_longer_exists",
+        translated_text: "El archivo de shader ya no existe: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.shader_filename_is_not_valid_utf_8",
+        translated_text: "El nombre del archivo de shader no es UTF-8 válido: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.shader_loaded_but_recent_file_history_could_not_be_saved",
+        translated_text: "El shader se cargó, pero no se pudo guardar el historial de archivos recientes: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.shader_loading_canceled",
+        translated_text: "Se canceló la carga del shader.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.shader_move_was_rolled_back_because_policy_paths_could_not_be_updated",
+        translated_text: "El movimiento del shader se revirtió porque no se pudieron actualizar las rutas de las políticas: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.shader_moved_to",
+        translated_text: "Shader movido a {value1}.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.shader_moved_to_policy_target_updated_to",
+        translated_text: "Shader movido a {value1}. Destino de política actualizado a {value2}.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.shader_moved_configuration_reload_failed",
+        translated_text: "El shader se movió; no se pudo volver a cargar la configuración.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.shader_path_has_no_valid_filename",
+        translated_text: "La ruta del shader no tiene un nombre de archivo válido: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.shader_was_not_deleted_because_its_associated_policy_could_not_be_deleted",
+        translated_text: "El shader no se eliminó porque no se pudo eliminar su política asociada: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.single_display_mode_requires_a_shader_policy_selection",
+        translated_text: "El modo de visualización Único requiere seleccionar una política de shader.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.the_selected_policy_target_is_unavailable_in_the_current_editing_session",
+        translated_text: "El destino de política seleccionado no está disponible en la sesión de edición actual.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.the_selected_shader_could_not_be_loaded_for_editing",
+        translated_text: "No se pudo cargar el shader seleccionado para editarlo",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.this_shader_cannot_use_a_screensaver_policy_in_the_current_editing_session",
+        translated_text: "Este shader no puede usar una política de salvapantallas en la sesión de edición actual.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.this_shader_cannot_use_a_wallpaper_policy_in_the_current_editing_session",
+        translated_text: "Este shader no puede usar una política de fondo de pantalla en la sesión de edición actual.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.this_shader_cannot_use_an_unassigned_policy_in_the_current_editing_session",
+        translated_text: "Este shader no puede usar una política sin asignar en la sesión de edición actual.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.unable_to_clone_policy",
+        translated_text: "No se pudo clonar la política: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.unable_to_create_control_center_state_folder",
+        translated_text: "No se pudo crear la carpeta de estado del Centro de control {value1}: {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.unable_to_create_opengl_context",
+        translated_text: "No se pudo crear el contexto OpenGL: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.unable_to_create_sdl_event_pump",
+        translated_text: "No se pudo crear la bomba de eventos SDL: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.unable_to_create_destination_directory",
+        translated_text: "No se pudo crear el directorio de destino {value1} ({value2})",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.unable_to_create_edit_shader_opengl_context",
+        translated_text: "No se pudo crear el contexto OpenGL de edición de shader: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.unable_to_create_edit_shader_sdl_event_pump",
+        translated_text: "No se pudo crear la bomba de eventos SDL de edición de shader: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.unable_to_create_edit_shader_window",
+        translated_text: "No se pudo crear la ventana de edición de shader: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.unable_to_decode_policy_list_database_row",
+        translated_text: "No se pudo decodificar la fila de la base de datos de la Lista de políticas: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.unable_to_delete_policy",
+        translated_text: "No se pudo eliminar la política: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.unable_to_load_shader",
+        translated_text: "No se pudo cargar el shader: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.unable_to_move_shader_from_to",
+        translated_text: "No se pudo mover el shader de {value1} a {value2} ({value3})",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.unable_to_open_database_while_reading_shader_metadata_for",
+        translated_text: "No se pudo abrir la base de datos al leer los metadatos del shader para '{value1}': {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.unable_to_prepare_policy_list_database_query",
+        translated_text: "No se pudo preparar la consulta de base de datos de la Lista de políticas: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.unable_to_prepare_policy_clone",
+        translated_text: "No se pudo preparar el clon de la política: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.unable_to_query_policy_list_rows_from_database",
+        translated_text: "No se pudieron consultar las filas de la Lista de políticas en la base de datos: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.unable_to_query_shader_id_for",
+        translated_text: "No se pudo consultar el ID del shader para '{value1}': {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.unable_to_read_database_metadata_for",
+        translated_text: "No se pudieron leer los metadatos de la base de datos para '{value1}': {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.unable_to_refresh_shader",
+        translated_text: "No se pudo actualizar el shader: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.unable_to_rename_policy",
+        translated_text: "No se pudo renombrar la política: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.unable_to_resolve_shader_id",
+        translated_text: "No se pudo resolver shader_id {value1}: {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.unable_to_restore_control_center_fullscreen_state",
+        translated_text: "No se pudo restaurar el estado de pantalla completa del Centro de control de Screenshaver: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.unable_to_restore_the_previous_shader_after_bulk_edit",
+        translated_text: "No se pudo restaurar el shader anterior después de la edición masiva: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.unable_to_save_bulk_policy_changes",
+        translated_text: "No se pudieron guardar los cambios masivos de políticas: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.unable_to_save_policy",
+        translated_text: "No se pudo guardar la política: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.unable_to_serialize_control_center_state",
+        translated_text: "No se pudo serializar el estado del Centro de control: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.unable_to_write_control_center_state",
+        translated_text: "No se pudo escribir el estado del Centro de control {value1}: {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.unsupported_display_mode",
+        translated_text: "Modo de visualización no compatible '{value1}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.valid_shader_has_no_channel_usage_metadata",
+        translated_text: "El shader válido '{value1}' no tiene metadatos de uso de canales",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.wallpaper_target_enforced_by_shader_location_new_wallpaper_policy_is_ready",
+        translated_text: "El destino Fondo de pantalla se impuso por la ubicación del shader. La nueva política de fondo de pantalla está lista para guardarse.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.shader_is_rejected_2",
+        translated_text: "el shader está rechazado",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.policy_deleted_for",
+        translated_text: "Política {value1} eliminada para {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.policy_was_deleted_but_the_shader_file_could_not_be_deleted",
+        translated_text: "Se eliminó la política {value1}, pero no se pudo eliminar el archivo de shader: {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.shader_and_associated_policy_deleted",
+        translated_text: "Shader {value1} y política {value2} asociada eliminados: {value3}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "target.unassigned",
+        translated_text: "Sin asignar",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.bulk_edit_no_changes_protected_default_one",
+        translated_text: "No se modificó ninguna política. El destino de política no puede cambiarse para {value1} política predeterminada protegida.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.bulk_edit_no_changes_protected_default_many",
+        translated_text: "No se modificó ninguna política. El destino de política no puede cambiarse para {value1} políticas predeterminadas protegidas.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.bulk_edit_complete_protected_default_one",
+        translated_text: "Edición masiva completada: {value1} políticas actualizadas. Se conservó el destino de política para {value2} política predeterminada protegida.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.bulk_edit_complete_protected_default_many",
+        translated_text: "Edición masiva completada: {value1} políticas actualizadas. Se conservó el destino de política para {value2} políticas predeterminadas protegidas.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.select_policy_target_before_saving",
+        translated_text: "Seleccione un destino de política antes de guardar",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.delete_shader_from_policy_context_menu",
+        translated_text: "Eliminar shader está disponible en el menú contextual de la fila de Políticas.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.select_target_for_selected_unassigned_policies",
+        translated_text: "Seleccione Salvapantallas o Fondo de pantalla como destino de política para las políticas Sin asignar seleccionadas.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "edit.required",
+        translated_text: "Requerido",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "assign_shader_policies.all_screensavers",
+        translated_text: "Todos como protectores de pantalla",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "assign_shader_policies.all_wallpapers",
+        translated_text: "Todos como fondos de pantalla",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "assign_shader_policies.screensavers_and_wallpapers",
+        translated_text: "Protectores de pantalla + fondos de pantalla",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "assign_shader_policies.all_unassigned",
+        translated_text: "Todos sin asignar",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "assign_shader_policies.assignment_title",
+        translated_text: "Asignar nuevas políticas de shader",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "assign_shader_policies.assignment_message.singular",
+        translated_text: "Screenshaver encontró {count} shader en la carpeta de shaders administrados que aún no tiene una política.\n\nElija cómo se debe crear una política para este shader.\n\nLas políticas sin asignar no se pueden renderizar hasta que su Destino de política se cambie a Protector de pantalla o Fondo de pantalla.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "assign_shader_policies.assignment_message.plural",
+        translated_text: "Screenshaver encontró {count} shaders en la carpeta de shaders administrados que aún no tienen una política.\n\nElija cómo se deben crear las políticas para estos shaders.\n\nLas políticas sin asignar no se pueden renderizar hasta que su Destino de política se cambie a Protector de pantalla o Fondo de pantalla.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "assign_shader_policies.completion_title",
+        translated_text: "Políticas de shader creadas",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "assign_shader_policies.completion_message.one_policy_one_shader",
+        translated_text: "Screenshaver creó {policy_count} política de shader para {shader_count} shader usando \"{assignment}\".\n\nPuede revisar o cambiar las políticas de shader en cualquier momento ejecutando:\n\nscreenshaver --control\n\nEsto abre el Centro de control de Screenshaver.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "assign_shader_policies.completion_message.one_policy_many_shaders",
+        translated_text: "Screenshaver creó {policy_count} política de shader para {shader_count} shaders usando \"{assignment}\".\n\nPuede revisar o cambiar las políticas de shader en cualquier momento ejecutando:\n\nscreenshaver --control\n\nEsto abre el Centro de control de Screenshaver.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "assign_shader_policies.completion_message.many_policies_one_shader",
+        translated_text: "Screenshaver creó {policy_count} políticas de shader para {shader_count} shader usando \"{assignment}\".\n\nPuede revisar o cambiar las políticas de shader en cualquier momento ejecutando:\n\nscreenshaver --control\n\nEsto abre el Centro de control de Screenshaver.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "assign_shader_policies.completion_message.many_policies_many_shaders",
+        translated_text: "Screenshaver creó {policy_count} políticas de shader para {shader_count} shaders usando \"{assignment}\".\n\nPuede revisar o cambiar las políticas de shader en cualquier momento ejecutando:\n\nscreenshaver --control\n\nEsto abre el Centro de control de Screenshaver.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "assign_shader_policies.error.prepare_query",
+        translated_text: "No se pudo preparar la consulta de shaders sin política: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "assign_shader_policies.error.query_shaders",
+        translated_text: "No se pudieron consultar los shaders sin política: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "assign_shader_policies.error.decode_row",
+        translated_text: "No se pudo decodificar la fila del shader sin política: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "assign_shader_policies.error.display_dialog",
+        translated_text: "No se pudo mostrar el diálogo de asignación de nuevas políticas: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "assign_shader_policies.error.unknown_button",
+        translated_text: "El diálogo de asignación de nuevas políticas devolvió el identificador de botón desconocido {button_id}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "assign_shader_policies.error.begin_transaction",
+        translated_text: "No se pudo iniciar la transacción de asignación de nuevas políticas: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "assign_shader_policies.error.recheck_policies",
+        translated_text: "No se pudieron volver a comprobar las políticas de '{filename}': {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "assign_shader_policies.error.commit_transaction",
+        translated_text: "No se pudo confirmar la transacción de asignación de nuevas políticas: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "assign_shader_policies.error.create_policy",
+        translated_text: "No se pudo crear la política {target} para '{filename}': {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "assign_shader_policies.error.validate_policy_name",
+        translated_text: "No se pudo validar el Nombre de política generado '{policy_name}' para el destino {target}: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "assign_shader_policies.error.generate_policy_name",
+        translated_text: "No se pudo generar un Nombre de política sugerido disponible para '{filename}' en el destino {target}",
+    },
+
 ];

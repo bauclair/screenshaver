@@ -526,6 +526,37 @@ fn intentionally_invariant(s: &str, line: &str, path: &Path) -> bool {
         return true;
     }
 
+    // edit_shader.rs uses bracketed subsystem tags exclusively for developer/runtime
+    // diagnostics written through Screenshaver logging. They are intentionally stable
+    // diagnostic text, not localized presentation. The remaining exact strings below
+    // are internal state encodings, assertion text, or technical shader identifiers.
+    let is_edit_shader = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        == Some("edit_shader.rs");
+
+    if is_edit_shader
+        && (t.starts_with("[EDIT_SHADER]")
+            || t.starts_with("[TEXTURE]")
+            || t.starts_with("[AUDIO_MOTION]")
+            || t.starts_with("[CONFIG]")
+            || matches!(
+                t,
+                "shader_paths was checked for emptiness"
+                    | "Native GLSL"
+                    | "existing policy"
+                    | "resolved defaults"
+                    | "rejected:"
+                    | "unavailable:"
+                    | "rejected: {}"
+                    | "unavailable: {}"
+                    | "single:{}"
+                    | "playlist:{}:{}"
+            ))
+    {
+        return true;
+    }
+
     if matches!(
         t,
         "screensaver"

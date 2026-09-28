@@ -43,24 +43,32 @@ impl PolicyAssignment {
 
     pub fn name(
         self,
-    ) -> &'static str {
+    ) -> String {
 
         match self {
 
             Self::Screensavers => {
-                "All Screensavers"
+                crate::manage_localization::runtime_text(
+                    "assign_shader_policies.all_screensavers"
+                )
             }
 
             Self::Wallpapers => {
-                "All Wallpapers"
+                crate::manage_localization::runtime_text(
+                    "assign_shader_policies.all_wallpapers"
+                )
             }
 
             Self::ScreensaversAndWallpapers => {
-                "Screensavers + Wallpapers"
+                crate::manage_localization::runtime_text(
+                    "assign_shader_policies.screensavers_and_wallpapers"
+                )
             }
 
             Self::Unassigned => {
-                "All Unassigned"
+                crate::manage_localization::runtime_text(
+                    "assign_shader_policies.all_unassigned"
+                )
             }
         }
     }
@@ -198,9 +206,11 @@ fn load_policyless_managed_shaders(
             )
             .map_err(
                 |error| {
-                    format!(
-                        "Unable to prepare policy-less shader query: {}",
-                        error,
+                    crate::manage_localization::runtime_text_with_params(
+                        "assign_shader_policies.error.prepare_query",
+                        &[
+                            ("error", &error.to_string()),
+                        ],
                     )
                 }
             )?;
@@ -230,9 +240,11 @@ fn load_policyless_managed_shaders(
             )
             .map_err(
                 |error| {
-                    format!(
-                        "Unable to query policy-less shaders: {}",
-                        error,
+                    crate::manage_localization::runtime_text_with_params(
+                        "assign_shader_policies.error.query_shaders",
+                        &[
+                            ("error", &error.to_string()),
+                        ],
                     )
                 }
             )?;
@@ -247,9 +259,11 @@ fn load_policyless_managed_shaders(
         shaders.push(
             row.map_err(
                 |error| {
-                    format!(
-                        "Unable to decode policy-less shader row: {}",
-                        error,
+                    crate::manage_localization::runtime_text_with_params(
+                        "assign_shader_policies.error.decode_row",
+                        &[
+                            ("error", &error.to_string()),
+                        ],
                     )
                 }
             )?
@@ -267,6 +281,19 @@ fn show_assignment_dialog(
     shader_count: usize,
 ) -> Result<Option<PolicyAssignment>, String> {
 
+    let all_screensavers =
+        PolicyAssignment::Screensavers.name();
+    let all_wallpapers =
+        PolicyAssignment::Wallpapers.name();
+    let screensavers_and_wallpapers =
+        PolicyAssignment::ScreensaversAndWallpapers.name();
+    let all_unassigned =
+        PolicyAssignment::Unassigned.name();
+    let cancel =
+        crate::manage_localization::runtime_text(
+            "common.cancel"
+        );
+
     let buttons = [
         ButtonData {
             flags:
@@ -274,7 +301,7 @@ fn show_assignment_dialog(
             button_id:
                 BUTTON_SCREENSAVERS,
             text:
-                "All Screensavers",
+                &all_screensavers,
         },
 
         ButtonData {
@@ -283,7 +310,7 @@ fn show_assignment_dialog(
             button_id:
                 BUTTON_WALLPAPERS,
             text:
-                "All Wallpapers",
+                &all_wallpapers,
         },
 
         ButtonData {
@@ -292,7 +319,7 @@ fn show_assignment_dialog(
             button_id:
                 BUTTON_BOTH,
             text:
-                "Screensavers + Wallpapers",
+                &screensavers_and_wallpapers,
         },
 
         ButtonData {
@@ -301,7 +328,7 @@ fn show_assignment_dialog(
             button_id:
                 BUTTON_UNASSIGNED,
             text:
-                "All Unassigned",
+                &all_unassigned,
         },
 
         ButtonData {
@@ -310,20 +337,27 @@ fn show_assignment_dialog(
             button_id:
                 BUTTON_CANCEL,
             text:
-                "Cancel",
+                &cancel,
         },
     ];
 
 
+    let shader_count_text =
+        shader_count.to_string();
+
+    let message_key =
+        if shader_count == 1 {
+            "assign_shader_policies.assignment_message.singular"
+        } else {
+            "assign_shader_policies.assignment_message.plural"
+        };
+
     let message =
-        format!(
-            "Screenshaver found {} shader{} in the managed shaders folder that do not yet have a policy.\n\nChoose how policies should be created for these shaders.\n\nUnassigned policies cannot be rendered until their Policy Target is changed to Screensaver or Wallpaper.",
-            shader_count,
-            if shader_count == 1 {
-                ""
-            } else {
-                "s"
-            },
+        crate::manage_localization::runtime_text_with_params(
+            message_key,
+            &[
+                ("count", &shader_count_text),
+            ],
         );
 
 
@@ -331,16 +365,20 @@ fn show_assignment_dialog(
         show_message_box(
             MessageBoxFlag::INFORMATION,
             &buttons,
-            "Assign New Shader Policies",
+            &crate::manage_localization::runtime_text(
+                "assign_shader_policies.assignment_title"
+            ),
             &message,
             None::<&sdl2::video::Window>,
             None::<sdl2::messagebox::MessageBoxColorScheme>,
         )
         .map_err(
             |error| {
-                format!(
-                    "Unable to display new-policy assignment dialog: {:?}",
-                    error,
+                crate::manage_localization::runtime_text_with_params(
+                    "assign_shader_policies.error.display_dialog",
+                    &[
+                        ("error", &format!("{:?}", error)),
+                    ],
                 )
             }
         )?;
@@ -400,9 +438,11 @@ fn show_assignment_dialog(
 
                 other => {
                     Err(
-                        format!(
-                            "New-policy assignment dialog returned unknown button id {}",
-                            other,
+                        crate::manage_localization::runtime_text_with_params(
+                            "assign_shader_policies.error.unknown_button",
+                            &[
+                                ("button_id", &other.to_string()),
+                            ],
                         )
                     )
                 }
@@ -423,9 +463,11 @@ fn create_policies(
             .transaction()
             .map_err(
                 |error| {
-                    format!(
-                        "Unable to begin new-policy assignment transaction: {}",
-                        error,
+                    crate::manage_localization::runtime_text_with_params(
+                        "assign_shader_policies.error.begin_transaction",
+                        &[
+                            ("error", &error.to_string()),
+                        ],
                     )
                 }
             )?;
@@ -456,10 +498,12 @@ fn create_policies(
                 )
                 .map_err(
                     |error| {
-                        format!(
-                            "Unable to recheck policies for '{}': {}",
-                            shader.filename,
-                            error,
+                        crate::manage_localization::runtime_text_with_params(
+                            "assign_shader_policies.error.recheck_policies",
+                            &[
+                                ("filename", shader.filename.as_str()),
+                                ("error", &error.to_string()),
+                            ],
                         )
                     }
                 )?;
@@ -535,9 +579,11 @@ fn create_policies(
         .commit()
         .map_err(
             |error| {
-                format!(
-                    "Unable to commit new-policy assignment transaction: {}",
-                    error,
+                crate::manage_localization::runtime_text_with_params(
+                    "assign_shader_policies.error.commit_transaction",
+                    &[
+                        ("error", &error.to_string()),
+                    ],
                 )
             }
         )?;
@@ -601,11 +647,13 @@ fn insert_default_policy(
         )
         .map_err(
             |error| {
-                format!(
-                    "Unable to create {} policy for '{}': {}",
-                    target,
-                    shader.filename,
-                    error,
+                crate::manage_localization::runtime_text_with_params(
+                    "assign_shader_policies.error.create_policy",
+                    &[
+                        ("target", target),
+                        ("filename", shader.filename.as_str()),
+                        ("error", &error.to_string()),
+                    ],
                 )
             }
         )?;
@@ -701,11 +749,13 @@ fn available_policy_name(
                 )
                 .map_err(
                     |error| {
-                        format!(
-                            "Unable to validate generated Policy Name '{}' for target {}: {}",
-                            candidate,
-                            target,
-                            error,
+                        crate::manage_localization::runtime_text_with_params(
+                            "assign_shader_policies.error.validate_policy_name",
+                            &[
+                                ("policy_name", candidate.as_str()),
+                                ("target", target),
+                                ("error", &error.to_string()),
+                            ],
                         )
                     }
                 )?;
@@ -718,10 +768,12 @@ fn available_policy_name(
     }
 
     Err(
-        format!(
-            "Unable to generate an available suggested Policy Name for '{}' in target {}",
-            filename,
-            target,
+        crate::manage_localization::runtime_text_with_params(
+            "assign_shader_policies.error.generate_policy_name",
+            &[
+                ("filename", filename),
+                ("target", target),
+            ],
         )
     )
 }
@@ -733,29 +785,49 @@ fn show_completion_dialog(
     assignment: PolicyAssignment,
 ) {
 
+    let policy_count_text =
+        policy_count.to_string();
+    let shader_count_text =
+        shader_count.to_string();
+    let assignment_name =
+        assignment.name();
+
+    let message_key =
+        match (
+            policy_count == 1,
+            shader_count == 1,
+        ) {
+            (true, true) => {
+                "assign_shader_policies.completion_message.one_policy_one_shader"
+            }
+            (true, false) => {
+                "assign_shader_policies.completion_message.one_policy_many_shaders"
+            }
+            (false, true) => {
+                "assign_shader_policies.completion_message.many_policies_one_shader"
+            }
+            (false, false) => {
+                "assign_shader_policies.completion_message.many_policies_many_shaders"
+            }
+        };
+
     let message =
-        format!(
-            "Screenshaver created {} shader polic{} for {} shader{} using \"{}\".\n\nYou can review or change shader policies at any time by running:\n\nscreenshaver --control\n\nThis opens the Screenshaver Control Center.",
-            policy_count,
-            if policy_count == 1 {
-                "y"
-            } else {
-                "ies"
-            },
-            shader_count,
-            if shader_count == 1 {
-                ""
-            } else {
-                "s"
-            },
-            assignment.name(),
+        crate::manage_localization::runtime_text_with_params(
+            message_key,
+            &[
+                ("policy_count", &policy_count_text),
+                ("shader_count", &shader_count_text),
+                ("assignment", &assignment_name),
+            ],
         );
 
 
     let _ =
         show_simple_message_box(
             MessageBoxFlag::INFORMATION,
-            "Shader Policies Created",
+            &crate::manage_localization::runtime_text(
+                "assign_shader_policies.completion_title"
+            ),
             &message,
             None::<&sdl2::video::Window>,
         );
