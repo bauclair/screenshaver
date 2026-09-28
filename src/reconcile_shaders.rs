@@ -14,8 +14,6 @@ use rusqlite::{
 };
 
 
-const RUNTIME_SOURCE_PREPARATION_VERSION: i64 = 1;
-
 
 #[derive(
     Debug,
@@ -783,7 +781,7 @@ fn existing_record_can_be_reused(
             existing.runtime_source_present
                 && existing.preprocessor_version
                     == Some(
-                        RUNTIME_SOURCE_PREPARATION_VERSION
+                        crate::runtime_source_version::RUNTIME_SOURCE_PREPARATION_VERSION
                     )
                 && existing.channel_usage_present
                 && existing.shader_inputs_present
@@ -1194,7 +1192,7 @@ fn valid_prepared_shader(
 
         preprocessor_version:
             Some(
-                RUNTIME_SOURCE_PREPARATION_VERSION
+                crate::runtime_source_version::RUNTIME_SOURCE_PREPARATION_VERSION
             ),
 
         channel_usage_mask:

@@ -4,7 +4,6 @@ use rusqlite::{
 };
 
 const EXPECTED_SCHEMA_VERSION: i64 = 2;
-const EXPECTED_RUNTIME_SOURCE_PREPARATION_VERSION: i64 = 1;
 
 
 pub fn validate_integrity(
@@ -1202,12 +1201,12 @@ fn validate_default_shader(
 
 
     if preprocessor_version
-        != EXPECTED_RUNTIME_SOURCE_PREPARATION_VERSION
+        != crate::runtime_source_version::RUNTIME_SOURCE_PREPARATION_VERSION
     {
         return Err(
             format!(
                 "Default-shader validation failed: expected runtime-source preparation version {}, found {}",
-                EXPECTED_RUNTIME_SOURCE_PREPARATION_VERSION,
+                crate::runtime_source_version::RUNTIME_SOURCE_PREPARATION_VERSION,
                 preprocessor_version,
             )
         );

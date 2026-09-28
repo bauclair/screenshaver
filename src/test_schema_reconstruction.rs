@@ -476,7 +476,8 @@ fn verify_factory_default_runtime_package(
         || file_status != "present"
         || validation_status != "valid"
         || runtime_source_length <= 0
-        || preprocessor_version != 1
+        || preprocessor_version
+            != crate::runtime_source_version::RUNTIME_SOURCE_PREPARATION_VERSION
         || channel_usage_mask < 0
         || shader_inputs_json != "[]"
     {

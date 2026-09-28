@@ -14,8 +14,6 @@ use rusqlite::{
 };
 
 
-const RUNTIME_SOURCE_PREPARATION_VERSION: i64 = 1;
-
 
 pub(crate) fn register_default_shader(
     connection: &mut Connection,
@@ -230,7 +228,7 @@ pub(crate) fn register_default_shader(
                 validation_reason,
                 validation_message,
                 source_bytes,
-                RUNTIME_SOURCE_PREPARATION_VERSION,
+                crate::runtime_source_version::RUNTIME_SOURCE_PREPARATION_VERSION,
                 channel_usage_mask,
                 shader_inputs_json,
             ],

@@ -33,6 +33,7 @@ mod apply_shader_inputs;
 mod preprocess_shader;
 mod load_shader;
 mod load_shader_source;
+mod runtime_source_version;
 mod compile_shader;
 
 mod generate_bricks;

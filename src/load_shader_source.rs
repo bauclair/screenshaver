@@ -1,8 +1,6 @@
 use rusqlite::OptionalExtension;
 
 
-const EXPECTED_RUNTIME_SOURCE_PREPARATION_VERSION: i64 = 1;
-
 
 #[derive(Debug)]
 pub enum ShaderSourceResult {
@@ -244,7 +242,7 @@ pub fn load_managed_shader_source(
 
 
     if preprocessor_version
-        != EXPECTED_RUNTIME_SOURCE_PREPARATION_VERSION
+        != crate::runtime_source_version::RUNTIME_SOURCE_PREPARATION_VERSION
     {
 
         return Ok(
@@ -254,7 +252,7 @@ pub fn load_managed_shader_source(
                         "Shader '{}' runtime source was prepared by version {}, but this executable requires version {}",
                         shader_name,
                         preprocessor_version,
-                        EXPECTED_RUNTIME_SOURCE_PREPARATION_VERSION,
+                        crate::runtime_source_version::RUNTIME_SOURCE_PREPARATION_VERSION,
                     ),
             }
         );

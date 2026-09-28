@@ -135,6 +135,8 @@ mod export_data;
 mod manage_backup;
 mod compare_databases;
 
+mod runtime_source_version;
+
 use std::sync::Arc;
 use std::sync::atomic::{
     AtomicBool,

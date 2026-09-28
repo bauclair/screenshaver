@@ -60,6 +60,10 @@ mod preprocess_shader;
 mod load_shader;
 #[path = "../../src/load_shader_source.rs"]
 mod load_shader_source;
+
+#[path = "../../src/runtime_source_version.rs"]
+mod runtime_source_version;
+
 #[path = "../../src/compile_shader.rs"]
 mod compile_shader;
 

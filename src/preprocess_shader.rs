@@ -266,8 +266,9 @@ fn glsl_comp_0005_initialize_main_image_output(
 // Introduced: Screenshaver pre-release
 // First Observed: 2026-07-11
 // Implemented: 2026-07-11
-// Last Revised: 2026-07-11
+// Last Revised: 2026-09-28
 // First Cases: shell/cube-carving shader; Dark Transit
+// Struct-member exclusion: Mobius trans in hyper-3 space
 // ------------------------------------------------------------
 fn glsl_comp_0006_initialize_multi_declarations(
     source: &str,
@@ -285,6 +286,11 @@ fn glsl_comp_0006_initialize_multi_declarations(
 
     for captures in declaration_regex.captures_iter(&mask) {
         let whole = captures.get(0).expect("GLSL-COMP-0006 complete declaration");
+
+        if is_inside_struct_body(&mask, whole.start()) {
+            continue;
+        }
+
         let indentation = captures.get(1).expect("GLSL-COMP-0006 indentation").as_str();
         let variable_type = captures.get(2).expect("GLSL-COMP-0006 variable type").as_str();
         let declarator_match = captures.get(3).expect("GLSL-COMP-0006 declarator list");
@@ -787,6 +793,32 @@ fn split_top_level_declarators(source: &str) -> Vec<(usize, usize)> {
 
     ranges.push((range_start, source.len()));
     ranges
+}
+
+fn is_inside_struct_body(source: &str, position: usize) -> bool {
+    let bytes = source.as_bytes();
+    let mut brace_stack = Vec::new();
+    let struct_regex = Regex::new(r"\bstruct(?:\s+[A-Za-z_]\w*)?\s*$")
+        .expect("GLSL struct-context regex");
+
+    for (index, byte) in bytes[..position].iter().enumerate() {
+        match byte {
+            b'{' => {
+                let prefix = &source[..index];
+                let declaration_start = prefix
+                    .rfind(|character| matches!(character, ';' | '{' | '}'))
+                    .map_or(0, |delimiter| delimiter + 1);
+                let declaration_prefix = prefix[declaration_start..].trim();
+                brace_stack.push(struct_regex.is_match(declaration_prefix));
+            }
+            b'}' => {
+                brace_stack.pop();
+            }
+            _ => {}
+        }
+    }
+
+    brace_stack.last().copied().unwrap_or(false)
 }
 
 fn has_top_level_assignment(source: &str) -> bool {
