@@ -694,12 +694,29 @@ impl PolicyDisplayRow {
         }
 
         if self.validation_status.eq_ignore_ascii_case("rejected") {
+            let compile_error =
+                self.validation_reason
+                    .as_deref()
+                    .is_some_and(
+                        |reason| {
+                            reason.eq_ignore_ascii_case("compile_error")
+                        }
+                    );
+
+            let status =
+                if compile_error {
+                    "Compile Error"
+                } else {
+                    "Rejected"
+                };
+
             let reason = self.validation_message.as_deref()
                 .or(self.validation_reason.as_deref())
                 .unwrap_or("Shader validation failed.");
 
             return format!(
-                "Shader cannot be rendered.\nStatus: Rejected\nReason: {}\nSee screenshaver.log for further details.",
+                "Shader cannot be rendered.\nStatus: {}\nReason: {}\nSee screenshaver.log for further details.",
+                status,
                 reason,
             );
         }

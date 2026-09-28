@@ -776,6 +776,7 @@ impl ShaderManager {
                        ON s.shader_id = p.shader_id
                      WHERE s.source_path = ?1
                        AND s.file_status = 'present'
+                       AND s.validation_status = 'valid'
                        AND p.policy_target = 'screensaver'
                      ORDER BY p.policy_name COLLATE NOCASE,
                               p.policy_name,
@@ -1286,6 +1287,77 @@ impl ShaderManager {
             shader
         )
     }
+}
+
+
+/// Persist an OpenGL compilation failure for one managed shader.  Schema 2
+/// represents runtime compilation failures as a rejected shader with the
+/// machine-readable `compile_error` reason; the full OpenGL diagnostic is kept
+/// in `validation_message` for Policy List/QBE/tooltips and troubleshooting.
+pub fn record_compile_error(
+    shader_name: &str,
+    error: &str,
+) -> Result<(), String> {
+
+    let managed_source_path =
+        crate::locate_paths::shader_dir()
+            .to_string_lossy()
+            .to_string();
+
+    let connection =
+        crate::open_database::open()
+            .map_err(
+                |open_error| {
+                    format!(
+                        "Unable to open database while recording compile error for '{}': {}",
+                        shader_name,
+                        open_error,
+                    )
+                }
+            )?;
+
+    let updated =
+        connection.execute(
+            "UPDATE shaders
+             SET validation_status = 'rejected',
+                 validation_reason = 'compile_error',
+                 validation_message = ?1
+             WHERE filename = ?2
+               AND source_path = ?3
+               AND file_status = 'present'",
+            rusqlite::params![
+                error,
+                shader_name,
+                managed_source_path,
+            ],
+        )
+        .map_err(
+            |database_error| {
+                format!(
+                    "Unable to record compile error for managed shader '{}': {}",
+                    shader_name,
+                    database_error,
+                )
+            }
+        )?;
+
+    if updated == 0 {
+        return Err(
+            format!(
+                "No present managed shader record matched '{}' while recording compile error",
+                shader_name,
+            )
+        );
+    }
+
+    log_information(
+        &format!(
+            "[SHADER] Recorded Compile Error status for managed shader '{}'",
+            shader_name,
+        )
+    );
+
+    Ok(())
 }
 
 

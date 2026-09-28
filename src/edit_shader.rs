@@ -2105,6 +2105,40 @@ fn run_empty_session(
                                 }
 
 
+                                if matches!(
+                                    *command,
+                                    crate::editor_layout::PolicyRowCommand::RefreshShader
+                                ) {
+                                    if let Err(error) =
+                                        refresh_managed_shader_for_editor(
+                                            &selected_path
+                                        )
+                                    {
+                                        edit_window.set_status_message(
+                                            format!(
+                                                "Unable to refresh shader: {}",
+                                                error,
+                                            )
+                                        );
+
+                                        log_warning(
+                                            &format!(
+                                                "[EDIT_SHADER] Unable to refresh managed shader '{}': {}",
+                                                selected_path.display(),
+                                                error,
+                                            )
+                                        );
+
+                                        continue;
+                                    }
+
+                                    policy_display_rows =
+                                    build_policy_display_rows(
+                                        &config
+                                    );
+                                }
+
+
                                 policy_open_request =
                                 Some(
                                     (
@@ -5263,6 +5297,50 @@ fn run_paths(
                                                                         &selected_shader_name,
                                                                     );
 
+                                                                    if policy_row_open_request
+                                                                        .as_ref()
+                                                                        .is_some_and(
+                                                                            |(
+                                                                                _row,
+                                                                                command,
+                                                                            )| {
+                                                                                matches!(
+                                                                                    *command,
+                                                                                    crate::editor_layout::PolicyRowCommand::RefreshShader
+                                                                                )
+                                                                            }
+                                                                        )
+                                                                    {
+                                                                        if let Err(error) =
+                                                                            refresh_managed_shader_for_editor(
+                                                                                &selected_path
+                                                                            )
+                                                                        {
+                                                                            edit_window.set_status_message(
+                                                                                format!(
+                                                                                    "Unable to refresh shader: {}",
+                                                                                    error,
+                                                                                )
+                                                                            );
+
+                                                                            log_warning(
+                                                                                &format!(
+                                                                                    "[EDIT_SHADER] Unable to refresh managed shader '{}': {}",
+                                                                                    selected_path.display(),
+                                                                                    error,
+                                                                                )
+                                                                            );
+
+                                                                            continue;
+                                                                        }
+
+                                                                        policy_display_rows =
+                                                                        build_policy_display_rows(
+                                                                            &config
+                                                                        );
+                                                                    }
+
+
                                                                     match load_active_shader(
                                                                         &selected_path,
                                                                         &new_texture_policy,
@@ -5446,6 +5524,31 @@ fn run_paths(
                                                                         }
 
                                                                         Err(error) => {
+                                                                            if policy_row_open_request
+                                                                                .as_ref()
+                                                                                .is_some_and(
+                                                                                    |(
+                                                                                        _row,
+                                                                                        command,
+                                                                                    )| {
+                                                                                        matches!(
+                                                                                            *command,
+                                                                                            crate::editor_layout::PolicyRowCommand::RefreshShader
+                                                                                        )
+                                                                                    }
+                                                                                )
+                                                                            {
+                                                                                record_editor_compile_error_if_managed(
+                                                                                    &selected_path,
+                                                                                    &error,
+                                                                                );
+
+                                                                                policy_display_rows =
+                                                                                build_policy_display_rows(
+                                                                                    &config
+                                                                                );
+                                                                            }
+
                                                                             edit_window.set_status_message(
                                                                                 format!(
                                                                                     "Unable to load shader: {}",
@@ -5470,6 +5573,34 @@ fn run_paths(
                                                         if editor_output.refresh_shader_requested {
                                                             let refresh_path =
                                                             active.path.clone();
+
+                                                            if let Err(error) =
+                                                                refresh_managed_shader_for_editor(
+                                                                    &refresh_path
+                                                                )
+                                                            {
+                                                                edit_window.set_status_message(
+                                                                    format!(
+                                                                        "Unable to refresh shader: {}",
+                                                                        error,
+                                                                    )
+                                                                );
+
+                                                                log_warning(
+                                                                    &format!(
+                                                                        "[EDIT_SHADER] Unable to refresh managed shader '{}': {}",
+                                                                        refresh_path.display(),
+                                                                        error,
+                                                                    )
+                                                                );
+
+                                                                continue;
+                                                            }
+
+                                                            policy_display_rows =
+                                                            build_policy_display_rows(
+                                                                &config
+                                                            );
 
                                                             match load_active_shader(
                                                                 &refresh_path,
@@ -5577,6 +5708,16 @@ fn run_paths(
                                                                 }
 
                                                                 Err(error) => {
+                                                                    record_editor_compile_error_if_managed(
+                                                                        &refresh_path,
+                                                                        &error,
+                                                                    );
+
+                                                                    policy_display_rows =
+                                                                    build_policy_display_rows(
+                                                                        &config
+                                                                    );
+
                                                                     edit_window.set_status_message(
                                                                         format!(
                                                                             "Unable to refresh shader: {}",
@@ -9578,6 +9719,11 @@ String,
 
                 Err(error) => {
 
+                    record_editor_compile_error_if_managed(
+                        path,
+                        &error,
+                    );
+
                     log_warning(
                         &format!(
                             "[EDIT_SHADER] Skipping '{}': {}",
@@ -9594,6 +9740,113 @@ String,
             "The selected shader could not be loaded for editing"
             .to_string()
         )
+}
+
+
+fn refresh_managed_shader_for_editor(
+    shader_path: &Path,
+) -> Result<(), String> {
+
+    let managed_directory =
+        crate::locate_paths::shader_dir();
+
+    let is_managed =
+        std::fs::canonicalize(
+            shader_path
+        )
+        .ok()
+        .zip(
+            std::fs::canonicalize(
+                &managed_directory
+            )
+            .ok()
+        )
+        .is_some_and(
+            |(
+                shader,
+                directory,
+            )| {
+                shader.parent()
+                    == Some(
+                        directory.as_path()
+                    )
+            }
+        );
+
+    if !is_managed {
+        return Ok(());
+    }
+
+    crate::reconcile_shaders::refresh_managed_shader(
+        shader_path
+    )?;
+
+    Ok(())
+}
+
+
+fn record_editor_compile_error_if_managed(
+    shader_path: &Path,
+    error: &str,
+) {
+
+    let managed_directory =
+        crate::locate_paths::shader_dir();
+
+    let is_managed =
+        std::fs::canonicalize(
+            shader_path
+        )
+        .ok()
+        .zip(
+            std::fs::canonicalize(
+                &managed_directory
+            )
+            .ok()
+        )
+        .is_some_and(
+            |(
+                shader,
+                directory,
+            )| {
+                shader.parent()
+                    == Some(
+                        directory.as_path()
+                    )
+            }
+        );
+
+    if !is_managed
+        || error.starts_with("rejected:")
+        || error.starts_with("unavailable:")
+    {
+        return;
+    }
+
+    let Some(shader_name) =
+        shader_path
+        .file_name()
+        .and_then(
+            |name| name.to_str()
+        )
+    else {
+        return;
+    };
+
+    if let Err(database_error) =
+        crate::manage_shader::record_compile_error(
+            shader_name,
+            error,
+        )
+    {
+        log_warning(
+            &format!(
+                "[EDIT_SHADER] Unable to persist Compile Error for refreshed managed shader '{}': {}",
+                shader_name,
+                database_error,
+            )
+        );
+    }
 }
 
 

@@ -567,6 +567,7 @@ fn draw_value_control(
                 &[
                     "OK",
                     "Rejected",
+                    "Compile Error",
                     "Missing",
                     "Unreadable",
                 ],

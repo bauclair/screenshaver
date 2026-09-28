@@ -1924,6 +1924,24 @@ fn select_safe_shader_program(
                         );
 
 
+                        if is_managed_shader {
+                            if let Err(status_error) =
+                                crate::manage_shader::record_compile_error(
+                                    &requested_shader_name,
+                                    &error,
+                                )
+                            {
+                                log_warning(
+                                    &format!(
+                                        "[RENDER] Unable to persist Compile Error status for '{}': {}",
+                                        requested_shader_name,
+                                        status_error,
+                                    )
+                                );
+                            }
+                        }
+
+
                         shader_manager.remove_entry(
                             &requested_shader
                         );

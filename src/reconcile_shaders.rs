@@ -163,6 +163,127 @@ enum Mutation {
 }
 
 
+pub fn refresh_managed_shader(
+    shader_path: &Path,
+) -> Result<ReconciliationOutcome, String> {
+
+    let shader_directory =
+        crate::locate_paths::shader_dir();
+
+    let canonical_shader_directory =
+        std::fs::canonicalize(
+            &shader_directory
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to resolve managed shader directory '{}': {}",
+                    shader_directory.display(),
+                    error,
+                )
+            }
+        )?;
+
+    let canonical_shader_path =
+        std::fs::canonicalize(
+            shader_path
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to resolve shader '{}': {}",
+                    shader_path.display(),
+                    error,
+                )
+            }
+        )?;
+
+    if canonical_shader_path.parent()
+        != Some(
+            canonical_shader_directory.as_path()
+        )
+    {
+        return Err(
+            format!(
+                "Shader '{}' is not in the managed shader directory",
+                shader_path.display(),
+            )
+        );
+    }
+
+    let filename =
+        canonical_shader_path
+        .file_name()
+        .and_then(
+            |name| name.to_str()
+        )
+        .ok_or_else(
+            || {
+                format!(
+                    "Managed shader path has no valid filename: {}",
+                    shader_path.display(),
+                )
+            }
+        )?;
+
+    let source_path =
+        shader_directory
+        .to_string_lossy()
+        .to_string();
+
+    let mut connection =
+        crate::open_database::open()
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to open database while refreshing managed shader '{}': {}",
+                    filename,
+                    error,
+                )
+            }
+        )?;
+
+    let invalidated =
+        connection
+        .execute(
+            "UPDATE shaders
+             SET preprocessed_source = NULL,
+                 preprocessor_version = NULL,
+                 channel_usage_mask = NULL,
+                 shader_inputs_json = NULL
+             WHERE filename = ?1
+               AND source_path = ?2
+               AND file_status = 'present'",
+            rusqlite::params![
+                filename,
+                source_path,
+            ],
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to invalidate derived runtime source for managed shader '{}': {}",
+                    filename,
+                    error,
+                )
+            }
+        )?;
+
+    if invalidated == 0 {
+        return Err(
+            format!(
+                "No present managed shader record matched '{}'",
+                filename,
+            )
+        );
+    }
+
+    reconcile(
+        &mut connection
+    )
+}
+
+
 pub fn reconcile(
     connection: &mut Connection,
 ) -> Result<ReconciliationOutcome, String> {
@@ -788,7 +909,31 @@ fn existing_record_can_be_reused(
         }
 
         "rejected" => {
-            true
+            if existing.validation_reason
+                .as_deref()
+                == Some(
+                    "compile_error"
+                )
+            {
+                // Runtime compiler failures are persistent validation results,
+                // not preprocessing failures.  Preserve the Compile Error
+                // across ordinary reconciliation only while the physical
+                // source is unchanged (checked by the caller) and the stored
+                // runtime package still belongs to the current preparation
+                // version.  A source edit or preparation-version bump must
+                // force regeneration and give the shader another chance.
+                existing.runtime_source_present
+                    && existing.preprocessor_version
+                        == Some(
+                            crate::runtime_source_version::RUNTIME_SOURCE_PREPARATION_VERSION
+                        )
+                    && existing.channel_usage_present
+                    && existing.shader_inputs_present
+            } else {
+                // Static/preprocessing rejection remains reusable while the
+                // source hash is unchanged.
+                true
+            }
         }
 
         _ => {

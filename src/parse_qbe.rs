@@ -1789,7 +1789,14 @@ fn build_status_clause(
             }
 
             "rejected" => {
-                "s.validation_status = 'rejected'"
+                "s.validation_status = 'rejected'
+                 AND COALESCE(lower(s.validation_reason), '') <> 'compile_error'"
+            }
+
+            "compile error"
+            | "compile_error" => {
+                "s.validation_status = 'rejected'
+                 AND lower(COALESCE(s.validation_reason, '')) = 'compile_error'"
             }
 
             "missing" => {
