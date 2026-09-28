@@ -1091,4 +1091,1296 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
         key: "export.finish",
         translated_text: "Finalizar",
     },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.window_title",
+        translated_text: "Importar datos de Screenshaver",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.stage.select_archive",
+        translated_text: "Seleccionar archivo",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.stage.inspect_archive",
+        translated_text: "Inspeccionar archivo",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.stage.resolve_conflicts",
+        translated_text: "Resolver conflictos",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.review_confirm",
+        translated_text: "Revisar y confirmar",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.results",
+        translated_text: "Resultados",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.select_archive_help",
+        translated_text: "Seleccione un archivo de exportación de Screenshaver para inspeccionarlo. En esta etapa no se modificará ningún dato de Screenshaver.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.archive_colon",
+        translated_text: "Archivo:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.archive_ready",
+        translated_text: "El archivo está listo para una inspección de solo lectura.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.no_archive_selected",
+        translated_text: "No se ha seleccionado ningún archivo.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.inspection_not_run",
+        translated_text: "La inspección del archivo no se ha ejecutado.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.archive_inspection_colon",
+        translated_text: "Inspección del archivo:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.pass",
+        translated_text: "CORRECTO",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.fail",
+        translated_text: "FALLO",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.export_format_colon",
+        translated_text: "Formato de exportación:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.source_screenshaver_colon",
+        translated_text: "Screenshaver de origen:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.source_db_schema_colon",
+        translated_text: "Esquema de BD de origen:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.inspection_read_only",
+        translated_text: "La inspección es de solo lectura. No se ha realizado ningún cambio en Screenshaver.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.conflict.new",
+        translated_text: "NUEVO",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.conflict.duplicate",
+        translated_text: "DUPLICADO",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.conflict.conflict",
+        translated_text: "CONFLICTO",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.conflict_help",
+        translated_text: "La importación es aditiva y no destructiva. Los conflictos de nombre reales se resuelven automáticamente cambiando el nombre del objeto importado; los objetos existentes nunca se modifican ni se descartan.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.conflict_not_run",
+        translated_text: "La detección de conflictos no se ha ejecutado.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.conflict_counts",
+        translated_text: "{new} nuevos, {duplicates} duplicados, {conflicts} conflictos",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.automatic_rename",
+        translated_text: "Resolución automática: Cambiar nombre → {name}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.rename_blocked",
+        translated_text: "No se pudo generar un cambio de nombre automático; la importación está bloqueada.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.proposed_dependency_plan",
+        translated_text: "Plan de dependencias propuesto",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.dependencies_resolved",
+        translated_text: "Todos los objetos y dependencias del paquete tienen destinos deterministas.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.conflict_read_only",
+        translated_text: "Este informe es de solo lectura. No se ha modificado ninguna fila de la base de datos ni ningún archivo de shader.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.keep_existing",
+        translated_text: "Conservar {type} existente ID {id}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.import_new",
+        translated_text: "Importar nuevo {type}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.unresolved_conflict",
+        translated_text: "Conflicto sin resolver",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.review_ready",
+        translated_text: "Screenshaver está listo para aplicar a esta instalación el paquete validado con sus dependencias resueltas.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.no_validated_package",
+        translated_text: "No hay ningún paquete validado disponible.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.conflict_unavailable",
+        translated_text: "La detección de conflictos no está disponible.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.before_import",
+        translated_text: "Antes de importar",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.backup_before_changes",
+        translated_text: "Screenshaver creará y verificará una copia de seguridad permanente con marca de tiempo de screenshaver.db antes de realizar cambios persistentes.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.behavior",
+        translated_text: "Comportamiento de la importación",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.behavior_detail",
+        translated_text: "Los archivos de shader nuevos y renombrados automáticamente se instalarán en la carpeta administrada de shaders, las políticas se restaurarán con sus ajustes de renderizado exportados y las listas de reproducción se reconstruirán en orden canónico. Los objetos existentes nunca se modifican. Los objetos duplicados realmente idénticos son reutilizados por las dependencias importadas.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.toml_unchanged",
+        translated_text: "screenshaver.toml no se modificará.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.no_result",
+        translated_text: "No hay ningún resultado de importación disponible.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.completed",
+        translated_text: "La importación se completó correctamente.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.failed",
+        translated_text: "La importación falló.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.playlist_memberships_colon",
+        translated_text: "Membresías de listas de reproducción:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.shaders_created_colon",
+        translated_text: "Shaders creados:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.policies_created_colon",
+        translated_text: "Políticas creadas:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.playlists_created_colon",
+        translated_text: "Listas de reproducción creadas:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.memberships_created_colon",
+        translated_text: "Membresías creadas:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.preimport_backup",
+        translated_text: "Copia de seguridad de la base de datos previa a la importación:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.close",
+        translated_text: "Cerrar",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.action",
+        translated_text: "Importar",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.shader_identical_same_name",
+        translated_text: "Ya hay contenido de shader idéntico instalado con el mismo nombre de archivo.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.shader_identical_other_name",
+        translated_text: "Ya hay contenido de shader idéntico instalado como '{name}'; se conservará el shader físico existente.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.shader_name_content_conflict",
+        translated_text: "El nombre de archivo ya existe en el inventario administrado de shaders, pero su contenido difiere del shader importado.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.shader_new",
+        translated_text: "Ningún shader instalado tiene este contenido ni este nombre de archivo administrado.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.policy_new",
+        translated_text: "No existe ninguna política {target} con este nombre de política.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.policy_duplicate",
+        translated_text: "Una política existente tiene el mismo destino, contenido de shader y configuración de renderizado.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.policy_conflict",
+        translated_text: "El nombre de política ya existe para este destino, pero su shader o configuración de renderizado difiere.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.policy_multiple_match",
+        translated_text: "Más de una política receptora coincide inesperadamente con este nombre de política y destino.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.playlist_new",
+        translated_text: "Ninguna lista de reproducción receptora tiene este nombre.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.playlist_duplicate",
+        translated_text: "Una lista de reproducción existente tiene la misma descripción y las mismas políticas resueltas en el mismo orden canónico.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.playlist_conflict",
+        translated_text: "El nombre de la lista de reproducción ya existe, pero su descripción o membresía resuelta difiere.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.archive_file",
+        translated_text: "Archivo de exportación",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.archive_size",
+        translated_text: "Tamaño del archivo",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.zip_container",
+        translated_text: "Contenedor ZIP",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.zip_entry_count",
+        translated_text: "Cantidad de entradas ZIP",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.zip_entry_access",
+        translated_text: "Acceso a entrada ZIP",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.resource_limits",
+        translated_text: "Límites de recursos del archivo",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.member_read",
+        translated_text: "Lectura de miembro del archivo",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.unique_names",
+        translated_text: "Nombres únicos en el archivo",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.archive_paths",
+        translated_text: "Rutas del archivo",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.entry_types",
+        translated_text: "Tipos de entrada del archivo",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.manifest",
+        translated_text: "Manifiesto",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.export_schema",
+        translated_text: "Esquema de exportación",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.format_identifier",
+        translated_text: "Identificador de formato",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.shader_metadata_structure",
+        translated_text: "Estructura de metadatos de shaders",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.shader_archive_paths",
+        translated_text: "Rutas de shaders en el archivo",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.package_structure",
+        translated_text: "Estructura del paquete",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.missing_content",
+        translated_text: "Contenido faltante del archivo",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.unexpected_content",
+        translated_text: "Contenido inesperado del archivo",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.manifest_counts",
+        translated_text: "Conteos del manifiesto",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.validated_package",
+        translated_text: "Paquete validado",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.relationships",
+        translated_text: "Relaciones del paquete",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.shader_payloads",
+        translated_text: "Contenido de shaders",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.shader_integrity",
+        translated_text: "Integridad de shaders",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.shader_encoding",
+        translated_text: "Codificación del código de shaders",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.shader_payload_inspection",
+        translated_text: "Inspección del contenido de shaders",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.package_sha256",
+        translated_text: "SHA-256 del paquete",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.not_regular_file",
+        translated_text: "La ruta seleccionada no es un archivo normal.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.resource_limit",
+        translated_text: "La expansión del archivo o una entrada individual supera los límites de inspección.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.no_duplicate_names",
+        translated_text: "No se detectaron nombres de miembros ZIP duplicados.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.safe_paths",
+        translated_text: "No se detectaron rutas absolutas, de recorrido, con NUL ni con barras invertidas.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.safe_entry_types",
+        translated_text: "No se detectaron enlaces simbólicos ni entradas de archivos especiales.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.manifest_missing",
+        translated_text: "Falta el archivo obligatorio manifest.json.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.counts_match",
+        translated_text: "Los conteos de políticas, shaders y listas de reproducción coinciden con los metadatos.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.counts_mismatch",
+        translated_text: "Los conteos del manifiesto no coinciden con los metadatos analizados.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.integrity_record_missing",
+        translated_text: "Falta el registro de integridad del manifiesto.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.sha_verified",
+        translated_text: "SHA-256 verificado.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.sha_mismatch",
+        translated_text: "El SHA-256 no coincide o el hash tiene un formato incorrecto.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.relationships_valid",
+        translated_text: "Las referencias política→shader y lista de reproducción→política son estructuralmente válidas.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.all_shader_hashes_verified",
+        translated_text: "Se verificaron todos los valores SHA-256 de los shaders.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.all_shader_utf8",
+        translated_text: "El contenido de todos los shaders es texto UTF-8 válido.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.package_hash_malformed",
+        translated_text: "El hash del paquete en el manifiesto tiene un formato incorrecto.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.package_fingerprint_verified",
+        translated_text: "Se verificó la huella digital canónica del paquete.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.package_fingerprint_mismatch",
+        translated_text: "La huella digital canónica del paquete no coincide con el manifiesto.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.access_archive",
+        translated_text: "No se puede acceder al archivo: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.open_archive",
+        translated_text: "No se puede abrir el archivo: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.invalid_zip",
+        translated_text: "Archivo ZIP no válido: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.zip_entry_error",
+        translated_text: "Entrada {index}: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.member_error",
+        translated_text: "{name}: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.manifest_invalid",
+        translated_text: "manifest.json no es válido: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.format_supported",
+        translated_text: "El formato de exportación de Screenshaver {version} es compatible.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.shader_path_not_permitted",
+        translated_text: "'{path}' no está permitido por el esquema de exportación.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.shader_files_present",
+        translated_text: "Hay {count} archivos de shader declarados presentes.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.playlist_members",
+        translated_text: "Miembros de listas de reproducción",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.metadata_title",
+        translated_text: "Metadatos de {dataset}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.metadata_hash_title",
+        translated_text: "Hash de metadatos de {dataset}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.structure_title",
+        translated_text: "Estructura de {dataset}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.required_file_missing",
+        translated_text: "Falta el archivo requerido '{file}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.manifest_integrity_missing",
+        translated_text: "Falta el registro de integridad del manifiesto.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.sha256_verified",
+        translated_text: "SHA-256 verificado.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.sha256_bad",
+        translated_text: "El SHA-256 no coincide o el hash tiene un formato incorrecto.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.rows_header_verified",
+        translated_text: "{rows} filas; encabezado del esquema verificado.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.required_members_exact",
+        translated_text: "Todos los miembros requeridos están presentes y no se encontraron archivos inesperados.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.review_count",
+        translated_text: "{new} para importar, {duplicates} idénticos ya presentes",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.package_members",
+        translated_text: "Miembros del paquete",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.package_relationships",
+        translated_text: "Relaciones del paquete",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.shader_source_encoding",
+        translated_text: "Codificación del código fuente de shaders",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.no_duplicate_names",
+        translated_text: "No se detectaron nombres duplicados de miembros ZIP.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.paths_safe",
+        translated_text: "No se detectaron rutas absolutas, de recorrido, con NUL ni con barras invertidas.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.no_special_entries",
+        translated_text: "No se detectaron enlaces simbólicos ni entradas de archivos especiales.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.manifest_missing",
+        translated_text: "Falta el archivo requerido manifest.json.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.package_hash_verified",
+        translated_text: "Huella digital canónica del paquete verificada.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.package_hash_mismatch",
+        translated_text: "La huella digital canónica del paquete no coincide con el manifiesto.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.relationships_valid",
+        translated_text: "Las referencias política→shader y lista de reproducción→política son estructuralmente válidas.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.all_shader_hashes_verified",
+        translated_text: "Se verificaron todos los valores SHA-256 de los shaders.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.check.all_shader_utf8",
+        translated_text: "El contenido de todos los shaders es texto UTF-8 válido.",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.dataset.playlists",
+        translated_text: "Listas de reproducción",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.dataset.playlist_memberships",
+        translated_text: "Membresías de listas de reproducción",
+    },
+
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.archive_bytes_exceed_limit",
+        translated_text: "{actual} bytes supera el límite de inspección de {limit} bytes.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.archive_entries_exceed_limit",
+        translated_text: "{actual} entradas supera el límite de {limit} entradas.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.manifest_schema_format_mismatch",
+        translated_text: "Manifiesto '{manifest}'; esquema '{schema}'.",
+    },
+
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.contents_colon",
+        translated_text: "Contenido:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.contents_counts",
+        translated_text: "{policies} políticas, {shaders} shaders, {playlists} listas de reproducción, {memberships} membresías",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.automatic_resolution_rename",
+        translated_text: "Resolución automática: Renombrar → {name}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.unresolved_rename_dependency_counts",
+        translated_text: "No se pudieron generar {renames} cambio(s) de nombre por conflicto; quedan {dependencies} referencia(s) de dependencia sin resolver.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.blocked_counts",
+        translated_text: "La importación está bloqueada: {conflicts} conflicto(s), {dependencies} referencia(s) de dependencia sin resolver.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.review_blocked_explanation",
+        translated_text: "La revisión está disponible para inspección, pero Importar permanecerá deshabilitado si no se puede generar algún cambio de nombre determinista o destino de dependencia.",
+    },
+
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.local_timestamp_failed",
+        translated_text: "No se pudo determinar la marca de tiempo local de importación: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.unique_import_name_failed",
+        translated_text: "No se pudo generar un nombre importado único para '{name}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.no_deterministic_rename",
+        translated_text: "{type} '{name}' no tiene un cambio de nombre importado determinista.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.missing_package_shader",
+        translated_text: "Falta el shader del paquete.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.missing_package_policy",
+        translated_text: "Falta la política del paquete.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.missing_package_playlist",
+        translated_text: "Falta la lista de reproducción del paquete.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.conflict_discovery_unavailable",
+        translated_text: "Detección de conflictos no disponible",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.conflict_database_open_failed",
+        translated_text: "No se pudo abrir screenshaver.db para la detección de conflictos de solo lectura: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.shader_hash_prepare_failed",
+        translated_text: "No se pudo preparar la búsqueda del hash del shader: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.shader_hash_query_failed",
+        translated_text: "No se pudo consultar el hash del shader '{hash}': {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.shader_hash_decode_failed",
+        translated_text: "No se pudo decodificar la búsqueda del hash del shader: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.shader_filename_check_failed",
+        translated_text: "No se pudo comprobar el nombre de archivo del shader '{filename}': {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.policy_name_prepare_failed",
+        translated_text: "No se pudo preparar la búsqueda de Nombre de política: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.policy_name_query_failed",
+        translated_text: "No se pudo consultar el Nombre de política '{name}': {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.policy_name_decode_failed",
+        translated_text: "No se pudo decodificar la búsqueda de Nombre de política: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.playlist_query_failed",
+        translated_text: "No se pudo consultar la lista de reproducción '{name}': {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.playlist_member_prepare_failed",
+        translated_text: "No se pudo preparar la búsqueda de miembros de la lista de reproducción: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.playlist_members_query_failed",
+        translated_text: "No se pudieron consultar los miembros de la lista de reproducción: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.playlist_members_decode_failed",
+        translated_text: "No se pudieron decodificar los miembros de la lista de reproducción: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.validated_policy_missing_field",
+        translated_text: "A la política validada '{policy}' le falta '{field}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.invalid_number_in_field",
+        translated_text: "Número no válido '{value}' en {field}.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.invalid_integer_in_field",
+        translated_text: "Entero no válido '{value}' en {field}.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.invalid_boolean_in_field",
+        translated_text: "Booleano no válido '{value}' en {field}.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.unsupported_policy_target",
+        translated_text: "Destino de política importada no compatible '{target}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.receiving_defaults_texture_mode",
+        translated_text: "Los valores predeterminados de {target} de la instalación receptora tienen un modo de textura no compatible '{mode}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.receiving_policy_texture_mode",
+        translated_text: "La política receptora tiene un modo de textura no compatible '{mode}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.receiving_defaults_palette_mode",
+        translated_text: "Los valores predeterminados de {target} de la instalación receptora tienen un modo de paleta no compatible '{mode}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.diag.receiving_policy_palette_mode",
+        translated_text: "La política receptora tiene un modo de paleta no compatible '{mode}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.policy_with_id",
+        translated_text: "Política {id}",
+    },
+
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.archive_reinspection_failed",
+        translated_text: "El archivo ya no supera la inspección. No se realizaron cambios de importación.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.validated_package_unavailable",
+        translated_text: "El paquete validado no está disponible.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.conflict_timestamp_unavailable",
+        translated_text: "La marca de tiempo de conflictos de importación no está disponible. No se realizaron cambios de importación.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.destination_name_changed",
+        translated_text: "La instalación receptora cambió después de Revisar: '{previous}' ya no es el nombre de destino determinista (ahora es '{current}'). No se realizaron cambios de importación.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.conflict_set_changed",
+        translated_text: "La instalación receptora cambió después de Revisar y el conjunto de conflictos ya no es el mismo. No se realizaron cambios de importación.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.new_conflicts_discovered",
+        translated_text: "La instalación receptora cambió después de Revisar y se detectaron nuevos conflictos. No se realizaron cambios de importación.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.conflict_resolution_stale",
+        translated_text: "La resolución de conflictos de importación está incompleta o desactualizada: {error} No se realizaron cambios de importación.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.unresolved_conflicts",
+        translated_text: "La detección de conflictos durante la ejecución encontró {count} conflicto(s) sin resolver:\\n\\n{details}\\n\\nNo se realizaron cambios de importación.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.policy_unresolved_destination",
+        translated_text: "La política '{name}' (ID de paquete {id}) tiene un destino sin resolver.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.policy_unresolved_shader",
+        translated_text: "La política '{name}' (ID de paquete {id}) requiere el ID de paquete de shader {shader_id} sin resolver.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.playlist_unresolved_destination",
+        translated_text: "La lista de reproducción '{name}' (ID de paquete {id}) tiene un destino sin resolver.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.playlist_member_unresolved_policy",
+        translated_text: "El miembro {position} '{policy}' de la lista de reproducción '{playlist}' requiere el ID de paquete de política {policy_id} sin resolver.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.unresolved_dependencies",
+        translated_text: "La validación de dependencias durante la ejecución encontró {count} referencia(s) de dependencia sin resolver:\\n\\n{details}\\n\\nNo se realizaron cambios de importación.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.failed_database_restored",
+        translated_text: "{error} Se restauró la base de datos anterior a la importación. Los archivos de shader recién instalados se eliminaron cuando fue posible.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.failed_restore_also_failed",
+        translated_text: "{error} LA RESTAURACIÓN DE LA BASE DE DATOS TAMBIÉN FALLÓ: {restore_error}. La copia de seguridad verificada permanece en '{backup}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.backup_timestamp_failed",
+        translated_text: "No se pudo determinar la marca de tiempo de la copia de seguridad anterior a la importación: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.backup_create_failed",
+        translated_text: "No se pudo crear la copia de seguridad de la base de datos anterior a la importación '{path}': {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.backup_open_verify_failed",
+        translated_text: "No se pudo abrir la copia de seguridad de la base de datos anterior a la importación para verificarla: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.backup_verify_failed",
+        translated_text: "No se pudo verificar la copia de seguridad de la base de datos anterior a la importación: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.backup_integrity_failed",
+        translated_text: "La copia de seguridad de la base de datos anterior a la importación no superó la verificación de integridad: {result}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.restore_copy_failed",
+        translated_text: "No se pudo restaurar '{database}' desde '{backup}': {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.restored_database_open_failed",
+        translated_text: "No se pudo abrir la base de datos restaurada: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.restored_database_verify_failed",
+        translated_text: "No se pudo verificar la base de datos restaurada: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.restored_database_integrity_result",
+        translated_text: "La comprobación integrity_check de la base de datos restaurada devolvió '{result}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.shader_directory_create_failed",
+        translated_text: "No se pudo crear el directorio administrado de shaders '{path}': {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.archive_reopen_failed",
+        translated_text: "No se pudo volver a abrir el archivo de importación: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.zip_reopen_failed",
+        translated_text: "No se pudo volver a abrir el ZIP de importación: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.shader_overwrite_refused",
+        translated_text: "Se rechaza sobrescribir el archivo de shader existente inesperado '{path}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.shader_payload_read_failed",
+        translated_text: "No se pudo leer la carga útil del shader '{path}': {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.shader_changed_after_inspection",
+        translated_text: "El shader '{filename}' cambió después de la inspección; SHA-256 ya no coincide.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.shader_install_failed",
+        translated_text: "No se pudo instalar el shader '{path}': {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.shader_reconcile_failed",
+        translated_text: "No se pudieron conciliar los archivos de shader importados: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.shader_registration_failed",
+        translated_text: "El shader importado '{filename}' no se registró como se esperaba: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.transaction_begin_failed",
+        translated_text: "No se pudo iniciar la transacción de base de datos de importación: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.policy_no_destination_shader",
+        translated_text: "La política '{name}' no tiene un shader de destino resuelto.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.playlist_import_failed",
+        translated_text: "No se pudo importar la lista de reproducción '{name}': {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.playlist_id_no_mapping",
+        translated_text: "El ID de paquete de lista de reproducción {id} no tiene asignación de destino.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.policy_id_no_membership_mapping",
+        translated_text: "El ID de paquete de política {id} no tiene asignación de destino para la membresía de la lista de reproducción.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.membership_restore_failed",
+        translated_text: "No se pudo restaurar la membresía de la lista de reproducción en la posición {position}: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.transaction_commit_failed",
+        translated_text: "No se pudo confirmar la transacción de base de datos de importación: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.success_detail",
+        translated_text: "El paquete validado se importó correctamente. Los conflictos genuinos se conservaron de forma aditiva con nombres importados deterministas; los objetos existentes de la instalación receptora no se modificaron. Los duplicados verdaderamente idénticos se reutilizaron y las dependencias importadas se asignaron a sus identidades de destino. screenshaver.toml no se modificó.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.imported_policy_missing_field",
+        translated_text: "A la política importada '{policy}' le falta '{field}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.invalid_policy_integer",
+        translated_text: "Entero no válido '{value}' en el campo de política importada '{field}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.invalid_policy_number",
+        translated_text: "Número no válido '{value}' en el campo de política importada '{field}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.invalid_policy_boolean",
+        translated_text: "Booleano no válido '{value}' en el campo de política importada '{field}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.unsupported_texture_mode",
+        translated_text: "Modo de textura importado no compatible '{mode}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.unsupported_palette_mode",
+        translated_text: "Modo de paleta importado no compatible '{mode}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.unsupported_animation_speed_mode",
+        translated_text: "Modo de velocidad de animación importado no compatible '{mode}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.policy_import_failed",
+        translated_text: "No se pudo importar la política '{name}': {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.imported_name_length_invalid",
+        translated_text: "El nombre importado debe contener entre 1 y 128 caracteres; se encontraron {length}.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.exec.imported_name_empty_key",
+        translated_text: "El nombre importado produjo una clave de comparación vacía.",
+    },
+
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.validation.export_format_unsupported",
+        translated_text: "El formato de exportación de Screenshaver {version} no es compatible con esta instalación.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.validation.export_schema_load_failed",
+        translated_text: "No se pudo cargar el esquema de exportación {version}: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.validation.export_schema_version_mismatch",
+        translated_text: "La versión del esquema de exportación no coincide con el archivo.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.validation.export_schema_integrity_unsupported",
+        translated_text: "El esquema de exportación solicita un comportamiento de integridad no compatible.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.validation.export_schema_manifest_hashing",
+        translated_text: "El esquema de exportación debe excluir su manifiesto del hash del paquete.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.validation.schema_metadata_undeclared",
+        translated_text: "El archivo de metadatos del esquema '{file}' no está declarado en el archivo.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.validation.dataset_not_utf8",
+        translated_text: "'{file}' no es UTF-8: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.validation.dataset_empty",
+        translated_text: "'{file}' está vacío.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.validation.dataset_header_mismatch",
+        translated_text: "El encabezado de '{file}' no coincide con el esquema de exportación.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.validation.dataset_row_error",
+        translated_text: "'{file}' fila {row}: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.validation.dataset_column_count",
+        translated_text: "La fila {row} de '{file}' tiene {actual} columnas; se requieren {required}.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.validation.tsv_trailing_escape",
+        translated_text: "Secuencia de escape TSV incompleta al final.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.validation.tsv_escape_unsupported",
+        translated_text: "Secuencia de escape TSV no compatible '\\{escape}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.validation.schema_dataset_missing_column",
+        translated_text: "Al conjunto de datos del esquema '{file}' le falta la columna '{column}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.validation.duplicate_id",
+        translated_text: "{label} {id} duplicado.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.validation.not_positive_integer",
+        translated_text: "{label} '{value}' no es un entero positivo.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.validation.must_be_positive",
+        translated_text: "{label} debe ser mayor que cero.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.validation.policy_missing_shader_id",
+        translated_text: "La política hace referencia al shader_export_id {id} que falta.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.validation.membership_unresolved_id",
+        translated_text: "La membresía de la lista de reproducción contiene un ID de paquete sin resolver.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.validation.playlist_duplicate_policy",
+        translated_text: "La lista de reproducción {playlist} contiene la política {policy} más de una vez.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.validation.playlist_duplicate_position",
+        translated_text: "La lista de reproducción {playlist} contiene la posición duplicada {position}.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.validation.shader_declared_twice",
+        translated_text: "El shader '{path}' está declarado más de una vez.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.validation.shader_sha_malformed",
+        translated_text: "El shader '{path}' tiene un SHA-256 con formato incorrecto.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.validation.declared_shader_missing",
+        translated_text: "Falta el shader declarado '{path}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.validation.declared_shader_directory",
+        translated_text: "El shader declarado '{path}' es un directorio.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.validation.shader_executable",
+        translated_text: "El shader '{path}' está marcado como ejecutable.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.validation.shader_sha_failed",
+        translated_text: "El shader '{path}' no superó la verificación SHA-256.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.validation.shader_not_utf8",
+        translated_text: "El shader '{path}' no es texto UTF-8 válido.",
+    },
+
 ];

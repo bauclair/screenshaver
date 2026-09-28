@@ -126,6 +126,7 @@ mod test_playlists;
 mod test_lyrics;
 mod test_localization;
 mod manage_localization;
+mod audit_translation;
 mod test_render_benchmark;
 mod test_audio_motion;
 
@@ -214,6 +215,24 @@ fn main() {
         crate::parse_arguments::Command::Version => {
 
             crate::parse_arguments::print_version();
+
+            return;
+        }
+
+
+        crate::parse_arguments::Command::AuditTranslation { locale, module } => {
+
+            match crate::audit_translation::run(
+                locale.as_deref(),
+                module.as_deref(),
+            ) {
+                Ok(true) => {}
+                Ok(false) => std::process::exit(1),
+                Err(error) => {
+                    eprintln!("[TRANSLATION AUDIT] ERROR: {}", error);
+                    std::process::exit(2);
+                }
+            }
 
             return;
         }
@@ -1336,6 +1355,7 @@ fn main() {
         | crate::parse_arguments::Command::TestPlaylists
         | crate::parse_arguments::Command::TestLyrics
         | crate::parse_arguments::Command::TestLocalization
+        | crate::parse_arguments::Command::AuditTranslation { .. }
         | crate::parse_arguments::Command::TestSchemaReader { .. }
         | crate::parse_arguments::Command::TestSchemaReconstruction { .. }
         | crate::parse_arguments::Command::TestSchemaMigrationFailures { .. }

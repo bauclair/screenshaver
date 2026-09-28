@@ -23,6 +23,11 @@ pub enum Command {
 
     TestLocalization,
 
+    AuditTranslation {
+        locale: Option<String>,
+        module: Option<String>,
+    },
+
     TestSchemaReader {
         database_path: Option<String>,
     },
@@ -193,6 +198,14 @@ pub fn parse() -> Result<Command, String> {
         }
 
 
+        "--audit-translation" => {
+
+            parse_audit_translation(
+                &args[1..]
+            )
+        }
+
+
         "--test-schema-reader" => {
 
             parse_test_schema_reader(
@@ -316,6 +329,51 @@ pub fn parse() -> Result<Command, String> {
             )
         }
     }
+}
+
+
+fn parse_audit_translation(
+    args: &[String],
+) -> Result<Command, String> {
+
+    if args.len() > 2 {
+        return Err(
+            "--audit-translation accepts at most a locale and a module (for example: es-US import_data)"
+                .to_string()
+        );
+    }
+
+    let locale =
+        match args.first() {
+            Some(value) => {
+                let value = value.trim();
+                if value.is_empty() || value.starts_with('-') {
+                    return Err(
+                        "--audit-translation accepts an optional locale such as es-US, followed by an optional module"
+                            .to_string()
+                    );
+                }
+                Some(value.to_string())
+            }
+            None => None,
+        };
+
+    let module =
+        match args.get(1) {
+            Some(value) => {
+                let value = value.trim();
+                if value.is_empty() || value.starts_with('-') {
+                    return Err(
+                        "--audit-translation MODULE must name a Rust source module such as import_data"
+                            .to_string()
+                    );
+                }
+                Some(value.to_string())
+            }
+            None => None,
+        };
+
+    Ok(Command::AuditTranslation { locale, module })
 }
 
 
@@ -803,6 +861,11 @@ pub fn print_help() {
          \n\
              --test-localization\n\
                  Test locale selection, translation lookup, and English fallback.\n\
+         \n\
+             --audit-translation [LOCALE] [MODULE]\n\
+                 Audit Rust source for user-facing English text not covered by localization.\n\
+                 If LOCALE is omitted, use [language].locale from screenshaver.toml.\n\
+                 If MODULE is supplied, scan only that Rust module while still auditing the full locale catalog.\n\
          \n\
              --test-schema-reader [DATABASE_PATH]\n\
                  Read a Schema-1 database through the historical migration reader and exit.\n\
