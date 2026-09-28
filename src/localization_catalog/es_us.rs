@@ -2383,4 +2383,380 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
         translated_text: "El shader '{path}' no es texto UTF-8 válido.",
     },
 
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_load_playlists_for_export_selection",
+        translated_text: "No se pudieron cargar las listas de reproducción para la selección de exportación: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_load_schema",
+        translated_text: "No se pudo cargar el Esquema de Exportación V1 de Screenshaver: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.schema_has_an_empty_format_identifier",
+        translated_text: "El Esquema de Exportación V1 de Screenshaver tiene un identificador de formato vacío.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.schema_has_an_invalid_format_version",
+        translated_text: "El Esquema de Exportación V1 de Screenshaver tiene una versión de formato no válida.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.schema_requests_an_unsupported_integrity_algorithm_or_canonicalization",
+        translated_text: "El Esquema de Exportación V1 de Screenshaver solicita un algoritmo de integridad o una canonicalización no compatibles.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.schema_must_exclude_its_manifest_from_the_package_hash",
+        translated_text: "El Esquema de Exportación V1 de Screenshaver debe excluir su manifiesto del hash del paquete.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.schema_dataset_is_not_declared_as_archive_metadata",
+        translated_text: "El conjunto de datos '{value1}' del Esquema de Exportación V1 de Screenshaver no está declarado como metadatos del archivo.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.missing_package_local_export_id_for_policy",
+        translated_text: "Falta el ID de exportación local del paquete para la política '{value1}'",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.missing_package_local_export_id_for_shader_referenced_by_policy",
+        translated_text: "Falta el ID de exportación local del paquete para el shader '{value1}' al que hace referencia la política '{value2}'",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.missing_package_local_export_id_for_playlist",
+        translated_text: "Falta el ID de exportación local del paquete para la lista de reproducción '{value1}'",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_load_members_for_playlist_while_exporting",
+        translated_text: "No se pudieron cargar los miembros de la lista de reproducción {value1} durante la exportación: {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.missing_package_local_export_id_for_policy_in_playlist",
+        translated_text: "Falta el ID de exportación local del paquete para la política {value1} en la lista de reproducción '{value2}'",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_read_shader_at",
+        translated_text: "No se pudo leer el shader '{value1}' en '{value2}': {value3}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.missing_package_local_export_id_for_shader",
+        translated_text: "Falta el ID de exportación local del paquete para el shader '{value1}'",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_create_in_export_archive",
+        translated_text: "No se pudo crear '{value1}' en el archivo de exportación: {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_write_to_export_archive",
+        translated_text: "No se pudo escribir '{value1}' en el archivo de exportación: {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.the_export_destination_is_not_valid",
+        translated_text: "El destino de exportación no es válido.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.the_export_destination_folder_is_not_valid",
+        translated_text: "La carpeta de destino de exportación no es válida.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.export_destination_folder_does_not_exist",
+        translated_text: "La carpeta de destino de exportación no existe: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.the_effective_policy_snapshot_is_incomplete_return_to_selection_and_try_again",
+        translated_text: "La instantánea de políticas efectivas está incompleta. Vuelva a la selección e inténtelo de nuevo.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_read_shader_while_calculating_package_integrity",
+        translated_text: "No se pudo leer el shader '{value1}' al calcular la integridad del paquete: {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_serialize_export_manifest",
+        translated_text: "No se pudo serializar el manifiesto de exportación: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_remove_stale_temporary_export",
+        translated_text: "No se pudo eliminar la exportación temporal obsoleta '{value1}': {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_create_temporary_export_archive",
+        translated_text: "No se pudo crear el archivo temporal de exportación '{value1}': {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_add_database_snapshot_to_backup_archive",
+        translated_text: "No se pudo agregar la instantánea de la base de datos al archivo de copia de seguridad: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_write_database_snapshot_to_backup_archive",
+        translated_text: "No se pudo escribir la instantánea de la base de datos en el archivo de copia de seguridad: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_add_managed_shader_to_backup_archive",
+        translated_text: "No se pudo agregar el shader administrado '{value1}' al archivo de copia de seguridad: {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_write_managed_shader_to_backup_archive",
+        translated_text: "No se pudo escribir el shader administrado '{value1}' en el archivo de copia de seguridad: {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_add_shader_to_export_archive",
+        translated_text: "No se pudo agregar el shader '{value1}' al archivo de exportación: {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_open_shader",
+        translated_text: "No se pudo abrir el shader '{value1}': {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_read_shader",
+        translated_text: "No se pudo leer el shader '{value1}': {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_write_shader_to_export_archive",
+        translated_text: "No se pudo escribir el shader '{value1}' en el archivo de exportación: {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_finalize_export_archive",
+        translated_text: "No se pudo finalizar el archivo de exportación: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_move_completed_export_archive_to",
+        translated_text: "No se pudo mover el archivo de exportación completado a '{value1}': {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_enumerate_managed_shader_directory",
+        translated_text: "No se pudo enumerar el directorio de shaders administrados '{value1}': {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_read_managed_shader_directory_entry",
+        translated_text: "No se pudo leer la entrada del directorio de shaders administrados: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_inspect_managed_shader_entry",
+        translated_text: "No se pudo inspeccionar la entrada de shader administrado '{value1}': {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_read_managed_shader_for_full_backup",
+        translated_text: "No se pudo leer el shader administrado '{value1}' para la copia de seguridad completa: {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_remove_stale_database_snapshot",
+        translated_text: "No se pudo eliminar la instantánea obsoleta de la base de datos '{value1}': {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_open_database_for_backup_snapshot",
+        translated_text: "No se pudo abrir la base de datos para la instantánea de copia de seguridad: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_create_consistent_database_snapshot",
+        translated_text: "No se pudo crear una instantánea coherente de la base de datos: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_open_database_snapshot_for_verification",
+        translated_text: "No se pudo abrir la instantánea de la base de datos para su verificación: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_verify_database_snapshot",
+        translated_text: "No se pudo verificar la instantánea de la base de datos: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.database_snapshot_failed_integrity_verification",
+        translated_text: "La instantánea de la base de datos no superó la verificación de integridad: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_read_verified_database_snapshot",
+        translated_text: "No se pudo leer la instantánea verificada de la base de datos '{value1}': {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_create_backup_directory",
+        translated_text: "No se pudo crear el directorio de copia de seguridad '{value1}': {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_prepare_full_backup_selection",
+        translated_text: "No se pudo preparar la selección de copia de seguridad completa: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_resolve_full_backup_policies",
+        translated_text: "No se pudieron resolver las políticas de copia de seguridad completa: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_determine_backup_filename_timestamp",
+        translated_text: "No se pudo determinar la marca de tiempo del nombre de archivo de la copia de seguridad.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_prepare_effective_export_policy_query",
+        translated_text: "No se pudo preparar la consulta de políticas efectivas de exportación: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_read_selected_policy_id_while_resolving_export_data",
+        translated_text: "No se pudo leer el ID de política seleccionado {value1} al resolver los datos de exportación: {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.policy_has_unsupported_target",
+        translated_text: "La política '{value1}' tiene un destino no compatible '{value2}'",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.one_or_more_selected_policies_disappeared_while_export_data_was_being_resolved",
+        translated_text: "Una o más políticas seleccionadas desaparecieron mientras se resolvían los datos de exportación",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.policy_has_a_specific_texture_without_a_texture_family",
+        translated_text: "La política '{value1}' tiene una textura específica sin una familia de texturas",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.policy_has_a_specific_texture_without_a_primitive_count",
+        translated_text: "La política '{value1}' tiene una textura específica sin un recuento de primitivas",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.policy_has_unsupported_texture_mode",
+        translated_text: "La política '{value1}' tiene un modo de textura no compatible '{value2}'",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.defaults_specify_a_specific_texture_without_a_texture_family_while_resolving_policy",
+        translated_text: "Los valores predeterminados de {value1} especifican una textura concreta sin una familia de texturas al resolver la política '{value2}'",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.defaults_contain_unsupported_texture_mode_while_resolving_policy",
+        translated_text: "Los valores predeterminados de {value1} contienen un modo de textura no compatible '{value2}' al resolver la política '{value3}'",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.policy_has_a_specific_palette_without_a_palette_color",
+        translated_text: "La política '{value1}' tiene una paleta específica sin un color de paleta",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.policy_has_unsupported_palette_mode",
+        translated_text: "La política '{value1}' tiene un modo de paleta no compatible '{value2}'",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.defaults_specify_a_specific_palette_without_a_palette_color_while_resolving_policy",
+        translated_text: "Los valores predeterminados de {value1} especifican una paleta concreta sin un color de paleta al resolver la política '{value2}'",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.defaults_contain_unsupported_palette_mode_while_resolving_policy",
+        translated_text: "Los valores predeterminados de {value1} contienen un modo de paleta no compatible '{value2}' al resolver la política '{value3}'",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.policy_has_invalid_boolean_value_for",
+        translated_text: "La política '{value1}' tiene el valor booleano no válido {value2} para {value3}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.assigned_policy_retained_unresolved_target_texture_inheritance",
+        translated_text: "La política asignada '{value1}' conservó una herencia de textura de destino sin resolver",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.assigned_policy_retained_unresolved_target_palette_inheritance",
+        translated_text: "La política asignada '{value1}' conservó una herencia de paleta de destino sin resolver",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.assigned_policy_retained_unresolved_target_animation_speed_inheritance",
+        translated_text: "La política asignada '{value1}' conservó una herencia de velocidad de animación de destino sin resolver",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.policy_resolved_to_an_invalid_specific_texture",
+        translated_text: "La política '{value1}' se resolvió a una textura específica no válida",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.assigned_policy_resolved_to_random_texture_without_an_explicit_primitive_count",
+        translated_text: "La política asignada '{value1}' se resolvió a una textura aleatoria sin un recuento explícito de primitivas",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.policy_resolved_to_an_invalid_random_texture_primitive_count",
+        translated_text: "La política '{value1}' se resolvió a un recuento de primitivas de textura aleatoria no válido",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.policy_resolved_to_one_or_more_invalid_numeric_export_values",
+        translated_text: "La política '{value1}' se resolvió a uno o más valores numéricos de exportación no válidos",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.policy_resolved_to_an_invalid_animation_speed",
+        translated_text: "La política '{value1}' se resolvió a una velocidad de animación no válida",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_prepare_export_policy_selection_query",
+        translated_text: "No se pudo preparar la consulta de selección de políticas de exportación: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_query_policies_for_export_selection",
+        translated_text: "No se pudieron consultar las políticas para la selección de exportación: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.error.unable_to_decode_export_policy_selection_row",
+        translated_text: "No se pudo decodificar la fila de selección de políticas de exportación: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.review_instruction",
+        translated_text: "Revise el enfoque de exportación seleccionado, las políticas, los shaders y las listas de reproducción incluidos, y el destino antes de iniciar la exportación.",
+    },
 ];

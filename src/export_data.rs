@@ -7,6 +7,47 @@
 // into an in-memory portable effective configuration and writes Screenshaver
 // Export Format 1 as a ZIP archive after final confirmation.
 
+
+fn localized_export_values(
+    key: &str,
+    values: &[String],
+) -> String {
+    let parameter_names = [
+        "value1", "value2", "value3", "value4",
+    ];
+
+    let parameters = values
+        .iter()
+        .enumerate()
+        .filter_map(
+            |(index, value)| {
+                parameter_names
+                    .get(index)
+                    .map(|name| (*name, value.as_str()))
+            }
+        )
+        .collect::<Vec<_>>();
+
+    crate::manage_localization::runtime_text_with_params(
+        key,
+        &parameters,
+    )
+}
+
+macro_rules! localized_export {
+    ($key:expr) => {
+        crate::manage_localization::runtime_text($key)
+    };
+    ($key:expr, $($value:expr),+ $(,)?) => {{
+        localized_export_values(
+            $key,
+            &[
+                $($value.to_string()),+
+            ],
+        )
+    }};
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ExportStage {
     SelectFocus,
@@ -615,8 +656,7 @@ fn load_export_playlist_choices(
         )
         .map_err(
             |error| {
-                format!(
-                    "Unable to load playlists for export selection: {}",
+                localized_export!("export.error.unable_to_load_playlists_for_export_selection",
                     error,
                 )
             }
@@ -677,8 +717,7 @@ fn export_schema() -> Result<ExportSchema, String> {
         )
         .map_err(
             |error| {
-                format!(
-                    "Unable to load Screenshaver Export Schema V1: {}",
+                localized_export!("export.error.unable_to_load_schema",
                     error,
                 )
             }
@@ -686,15 +725,13 @@ fn export_schema() -> Result<ExportSchema, String> {
 
     if schema.format.trim().is_empty() {
         return Err(
-            "Screenshaver Export Schema V1 has an empty format identifier."
-                .to_string()
+            localized_export!("export.error.schema_has_an_empty_format_identifier")
         );
     }
 
     if schema.format_version == 0 {
         return Err(
-            "Screenshaver Export Schema V1 has an invalid format version."
-                .to_string()
+            localized_export!("export.error.schema_has_an_invalid_format_version")
         );
     }
 
@@ -703,8 +740,7 @@ fn export_schema() -> Result<ExportSchema, String> {
             != "screenshaver-package-v1"
     {
         return Err(
-            "Screenshaver Export Schema V1 requests an unsupported integrity algorithm or canonicalization."
-                .to_string()
+            localized_export!("export.error.schema_requests_an_unsupported_integrity_algorithm_or_canonicalization")
         );
     }
 
@@ -715,8 +751,7 @@ fn export_schema() -> Result<ExportSchema, String> {
         .any(|name| name == &schema.archive.manifest)
     {
         return Err(
-            "Screenshaver Export Schema V1 must exclude its manifest from the package hash."
-                .to_string()
+            localized_export!("export.error.schema_must_exclude_its_manifest_from_the_package_hash")
         );
     }
 
@@ -730,8 +765,7 @@ fn export_schema() -> Result<ExportSchema, String> {
     for file in expected_metadata {
         if !schema.archive.metadata_files.iter().any(|name| name == file) {
             return Err(
-                format!(
-                    "Screenshaver Export Schema V1 dataset '{}' is not declared as archive metadata.",
+                localized_export!("export.error.schema_dataset_is_not_declared_as_archive_metadata",
                     file,
                 )
             );
@@ -946,8 +980,7 @@ fn build_policies_tsv(
             .get(&policy.policy_id)
             .copied()
             .ok_or_else(|| {
-                format!(
-                    "Missing package-local export ID for policy '{}'",
+                localized_export!("export.error.missing_package_local_export_id_for_policy",
                     policy.policy_name,
                 )
             })?;
@@ -956,8 +989,7 @@ fn build_policies_tsv(
             .get(&policy.shader_id)
             .copied()
             .ok_or_else(|| {
-                format!(
-                    "Missing package-local export ID for shader '{}' referenced by policy '{}'",
+                localized_export!("export.error.missing_package_local_export_id_for_shader_referenced_by_policy",
                     policy.shader_filename,
                     policy.policy_name,
                 )
@@ -1013,8 +1045,7 @@ fn build_playlists_tsv(
             .get(&playlist.playlist_id)
             .copied()
             .ok_or_else(|| {
-                format!(
-                    "Missing package-local export ID for playlist '{}'",
+                localized_export!("export.error.missing_package_local_export_id_for_playlist",
                     playlist.playlist_name,
                 )
             })?;
@@ -1046,8 +1077,7 @@ fn build_playlist_members_tsv(
             .get(&playlist.playlist_id)
             .copied()
             .ok_or_else(|| {
-                format!(
-                    "Missing package-local export ID for playlist '{}'",
+                localized_export!("export.error.missing_package_local_export_id_for_playlist",
                     playlist.playlist_name,
                 )
             })?;
@@ -1056,8 +1086,7 @@ fn build_playlist_members_tsv(
             crate::manage_playlists::playlist_members(playlist.playlist_id)
                 .map_err(
                     |error| {
-                        format!(
-                            "Unable to load members for playlist {} while exporting: {}",
+                        localized_export!("export.error.unable_to_load_members_for_playlist_while_exporting",
                             playlist.playlist_id,
                             error,
                         )
@@ -1072,8 +1101,7 @@ fn build_playlist_members_tsv(
                     .get(&member.policy_id)
                     .copied()
                     .ok_or_else(|| {
-                        format!(
-                            "Missing package-local export ID for policy {} in playlist '{}'",
+                        localized_export!("export.error.missing_package_local_export_id_for_policy_in_playlist",
                             member.policy_id,
                             playlist.playlist_name,
                         )
@@ -1136,8 +1164,7 @@ fn build_shaders_tsv(
             std::fs::read(&path)
                 .map_err(
                     |error| {
-                        format!(
-                            "Unable to read shader '{}' at '{}': {}",
+                        localized_export!("export.error.unable_to_read_shader_at",
                             filename,
                             path.display(),
                             error,
@@ -1156,8 +1183,7 @@ fn build_shaders_tsv(
             .get(shader_id)
             .copied()
             .ok_or_else(|| {
-                format!(
-                    "Missing package-local export ID for shader '{}'",
+                localized_export!("export.error.missing_package_local_export_id_for_shader",
                     filename,
                 )
             })?;
@@ -1197,8 +1223,7 @@ fn write_zip_text(
     zip.start_file(name, options)
         .map_err(
             |error| {
-                format!(
-                    "Unable to create '{}' in export archive: {}",
+                localized_export!("export.error.unable_to_create_in_export_archive",
                     name,
                     error,
                 )
@@ -1208,8 +1233,7 @@ fn write_zip_text(
     zip.write_all(contents.as_bytes())
         .map_err(
             |error| {
-                format!(
-                    "Unable to write '{}' to export archive: {}",
+                localized_export!("export.error.unable_to_write_to_export_archive",
                     name,
                     error,
                 )
@@ -1228,19 +1252,18 @@ fn create_export_archive(
     let final_path =
         state.resolved_export_path()
             .ok_or_else(
-                || "The export destination is not valid.".to_string()
+                || localized_export!("export.error.the_export_destination_is_not_valid")
             )?;
 
     let destination_folder =
         final_path.parent()
             .ok_or_else(
-                || "The export destination folder is not valid.".to_string()
+                || localized_export!("export.error.the_export_destination_folder_is_not_valid")
             )?;
 
     if !destination_folder.is_dir() {
         return Err(
-            format!(
-                "Export destination folder does not exist: {}",
+            localized_export!("export.error.export_destination_folder_does_not_exist",
                 destination_folder.display(),
             )
         );
@@ -1282,8 +1305,7 @@ fn create_export_archive(
         != included_policy_ids.len()
     {
         return Err(
-            "The effective policy snapshot is incomplete. Return to selection and try again."
-                .to_string()
+            localized_export!("export.error.the_effective_policy_snapshot_is_incomplete_return_to_selection_and_try_again")
         );
     }
 
@@ -1333,8 +1355,7 @@ fn create_export_archive(
                         .map(|bytes| (archive_name.clone(), bytes))
                         .map_err(
                             |error| {
-                                format!(
-                                    "Unable to read shader '{}' while calculating package integrity: {}",
+                                localized_export!("export.error.unable_to_read_shader_while_calculating_package_integrity",
                                     source_path.display(),
                                     error,
                                 )
@@ -1454,8 +1475,7 @@ fn create_export_archive(
         serde_json::to_string_pretty(&manifest)
             .map_err(
                 |error| {
-                    format!(
-                        "Unable to serialize export manifest: {}",
+                    localized_export!("export.error.unable_to_serialize_export_manifest",
                         error,
                     )
                 }
@@ -1468,8 +1488,7 @@ fn create_export_archive(
         std::fs::remove_file(&temporary_path)
             .map_err(
                 |error| {
-                    format!(
-                        "Unable to remove stale temporary export '{}': {}",
+                    localized_export!("export.error.unable_to_remove_stale_temporary_export",
                         temporary_path.display(),
                         error,
                     )
@@ -1481,8 +1500,7 @@ fn create_export_archive(
         std::fs::File::create(&temporary_path)
             .map_err(
                 |error| {
-                    format!(
-                        "Unable to create temporary export archive '{}': {}",
+                    localized_export!("export.error.unable_to_create_temporary_export_archive",
                         temporary_path.display(),
                         error,
                     )
@@ -1531,10 +1549,10 @@ fn create_export_archive(
                     DATABASE_ARCHIVE_PATH,
                     options,
                 )
-                .map_err(|error| format!("Unable to add database snapshot to backup archive: {}", error))?;
+                .map_err(|error| localized_export!("export.error.unable_to_add_database_snapshot_to_backup_archive", error))?;
 
                 zip.write_all(bytes)
-                    .map_err(|error| format!("Unable to write database snapshot to backup archive: {}", error))?;
+                    .map_err(|error| localized_export!("export.error.unable_to_write_database_snapshot_to_backup_archive", error))?;
             }
 
             for (archive_name, bytes) in &managed_shader_payloads {
@@ -1542,10 +1560,10 @@ fn create_export_archive(
                     archive_name,
                     options,
                 )
-                .map_err(|error| format!("Unable to add managed shader '{}' to backup archive: {}", archive_name, error))?;
+                .map_err(|error| localized_export!("export.error.unable_to_add_managed_shader_to_backup_archive", archive_name, error))?;
 
                 zip.write_all(bytes)
-                    .map_err(|error| format!("Unable to write managed shader '{}' to backup archive: {}", archive_name, error))?;
+                    .map_err(|error| localized_export!("export.error.unable_to_write_managed_shader_to_backup_archive", archive_name, error))?;
             }
 
             let mut buffer = [0_u8; 64 * 1024];
@@ -1559,8 +1577,7 @@ fn create_export_archive(
                 )
                 .map_err(
                     |error| {
-                        format!(
-                            "Unable to add shader '{}' to export archive: {}",
+                        localized_export!("export.error.unable_to_add_shader_to_export_archive",
                             source_path.display(),
                             error,
                         )
@@ -1571,8 +1588,7 @@ fn create_export_archive(
                     std::fs::File::open(source_path)
                         .map_err(
                             |error| {
-                                format!(
-                                    "Unable to open shader '{}': {}",
+                                localized_export!("export.error.unable_to_open_shader",
                                     source_path.display(),
                                     error,
                                 )
@@ -1584,8 +1600,7 @@ fn create_export_archive(
                         source.read(&mut buffer)
                             .map_err(
                                 |error| {
-                                    format!(
-                                        "Unable to read shader '{}': {}",
+                                    localized_export!("export.error.unable_to_read_shader",
                                         source_path.display(),
                                         error,
                                     )
@@ -1599,8 +1614,7 @@ fn create_export_archive(
                     zip.write_all(&buffer[..read])
                         .map_err(
                             |error| {
-                                format!(
-                                    "Unable to write shader '{}' to export archive: {}",
+                                localized_export!("export.error.unable_to_write_shader_to_export_archive",
                                     source_path.display(),
                                     error,
                                 )
@@ -1624,8 +1638,7 @@ fn create_export_archive(
             |error| {
                 let _ =
                     std::fs::remove_file(&temporary_path);
-                format!(
-                    "Unable to finalize export archive: {}",
+                localized_export!("export.error.unable_to_finalize_export_archive",
                     error,
                 )
             }
@@ -1639,8 +1652,7 @@ fn create_export_archive(
         |error| {
             let _ =
                 std::fs::remove_file(&temporary_path);
-            format!(
-                "Unable to move completed export archive to '{}': {}",
+            localized_export!("export.error.unable_to_move_completed_export_archive_to",
                 final_path.display(),
                 error,
             )
@@ -1670,12 +1682,12 @@ fn load_all_managed_shader_payloads(
     }
 
     let entries = std::fs::read_dir(&shader_directory)
-        .map_err(|error| format!("Unable to enumerate managed shader directory '{}': {}", shader_directory.display(), error))?;
+        .map_err(|error| localized_export!("export.error.unable_to_enumerate_managed_shader_directory", shader_directory.display(), error))?;
 
     for entry in entries {
-        let entry = entry.map_err(|error| format!("Unable to read managed shader directory entry: {}", error))?;
+        let entry = entry.map_err(|error| localized_export!("export.error.unable_to_read_managed_shader_directory_entry", error))?;
         let file_type = entry.file_type()
-            .map_err(|error| format!("Unable to inspect managed shader entry '{}': {}", entry.path().display(), error))?;
+            .map_err(|error| localized_export!("export.error.unable_to_inspect_managed_shader_entry", entry.path().display(), error))?;
 
         if !file_type.is_file() {
             continue;
@@ -1684,7 +1696,7 @@ fn load_all_managed_shader_payloads(
         let filename = entry.file_name().to_string_lossy().to_string();
         let archive_name = format!("backup/managed-shaders/{}", filename);
         let bytes = std::fs::read(entry.path())
-            .map_err(|error| format!("Unable to read managed shader '{}' for full backup: {}", entry.path().display(), error))?;
+            .map_err(|error| localized_export!("export.error.unable_to_read_managed_shader_for_full_backup", entry.path().display(), error))?;
 
         payloads.push((archive_name, bytes));
     }
@@ -1702,11 +1714,11 @@ fn create_database_snapshot_bytes(
 
     if temporary_path.exists() {
         std::fs::remove_file(&temporary_path)
-            .map_err(|error| format!("Unable to remove stale database snapshot '{}': {}", temporary_path.display(), error))?;
+            .map_err(|error| localized_export!("export.error.unable_to_remove_stale_database_snapshot", temporary_path.display(), error))?;
     }
 
     let connection = crate::open_database::open()
-        .map_err(|error| format!("Unable to open database for backup snapshot: {}", error))?;
+        .map_err(|error| localized_export!("export.error.unable_to_open_database_for_backup_snapshot", error))?;
 
     let quoted = temporary_path.to_string_lossy().replace('\'', "''");
     let result = connection.execute_batch(
@@ -1715,31 +1727,31 @@ fn create_database_snapshot_bytes(
 
     if let Err(error) = result {
         let _ = std::fs::remove_file(&temporary_path);
-        return Err(format!("Unable to create consistent database snapshot: {}", error));
+        return Err(localized_export!("export.error.unable_to_create_consistent_database_snapshot", error));
     }
 
     let verify = rusqlite::Connection::open_with_flags(
         &temporary_path,
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
     )
-    .map_err(|error| format!("Unable to open database snapshot for verification: {}", error))?;
+    .map_err(|error| localized_export!("export.error.unable_to_open_database_snapshot_for_verification", error))?;
 
     let integrity: String = verify.query_row(
         "PRAGMA integrity_check",
         [],
         |row| row.get(0),
     )
-    .map_err(|error| format!("Unable to verify database snapshot: {}", error))?;
+    .map_err(|error| localized_export!("export.error.unable_to_verify_database_snapshot", error))?;
 
     if integrity != "ok" {
         let _ = std::fs::remove_file(&temporary_path);
-        return Err(format!("Database snapshot failed integrity verification: {}", integrity));
+        return Err(localized_export!("export.error.database_snapshot_failed_integrity_verification", integrity));
     }
 
     drop(verify);
 
     let bytes = std::fs::read(&temporary_path)
-        .map_err(|error| format!("Unable to read verified database snapshot '{}': {}", temporary_path.display(), error));
+        .map_err(|error| localized_export!("export.error.unable_to_read_verified_database_snapshot", temporary_path.display(), error));
 
     let _ = std::fs::remove_file(&temporary_path);
     bytes
@@ -1749,16 +1761,16 @@ fn create_database_snapshot_bytes(
 pub fn create_full_backup() -> Result<std::path::PathBuf, String> {
     let backup_directory = crate::locate_paths::backup_dir();
     std::fs::create_dir_all(&backup_directory)
-        .map_err(|error| format!("Unable to create backup directory '{}': {}", backup_directory.display(), error))?;
+        .map_err(|error| localized_export!("export.error.unable_to_create_backup_directory", backup_directory.display(), error))?;
 
     let mut state = ExportWizardState::default();
     state.reset_for_open();
 
     if let Some(error) = state.selection_error.as_ref() {
-        return Err(format!("Unable to prepare full backup selection: {}", error));
+        return Err(localized_export!("export.error.unable_to_prepare_full_backup_selection", error));
     }
     if let Some(error) = state.portable_policy_error.as_ref() {
-        return Err(format!("Unable to resolve full backup policies: {}", error));
+        return Err(localized_export!("export.error.unable_to_resolve_full_backup_policies", error));
     }
 
     // Full backup is deliberately non-interactive: every policy and every
@@ -1778,7 +1790,7 @@ pub fn create_full_backup() -> Result<std::path::PathBuf, String> {
         .and_then(|output| String::from_utf8(output.stdout).ok())
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| "Unable to determine backup filename timestamp.".to_string())?;
+        .ok_or_else(|| localized_export!("export.error.unable_to_determine_backup_filename_timestamp"))?;
 
     state.destination = backup_directory.to_string_lossy().to_string();
     state.export_filename = format!("{}.zip", stamp);
@@ -1972,8 +1984,7 @@ fn resolve_portable_policies(
             )
             .map_err(
                 |error| {
-                    format!(
-                        "Unable to prepare effective export policy query: {}",
+                    localized_export!("export.error.unable_to_prepare_effective_export_policy_query",
                         error,
                     )
                 }
@@ -2029,8 +2040,7 @@ fn resolve_portable_policies(
                 )
                 .map_err(
                     |error| {
-                        format!(
-                            "Unable to read selected policy ID {} while resolving export data: {}",
+                        localized_export!("export.error.unable_to_read_selected_policy_id_while_resolving_export_data",
                             policy_id,
                             error,
                         )
@@ -2075,8 +2085,7 @@ fn resolve_portable_policies(
                 "unassigned" => None,
                 other => {
                     return Err(
-                        format!(
-                            "Policy '{}' has unsupported target '{}'",
+                        localized_export!("export.error.policy_has_unsupported_target",
                             policy_name,
                             other,
                         )
@@ -2192,8 +2201,7 @@ fn resolve_portable_policies(
 
     if portable_policies.len() != selected_policy_ids.len() {
         return Err(
-            "One or more selected policies disappeared while export data was being resolved"
-                .to_string()
+            localized_export!("export.error.one_or_more_selected_policies_disappeared_while_export_data_was_being_resolved")
         );
     }
 
@@ -2211,8 +2219,7 @@ fn resolve_portable_texture(
         Some("specific") => {
             let family = family.ok_or_else(
                 || {
-                    format!(
-                        "Policy '{}' has a specific texture without a texture family",
+                    localized_export!("export.error.policy_has_a_specific_texture_without_a_texture_family",
                         policy_name,
                     )
                 }
@@ -2220,8 +2227,7 @@ fn resolve_portable_texture(
 
             let primitives = primitives.ok_or_else(
                 || {
-                    format!(
-                        "Policy '{}' has a specific texture without a primitive count",
+                    localized_export!("export.error.policy_has_a_specific_texture_without_a_primitive_count",
                         policy_name,
                     )
                 }
@@ -2262,8 +2268,7 @@ fn resolve_portable_texture(
         }
 
         Some(other) => Err(
-            format!(
-                "Policy '{}' has unsupported texture mode '{}'",
+            localized_export!("export.error.policy_has_unsupported_texture_mode",
                 policy_name,
                 other,
             )
@@ -2283,8 +2288,7 @@ fn portable_texture_from_target_defaults(
                     .clone()
                     .ok_or_else(
                         || {
-                            format!(
-                                "{} defaults specify a specific texture without a texture family while resolving policy '{}'",
+                            localized_export!("export.error.defaults_specify_a_specific_texture_without_a_texture_family_while_resolving_policy",
                                 defaults.target,
                                 policy_name,
                             )
@@ -2306,8 +2310,7 @@ fn portable_texture_from_target_defaults(
         ),
 
         other => Err(
-            format!(
-                "{} defaults contain unsupported texture mode '{}' while resolving policy '{}'",
+            localized_export!("export.error.defaults_contain_unsupported_texture_mode_while_resolving_policy",
                 defaults.target,
                 other,
                 policy_name,
@@ -2326,8 +2329,7 @@ fn resolve_portable_palette(
         Some("specific") => {
             let color = color.ok_or_else(
                 || {
-                    format!(
-                        "Policy '{}' has a specific palette without a palette color",
+                    localized_export!("export.error.policy_has_a_specific_palette_without_a_palette_color",
                         policy_name,
                     )
                 }
@@ -2358,8 +2360,7 @@ fn resolve_portable_palette(
         }
 
         Some(other) => Err(
-            format!(
-                "Policy '{}' has unsupported palette mode '{}'",
+            localized_export!("export.error.policy_has_unsupported_palette_mode",
                 policy_name,
                 other,
             )
@@ -2379,8 +2380,7 @@ fn portable_palette_from_target_defaults(
                     .clone()
                     .ok_or_else(
                         || {
-                            format!(
-                                "{} defaults specify a specific palette without a palette color while resolving policy '{}'",
+                            localized_export!("export.error.defaults_specify_a_specific_palette_without_a_palette_color_while_resolving_policy",
                                 defaults.target,
                                 policy_name,
                             )
@@ -2397,8 +2397,7 @@ fn portable_palette_from_target_defaults(
         ),
 
         other => Err(
-            format!(
-                "{} defaults contain unsupported palette mode '{}' while resolving policy '{}'",
+            localized_export!("export.error.defaults_contain_unsupported_palette_mode_while_resolving_policy",
                 defaults.target,
                 other,
                 policy_name,
@@ -2416,8 +2415,7 @@ fn database_boolean(
         0 => Ok(false),
         1 => Ok(true),
         other => Err(
-            format!(
-                "Policy '{}' has invalid boolean value {} for {}",
+            localized_export!("export.error.policy_has_invalid_boolean_value_for",
                 policy_name,
                 other,
                 field_name,
@@ -2439,8 +2437,7 @@ fn validate_portable_policy(
             PortableTextureSelection::InheritTarget
         ) {
             return Err(
-                format!(
-                    "Assigned policy '{}' retained unresolved target texture inheritance",
+                localized_export!("export.error.assigned_policy_retained_unresolved_target_texture_inheritance",
                     policy.policy_name,
                 )
             );
@@ -2451,8 +2448,7 @@ fn validate_portable_policy(
             PortablePaletteSelection::InheritTarget
         ) {
             return Err(
-                format!(
-                    "Assigned policy '{}' retained unresolved target palette inheritance",
+                localized_export!("export.error.assigned_policy_retained_unresolved_target_palette_inheritance",
                     policy.policy_name,
                 )
             );
@@ -2463,8 +2459,7 @@ fn validate_portable_policy(
             PortableTargetValue::InheritTarget
         ) {
             return Err(
-                format!(
-                    "Assigned policy '{}' retained unresolved target animation-speed inheritance",
+                localized_export!("export.error.assigned_policy_retained_unresolved_target_animation_speed_inheritance",
                     policy.policy_name,
                 )
             );
@@ -2478,8 +2473,7 @@ fn validate_portable_policy(
         } => {
             if family.trim().is_empty() || *primitives <= 0 {
                 return Err(
-                    format!(
-                        "Policy '{}' resolved to an invalid specific texture",
+                    localized_export!("export.error.policy_resolved_to_an_invalid_specific_texture",
                         policy.policy_name,
                     )
                 );
@@ -2491,8 +2485,7 @@ fn validate_portable_policy(
         } => {
             if assigned && primitives.is_none() {
                 return Err(
-                    format!(
-                        "Assigned policy '{}' resolved to random texture without an explicit primitive count",
+                    localized_export!("export.error.assigned_policy_resolved_to_random_texture_without_an_explicit_primitive_count",
                         policy.policy_name,
                     )
                 );
@@ -2501,8 +2494,7 @@ fn validate_portable_policy(
             if let Some(primitives) = primitives {
                 if *primitives <= 0 {
                     return Err(
-                        format!(
-                            "Policy '{}' resolved to an invalid random-texture primitive count",
+                        localized_export!("export.error.policy_resolved_to_an_invalid_random_texture_primitive_count",
                             policy.policy_name,
                         )
                     );
@@ -2525,8 +2517,7 @@ fn validate_portable_policy(
         || !policy.hue_rotation.is_finite()
     {
         return Err(
-            format!(
-                "Policy '{}' resolved to one or more invalid numeric export values",
+            localized_export!("export.error.policy_resolved_to_one_or_more_invalid_numeric_export_values",
                 policy.policy_name,
             )
         );
@@ -2537,8 +2528,7 @@ fn validate_portable_policy(
     {
         if !speed.is_finite() {
             return Err(
-                format!(
-                    "Policy '{}' resolved to an invalid animation speed",
+                localized_export!("export.error.policy_resolved_to_an_invalid_animation_speed",
                     policy.policy_name,
                 )
             );
@@ -2590,8 +2580,7 @@ fn load_export_policy_choices(
             )
             .map_err(
                 |error| {
-                    format!(
-                        "Unable to prepare export policy selection query: {}",
+                    localized_export!("export.error.unable_to_prepare_export_policy_selection_query",
                         error,
                     )
                 }
@@ -2618,8 +2607,7 @@ fn load_export_policy_choices(
             )
             .map_err(
                 |error| {
-                    format!(
-                        "Unable to query policies for export selection: {}",
+                    localized_export!("export.error.unable_to_query_policies_for_export_selection",
                         error,
                     )
                 }
@@ -2644,8 +2632,7 @@ fn load_export_policy_choices(
         ) =
             row.map_err(
                 |error| {
-                    format!(
-                        "Unable to decode export policy selection row: {}",
+                    localized_export!("export.error.unable_to_decode_export_policy_selection_row",
                         error,
                     )
                 }
@@ -3005,7 +2992,7 @@ fn draw_stage_rail(
                         &crate::manage_localization::runtime_text("export.destination_help")
                     ),
                     ExportStage::Review => response.on_hover_text(
-                        "Review the selected export focus, included policies, shaders and playlists, and destination before starting Export."
+                        localized_export!("export.review_instruction")
                     ),
                     ExportStage::Results => response,
                     ExportStage::SelectFocus | ExportStage::SelectData => response,

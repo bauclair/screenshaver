@@ -503,6 +503,29 @@ fn intentionally_invariant(s: &str, line: &str, path: &Path) -> bool {
         return true;
     }
 
+    // Portable export serialization, archive layout, filename conventions, and the
+    // interchange-format identifier are machine-facing compatibility contracts.
+    // Keep these exemptions scoped to export_data.rs so identical raw English text
+    // elsewhere remains subject to normal localization auditing.
+    let is_export_data = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        == Some("export_data.rs");
+
+    if is_export_data
+        && matches!(
+            t,
+            "{}\\t{}\\t{}\\n"
+                | "{}\\t{}\\t{}\\t{}\\n"
+                | "backup/managed-shaders/{}"
+                | "{}.zip"
+                | "Screenshaver-Export-{}.zip"
+                | "Screenshaver Export Format 1"
+        )
+    {
+        return true;
+    }
+
     if matches!(
         t,
         "screensaver"

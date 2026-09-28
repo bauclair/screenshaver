@@ -2390,4 +2390,380 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
         translator_context: "Import package, schema, TSV, or shader validation message. Named parameters are stable identifiers, paths, package values, or external error text and must remain unchanged.",
     },
 
+
+    FactoryTranslationKey {
+        key: "export.error.unable_to_load_playlists_for_export_selection",
+        english_text: "Unable to load playlists for export selection: {value1}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_load_schema",
+        english_text: "Unable to load Screenshaver Export Schema V1: {value1}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.schema_has_an_empty_format_identifier",
+        english_text: "Screenshaver Export Schema V1 has an empty format identifier.",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.schema_has_an_invalid_format_version",
+        english_text: "Screenshaver Export Schema V1 has an invalid format version.",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.schema_requests_an_unsupported_integrity_algorithm_or_canonicalization",
+        english_text: "Screenshaver Export Schema V1 requests an unsupported integrity algorithm or canonicalization.",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.schema_must_exclude_its_manifest_from_the_package_hash",
+        english_text: "Screenshaver Export Schema V1 must exclude its manifest from the package hash.",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.schema_dataset_is_not_declared_as_archive_metadata",
+        english_text: "Screenshaver Export Schema V1 dataset '{value1}' is not declared as archive metadata.",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.missing_package_local_export_id_for_policy",
+        english_text: "Missing package-local export ID for policy '{value1}'",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.missing_package_local_export_id_for_shader_referenced_by_policy",
+        english_text: "Missing package-local export ID for shader '{value1}' referenced by policy '{value2}'",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.missing_package_local_export_id_for_playlist",
+        english_text: "Missing package-local export ID for playlist '{value1}'",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_load_members_for_playlist_while_exporting",
+        english_text: "Unable to load members for playlist {value1} while exporting: {value2}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.missing_package_local_export_id_for_policy_in_playlist",
+        english_text: "Missing package-local export ID for policy {value1} in playlist '{value2}'",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_read_shader_at",
+        english_text: "Unable to read shader '{value1}' at '{value2}': {value3}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.missing_package_local_export_id_for_shader",
+        english_text: "Missing package-local export ID for shader '{value1}'",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_create_in_export_archive",
+        english_text: "Unable to create '{value1}' in export archive: {value2}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_write_to_export_archive",
+        english_text: "Unable to write '{value1}' to export archive: {value2}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.the_export_destination_is_not_valid",
+        english_text: "The export destination is not valid.",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.the_export_destination_folder_is_not_valid",
+        english_text: "The export destination folder is not valid.",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.export_destination_folder_does_not_exist",
+        english_text: "Export destination folder does not exist: {value1}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.the_effective_policy_snapshot_is_incomplete_return_to_selection_and_try_again",
+        english_text: "The effective policy snapshot is incomplete. Return to selection and try again.",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_read_shader_while_calculating_package_integrity",
+        english_text: "Unable to read shader '{value1}' while calculating package integrity: {value2}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_serialize_export_manifest",
+        english_text: "Unable to serialize export manifest: {value1}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_remove_stale_temporary_export",
+        english_text: "Unable to remove stale temporary export '{value1}': {value2}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_create_temporary_export_archive",
+        english_text: "Unable to create temporary export archive '{value1}': {value2}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_add_database_snapshot_to_backup_archive",
+        english_text: "Unable to add database snapshot to backup archive: {value1}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_write_database_snapshot_to_backup_archive",
+        english_text: "Unable to write database snapshot to backup archive: {value1}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_add_managed_shader_to_backup_archive",
+        english_text: "Unable to add managed shader '{value1}' to backup archive: {value2}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_write_managed_shader_to_backup_archive",
+        english_text: "Unable to write managed shader '{value1}' to backup archive: {value2}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_add_shader_to_export_archive",
+        english_text: "Unable to add shader '{value1}' to export archive: {value2}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_open_shader",
+        english_text: "Unable to open shader '{value1}': {value2}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_read_shader",
+        english_text: "Unable to read shader '{value1}': {value2}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_write_shader_to_export_archive",
+        english_text: "Unable to write shader '{value1}' to export archive: {value2}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_finalize_export_archive",
+        english_text: "Unable to finalize export archive: {value1}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_move_completed_export_archive_to",
+        english_text: "Unable to move completed export archive to '{value1}': {value2}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_enumerate_managed_shader_directory",
+        english_text: "Unable to enumerate managed shader directory '{value1}': {value2}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_read_managed_shader_directory_entry",
+        english_text: "Unable to read managed shader directory entry: {value1}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_inspect_managed_shader_entry",
+        english_text: "Unable to inspect managed shader entry '{value1}': {value2}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_read_managed_shader_for_full_backup",
+        english_text: "Unable to read managed shader '{value1}' for full backup: {value2}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_remove_stale_database_snapshot",
+        english_text: "Unable to remove stale database snapshot '{value1}': {value2}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_open_database_for_backup_snapshot",
+        english_text: "Unable to open database for backup snapshot: {value1}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_create_consistent_database_snapshot",
+        english_text: "Unable to create consistent database snapshot: {value1}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_open_database_snapshot_for_verification",
+        english_text: "Unable to open database snapshot for verification: {value1}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_verify_database_snapshot",
+        english_text: "Unable to verify database snapshot: {value1}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.database_snapshot_failed_integrity_verification",
+        english_text: "Database snapshot failed integrity verification: {value1}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_read_verified_database_snapshot",
+        english_text: "Unable to read verified database snapshot '{value1}': {value2}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_create_backup_directory",
+        english_text: "Unable to create backup directory '{value1}': {value2}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_prepare_full_backup_selection",
+        english_text: "Unable to prepare full backup selection: {value1}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_resolve_full_backup_policies",
+        english_text: "Unable to resolve full backup policies: {value1}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_determine_backup_filename_timestamp",
+        english_text: "Unable to determine backup filename timestamp.",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_prepare_effective_export_policy_query",
+        english_text: "Unable to prepare effective export policy query: {value1}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_read_selected_policy_id_while_resolving_export_data",
+        english_text: "Unable to read selected policy ID {value1} while resolving export data: {value2}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.policy_has_unsupported_target",
+        english_text: "Policy '{value1}' has unsupported target '{value2}'",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.one_or_more_selected_policies_disappeared_while_export_data_was_being_resolved",
+        english_text: "One or more selected policies disappeared while export data was being resolved",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.policy_has_a_specific_texture_without_a_texture_family",
+        english_text: "Policy '{value1}' has a specific texture without a texture family",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.policy_has_a_specific_texture_without_a_primitive_count",
+        english_text: "Policy '{value1}' has a specific texture without a primitive count",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.policy_has_unsupported_texture_mode",
+        english_text: "Policy '{value1}' has unsupported texture mode '{value2}'",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.defaults_specify_a_specific_texture_without_a_texture_family_while_resolving_policy",
+        english_text: "{value1} defaults specify a specific texture without a texture family while resolving policy '{value2}'",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.defaults_contain_unsupported_texture_mode_while_resolving_policy",
+        english_text: "{value1} defaults contain unsupported texture mode '{value2}' while resolving policy '{value3}'",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.policy_has_a_specific_palette_without_a_palette_color",
+        english_text: "Policy '{value1}' has a specific palette without a palette color",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.policy_has_unsupported_palette_mode",
+        english_text: "Policy '{value1}' has unsupported palette mode '{value2}'",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.defaults_specify_a_specific_palette_without_a_palette_color_while_resolving_policy",
+        english_text: "{value1} defaults specify a specific palette without a palette color while resolving policy '{value2}'",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.defaults_contain_unsupported_palette_mode_while_resolving_policy",
+        english_text: "{value1} defaults contain unsupported palette mode '{value2}' while resolving policy '{value3}'",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.policy_has_invalid_boolean_value_for",
+        english_text: "Policy '{value1}' has invalid boolean value {value2} for {value3}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.assigned_policy_retained_unresolved_target_texture_inheritance",
+        english_text: "Assigned policy '{value1}' retained unresolved target texture inheritance",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.assigned_policy_retained_unresolved_target_palette_inheritance",
+        english_text: "Assigned policy '{value1}' retained unresolved target palette inheritance",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.assigned_policy_retained_unresolved_target_animation_speed_inheritance",
+        english_text: "Assigned policy '{value1}' retained unresolved target animation-speed inheritance",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.policy_resolved_to_an_invalid_specific_texture",
+        english_text: "Policy '{value1}' resolved to an invalid specific texture",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.assigned_policy_resolved_to_random_texture_without_an_explicit_primitive_count",
+        english_text: "Assigned policy '{value1}' resolved to random texture without an explicit primitive count",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.policy_resolved_to_an_invalid_random_texture_primitive_count",
+        english_text: "Policy '{value1}' resolved to an invalid random-texture primitive count",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.policy_resolved_to_one_or_more_invalid_numeric_export_values",
+        english_text: "Policy '{value1}' resolved to one or more invalid numeric export values",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.policy_resolved_to_an_invalid_animation_speed",
+        english_text: "Policy '{value1}' resolved to an invalid animation speed",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_prepare_export_policy_selection_query",
+        english_text: "Unable to prepare export policy selection query: {value1}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_query_policies_for_export_selection",
+        english_text: "Unable to query policies for export selection: {value1}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.error.unable_to_decode_export_policy_selection_row",
+        english_text: "Unable to decode export policy selection row: {value1}",
+        translator_context: "Export workflow user-facing error/status text. Supplied {valueN} parameters are runtime data and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.review_instruction",
+        english_text: "Review the selected export focus, included policies, shaders and playlists, and destination before starting Export.",
+        translator_context: "Export wizard Review page instruction shown before the user starts the export.",
+    },
 ];
