@@ -106,10 +106,10 @@ impl PostProcessingNestedTab {
         self,
     ) -> String {
         match self {
-            PostProcessingNestedTab::VisualQuality => "Visual Quality".to_string(),
-            PostProcessingNestedTab::ImageTransforms => "Image Transforms".to_string(),
-            PostProcessingNestedTab::Audiovisual => "Audiovisual".to_string(),
-            PostProcessingNestedTab::AudioMotion => "Audio Motion".to_string(),
+            PostProcessingNestedTab::VisualQuality => crate::manage_localization::runtime_text("post.tab.visual_quality"),
+            PostProcessingNestedTab::ImageTransforms => crate::manage_localization::runtime_text("post.tab.image_transforms"),
+            PostProcessingNestedTab::Audiovisual => crate::manage_localization::runtime_text("post.tab.audiovisual"),
+            PostProcessingNestedTab::AudioMotion => crate::manage_localization::runtime_text("post.tab.audio_motion"),
         }
     }
 }
@@ -697,17 +697,17 @@ fn draw_post_processing_audio_motion(
     bulk_edit_mode: bool,
     bulk_audio_motion_selected: &mut bool,
 ) {
-    ui.heading("Audio Motion");
+    ui.heading(crate::manage_localization::runtime_text("post.tab.audio_motion"));
     ui.add_space(8.0);
 
     ui.horizontal(|ui| {
-        ui.label("Audio Motion Effect:")
-            .on_hover_text("Selects an audio-driven full-frame motion effect. Woofer from Hell uses LRCMUX vocal timing for inverse-cone motion. FFT Mirror Warp uses a mirrored 48-channel FFT trace. Polar Propeller uses the same 48-channel FFT response in a rotating radial deformation.");
+        ui.label(crate::manage_localization::runtime_text("post.motion.effect"))
+            .on_hover_text(crate::manage_localization::runtime_text("post.motion.effect_help"));
 
         let selected_text = if bulk_edit_mode && !*bulk_audio_motion_selected {
-            "Unchanged"
+            crate::manage_localization::runtime_text("post.common.unchanged")
         } else {
-            audio_motion.display_name()
+            audio_motion.display_name().to_string()
         };
 
         let response = egui::ComboBox::from_id_source("post_processing_audio_motion_effect")
@@ -715,22 +715,22 @@ fn draw_post_processing_audio_motion(
             .width(POST_PROCESSING_CONTROL_WIDTH)
             .show_ui(ui, |ui| {
                 if bulk_edit_mode {
-                    if ui.selectable_label(!*bulk_audio_motion_selected, "Unchanged").clicked() {
+                    if ui.selectable_label(!*bulk_audio_motion_selected, crate::manage_localization::runtime_text("post.common.unchanged")).clicked() {
                         *bulk_audio_motion_selected = false;
                     }
                     ui.separator();
                 }
 
-                if ui.selectable_value(audio_motion, crate::render_audio_motion::AudioMotionEffect::Off, "Off").clicked() && bulk_edit_mode {
+                if ui.selectable_value(audio_motion, crate::render_audio_motion::AudioMotionEffect::Off, crate::manage_localization::runtime_text("post.common.off")).clicked() && bulk_edit_mode {
                     *bulk_audio_motion_selected = true;
                 }
-                if ui.selectable_value(audio_motion, crate::render_audio_motion::AudioMotionEffect::WooferFromHell, "Woofer from Hell").clicked() && bulk_edit_mode {
+                if ui.selectable_value(audio_motion, crate::render_audio_motion::AudioMotionEffect::WooferFromHell, crate::manage_localization::runtime_text("post.motion.woofer")).clicked() && bulk_edit_mode {
                     *bulk_audio_motion_selected = true;
                 }
-                if ui.selectable_value(audio_motion, crate::render_audio_motion::AudioMotionEffect::FftMirrorWarp, "FFT Mirror Warp").clicked() && bulk_edit_mode {
+                if ui.selectable_value(audio_motion, crate::render_audio_motion::AudioMotionEffect::FftMirrorWarp, crate::manage_localization::runtime_text("post.motion.fft_mirror")).clicked() && bulk_edit_mode {
                     *bulk_audio_motion_selected = true;
                 }
-                if ui.selectable_value(audio_motion, crate::render_audio_motion::AudioMotionEffect::PolarPropeller, "Polar Propeller").clicked() && bulk_edit_mode {
+                if ui.selectable_value(audio_motion, crate::render_audio_motion::AudioMotionEffect::PolarPropeller, crate::manage_localization::runtime_text("post.motion.polar_propeller")).clicked() && bulk_edit_mode {
                     *bulk_audio_motion_selected = true;
                 }
             })
@@ -754,7 +754,7 @@ fn draw_post_processing_visual_quality(
     bulk_dithering_selected: &mut bool,
     bulk_color_precision_selected: &mut bool,
 ) {
-    ui.heading("Visual Quality");
+    ui.heading(crate::manage_localization::runtime_text("post.tab.visual_quality"));
     ui.add_space(8.0);
 
     egui::Grid::new(
@@ -765,20 +765,20 @@ fn draw_post_processing_visual_quality(
     .show(
         ui,
         |ui| {
-            ui.label("Anti-Aliasing:")
+            ui.label(crate::manage_localization::runtime_text("post.visual.anti_aliasing"))
                 .on_hover_text(
-                    "Controls edge smoothing for the rendered shader."
+                    crate::manage_localization::runtime_text("post.visual.anti_aliasing_help")
                 );
 
             let selected_text =
                 if bulk_edit_mode
                     && !*bulk_anti_aliasing_selected
                 {
-                    "Unchanged"
+                    crate::manage_localization::runtime_text("post.common.unchanged")
                 } else {
                     match *anti_aliasing {
-                        AntiAliasingSelection::Off => "Off",
-                        AntiAliasingSelection::Fxaa => "FXAA",
+                        AntiAliasingSelection::Off => crate::manage_localization::runtime_text("post.common.off"),
+                        AntiAliasingSelection::Fxaa => "FXAA".to_string(),
                     }
                 };
 
@@ -794,7 +794,7 @@ fn draw_post_processing_visual_quality(
                     if bulk_edit_mode {
                         if ui.selectable_label(
                             !*bulk_anti_aliasing_selected,
-                            "Unchanged",
+                            crate::manage_localization::runtime_text("post.common.unchanged"),
                         ).clicked() {
                             *bulk_anti_aliasing_selected = false;
                         }
@@ -804,7 +804,7 @@ fn draw_post_processing_visual_quality(
                     if ui.selectable_value(
                         anti_aliasing,
                         AntiAliasingSelection::Off,
-                        "Off",
+                        crate::manage_localization::runtime_text("post.common.off"),
                     ).clicked() && bulk_edit_mode {
                         *bulk_anti_aliasing_selected = true;
                     }
@@ -834,18 +834,18 @@ fn draw_post_processing_visual_quality(
 
             ui.label(crate::manage_localization::runtime_text("rendering.dithering"))
                 .on_hover_text(
-                    "Controls subtle dithering used to reduce visible color banding."
+                    crate::manage_localization::runtime_text("post.visual.dithering_help")
                 );
 
             let selected_text =
                 if bulk_edit_mode
                     && !*bulk_dithering_selected
                 {
-                    "Unchanged"
+                    crate::manage_localization::runtime_text("post.common.unchanged")
                 } else {
                     match *dithering {
-                        DitheringSelection::Off => "Off",
-                        DitheringSelection::Subtle => "Subtle",
+                        DitheringSelection::Off => crate::manage_localization::runtime_text("post.common.off"),
+                        DitheringSelection::Subtle => crate::manage_localization::runtime_text("post.visual.subtle"),
                     }
                 };
 
@@ -861,7 +861,7 @@ fn draw_post_processing_visual_quality(
                     if bulk_edit_mode {
                         if ui.selectable_label(
                             !*bulk_dithering_selected,
-                            "Unchanged",
+                            crate::manage_localization::runtime_text("post.common.unchanged"),
                         ).clicked() {
                             *bulk_dithering_selected = false;
                         }
@@ -871,7 +871,7 @@ fn draw_post_processing_visual_quality(
                     if ui.selectable_value(
                         dithering,
                         DitheringSelection::Off,
-                        "Off",
+                        crate::manage_localization::runtime_text("post.common.off"),
                     ).clicked() && bulk_edit_mode {
                         *bulk_dithering_selected = true;
                     }
@@ -879,7 +879,7 @@ fn draw_post_processing_visual_quality(
                     if ui.selectable_value(
                         dithering,
                         DitheringSelection::Subtle,
-                        "Subtle",
+                        crate::manage_localization::runtime_text("post.visual.subtle"),
                     ).clicked() && bulk_edit_mode {
                         *bulk_dithering_selected = true;
                     }
@@ -899,21 +899,21 @@ fn draw_post_processing_visual_quality(
 
             ui.end_row();
 
-            ui.label("Color Precision:")
+            ui.label(crate::manage_localization::runtime_text("post.visual.color_precision"))
                 .on_hover_text(
-                    "Selects the color precision used by post-processing."
+                    crate::manage_localization::runtime_text("post.visual.color_precision_help")
                 );
 
             let selected_text =
                 if bulk_edit_mode
                     && !*bulk_color_precision_selected
                 {
-                    "Unchanged"
+                    crate::manage_localization::runtime_text("post.common.unchanged")
                 } else {
                     match *color_precision {
-                        ColorPrecisionSelection::Automatic => "Automatic",
-                        ColorPrecisionSelection::Standard => "Standard Precision",
-                        ColorPrecisionSelection::High => "High Precision",
+                        ColorPrecisionSelection::Automatic => crate::manage_localization::runtime_text("post.visual.automatic"),
+                        ColorPrecisionSelection::Standard => crate::manage_localization::runtime_text("post.visual.standard_precision"),
+                        ColorPrecisionSelection::High => crate::manage_localization::runtime_text("post.visual.high_precision"),
                     }
                 };
 
@@ -929,7 +929,7 @@ fn draw_post_processing_visual_quality(
                     if bulk_edit_mode {
                         if ui.selectable_label(
                             !*bulk_color_precision_selected,
-                            "Unchanged",
+                            crate::manage_localization::runtime_text("post.common.unchanged"),
                         ).clicked() {
                             *bulk_color_precision_selected = false;
                         }
@@ -937,9 +937,9 @@ fn draw_post_processing_visual_quality(
                     }
 
                     for (choice, label) in [
-                        (ColorPrecisionSelection::Automatic, "Automatic"),
-                        (ColorPrecisionSelection::Standard, "Standard Precision"),
-                        (ColorPrecisionSelection::High, "High Precision"),
+                        (ColorPrecisionSelection::Automatic, crate::manage_localization::runtime_text("post.visual.automatic")),
+                        (ColorPrecisionSelection::Standard, crate::manage_localization::runtime_text("post.visual.standard_precision")),
+                        (ColorPrecisionSelection::High, crate::manage_localization::runtime_text("post.visual.high_precision")),
                     ] {
                         if ui.selectable_value(
                             color_precision,
@@ -984,7 +984,7 @@ fn draw_post_processing_image_transforms(
     bulk_flip_vertical: &mut BulkBooleanSelection,
     bulk_hue_rotation_selected: &mut bool,
 ) {
-    ui.heading("Image Transforms");
+    ui.heading(crate::manage_localization::runtime_text("post.tab.image_transforms"));
     ui.add_space(8.0);
 
     if bulk_edit_mode {
@@ -992,49 +992,49 @@ fn draw_post_processing_image_transforms(
             ui,
             "post_processing_bulk_invert_colors",
             scale,
-            "Invert Colors",
+            crate::manage_localization::runtime_text("post.transform.invert_colors"),
             bulk_invert_colors,
-            "Inverts the final rendered colors.",
+            crate::manage_localization::runtime_text("post.transform.invert_colors_help"),
         );
         draw_bulk_boolean_row(
             ui,
             "post_processing_bulk_flip_horizontal",
             scale,
-            "Flip Horizontal",
+            crate::manage_localization::runtime_text("post.transform.flip_horizontal"),
             bulk_flip_horizontal,
-            "Mirrors the final image horizontally.",
+            crate::manage_localization::runtime_text("post.transform.flip_horizontal_help"),
         );
         draw_bulk_boolean_row(
             ui,
             "post_processing_bulk_flip_vertical",
             scale,
-            "Flip Vertical",
+            crate::manage_localization::runtime_text("post.transform.flip_vertical"),
             bulk_flip_vertical,
-            "Mirrors the final image vertically.",
+            crate::manage_localization::runtime_text("post.transform.flip_vertical_help"),
         );
     } else {
         ui.checkbox(
             invert_colors,
-            "Invert Colors",
+            crate::manage_localization::runtime_text("post.transform.invert_colors"),
         )
         .on_hover_text(
-            "Inverts the final rendered colors."
+            crate::manage_localization::runtime_text("post.transform.invert_colors_help")
         );
 
         ui.checkbox(
             flip_horizontal,
-            "Flip Horizontal",
+            crate::manage_localization::runtime_text("post.transform.flip_horizontal"),
         )
         .on_hover_text(
-            "Mirrors the final image horizontally."
+            crate::manage_localization::runtime_text("post.transform.flip_horizontal_help")
         );
 
         ui.checkbox(
             flip_vertical,
-            "Flip Vertical",
+            crate::manage_localization::runtime_text("post.transform.flip_vertical"),
         )
         .on_hover_text(
-            "Mirrors the final image vertically."
+            crate::manage_localization::runtime_text("post.transform.flip_vertical_help")
         );
     }
 
@@ -1042,7 +1042,7 @@ fn draw_post_processing_image_transforms(
 
     draw_numeric_slider_row(
         ui,
-        "Hue Rotation:",
+        crate::manage_localization::runtime_text("post.transform.hue_rotation"),
         hue_rotation,
         crate::postprocess_shader::HUE_ROTATION_MIN,
         crate::postprocess_shader::HUE_ROTATION_MAX,
@@ -1053,7 +1053,7 @@ fn draw_post_processing_image_transforms(
         bulk_hue_rotation_selected,
         true,
         scale,
-        "Rotates the displayed shader colors around the hue wheel.",
+        crate::manage_localization::runtime_text("post.transform.hue_rotation_help"),
     );
 }
 
@@ -1080,27 +1080,27 @@ fn draw_post_processing_audio(
     bulk_bloom_frequency_rotation_selected: &mut bool,
     bulk_bloom_frequency_invert: &mut BulkBooleanSelection,
 ) {
-    ui.heading("Audiovisual");
+    ui.heading(crate::manage_localization::runtime_text("post.tab.audiovisual"));
     ui.add_space(8.0);
 
     ui.horizontal(
         |ui| {
-            ui.label("Audiovisual Effect:")
+            ui.label(crate::manage_localization::runtime_text("post.audio.effect"))
                 .on_hover_text(
-                    "Selects the audio-driven post-processing effect: Off, Audio Bloom, Spectral Bloom, or experimental Loudness Bloom."
+                    crate::manage_localization::runtime_text("post.audio.effect_help")
                 );
 
             let selected_text =
                 if bulk_edit_mode
                     && !*bulk_bloom_selected
                 {
-                    "Unchanged"
+                    crate::manage_localization::runtime_text("post.common.unchanged")
                 } else {
                     match *bloom {
-                        BloomSelection::Off => "Off",
-                        BloomSelection::Audio => "Audio Bloom",
-                        BloomSelection::Spectral => "Spectral Bloom",
-                        BloomSelection::Loudness => "Loudness Bloom",
+                        BloomSelection::Off => crate::manage_localization::runtime_text("post.common.off"),
+                        BloomSelection::Audio => crate::manage_localization::runtime_text("post.audio.audio_bloom"),
+                        BloomSelection::Spectral => crate::manage_localization::runtime_text("post.audio.spectral_bloom"),
+                        BloomSelection::Loudness => crate::manage_localization::runtime_text("post.audio.loudness_bloom"),
                     }
                 };
 
@@ -1116,7 +1116,7 @@ fn draw_post_processing_audio(
                     if bulk_edit_mode {
                         if ui.selectable_label(
                             !*bulk_bloom_selected,
-                            "Unchanged",
+                            crate::manage_localization::runtime_text("post.common.unchanged"),
                         ).clicked() {
                             *bulk_bloom_selected = false;
                         }
@@ -1126,7 +1126,7 @@ fn draw_post_processing_audio(
                     if ui.selectable_value(
                         bloom,
                         BloomSelection::Off,
-                        "Off",
+                        crate::manage_localization::runtime_text("post.common.off"),
                     ).clicked() && bulk_edit_mode {
                         *bulk_bloom_selected = true;
                     }
@@ -1134,7 +1134,7 @@ fn draw_post_processing_audio(
                     if ui.selectable_value(
                         bloom,
                         BloomSelection::Audio,
-                        "Audio Bloom",
+                        crate::manage_localization::runtime_text("post.audio.audio_bloom"),
                     ).clicked() && bulk_edit_mode {
                         *bulk_bloom_selected = true;
                     }
@@ -1143,7 +1143,7 @@ fn draw_post_processing_audio(
                     if ui.selectable_value(
                         bloom,
                         BloomSelection::Spectral,
-                        "Spectral Bloom",
+                        crate::manage_localization::runtime_text("post.audio.spectral_bloom"),
                     ).clicked() && bulk_edit_mode {
                         *bulk_bloom_selected = true;
                     }
@@ -1152,7 +1152,7 @@ fn draw_post_processing_audio(
                     if ui.selectable_value(
                         bloom,
                         BloomSelection::Loudness,
-                        "Loudness Bloom",
+                        crate::manage_localization::runtime_text("post.audio.loudness_bloom"),
                     ).clicked() && bulk_edit_mode {
                         *bulk_bloom_selected = true;
                     }
@@ -1206,7 +1206,7 @@ fn draw_post_processing_audio(
         |ui| {
             draw_numeric_slider_grid_row(
                 ui,
-                "Bloom Intensity:",
+                crate::manage_localization::runtime_text("post.audio.bloom_intensity"),
                 bloom_intensity,
                 crate::render_bloom::BLOOM_INTENSITY_MIN,
                 crate::render_bloom::BLOOM_INTENSITY_MAX,
@@ -1217,12 +1217,12 @@ fn draw_post_processing_audio(
                 bulk_bloom_intensity_selected,
                 bloom_controls_available,
                 scale,
-                "Controls the strength of the selected Bloom mode.",
+                crate::manage_localization::runtime_text("post.audio.bloom_intensity_help"),
             );
 
             draw_numeric_slider_grid_row(
                 ui,
-                "Bloom Saturation:",
+                crate::manage_localization::runtime_text("post.audio.bloom_saturation"),
                 bloom_saturation,
                 crate::render_bloom::BLOOM_SATURATION_MIN,
                 crate::render_bloom::BLOOM_SATURATION_MAX,
@@ -1233,12 +1233,12 @@ fn draw_post_processing_audio(
                 bulk_bloom_saturation_selected,
                 bloom_controls_available,
                 scale,
-                "Boosts bloom color saturation from the neutral 1.0 level up to 2.0 without changing the displayed shader colors.",
+                crate::manage_localization::runtime_text("post.audio.bloom_saturation_help"),
             );
 
             draw_numeric_slider_grid_row(
                 ui,
-                "Bloom Threshold:",
+                crate::manage_localization::runtime_text("post.audio.bloom_threshold"),
                 bloom_threshold,
                 crate::render_bloom::BLOOM_THRESHOLD_MIN,
                 crate::render_bloom::BLOOM_THRESHOLD_MAX,
@@ -1249,12 +1249,12 @@ fn draw_post_processing_audio(
                 bulk_bloom_threshold_selected,
                 bloom_controls_available,
                 scale,
-                "Controls the brightness threshold used to extract bloom.",
+                crate::manage_localization::runtime_text("post.audio.bloom_threshold_help"),
             );
 
             draw_numeric_slider_grid_row(
                 ui,
-                "Frequency Rotation:",
+                crate::manage_localization::runtime_text("post.audio.frequency_rotation"),
                 bloom_frequency_rotation,
                 crate::render_bloom::BLOOM_FREQUENCY_ROTATION_MIN,
                 crate::render_bloom::BLOOM_FREQUENCY_ROTATION_MAX,
@@ -1265,7 +1265,7 @@ fn draw_post_processing_audio(
                 bulk_bloom_frequency_rotation_selected,
                 frequency_controls_available,
                 scale,
-                "Rotates Audio/Spectral frequency-to-color mapping. Disabled for Loudness Bloom.",
+                crate::manage_localization::runtime_text("post.audio.frequency_rotation_help"),
             );
         },
     );
@@ -1280,17 +1280,17 @@ fn draw_post_processing_audio(
                     ui,
                     "post_processing_bulk_bloom_frequency_invert",
                     scale,
-                    "Invert Frequency Mapping",
+                    crate::manage_localization::runtime_text("post.audio.invert_frequency"),
                     bulk_bloom_frequency_invert,
-                    "Reverses Audio/Spectral low-to-high color-frequency mapping. Disabled for Loudness Bloom.",
+                    crate::manage_localization::runtime_text("post.audio.invert_frequency_help"),
                 );
             } else {
                 ui.checkbox(
                     bloom_frequency_invert,
-                    "Invert Frequency Mapping",
+                    crate::manage_localization::runtime_text("post.audio.invert_frequency"),
                 )
                 .on_hover_text(
-                    "Reverses Audio/Spectral low-to-high color-frequency mapping. Disabled for Loudness Bloom."
+                    crate::manage_localization::runtime_text("post.audio.invert_frequency_help")
                 );
             }
         },
@@ -1302,9 +1302,9 @@ fn draw_bulk_boolean_row(
     ui: &mut egui::Ui,
     id: &'static str,
     scale: f32,
-    label: &'static str,
+    label: String,
     selection: &mut BulkBooleanSelection,
-    help: &'static str,
+    help: String,
 ) {
     ui.horizontal(
         |ui| {
@@ -1313,9 +1313,9 @@ fn draw_bulk_boolean_row(
 
             let selected_text =
                 match *selection {
-                    BulkBooleanSelection::Unchanged => "Unchanged",
-                    BulkBooleanSelection::True => "Enabled",
-                    BulkBooleanSelection::False => "Disabled",
+                    BulkBooleanSelection::Unchanged => crate::manage_localization::runtime_text("post.common.unchanged"),
+                    BulkBooleanSelection::True => crate::manage_localization::runtime_text("post.common.enabled"),
+                    BulkBooleanSelection::False => crate::manage_localization::runtime_text("post.common.disabled"),
                 };
 
             let response =
@@ -1328,7 +1328,7 @@ fn draw_bulk_boolean_row(
                         ui.selectable_value(
                             selection,
                             BulkBooleanSelection::Unchanged,
-                            "Unchanged",
+                            crate::manage_localization::runtime_text("post.common.unchanged"),
                         );
                         ui.separator();
                         ui.selectable_value(
@@ -1339,7 +1339,7 @@ fn draw_bulk_boolean_row(
                         ui.selectable_value(
                             selection,
                             BulkBooleanSelection::False,
-                            "Disabled",
+                            crate::manage_localization::runtime_text("post.common.disabled"),
                         );
                     },
                 )
@@ -1363,7 +1363,7 @@ fn draw_bulk_boolean_row(
 
 fn draw_numeric_slider_row(
     ui: &mut egui::Ui,
-    label: &'static str,
+    label: String,
     value: &mut f32,
     minimum: f32,
     maximum: f32,
@@ -1374,7 +1374,7 @@ fn draw_numeric_slider_row(
     bulk_selected: &mut bool,
     control_available: bool,
     scale: f32,
-    help: &'static str,
+    help: String,
 ) {
     ui.horizontal(
         |ui| {
@@ -1400,7 +1400,7 @@ fn draw_numeric_slider_row(
 
 fn draw_numeric_slider_grid_row(
     ui: &mut egui::Ui,
-    label: &'static str,
+    label: String,
     value: &mut f32,
     minimum: f32,
     maximum: f32,
@@ -1411,7 +1411,7 @@ fn draw_numeric_slider_grid_row(
     bulk_selected: &mut bool,
     control_available: bool,
     scale: f32,
-    help: &'static str,
+    help: String,
 ) {
     ui.label(label)
         .on_hover_text(help);
@@ -1509,9 +1509,9 @@ fn draw_numeric_slider_control(
                     )
                     .on_hover_text(
                         if *bulk_selected {
-                            "Click to exclude this value from Bulk Edit"
+                            crate::manage_localization::runtime_text("post.bulk.exclude")
                         } else {
-                            "Click to include this value in Bulk Edit"
+                            crate::manage_localization::runtime_text("post.bulk.include")
                         }
                     );
 
