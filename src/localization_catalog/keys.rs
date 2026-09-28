@@ -3503,4 +3503,22 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
         translator_context: "Error after exhausting generated Policy Name candidates. {filename} is user shader data and {target} is the stored technical target token; both must remain unchanged.",
     },
 
+
+
+    FactoryTranslationKey {
+        key: "authentication.error.initialize_pam",
+        english_text: "Unable to initialize PAM service '{service}': {error}",
+        translator_context: "Authentication error when Screenshaver cannot initialize its PAM service. {service} is the technical PAM service name and {error} is externally supplied PAM/system error text; both must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "authentication.error.configure_failure_delay",
+        english_text: "Unable to configure PAM failure delay: {error}",
+        translator_context: "Authentication error when Screenshaver cannot configure the Linux-PAM failure delay. {error} is externally supplied PAM/system error text and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "authentication.error.pam_authentication",
+        english_text: "PAM authentication error: {error}",
+        translator_context: "Unexpected PAM authentication error. {error} is externally supplied PAM/system error text and must remain unchanged.",
+    },
+
 ];

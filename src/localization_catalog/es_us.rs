@@ -3496,4 +3496,22 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
         translated_text: "No se pudo generar un Nombre de política sugerido disponible para '{filename}' en el destino {target}",
     },
 
+
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "authentication.error.initialize_pam",
+        translated_text: "No se pudo inicializar el servicio PAM '{service}': {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "authentication.error.configure_failure_delay",
+        translated_text: "No se pudo configurar el retraso por fallo de autenticación de PAM: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "authentication.error.pam_authentication",
+        translated_text: "Error de autenticación PAM: {error}",
+    },
+
 ];

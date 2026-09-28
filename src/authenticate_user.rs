@@ -28,10 +28,12 @@ pub fn authenticate(
 
             Err(error) => {
                 return AuthenticationResult::Error(
-                    format!(
-                        "Unable to initialize PAM service '{}': {}",
-                        PAM_SERVICE,
-                        error,
+                    crate::manage_localization::runtime_text_with_params(
+                        "authentication.error.initialize_pam",
+                        &[
+                            ("service", PAM_SERVICE),
+                            ("error", &error.to_string()),
+                        ],
                     )
                 );
             }
@@ -46,9 +48,11 @@ pub fn authenticate(
         )
     {
         return AuthenticationResult::Error(
-            format!(
-                "Unable to configure PAM failure delay: {}",
-                error,
+            crate::manage_localization::runtime_text_with_params(
+                "authentication.error.configure_failure_delay",
+                &[
+                    ("error", &error.to_string()),
+                ],
             )
         );
     }
@@ -81,9 +85,11 @@ pub fn authenticate(
 
                 _ => {
                     AuthenticationResult::Error(
-                        format!(
-                            "PAM authentication error: {}",
-                            error,
+                        crate::manage_localization::runtime_text_with_params(
+                            "authentication.error.pam_authentication",
+                            &[
+                                ("error", &error.to_string()),
+                            ],
                         )
                     )
                 }
