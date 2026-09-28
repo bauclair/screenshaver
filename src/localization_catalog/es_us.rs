@@ -856,4 +856,239 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
         key: "post.bulk.include",
         translated_text: "Haga clic para incluir este valor en la edición masiva",
     },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.window_title",
+        translated_text: "Exportar datos de Screenshaver",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.stage.select_focus",
+        translated_text: "Seleccionar enfoque de exportación",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.stage.select_data",
+        translated_text: "Seleccionar datos",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.destination",
+        translated_text: "Destino",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.review_confirm",
+        translated_text: "Revisar y confirmar",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.results",
+        translated_text: "Resultados",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.policies",
+        translated_text: "Políticas",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.shaders",
+        translated_text: "Shaders",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.playlists",
+        translated_text: "Listas de reproducción",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.select_policies",
+        translated_text: "Seleccionar políticas",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.select_shaders",
+        translated_text: "Seleccionar shaders",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.select_playlists",
+        translated_text: "Seleccionar listas de reproducción",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.focus",
+        translated_text: "Enfoque de exportación:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.focus_heading",
+        translated_text: "Enfoque de exportación",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.focus_help",
+        translated_text: "Elija si las políticas, los shaders o las listas de reproducción serán el enfoque seleccionable que determinará esta exportación.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.destination_help",
+        translated_text: "Elija el directorio donde se creará el archivo portátil de exportación de Screenshaver.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.select_all",
+        translated_text: "Seleccionar todo",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.clear_all",
+        translated_text: "Borrar selección",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.selected_count",
+        translated_text: "{selected} de {total} seleccionados",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.policies_included",
+        translated_text: "Políticas incluidas ({count})",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.shaders_included",
+        translated_text: "Shaders incluidos ({count})",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.playlists_included",
+        translated_text: "Listas de reproducción incluidas ({count})",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.resolve_failed",
+        translated_text: "No se pudieron resolver las políticas efectivas de exportación: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.policies_resolved",
+        translated_text: "{count} políticas incluidas resueltas y validadas para la exportación portátil.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.select_at_least_one",
+        translated_text: "Seleccione al menos un elemento de {type} para continuar.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.destination_folder",
+        translated_text: "Carpeta de destino:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.browse",
+        translated_text: "Examinar...",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.filename",
+        translated_text: "Nombre del archivo de exportación:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.filename_invalid",
+        translated_text: "Introduzca un nombre de archivo sin separadores de directorio.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.filename_exists",
+        translated_text: "Ese nombre de archivo ya existe. La exportación usará: {filename}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.contents",
+        translated_text: "Contenido de la exportación",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.policies_colon",
+        translated_text: "Políticas:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.shaders_colon",
+        translated_text: "Shaders:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.playlists_colon",
+        translated_text: "Listas de reproducción:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.format",
+        translated_text: "Formato de exportación",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.review_safety",
+        translated_text: "No se modificará ninguna configuración de Screenshaver. La exportación crea una copia portátil de los elementos mostrados arriba.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.export_colon",
+        translated_text: "Exportación:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.passed",
+        translated_text: "CORRECTA",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.failed",
+        translated_text: "FALLIDA",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.archive",
+        translated_text: "Archivo: {path}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.result_counts",
+        translated_text: "Políticas: {policies}    Shaders: {shaders}    Listas de reproducción: {playlists}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.no_archive_installed",
+        translated_text: "No se instaló ningún archivo de exportación completado.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.not_run",
+        translated_text: "La exportación no se ha ejecutado.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.back",
+        translated_text: "< Atrás",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.action",
+        translated_text: "Exportar",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.next",
+        translated_text: "Siguiente >",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.finish",
+        translated_text: "Finalizar",
+    },
 ];

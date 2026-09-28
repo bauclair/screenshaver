@@ -38,11 +38,25 @@ impl ExportSelectionRoot {
         }
     }
 
-    fn select_label(self) -> &'static str {
+    fn select_label(self) -> String {
         match self {
-            ExportSelectionRoot::Policies => "Select Policies",
-            ExportSelectionRoot::Shaders => "Select Shaders",
-            ExportSelectionRoot::Playlists => "Select Playlists",
+            ExportSelectionRoot::Policies =>
+                crate::manage_localization::runtime_text("export.select_policies"),
+            ExportSelectionRoot::Shaders =>
+                crate::manage_localization::runtime_text("export.select_shaders"),
+            ExportSelectionRoot::Playlists =>
+                crate::manage_localization::runtime_text("export.select_playlists"),
+        }
+    }
+
+    fn display_label(self) -> String {
+        match self {
+            ExportSelectionRoot::Policies =>
+                crate::manage_localization::runtime_text("export.policies"),
+            ExportSelectionRoot::Shaders =>
+                crate::manage_localization::runtime_text("export.shaders"),
+            ExportSelectionRoot::Playlists =>
+                crate::manage_localization::runtime_text("export.playlists"),
         }
     }
 
@@ -75,23 +89,31 @@ enum SelectDataTab {
 }
 
 impl SelectDataTab {
-    fn label(self) -> &'static str {
+    fn label(self) -> String {
         match self {
-            SelectDataTab::Policies => "Policies",
-            SelectDataTab::Shaders => "Shaders",
-            SelectDataTab::Playlists => "Playlists",
+            SelectDataTab::Policies =>
+                crate::manage_localization::runtime_text("export.policies"),
+            SelectDataTab::Shaders =>
+                crate::manage_localization::runtime_text("export.shaders"),
+            SelectDataTab::Playlists =>
+                crate::manage_localization::runtime_text("export.playlists"),
         }
     }
 }
 
 impl ExportStage {
-    fn label(self) -> &'static str {
+    fn label(self) -> String {
         match self {
-            ExportStage::SelectFocus => "Select Export Focus",
-            ExportStage::SelectData => "Select Data",
-            ExportStage::Destination => "Destination",
-            ExportStage::Review => "Review & Confirm",
-            ExportStage::Results => "Results",
+            ExportStage::SelectFocus =>
+                crate::manage_localization::runtime_text("export.stage.select_focus"),
+            ExportStage::SelectData =>
+                crate::manage_localization::runtime_text("export.stage.select_data"),
+            ExportStage::Destination =>
+                crate::manage_localization::runtime_text("export.destination"),
+            ExportStage::Review =>
+                crate::manage_localization::runtime_text("export.review_confirm"),
+            ExportStage::Results =>
+                crate::manage_localization::runtime_text("export.results"),
         }
     }
 }
@@ -2763,7 +2785,7 @@ pub fn draw(
         crate::editor_layout::EDIT_WINDOW_REFERENCE_HEIGHT_PIXELS
             * export_resolution_scale;
 
-    egui::Window::new("Export Screenshaver Data")
+    egui::Window::new(crate::manage_localization::runtime_text("export.window_title"))
         .id(egui::Id::new("screenshaver_export_data_wizard_window"))
         .collapsible(false)
         .resizable(true)
@@ -2893,12 +2915,12 @@ fn draw_stage_rail(
                     || state.stage == ExportStage::SelectFocus,
                 egui::SelectableLabel::new(
                     state.stage == ExportStage::SelectFocus,
-                    egui::RichText::new("Select Export Focus")
+                    egui::RichText::new(crate::manage_localization::runtime_text("export.stage.select_focus"))
                         .strong(),
                 ),
             )
             .on_hover_text(
-                "Choose whether Policies, Shaders, or Playlists will be the selectable focus that drives this export."
+                &crate::manage_localization::runtime_text("export.focus_help")
             );
 
             if focus_response.clicked()
@@ -2980,7 +3002,7 @@ fn draw_stage_rail(
 
                 let response = match stage {
                     ExportStage::Destination => response.on_hover_text(
-                        "Choose the directory where the portable Screenshaver export archive will be created."
+                        &crate::manage_localization::runtime_text("export.destination_help")
                     ),
                     ExportStage::Review => response.on_hover_text(
                         "Review the selected export focus, included policies, shaders and playlists, and destination before starting Export."
@@ -3003,12 +3025,12 @@ fn draw_select_focus_page(
     ui: &mut egui::Ui,
     state: &mut ExportWizardState,
 ) {
-    ui.heading("Select Export Focus");
+    ui.heading(crate::manage_localization::runtime_text("export.stage.select_focus"));
     ui.add_space(12.0);
 
     ui.horizontal(
         |ui| {
-            ui.label("Export Focus:");
+            ui.label(crate::manage_localization::runtime_text("export.focus"));
 
             let mut selected_focus =
                 state.export_focus;
@@ -3100,17 +3122,19 @@ fn draw_export_policies_tab(
     if editable {
         ui.horizontal(
             |ui| {
-                ui.strong("Policies");
+                ui.strong(crate::manage_localization::runtime_text("export.policies"));
 
                 ui.label(
-                    format!(
-                        "{} of {} selected",
-                        state.selected_policy_ids.len(),
-                        state.policies.len(),
+                    crate::manage_localization::runtime_text_with_params(
+                        "export.selected_count",
+                        &[
+                            ("selected", &state.selected_policy_ids.len().to_string()),
+                            ("total", &state.policies.len().to_string()),
+                        ],
                     )
                 );
 
-                if ui.button("Select All").clicked() {
+                if ui.button(crate::manage_localization::runtime_text("export.select_all")).clicked() {
                     state.selected_policy_ids =
                         state.policies
                             .iter()
@@ -3121,7 +3145,7 @@ fn draw_export_policies_tab(
                     state.refresh_portable_policies();
                 }
 
-                if ui.button("Clear All").clicked() {
+                if ui.button(crate::manage_localization::runtime_text("export.clear_all")).clicked() {
                     state.selected_policy_ids.clear();
                     state.refresh_portable_policies();
                 }
@@ -3129,9 +3153,9 @@ fn draw_export_policies_tab(
         );
     } else {
         ui.strong(
-            format!(
-                "Policies Included ({})",
-                state.included_policy_ids().len(),
+            crate::manage_localization::runtime_text_with_params(
+                "export.policies_included",
+                &[("count", &state.included_policy_ids().len().to_string())],
             )
         );
     }
@@ -3242,17 +3266,19 @@ fn draw_export_shaders_tab(
     if editable {
         ui.horizontal(
             |ui| {
-                ui.strong("Shaders");
+                ui.strong(crate::manage_localization::runtime_text("export.shaders"));
 
                 ui.label(
-                    format!(
-                        "{} of {} selected",
-                        state.selected_shader_ids.len(),
-                        state.shaders.len(),
+                    crate::manage_localization::runtime_text_with_params(
+                        "export.selected_count",
+                        &[
+                            ("selected", &state.selected_shader_ids.len().to_string()),
+                            ("total", &state.shaders.len().to_string()),
+                        ],
                     )
                 );
 
-                if ui.button("Select All").clicked() {
+                if ui.button(crate::manage_localization::runtime_text("export.select_all")).clicked() {
                     state.selected_shader_ids =
                         state.shaders
                             .iter()
@@ -3263,7 +3289,7 @@ fn draw_export_shaders_tab(
                     state.refresh_portable_policies();
                 }
 
-                if ui.button("Clear All").clicked() {
+                if ui.button(crate::manage_localization::runtime_text("export.clear_all")).clicked() {
                     state.selected_shader_ids.clear();
                     state.refresh_portable_policies();
                 }
@@ -3271,9 +3297,9 @@ fn draw_export_shaders_tab(
         );
     } else {
         ui.strong(
-            format!(
-                "Shaders Included ({})",
-                state.included_shaders().len(),
+            crate::manage_localization::runtime_text_with_params(
+                "export.shaders_included",
+                &[("count", &state.included_shaders().len().to_string())],
             )
         );
     }
@@ -3379,17 +3405,19 @@ fn draw_export_playlists_tab(
     if editable {
         ui.horizontal(
             |ui| {
-                ui.strong("Playlists");
+                ui.strong(crate::manage_localization::runtime_text("export.playlists"));
 
                 ui.label(
-                    format!(
-                        "{} of {} selected",
-                        state.selected_playlist_ids.len(),
-                        state.playlists.len(),
+                    crate::manage_localization::runtime_text_with_params(
+                        "export.selected_count",
+                        &[
+                            ("selected", &state.selected_playlist_ids.len().to_string()),
+                            ("total", &state.playlists.len().to_string()),
+                        ],
                     )
                 );
 
-                if ui.button("Select All").clicked() {
+                if ui.button(crate::manage_localization::runtime_text("export.select_all")).clicked() {
                     state.selected_playlist_ids =
                         state.playlists
                             .iter()
@@ -3400,7 +3428,7 @@ fn draw_export_playlists_tab(
                     state.refresh_portable_policies();
                 }
 
-                if ui.button("Clear All").clicked() {
+                if ui.button(crate::manage_localization::runtime_text("export.clear_all")).clicked() {
                     state.selected_playlist_ids.clear();
                     state.refresh_portable_policies();
                 }
@@ -3408,9 +3436,9 @@ fn draw_export_playlists_tab(
         );
     } else {
         ui.strong(
-            format!(
-                "Playlists Included ({})",
-                state.included_playlists().len(),
+            crate::manage_localization::runtime_text_with_params(
+                "export.playlists_included",
+                &[("count", &state.included_playlists().len().to_string())],
             )
         );
     }
@@ -3495,9 +3523,9 @@ fn draw_selection_status(
         ui.add_space(6.0);
         ui.label(
             egui::RichText::new(
-                format!(
-                    "Unable to resolve effective export policies: {}",
-                    error,
+                crate::manage_localization::runtime_text_with_params(
+                    "export.resolve_failed",
+                    &[("error", error)],
                 )
             )
             .strong(),
@@ -3506,9 +3534,9 @@ fn draw_selection_status(
         ui.add_space(6.0);
         ui.label(
             egui::RichText::new(
-                format!(
-                    "{} included policies resolved and validated for portable export.",
-                    state.portable_policies.len(),
+                crate::manage_localization::runtime_text_with_params(
+                    "export.policies_resolved",
+                    &[("count", &state.portable_policies.len().to_string())],
                 )
             )
             .weak(),
@@ -3519,9 +3547,9 @@ fn draw_selection_status(
         ui.add_space(6.0);
         ui.label(
             egui::RichText::new(
-                format!(
-                    "Select at least one {} to continue.",
-                    state.export_focus.label(),
+                crate::manage_localization::runtime_text_with_params(
+                    "export.select_at_least_one",
+                    &[("type", &state.export_focus.display_label())],
                 )
             )
             .weak(),
@@ -3534,10 +3562,10 @@ fn draw_destination_page(
     state: &mut ExportWizardState,
     destination_browse_requested: &mut Option<std::path::PathBuf>,
 ) {
-    ui.heading("Destination");
+    ui.heading(crate::manage_localization::runtime_text("export.destination"));
     ui.add_space(8.0);
 
-    ui.label("Destination Folder:");
+    ui.label(crate::manage_localization::runtime_text("export.destination_folder"));
 
     ui.horizontal(
         |ui| {
@@ -3549,7 +3577,7 @@ fn draw_destination_page(
                 .hint_text("$HOME"),
             );
 
-            if ui.button("Browse...").clicked() {
+            if ui.button(crate::manage_localization::runtime_text("export.browse")).clicked() {
                 *destination_browse_requested =
                     Some(
                         std::path::PathBuf::from(
@@ -3562,7 +3590,7 @@ fn draw_destination_page(
 
     ui.add_space(10.0);
 
-    ui.label("Export Filename:");
+    ui.label(crate::manage_localization::runtime_text("export.filename"));
 
     ui.add(
         egui::TextEdit::singleline(
@@ -3580,7 +3608,7 @@ fn draw_destination_page(
         ui.add_space(4.0);
         ui.label(
             egui::RichText::new(
-                "Enter a filename without directory separators."
+                crate::manage_localization::runtime_text("export.filename_invalid")
             )
             .weak(),
         );
@@ -3597,17 +3625,16 @@ fn draw_destination_page(
 
         if path != requested {
             ui.add_space(4.0);
+            let filename =
+                path.file_name()
+                    .and_then(|value| value.to_str())
+                    .unwrap_or(state.export_filename.trim());
+
             ui.label(
                 egui::RichText::new(
-                    format!(
-                        "That filename already exists. Export will use: {}",
-                        path.file_name()
-                            .and_then(
-                                |value| value.to_str()
-                            )
-                            .unwrap_or(
-                                state.export_filename.trim()
-                            ),
+                    crate::manage_localization::runtime_text_with_params(
+                        "export.filename_exists",
+                        &[("filename", filename)],
                     )
                 )
                 .weak(),
@@ -3620,16 +3647,16 @@ fn draw_review_page(
     ui: &mut egui::Ui,
     state: &ExportWizardState,
 ) {
-    ui.heading("Review & Confirm");
+    ui.heading(crate::manage_localization::runtime_text("export.review_confirm"));
     ui.add_space(12.0);
 
-    ui.strong("Export Focus");
+    ui.strong(crate::manage_localization::runtime_text("export.focus_heading"));
     ui.add_space(4.0);
-    ui.label(state.export_focus.label());
+    ui.label(state.export_focus.display_label());
 
     ui.add_space(14.0);
 
-    ui.strong("Export Contents");
+    ui.strong(crate::manage_localization::runtime_text("export.contents"));
     ui.add_space(4.0);
 
     egui::Grid::new("export_review_contents")
@@ -3638,7 +3665,7 @@ fn draw_review_page(
         .show(
             ui,
             |ui| {
-                ui.label("Policies:");
+                ui.label(crate::manage_localization::runtime_text("export.policies_colon"));
                 ui.label(
                     state.included_policy_ids()
                         .len()
@@ -3646,7 +3673,7 @@ fn draw_review_page(
                 );
                 ui.end_row();
 
-                ui.label("Shaders:");
+                ui.label(crate::manage_localization::runtime_text("export.shaders_colon"));
                 ui.label(
                     state.included_shaders()
                         .len()
@@ -3654,7 +3681,7 @@ fn draw_review_page(
                 );
                 ui.end_row();
 
-                ui.label("Playlists:");
+                ui.label(crate::manage_localization::runtime_text("export.playlists_colon"));
                 ui.label(
                     state.included_playlists()
                         .len()
@@ -3666,7 +3693,7 @@ fn draw_review_page(
 
     ui.add_space(14.0);
 
-    ui.strong("Destination");
+    ui.strong(crate::manage_localization::runtime_text("export.destination"));
     ui.add_space(4.0);
 
     if let Some(path) =
@@ -3685,7 +3712,7 @@ fn draw_review_page(
 
     ui.add_space(14.0);
 
-    ui.strong("Export Format");
+    ui.strong(crate::manage_localization::runtime_text("export.format"));
     ui.add_space(4.0);
     ui.label("Screenshaver Export Format 1");
 
@@ -3695,7 +3722,7 @@ fn draw_review_page(
 
     ui.label(
         egui::RichText::new(
-            "No Screenshaver configuration will be changed. Export creates a portable copy of the items shown above."
+            crate::manage_localization::runtime_text("export.review_safety")
         )
         .strong(),
     );
@@ -3705,36 +3732,38 @@ fn draw_results_page(
     ui: &mut egui::Ui,
     state: &ExportWizardState,
 ) {
-    ui.heading("Results");
+    ui.heading(crate::manage_localization::runtime_text("export.results"));
     ui.add_space(12.0);
 
     match state.export_result.as_ref() {
         Some(Ok(result)) => {
             ui.horizontal(|ui| {
                 ui.label(
-                    egui::RichText::new("Export:")
+                    egui::RichText::new(crate::manage_localization::runtime_text("export.export_colon"))
                         .strong()
                 );
                 ui.label(
-                    egui::RichText::new("PASSED")
+                    egui::RichText::new(crate::manage_localization::runtime_text("export.passed"))
                         .color(egui::Color32::GREEN)
                         .strong()
                 );
             });
             ui.add_space(8.0);
             ui.label(
-                format!(
-                    "Archive: {}",
-                    result.path.display(),
+                crate::manage_localization::runtime_text_with_params(
+                    "export.archive",
+                    &[("path", &result.path.display().to_string())],
                 )
             );
             ui.add_space(8.0);
             ui.label(
-                format!(
-                    "Policies: {}    Shaders: {}    Playlists: {}",
-                    result.policy_count,
-                    result.shader_count,
-                    result.playlist_count,
+                crate::manage_localization::runtime_text_with_params(
+                    "export.result_counts",
+                    &[
+                        ("policies", &result.policy_count.to_string()),
+                        ("shaders", &result.shader_count.to_string()),
+                        ("playlists", &result.playlist_count.to_string()),
+                    ],
                 )
             );
         }
@@ -3742,11 +3771,11 @@ fn draw_results_page(
         Some(Err(error)) => {
             ui.horizontal(|ui| {
                 ui.label(
-                    egui::RichText::new("Export:")
+                    egui::RichText::new(crate::manage_localization::runtime_text("export.export_colon"))
                         .strong()
                 );
                 ui.label(
-                    egui::RichText::new("FAILED")
+                    egui::RichText::new(crate::manage_localization::runtime_text("export.failed"))
                         .color(egui::Color32::RED)
                         .strong()
                 );
@@ -3756,14 +3785,14 @@ fn draw_results_page(
             ui.add_space(8.0);
             ui.label(
                 egui::RichText::new(
-                    "No completed export archive was installed."
+                    crate::manage_localization::runtime_text("export.no_archive_installed")
                 )
                 .weak(),
             );
         }
 
         None => {
-            ui.label("Export has not been run.");
+            ui.label(crate::manage_localization::runtime_text("export.not_run"));
         }
     }
 }
@@ -3777,7 +3806,7 @@ fn draw_navigation(
             |ui| {
                 if ui.add_enabled(
                     !state.execution_started,
-                    egui::Button::new("< Back"),
+                    egui::Button::new(crate::manage_localization::runtime_text("export.back")),
                 )
                 .clicked()
                 {
@@ -3794,7 +3823,7 @@ fn draw_navigation(
                             !state.execution_started
                                 && state.select_data_valid()
                                 && state.destination_valid(),
-                            egui::Button::new("Export"),
+                            egui::Button::new(crate::manage_localization::runtime_text("export.action")),
                         )
                         .clicked()
                         {
@@ -3812,7 +3841,7 @@ fn draw_navigation(
 
                         if ui.add_enabled(
                             !state.execution_started,
-                            egui::Button::new("Cancel"),
+                            egui::Button::new(crate::manage_localization::runtime_text("common.cancel")),
                         )
                         .clicked()
                         {
@@ -3834,7 +3863,7 @@ fn draw_navigation(
 
             if ui.add_enabled(
                 back_enabled,
-                egui::Button::new("< Back"),
+                egui::Button::new(crate::manage_localization::runtime_text("export.back")),
             )
             .clicked()
             {
@@ -3876,7 +3905,7 @@ fn draw_navigation(
 
             if ui.add_enabled(
                 cancel_enabled,
-                egui::Button::new("Cancel"),
+                egui::Button::new(crate::manage_localization::runtime_text("common.cancel")),
             )
             .clicked()
             {
@@ -3890,7 +3919,7 @@ fn draw_navigation(
                 |ui| {
                     match state.stage {
                         ExportStage::SelectFocus => {
-                            if ui.button("Next >").clicked() {
+                            if ui.button(crate::manage_localization::runtime_text("export.next")).clicked() {
                                 state.stage = ExportStage::SelectData;
                                 state.select_data_tab =
                                     state.export_focus.tab_order()[0];
@@ -3903,7 +3932,7 @@ fn draw_navigation(
 
                             if ui.add_enabled(
                                 next_enabled,
-                                egui::Button::new("Next >"),
+                                egui::Button::new(crate::manage_localization::runtime_text("export.next")),
                             )
                             .clicked()
                             {
@@ -3934,7 +3963,7 @@ fn draw_navigation(
                             if ui.add_enabled(
                                 state.select_data_valid()
                                     && state.destination_valid(),
-                                egui::Button::new("Next >"),
+                                egui::Button::new(crate::manage_localization::runtime_text("export.next")),
                             )
                             .clicked()
                             {
@@ -3945,7 +3974,7 @@ fn draw_navigation(
                         ExportStage::Review => {}
 
                         ExportStage::Results => {
-                            if ui.button("Finish").clicked() {
+                            if ui.button(crate::manage_localization::runtime_text("export.finish")).clicked() {
                                 state.open = false;
                             }
                         }

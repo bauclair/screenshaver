@@ -863,4 +863,239 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
         english_text: "Click to include this value in Bulk Edit",
         translator_context: "Tooltip for adding a value to Bulk Edit.",
     },
+    FactoryTranslationKey {
+        key: "export.window_title",
+        english_text: "Export Screenshaver Data",
+        translator_context: "Export wizard window title.",
+    },
+    FactoryTranslationKey {
+        key: "export.stage.select_focus",
+        english_text: "Select Export Focus",
+        translator_context: "Export wizard stage/page label.",
+    },
+    FactoryTranslationKey {
+        key: "export.stage.select_data",
+        english_text: "Select Data",
+        translator_context: "Export wizard stage label.",
+    },
+    FactoryTranslationKey {
+        key: "export.destination",
+        english_text: "Destination",
+        translator_context: "Export wizard destination stage/heading.",
+    },
+    FactoryTranslationKey {
+        key: "export.review_confirm",
+        english_text: "Review & Confirm",
+        translator_context: "Export wizard review stage/heading.",
+    },
+    FactoryTranslationKey {
+        key: "export.results",
+        english_text: "Results",
+        translator_context: "Export wizard results stage/heading.",
+    },
+    FactoryTranslationKey {
+        key: "export.policies",
+        english_text: "Policies",
+        translator_context: "Export wizard category label.",
+    },
+    FactoryTranslationKey {
+        key: "export.shaders",
+        english_text: "Shaders",
+        translator_context: "Export wizard category label.",
+    },
+    FactoryTranslationKey {
+        key: "export.playlists",
+        english_text: "Playlists",
+        translator_context: "Export wizard category label.",
+    },
+    FactoryTranslationKey {
+        key: "export.select_policies",
+        english_text: "Select Policies",
+        translator_context: "Export wizard selectable policy category.",
+    },
+    FactoryTranslationKey {
+        key: "export.select_shaders",
+        english_text: "Select Shaders",
+        translator_context: "Export wizard selectable shader category.",
+    },
+    FactoryTranslationKey {
+        key: "export.select_playlists",
+        english_text: "Select Playlists",
+        translator_context: "Export wizard selectable playlist category.",
+    },
+    FactoryTranslationKey {
+        key: "export.focus",
+        english_text: "Export Focus:",
+        translator_context: "Export wizard focus selector label.",
+    },
+    FactoryTranslationKey {
+        key: "export.focus_heading",
+        english_text: "Export Focus",
+        translator_context: "Export wizard review heading.",
+    },
+    FactoryTranslationKey {
+        key: "export.focus_help",
+        english_text: "Choose whether Policies, Shaders, or Playlists will be the selectable focus that drives this export.",
+        translator_context: "Help text explaining export focus.",
+    },
+    FactoryTranslationKey {
+        key: "export.destination_help",
+        english_text: "Choose the directory where the portable Screenshaver export archive will be created.",
+        translator_context: "Tooltip/help for export destination.",
+    },
+    FactoryTranslationKey {
+        key: "export.select_all",
+        english_text: "Select All",
+        translator_context: "Export wizard selection button.",
+    },
+    FactoryTranslationKey {
+        key: "export.clear_all",
+        english_text: "Clear All",
+        translator_context: "Export wizard selection button.",
+    },
+    FactoryTranslationKey {
+        key: "export.selected_count",
+        english_text: "{selected} of {total} selected",
+        translator_context: "Export selection count. Parameters are numeric.",
+    },
+    FactoryTranslationKey {
+        key: "export.policies_included",
+        english_text: "Policies Included ({count})",
+        translator_context: "Read-only included policy count.",
+    },
+    FactoryTranslationKey {
+        key: "export.shaders_included",
+        english_text: "Shaders Included ({count})",
+        translator_context: "Read-only included shader count.",
+    },
+    FactoryTranslationKey {
+        key: "export.playlists_included",
+        english_text: "Playlists Included ({count})",
+        translator_context: "Read-only included playlist count.",
+    },
+    FactoryTranslationKey {
+        key: "export.resolve_failed",
+        english_text: "Unable to resolve effective export policies: {error}",
+        translator_context: "Export selection error; error is supplied text.",
+    },
+    FactoryTranslationKey {
+        key: "export.policies_resolved",
+        english_text: "{count} included policies resolved and validated for portable export.",
+        translator_context: "Export selection validation status.",
+    },
+    FactoryTranslationKey {
+        key: "export.select_at_least_one",
+        english_text: "Select at least one {type} to continue.",
+        translator_context: "Export selection requirement; type is localized category text.",
+    },
+    FactoryTranslationKey {
+        key: "export.destination_folder",
+        english_text: "Destination Folder:",
+        translator_context: "Export destination folder label.",
+    },
+    FactoryTranslationKey {
+        key: "export.browse",
+        english_text: "Browse...",
+        translator_context: "Browse for export destination button.",
+    },
+    FactoryTranslationKey {
+        key: "export.filename",
+        english_text: "Export Filename:",
+        translator_context: "Export filename label.",
+    },
+    FactoryTranslationKey {
+        key: "export.filename_invalid",
+        english_text: "Enter a filename without directory separators.",
+        translator_context: "Export filename validation message.",
+    },
+    FactoryTranslationKey {
+        key: "export.filename_exists",
+        english_text: "That filename already exists. Export will use: {filename}",
+        translator_context: "Collision-safe export filename notice.",
+    },
+    FactoryTranslationKey {
+        key: "export.contents",
+        english_text: "Export Contents",
+        translator_context: "Export review heading.",
+    },
+    FactoryTranslationKey {
+        key: "export.policies_colon",
+        english_text: "Policies:",
+        translator_context: "Export review/result label.",
+    },
+    FactoryTranslationKey {
+        key: "export.shaders_colon",
+        english_text: "Shaders:",
+        translator_context: "Export review/result label.",
+    },
+    FactoryTranslationKey {
+        key: "export.playlists_colon",
+        english_text: "Playlists:",
+        translator_context: "Export review/result label.",
+    },
+    FactoryTranslationKey {
+        key: "export.format",
+        english_text: "Export Format",
+        translator_context: "Export review heading.",
+    },
+    FactoryTranslationKey {
+        key: "export.review_safety",
+        english_text: "No Screenshaver configuration will be changed. Export creates a portable copy of the items shown above.",
+        translator_context: "Export review safety statement.",
+    },
+    FactoryTranslationKey {
+        key: "export.export_colon",
+        english_text: "Export:",
+        translator_context: "Export result label.",
+    },
+    FactoryTranslationKey {
+        key: "export.passed",
+        english_text: "PASSED",
+        translator_context: "Successful export status.",
+    },
+    FactoryTranslationKey {
+        key: "export.failed",
+        english_text: "FAILED",
+        translator_context: "Failed export status.",
+    },
+    FactoryTranslationKey {
+        key: "export.archive",
+        english_text: "Archive: {path}",
+        translator_context: "Successful export archive path; path must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "export.result_counts",
+        english_text: "Policies: {policies}    Shaders: {shaders}    Playlists: {playlists}",
+        translator_context: "Successful export counts.",
+    },
+    FactoryTranslationKey {
+        key: "export.no_archive_installed",
+        english_text: "No completed export archive was installed.",
+        translator_context: "Failed export result note.",
+    },
+    FactoryTranslationKey {
+        key: "export.not_run",
+        english_text: "Export has not been run.",
+        translator_context: "Export results placeholder.",
+    },
+    FactoryTranslationKey {
+        key: "export.back",
+        english_text: "< Back",
+        translator_context: "Export wizard navigation button.",
+    },
+    FactoryTranslationKey {
+        key: "export.action",
+        english_text: "Export",
+        translator_context: "Export wizard action button.",
+    },
+    FactoryTranslationKey {
+        key: "export.next",
+        english_text: "Next >",
+        translator_context: "Export wizard navigation button.",
+    },
+    FactoryTranslationKey {
+        key: "export.finish",
+        english_text: "Finish",
+        translator_context: "Export wizard completion button.",
+    },
 ];
