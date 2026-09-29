@@ -1196,6 +1196,158 @@ fn intentionally_invariant(s: &str, line: &str, path: &Path) -> bool {
         return true;
     }
 
+    // SDL/OpenGL subtitle-overlay construction and shader diagnostics are renderer-internal technical text.
+    if filename == "display_overlay.rs"
+        && matches!(
+            t,
+            "Unable to create SDL subtitle texture: {}"
+                | "Subtitle width cannot be represented as usize"
+                | "Subtitle pitch overflow"
+                | "Unable to upload subtitle pixels: {}"
+                | "Unable to draw subtitle overlay: {}"
+                | "OpenGL failed to allocate subtitle overlay resources"
+                | "Unable to link subtitle overlay program: {}"
+                | "Subtitle overlay shader source contains a null byte"
+                | "Unable to compile subtitle overlay shader: {}"
+                | "unknown shader compilation error"
+                | "unknown program link error"
+                | "static subtitle uniform name"
+        )
+    {
+        return true;
+    }
+
+    // QBE database-access errors are data-layer diagnostics; qbe_layout.rs owns user-facing presentation.
+    if filename == "query_database.rs"
+        && matches!(
+            t,
+            "Unable to open database while loading QBE lookup values: {}"
+                | "Unable to open database while loading QBE texture names: {}"
+                | "Unable to open database while loading QBE palette choices: {}"
+                | "Unable to open database while loading QBE Shader Type values: {}"
+                | "Unable to open database while loading QBE Playlist Name values: {}"
+                | "Unable to prepare QBE Playlist Name query: {}"
+                | "Unable to query QBE Playlist Name choices: {}"
+                | "Unable to decode QBE Playlist Name row: {}"
+                | "Unable to prepare QBE texture-catalog query: {}"
+                | "Unable to query QBE texture choices: {}"
+                | "Unable to decode QBE texture-catalog row: {}"
+                | "Unable to prepare QBE curated-palette query: {}"
+                | "Unable to query QBE curated-palette choices: {}"
+                | "Unable to decode QBE curated-palette row: {}"
+                | "Unable to prepare QBE Shader Type query: {}"
+                | "Unable to query QBE Shader Type choices: {}"
+                | "Unable to decode QBE Shader Type row: {}"
+                | "Unable to open database while executing Policy List QBE: {}"
+                | "Unable to parse Policy List QBE: {}"
+                | "Unable to open database while loading the complete Policy List: {}"
+                | "Unable to count total shader policies for QBE: {}"
+                | "Unable to prepare Policy List QBE statement: {}"
+                | "Unable to execute Policy List QBE: {}"
+                | "Unable to decode Policy List QBE row: {}"
+                | "Total shader-policy count {} cannot be represented as usize"
+                | "\\n             WHERE "
+        )
+    {
+        return true;
+    }
+
+    // Xfce native-lock presentation findings are X11/GLX/process telemetry and backend diagnostics.
+    if filename == "present_screen_lock_xfce.rs"
+        && matches!(
+            t,
+            "{} is empty"
+                | "Unable to parse {} value '{}': {}"
+                | "{} contains an invalid zero X11 window ID"
+                | "[LOCK] XFCE lock presentation window detected: 0x{:X}"
+                | "[LOCK] XFCE OpenGL presentation: opening X11 display"
+                | "Unable to connect to the X11 display while verifying XFCE presentation window 0x{:X}: {}"
+                | "XGetWindowAttributes failed for XFCE presentation window 0x{:X}"
+                | "XFCE presentation window 0x{:X} has invalid geometry {}x{}"
+                | "[LOCK] XFCE lock presentation window verified: 0x{:X}, geometry={}x{}, depth={}, map_state={}"
+                | "[LOCK] XFCE shader presentation: loading Screenshaver configuration"
+                | "Unable to load Screenshaver configuration for XFCE lock presentation: {}"
+                | "[LOCK] XFCE shader presentation: choosing GLX framebuffer configuration"
+                | "Unable to choose GLX framebuffer configuration for XFCE lock presentation: {}"
+                | "[LOCK] XFCE shader presentation: selected GLX visual 0x{:X}"
+                | "Unable to create GLX context for XFCE lock presentation: {}"
+                | "[LOCK] XFCE shader presentation: making context current on supplied window"
+                | "Unable to make GLX context current on XFCE presentation window 0x{:X}: {}"
+                | "[LOCK] XFCE shader presentation: GLX context is current"
+                | "OpenGL symbol name contained an interior NUL"
+                | "[LOCK] XFCE shader presentation: constructing FrameRenderEngine"
+                | "Unable to construct FrameRenderEngine for XFCE lock presentation: {}"
+                | "[LOCK] XFCE shader presentation initialized: window=0x{:X}, geometry={}x{}"
+                | "[LOCK] XFCE shader presentation started: window=0x{:X}, geometry={}x{}"
+                | "[LOCK] XFCE shader presentation frames displayed: {}"
+                | "[LOCK] XFCE authentication-dialog process poll failed: {}"
+                | "[LOCK] Unable to start XFCE authentication-dialog monitor thread; shader presentation will continue: {}"
+                | "[LOCK] XFCE authentication dialog state: {}"
+                | "Unable to read /proc while checking for {}: {}"
+        )
+    {
+        return true;
+    }
+
+    // Current-schema reconstruction findings are migration/storage validation diagnostics, not presentation text.
+    if filename == "write_current.rs"
+        && matches!(
+            t,
+            "Refusing to reconstruct database because destination already exists: {}"
+                | "Unable to create reconstruction database '{}': {}"
+                | "Unable to create current database schema in '{}': {}"
+                | "Unable to begin reconstruction transaction: {}"
+                | "Unable to commit reconstructed current database: {}"
+                | "{}; additionally unable to remove failed reconstruction database '{}': {}"
+                | "Unable to begin factory-catalog reconstruction transaction: {}"
+                | "Unable to prepare reconstructed texture-catalog insert: {}"
+                | "Unable to reconstruct texture family '{}': {}"
+                | "Unable to prepare reconstructed curated-palette insert: {}"
+                | "Unable to reconstruct curated palette entry '{}': {}"
+                | "Unable to commit reconstructed factory catalogs: {}"
+                | "Unable to prepare reconstructed shader insert: {}"
+                | "Unable to reconstruct shader '{}' from '{}': {}"
+                | "MigrationData contains duplicate shader migration ID {}"
+                | "MigrationData shader-ID mapping is incomplete: mapped {}, expected {}"
+                | "Unable to prepare reconstructed policy insert: {}"
+                | "Policy '{}' references unknown shader migration ID {}"
+                | "Policy Name"
+                | "Unable to reconstruct policy '{}': {}"
+                | "MigrationData contains duplicate policy migration ID {}"
+                | "Playlist Name"
+                | "Unable to reconstruct playlist '{}': {}"
+                | "MigrationData contains duplicate playlist migration ID {}"
+                | "Playlist '{}' references unknown policy migration ID {}"
+                | "Unable to reconstruct member {} of playlist '{}': {}"
+                | "Unable to reconstruct application defaults: {}"
+                | "{} idle-timeout value {} exceeds SQLite integer range"
+                | "{} target default contains conflicting texture primitive counts: {} and {}"
+                | "Unable to reconstruct {} target defaults: {}"
+                | "{} runtime target references unknown policy migration ID {}"
+                | "ordered interval"
+                | "random interval"
+                | "{} runtime target references unknown playlist migration ID {}"
+                | "playlist interval"
+                | "Unable to reconstruct {} runtime target: {}"
+                | "Unable to write reconstructed schema metadata: {}"
+                | "Unable to validate reconstructed {} row count: {}"
+                | "Reconstructed {} row count mismatch: expected {}, found {}"
+                | "{} must contain between 1 and 128 characters; found {}"
+                | "{} produced an empty comparison key"
+                | "{} value {} exceeds SQLite integer range"
+        )
+    {
+        return true;
+    }
+
+    // xfconf-query emits this English array-header prefix as command output.
+    // Screenshaver filters it structurally; it is not application-authored presentation text.
+    if filename == "construct_lock_screen_xfce.rs"
+        && t == "Value is an array with "
+    {
+        return true;
+    }
+
     if filename == "construct_lock_screen_xfce.rs"
         && matches!(
             t,
