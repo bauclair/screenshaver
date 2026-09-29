@@ -2075,6 +2075,271 @@ fn intentionally_invariant(s: &str, line: &str, path: &Path) -> bool {
         return true;
     }
 
+    // v12 correction: intentionally_invariant() receives trimmed candidate text.
+    // These are the exact whitespace-trimmed forms of the remaining reviewed
+    // compare_databases.rs developer/diagnostic strings.
+    if filename == "compare_databases.rs"
+        && matches!(
+            t,
+            "local shader, policy, playlist, and relationship IDs"
+                | "creation/modification/addition timestamps"
+                | "schema/application provenance metadata"
+                | "derived shader validation/runtime-package metadata"
+                | "runtime target selections/modes/intervals"
+                | "application defaults"
+                | "screensaver/wallpaper target defaults"
+                | "A: {}"
+                | "B: <missing>"
+                | "A: <missing>"
+                | "B: {}"
+                | "Row: {}"
+                | "A: {} occurrence(s)"
+                | "B: {} occurrence(s)"
+        )
+    {
+        return true;
+    }
+
+    // v12 correction: intentionally_invariant() receives trimmed candidate text.
+    // These are the exact whitespace-trimmed forms of the remaining reviewed
+    // test_render_benchmark.rs developer/diagnostic strings.
+    if filename == "test_render_benchmark.rs"
+        && matches!(
+            t,
+            "warming up..."
+                | "measuring..."
+                | "{:.2} FPS, P99 {:.3} ms"
+                | "* 'Production baseline' reproduces the current postprocess + per-frame uniform lookup + glFinish synchronization pattern."
+                | "* Raw-shader cases bypass Screenshaver post-processing and establish the shader's approximate rendering ceiling."
+                | "* PBO is not included in this first harness because the audited production path does not currently perform a per-frame CPU pixel transfer for a PBO to replace."
+                | "* The GPU timer-query diagnostic separates CPU wall time from GPU scene and post-processing time."
+                | "* It also retains the 20 worst CPU-wall and 20 worst GPU-total frames with correlated per-frame measurements."
+                | "* A large CPU-wall spike without a comparable GPU-time spike indicates presentation/compositor/driver waiting rather than an intrinsically slow shader frame."
+                | "* The fence-wait case inserts GL_SYNC_GPU_COMMANDS_COMPLETE after the frame and waits with glClientWaitSync, allowing a direct comparison with the production glFinish barrier."
+                | "* The diagnostic times the actual production post-processing passes individually: primary/AA, Bloom extraction, both blur passes, composition, and dithering/final output."
+                | "* Audio-reactive Bloom requests the normal audio backend and feeds live AudioBands into every postprocessed benchmark phase and the detailed diagnostic."
+                | "* Reduced/fused post-processing and alternate Bloom-resolution experiments can now be designed from measured per-pass costs."
+                | "* Additional outlier tables rank the worst post-processing and scene-shader frames and retain every measured post-processing stage."
+                | "* Diagnostic counters separately identify large CPU/presentation waits, scene-heavy GPU frames, and postprocess-heavy GPU frames."
+                | "* Live AudioBands are printed about once per second and summarized with peak/nonzero counts so Audio Bloom input can be verified objectively."
+                | "[AUDIO] live bands: bass={:.3} midrange={:.3} treble={:.3}"
+                | "Samples observed:              {}"
+                | "Nonzero samples:               {}"
+                | "Peak bass:                     {:.3}"
+                | "Peak midrange:                 {:.3}"
+                | "Peak treble:                   {:.3}"
+                | "AUDIO INPUT FAILURE: no nonzero AudioBands were observed while Audio Bloom was requested."
+                | "Audio input confirmed: live nonzero AudioBands reached the benchmark."
+                | "{:<36} {:+8.2}% average FPS"
+                | "Baseline measured duration: {:.3} s"
+                | "Frames sampled:                {}"
+                | "CPU wall mean:                 {:.3} ms"
+                | "CPU wall P99:                  {:.3} ms"
+                | "CPU wall worst:                {:.3} ms"
+                | "GPU scene mean:                {:.3} ms"
+                | "GPU postprocess mean:          {:.3} ms"
+                | "Primary / AA:              {:.3} ms"
+                | "Bloom extraction:          {:.3} ms"
+                | "Bloom horizontal blur:     {:.3} ms"
+                | "Bloom vertical blur:       {:.3} ms"
+                | "Bloom composite:           {:.3} ms"
+                | "Dithering / final:         {:.3} ms"
+                | "Postprocess stage shares:"
+                | "Primary / AA:              {:>6.1}%"
+                | "Bloom extraction:          {:>6.1}%"
+                | "Bloom horizontal blur:     {:>6.1}%"
+                | "Bloom vertical blur:       {:>6.1}%"
+                | "Bloom composite:           {:>6.1}%"
+                | "Dithering / final:         {:>6.1}%"
+                | "GPU total mean:                {:.3} ms"
+                | "GPU total P99:                 {:.3} ms"
+                | "GPU total worst:               {:.3} ms"
+                | "Largest CPU-wall minus GPU:    {:.3} ms"
+                | "External-stall frames (CPU-GPU >= 5 ms): {}"
+                | "Scene-heavy frames (scene >= 5 ms):      {}"
+                | "Postprocess-heavy frames (post >= 2 ms): {}"
+                | "Diagnostic counters only; production Warning/CRITICAL thresholds are unchanged."
+                | "Observation: a substantial CPU/presentation wait occurred that was not matched by GPU render time."
+                | "Observation: CPU-wall and GPU timing remained comparatively close during the diagnostic."
+                | "Vendor:   {}"
+                | "Renderer: {}"
+                | "Version:  {}"
+        )
+    {
+        return true;
+    }
+
+
+    // Batch v13: generator, native-lock, GLX, renderer, session-backend, and ISF
+    // preprocessing strings below are technical diagnostics, structured telemetry,
+    // test labels, machine identifiers, or shader-source transformation text. Keep
+    // exemptions module-scoped so future presentation prose remains auditable.
+    if filename == "generate_skulls.rs"
+        && matches!(
+            t,
+            "Skull source image has zero width or height"
+                | "Skull texture buffer size overflow"
+                | "Unable to decode embedded skull PNG: {}"
+                | "Embedded skull PNG contains no visible pixels"
+                | "embedded skull PNG"
+                | "minimum skull layout"
+                | "explicit minimum skull layout"
+                | "maximum skull layout"
+                | "explicit maximum skull layout"
+                | "sparse skull layout"
+                | "dense skull layout"
+                | "first skull texture"
+                | "second skull texture"
+                | "skull generation"
+        )
+    {
+        return true;
+    }
+
+    if filename == "glx_context.rs"
+        && matches!(
+            t,
+            "Cannot choose a GLX framebuffer configuration for a null X11 display."
+                | "Choosing GLX framebuffer configuration..."
+                | "glXChooseFBConfig() did not return a compatible framebuffer configuration."
+                | "glXGetVisualFromFBConfig() failed for the selected framebuffer configuration."
+                | "Selected compatible GLX framebuffer configuration and X11 visual."
+                | "Cannot create a GLX context for a null X11 display."
+                | "Creating GLX context..."
+                | "glXCreateNewContext() failed."
+                | "Created GLX context."
+                | "Cannot activate a GLX context on a null X11 display."
+                | "Making GLX context current..."
+                | "glXMakeContextCurrent() failed."
+                | "GLX context is current."
+                | "Cannot release a GLX context from a null X11 display."
+                | "glXMakeContextCurrent() failed while releasing the current context."
+                | "Destroying GLX context..."
+                | "Destroyed GLX context."
+        )
+    {
+        return true;
+    }
+
+    if filename == "manage_screen_lock_gnome.rs"
+        && (t.starts_with("[LOCK] ")
+            || matches!(
+                t,
+                "Unable to connect to the GNOME session bus: {}"
+                    | "Unable to create GNOME ScreenSaver D-Bus proxy: {}"
+                    | "Wallpaper renderer did not acknowledge pause before GNOME screen lock"
+                    | "GNOME Shell screen-lock request failed: {}"
+                    | "GNOME Shell did not confirm an active screen lock within {} seconds"
+                    | "Unable to query GNOME screen-lock state: {}"
+            ))
+    {
+        return true;
+    }
+
+    if filename == "manage_screen_lock_xfce.rs"
+        && (t.starts_with("[LOCK] ")
+            || matches!(
+                t,
+                "Unable to connect to the XFCE session bus: {}"
+                    | "Unable to create XFCE ScreenSaver D-Bus proxy: {}"
+                    | "Wallpaper renderer did not acknowledge pause before XFCE screen lock"
+                    | "XFCE screen-lock request failed: {}"
+                    | "XFCE did not confirm an active screen lock within {} seconds"
+                    | "Unable to query XFCE screen-lock state: {}"
+            ))
+    {
+        return true;
+    }
+
+    if filename == "notify_wallpaper.rs"
+        && (t.starts_with("[WALLPAPER] ")
+            || matches!(
+                t,
+                "could not connect to the session D-Bus: {}"
+                    | "D-Bus notification failed: {}"
+                    | "could not read notification ID: {}"
+                    | "D-Bus CloseNotification failed: {}"
+            ))
+    {
+        return true;
+    }
+
+    if filename == "preprocess_isf.rs"
+        && matches!(
+            t,
+            "ISF multipass shaders are not supported in this implementation"
+                | "ISF imported resources are not supported in this implementation"
+                | "uniform {} {};"
+                | "{}\\n{}"
+                | "ISF input has an invalid GLSL identifier: {}"
+                | "ISF image input '{}' is not supported yet"
+                | "ISF audio input '{}' is not supported yet"
+                | "ISF event input '{}' is not supported yet"
+                | "Unsupported ISF input type '{}' for '{}'"
+                | "(?ms)^\\s*#ifdef\\s+GL_ES\\s*\\n\\s*precision\\s+\\w+\\s+float\\s*;\\s*\\n\\s*#endif\\s*\\n?"
+                | "ISF GL_ES precision block regex"
+                | "(?m)^[ \\t]*(?:const[ \\t]+)?vec3[ \\t]+iResolution[ \\t]*=[ \\t]*vec3[ \\t]*\\([ \\t]*RENDERSIZE[ \\t]*,[ \\t]*1(?:\\.0*)?[ \\t]*\\)[ \\t]*;[ \\t]*(?://[^\\n]*)?\\n?"
+                | "ISF redundant iResolution alias regex"
+                | "(?m)^[ \\t]*(?:const[ \\t]+)?float[ \\t]+iTime[ \\t]*=[ \\t]*TIME[ \\t]*;[ \\t]*(?://[^\\n]*)?\\n?"
+                | "ISF redundant iTime alias regex"
+                | "ISF main function regex"
+                | "fragColor = vec4(0.0)"
+                | "\\n    fragColor = vec4(0.0);"
+        )
+    {
+        return true;
+    }
+
+    if filename == "render_frame.rs"
+        && (t.starts_with("[RENDER] ")
+            || matches!(
+                t,
+                "Failed to create SDL event pump: {error}"
+                    | "Failed to create renderer window: {error}"
+                    | "Failed to create OpenGL context: {error}"
+            ))
+    {
+        return true;
+    }
+
+    // session_backend/mod.rs contains only backend-selection telemetry and the
+    // final technical failure returned when no supported idle backend can start.
+    if path.ends_with("session_backend/mod.rs")
+        && (t.starts_with("[SESSION] ")
+            || t.starts_with("[LOCK] ")
+            || t == "No compatible session backend available")
+    {
+        return true;
+    }
+
+    // Previously reviewed one-line residuals. These are a logger timestamp token,
+    // an SQL fragment, an internal import conflict-state token, and the standalone
+    // KDE renderer host's crate-local database diagnostic.
+    if filename == "logger.rs"
+        && t == "UNIX-{}"
+    {
+        return true;
+    }
+
+    if filename == "query_database.rs"
+        && t == "\\n             WHERE"
+    {
+        return true;
+    }
+
+    if filename == "import_data.rs"
+        && t == "Receiving installation"
+    {
+        return true;
+    }
+
+    if filename == "lib.rs"
+        && t == "KDE renderer host requires an existing Screenshaver database at '{}'"
+    {
+        return true;
+    }
+
+
     false
 }
 

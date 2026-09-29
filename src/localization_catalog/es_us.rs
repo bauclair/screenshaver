@@ -3774,4 +3774,39 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
         translated_text: "Presentación de shaders de Screenshaver para la pantalla de bloqueo de Xfce",
     },
 
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.notification.title",
+        translated_text: "Fondo de pantalla de Screenshaver",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.notification.policy",
+        translated_text: "Política: {policy} ({speed})",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.notification.performance_warning",
+        translated_text: "Advertencia de rendimiento",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.notification.performance_critical",
+        translated_text: "Rendimiento CRÍTICO",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.notification.fps",
+        translated_text: "FPS: {fps}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.notification.texture",
+        translated_text: "Textura: {texture}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.notification.palette",
+        translated_text: "Paleta: {palette}",
+    },
 ];

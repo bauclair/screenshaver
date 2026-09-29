@@ -3781,4 +3781,39 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
         translator_context: "Description in the generated Xfce screensaver desktop entry. Screenshaver and Xfce are product names.",
     },
 
+    FactoryTranslationKey {
+        key: "wallpaper.notification.title",
+        english_text: "Screenshaver Wallpaper",
+        translator_context: "Desktop notification title for Screenshaver wallpaper activity. Screenshaver is a product name.",
+    },
+    FactoryTranslationKey {
+        key: "wallpaper.notification.policy",
+        english_text: "Policy: {policy} ({speed})",
+        translator_context: "Wallpaper desktop notification line. {policy} is a user-defined policy name and {speed} is a formatted animation-speed value; both remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "wallpaper.notification.performance_warning",
+        english_text: "Performance Warning",
+        translator_context: "Wallpaper desktop notification performance warning.",
+    },
+    FactoryTranslationKey {
+        key: "wallpaper.notification.performance_critical",
+        english_text: "Performance CRITICAL",
+        translator_context: "Wallpaper desktop notification critical performance warning. Preserve the strong emphasis of CRITICAL.",
+    },
+    FactoryTranslationKey {
+        key: "wallpaper.notification.fps",
+        english_text: "FPS: {fps}",
+        translator_context: "Wallpaper desktop notification frame-rate line. FPS is the standard frames-per-second abbreviation and {fps} is numeric.",
+    },
+    FactoryTranslationKey {
+        key: "wallpaper.notification.texture",
+        english_text: "Texture: {texture}",
+        translator_context: "Wallpaper desktop notification texture line. {texture} is the selected texture value and remains unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "wallpaper.notification.palette",
+        english_text: "Palette: {palette}",
+        translator_context: "Wallpaper desktop notification palette line. {palette} is the selected palette value and remains unchanged.",
+    },
 ];

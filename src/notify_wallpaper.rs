@@ -35,14 +35,31 @@ impl WallpaperMetadata {
         &self,
     ) -> String {
 
+        let animation_speed =
+            format_animation_speed(
+                self.animation_speed
+            );
+
+        let fps =
+            self.fps
+                .max(1)
+                .to_string();
+
+
         let mut lines =
             vec![
-                format!(
-                    "Policy: {} ({})",
-                    self.policy_name,
-                    format_animation_speed(
-                        self.animation_speed
-                    ),
+                crate::manage_localization::runtime_text_with_params(
+                    "wallpaper.notification.policy",
+                    &[
+                        (
+                            "policy",
+                            self.policy_name.as_str(),
+                        ),
+                        (
+                            "speed",
+                            animation_speed.as_str(),
+                        ),
+                    ],
                 )
             ];
 
@@ -52,23 +69,32 @@ impl WallpaperMetadata {
 
             FpsWarningState::Warning => {
                 lines.push(
-                    "Performance Warning".to_string()
+                    crate::manage_localization::runtime_text(
+                        "wallpaper.notification.performance_warning"
+                    )
                 );
             }
 
             FpsWarningState::Critical
             | FpsWarningState::CriticalHidden => {
                 lines.push(
-                    "Performance CRITICAL".to_string()
+                    crate::manage_localization::runtime_text(
+                        "wallpaper.notification.performance_critical"
+                    )
                 );
             }
         }
 
 
         lines.push(
-            format!(
-                "FPS: {}",
-                self.fps.max(1),
+            crate::manage_localization::runtime_text_with_params(
+                "wallpaper.notification.fps",
+                &[
+                    (
+                        "fps",
+                        fps.as_str(),
+                    )
+                ],
             )
         );
 
@@ -77,9 +103,14 @@ impl WallpaperMetadata {
             &self.texture
         {
             lines.push(
-                format!(
-                    "Texture: {}",
-                    texture,
+                crate::manage_localization::runtime_text_with_params(
+                    "wallpaper.notification.texture",
+                    &[
+                        (
+                            "texture",
+                            texture.as_str(),
+                        )
+                    ],
                 )
             );
         }
@@ -89,9 +120,14 @@ impl WallpaperMetadata {
             &self.palette
         {
             lines.push(
-                format!(
-                    "Palette: {}",
-                    palette,
+                crate::manage_localization::runtime_text_with_params(
+                    "wallpaper.notification.palette",
+                    &[
+                        (
+                            "palette",
+                            palette.as_str(),
+                        )
+                    ],
                 )
             );
         }
@@ -410,7 +446,9 @@ pub fn show(
 
 
     match send_notification(
-        "Screenshaver Wallpaper",
+        &crate::manage_localization::runtime_text(
+            "wallpaper.notification.title"
+        ),
         &metadata.body(),
         metadata.is_critical(),
         !metadata.is_performance_alert(),
