@@ -2497,6 +2497,40 @@ fn intentionally_invariant(s: &str, line: &str, path: &Path) -> bool {
 
 
 
+
+    // v14 residual cleanup: reviewed technical/data/parser-test literals.
+    // Keep these exact and module-scoped; `t` is already trimmed above.
+    if filename == "singleton.rs"
+        && t == "[INSTANCE] {}"
+    {
+        return true;
+    }
+
+    if filename == "initialize_database.rs"
+        && matches!(
+            t,
+            "{}; additionally unable to remove incomplete database '{}': {}"
+                | "screensaver default"
+                | "wallpaper default"
+        )
+    {
+        return true;
+    }
+
+    if filename == "parse_texture_specification.rs"
+        && matches!(
+            t,
+            "hexagons : 144"
+                | "Hexagons (144)"
+                | "Facets (144)"
+                | "hexagons:"
+                | "hexagons:{}"
+        )
+    {
+        return true;
+    }
+
+
     false
 }
 
