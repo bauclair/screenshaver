@@ -3683,4 +3683,88 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
         translated_text: "Detener",
     },
 
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.runtime.disabled_by_config",
+        translated_text: "[WALLPAPER] El fondo de pantalla está deshabilitado por screenshaver.toml",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.runtime.starting",
+        translated_text: "[WALLPAPER] Iniciando el entorno de ejecución automático del fondo de pantalla",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.runtime.stopped_cleanly",
+        translated_text: "[WALLPAPER] El entorno de ejecución del fondo de pantalla se detuvo correctamente",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.runtime.attempt_failed",
+        translated_text: "[WALLPAPER] El intento {attempt}/{maximum} del entorno de ejecución falló: {error}",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.runtime.attempt_panicked",
+        translated_text: "[WALLPAPER] El intento {attempt}/{maximum} del entorno de ejecución produjo un pánico",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.runtime.disabled_after_failures",
+        translated_text: "[WALLPAPER] Fondo de pantalla deshabilitado durante la sesión actual después de errores repetidos",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.runtime.thread_create_failed",
+        translated_text: "[WALLPAPER] No se pudo crear el hilo del fondo de pantalla: {error}",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.runtime.supervisor_panicked_shutdown",
+        translated_text: "[WALLPAPER] El hilo supervisor del fondo de pantalla produjo un pánico durante el cierre.",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.test.window_title",
+        translated_text: "Prueba de renderizado de fondo de pantalla de Screenshaver",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.test.error.sdl_initialization",
+        translated_text: "Error al inicializar SDL: {error}",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.test.error.sdl_video_initialization",
+        translated_text: "Error al inicializar el video de SDL: {error}",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.test.error.create_window",
+        translated_text: "No se pudo crear la ventana de prueba de renderizado del fondo de pantalla: {error}",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.test.error.create_opengl_context",
+        translated_text: "No se pudo crear el contexto OpenGL de prueba del fondo de pantalla: {error}",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.test.error.create_event_pump",
+        translated_text: "No se pudo crear el sistema de eventos de prueba del fondo de pantalla: {error}",
+    },
+
 ];

@@ -14,9 +14,11 @@ pub fn run_test_window(
         sdl2::init()
             .map_err(
                 |error| {
-                    format!(
-                        "SDL initialization failed: {}",
-                        error,
+                    crate::manage_localization::runtime_text_with_params(
+                        "wallpaper.test.error.sdl_initialization",
+                        &[
+                            ("error", &error.to_string()),
+                        ],
                     )
                 }
             )?;
@@ -26,9 +28,11 @@ pub fn run_test_window(
         sdl.video()
             .map_err(
                 |error| {
-                    format!(
-                        "SDL video initialization failed: {}",
-                        error,
+                    crate::manage_localization::runtime_text_with_params(
+                        "wallpaper.test.error.sdl_video_initialization",
+                        &[
+                            ("error", &error.to_string()),
+                        ],
                     )
                 }
             )?;
@@ -54,7 +58,7 @@ pub fn run_test_window(
     let window =
         video
             .window(
-                "Screenshaver Wallpaper Rendering Test",
+                &crate::manage_localization::runtime_text("wallpaper.test.window_title"),
                 1280,
                 720,
             )
@@ -64,9 +68,11 @@ pub fn run_test_window(
             .build()
             .map_err(
                 |error| {
-                    format!(
-                        "Unable to create wallpaper rendering test window: {}",
-                        error,
+                    crate::manage_localization::runtime_text_with_params(
+                        "wallpaper.test.error.create_window",
+                        &[
+                            ("error", &error.to_string()),
+                        ],
                     )
                 }
             )?;
@@ -77,9 +83,11 @@ pub fn run_test_window(
             .gl_create_context()
             .map_err(
                 |error| {
-                    format!(
-                        "Unable to create wallpaper test OpenGL context: {}",
-                        error,
+                    crate::manage_localization::runtime_text_with_params(
+                        "wallpaper.test.error.create_opengl_context",
+                        &[
+                            ("error", &error.to_string()),
+                        ],
                     )
                 }
             )?;
@@ -161,9 +169,11 @@ pub fn run_test_window(
         sdl.event_pump()
             .map_err(
                 |error| {
-                    format!(
-                        "Unable to create wallpaper test event pump: {}",
-                        error,
+                    crate::manage_localization::runtime_text_with_params(
+                        "wallpaper.test.error.create_event_pump",
+                        &[
+                            ("error", &error.to_string()),
+                        ],
                     )
                 }
             )?;

@@ -3690,4 +3690,88 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
         translator_context: "System tray command that stops Screenshaver.",
     },
 
+    FactoryTranslationKey {
+        key: "wallpaper.runtime.disabled_by_config",
+        english_text: "[WALLPAPER] Wallpaper is disabled by screenshaver.toml",
+        translator_context: "Runtime log message when wallpaper rendering is disabled by configuration. The filename screenshaver.toml remains unchanged.",
+    },
+
+    FactoryTranslationKey {
+        key: "wallpaper.runtime.starting",
+        english_text: "[WALLPAPER] Starting automatic wallpaper runtime",
+        translator_context: "Runtime log message when automatic wallpaper rendering starts.",
+    },
+
+    FactoryTranslationKey {
+        key: "wallpaper.runtime.stopped_cleanly",
+        english_text: "[WALLPAPER] Wallpaper runtime stopped cleanly",
+        translator_context: "Runtime log message when the wallpaper renderer exits normally.",
+    },
+
+    FactoryTranslationKey {
+        key: "wallpaper.runtime.attempt_failed",
+        english_text: "[WALLPAPER] Runtime attempt {attempt}/{maximum} failed: {error}",
+        translator_context: "Runtime log message for a failed wallpaper restart attempt. Placeholders are supplied values.",
+    },
+
+    FactoryTranslationKey {
+        key: "wallpaper.runtime.attempt_panicked",
+        english_text: "[WALLPAPER] Runtime attempt {attempt}/{maximum} panicked",
+        translator_context: "Runtime log message for a wallpaper restart attempt that panicked. Placeholders are supplied values.",
+    },
+
+    FactoryTranslationKey {
+        key: "wallpaper.runtime.disabled_after_failures",
+        english_text: "[WALLPAPER] Wallpaper disabled for the current session after repeated failures",
+        translator_context: "Runtime log message when wallpaper rendering is disabled for the remainder of the session after repeated failures.",
+    },
+
+    FactoryTranslationKey {
+        key: "wallpaper.runtime.thread_create_failed",
+        english_text: "[WALLPAPER] Unable to create wallpaper thread: {error}",
+        translator_context: "Runtime log error when the wallpaper supervisor thread cannot be created. {error} is supplied.",
+    },
+
+    FactoryTranslationKey {
+        key: "wallpaper.runtime.supervisor_panicked_shutdown",
+        english_text: "[WALLPAPER] Wallpaper supervisor thread panicked during shutdown.",
+        translator_context: "Terminal diagnostic emitted if the wallpaper supervisor thread panics while Screenshaver shuts down.",
+    },
+
+    FactoryTranslationKey {
+        key: "wallpaper.test.window_title",
+        english_text: "Screenshaver Wallpaper Rendering Test",
+        translator_context: "Title of the SDL window used by the wallpaper rendering test.",
+    },
+
+    FactoryTranslationKey {
+        key: "wallpaper.test.error.sdl_initialization",
+        english_text: "SDL initialization failed: {error}",
+        translator_context: "Wallpaper rendering test error. SDL is a product/technology name; {error} is supplied.",
+    },
+
+    FactoryTranslationKey {
+        key: "wallpaper.test.error.sdl_video_initialization",
+        english_text: "SDL video initialization failed: {error}",
+        translator_context: "Wallpaper rendering test error. SDL is a product/technology name; {error} is supplied.",
+    },
+
+    FactoryTranslationKey {
+        key: "wallpaper.test.error.create_window",
+        english_text: "Unable to create wallpaper rendering test window: {error}",
+        translator_context: "Wallpaper rendering test error when the SDL test window cannot be created.",
+    },
+
+    FactoryTranslationKey {
+        key: "wallpaper.test.error.create_opengl_context",
+        english_text: "Unable to create wallpaper test OpenGL context: {error}",
+        translator_context: "Wallpaper rendering test error. OpenGL remains unchanged; {error} is supplied.",
+    },
+
+    FactoryTranslationKey {
+        key: "wallpaper.test.error.create_event_pump",
+        english_text: "Unable to create wallpaper test event pump: {error}",
+        translator_context: "Wallpaper rendering test error when the SDL event pump cannot be created.",
+    },
+
 ];

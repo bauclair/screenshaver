@@ -260,7 +260,7 @@ impl WallpaperRuntimeManager {
 
             crate::logger::information(
                 &logfile,
-                "[WALLPAPER] Wallpaper is disabled by screenshaver.toml",
+                &crate::manage_localization::runtime_text("wallpaper.runtime.disabled_by_config"),
             );
 
 
@@ -274,7 +274,7 @@ impl WallpaperRuntimeManager {
 
         crate::logger::information(
             &logfile,
-            "[WALLPAPER] Starting automatic wallpaper runtime",
+            &crate::manage_localization::runtime_text("wallpaper.runtime.starting"),
         );
 
 
@@ -352,7 +352,7 @@ impl WallpaperRuntimeManager {
 
                                     crate::logger::information(
                                         &logfile,
-                                        "[WALLPAPER] Wallpaper runtime stopped cleanly",
+                                        &crate::manage_localization::runtime_text("wallpaper.runtime.stopped_cleanly"),
                                     );
 
 
@@ -375,11 +375,13 @@ impl WallpaperRuntimeManager {
 
                                     crate::logger::error(
                                         &logfile,
-                                        &format!(
-                                            "[WALLPAPER] Runtime attempt {}/{} failed: {}",
-                                            attempt,
-                                            MAX_RESTART_ATTEMPTS,
-                                            error,
+                                        &crate::manage_localization::runtime_text_with_params(
+                                            "wallpaper.runtime.attempt_failed",
+                                            &[
+                                                ("attempt", &attempt.to_string()),
+                                                ("maximum", &MAX_RESTART_ATTEMPTS.to_string()),
+                                                ("error", &error.to_string()),
+                                            ],
                                         ),
                                     );
                                 }
@@ -389,10 +391,12 @@ impl WallpaperRuntimeManager {
 
                                     crate::logger::error(
                                         &logfile,
-                                        &format!(
-                                            "[WALLPAPER] Runtime attempt {}/{} panicked",
-                                            attempt,
-                                            MAX_RESTART_ATTEMPTS,
+                                        &crate::manage_localization::runtime_text_with_params(
+                                            "wallpaper.runtime.attempt_panicked",
+                                            &[
+                                                ("attempt", &attempt.to_string()),
+                                                ("maximum", &MAX_RESTART_ATTEMPTS.to_string()),
+                                            ],
                                         ),
                                     );
                                 }
@@ -423,7 +427,7 @@ impl WallpaperRuntimeManager {
 
                             crate::logger::error(
                                 &logfile,
-                                "[WALLPAPER] Wallpaper disabled for the current session after repeated failures",
+                                &crate::manage_localization::runtime_text("wallpaper.runtime.disabled_after_failures"),
                             );
                         }
 
@@ -443,9 +447,11 @@ impl WallpaperRuntimeManager {
                     |error| {
                         crate::logger::error(
                             &logfile,
-                            &format!(
-                                "[WALLPAPER] Unable to create wallpaper thread: {}",
-                                error,
+                            &crate::manage_localization::runtime_text_with_params(
+                                "wallpaper.runtime.thread_create_failed",
+                                &[
+                                    ("error", &error.to_string()),
+                                ],
                             ),
                         );
 
@@ -494,7 +500,10 @@ impl WallpaperRuntimeManager {
             if thread.join().is_err() {
 
                 eprintln!(
-                    "[WALLPAPER] Wallpaper supervisor thread panicked during shutdown."
+                    "{}",
+                    crate::manage_localization::runtime_text(
+                        "wallpaper.runtime.supervisor_panicked_shutdown"
+                    )
                 );
             }
         }

@@ -1142,6 +1142,92 @@ fn intentionally_invariant(s: &str, line: &str, path: &Path) -> bool {
         return true;
     }
 
+
+    // Batch v8: backend/session, renderer, shader-widget, and procedural-texture
+    // diagnostics. These are technical implementation messages or stable machine
+    // tokens rather than localized presentation. Exemptions remain exact and
+    // module-scoped so future human-facing prose in these modules is still audited.
+    let batch_v8_invariant = match filename {
+        "logind.rs" => matches!(
+            t,
+            "Unable to connect to system bus: {}"
+                | "Unable to create logind manager proxy: {}"
+                | "Unable to locate session: {}"
+                | "Unable to create logind session proxy: {}"
+                | "Unable to read logind IdleHint: {}"
+        ),
+        "x11.rs" => matches!(
+            t,
+            "[X11] Idle threshold = {} ms"
+                | "XScreenSaver extension is unavailable"
+                | "[X11] XScreenSaver extension available (event_base={}, error_base={})"
+                | "Unable to allocate XScreenSaverInfo"
+                | "[X11] XScreenSaverQueryInfo failed"
+                | "XScreenSaverQueryInfo failed"
+                | "[X11] poll_state: idle={} ms, timeout={} ms"
+                | "[X11] State = Idle (idle={} ms, timeout={} ms)"
+        ),
+        "x11_connection.rs" => matches!(
+            t,
+            "[X11] Opening X11 display"
+                | "Unable to open X11 display"
+                | "[X11] Connected to {}"
+                | "Unable to obtain the X11 root window"
+                | "[X11] Screen = {}, root window = {}, geometry = {}x{}, depth = {}"
+                | "[X11] Closing X11 display"
+        ),
+        "generate_textures.rs" => matches!(
+            t,
+            "Unknown texture family '{}'. Valid families: {}"
+                | "Invalid texture buffer: expected {} bytes for {}x{} RGBA8, received {}"
+                | "Generated texture is {}x{}; Screenshaver requires {}x{}"
+                | "Generated texture contains {} bytes; expected {}"
+                | "Texture width cannot be represented as usize"
+                | "Texture height cannot be represented as usize"
+                | "Texture dimensions overflow the pixel-buffer size"
+                | "diagnostic texture generation"
+        ),
+        "lock_screen_widget.rs" => matches!(
+            t,
+            "Unable to link lock-screen widget shader: {}"
+                | "Lock-screen widget shader contains an interior NUL: {}"
+                | "Unable to compile lock-screen widget shader: {}"
+                | "Invalid lock-screen widget uniform '{}': {}"
+                | "Lock-screen widget shader uniform '{}' was not found"
+                | "no shader compiler log was provided"
+                | "no program linker log was provided"
+        ),
+        "render_audio_motion.rs" => matches!(
+            t,
+            "woofer from hell"
+                | "fft mirror warp"
+                | "polar propeller"
+                | "Unsupported Audio Motion effect '{}'; supported values: off, woofer_from_hell, fft_mirror_warp, polar_propeller"
+                | "Invalid uniform name: {}"
+                | "Audio Motion shader uniform '{}' was not found"
+        ),
+        "render_lock_screen_kde.rs" => matches!(
+            t,
+            "empty CString"
+                | "Screenshaver KDE renderer error"
+                | "static CString"
+                | "Required OpenGL 3.3 entry points were not supplied by the current Qt context"
+                | "Qt OpenGL procedure loader was null"
+                | "Invalid KDE render size: {width}x{height}"
+                | "Unable to load Screenshaver configuration {}: {error}"
+                | "Screenshaver KDE renderer handle was null"
+        ),
+        "render_wallpaper.rs" => matches!(
+            t,
+            "Uniform name contains an interior null byte: {}"
+        ),
+        _ => false,
+    };
+
+    if batch_v8_invariant {
+        return true;
+    }
+
     false
 }
 
