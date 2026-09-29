@@ -3936,4 +3936,101 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
         key: "overlay.collect_more_shaders",
         translated_text: "Obtén más shaders en https://editor.isf.video/shaders y https://shadertoy.com/browse",
     },
+
+    // Query By Example validation and parse errors.
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.validation.first_item_blank",
+        translated_text: "El primer elemento QBE está vacío.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.validation.first_operator_blank",
+        translated_text: "El primer operador QBE está vacío.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.validation.first_value_blank",
+        translated_text: "El primer valor QBE está vacío.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.validation.first_operator_invalid",
+        translated_text: "El primer operador QBE no es válido para el elemento seleccionado.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.validation.second_item_blank",
+        translated_text: "El segundo elemento QBE está vacío.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.validation.second_operator_blank",
+        translated_text: "El segundo operador QBE está vacío.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.validation.second_value_blank",
+        translated_text: "El segundo valor QBE está vacío.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.validation.second_operator_invalid",
+        translated_text: "El segundo operador QBE no es válido para el elemento seleccionado.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.error.invalid_boolean",
+        translated_text: "El valor booleano QBE '{value}' debe ser true o false.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.error.invalid_integer",
+        translated_text: "El valor QBE '{value}' no es un entero válido.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.error.invalid_decimal",
+        translated_text: "El valor QBE '{value}' no es un número decimal válido.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.error.invalid_date",
+        translated_text: "La fecha QBE '{value}' debe ser una fecha válida con formato MM/DD/YYYY.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.error.invalid_shader_type",
+        translated_text: "Tipo de shader desconocido '{value}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.error.invalid_policy_target",
+        translated_text: "Destino de política desconocido '{value}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.error.invalid_status",
+        translated_text: "Estado de shader desconocido '{value}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.error.invalid_anti_aliasing",
+        translated_text: "Valor de antialiasing desconocido '{value}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.error.invalid_dithering",
+        translated_text: "Valor de tramado desconocido '{value}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.error.invalid_color_precision",
+        translated_text: "Valor de precisión de color desconocido '{value}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.error.invalid_audiovisual_effect",
+        translated_text: "Valor de efecto audiovisual desconocido '{value}'.",
+    },
 ];

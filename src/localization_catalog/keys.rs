@@ -3943,4 +3943,101 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
         english_text: "Collect more shaders at https://editor.isf.video/shaders and https://shadertoy.com/browse",
         translator_context: "Overlay call-to-action shown for the built-in default shader. Preserve both URLs exactly.",
     },
+
+    // Query By Example validation and parse errors.
+    FactoryTranslationKey {
+        key: "qbe.validation.first_item_blank",
+        english_text: "The first QBE item is blank.",
+        translator_context: "QBE validation message.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.validation.first_operator_blank",
+        english_text: "The first QBE operator is blank.",
+        translator_context: "QBE validation message.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.validation.first_value_blank",
+        english_text: "The first QBE value is blank.",
+        translator_context: "QBE validation message.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.validation.first_operator_invalid",
+        english_text: "The first QBE operator is not valid for the selected item.",
+        translator_context: "QBE validation message.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.validation.second_item_blank",
+        english_text: "The second QBE item is blank.",
+        translator_context: "QBE validation message.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.validation.second_operator_blank",
+        english_text: "The second QBE operator is blank.",
+        translator_context: "QBE validation message.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.validation.second_value_blank",
+        english_text: "The second QBE value is blank.",
+        translator_context: "QBE validation message.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.validation.second_operator_invalid",
+        english_text: "The second QBE operator is not valid for the selected item.",
+        translator_context: "QBE validation message.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.error.invalid_boolean",
+        english_text: "QBE boolean value '{value}' must be true or false.",
+        translator_context: "QBE parse error. {value} is user-entered text and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.error.invalid_integer",
+        english_text: "QBE value '{value}' is not a valid integer.",
+        translator_context: "QBE parse error. {value} is user-entered text and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.error.invalid_decimal",
+        english_text: "QBE value '{value}' is not a valid decimal number.",
+        translator_context: "QBE parse error. {value} is user-entered text and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.error.invalid_date",
+        english_text: "QBE date '{value}' must be a valid date in MM/DD/YYYY format.",
+        translator_context: "QBE parse error. {value} is user-entered text and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.error.invalid_shader_type",
+        english_text: "Unknown Shader Type '{value}'.",
+        translator_context: "QBE parse error. {value} is user-entered text and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.error.invalid_policy_target",
+        english_text: "Unknown Policy Target '{value}'.",
+        translator_context: "QBE parse error. {value} is user-entered text and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.error.invalid_status",
+        english_text: "Unknown shader Status '{value}'.",
+        translator_context: "QBE parse error. {value} is user-entered text and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.error.invalid_anti_aliasing",
+        english_text: "Unknown Anti-Aliasing value '{value}'.",
+        translator_context: "QBE parse error. {value} is user-entered text and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.error.invalid_dithering",
+        english_text: "Unknown Dithering value '{value}'.",
+        translator_context: "QBE parse error. {value} is user-entered text and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.error.invalid_color_precision",
+        english_text: "Unknown Color Precision value '{value}'.",
+        translator_context: "QBE parse error. {value} is user-entered text and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.error.invalid_audiovisual_effect",
+        english_text: "Unknown Audiovisual Effect value '{value}'.",
+        translator_context: "QBE parse error. {value} is user-entered text and must remain unchanged.",
+    },
 ];

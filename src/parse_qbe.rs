@@ -435,34 +435,34 @@ pub enum QbeValidationError {
 
 impl QbeValidationError {
 
-    pub const fn message(
+    pub fn message(
         self,
-    ) -> &'static str {
+    ) -> String {
 
         match self {
             Self::FirstFieldMissing =>
-                "The first QBE item is blank.",
+                crate::manage_localization::runtime_text("qbe.validation.first_item_blank"),
 
             Self::FirstOperatorMissing =>
-                "The first QBE operator is blank.",
+                crate::manage_localization::runtime_text("qbe.validation.first_operator_blank"),
 
             Self::FirstValueMissing =>
-                "The first QBE value is blank.",
+                crate::manage_localization::runtime_text("qbe.validation.first_value_blank"),
 
             Self::FirstOperatorInvalid =>
-                "The first QBE operator is not valid for the selected item.",
+                crate::manage_localization::runtime_text("qbe.validation.first_operator_invalid"),
 
             Self::SecondFieldMissing =>
-                "The second QBE item is blank.",
+                crate::manage_localization::runtime_text("qbe.validation.second_item_blank"),
 
             Self::SecondOperatorMissing =>
-                "The second QBE operator is blank.",
+                crate::manage_localization::runtime_text("qbe.validation.second_operator_blank"),
 
             Self::SecondValueMissing =>
-                "The second QBE value is blank.",
+                crate::manage_localization::runtime_text("qbe.validation.second_value_blank"),
 
             Self::SecondOperatorInvalid =>
-                "The second QBE operator is not valid for the selected item.",
+                crate::manage_localization::runtime_text("qbe.validation.second_operator_invalid"),
         }
     }
 }
@@ -865,72 +865,72 @@ impl QbeParseError {
 
         match self {
             Self::Validation(error) =>
-                error.message().to_string(),
+                error.message(),
 
             Self::InvalidBoolean(value) =>
-                format!(
-                    "QBE boolean value '{}' must be true or false.",
-                    value,
+                crate::manage_localization::runtime_text_with_params(
+                    "qbe.error.invalid_boolean",
+                    &[("value", value.as_str())],
                 ),
 
             Self::InvalidInteger(value) =>
-                format!(
-                    "QBE value '{}' is not a valid integer.",
-                    value,
+                crate::manage_localization::runtime_text_with_params(
+                    "qbe.error.invalid_integer",
+                    &[("value", value.as_str())],
                 ),
 
             Self::InvalidDecimal(value) =>
-                format!(
-                    "QBE value '{}' is not a valid decimal number.",
-                    value,
+                crate::manage_localization::runtime_text_with_params(
+                    "qbe.error.invalid_decimal",
+                    &[("value", value.as_str())],
                 ),
 
             Self::InvalidDate(value) =>
-                format!(
-                    "QBE date '{}' must be a valid date in MM/DD/YYYY format.",
-                    value,
+                crate::manage_localization::runtime_text_with_params(
+                    "qbe.error.invalid_date",
+                    &[("value", value.as_str())],
                 ),
 
             Self::InvalidShaderType(value) =>
-                format!(
-                    "Unknown Shader Type '{}'.",
-                    value,
+                crate::manage_localization::runtime_text_with_params(
+                    "qbe.error.invalid_shader_type",
+                    &[("value", value.as_str())],
                 ),
 
             Self::InvalidPolicyTarget(value) =>
-                format!(
-                    "Unknown Policy Target '{}'.",
-                    value,
+                crate::manage_localization::runtime_text_with_params(
+                    "qbe.error.invalid_policy_target",
+                    &[("value", value.as_str())],
                 ),
 
             Self::InvalidStatus(value) =>
-                format!(
-                    "Unknown shader Status '{}'.",
-                    value,
+                crate::manage_localization::runtime_text_with_params(
+                    "qbe.error.invalid_status",
+                    &[("value", value.as_str())],
                 ),
 
             Self::InvalidAntiAliasing(value) =>
-                format!(
-                    "Unknown Anti-Aliasing value '{}'.",
-                    value,
+                crate::manage_localization::runtime_text_with_params(
+                    "qbe.error.invalid_anti_aliasing",
+                    &[("value", value.as_str())],
                 ),
 
             Self::InvalidDithering(value) =>
-                format!(
-                    "Unknown Dithering value '{}'.",
-                    value,
+                crate::manage_localization::runtime_text_with_params(
+                    "qbe.error.invalid_dithering",
+                    &[("value", value.as_str())],
                 ),
 
             Self::InvalidColorPrecision(value) =>
-                format!(
-                    "Unknown Color Precision value '{}'.",
-                    value,
+                crate::manage_localization::runtime_text_with_params(
+                    "qbe.error.invalid_color_precision",
+                    &[("value", value.as_str())],
                 ),
 
             Self::InvalidBloomMode(value) =>
-                format!(
-                    "Unknown Audiovisual Effect value '{}'.",
-                    value,
+                crate::manage_localization::runtime_text_with_params(
+                    "qbe.error.invalid_audiovisual_effect",
+                    &[("value", value.as_str())],
                 ),
         }
     }
