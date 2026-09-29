@@ -13,7 +13,7 @@ use ksni::{Category, MenuItem, Status, ToolTip, Tray};
 const APPLICATION_ID: &str = "screenshaver";
 const APPLICATION_NAME: &str = "Screenshaver";
 const ICON_NAME: &str = "screenshaver";
-const TOOLTIP_DESCRIPTION: &str = "Waiting for idle...";
+
 
 /// Commands that can be requested through the system tray menu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -229,11 +229,11 @@ impl TrayStatusControl {
 
         match status {
             WallpaperTrayStatus::Disabled => {
-                "Disabled".to_string()
+                crate::manage_localization::runtime_text("tray.status.disabled")
             }
 
             WallpaperTrayStatus::Starting => {
-                "Starting...".to_string()
+                crate::manage_localization::runtime_text("tray.status.starting")
             }
 
             WallpaperTrayStatus::Active(info) => {
@@ -334,7 +334,7 @@ impl Tray for ScreenshaverTray {
             title:
                 APPLICATION_NAME.into(),
             description:
-                TOOLTIP_DESCRIPTION.into(),
+                crate::manage_localization::runtime_text("tray.tooltip.waiting_for_idle"),
             ..Default::default()
         }
     }
@@ -345,12 +345,14 @@ impl Tray for ScreenshaverTray {
         vec![
             StandardItem {
                 label:
-                    format!(
-                        "Screensaver: {}",
-                        enabled_status(
-                            self.status
-                                .screensaver_enabled
-                        ),
+                    crate::manage_localization::runtime_text_with_params(
+                        "tray.menu.screensaver_status",
+                        &[(
+                            "status",
+                            &enabled_status(
+                                self.status.screensaver_enabled
+                            ),
+                        )],
                     ),
                 enabled: false,
                 ..Default::default()
@@ -358,7 +360,7 @@ impl Tray for ScreenshaverTray {
             .into(),
             StandardItem {
                 label:
-                    "Wallpaper:".into(),
+                    crate::manage_localization::runtime_text("tray.menu.wallpaper"),
                 enabled: false,
                 ..Default::default()
             }
@@ -374,7 +376,7 @@ impl Tray for ScreenshaverTray {
             .into(),
             StandardItem {
                 label:
-                    "Edit".into(),
+                    crate::manage_localization::runtime_text("tray.menu.edit"),
                 icon_name:
                     "document-edit".into(),
                 enabled: true,
@@ -391,7 +393,7 @@ impl Tray for ScreenshaverTray {
             .into(),
             StandardItem {
                 label:
-                    "Restart".into(),
+                    crate::manage_localization::runtime_text("tray.menu.restart"),
                 icon_name:
                     "view-refresh".into(),
                 activate:
@@ -407,7 +409,7 @@ impl Tray for ScreenshaverTray {
             .into(),
             StandardItem {
                 label:
-                    "Stop".into(),
+                    crate::manage_localization::runtime_text("tray.menu.stop"),
                 icon_name:
                     "application-exit".into(),
                 activate:
@@ -455,11 +457,11 @@ pub fn start(
 
 fn enabled_status(
     enabled: bool,
-) -> &'static str {
+) -> String {
     if enabled {
-        "Enabled"
+        crate::manage_localization::runtime_text("tray.status.enabled")
     } else {
-        "Disabled"
+        crate::manage_localization::runtime_text("tray.status.disabled")
     }
 }
 

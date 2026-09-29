@@ -1003,6 +1003,126 @@ fn intentionally_invariant(s: &str, line: &str, path: &Path) -> bool {
         return true;
     }
 
+    // Batch v7: these modules contain backend, database, parser, and runtime-control
+    // diagnostics rather than presentation text. Keep exemptions module-scoped and exact
+    // (or restricted to a stable diagnostic prefix) so future UI prose remains auditable.
+    if filename == "control_wallpaper.rs"
+        && matches!(
+            t,
+            "Unable to request exclusive renderer ownership from the active wallpaper renderer: {}"
+                | "Timed out after {} ms waiting for the active wallpaper renderer to acknowledge suspension; refusing to start a second renderer"
+                | "Using XDG runtime directory: {}"
+                | "XDG_RUNTIME_DIR does not name an existing directory: {}"
+                | "XDG_RUNTIME_DIR unavailable; using fallback runtime directory: {}"
+                | "Unable to locate a usable wallpaper control runtime directory; checked XDG_RUNTIME_DIR and {}"
+                | "[WALLPAPER_CONTROL] {}"
+        )
+    {
+        return true;
+    }
+
+    if filename == "create_wayland_lock_context.rs"
+        && (t.starts_with("[LOCK TEST]")
+            || matches!(
+                t,
+                "Cannot create an EGL lock context with a zero-sized surface"
+                    | "libwayland-egl is unavailable"
+                    | "Lock-surface width {} exceeds EGL limits"
+                    | "Lock-surface height {} exceeds EGL limits"
+                    | "Wayland display pointer is null; EGL interop is unavailable"
+                    | "eglGetDisplay returned EGL_NO_DISPLAY"
+                    | "eglInitialize failed: {:?}"
+                    | "eglBindAPI(EGL_OPENGL_API) failed: {:?}"
+                    | "eglChooseConfig failed: {:?}"
+                    | "No EGL window configuration supports desktop OpenGL"
+                    | "eglCreateContext(OpenGL 3.3 core) failed: {:?}"
+                    | "Unable to create wl_egl_window: {}"
+                    | "eglCreateWindowSurface failed: {:?}"
+                    | "eglMakeCurrent failed: {:?}"
+                    | "eglSwapBuffers failed: {:?}"
+            ))
+    {
+        return true;
+    }
+
+    if filename == "database_factory.rs"
+        && matches!(
+            t,
+            "Unable to read default shader '{}': {}"
+                | "Default shader '{}' is not valid UTF-8: {}"
+                | "Default shader '{}' was unexpectedly classified as ShaderToy"
+                | "Default shader '{}' was unexpectedly classified as ISF"
+                | "Default shader path '{}' has no valid UTF-8 filename"
+                | "Default shader path '{}' has no parent directory"
+                | "Unable to register default shader '{}': {}"
+                | "Unable to begin localization-catalog synchronization transaction: {}"
+                | "Unable to prepare language-catalog synchronization: {}"
+                | "Unable to synchronize factory language '{}': {}"
+                | "Unable to prepare translation-key synchronization: {}"
+                | "Unable to synchronize factory translation key '{}': {}"
+                | "Unable to prepare translation synchronization: {}"
+                | "Unable to synchronize factory translation '{}:{}': {}"
+                | "Unable to commit localization factory catalog synchronization: {}"
+        )
+    {
+        return true;
+    }
+
+    if filename == "locate_wallpaper.rs"
+        && matches!(
+            t,
+            "Unable to open database for wallpaper shader discovery: {}"
+                | "Unable to prepare wallpaper shader discovery query: {}"
+                | "Unable to query wallpaper shader discovery rows: {}"
+                | "Unable to decode wallpaper shader discovery row: {}"
+        )
+    {
+        return true;
+    }
+
+    if filename == "open_database.rs"
+        && matches!(
+            t,
+            "Unable to open existing database '{}': {}"
+                | "Unable to enable SQLite foreign-key enforcement: {}"
+                | "Unable to configure SQLite synchronous mode: {}"
+                | "Unable to configure SQLite busy timeout: {}"
+        )
+    {
+        return true;
+    }
+
+    if filename == "parse_interval.rs"
+        && t.starts_with("[PARSE_INTERVAL]")
+    {
+        return true;
+    }
+
+    if filename == "parse_mode.rs"
+        && t.starts_with("[PARSE_MODE]")
+    {
+        return true;
+    }
+
+    // Language names here are factory catalog metadata. english_name intentionally names
+    // every locale in English; native_name intentionally names it in that locale itself.
+    let is_localization_catalog_mod = filename == "mod.rs"
+        && path.parent()
+            .and_then(|parent| parent.file_name())
+            .and_then(|value| value.to_str())
+            == Some("localization_catalog");
+
+    if is_localization_catalog_mod
+        && matches!(
+            t,
+            "English (United States)"
+                | "Spanish (United States)"
+                | "Español (Estados Unidos)"
+        )
+    {
+        return true;
+    }
+
     if matches!(
         t,
         "screensaver"

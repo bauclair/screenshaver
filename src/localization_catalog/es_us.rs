@@ -3627,4 +3627,60 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
         translated_text: "No se encontró el archivo o directorio del shader: {path}",
     },
 
+
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "tray.tooltip.waiting_for_idle",
+        translated_text: "Esperando inactividad...",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "tray.status.enabled",
+        translated_text: "Activado",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "tray.status.disabled",
+        translated_text: "Desactivado",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "tray.status.starting",
+        translated_text: "Iniciando...",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "tray.menu.screensaver_status",
+        translated_text: "Protector de pantalla: {status}",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "tray.menu.wallpaper",
+        translated_text: "Fondo de pantalla:",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "tray.menu.edit",
+        translated_text: "Editar",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "tray.menu.restart",
+        translated_text: "Reiniciar",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "tray.menu.stop",
+        translated_text: "Detener",
+    },
+
 ];

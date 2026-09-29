@@ -3634,4 +3634,60 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
         translator_context: "Control Center error when a supplied shader preview target does not exist. {path} is a filesystem path and must remain unchanged.",
     },
 
+
+
+    FactoryTranslationKey {
+        key: "tray.tooltip.waiting_for_idle",
+        english_text: "Waiting for idle...",
+        translator_context: "System tray tooltip shown while Screenshaver is waiting for the desktop idle timeout.",
+    },
+
+    FactoryTranslationKey {
+        key: "tray.status.enabled",
+        english_text: "Enabled",
+        translator_context: "System tray status indicating that a Screenshaver feature is enabled.",
+    },
+
+    FactoryTranslationKey {
+        key: "tray.status.disabled",
+        english_text: "Disabled",
+        translator_context: "System tray status indicating that a Screenshaver feature is disabled.",
+    },
+
+    FactoryTranslationKey {
+        key: "tray.status.starting",
+        english_text: "Starting...",
+        translator_context: "System tray wallpaper status while the wallpaper renderer is starting.",
+    },
+
+    FactoryTranslationKey {
+        key: "tray.menu.screensaver_status",
+        english_text: "Screensaver: {status}",
+        translator_context: "Read-only system tray menu row showing whether the screensaver is enabled. {status} is an already localized status label.",
+    },
+
+    FactoryTranslationKey {
+        key: "tray.menu.wallpaper",
+        english_text: "Wallpaper:",
+        translator_context: "Read-only system tray menu heading preceding the current wallpaper status or policy name.",
+    },
+
+    FactoryTranslationKey {
+        key: "tray.menu.edit",
+        english_text: "Edit",
+        translator_context: "System tray command that opens the Screenshaver Control Center for editing configuration.",
+    },
+
+    FactoryTranslationKey {
+        key: "tray.menu.restart",
+        english_text: "Restart",
+        translator_context: "System tray command that restarts Screenshaver.",
+    },
+
+    FactoryTranslationKey {
+        key: "tray.menu.stop",
+        english_text: "Stop",
+        translator_context: "System tray command that stops Screenshaver.",
+    },
+
 ];
