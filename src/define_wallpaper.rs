@@ -32,7 +32,7 @@ impl WallpaperMonitorMode {
                 Err(
                     format!(
                         "Unsupported wallpaper monitor_mode '{}'; supported values: mirror",
-                        other,
+                        other
                     )
                 )
             }

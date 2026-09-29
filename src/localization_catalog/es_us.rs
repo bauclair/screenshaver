@@ -3567,4 +3567,64 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
         translated_text: "Falló la compilación del shader {kind}:\n{error}",
     },
 
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.query",
+        translated_text: "Consultar",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.clear",
+        translated_text: "Limpiar",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.boolean.true",
+        translated_text: "Verdadero",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.boolean.false",
+        translated_text: "Falso",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.status.ok",
+        translated_text: "Correcto",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.status.rejected",
+        translated_text: "Rechazado",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.status.compile_error",
+        translated_text: "Error de compilación",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.status.missing",
+        translated_text: "Falta",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.status.unreadable",
+        translated_text: "Ilegible",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "preview.target_not_found",
+        translated_text: "No se encontró el archivo o directorio del shader: {path}",
+    },
+
 ];

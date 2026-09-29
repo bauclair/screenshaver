@@ -57,7 +57,7 @@ pub fn draw_qbe_strip(
                 ui.add_enabled(
                     query_ready,
                     egui::Button::new(
-                        "Query"
+                        crate::manage_localization::runtime_text("qbe.query")
                     )
                     .min_size(
                         egui::vec2(
@@ -77,7 +77,7 @@ pub fn draw_qbe_strip(
 
             if ui.add(
                 egui::Button::new(
-                    "Clear"
+                    crate::manage_localization::runtime_text("qbe.clear")
                 )
                 .min_size(
                     egui::vec2(
@@ -486,14 +486,14 @@ fn draw_value_control(
         operator,
     ) {
         crate::parse_qbe::QbeValueKind::Boolean => {
-            draw_value_combo(
+            draw_localized_value_combo(
                 ui,
                 id,
                 width,
                 &mut clause.value,
                 &[
-                    "true",
-                    "false",
+                    ("true", "qbe.boolean.true"),
+                    ("false", "qbe.boolean.false"),
                 ],
             );
         }
@@ -511,15 +511,15 @@ fn draw_value_control(
 
 
         crate::parse_qbe::QbeValueKind::PolicyTarget => {
-            draw_value_combo(
+            draw_localized_value_combo(
                 ui,
                 id,
                 width,
                 &mut clause.value,
                 &[
-                    "Screensaver",
-                    "Wallpaper",
-                    "Unassigned",
+                    ("Screensaver", "target.screensaver"),
+                    ("Wallpaper", "target.wallpaper"),
+                    ("Unassigned", "target.unassigned"),
                 ],
             );
         }
@@ -559,76 +559,76 @@ fn draw_value_control(
 
 
         crate::parse_qbe::QbeValueKind::Status => {
-            draw_value_combo(
+            draw_localized_value_combo(
                 ui,
                 id,
                 width,
                 &mut clause.value,
                 &[
-                    "OK",
-                    "Rejected",
-                    "Compile Error",
-                    "Missing",
-                    "Unreadable",
+                    ("OK", "qbe.status.ok"),
+                    ("Rejected", "qbe.status.rejected"),
+                    ("Compile Error", "qbe.status.compile_error"),
+                    ("Missing", "qbe.status.missing"),
+                    ("Unreadable", "qbe.status.unreadable"),
                 ],
             );
         }
 
 
         crate::parse_qbe::QbeValueKind::AntiAliasing => {
-            draw_value_combo(
+            draw_localized_value_combo(
                 ui,
                 id,
                 width,
                 &mut clause.value,
                 &[
-                    "Off",
-                    "FXAA",
+                    ("Off", "rendering.off"),
+                    ("FXAA", "rendering.fxaa"),
                 ],
             );
         }
 
 
         crate::parse_qbe::QbeValueKind::Dithering => {
-            draw_value_combo(
+            draw_localized_value_combo(
                 ui,
                 id,
                 width,
                 &mut clause.value,
                 &[
-                    "Off",
-                    "Subtle",
+                    ("Off", "rendering.off"),
+                    ("Subtle", "rendering.subtle"),
                 ],
             );
         }
 
 
         crate::parse_qbe::QbeValueKind::ColorPrecision => {
-            draw_value_combo(
+            draw_localized_value_combo(
                 ui,
                 id,
                 width,
                 &mut clause.value,
                 &[
-                    "Automatic",
-                    "High Precision",
-                    "Standard Precision",
+                    ("Automatic", "rendering.auto"),
+                    ("High Precision", "post.visual.high_precision"),
+                    ("Standard Precision", "post.visual.standard_precision"),
                 ],
             );
         }
 
 
         crate::parse_qbe::QbeValueKind::BloomMode => {
-            draw_value_combo(
+            draw_localized_value_combo(
                 ui,
                 id,
                 width,
                 &mut clause.value,
                 &[
-                    "Off",
-                    "Audio Bloom",
-                    "Spectral Bloom",
-                    "Loudness Bloom",
+                    ("Off", "post.common.off"),
+                    ("Audio Bloom", "post.audio.audio_bloom"),
+                    ("Spectral Bloom", "post.audio.spectral_bloom"),
+                    ("Loudness Bloom", "post.audio.loudness_bloom"),
                 ],
             );
         }
@@ -653,33 +653,35 @@ fn draw_value_control(
 }
 
 
-fn draw_value_combo(
+fn draw_localized_value_combo(
     ui: &mut egui::Ui,
     id: &'static str,
     width: f32,
     value: &mut String,
-    choices: &[&str],
+    choices: &[(&str, &str)],
 ) {
-    egui::ComboBox::from_id_source(
-        id
-    )
-    .selected_text(
-        value.as_str()
-    )
-    .width(width)
-    .height(360.0)
-    .show_ui(
-        ui,
-        |ui| {
-            for choice in choices {
-                ui.selectable_value(
-                    value,
-                    (*choice).to_string(),
-                    *choice,
-                );
-            }
-        },
-    );
+    let selected_text = choices
+        .iter()
+        .find(|(stored_value, _)| *stored_value == value.as_str())
+        .map(|(_, key)| crate::manage_localization::runtime_text(key))
+        .unwrap_or_else(|| value.clone());
+
+    egui::ComboBox::from_id_source(id)
+        .selected_text(selected_text)
+        .width(width)
+        .height(360.0)
+        .show_ui(
+            ui,
+            |ui| {
+                for (stored_value, key) in choices {
+                    ui.selectable_value(
+                        value,
+                        (*stored_value).to_string(),
+                        crate::manage_localization::runtime_text(key),
+                    );
+                }
+            },
+        );
 }
 
 
@@ -734,7 +736,7 @@ fn draw_palette_value_combo(
             ui.selectable_value(
                 value,
                 "random".to_string(),
-                "random",
+                crate::manage_localization::runtime_text("common.random"),
             );
 
 

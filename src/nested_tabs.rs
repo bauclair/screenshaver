@@ -2336,7 +2336,7 @@ fn draw_rendering_placeholders(
                 });
             ui.end_row();
 
-            ui.label("Dithering:");
+            ui.label(crate::manage_localization::runtime_text("rendering.dithering"));
             egui::ComboBox::from_id_source("rendering_default_dithering")
                 .selected_text(match configuration.dithering.as_str() {
                     "off" => crate::manage_localization::runtime_text("rendering.off"),

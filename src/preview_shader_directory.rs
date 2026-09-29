@@ -64,9 +64,9 @@ pub fn resolve_preview_target(
     } else {
 
         Err(
-            format!(
-                "Shader file or directory not found: {}",
-                resolved.display(),
+            crate::manage_localization::runtime_text_with_params(
+                "preview.target_not_found",
+                &[("path", &resolved.display().to_string())],
             )
         )
     }

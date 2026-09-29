@@ -5,7 +5,7 @@
 //! defects from runtime human-readable English text. All non-suppressed runtime prose
 //! defects and true catalog defects make the audit fail.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -48,13 +48,29 @@ pub fn run(requested_locale: Option<&str>, requested_module: Option<&str>) -> Re
         .cloned()
         .collect::<Vec<_>>();
 
-    let files = match requested_module {
-        Some(module) => vec![resolve_module_path(&src, module)?],
+    let source_inventory = source_inventory(&src)?;
+    let active_graph = active_rust_files(&root, &src)?;
+    let active_files = source_inventory
+        .iter()
+        .filter(|path| active_graph.contains(*path))
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let orphaned_files = source_inventory
+        .iter()
+        .filter(|path| !active_files.contains(*path))
+        .cloned()
+        .collect::<Vec<_>>();
+
+    let (files, requested_module_is_orphaned) = match requested_module {
+        Some(module) => {
+            let path = resolve_module_path(&src, module)?;
+            let orphaned = !active_files.contains(&path);
+            (vec![path], orphaned)
+        }
         None => {
-            let mut files = Vec::new();
-            collect_rs_files(&src, &mut files)?;
+            let mut files = active_files.iter().cloned().collect::<Vec<_>>();
             files.sort();
-            files
+            (files, false)
         }
     };
 
@@ -64,6 +80,9 @@ pub fn run(requested_locale: Option<&str>, requested_module: Option<&str>) -> Re
     let mut suppressed_count = 0usize;
 
     for path in &files {
+        if requested_module_is_orphaned {
+            continue;
+        }
         if path == &keys_path || path == &locale_path || path.ends_with("audit_translation.rs") {
             continue;
         }
@@ -83,11 +102,29 @@ pub fn run(requested_locale: Option<&str>, requested_module: Option<&str>) -> Re
     println!("[TRANSLATION AUDIT] Source root: {}", src.display());
     match requested_module {
         Some(_) => println!("[TRANSLATION AUDIT] Source scope: {}", files[0].display()),
-        None => println!("[TRANSLATION AUDIT] Source scope: entire src/ tree"),
+        None => println!("[TRANSLATION AUDIT] Source scope: active Rust module graph"),
     }
 
-    print_findings("DEFINITE LOCALIZATION DEFECTS", &findings, Severity::Actionable);
-    print_findings("NON-ACTIONABLE REVIEW FINDINGS", &findings, Severity::Review);
+    if requested_module_is_orphaned {
+        println!("\nMODULE STATUS");
+        println!("    Inactive/orphaned Rust source.");
+        println!("    No active module reference was found.");
+        println!("    Localization audit skipped.");
+    } else {
+        print_findings("DEFINITE LOCALIZATION DEFECTS", &findings, Severity::Actionable);
+        print_findings("NON-ACTIONABLE REVIEW FINDINGS", &findings, Severity::Review);
+    }
+
+    if requested_module.is_none() {
+        println!("\nORPHANED RUST SOURCE FILES");
+        if orphaned_files.is_empty() {
+            println!("    none");
+        } else {
+            for path in &orphaned_files {
+                println!("    {}", display_relative(&root, path));
+            }
+        }
+    }
 
     println!("\nMISSING {} TRANSLATIONS", locale);
     if missing.is_empty() {
@@ -109,7 +146,11 @@ pub fn run(requested_locale: Option<&str>, requested_module: Option<&str>) -> Re
     let actionable = actionable_source + missing.len();
 
     println!("\nSUMMARY");
-    println!("    Rust files scanned:        {}", files.len());
+    let scanned_files = if requested_module_is_orphaned { 0 } else { files.len() };
+    println!("    Active Rust files scanned: {}", scanned_files);
+    if requested_module.is_none() {
+        println!("    Orphaned Rust files:       {}", orphaned_files.len());
+    }
     println!("    Candidate strings:         {}", candidate_count);
     println!("    Suppressed invariants:     {}", suppressed_count);
     println!("    Definite source defects:   {}", actionable_source);
@@ -205,6 +246,165 @@ fn collect_named_rs_files(dir: &Path, filename: &str, out: &mut Vec<PathBuf>) ->
         }
     }
     Ok(())
+}
+
+
+fn source_inventory(src: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut files = Vec::new();
+    collect_rs_files(src, &mut files)?;
+    files.retain(|path| !is_intentional_source_copy(path));
+    files.sort();
+    files.dedup();
+    Ok(files)
+}
+
+fn active_rust_files(root: &Path, src: &Path) -> Result<BTreeSet<PathBuf>, String> {
+    let mut active = BTreeSet::new();
+    let mut queue = VecDeque::new();
+
+    // The main Screenshaver crate and the separate KDE renderer crate both contribute to
+    // reachability. KDE files themselves remain outside the localization scan; following that
+    // crate merely prevents shared main-tree files from being misclassified as orphaned.
+    for candidate in [
+        src.join("main.rs"),
+        src.join("lib.rs"),
+        root.join("kde-renderer/src/lib.rs"),
+        root.join("kde-renderer/src/main.rs"),
+    ] {
+        if candidate.is_file() {
+            queue.push_back(candidate);
+        }
+    }
+
+    while let Some(path) = queue.pop_front() {
+        if !active.insert(path.clone()) {
+            continue;
+        }
+
+        let text = fs::read_to_string(&path)
+            .map_err(|error| format!("Unable to read '{}': {}", path.display(), error))?;
+        for child in referenced_rust_modules(&path, &text) {
+            if child.is_file() && !active.contains(&child) {
+                queue.push_back(child);
+            }
+        }
+    }
+
+    Ok(active)
+}
+
+fn referenced_rust_modules(parent: &Path, text: &str) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let parent_dir = match parent.parent() {
+        Some(value) => value,
+        None => return out,
+    };
+
+    let mut pending_path: Option<String> = None;
+    for raw in text.lines() {
+        let line = raw.trim();
+
+        if line.starts_with("//") {
+            continue;
+        }
+
+        if line.starts_with("#[path") {
+            pending_path = attribute_path_value(line);
+            continue;
+        }
+
+        if let Some(module) = module_declaration_name(line) {
+            if let Some(relative) = pending_path.take() {
+                out.push(normalize_path(parent_dir.join(relative)));
+            } else {
+                let module_dir = rust_module_directory(parent);
+                let sibling = module_dir.join(format!("{}.rs", module));
+                let nested = module_dir.join(&module).join("mod.rs");
+                if sibling.is_file() {
+                    out.push(normalize_path(sibling));
+                } else if nested.is_file() {
+                    out.push(normalize_path(nested));
+                }
+            }
+        } else if !line.is_empty() && !line.starts_with("#[") {
+            pending_path = None;
+        }
+    }
+
+    out
+}
+
+fn rust_module_directory(parent: &Path) -> PathBuf {
+    let parent_dir = parent.parent().unwrap_or_else(|| Path::new(""));
+    match parent.file_name().and_then(|value| value.to_str()) {
+        Some("main.rs") | Some("lib.rs") | Some("mod.rs") => parent_dir.to_path_buf(),
+        Some(filename) if filename.ends_with(".rs") => {
+            let stem = filename.trim_end_matches(".rs");
+            parent_dir.join(stem)
+        }
+        _ => parent_dir.to_path_buf(),
+    }
+}
+
+fn attribute_path_value(line: &str) -> Option<String> {
+    let first_quote = line.find('"')?;
+    let rest = &line[first_quote + 1..];
+    let second_quote = rest.find('"')?;
+    Some(rest[..second_quote].to_string())
+}
+
+fn module_declaration_name(line: &str) -> Option<String> {
+    let line = line
+        .strip_prefix("pub(crate) ")
+        .or_else(|| line.strip_prefix("pub(super) "))
+        .or_else(|| line.strip_prefix("pub(self) "))
+        .or_else(|| line.strip_prefix("pub "))
+        .unwrap_or(line);
+
+    let rest = line.strip_prefix("mod ")?.trim();
+    if !rest.ends_with(';') {
+        return None;
+    }
+
+    let name = rest.trim_end_matches(';').trim();
+    if !name.is_empty()
+        && name
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || character == '_')
+    {
+        Some(name.to_string())
+    } else {
+        None
+    }
+}
+
+fn normalize_path(path: PathBuf) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        use std::path::Component;
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            other => normalized.push(other.as_os_str()),
+        }
+    }
+    normalized
+}
+
+fn is_intentional_source_copy(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|value| value.to_str())
+        .map(|name| name.to_ascii_lowercase().contains("copy"))
+        .unwrap_or(false)
+}
+
+fn display_relative(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .display()
+        .to_string()
 }
 
 fn configured_locale() -> Option<String> {
@@ -346,8 +546,11 @@ fn scan_file(
                 literal
                     .replace("\\n", "\n");
 
-            if english.contains(&literal)
-                || english.contains(&catalog_literal)
+            let matches_catalog =
+                english.contains(&literal)
+                    || english.contains(&catalog_literal);
+
+            if (matches_catalog && !is_direct_presentation_literal(line))
                 || intentionally_invariant(&literal, line, path)
             {
                 *suppressed_count += 1;
@@ -363,6 +566,29 @@ fn scan_file(
         }
     }
 }
+
+fn is_direct_presentation_literal(line: &str) -> bool {
+    // A raw literal passed directly to a UI presentation API is still a localization
+    // defect even when identical English text exists somewhere in the canonical catalog.
+    // Catalog membership proves that text is translatable; it does not prove this source
+    // location actually performs a translation lookup.
+    [
+        "Button::new(",
+        ".button(",
+        "ui.label(",
+        "ui.heading(",
+        "RichText::new(",
+        ".selected_text(",
+        ".on_hover_text(",
+        ".on_hover_ui(",
+        "selectable_label(",
+        "checkbox(",
+        "radio_value(",
+    ]
+    .iter()
+    .any(|needle| line.contains(needle))
+}
+
 
 fn contains_localization_call(line: &str) -> bool {
     line.contains("runtime_text(")
@@ -551,6 +777,23 @@ fn intentionally_invariant(s: &str, line: &str, path: &Path) -> bool {
     }
 
 
+    // analyze_audio.rs emits stable developer/runtime telemetry for FFT and audio
+    // analysis. These tagged lines report numerical analyzer state rather than localized
+    // presentation text. Keep the exemption scoped to this module so [AUDIO] or
+    // [FFT-MOTION-DIAG] prose elsewhere remains subject to normal localization auditing.
+    let is_analyze_audio = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        == Some("analyze_audio.rs");
+
+    if is_analyze_audio
+        && (t.starts_with("[AUDIO]")
+            || t.starts_with("[FFT-MOTION-DIAG]"))
+    {
+        return true;
+    }
+
+
     // edit_shader.rs uses bracketed subsystem tags exclusively for developer/runtime
     // diagnostics written through Screenshaver logging. They are intentionally stable
     // diagnostic text, not localized presentation. The remaining exact strings below
@@ -578,6 +821,46 @@ fn intentionally_invariant(s: &str, line: &str, path: &Path) -> bool {
                     | "single:{}"
                     | "playlist:{}:{}"
             ))
+    {
+        return true;
+    }
+
+    // These modules contain technical/internal diagnostics or stable environment
+    // classification labels rather than localized presentation text.
+    let filename = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("");
+
+    if filename == "display_lock_authentication.rs"
+        && t == "current user"
+    {
+        return true;
+    }
+
+    if filename == "generate_clouds.rs"
+        && t == "Cloud texture buffer size overflow"
+    {
+        return true;
+    }
+
+    // define_wallpaper.rs is shared with the standalone KDE renderer crate, which
+    // intentionally does not depend on the application's localization manager. This
+    // exact message validates the stable monitor_mode/mirror configuration tokens.
+    if filename == "define_wallpaper.rs"
+        && t == "Unsupported wallpaper monitor_mode '{}'; supported values: mirror"
+    {
+        return true;
+    }
+
+    if filename == "parse_subtitle_placement.rs"
+        && t.starts_with("[CONFIG] Invalid subtitle_placement")
+    {
+        return true;
+    }
+
+    if filename == "detect_desktop_environment.rs"
+        && matches!(t, "KDE Plasma" | "GNOME" | "XFCE" | "Other" | "Unknown")
     {
         return true;
     }

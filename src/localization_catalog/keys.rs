@@ -3574,4 +3574,64 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
         translator_context: "Shader compilation failure followed by the OpenGL driver diagnostic. {kind} is a localized shader-stage name; {error} is externally supplied OpenGL diagnostic text and must remain unchanged.",
     },
 
+    FactoryTranslationKey {
+        key: "qbe.query",
+        english_text: "Query",
+        translator_context: "Button that executes the current Query By Example criteria.",
+    },
+
+    FactoryTranslationKey {
+        key: "qbe.clear",
+        english_text: "Clear",
+        translator_context: "Button that clears the current Query By Example criteria.",
+    },
+
+    FactoryTranslationKey {
+        key: "qbe.boolean.true",
+        english_text: "True",
+        translator_context: "Displayed boolean true value in Query By Example; stored query token remains true.",
+    },
+
+    FactoryTranslationKey {
+        key: "qbe.boolean.false",
+        english_text: "False",
+        translator_context: "Displayed boolean false value in Query By Example; stored query token remains false.",
+    },
+
+    FactoryTranslationKey {
+        key: "qbe.status.ok",
+        english_text: "OK",
+        translator_context: "Displayed valid shader status in Query By Example; stored query value remains OK.",
+    },
+
+    FactoryTranslationKey {
+        key: "qbe.status.rejected",
+        english_text: "Rejected",
+        translator_context: "Displayed rejected shader status in Query By Example; stored query value remains Rejected.",
+    },
+
+    FactoryTranslationKey {
+        key: "qbe.status.compile_error",
+        english_text: "Compile Error",
+        translator_context: "Displayed shader compile-error status in Query By Example; stored query value remains Compile Error.",
+    },
+
+    FactoryTranslationKey {
+        key: "qbe.status.missing",
+        english_text: "Missing",
+        translator_context: "Displayed missing shader status in Query By Example; stored query value remains Missing.",
+    },
+
+    FactoryTranslationKey {
+        key: "qbe.status.unreadable",
+        english_text: "Unreadable",
+        translator_context: "Displayed unreadable shader status in Query By Example; stored query value remains Unreadable.",
+    },
+
+    FactoryTranslationKey {
+        key: "preview.target_not_found",
+        english_text: "Shader file or directory not found: {path}",
+        translator_context: "Control Center error when a supplied shader preview target does not exist. {path} is a filesystem path and must remain unchanged.",
+    },
+
 ];
