@@ -1,6 +1,125 @@
 use std::ffi::CString;
 
 
+type TextFormatter =
+    fn(
+        key: &str,
+        params: &[(&str, &str)],
+    ) -> String;
+
+static TEXT_FORMATTER:
+    std::sync::OnceLock<TextFormatter> =
+    std::sync::OnceLock::new();
+
+
+pub fn set_text_formatter(
+    formatter: TextFormatter,
+) -> Result<(), &'static str> {
+
+    TEXT_FORMATTER
+        .set(
+            formatter
+        )
+        .map_err(
+            |_| "compile-shader text formatter is already initialized"
+        )
+}
+
+
+fn runtime_text(
+    key: &str,
+) -> String {
+
+    format_text(
+        key,
+        &[],
+    )
+}
+
+
+fn runtime_text_with_params(
+    key: &str,
+    params: &[(&str, &str)],
+) -> String {
+
+    format_text(
+        key,
+        params,
+    )
+}
+
+
+fn format_text(
+    key: &str,
+    params: &[(&str, &str)],
+) -> String {
+
+    if let Some(formatter) =
+        TEXT_FORMATTER.get()
+    {
+        return formatter(
+            key,
+            params,
+        );
+    }
+
+    default_text(
+        key,
+        params,
+    )
+}
+
+
+fn default_text(
+    key: &str,
+    params: &[(&str, &str)],
+) -> String {
+
+    let template =
+        match key {
+            "compile_shader.kind.vertex" =>
+                "Vertex",
+            "compile_shader.kind.fragment" =>
+                "Fragment",
+            "compile_shader.kind.unknown" =>
+                "Unknown",
+            "compile_shader.error.create_shader_object" =>
+                "Unable to create OpenGL {kind} shader object",
+            "compile_shader.error.interior_null" =>
+                "{kind} shader source contained an interior null byte",
+            "compile_shader.error.create_program_object" =>
+                "Unable to create OpenGL shader program object",
+            "compile_shader.error.link_no_diagnostic" =>
+                "Shader program linking failed without an OpenGL diagnostic",
+            "compile_shader.error.link_failed" =>
+                "Shader program linking failed:\n{error}",
+            "compile_shader.error.compile_no_diagnostic" =>
+                "{kind} shader compilation failed without an OpenGL diagnostic",
+            "compile_shader.error.compile_failed" =>
+                "{kind} shader compilation failed:\n{error}",
+            _ =>
+                key,
+        };
+
+    let mut rendered =
+        template.to_string();
+
+    for (name, value) in params {
+        rendered =
+            rendered.replace(
+                &format!(
+                    "{{{}}}",
+                    name
+                ),
+                value,
+            );
+    }
+
+    rendered
+}
+
+
+
 pub fn compile_shader(
     source: &str,
     kind: u32,
@@ -17,11 +136,11 @@ pub fn compile_shader(
             == 0
         {
             return Err(
-                format!(
-                    "Unable to create OpenGL {} shader object",
-                    shader_kind_name(
-                        kind
-                    ),
+                runtime_text_with_params(
+                    "compile_shader.error.create_shader_object",
+                    &[
+                        ("kind", &shader_kind_display_name(kind)),
+                    ],
                 )
             );
         }
@@ -44,11 +163,11 @@ pub fn compile_shader(
 
 
                     return Err(
-                        format!(
-                            "{} shader source contained an interior null byte",
-                            shader_kind_display_name(
-                                kind
-                            ),
+                        runtime_text_with_params(
+                            "compile_shader.error.interior_null",
+                            &[
+                                ("kind", &shader_kind_display_name(kind)),
+                            ],
                         )
                     );
                 }
@@ -112,8 +231,9 @@ pub fn link_program(
             == 0
         {
             return Err(
-                "Unable to create OpenGL shader program object"
-                    .to_string()
+                runtime_text(
+                    "compile_shader.error.create_program_object",
+                )
             );
         }
 
@@ -152,14 +272,17 @@ pub fn link_program(
             return Err(
                 if error.is_empty() {
 
-                    "Shader program linking failed without an OpenGL diagnostic"
-                        .to_string()
+                    runtime_text(
+                        "compile_shader.error.link_no_diagnostic",
+                    )
 
                 } else {
 
-                    format!(
-                        "Shader program linking failed:\n{}",
-                        error,
+                    runtime_text_with_params(
+                        "compile_shader.error.link_failed",
+                        &[
+                            ("error", &error),
+                        ],
                     )
                 }
             );
@@ -257,20 +380,26 @@ fn shader_kind_name(
 
 fn shader_kind_display_name(
     kind: u32,
-) -> &'static str {
+) -> String {
 
     match kind {
 
         gl::VERTEX_SHADER => {
-            "Vertex"
+            runtime_text(
+                "compile_shader.kind.vertex",
+            )
         }
 
         gl::FRAGMENT_SHADER => {
-            "Fragment"
+            runtime_text(
+                "compile_shader.kind.fragment",
+            )
         }
 
         _ => {
-            "Unknown"
+            runtime_text(
+                "compile_shader.kind.unknown",
+            )
         }
     }
 }
@@ -283,21 +412,21 @@ fn format_shader_failure(
 
     if error.is_empty() {
 
-        format!(
-            "{} shader compilation failed without an OpenGL diagnostic",
-            shader_kind_display_name(
-                kind
-            ),
+        runtime_text_with_params(
+            "compile_shader.error.compile_no_diagnostic",
+            &[
+                ("kind", &shader_kind_display_name(kind)),
+            ],
         )
 
     } else {
 
-        format!(
-            "{} shader compilation failed:\n{}",
-            shader_kind_display_name(
-                kind
-            ),
-            error,
+        runtime_text_with_params(
+            "compile_shader.error.compile_failed",
+            &[
+                ("kind", &shader_kind_display_name(kind)),
+                ("error", error),
+            ],
         )
     }
 }

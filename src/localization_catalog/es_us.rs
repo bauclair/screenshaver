@@ -3514,4 +3514,57 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
         translated_text: "Error de autenticación PAM: {error}",
     },
 
+
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "compile_shader.kind.vertex",
+        translated_text: "Vértice",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "compile_shader.kind.fragment",
+        translated_text: "Fragmento",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "compile_shader.kind.unknown",
+        translated_text: "Desconocido",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "compile_shader.error.create_shader_object",
+        translated_text: "No se pudo crear el objeto de shader {kind} de OpenGL",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "compile_shader.error.interior_null",
+        translated_text: "El código fuente del shader {kind} contenía un byte nulo interno",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "compile_shader.error.create_program_object",
+        translated_text: "No se pudo crear el objeto de programa de shader de OpenGL",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "compile_shader.error.link_no_diagnostic",
+        translated_text: "Falló el enlazado del programa de shader sin un diagnóstico de OpenGL",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "compile_shader.error.link_failed",
+        translated_text: "Falló el enlazado del programa de shader:\n{error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "compile_shader.error.compile_no_diagnostic",
+        translated_text: "Falló la compilación del shader {kind} sin un diagnóstico de OpenGL",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "compile_shader.error.compile_failed",
+        translated_text: "Falló la compilación del shader {kind}:\n{error}",
+    },
+
 ];

@@ -3521,4 +3521,57 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
         translator_context: "Unexpected PAM authentication error. {error} is externally supplied PAM/system error text and must remain unchanged.",
     },
 
+
+
+    FactoryTranslationKey {
+        key: "compile_shader.kind.vertex",
+        english_text: "Vertex",
+        translator_context: "User-facing shader-stage name used in shader compilation errors.",
+    },
+    FactoryTranslationKey {
+        key: "compile_shader.kind.fragment",
+        english_text: "Fragment",
+        translator_context: "User-facing shader-stage name used in shader compilation errors.",
+    },
+    FactoryTranslationKey {
+        key: "compile_shader.kind.unknown",
+        english_text: "Unknown",
+        translator_context: "User-facing fallback shader-stage name used in shader compilation errors.",
+    },
+    FactoryTranslationKey {
+        key: "compile_shader.error.create_shader_object",
+        english_text: "Unable to create OpenGL {kind} shader object",
+        translator_context: "Error when OpenGL cannot create a shader object. {kind} is a localized shader-stage name. OpenGL remains unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "compile_shader.error.interior_null",
+        english_text: "{kind} shader source contained an interior null byte",
+        translator_context: "Error when shader source contains an interior null byte. {kind} is a localized shader-stage name.",
+    },
+    FactoryTranslationKey {
+        key: "compile_shader.error.create_program_object",
+        english_text: "Unable to create OpenGL shader program object",
+        translator_context: "Error when OpenGL cannot create a shader program object. OpenGL remains unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "compile_shader.error.link_no_diagnostic",
+        english_text: "Shader program linking failed without an OpenGL diagnostic",
+        translator_context: "Shader-program link failure when OpenGL supplies no diagnostic. OpenGL remains unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "compile_shader.error.link_failed",
+        english_text: "Shader program linking failed:\n{error}",
+        translator_context: "Shader-program link failure followed by the OpenGL driver diagnostic. {error} is externally supplied OpenGL diagnostic text and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "compile_shader.error.compile_no_diagnostic",
+        english_text: "{kind} shader compilation failed without an OpenGL diagnostic",
+        translator_context: "Shader compilation failure when OpenGL supplies no diagnostic. {kind} is a localized shader-stage name; OpenGL remains unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "compile_shader.error.compile_failed",
+        english_text: "{kind} shader compilation failed:\n{error}",
+        translator_context: "Shader compilation failure followed by the OpenGL driver diagnostic. {kind} is a localized shader-stage name; {error} is externally supplied OpenGL diagnostic text and must remain unchanged.",
+    },
+
 ];

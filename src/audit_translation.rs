@@ -342,7 +342,14 @@ fn scan_file(
             }
             *candidate_count += 1;
 
-            if english.contains(&literal) || intentionally_invariant(&literal, line, path) {
+            let catalog_literal =
+                literal
+                    .replace("\\n", "\n");
+
+            if english.contains(&literal)
+                || english.contains(&catalog_literal)
+                || intentionally_invariant(&literal, line, path)
+            {
                 *suppressed_count += 1;
                 continue;
             }
@@ -525,6 +532,24 @@ fn intentionally_invariant(s: &str, line: &str, path: &Path) -> bool {
     {
         return true;
     }
+
+    // compile_shader.rs is shared by the normal Screenshaver executable and the
+    // standalone KDE renderer library. This exact message reports an internal programming
+    // error if the process-global formatter hook is registered more than once; it is not
+    // presentation text. The shared module's normal English fallback messages are not
+    // exempted here: because they are canonical catalog text, scan_file() suppresses them
+    // through the catalog comparison above.
+    let is_compile_shader = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        == Some("compile_shader.rs");
+
+    if is_compile_shader
+        && t == "compile-shader text formatter is already initialized"
+    {
+        return true;
+    }
+
 
     // edit_shader.rs uses bracketed subsystem tags exclusively for developer/runtime
     // diagnostics written through Screenshaver logging. They are intentionally stable

@@ -146,6 +146,25 @@ use std::time::Duration;
 
 
 
+
+fn format_compile_shader_text(
+    key: &str,
+    params: &[(&str, &str)],
+) -> String {
+
+    if params.is_empty() {
+        crate::manage_localization::runtime_text(
+            key
+        )
+    } else {
+        crate::manage_localization::runtime_text_with_params(
+            key,
+            params,
+        )
+    }
+}
+
+
 fn main() {
 
     let command =
@@ -1157,6 +1176,28 @@ fn main() {
             ),
         );
 
+
+        return;
+    }
+
+
+    if let Err(error) =
+        crate::compile_shader::set_text_formatter(
+            format_compile_shader_text
+        )
+    {
+        eprintln!(
+            "[MAIN] COMPILE-SHADER LOCALIZATION ERROR: {}",
+            error
+        );
+
+        crate::logger::error(
+            &logfile,
+            &format!(
+                "[LOCALIZATION] Unable to initialize compile-shader text localization: {}",
+                error,
+            ),
+        );
 
         return;
     }
