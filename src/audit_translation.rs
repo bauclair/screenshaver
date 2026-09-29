@@ -2531,6 +2531,404 @@ fn intentionally_invariant(s: &str, line: &str, path: &Path) -> bool {
     }
 
 
+    // v15 reviewed-module cleanup.
+    //
+    // These exact literals were reviewed in their complete source modules.
+    // They are intentionally not localized because they are low-level renderer/
+    // storage diagnostics, stable parser/configuration terminology, bootstrap CLI
+    // diagnostics that execute before database-backed localization is initialized,
+    // or explicit developer/test-harness output. Keep every exemption exact and
+    // module-scoped so newly introduced prose in these modules remains auditable.
+    if filename == "load_shader.rs"
+        && matches!(
+            t,
+            "[SHADER] Attempting to load managed shader from database: {}"
+                | "[SHADER] Successfully loaded managed shader from database: {}"
+                | "[SHADER] Runtime source: {} bytes"
+                | "[SHADER] Type: {}"
+                | "Native GLSL"
+                | "Shader is rejected by the Screenshaver database"
+                | "[SHADER] Managed shader '{}' is rejected: {}"
+                | "[SHADER] Managed shader '{}' is unavailable: {}"
+                | "[SHADER] Unable to load managed shader '{}' from database: {}"
+                | "[SHADER] Attempting to load shader: {}"
+                | "[SHADER] Successfully loaded shader: {}"
+                | "[SHADER] Failed to load shader '{}': {}"
+                | "[SHADER] Loaded shader source: {} bytes"
+                | "[SHADER] Type: ShaderToy"
+                | "[SHADER] Type: ISF"
+                | "[ISF] Metadata parsing failed for '{}': {}"
+                | "ISF metadata parsing failed: {}"
+                | "[ISF] Version: {}"
+                | "[ISF] Inputs: {}"
+                | "[ISF] Passes: {}"
+                | "[ISF] Imported resources: {}"
+                | "[ISF] Status: Unsupported"
+                | "[ISF] Status: Supported"
+                | "[SHADER] Type: Native GLSL"
+                | "[SHADER] Loading built-in default shader"
+                | "[SHADER] Built-in default shader failed validation: {}"
+                | "Built-in default shader failed validation: {}"
+                | "[PREPROCESS] Applied: {item}"
+                | "[PREPROCESS] Warning: {item}"
+                | "[PREPROCESS] Rejection: {item}"
+        )
+    {
+        return true;
+    }
+
+    if filename == "manage_shader.rs"
+        && matches!(
+            t,
+            "state root was normalized to an object"
+                | "ordered state was normalized to an object"
+                | "Unable to create runtime state folder {}: {}"
+                | "Unable to serialize runtime state: {}"
+                | "Unable to write temporary runtime state {}: {}"
+                | "Unable to replace runtime state {}: {}"
+                | "[SHADER] Requested resume shader '{}' is unavailable; continuing with configured selection mode"
+                | "[PLAYLIST] Playlist ID {} references {} policy_id={} ('{}'), but that policy is not currently renderable; skipping it"
+                | "[PLAYLIST] Unable to resolve playlist ID {} for {} rendering: {}"
+                | "[PLAYLIST] Playlist ID {} has no renderable {} policies"
+                | "[PLAYLIST] Resolved playlist ID {} to {} renderable {} policy/policies in canonical Playlist order"
+                | "[SHADER] No user shaders found"
+                | "[SHADER] Ordered mode resuming after policy_id={}"
+                | "[SHADER] Ordered-mode saved policy_id={} is no longer eligible; starting with the first current policy"
+                | "[SHADER] Unable to persist Ordered-mode position for policy_id={}: {}"
+                | "[SHADER] Discovered screensaver policy '{}' for managed shader '{}'"
+                | "[SHADER] Unable to decode managed shader discovery row: {}"
+                | "[SHADER] Unable to query managed shader discovery rows: {}"
+                | "[SHADER] Unable to prepare managed shader discovery query: {}"
+                | "[SHADER] Unable to open database for managed shader discovery: {}"
+                | "[SHADER] External screensaver shader '{}' is unavailable: {}"
+                | "[SHADER] Unable to load external screensaver shader paths: {}"
+                | "[SHADER] No selectable shaders found"
+                | "[SHADER] Removed rejected shader from active list: {}"
+                | "[SHADER] Removed rejected policy entry from active list: policy_id={}, shader={}"
+                | "[SHADER] Requested Single policy '{}' is unavailable; selecting another policy"
+                | "Unable to open database while recording compile error for '{}': {}"
+                | "Unable to record compile error for managed shader '{}': {}"
+                | "No present managed shader record matched '{}' while recording compile error"
+                | "[SHADER] Recorded Compile Error status for managed shader '{}'"
+        )
+    {
+        return true;
+    }
+
+    if filename == "manage_textures.rs"
+        && matches!(
+            t,
+            "command line"
+                | "command-line random"
+                | "shader policy"
+                | "shader-policy random"
+                | "random fallback"
+                | "[PREVIEW_SHADER] Texture/palette command-line options ignored because '{}' does not use texture channels"
+                | "[TEXTURE] Texture override configured for '{}', but the shader does not use texture channels; policy ignored"
+                | "[TEXTURE] Active shader does not require texture channels"
+                | "[TEXTURE] Shader policy matched: {}"
+                | "[TEXTURE] Selected procedural texture: family={}, primitives={}, palette={}, seed={}"
+                | "[TEXTURE] Selection source: texture={}, palette={}"
+                | "[TEXTURE] Uploaded texture {}x{} as OpenGL object {}"
+                | "[TEXTURE] Active channel assignment: {}"
+                | "static channel-resolution uniform name"
+                | "Texture width exceeds OpenGL i32 range"
+                | "Texture height exceeds OpenGL i32 range"
+                | "OpenGL failed to create a texture object"
+                | "uploading procedural texture"
+                | "updating animated Eyes texture"
+                | "generated sampler uniform name contains no null byte"
+                | "Texture width cannot be represented as usize"
+                | "Texture row size overflow"
+                | "Texture height cannot be represented as usize"
+                | "Texture buffer size overflow"
+                | "Cannot flip texture rows: expected {} bytes, received {}"
+                | "[TEXTURE] Deleted OpenGL texture {} ({} / {}, seed={})"
+                | "OpenGL error 0x{error:04X} while {operation}"
+        )
+    {
+        return true;
+    }
+
+    if filename == "parse_arguments.rs"
+        && matches!(
+            t,
+            "Unknown option: {}"
+                | "Unexpected argument: {}"
+                | "--audit-translation accepts at most a locale and a module (for example: es-US import_data)"
+                | "--audit-translation accepts an optional locale such as es-US, followed by an optional module"
+                | "--audit-translation MODULE must name a Rust source module such as import_data"
+                | "--compare-databases accepts --exclude-metadata only once"
+                | "--compare-databases accepts --exclude-local-config only once"
+                | "Unknown --compare-databases option: {}"
+                | "--compare-databases requires two valid database paths"
+                | "--compare-databases requires exactly two database paths, with optional --exclude-metadata and/or --exclude-local-config"
+                | "--test-schema-reader accepts at most one database path"
+                | "--test-schema-reader accepts an optional database path"
+                | "--test-schema-reconstruction requires exactly two database paths: SOURCE DESTINATION"
+                | "--test-schema-reconstruction requires valid SOURCE and DESTINATION database paths"
+                | "--test-schema-migration-failures requires exactly two paths: FIXTURE WORK_DIRECTORY"
+                | "--test-schema-migration-failures requires valid FIXTURE and WORK_DIRECTORY paths"
+                | "--test-migration-coordinator accepts at most one Schema-1 database path"
+                | "--test-migration-coordinator accepts an optional Schema-1 database path"
+                | "--benchmark-render requires exactly one shader filename or path"
+                | "--benchmark-render requires a valid shader filename or path"
+                | "--test-audio-motion requires exactly one shader filename or path"
+                | "--test-audio-motion requires a valid shader filename or path"
+                | "--reset-idle-timeout requires exactly one duration (for example: 60s, 2m, or 1h)"
+                | "--reset-idle-timeout requires a positive duration (for example: 60s, 2m, or 1h)"
+                | "--control accepts at most one shader filename or path"
+                | "--control accepts an optional shader filename or path"
+                | "--construct-lock-screen-kde does not accept additional arguments"
+                | "{} does not accept additional arguments"
+                | "Screenshaver {}"
+        )
+    {
+        return true;
+    }
+
+    if filename == "test_audio_motion.rs"
+        && matches!(
+            t,
+            "[AUDIO MOTION FFT] channels={} active={} peak={:.3} gain={:.3} width={:.3} avg_hz={:.1} rpm={:.2} shader_time={:.2}"
+                | "Shader '{}' was rejected: {}"
+                | "Shader '{}' is unavailable: {}"
+                | "Screenshaver Audio Motion Test"
+                | "Shader: {}"
+                | "Processed shader: {}"
+                | "Test size: {}x{}"
+                | "Effect: polar multi-channel FFT shader deformation"
+                | "FFT channels: {} logarithmic buckets"
+                | "FFT display range: {:.0} Hz..{:.0} Hz"
+                | "FFT compressed peak ceiling: {:.0}%"
+                | "FFT compression threshold: {:.3}"
+                | "FFT compression curve: {:.3}"
+                | "Trace gain: {:.3}"
+                | "Trace spatial width: {:.3}"
+                | "Polar rotation: {:.1}..{:.1} RPM clockwise, mapped from {:.0}..{:.0} Hz average frequency"
+                | "No FFT line or bars are drawn; the shader image itself is deformed."
+                | "Play audio to exercise motion. Press Esc or close the window to exit."
+                | "SDL initialization failed: {}"
+                | "SDL video initialization failed: {}"
+                | "Unable to create Audio Motion test window: {}"
+                | "Unable to create Audio Motion OpenGL context: {}"
+                | "Audio Motion test shader compilation failed: {}"
+                | "Audio Motion polar-FFT post-process shader compilation failed: {}"
+                | "Audio Motion framebuffer is incomplete."
+                | "Unable to create Audio Motion event pump: {}"
+                | "Unable to update Audio Motion animated texture: {}"
+                | "Polar multi-channel FFT Audio Motion test ended."
+                | "Audio Motion test shader does not exist or is not a file: {}"
+        )
+    {
+        return true;
+    }
+
+    if filename == "test_localization.rs"
+        && matches!(
+            t,
+            "[LOCALIZATION TEST] Configured locale: {}"
+                | "[LOCALIZATION TEST] Active locale: {}"
+                | "[LOCALIZATION TEST] Text direction: {}"
+                | "[LOCALIZATION TEST] Locale fallback used: {}"
+                | "[LOCALIZATION TEST] {} = {}"
+                | "Unavailable-locale fallback did not select en-US"
+                | "English fallback returned unexpected text for target.screensaver: '{}'"
+                | "[LOCALIZATION TEST] Verified: unavailable locale falls back to en-US"
+                | "[LOCALIZATION TEST] Verified: canonical English fallback resolves from translation_keys"
+                | "Enabled es-US locale was not selected directly"
+                | "Expected es-US text direction 'ltr', found '{}'"
+                | "Protector de pantalla"
+                | "Expected es-US translation for target.screensaver, found '{}'"
+                | "Expected per-key English fallback for target.wallpaper, found '{}'"
+                | "Expected per-key English fallback for app.name, found '{}'"
+                | "[LOCALIZATION TEST] es-US target.screensaver = {}"
+                | "[LOCALIZATION TEST] es-US target.wallpaper = {}"
+                | "[LOCALIZATION TEST] es-US app.name = {}"
+                | "[LOCALIZATION TEST] Verified: es-US translation overrides canonical English"
+                | "[LOCALIZATION TEST] Verified: missing es-US keys fall back individually to canonical English"
+                | "/tmp/Screenshaver Backups/用户/backup-001"
+                | "Copia de seguridad creada: {}"
+                | "Parameterized es-US backup.created returned unexpected text: '{}'"
+                | "SQLite error / ruta 用户"
+                | "Backup failed: {}"
+                | "Parameterized English fallback for backup.failed returned unexpected text: '{}'"
+                | "[LOCALIZATION TEST] es-US backup.created = {}"
+                | "[LOCALIZATION TEST] es-US backup.failed fallback = {}"
+                | "[LOCALIZATION TEST] Verified: named parameters preserve supplied Unicode text verbatim"
+                | "[LOCALIZATION TEST] Verified: parameterized keys retain per-key canonical English fallback"
+                | "[LOCALIZATION TEST] PASS"
+        )
+    {
+        return true;
+    }
+
+    if filename == "test_migration_coordinator.rs"
+        && matches!(
+            t,
+            "Schema-1 source database does not exist: {}"
+                | "Unable to read Schema-1 source database '{}': {}"
+                | "Unable to remove previous coordinator-test directory '{}': {}"
+                | "Unable to create coordinator-test directory '{}': {}"
+                | "[MIGRATION COORDINATOR TEST] Source: {}"
+                | "[MIGRATION COORDINATOR TEST] Source type: {}"
+                | "permanent Schema-1 fixture"
+                | "external Schema-1 database"
+                | "[MIGRATION COORDINATOR TEST] Work directory: {}"
+                | "[MIGRATION COORDINATOR TEST] Live Screenshaver database is not used by this test"
+                | "Unable to reread Schema-1 source database '{}' after coordinator test: {}"
+                | "Schema-1 source database changed during coordinator testing: {}"
+                | "Unable to remove coordinator-test directory '{}': {}"
+                | "[MIGRATION COORDINATOR TEST] Verified: Schema-1 source database remained byte-for-byte unchanged"
+                | "[MIGRATION COORDINATOR TEST] PASS: production cutover and rollback behavior operated as required."
+                | "{}; additionally, cleanup failed: {}"
+                | "Unable to create successful-cutover directory: {}"
+                | "Unable to copy fixture for successful-cutover test: {}"
+                | "successful cutover recovery copy"
+                | "successful cutover staging"
+                | "[MIGRATION COORDINATOR TEST] Verified: successful promotion retained original source database under timestamped recovery filename"
+                | "Unable to create rollback-test directory: {}"
+                | "Unable to copy fixture for rollback test: {}"
+                | "Forced final-validation failure unexpectedly succeeded"
+                | "restored original live database"
+                | "consumed rollback recovery filename"
+                | "[MIGRATION COORDINATOR TEST] Verified: forced post-promotion validation failure restored original database byte-for-byte"
+                | "[MIGRATION COORDINATOR TEST] Verified: failed promoted database retained as diagnostic evidence"
+                | "Unable to open fixture read-only: {}"
+                | "Unable to open reconstructed test database '{}': {}"
+                | ".failed-migration-{}"
+                | "{}: unable to read '{}': {}"
+                | "{}: file contents differ from expected bytes: {}"
+                | "{} unexpectedly exists: {}"
+        )
+    {
+        return true;
+    }
+
+    if filename == "test_schema_migration_failures.rs"
+        && matches!(
+            t,
+            "Schema-1 fixture does not exist: {}"
+                | "Unable to create migration failure-test directory '{}': {}"
+                | "[SCHEMA MIGRATION FAILURE TEST] Fixture: {}"
+                | "[SCHEMA MIGRATION FAILURE TEST] Fixture is treated as immutable"
+                | "[SCHEMA MIGRATION FAILURE TEST] Work directory: {}"
+                | "Unable to read fixture before failure tests: {}"
+                | "Unable to read fixture after failure tests: {}"
+                | "Permanent Schema-1 fixture changed during failure-path testing"
+                | "[SCHEMA MIGRATION FAILURE TEST] Verified: permanent fixture remained byte-for-byte unchanged"
+                | "[SCHEMA MIGRATION FAILURE TEST] PASS: invalid sources were rejected and failed reconstruction left no partial destination."
+                | "Unable to create missing-runtime-target test database: {}"
+                | "Missing-runtime-target test expected to delete one wallpaper row, deleted {}"
+                | "missing required runtime target"
+                | "expected exactly two runtime_targets rows"
+                | "Unable to create gapped-playlist test database: {}"
+                | "Gapped-playlist test expected to update one membership row, updated {}"
+                | "Gapped-playlist test could not find the fixture's first playlist"
+                | "Gapped-playlist test expected four members in the first playlist, found {}"
+                | "[SCHEMA MIGRATION FAILURE TEST] Verified: reader accepted gapped playlist positions and preserved member order"
+                | "Writer unexpectedly accepted MigrationData containing an unknown runtime policy reference"
+                | "unknown policy migration ID"
+                | "Writer failed for an unexpected reason: {}"
+                | "[SCHEMA MIGRATION FAILURE TEST] Verified: writer rejected invalid MigrationData relationship"
+                | "Failed reconstruction left a partial destination database behind: {}"
+                | "[SCHEMA MIGRATION FAILURE TEST] Verified: failed writer reconstruction removed partial destination"
+                | "Historical reader unexpectedly accepted {} test database '{}'"
+                | "Historical reader rejected {} test for an unexpected reason: {}"
+                | "[SCHEMA MIGRATION FAILURE TEST] Verified: reader rejected {}"
+                | "Unable to copy Schema-1 fixture to '{}': {}"
+                | "Unable to open '{}' read-only: {}"
+                | "Unable to enable foreign keys for read-only database '{}': {}"
+                | "Unable to open temporary test database '{}' read-write: {}"
+                | "Unable to enable foreign keys for temporary test database '{}': {}"
+                | "Unable to remove temporary migration test database '{}': {}"
+                | "Unable to remove previous migration test database '{}': {}"
+        )
+    {
+        return true;
+    }
+
+    if filename == "wallpaper_backend.rs"
+        && matches!(
+            t,
+            "Native Wayland wallpaper backend is unavailable: {}"
+                | "No compatible wallpaper backend is available. Wayland: {}. X11: {}."
+                | "Selected native [{}] wallpaper backend"
+                | "Probing native Wayland wallpaper capabilities..."
+                | "Wayland wallpaper capabilities are available:"
+                | "    wl_compositor: version {}"
+                | "    zwlr_layer_shell_v1: version {}"
+                | "    Wallpaper targets: {}"
+                | "    Target {}:"
+                | "        Registry name: {}"
+                | "        Connector: {}"
+                | "<not advertised>"
+                | "        Description: {}"
+                | "        Make: {}"
+                | "        Model: {}"
+                | "        Position: {},{}"
+                | "        Current mode: {}x{} @ {:.3} Hz"
+                | "        Physical size: {}x{} mm"
+                | "        Scale: {}"
+                | "        Transform: {}"
+                | "        Metadata complete: {}"
+                | "Wallpaper display format: Full-screen"
+                | "Starting native Wayland/EGL mirror wallpaper renderer..."
+                | "Wallpaper display format: Windowed"
+                | "Starting native Wayland/EGL Windowed wallpaper renderer..."
+                | "Unable to create the Windowed Wayland wallpaper presentation:"
+                | "Falling back to Full-screen wallpaper presentation for this run."
+                | "The persisted Wallpaper Display Format remains Windowed."
+                | "Native Wayland/EGL mirror wallpaper renderer ended cleanly."
+        )
+    {
+        return true;
+    }
+
+    if filename == "x11_wallpaper.rs"
+        && matches!(
+            t,
+            "Probing native X11 wallpaper capabilities..."
+                | "Invalid atom name: {name}"
+                | "Unable to resolve X11 atom '{:?}'"
+                | "Cannot create an X11 wallpaper window with a null display."
+                | "Interning EWMH atoms..."
+                | "Creating colormap for the GLX-compatible visual..."
+                | "Unable to create an X11 colormap for the GLX visual."
+                | "Unable to create native X11 wallpaper window with the GLX visual."
+                | "Creating GLXWindow drawable..."
+                | "glXCreateWindow() failed."
+                | "Applying desktop window hints..."
+                | "Created native X11 wallpaper window {} and GLX drawable {} ({}x{})"
+                | "Closed X11 wallpaper window."
+                | "Loading OpenGL functions through GLX..."
+                | "GLX context became current, but required OpenGL functions could not be loaded."
+                | "Loaded required OpenGL functions."
+                | "OpenGL context information:"
+                | "    Vendor: "
+                | "    Renderer: "
+                | "    Version: "
+                | "    GLSL version: "
+                | "Entering continuous X11 wallpaper render loop..."
+                | "X11 active wallpaper policy reloaded."
+                | "Unable to reload X11 active wallpaper policy; keeping the previous settings: {}"
+                | "X11 wallpaper rendering paused."
+                | "X11 wallpaper rendering resumed."
+                | "Presented first continuous X11 wallpaper frame."
+                | "Leaving continuous X11 wallpaper render loop..."
+                | "X11 wallpaper capabilities are available:"
+                | "    Display: {}"
+                | "    Screen: {}"
+                | "    Current geometry: {}x{}"
+                | "    Default depth: {}"
+                | "    Root window: {}"
+                | "Creating native X11 wallpaper window..."
+        )
+    {
+        return true;
+    }
+
+
     false
 }
 
