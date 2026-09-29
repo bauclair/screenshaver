@@ -3809,4 +3809,131 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
         key: "wallpaper.notification.palette",
         translated_text: "Paleta: {palette}",
     },
+
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.cli.version",
+        translated_text: "Screenshaver {version}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.cli.configuration_heading",
+        translated_text: "Configuración del modo de fondo de pantalla:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.cli.shader_mode",
+        translated_text: "    Modo de shader: {mode}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.cli.monitor_mode",
+        translated_text: "    Modo de monitor: {mode}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.cli.animation_speed",
+        translated_text: "    Velocidad global de animación: {speed}x",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.cli.notifications",
+        translated_text: "    Notificaciones: {state}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.cli.directory",
+        translated_text: "    Directorio de fondos de pantalla: {path}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.cli.eligible_count",
+        translated_text: "Shaders de fondo de pantalla elegibles: {count}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.cli.no_eligible_shaders",
+        translated_text: "    No se encontraron shaders presentes con una política de Fondo de pantalla.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.cli.not_started",
+        translated_text: "No se inició el renderizado del fondo de pantalla.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.cli.rotation_disabled_single_shader",
+        translated_text: "Rotación del fondo de pantalla desactivada: solo hay un shader elegible disponible.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "wallpaper.cli.lyrics_enabled_windowpaper",
+        translated_text: "Administrador de letras sincronizadas: habilitado para Windowpaper",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "texture.family.marble",
+        translated_text: "Mármol",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "texture.family.clouds",
+        translated_text: "Nubes",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "texture.family.cells",
+        translated_text: "Celdas",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "texture.family.mesh",
+        translated_text: "Malla",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "texture.family.radial",
+        translated_text: "Radial",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "texture.family.noise",
+        translated_text: "Ruido",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "texture.family.bricks",
+        translated_text: "Ladrillos",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "texture.family.hexagons",
+        translated_text: "Hexágonos",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "texture.family.facets",
+        translated_text: "Facetas",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "texture.family.skulls",
+        translated_text: "Calaveras",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "texture.family.scales",
+        translated_text: "Escamas",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "texture.family.eyes",
+        translated_text: "Ojos",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "overlay.collect_more_shaders",
+        translated_text: "Obtén más shaders en https://editor.isf.video/shaders y https://shadertoy.com/browse",
+    },
 ];

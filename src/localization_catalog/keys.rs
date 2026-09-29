@@ -3816,4 +3816,131 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
         english_text: "Palette: {palette}",
         translator_context: "Wallpaper desktop notification palette line. {palette} is the selected palette value and remains unchanged.",
     },
+
+
+    FactoryTranslationKey {
+        key: "wallpaper.cli.version",
+        english_text: "Screenshaver {version}",
+        translator_context: "Terminal heading for wallpaper mode. {version} is the application version.",
+    },
+    FactoryTranslationKey {
+        key: "wallpaper.cli.configuration_heading",
+        english_text: "Wallpaper mode configuration:",
+        translator_context: "Terminal heading introducing wallpaper runtime configuration.",
+    },
+    FactoryTranslationKey {
+        key: "wallpaper.cli.shader_mode",
+        english_text: "    Shader mode: {mode}",
+        translator_context: "Terminal wallpaper configuration line. Preserve leading indentation; {mode} is a configuration value.",
+    },
+    FactoryTranslationKey {
+        key: "wallpaper.cli.monitor_mode",
+        english_text: "    Monitor mode: {mode}",
+        translator_context: "Terminal wallpaper configuration line. Preserve leading indentation; {mode} is a stable monitor-mode value.",
+    },
+    FactoryTranslationKey {
+        key: "wallpaper.cli.animation_speed",
+        english_text: "    Global animation speed: {speed}x",
+        translator_context: "Terminal wallpaper configuration line. Preserve leading indentation; {speed} is numeric.",
+    },
+    FactoryTranslationKey {
+        key: "wallpaper.cli.notifications",
+        english_text: "    Notifications: {state}",
+        translator_context: "Terminal wallpaper configuration line. Preserve leading indentation; {state} is localized enabled/disabled text.",
+    },
+    FactoryTranslationKey {
+        key: "wallpaper.cli.directory",
+        english_text: "    Wallpaper directory: {path}",
+        translator_context: "Terminal wallpaper configuration line. Preserve leading indentation; {path} is a filesystem path.",
+    },
+    FactoryTranslationKey {
+        key: "wallpaper.cli.eligible_count",
+        english_text: "Eligible wallpaper shaders: {count}",
+        translator_context: "Terminal wallpaper status line. {count} is numeric.",
+    },
+    FactoryTranslationKey {
+        key: "wallpaper.cli.no_eligible_shaders",
+        english_text: "    No present shaders with a Wallpaper policy were found.",
+        translator_context: "Terminal wallpaper status line. Preserve leading indentation. Wallpaper is the runtime target name.",
+    },
+    FactoryTranslationKey {
+        key: "wallpaper.cli.not_started",
+        english_text: "Wallpaper rendering was not started.",
+        translator_context: "Terminal wallpaper status when no eligible shader is available.",
+    },
+    FactoryTranslationKey {
+        key: "wallpaper.cli.rotation_disabled_single_shader",
+        english_text: "Wallpaper rotation disabled: only one eligible shader is available.",
+        translator_context: "Terminal wallpaper status when rotation is unnecessary.",
+    },
+    FactoryTranslationKey {
+        key: "wallpaper.cli.lyrics_enabled_windowpaper",
+        english_text: "Synchronized lyrics manager: enabled for Windowpaper",
+        translator_context: "Terminal status line. Windowpaper is Screenshaver's named mode.",
+    },
+    FactoryTranslationKey {
+        key: "texture.family.marble",
+        english_text: "Marble",
+        translator_context: "User-facing procedural texture family name.",
+    },
+    FactoryTranslationKey {
+        key: "texture.family.clouds",
+        english_text: "Clouds",
+        translator_context: "User-facing procedural texture family name.",
+    },
+    FactoryTranslationKey {
+        key: "texture.family.cells",
+        english_text: "Cells",
+        translator_context: "User-facing procedural texture family name.",
+    },
+    FactoryTranslationKey {
+        key: "texture.family.mesh",
+        english_text: "Mesh",
+        translator_context: "User-facing procedural texture family name.",
+    },
+    FactoryTranslationKey {
+        key: "texture.family.radial",
+        english_text: "Radial",
+        translator_context: "User-facing procedural texture family name.",
+    },
+    FactoryTranslationKey {
+        key: "texture.family.noise",
+        english_text: "Noise",
+        translator_context: "User-facing procedural texture family name.",
+    },
+    FactoryTranslationKey {
+        key: "texture.family.bricks",
+        english_text: "Bricks",
+        translator_context: "User-facing procedural texture family name.",
+    },
+    FactoryTranslationKey {
+        key: "texture.family.hexagons",
+        english_text: "Hexagons",
+        translator_context: "User-facing procedural texture family name.",
+    },
+    FactoryTranslationKey {
+        key: "texture.family.facets",
+        english_text: "Facets",
+        translator_context: "User-facing procedural texture family name.",
+    },
+    FactoryTranslationKey {
+        key: "texture.family.skulls",
+        english_text: "Skulls",
+        translator_context: "User-facing procedural texture family name.",
+    },
+    FactoryTranslationKey {
+        key: "texture.family.scales",
+        english_text: "Scales",
+        translator_context: "User-facing procedural texture family name.",
+    },
+    FactoryTranslationKey {
+        key: "texture.family.eyes",
+        english_text: "Eyes",
+        translator_context: "User-facing procedural texture family name.",
+    },
+    FactoryTranslationKey {
+        key: "overlay.collect_more_shaders",
+        english_text: "Collect more shaders at https://editor.isf.video/shaders and https://shadertoy.com/browse",
+        translator_context: "Overlay call-to-action shown for the built-in default shader. Preserve both URLs exactly.",
+    },
 ];

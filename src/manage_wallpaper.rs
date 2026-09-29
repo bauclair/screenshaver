@@ -366,66 +366,153 @@ pub fn run(
         load_shader_entries()?;
 
 
-    println!(
-        "Screenshaver {}\n",
+    let version =
         env!(
             "CARGO_PKG_VERSION"
+        );
+
+    println!(
+        "{}",
+        crate::manage_localization::runtime_text_with_params(
+            "wallpaper.cli.version",
+            &[
+                (
+                    "version",
+                    version,
+                )
+            ],
         )
     );
 
 
     println!(
-        "Wallpaper mode configuration:"
+        "{}",
+        crate::manage_localization::runtime_text(
+            "wallpaper.cli.configuration_heading"
+        )
     );
 
 
     println!(
-        "    Shader mode: {}",
-        configured_mode
+        "{}",
+        crate::manage_localization::runtime_text_with_params(
+            "wallpaper.cli.shader_mode",
+            &[
+                (
+                    "mode",
+                    configured_mode,
+                )
+            ],
+        )
     );
 
 
     println!(
-        "    Monitor mode: {}",
-        runtime.monitor_mode.name()
+        "{}",
+        crate::manage_localization::runtime_text_with_params(
+            "wallpaper.cli.monitor_mode",
+            &[
+                (
+                    "mode",
+                    runtime.monitor_mode.name(),
+                )
+            ],
+        )
     );
 
 
+    let animation_speed =
+        format!(
+            "{:.3}",
+            runtime.animation_speed_policy.global_speed
+        );
+
     println!(
-        "    Global animation speed: {:.3}x",
-        runtime.animation_speed_policy.global_speed
+        "{}",
+        crate::manage_localization::runtime_text_with_params(
+            "wallpaper.cli.animation_speed",
+            &[
+                (
+                    "speed",
+                    animation_speed.as_str(),
+                )
+            ],
+        )
     );
 
 
-    println!(
-        "    Notifications: {}",
+    let notification_state =
         if runtime.notifications {
-            "enabled"
+            crate::manage_localization::runtime_text(
+                "common.enabled"
+            )
         } else {
-            "disabled"
-        }
+            crate::manage_localization::runtime_text(
+                "common.disabled"
+            )
+        };
+
+    println!(
+        "{}",
+        crate::manage_localization::runtime_text_with_params(
+            "wallpaper.cli.notifications",
+            &[
+                (
+                    "state",
+                    notification_state.as_str(),
+                )
+            ],
+        )
     );
 
 
+    let wallpaper_directory_text =
+        wallpaper_directory
+            .display()
+            .to_string();
+
     println!(
-        "    Wallpaper directory: {}",
-        wallpaper_directory.display()
+        "{}",
+        crate::manage_localization::runtime_text_with_params(
+            "wallpaper.cli.directory",
+            &[
+                (
+                    "path",
+                    wallpaper_directory_text.as_str(),
+                )
+            ],
+        )
     );
 
 
     println!();
 
 
-    println!(
-        "Eligible wallpaper shaders: {}",
+    let eligible_count =
         shader_entries.len()
+            .to_string();
+
+    println!(
+        "{}",
+        crate::manage_localization::runtime_text_with_params(
+            "wallpaper.cli.eligible_count",
+            &[
+                (
+                    "count",
+                    eligible_count.as_str(),
+                )
+            ],
+        )
     );
 
 
     if shader_entries.is_empty() {
 
         println!(
-            "    No present shaders with a Wallpaper policy were found."
+            "{}",
+            crate::manage_localization::runtime_text(
+                "wallpaper.cli.no_eligible_shaders"
+            )
         );
 
 
@@ -433,7 +520,10 @@ pub fn run(
 
 
         println!(
-            "Wallpaper rendering was not started."
+            "{}",
+            crate::manage_localization::runtime_text(
+                "wallpaper.cli.not_started"
+            )
         );
 
 
@@ -458,7 +548,10 @@ pub fn run(
             println!();
 
             println!(
-                "Wallpaper rotation disabled: only one eligible shader is available."
+                "{}",
+                crate::manage_localization::runtime_text(
+                    "wallpaper.cli.rotation_disabled_single_shader"
+                )
             );
 
             None
@@ -493,7 +586,10 @@ pub fn run(
             match crate::manage_lyrics::LyricsManager::start() {
                 Ok(manager) => {
                     println!(
-                        "Synchronized lyrics manager: enabled for Windowpaper"
+                        "{}",
+                        crate::manage_localization::runtime_text(
+                            "wallpaper.cli.lyrics_enabled_windowpaper"
+                        )
                     );
                     Some(manager)
                 }

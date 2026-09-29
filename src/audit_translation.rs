@@ -2340,6 +2340,163 @@ fn intentionally_invariant(s: &str, line: &str, path: &Path) -> bool {
     }
 
 
+    // Batch v14: procedural texture construction, database initialization/reconciliation,
+    // runtime-source loading, parser diagnostics, renderer telemetry, singleton bootstrap
+    // diagnostics, and developer schema-reader output are technical/internal text. Curated
+    // palette descriptions are durable catalog data seeded into SQLite, not localized
+    // presentation strings. Exemptions remain module-scoped and constrained to exact
+    // literals, stable diagnostic prefixes, or the specific catalog-construction call.
+    if filename == "generate_eyes.rs"
+        && matches!(
+            t,
+            "Eyes animation state count mismatch: expected {}, received {}"
+                | "Eye source image has zero width or height"
+                | "Unable to decode embedded {} eye PNG: {}"
+                | "Embedded {} eye PNG is {}x{}; expected {}x{} to match eye-open.png"
+                | "Embedded eye PNGs contain no visible pixels"
+                | "Eye texture buffer size overflow"
+                | "embedded eye frames"
+                | "minimum eye layout"
+                | "explicit minimum eye layout"
+                | "maximum eye layout"
+                | "explicit maximum eye layout"
+                | "sparse eye layout"
+                | "dense eye layout"
+                | "Eyes animation source"
+                | "all-open Eyes pixels"
+                | "eye generation"
+        )
+    {
+        return true;
+    }
+
+    if filename == "initialize_database.rs"
+        && (t.starts_with("Unable to ")
+            || t.starts_with("Refusing to initialize database")
+            || t.starts_with("Texture-catalog initialization verification failed:")
+            || t.starts_with("Curated-palette initialization verification failed:"))
+    {
+        return true;
+    }
+
+    if filename == "load_shader_source.rs"
+        && (t.starts_with("Screenshaver database does not exist:")
+            || t.starts_with("Unable to query runtime source")
+            || t.starts_with("Shader '")
+            || t.starts_with("Valid shader '")
+            || t.starts_with("Runtime-source BLOB")
+            || t.starts_with("Runtime ShaderInput"))
+    {
+        return true;
+    }
+
+    if filename == "manage_wallpaper.rs"
+        && (t.starts_with("[WALLPAPER] ")
+            || t.starts_with("[LYRICS] ")
+            || t.starts_with("Unable to ")
+            || t.starts_with("Invalid wallpaper "))
+    {
+        return true;
+    }
+
+    if filename == "palettes.rs"
+        && (t.starts_with("Invalid color ")
+            || t.starts_with("Invalid red component ")
+            || t.starts_with("Invalid green component ")
+            || t.starts_with("Invalid blue component ")
+            || line.contains("CuratedPaletteColor::new(")
+            || matches!(
+                t,
+                "unexpectedly accepted {}"
+                    | "unexpected curated color count for {}"
+                    | "Pumpkin should be present in curated catalog"
+            ))
+    {
+        return true;
+    }
+
+    if filename == "parse_texture_specification.rs"
+        && (t.starts_with("Texture specification cannot be empty")
+            || t.starts_with("Invalid texture specification ")
+            || t.starts_with("Invalid primitive count ")
+            || t.starts_with("Primitive count ")
+            || matches!(
+                t,
+                "The texture specification should parse"
+                    | "The facets texture specification should parse"
+                    | "The maximum primitive count should parse"
+            ))
+    {
+        return true;
+    }
+
+    if filename == "reconcile_shaders.rs"
+        && (t.starts_with("Unable to ")
+            || t.starts_with("Shader '")
+            || t.starts_with("Managed shader path ")
+            || t.starts_with("No present managed shader record ")
+            || t.starts_with("Shader path ")
+            || t.starts_with("Shader source is not valid UTF-8:")
+            || t.starts_with("ISF metadata parsing failed:"))
+    {
+        return true;
+    }
+
+    if filename == "render_frame_engine.rs"
+        && (t.starts_with("[RENDER] ")
+            || t.starts_with("[AUDIO_MOTION] ")
+            || t.starts_with("[POSTPROCESS] ")
+            || t.starts_with("[TEXTURE] ")
+            || t.starts_with("[SUBTITLE] ")
+            || t.starts_with("[LYRICS] ")
+            || matches!(
+                t,
+                "Unable to allocate OpenGL GPU timer queries for FPS monitoring"
+                    | "Built-in default shader compilation failed: {}"
+                    | "Built-in default shader was rejected: {}"
+                    | "Built-in default shader is unavailable: {error}"
+            ))
+    {
+        return true;
+    }
+
+    if filename == "singleton.rs"
+        && matches!(
+            t,
+            "Screenshaver is already running"
+                | "XDG_RUNTIME_DIR is unavailable"
+                | "Failed to open instance lock file: {}"
+                | "Failed to acquire instance lock: {}"
+                | "Failed to write the Screenshaver process ID: {}"
+                | "Failed to inspect the instance lock: {}"
+                | "Failed to read the Screenshaver process ID: {}"
+                | "The instance lock contains an invalid process ID: '{}'"
+                | "Failed to stop Screenshaver process {}: {}"
+                | "Exclusive instance lock acquired: {} (PID {})"
+                | "Instance lock already held: {}"
+                | "Failed to acquire instance lock '{}': {}"
+                | "Stop requested, but no instance lock file exists"
+                | "Stop requested, but the instance lock is not held"
+                | "SIGTERM sent to Screenshaver process {}"
+        )
+    {
+        return true;
+    }
+
+    if filename == "test_schema_reader.rs"
+        && (t.starts_with("[SCHEMA READER TEST] ")
+            || t.starts_with("Screenshaver database does not exist:")
+            || t.starts_with("Unable to ")
+            || t.starts_with("single (")
+            || t.starts_with("ordered (")
+            || t.starts_with("random (")
+            || t.starts_with("playlist ("))
+    {
+        return true;
+    }
+
+
+
     false
 }
 

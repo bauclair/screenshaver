@@ -1233,7 +1233,7 @@ impl FrameRenderEngine {
             texture:
                 selection.map(
                     |(specification, _)| {
-                        specification.display_name()
+                        localized_texture_display_name(&specification)
                     }
                 ),
             palette:
@@ -1653,6 +1653,80 @@ fn resolve_shader_fps(
 }
 
 
+fn render_runtime_text(
+    key: &str,
+) -> String {
+
+    #[cfg(not(feature = "kde-host"))]
+    {
+        return crate::manage_localization::runtime_text(
+            key
+        );
+    }
+
+    #[cfg(feature = "kde-host")]
+    {
+        match key {
+            "texture.family.marble" => "Marble",
+            "texture.family.clouds" => "Clouds",
+            "texture.family.cells" => "Cells",
+            "texture.family.mesh" => "Mesh",
+            "texture.family.radial" => "Radial",
+            "texture.family.noise" => "Noise",
+            "texture.family.bricks" => "Bricks",
+            "texture.family.hexagons" => "Hexagons",
+            "texture.family.facets" => "Facets",
+            "texture.family.skulls" => "Skulls",
+            "texture.family.scales" => "Scales",
+            "texture.family.eyes" => "Eyes",
+            "overlay.collect_more_shaders" => {
+                "Collect more shaders at https://editor.isf.video/shaders and https://shadertoy.com/browse"
+            }
+            _ => key,
+        }
+        .to_string()
+    }
+}
+
+
+fn localized_texture_display_name(
+    specification: &crate::parse_texture_specification::TextureSpecification,
+) -> String {
+
+    let key =
+        match specification.family.name() {
+            "marble" => "texture.family.marble",
+            "clouds" => "texture.family.clouds",
+            "cells" => "texture.family.cells",
+            "mesh" => "texture.family.mesh",
+            "radial" => "texture.family.radial",
+            "noise" => "texture.family.noise",
+            "bricks" => "texture.family.bricks",
+            "hexagons" => "texture.family.hexagons",
+            "facets" => "texture.family.facets",
+            "skulls" => "texture.family.skulls",
+            "scales" => "texture.family.scales",
+            "eyes" => "texture.family.eyes",
+            _ => return specification.display_name(),
+        };
+
+    let family_name =
+        render_runtime_text(
+            key
+        );
+
+    if specification.count_was_explicit {
+        format!(
+            "{} ({})",
+            family_name,
+            specification.requested_primitive_count,
+        )
+    } else {
+        family_name
+    }
+}
+
+
 fn format_animation_speed(
     speed: f32,
 ) -> String {
@@ -1702,11 +1776,11 @@ fn build_subtitle_overlay(
                     (
                         Some(
                             if specification.count_was_explicit {
-                                specification.display_name()
+                                localized_texture_display_name(&specification)
                             } else {
                                 format!(
                                     "{} ({})",
-                                    specification.display_name(),
+                                    localized_texture_display_name(&specification),
                                     specification.requested_primitive_count,
                                 )
                             }
@@ -1747,8 +1821,9 @@ fn build_subtitle_overlay(
                             }
                         )
                 {
-                    "Collect more shaders at https://editor.isf.video/shaders and https://shadertoy.com/browse"
-                        .to_string()
+                    render_runtime_text(
+                        "overlay.collect_more_shaders"
+                    )
                 } else {
                     shader.policy_name
                         .clone()
