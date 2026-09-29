@@ -1526,6 +1526,135 @@ fn intentionally_invariant(s: &str, line: &str, path: &Path) -> bool {
         return true;
     }
 
+    // Batch v11: logging, localization-engine, duration-parser, post-processing,
+    // splash construction, and session-backend diagnostics. These strings report
+    // technical implementation state or failures rather than localized presentation.
+    // Keep exemptions exact and module-scoped; stable tagged parser telemetry is
+    // restricted to its own module.
+    let batch_v11_invariant = match filename {
+        "logger.rs" => matches!(
+            t,
+            "[LOGGER] Unable to create directory {} ({})"
+                | "[LOGGER] Unable to open {} ({})"
+                | "{} {}\\n"
+                | "[LOGGER] Unable to write to {} ({})"
+                | "[LOGGER] Unable to flush {} ({})"
+                | "[L{}] [{}] {}"
+                | "[LOGGER] Unable to create log file {} ({})"
+                | "[LOGGER] Unable to reset log file {} ({})"
+        ),
+        "manage_localization.rs" => matches!(
+            t,
+            "Unable to prepare runtime localization catalog query: {}"
+                | "Unable to query runtime localization keys: {}"
+                | "Unable to read runtime localization key: {}"
+                | "Runtime localization catalog was initialized more than once."
+                | "Configured locale '{}' is unavailable and required fallback locale '{}' is not enabled"
+                | "Unable to query translation '{}' for locale '{}': {}"
+                | "Unable to query canonical English text for localization key '{}': {}"
+                | "Unknown localization key '{}'"
+                | "Unable to query localization language '{}': {}"
+        ),
+        "parse_duration.rs" => t.starts_with("[PARSE_DURATION]"),
+        "postprocess_shader.rs" => matches!(
+            t,
+            "Hue rotation {:.3} is outside the supported range {:.1} through {:.1} degrees"
+                | "OpenGL could not allocate post-processing benchmark timer queries"
+                | "[POSTPROCESS] Requested precision: {}; selected: {} ({}); fallback: {}"
+                | "[POSTPROCESS] High-precision render targets were unavailable; standard precision was selected: {}"
+                | "[POSTPROCESS] Render scale: {:.3}; scene: {}x{}; output: {}x{}"
+                | "Unable to create post-processing targets: high precision failed ({}); standard precision failed ({})"
+                | "OpenGL failed to allocate post-processing framebuffer resources"
+                | "Post-processing framebuffer is incomplete (OpenGL status 0x{status:04X})"
+                | "Render scale {} is outside the supported range {:.2}-{:.2}"
+                | "Scaled render dimensions exceed the supported integer range: {:.0}x{:.0}"
+                | "Post-processing dimensions must be nonzero, received {}x{}"
+                | "Post-processing dimensions exceed OpenGL limits: {}x{}"
+        ),
+        "render_bloom.rs" => matches!(
+            t,
+            "Unsupported bloom mode '{}'; supported values: off, audio, spectral, loudness"
+                | "Bloom intensity {} is outside the supported range {:.2}-{:.2}"
+                | "Bloom saturation {} is outside the supported range {:.2}-{:.2}"
+                | "Bloom threshold {} is outside the supported range {:.2}-{:.2}"
+                | "Bloom frequency rotation {} is outside the supported range {:.1}-{:.1} degrees"
+                | "Unable to build Bloom highlight-extraction program: {}"
+                | "Unable to build Bloom audio color-extraction program: {}"
+                | "Unable to build Bloom spectral color-extraction program: {}"
+                | "Unable to build Bloom blur program: {}"
+                | "Unable to build Bloom composition program: {}"
+                | "OpenGL failed to allocate the Bloom vertex array"
+                | "Bloom post-processing program is missing a required uniform"
+        ),
+        "splash_screen.rs" => matches!(
+            t,
+            "Unable to determine splash image format: {}"
+                | "Unable to decode splash image: {}"
+                | "Splash image has invalid dimensions"
+                | "Unable to initialize SDL video for splash screen: {}"
+                | "Unable to determine display dimensions: {}"
+                | "Unable to create splash window: {}"
+                | "Unable to create splash canvas: {}"
+                | "Unable to create splash texture: {}"
+                | "Unable to upload splash texture: {}"
+                | "Unable to draw splash texture: {}"
+                | "Unable to create splash event pump: {}"
+        ),
+        _ => false,
+    };
+
+    if batch_v11_invariant {
+        return true;
+    }
+
+    // GNOME and Wayland names are intentionally scoped to session_backend so an
+    // unrelated future module with the same filename does not inherit these exemptions.
+    let is_session_backend_module = path
+        .parent()
+        .and_then(|parent| parent.file_name())
+        .and_then(|value| value.to_str())
+        == Some("session_backend");
+
+    if is_session_backend_module
+        && filename == "gnome.rs"
+        && matches!(
+            t,
+            "[GNOME] Connecting to session bus"
+                | "Failed to connect to GNOME session bus: {}"
+                | "[GNOME] Session bus connected"
+                | "Failed to create GNOME IdleMonitor proxy: {}"
+                | "[GNOME] Mutter IdleMonitor proxy created"
+                | "[GNOME] Testing GNOME IdleMonitor availability"
+                | "GNOME IdleMonitor unavailable: {}"
+                | "[GNOME] GNOME IdleMonitor available"
+                | "[GNOME] GNOME backend initialized"
+                | "Failed to query GNOME idle time: {}"
+        )
+    {
+        return true;
+    }
+
+    if is_session_backend_module
+        && filename == "wayland.rs"
+        && matches!(
+            t,
+            "[SESSION] Wayland idle notification: idled"
+                | "[SESSION] Wayland idle notification: resumed"
+                | "Unable to connect to Wayland compositor: {}"
+                | "Unable to read Wayland registry: {}"
+                | "Wayland ext_idle_notifier_v1 not advertised"
+                | "Wayland wl_seat not advertised"
+                | "Unable to complete Wayland object binds: {}"
+                | "Wayland idle timeout is too large"
+                | "[SESSION] Using Wayland input-only idle notification (protocol v2)"
+                | "[SESSION] Using Wayland idle notification (protocol v1)"
+                | "Unable to create Wayland idle notification: {}"
+                | "Wayland dispatch failed: {}"
+        )
+    {
+        return true;
+    }
+
     false
 }
 
