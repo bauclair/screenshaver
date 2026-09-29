@@ -865,6 +865,144 @@ fn intentionally_invariant(s: &str, line: &str, path: &Path) -> bool {
         return true;
     }
 
+    // Procedural texture generators return internal allocation diagnostics and contain
+    // test-only assertion labels. None of these strings are presentation text. Keep every
+    // exemption scoped by module and exact literal so future prose in these modules is still
+    // audited normally.
+    let procedural_texture_invariant = match filename {
+        "generate_bricks.rs" => matches!(
+            t,
+            "Brick texture buffer size overflow"
+                | "Different seeds produced identical brick walls"
+                | "brick generation"
+        ),
+        "generate_cellular.rs" => matches!(
+            t,
+            "Cellular texture buffer size overflow"
+                | "cellular generation"
+        ),
+        "generate_facets.rs" => matches!(
+            t,
+            "Facet texture buffer size overflow"
+                | "facet texture generation"
+        ),
+        "generate_hexagons.rs" => matches!(
+            t,
+            "Hexagon texture buffer size overflow"
+                | "hexagon texture generation"
+        ),
+        "generate_marble.rs" => matches!(
+            t,
+            "Marble texture buffer size overflow"
+                | "marble generation"
+        ),
+        "generate_mesh.rs" => matches!(
+            t,
+            "Mesh texture buffer size overflow"
+                | "Different seeds produced identical values across every sampled coordinate"
+                | "mesh generation"
+        ),
+        "generate_noise.rs" => matches!(
+            t,
+            "Noise texture buffer size overflow"
+                | "Different seeds produced identical television snow"
+                | "noise generation"
+        ),
+        "generate_radial.rs" => matches!(
+            t,
+            "Radial texture buffer size overflow"
+                | "Different seeds produced identical values across every sampled coordinate"
+                | "radial generation"
+        ),
+        "generate_scales.rs" => matches!(
+            t,
+            "Scale texture buffer size overflow"
+                | "scale generation"
+        ),
+        _ => false,
+    };
+
+    if procedural_texture_invariant {
+        return true;
+    }
+
+    // Observation-only lock presentation messages are structured runtime telemetry. Backend
+    // names and field identifiers are intentionally stable for log comparison and diagnostics.
+    if filename == "monitor_lock_presentation.rs"
+        && t.starts_with("[LOCK] ")
+    {
+        return true;
+    }
+
+    // This value is an egui widget identity, not text rendered to the user.
+    if filename == "nested_tabs.rs"
+        && t == "nested_config_disabled_grid_{}"
+    {
+        return true;
+    }
+
+    // ISF parser failures describe source-format parsing, thumbnail failures describe internal
+    // image construction, and session-query errors describe backend plumbing. These exact
+    // technical errors are intentionally stable and are not Control Center presentation text.
+    if filename == "parse_isf.rs"
+        && matches!(
+            t,
+            "Unterminated block comment while searching for ISF metadata"
+                | "No valid ISF JSON metadata block was found"
+        )
+    {
+        return true;
+    }
+
+    if filename == "preview_texture_thumbnail.rs"
+        && matches!(
+            t,
+            "Texture thumbnail size must be greater than zero"
+                | "Unable to construct {}x{} RGBA image for texture thumbnail"
+        )
+    {
+        return true;
+    }
+
+    if filename == "query_session.rs"
+        && matches!(
+            t,
+            "Backend unavailable: {}"
+                | "Session query failed: {}"
+        )
+    {
+        return true;
+    }
+
+    // Post-processing renderer errors are OpenGL construction/uniform diagnostics. These
+    // modules may participate in renderer paths where adding localization dependencies would
+    // be undesirable; keep the exemptions exact and module-scoped.
+    let renderer_invariant = match filename {
+        "render_dithering.rs" => matches!(
+            t,
+            "Unable to build dithering presentation program: {}"
+                | "OpenGL failed to allocate the dithering vertex array"
+                | "Dithering presentation program is missing a required uniform"
+        ),
+        "render_fxaa.rs" => matches!(
+            t,
+            "Unable to build FXAA presentation program: {}"
+                | "OpenGL failed to allocate the FXAA vertex array"
+                | "FXAA presentation program is missing a required uniform"
+        ),
+        "render_passthrough.rs" => matches!(
+            t,
+            "Unable to build passthrough presentation program: {}"
+                | "OpenGL failed to allocate the passthrough vertex array"
+                | "Passthrough presentation program does not expose the uScene sampler"
+        ),
+        _ => false,
+    };
+
+    if renderer_invariant {
+        return true;
+    }
+
     if matches!(
         t,
         "screensaver"
