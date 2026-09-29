@@ -1123,6 +1123,152 @@ fn intentionally_invariant(s: &str, line: &str, path: &Path) -> bool {
         return true;
     }
 
+    // Batch v9: audio capture, Xfce integration, and text-overlay implementation
+    // diagnostics are technical runtime/configuration messages. The compact P/T/FPS overlay
+    // prefixes are stable presentation notation; user/external descriptor values and lyrics
+    // remain untouched. Every exemption below is module-scoped and exact. The generated Xfce
+    // desktop-entry Comment is localized in source and is deliberately not exempted here.
+    if filename == "mod.rs"
+        && path.parent()
+            .and_then(|parent| parent.file_name())
+            .and_then(|value| value.to_str())
+            == Some("audio_backend")
+        && matches!(
+            t,
+            "[AUDIO] Unable to start demand-driven audio runtime worker: {}"
+                | "[AUDIO] Demand-driven Audio Bloom capture active: {}"
+                | "[AUDIO] Audio Bloom capture could not be started; continuing with zero audio bands: {}"
+                | "[AUDIO] Demand-driven Audio Bloom capture inactive"
+                | "[AUDIO] Attempting backend: PulseAudio"
+                | "[AUDIO] Selected [PULSEAUDIO] backend"
+                | "No compatible audio backend available"
+                | "[AUDIO] {} backend unavailable: {}"
+        )
+    {
+        return true;
+    }
+
+    if filename == "pulseaudio.rs"
+        && matches!(
+            t,
+            "Unable to start PulseAudio worker thread: {}"
+                | "Timed out while starting PulseAudio playback capture: {}"
+                | "[AUDIO] PulseAudio capture worker stopped: {}"
+                | "Unable to create PulseAudio main loop"
+                | "Unable to create PulseAudio context"
+                | "Unable to connect to PulseAudio-compatible server: {}"
+                | "[AUDIO] Default playback sink: {}"
+                | "[AUDIO] Playback monitor source: {}"
+                | "PulseAudio capture sample specification is invalid"
+                | "Screenshaver Audio Bloom Capture"
+                | "Unable to create PulseAudio recording stream"
+                | "[AUDIO] Requested capture fragment: {} bytes (~{:.1} ms)"
+                | "Unable to connect recording stream to '{}': {}"
+                | "[AUDIO] Actual capture fragment: {} bytes (~{:.1} ms)"
+                | "[AUDIO] Actual capture fragment unavailable"
+                | "[AUDIO] Playback capture active: {} Hz, {} channels, S16 native-endian PCM"
+                | "Unable to report PulseAudio capture readiness: {}"
+                | "PulseAudio context failed during capture: {}"
+                | "PulseAudio context terminated during capture"
+                | "PulseAudio recording stream failed during capture"
+                | "PulseAudio recording stream terminated during capture"
+                | "Unable to discard captured PulseAudio data: {}"
+                | "Unable to discard PulseAudio capture hole: {}"
+                | "Unable to read PulseAudio capture data: {}"
+                | "[AUDIO] Capture diagnostic: {} bytes received in last {} s; {} bytes / {} fragments total"
+                | "[AUDIO] PulseAudio playback capture stopped"
+                | "PulseAudio context failed: {}"
+                | "PulseAudio context terminated during initialization"
+                | "Timed out while connecting to PulseAudio-compatible server"
+                | "PulseAudio server did not report a default playback sink"
+                | "default playback sink"
+                | "Default PulseAudio sink has no monitor source"
+                | "PulseAudio failed while querying the default sink"
+                | "playback monitor source"
+                | "Timed out while querying PulseAudio {}"
+                | "PulseAudio recording stream failed during initialization"
+                | "PulseAudio recording stream terminated during initialization"
+                | "Timed out while starting PulseAudio recording stream"
+                | "PulseAudio main loop quit unexpectedly: {:?}"
+                | "PulseAudio main loop failed: {}"
+        )
+    {
+        return true;
+    }
+
+    if filename == "construct_lock_screen_xfce.rs"
+        && matches!(
+            t,
+            "XFCE lock-screen configuration did not verify successfully: {:?}"
+                | "XFCE Screensaver is not available at {}"
+                | "xfconf-query is not available at {}"
+                | "HOME is not set; unable to locate the user's XFCE configuration"
+                | "HOME does not contain an absolute path: {}"
+                | "Unable to inspect XFCE screensaver properties: {}"
+                | "Unable to inspect XFCE screensaver properties"
+                | "Unable to query XFCE screensaver themes: {}"
+                | "Unable to query XFCE screensaver themes"
+                | "Value is an array with "
+                | "Unable to migrate the legacy permanent Screenshaver XFCE theme selection: {}"
+                | "Unable to migrate the legacy permanent Screenshaver XFCE theme selection"
+                | "{}; command exited with status {}"
+                | "Unable to determine parent directory for {}"
+                | "Unable to create directory {}: {}"
+                | "Unable to create temporary file {}: {}"
+                | "Unable to write temporary file {}: {}"
+                | "Unable to synchronize temporary file {}: {}"
+                | "Unable to install user configuration file {}: {}"
+        )
+    {
+        return true;
+    }
+
+    if filename == "construct_text_overlay.rs"
+        && matches!(
+            t,
+            "Unable to initialize SDL_ttf: {}"
+                | "Unable to load subtitle font '{}': {}"
+                | "Unable to load bold subtitle font '{}': {}"
+                | "Cannot construct a text overlay without content"
+                | "Unable to render subtitle text: {}"
+                | "Unable to convert subtitle text surface: {}"
+                | "Unable to render FPS subtitle text: {}"
+                | "Unable to convert FPS subtitle surface: {}"
+                | "Subtitle overlay dimensions overflow"
+                | "Cannot construct a message overlay without content"
+                | "Unable to load message-overlay font '{}': {}"
+                | "Unable to render message-overlay text: {}"
+                | "Unable to convert message-overlay text surface: {}"
+                | "Message overlay dimensions overflow"
+                | "P: {}"
+                | "T: {}"
+                | "FPS: {}"
+                | "Unable to measure subtitle text: {}"
+                | "Unable to measure FPS subtitle text: {}"
+                | "DejaVu Sans:style=Book"
+                | "Unable to locate DejaVu Sans; set SCREENSHAVER_SUBTITLE_FONT to a sans-serif TTF file"
+                | "DejaVu Sans Condensed:style=Bold"
+                | "DejaVu Sans Condensed:style=Book"
+                | "Unable to locate {}; set {} to the corresponding TTF file"
+                | "DejaVu Sans Condensed Bold"
+                | "DejaVu Sans Condensed"
+                | "Unable to access rendered subtitle pixels"
+                | "Subtitle surface pitch cannot be represented as usize"
+                | "Cannot construct a lyrics panel for a zero-sized viewport"
+                | "Unable to initialize SDL_ttf for lyrics: {}"
+                | "Unable to load current-lyrics font '{}': {}"
+                | "Unable to measure current lyrics text: {}"
+                | "Unable to load lyrics font '{}': {}"
+                | "Unable to render lyrics text: {}"
+                | "Unable to convert lyrics text surface: {}"
+                | "Lyrics panel dimensions overflow"
+                | "Unable to access rendered lyrics pixels"
+                | "Lyrics surface pitch cannot be represented as usize"
+        )
+    {
+        return true;
+    }
+
     if matches!(
         t,
         "screensaver"

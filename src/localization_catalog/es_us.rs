@@ -3767,4 +3767,11 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
         translated_text: "No se pudo crear el sistema de eventos de prueba del fondo de pantalla: {error}",
     },
 
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "xfce.lock.desktop.comment",
+        translated_text: "Presentación de shaders de Screenshaver para la pantalla de bloqueo de Xfce",
+    },
+
 ];

@@ -3774,4 +3774,11 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
         translator_context: "Wallpaper rendering test error when the SDL event pump cannot be created.",
     },
 
+
+    FactoryTranslationKey {
+        key: "xfce.lock.desktop.comment",
+        english_text: "Screenshaver shader presentation for the Xfce lock screen",
+        translator_context: "Description in the generated Xfce screensaver desktop entry. Screenshaver and Xfce are product names.",
+    },
+
 ];

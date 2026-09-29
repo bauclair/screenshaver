@@ -26,17 +26,25 @@ const SAVER_THEME_LIST_PATH: &str =
 const LEGACY_NATIVE_FALLBACK_THEME_ID: &str =
     "screensavers-xfce-floaters";
 
-const SAVER_DESKTOP_ENTRY: &str =
-    "[Desktop Entry]\n\
+fn saver_desktop_entry(
+) -> String {
+
+    format!(
+        "[Desktop Entry]\n\
 Name=Screenshaver\n\
-Comment=Screenshaver shader presentation for the Xfce lock screen\n\
+Comment={}\n\
 Exec=/usr/libexec/xfce4-screensaver/screenshaver\n\
 TryExec=/usr/libexec/xfce4-screensaver/screenshaver\n\
 StartupNotify=false\n\
 Terminal=false\n\
 Type=Application\n\
 Categories=Screensaver;\n\
-OnlyShowIn=XFCE;\n";
+OnlyShowIn=XFCE;\n",
+        crate::manage_localization::runtime_text(
+            "xfce.lock.desktop.comment"
+        ),
+    )
+}
 
 const LIGHT_LOCKER_AUTOSTART_OVERRIDE: &str =
     "[Desktop Entry]\n\
@@ -161,9 +169,12 @@ pub fn configure_user(
             &home
         );
 
+    let saver_desktop_entry =
+        saver_desktop_entry();
+
     write_user_file(
         &saver_desktop_path,
-        SAVER_DESKTOP_ENTRY,
+        &saver_desktop_entry,
     )?;
 
     write_user_file(
@@ -302,7 +313,7 @@ fn desktop_entry_is_current(
     ) {
         Ok(contents) => {
             contents
-                == SAVER_DESKTOP_ENTRY
+                == saver_desktop_entry()
         }
 
         Err(_) => {
