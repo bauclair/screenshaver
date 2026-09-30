@@ -4033,4 +4033,1056 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
         key: "qbe.error.invalid_audiovisual_effect",
         translated_text: "Valor de efecto audiovisual desconocido '{value}'.",
     },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.shader_file_cannot_be_accessed",
+        translated_text: "No se puede acceder al archivo del shader:\\\n{value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.shader_validation_failed",
+        translated_text: "La validación del shader falló.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.shader_cannot_be_rendered_status_reason_see_screenshaver_log_for",
+        translated_text: "El shader no se puede renderizar.\\\nEstado: {value1}\\\nMotivo: {value2}\\\nConsulte screenshaver.log para obtener más detalles.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.shader_validation_state_is_unavailable",
+        translated_text: "El estado de validación del shader no está disponible.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.unassigned_policy_this_shader_cannot_be_rendered_until_its_policy",
+        translated_text: "Política sin asignar — este shader no se puede renderizar hasta que su Destino de política se cambie a Protector de pantalla o Fondo de pantalla.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.shader_is_accessible_and_validated",
+        translated_text: "El shader es accesible y está validado:\\\n{value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.unable_to_create_egui_opengl_painter",
+        translated_text: "No se pudo crear el pintor OpenGL de egui: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.unable_to_decode_embedded_control_center_branding_image",
+        translated_text: "No se pudo decodificar la imagen de marca integrada del Centro de control: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.embedded_control_center_branding_image_has_invalid_dimensions",
+        translated_text: "La imagen de marca integrada del Centro de control tiene dimensiones no válidas.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.screenshaver_control_center_esc_or_q_to_exit",
+        translated_text: "Centro de control de Screenshaver (ESC o Q para salir)",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.bulk_edit_mode_active_click_cancel_to_return_to_single",
+        translated_text: "Modo de edición masiva activo-- haga clic en Cancelar para volver al modo de edición individual.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.select",
+        translated_text: "Seleccionar...",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.policy_target",
+        translated_text: "Destino de política:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.no_change",
+        translated_text: "Sin cambios",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.leave_policy_target_unchanged_for_every_checked_policy",
+        translated_text: "Dejar el Destino de política sin cambios para cada política marcada.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.load_or_create_the_policy_used_for_screensaver_rendering",
+        translated_text: "Cargar o crear la política usada para renderizar el protector de pantalla.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.this_editing_session_was_opened_for_the_active_wallpaper_only",
+        translated_text: "Esta sesión de edición se abrió para el fondo de pantalla activo. Solo se puede editar la política de Fondo de pantalla.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.this_shader_is_unavailable_for_screensaver_use_because_it_does",
+        translated_text: "Este shader no está disponible para usarse como Protector de pantalla porque no existe en la carpeta de protectores de pantalla.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.save_or_cancel_the_current_changes_before_switching_policy_targets",
+        translated_text: "Guarde o cancele los cambios actuales antes de cambiar los destinos de política.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.load_or_create_the_policy_used_for_wallpaper_rendering",
+        translated_text: "Cargar o crear la política usada para renderizar el fondo de pantalla.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.this_editing_session_was_opened_for_the_active_screensaver_only",
+        translated_text: "Esta sesión de edición se abrió para el protector de pantalla activo. Solo se puede editar la política de Protector de pantalla.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.this_shader_is_unavailable_for_wallpaper_use_because_it_does",
+        translated_text: "Este shader no está disponible para usarse como Fondo de pantalla porque no existe en la carpeta de fondos de pantalla.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.keep_this_policy_and_all_of_its_settings_but_exclude",
+        translated_text: "Conservar esta política y toda su configuración, pero excluirla del renderizado de protector de pantalla y fondo de pantalla hasta que se reasigne.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.no_shader_loaded",
+        translated_text: "No hay ningún shader cargado",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.policy_name",
+        translated_text: "Nombre de política:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.filename",
+        translated_text: "Nombre de archivo:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.folder",
+        translated_text: "Carpeta:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.type",
+        translated_text: "Tipo:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.save_policy",
+        translated_text: "Guardar política",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.save_the_current_per_shader_policy",
+        translated_text: "Guardar la política actual específica del shader.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.saving_policy",
+        translated_text: "Guardando política...",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.discard_changes_made_during_this_editor_session",
+        translated_text: "Descartar los cambios realizados durante esta sesión de edición.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.bulk_edit_mode_canceled",
+        translated_text: "Modo de edición masiva cancelado",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.changes_canceled",
+        translated_text: "Cambios cancelados",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.policy",
+        translated_text: "Política: --",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.policy_modified",
+        translated_text: "Política: Modificada",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.policy_unchanged",
+        translated_text: "Política: Sin cambios",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.config_modified",
+        translated_text: "Configuración: Modificada",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.config_unchanged",
+        translated_text: "Configuración: Sin cambios",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.loaded_and_rendering",
+        translated_text: "cargado y renderizando",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.clear_all_policy_selections",
+        translated_text: "Borrar todas las selecciones de políticas",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.policy_name_2",
+        translated_text: "Nombre de política",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.policy_type",
+        translated_text: "Tipo de política",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.no_shader_policies_are_currently_defined",
+        translated_text: "Actualmente no hay políticas de shader definidas.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.include_this_policy_in_bulk_edit_mode",
+        translated_text: "Incluir esta política en el modo de edición masiva",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.policy_name_shader_path_shader_added_policy_created_policy_modified",
+        translated_text: "Nombre de política: {value1}\\\nShader: {value2}\\\nRuta: {value3}\\\nShader agregado: {value4}\\\nPolítica creada: {value5}\\\nPolítica modificada: {value6}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.edit_policy",
+        translated_text: "Editar política...",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.clone_policy",
+        translated_text: "Clonar política...",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.rename_policy",
+        translated_text: "Cambiar nombre de política...",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.add_to_playlist",
+        translated_text: "Agregar a lista de reproducción...",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.refresh_shader",
+        translated_text: "Actualizar shader",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.policy_query_cleared_displaying_all_policies",
+        translated_text: "Consulta de políticas borrada — se muestran las {value1} políticas.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.policy_query_returned_policies",
+        translated_text: "La consulta de políticas devolvió {value1} / {value2} políticas.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.policy_query_failed",
+        translated_text: "La consulta de políticas falló: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.usable_shader_selected",
+        translated_text: "{value1} shader{value2} utilizable seleccionado.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.texture_enabled_shader_detected",
+        translated_text: "Se detectaron {value1} shader{value2} con texturas habilitadas.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.managed_targets_screensaver_wallpaper",
+        translated_text: "Destinos administrados: {value1} Protector de pantalla, {value2} Fondo de pantalla.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.external_shaders_requiring_a_target",
+        translated_text: "Shaders externos que requieren un destino: {value1}.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.selected_shader_could_not_be_analyzed_and_will_not_be",
+        translated_text: "{value1} shader{value2} seleccionado no se pudo analizar y no se incluirá.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.policy_target_for_all_external_shaders",
+        translated_text: "Destino de política para todos los shaders externos:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.confirm_bulk_policy_changes",
+        translated_text: "Confirmar cambios masivos de políticas",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.changes_will_be_applied_to_policies_click_ok_to_continue",
+        translated_text: "Los cambios se aplicarán a {value1} políticas. Haga clic en Aceptar para continuar o en Cancelar para abortar.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.policies_were_selected_will_be_updated_and_will_be_skipped",
+        translated_text: "Se seleccionaron {value1} políticas. Se actualizarán {value2} y se omitirán {value3} porque el archivo del shader no está disponible.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.excluded_policy",
+        translated_text: "Política excluida:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.excluded_policies",
+        translated_text: "Políticas excluidas:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.texture_and_palette_settings_will_apply_to_texture_enabled_shader",
+        translated_text: "La configuración de Textura y Paleta se aplicará a {value1} shader{value2} con texturas habilitadas.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.no_selected_policies_are_eligible_for_bulk_edit_because_their",
+        translated_text: "Ninguna de las políticas seleccionadas es apta para Edición masiva porque sus archivos de shader no están disponibles.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.unsaved_changes",
+        translated_text: "Cambios sin guardar",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.the_screenshaver_control_center_has_unsaved_changes",
+        translated_text: "El Centro de control de Screenshaver tiene cambios sin guardar.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.would_you_like_to_save_those_changes_before_exiting",
+        translated_text: "¿Desea guardar esos cambios antes de salir?",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.save_and_exit",
+        translated_text: "Guardar y salir",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.exit_without_saving",
+        translated_text: "Salir sin guardar",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.rename_policy_2",
+        translated_text: "Cambiar nombre de política",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.change_the_user_facing_policy_name_the_shader_and_policy",
+        translated_text: "Cambiar el Nombre de política visible para el usuario. El shader y la configuración de la política no cambian.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.policy_name_must_contain_between_1_and_128_characters_found",
+        translated_text: "El Nombre de política debe contener entre 1 y 128 caracteres; se encontraron {value1}.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.clone_policy_2",
+        translated_text: "Clonar política",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.move_shader",
+        translated_text: "¿Mover shader?",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.move_this_shader_to",
+        translated_text: "Mover este shader a {value1}:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.the_existing_policy_will_be_changed_to_a_policy_all",
+        translated_text: "La política {value1} existente se cambiará a una política {value2}. Se conservará toda la configuración de la política.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.the_existing_policy_will_be_retained_and_its_path_will",
+        translated_text: "La política {value1} existente se conservará y su ruta se actualizará automáticamente.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.the_shader_file_will_not_be_deleted",
+        translated_text: "El archivo del shader no se eliminará.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.permanently_delete_this_shader",
+        translated_text: "Eliminar permanentemente este shader {value1}:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.the_associated_policy_will_also_be_deleted",
+        translated_text: "También se eliminará la política {value1} asociada.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.any_wallpaper_shader_or_wallpaper_policy_with_the_same_filename",
+        translated_text: "No se cambiará ningún shader de Fondo de pantalla ni ninguna política de Fondo de pantalla con el mismo nombre de archivo.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.any_screensaver_shader_or_screensaver_policy_with_the_same_filename",
+        translated_text: "No se cambiará ningún shader de Protector de pantalla ni ninguna política de Protector de pantalla con el mismo nombre de archivo.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.the_shader_file_will_not_be_changed",
+        translated_text: "El archivo del shader no se modificará.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.unable_to_load_playlists",
+        translated_text: "No se pudieron cargar las listas de reproducción: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.unable_to_load_the_playlist_inventory",
+        translated_text: "No se pudo cargar el inventario de Listas de reproducción.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.unable_to_load_playlist_policies",
+        translated_text: "No se pudieron cargar las políticas de la lista de reproducción: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.playlist_name",
+        translated_text: "Nombre de lista de reproducción",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.no_playlists_have_been_created",
+        translated_text: "No se han creado listas de reproducción.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.playlist_created_playlist_modified",
+        translated_text: "Lista de reproducción creada: {value1}\\\nLista de reproducción modificada: {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.selected_playlist",
+        translated_text: "Se seleccionó la lista de reproducción '{value1}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.new_playlist",
+        translated_text: "Nueva lista de reproducción",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.edit_playlist_info",
+        translated_text: "Editar información de la lista de reproducción",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.selected_playlist_2",
+        translated_text: "Lista de reproducción seleccionada",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.this_playlist_contains_no_policies",
+        translated_text: "Esta lista de reproducción no contiene políticas.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.policy_target_2",
+        translated_text: "Destino de política",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.sorted_playlist_by_compound_criteria",
+        translated_text: "Se ordenó la lista de reproducción '{value1}' por criterios compuestos.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.sorted_playlist_by",
+        translated_text: "Se ordenó la lista de reproducción '{value1}' por {value2}.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.unable_to_sort_playlist",
+        translated_text: "No se pudo ordenar la lista de reproducción: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.click_to_sort_and_persist_playlist_order_shift_click_adds",
+        translated_text: "Haga clic para ordenar y conservar el orden de la lista de reproducción. Mayús-clic agrega o cambia una clave de orden secundaria.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.policy_name_shader_path",
+        translated_text: "Nombre de política: {value1}\\\nShader: {value2}\\\nRuta: {value3}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.selected_policy_in_playlist",
+        translated_text: "Se seleccionó la política '{value1}' en la lista de reproducción '{value2}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.remove_policy",
+        translated_text: "Eliminar política",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.removed_policy_from_playlist",
+        translated_text: "Se eliminó la política '{value1}' de la lista de reproducción.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.policy_is_no_longer_a_member_of_this_playlist",
+        translated_text: "La política ya no pertenece a esta lista de reproducción.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.unable_to_remove_policy_from_playlist",
+        translated_text: "No se pudo eliminar la política de la lista de reproducción: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.add_policy",
+        translated_text: "Agregar política",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.removed_policy_from_playlist_2",
+        translated_text: "Se eliminó la política '{value1}' de la lista de reproducción '{value2}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.policy_was_not_present_in_playlist",
+        translated_text: "La política '{value1}' no estaba presente en la lista de reproducción '{value2}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.move_up",
+        translated_text: "Mover arriba",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.moved_policy_up",
+        translated_text: "Se movió la política '{value1}' hacia arriba.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.unable_to_move_policy",
+        translated_text: "No se pudo mover la política: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.move_down",
+        translated_text: "Mover abajo",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.moved_policy_down",
+        translated_text: "Se movió la política '{value1}' hacia abajo.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.add_to_playlist_2",
+        translated_text: "Agregar a lista de reproducción",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.add_policy_to_an_existing_playlist",
+        translated_text: "Agregar la política '{value1}' a una lista de reproducción existente.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.this_policy_is_already_a_member_of_every_playlist",
+        translated_text: "Esta política ya pertenece a todas las listas de reproducción.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.selected_playlist_3",
+        translated_text: "lista de reproducción seleccionada",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.added_policy_to_playlist",
+        translated_text: "Se agregó la política '{value1}' a la lista de reproducción '{value2}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.policy_is_already_a_member_of_playlist",
+        translated_text: "La política '{value1}' ya pertenece a la lista de reproducción '{value2}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.unable_to_add_policy_to_playlist",
+        translated_text: "No se pudo agregar la política a la lista de reproducción: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.no_policies_available",
+        translated_text: "No hay políticas disponibles",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.add_policy_to_playlist",
+        translated_text: "Agregar política a lista de reproducción",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.all_available_policies_are_already_members_of_this_playlist",
+        translated_text: "Todas las políticas disponibles ya pertenecen a esta lista de reproducción.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.selected_policy",
+        translated_text: "Política seleccionada",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.added_policy_to_playlist_2",
+        translated_text: "Se agregó la política '{value1}' a la lista de reproducción.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.that_policy_is_already_a_member_of_the_playlist",
+        translated_text: "Esa política ya pertenece a la lista de reproducción.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.playlist_name_2",
+        translated_text: "Nombre de lista de reproducción:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.description_optional",
+        translated_text: "Descripción (opcional):",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.created_playlist",
+        translated_text: "Se creó la lista de reproducción '{value1}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.edit_the_playlist_name_and_description_playlist_membership_and_policy",
+        translated_text: "Editar el nombre y la descripción de la lista de reproducción. La pertenencia y el orden de las políticas no cambian.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.updated_playlist",
+        translated_text: "Se actualizó la lista de reproducción '{value1}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.shader_policies_and_shader_files_will_not_be_deleted",
+        translated_text: "Las políticas de shader y los archivos de shader no se eliminarán.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.deleted_playlist",
+        translated_text: "Se eliminó la lista de reproducción '{value1}'.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.unable_to_delete_playlist",
+        translated_text: "No se pudo eliminar la lista de reproducción '{value1}': {value2}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.render_controls",
+        translated_text: "Controles de renderizado",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.fps_max",
+        translated_text: "FPS (Máx.)",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.fps",
+        translated_text: "{value1} FPS",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.click_to_include_fps_in_bulk_edit",
+        translated_text: "Haga clic para incluir FPS en Edición masiva",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.click_to_exclude_fps_from_bulk_edit",
+        translated_text: "Haga clic para excluir FPS de Edición masiva",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.click_the_numeric_fps_value_to_enable_this_slider_for",
+        translated_text: "Haga clic en el valor numérico de FPS para habilitar este control deslizante para Edición masiva.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.set_the_maximum_rendering_frame_rate_hold_shift_for_fine",
+        translated_text: "Establezca la velocidad máxima de fotogramas de renderizado. Mantenga Mayús para un ajuste preciso.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.animation_speed",
+        translated_text: "Velocidad de animación",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.click_to_include_animation_speed_in_bulk_edit",
+        translated_text: "Haga clic para incluir Velocidad de animación en Edición masiva",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.click_to_exclude_animation_speed_from_bulk_edit",
+        translated_text: "Haga clic para excluir Velocidad de animación de Edición masiva",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.click_the_numeric_animation_speed_value_to_enable_this_slider",
+        translated_text: "Haga clic en el valor numérico de Velocidad de animación para habilitar este control deslizante para Edición masiva.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.adjust_animation_speed_on_a_logarithmic_scale_the_slider_midpoint",
+        translated_text: "Ajuste la velocidad de animación en una escala logarítmica. El punto medio del control es 1.0x. Mantenga Mayús para un ajuste preciso.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.starting_offset",
+        translated_text: "Desplazamiento inicial",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.starting_offset_is_not_available_during_bulk_edit",
+        translated_text: "El Desplazamiento inicial no está disponible durante la Edición masiva.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.drag_to_choose_where_the_shader_begins_hold_shift_while",
+        translated_text: "Arrastre para elegir dónde comienza el shader. Mantenga Mayús mientras arrastra para un ajuste 10 veces más preciso.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.render_scale",
+        translated_text: "Escala de renderizado",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.click_to_include_render_scale_in_bulk_edit",
+        translated_text: "Haga clic para incluir Escala de renderizado en Edición masiva",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.click_to_exclude_render_scale_from_bulk_edit",
+        translated_text: "Haga clic para excluir Escala de renderizado de Edición masiva",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.click_the_numeric_render_scale_value_to_enable_this_slider",
+        translated_text: "Haga clic en el valor numérico de Escala de renderizado para habilitar este control deslizante para Edición masiva.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.change_internal_rendering_resolution_lower_values_improve_performance_higher_values",
+        translated_text: "Cambie la resolución interna de renderizado. Los valores menores mejoran el rendimiento; los mayores mejoran la calidad.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.set_the_number_of_graphical_elements_used_to_generate_the",
+        translated_text: "Establezca el número de elementos gráficos usados para generar la textura procedural.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.unable_to_generate_texture_thumbnail",
+        translated_text: "No se pudo generar la miniatura de textura: {value1}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.texture_preview_unavailable",
+        translated_text: "Vista previa de textura no disponible",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.palette_color",
+        translated_text: "Color de paleta:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.custom_color",
+        translated_text: "Color personalizado",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.choose_a_curated_palette_color_the_selected_color_is_written",
+        translated_text: "Elija un color de paleta seleccionado. El color seleccionado se escribe en el campo hexadecimal.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.enter_a_palette_color_using_six_digit_hexadecimal_notation_rrggbb",
+        translated_text: "Introduzca un color de paleta usando notación hexadecimal de seis dígitos (#rrggbb).",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.policy_actions",
+        translated_text: "Acciones de política",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.save_the_current_per_shader_policy_after_all_mandatory_information",
+        translated_text: "Guardar la política actual específica del shader después de proporcionar toda la información obligatoria.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.permanently_remove_the_shader_file_after_confirmation",
+        translated_text: "Eliminar permanentemente el archivo del shader después de la confirmación.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.about_shader_policies",
+        translated_text: "Acerca de las políticas de shader",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.a_shader_policy_determines_how_the_selected_shader_is_rendered",
+        translated_text: "Una política de shader determina cómo se renderiza el shader seleccionado como protector de pantalla o fondo de pantalla.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.policy_unsaved_changes",
+        translated_text: "Política: Cambios sin guardar",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.bulk_create.usable_shader_selected_one",
+        translated_text: "Se seleccionó {value1} shader utilizable.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.bulk_create.usable_shaders_selected_many",
+        translated_text: "Se seleccionaron {value1} shaders utilizables.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.bulk_create.texture_shader_detected_one",
+        translated_text: "Se detectó {value1} shader con texturas habilitadas.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.bulk_create.texture_shaders_detected_many",
+        translated_text: "Se detectaron {value1} shaders con texturas habilitadas.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.bulk_create.rejected_shader_one",
+        translated_text: "No se pudo analizar {value1} shader seleccionado y no se incluirá.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.bulk_create.rejected_shaders_many",
+        translated_text: "No se pudieron analizar {value1} shaders seleccionados y no se incluirán.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.bulk_edit.texture_settings_one",
+        translated_text: "La configuración de Textura y Paleta se aplicará a {value1} shader con texturas habilitadas.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.bulk_edit.texture_settings_many",
+        translated_text: "La configuración de Textura y Paleta se aplicará a {value1} shaders con texturas habilitadas.",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.field.policy_name",
+        translated_text: "Nombre de política",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.field.playlist_name",
+        translated_text: "Nombre de lista de reproducción",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.field.shader_added_date",
+        translated_text: "Fecha de adición del shader",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.field.policy_created_date",
+        translated_text: "Fecha de creación de política",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.field.policy_modified_date",
+        translated_text: "Fecha de modificación de política",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.field.playlist_created_date",
+        translated_text: "Fecha de creación de lista",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.field.playlist_modified_date",
+        translated_text: "Fecha de modificación de lista",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.field.shader_filename",
+        translated_text: "Nombre de archivo del shader",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.field.shader_type",
+        translated_text: "Tipo de shader",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.field.policy_target",
+        translated_text: "Destino de política",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.field.status",
+        translated_text: "Estado",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.field.texture",
+        translated_text: "Textura",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.field.palette",
+        translated_text: "Paleta",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.field.rendered_fps",
+        translated_text: "FPS renderizados",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.field.animation_speed",
+        translated_text: "Velocidad de animación",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.field.render_scale",
+        translated_text: "Escala de renderizado",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.field.anti_aliasing",
+        translated_text: "Antialiasing",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.field.dithering",
+        translated_text: "Tramado",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.field.color_precision",
+        translated_text: "Precisión de color",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.field.audiovisual_effect",
+        translated_text: "Efecto audiovisual",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.field.invert_frequency_mapping",
+        translated_text: "Invertir asignación de frecuencia",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.operator.is",
+        translated_text: "es",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.operator.eq",
+        translated_text: "igual",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.operator.ne",
+        translated_text: "distinto",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.operator.like",
+        translated_text: "como",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.operator.not_like",
+        translated_text: "no como",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.operator.lt",
+        translated_text: "menor que",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.operator.le",
+        translated_text: "menor o igual",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.operator.gt",
+        translated_text: "mayor que",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.operator.ge",
+        translated_text: "mayor o igual",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.conditional.and",
+        translated_text: "Y",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "qbe.conditional.or",
+        translated_text: "O",
+    },
 ];

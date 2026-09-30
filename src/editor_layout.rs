@@ -682,6 +682,33 @@ fn display_local_timestamp(value: &str) -> String {
     )
 }
 
+fn editor_runtime_text_with_values(
+    key: &str,
+    values: &[String],
+) -> String {
+    const PARAMETER_NAMES: [&str; 6] = [
+        "value1",
+        "value2",
+        "value3",
+        "value4",
+        "value5",
+        "value6",
+    ];
+
+    let parameters: Vec<(&str, &str)> =
+        PARAMETER_NAMES
+            .iter()
+            .copied()
+            .zip(values.iter().map(String::as_str))
+            .collect();
+
+    crate::manage_localization::runtime_text_with_params(
+        key,
+        &parameters,
+    )
+}
+
+
 impl PolicyDisplayRow {
     pub fn shader_renderable(&self) -> bool {
         self.accessible
@@ -690,7 +717,7 @@ impl PolicyDisplayRow {
 
     pub fn shader_status_tooltip(&self) -> String {
         if !self.accessible {
-            return format!("Shader file cannot be accessed:\n{}", self.full_path);
+            return editor_runtime_text_with_values("editor.shader_file_cannot_be_accessed", &[format!("{}", self.full_path)]);
         }
 
         if self.validation_status.eq_ignore_ascii_case("rejected") {
@@ -710,35 +737,27 @@ impl PolicyDisplayRow {
                     "Rejected"
                 };
 
-            let reason = self.validation_message.as_deref()
-                .or(self.validation_reason.as_deref())
-                .unwrap_or("Shader validation failed.");
+            let reason = self.validation_message.clone()
+                .or_else(|| self.validation_reason.clone())
+                .unwrap_or_else(|| crate::manage_localization::runtime_text("editor.shader_validation_failed"));
 
-            return format!(
-                "Shader cannot be rendered.\nStatus: {}\nReason: {}\nSee screenshaver.log for further details.",
-                status,
-                reason,
-            );
+            return editor_runtime_text_with_values("editor.shader_cannot_be_rendered_status_reason_see_screenshaver_log_for", &[format!("{}", status), format!("{}", reason)]);
         }
 
         if !self.validation_status.eq_ignore_ascii_case("valid") {
-            let reason = self.validation_message.as_deref()
-                .or(self.validation_reason.as_deref())
-                .unwrap_or("Shader validation state is unavailable.");
+            let reason = self.validation_message.clone()
+                .or_else(|| self.validation_reason.clone())
+                .unwrap_or_else(|| crate::manage_localization::runtime_text("editor.shader_validation_state_is_unavailable"));
 
-            return format!(
-                "Shader cannot be rendered.\nStatus: {}\nReason: {}\nSee screenshaver.log for further details.",
-                self.validation_status,
-                reason,
-            );
+            return editor_runtime_text_with_values("editor.shader_cannot_be_rendered_status_reason_see_screenshaver_log_for", &[format!("{}", self.validation_status), format!("{}", reason)]);
         }
 
         if self.unassigned {
-            return "Unassigned policy — this shader cannot be rendered until its Policy Target is changed to Screensaver or Wallpaper."
+            return crate::manage_localization::runtime_text("editor.unassigned_policy_this_shader_cannot_be_rendered_until_its_policy")
                 .to_string();
         }
 
-        format!("Shader is accessible and validated:\n{}", self.full_path)
+        editor_runtime_text_with_values("editor.shader_is_accessible_and_validated", &[format!("{}", self.full_path)])
     }
 }
 
@@ -1583,10 +1602,7 @@ impl EditWindowOverlay {
             )
             .map_err(
                 |error| {
-                    format!(
-                        "Unable to create egui OpenGL painter: {}",
-                        error,
-                    )
+                    editor_runtime_text_with_values("editor.unable_to_create_egui_opengl_painter", &[format!("{}", error)])
                 }
             )?;
 
@@ -1612,10 +1628,7 @@ impl EditWindowOverlay {
             )
             .map_err(
                 |error| {
-                    format!(
-                        "Unable to decode embedded Control Center branding image: {}",
-                        error,
-                    )
+                    editor_runtime_text_with_values("editor.unable_to_decode_embedded_control_center_branding_image", &[format!("{}", error)])
                 }
             )?
             .to_rgba8();
@@ -1632,7 +1645,7 @@ impl EditWindowOverlay {
             || branding_height == 0
         {
             return Err(
-                "Embedded Control Center branding image has invalid dimensions."
+                crate::manage_localization::runtime_text("editor.embedded_control_center_branding_image_has_invalid_dimensions")
                     .to_string()
             );
         }
@@ -2747,7 +2760,7 @@ impl EditWindowOverlay {
         // A shader physically located in one of Screenshaver's managed
         // runtime folders has exactly one available policy target.  Enforce
         // that target here as well as in edit_shader.rs so the Control Center
-        // cannot display "Select..." or retain a stale opposite target.
+        // cannot display the Select placeholder or retain a stale opposite target.
         let forced_policy_target =
             match (
                 screensaver_target_available,
@@ -3087,7 +3100,7 @@ impl EditWindowOverlay {
 
 
         let editor_title =
-            "Screenshaver Control Center (ESC or Q to exit)";
+            crate::manage_localization::runtime_text("editor.screenshaver_control_center_esc_or_q_to_exit");
 
 
         let bulk_edit_mode =
@@ -3163,7 +3176,7 @@ impl EditWindowOverlay {
                 bulk_hue_rotation_selected = false;
 
                 status_message =
-                    "Bulk Edit Mode active-- click Cancel to return to Single Edit mode."
+                    crate::manage_localization::runtime_text("editor.bulk_edit_mode_active_click_cancel_to_return_to_single")
                         .to_string();
             }
         } else {
@@ -3344,7 +3357,7 @@ impl EditWindowOverlay {
 
                     let main_window_response =
                         egui::Window::new(
-                            editor_title
+                            &editor_title
                         )
                     .open(
                         &mut window_open
@@ -3385,7 +3398,7 @@ impl EditWindowOverlay {
                             );
 
                             let mut hover_help_message:
-                                Option<&'static str> =
+                                Option<String> =
                                 None;
 
                             let current_configuration =
@@ -3830,7 +3843,7 @@ impl EditWindowOverlay {
                                     {
                                         hover_help_message =
                                             Some(
-                                                "Select a Policy Target before changing shader settings."
+                                                "Select a Policy Target before changing shader settings.".to_string()
                                             );
                                     }
                                 },
@@ -3925,12 +3938,11 @@ impl EditWindowOverlay {
                             );
 
                             let displayed_status: &str =
-                                match hover_help_message {
-                                    Some(message) =>
-                                        message,
-                                    None =>
-                                        status_message.as_str(),
-                                };
+                                hover_help_message
+                                    .as_deref()
+                                    .unwrap_or(
+                                        status_message.as_str()
+                                    );
 
                             draw_compact_status_row(
                                 ui,
@@ -5515,12 +5527,12 @@ fn normalize_starting_offset(
 
 fn update_hover_help(
     response: &egui::Response,
-    hover_help_message: &mut Option<&'static str>,
-    message: &'static str,
+    hover_help_message: &mut Option<String>,
+    message: impl Into<String>,
 ) {
     if response.hovered() {
         *hover_help_message =
-            Some(message);
+            Some(message.into());
     }
 }
 
@@ -5620,7 +5632,7 @@ fn draw_compact_header(
     clear_recent_files_requested: &mut bool,
     policy_target_change_requested: &mut Option<PolicyTarget>,
     status_message: &mut String,
-    hover_help_message: &mut Option<&'static str>,
+    hover_help_message: &mut Option<String>,
 ) {
     // The branding thumbnail is deliberately positioned independently of
     // the left-side header flow so its height cannot push Policy Name /
@@ -5674,20 +5686,26 @@ fn draw_compact_header(
                             Some(
                                 PolicyTarget::Screensaver
                             ) =>
-                                "Screensaver",
+                                crate::manage_localization::runtime_text(
+                                    "target.screensaver"
+                                ),
                             Some(
                                 PolicyTarget::Wallpaper
                             ) =>
-                                "Wallpaper",
+                                crate::manage_localization::runtime_text(
+                                    "target.wallpaper"
+                                ),
                             Some(
                                 PolicyTarget::Unassigned
                             ) =>
-                                "Unassigned",
+                                crate::manage_localization::runtime_text(
+                                    "target.unassigned"
+                                ),
                             None if bulk_edit_mode =>
-                                "",
+                                String::new(),
 
                             None =>
-                                "Select...",
+                                crate::manage_localization::runtime_text("editor.select"),
                         };
 
                     // The canonical default.glsl policies are fallbacks.
@@ -5711,7 +5729,7 @@ fn draw_compact_header(
 
                     ui.label(
                         egui::RichText::new(
-                            "Policy Target:"
+                            crate::manage_localization::runtime_text("editor.policy_target")
                         )
                         .strong(),
                     );
@@ -5736,13 +5754,13 @@ fn draw_compact_header(
                                                             let no_change_response =
                                                                 ui.selectable_label(
                                                                     policy_target.is_none(),
-                                                                    "No Change",
+                                                                    crate::manage_localization::runtime_text("editor.no_change"),
                                                                 );
 
                                                             update_hover_help(
                                                                 &no_change_response,
                                                                 hover_help_message,
-                                                                "Leave Policy Target unchanged for every checked policy.",
+                                                                crate::manage_localization::runtime_text("editor.leave_policy_target_unchanged_for_every_checked_policy"),
                                                             );
 
                                                             if no_change_response.clicked() {
@@ -5775,11 +5793,11 @@ fn draw_compact_header(
                                                             &screensaver_response,
                                                             hover_help_message,
                                                             if screensaver_target_available {
-                                                                "Load or create the policy used for screensaver rendering."
+                                                                crate::manage_localization::runtime_text("editor.load_or_create_the_policy_used_for_screensaver_rendering")
                                                             } else if screensaver_target_session_restricted {
-                                                                "This editing session was opened for the active wallpaper. Only the Wallpaper policy can be edited."
+                                                                crate::manage_localization::runtime_text("editor.this_editing_session_was_opened_for_the_active_wallpaper_only")
                                                             } else {
-                                                                "This shader is unavailable for Screensaver use because it does not exist in the screensavers folder."
+                                                                crate::manage_localization::runtime_text("editor.this_shader_is_unavailable_for_screensaver_use_because_it_does")
                                                             },
                                                         );
 
@@ -5804,7 +5822,7 @@ fn draw_compact_header(
                                                                 && policy_target.is_some()
                                                             {
                                                                 *status_message =
-                                                                    "Save or cancel the current changes before switching policy targets."
+                                                                    crate::manage_localization::runtime_text("editor.save_or_cancel_the_current_changes_before_switching_policy_targets")
                                                                         .to_string();
                                                             } else {
                                                                 *policy_target_change_requested =
@@ -5833,11 +5851,11 @@ fn draw_compact_header(
                                                             &wallpaper_response,
                                                             hover_help_message,
                                                             if wallpaper_target_available {
-                                                                "Load or create the policy used for wallpaper rendering."
+                                                                crate::manage_localization::runtime_text("editor.load_or_create_the_policy_used_for_wallpaper_rendering")
                                                             } else if wallpaper_target_session_restricted {
-                                                                "This editing session was opened for the active screensaver. Only the Screensaver policy can be edited."
+                                                                crate::manage_localization::runtime_text("editor.this_editing_session_was_opened_for_the_active_screensaver_only")
                                                             } else {
-                                                                "This shader is unavailable for Wallpaper use because it does not exist in the wallpapers folder."
+                                                                crate::manage_localization::runtime_text("editor.this_shader_is_unavailable_for_wallpaper_use_because_it_does")
                                                             },
                                                         );
 
@@ -5862,7 +5880,7 @@ fn draw_compact_header(
                                                                 && policy_target.is_some()
                                                             {
                                                                 *status_message =
-                                                                    "Save or cancel the current changes before switching policy targets."
+                                                                    crate::manage_localization::runtime_text("editor.save_or_cancel_the_current_changes_before_switching_policy_targets")
                                                                         .to_string();
                                                             } else {
                                                                 *policy_target_change_requested =
@@ -5886,7 +5904,7 @@ fn draw_compact_header(
                                                         update_hover_help(
                                                             &unassigned_response,
                                                             hover_help_message,
-                                                            "Keep this policy and all of its settings, but exclude it from screensaver and wallpaper rendering until it is reassigned.",
+                                                            crate::manage_localization::runtime_text("editor.keep_this_policy_and_all_of_its_settings_but_exclude"),
                                                         );
 
                                                         if unassigned_response.clicked()
@@ -5910,7 +5928,7 @@ fn draw_compact_header(
                                                                 && policy_target.is_some()
                                                             {
                                                                 *status_message =
-                                                                    "Save or cancel the current changes before switching policy targets."
+                                                                    crate::manage_localization::runtime_text("editor.save_or_cancel_the_current_changes_before_switching_policy_targets")
                                                                         .to_string();
                                                             } else {
                                                                 *policy_target_change_requested =
@@ -5969,17 +5987,17 @@ fn draw_compact_header(
             shader_information
         {
             (
-                information.policy_name.as_str(),
-                information.filename.as_str(),
-                information.folder.as_str(),
-                information.shader_type.as_str(),
+                information.policy_name.clone(),
+                information.filename.clone(),
+                information.folder.clone(),
+                information.shader_type.clone(),
             )
         } else {
             (
-                "—",
-                "No shader loaded",
-                "—",
-                "—",
+                "—".to_string(),
+                crate::manage_localization::runtime_text("editor.no_shader_loaded"),
+                "—".to_string(),
+                "—".to_string(),
             )
         };
 
@@ -6007,28 +6025,28 @@ fn draw_compact_header(
                     .show(
                         ui,
                         |ui| {
-                            ui.label("Policy Name:");
+                            ui.label(crate::manage_localization::runtime_text("editor.policy_name"));
                             ui.label(policy_name);
                             ui.end_row();
 
-                            ui.label("Filename:");
+                            ui.label(crate::manage_localization::runtime_text("editor.filename"));
                             ui.label(filename);
                             ui.end_row();
 
-                            ui.label("Folder:");
+                            ui.label(crate::manage_localization::runtime_text("editor.folder"));
                             let folder_response =
                                 ui.label(
                                     truncate_middle(
-                                        folder,
+                                        &folder,
                                         66,
                                     )
                                 );
                             folder_response.on_hover_text(
-                                folder
+                                &folder
                             );
                             ui.end_row();
 
-                            ui.label("Type:");
+                            ui.label(crate::manage_localization::runtime_text("editor.type"));
                             ui.label(shader_type);
                             ui.end_row();
                         },
@@ -6080,7 +6098,7 @@ fn draw_compact_action_row(
     render_scale_drag_state: &mut Option<SliderDragState>,
     bloom_threshold_drag_state: &mut Option<SliderDragState>,
     status_message: &mut String,
-    hover_help_message: &mut Option<&'static str>,
+    hover_help_message: &mut Option<String>,
     shader_information: Option<&ShaderInformation>,
     policy_changed: bool,
     control_configuration_dirty: bool,
@@ -6101,7 +6119,7 @@ fn draw_compact_action_row(
                         can_save
                     },
                     egui::Button::new(
-                        "Save Policy"
+                        crate::manage_localization::runtime_text("editor.save_policy")
                     )
                     .min_size(
                         button_size
@@ -6118,7 +6136,7 @@ fn draw_compact_action_row(
             update_hover_help(
                 &save_response,
                 hover_help_message,
-                "Save the current per-shader policy.",
+                crate::manage_localization::runtime_text("editor.save_the_current_per_shader_policy"),
             );
 
             if save_response.clicked() {
@@ -6130,7 +6148,7 @@ fn draw_compact_action_row(
                         true;
 
                     *status_message =
-                        "Saving policy..."
+                        crate::manage_localization::runtime_text("editor.saving_policy")
                             .to_string();
                 }
             }
@@ -6156,7 +6174,7 @@ fn draw_compact_action_row(
             update_hover_help(
                 &cancel_response,
                 hover_help_message,
-                "Discard changes made during this editor session.",
+                crate::manage_localization::runtime_text("editor.discard_changes_made_during_this_editor_session"),
             );
 
             if cancel_response.clicked() {
@@ -6227,11 +6245,11 @@ fn draw_compact_action_row(
                         None;
 
                     *status_message =
-                        "Bulk Edit Mode canceled"
+                        crate::manage_localization::runtime_text("editor.bulk_edit_mode_canceled")
                             .to_string();
                 } else {
                     *status_message =
-                        "Changes canceled"
+                        crate::manage_localization::runtime_text("editor.changes_canceled")
                             .to_string();
                 }
             }
@@ -6240,19 +6258,19 @@ fn draw_compact_action_row(
 
             let policy_text =
                 if shader_information.is_none() {
-                    "Policy: --"
+                    crate::manage_localization::runtime_text("editor.policy")
                 } else if policy_changed {
-                    "Policy: Modified"
+                    crate::manage_localization::runtime_text("editor.policy_modified")
                 } else {
-                    "Policy: Unchanged"
+                    crate::manage_localization::runtime_text("editor.policy_unchanged")
                 };
 
 
             let config_text =
                 if control_configuration_dirty {
-                    "Config: Modified"
+                    crate::manage_localization::runtime_text("editor.config_modified")
                 } else {
-                    "Config: Unchanged"
+                    crate::manage_localization::runtime_text("editor.config_unchanged")
                 };
 
 
@@ -6321,7 +6339,7 @@ fn draw_compact_status_row(
             || displayed_status
                 .to_ascii_lowercase()
                 .contains(
-                    "loaded and rendering"
+                    &crate::manage_localization::runtime_text("editor.loaded_and_rendering")
                 )
         {
             ""
@@ -6857,9 +6875,9 @@ fn draw_policies_tab(
                             .inner
                             .on_hover_text(
                                 if all_rows_checked {
-                                    "Clear all policy selections"
+                                    crate::manage_localization::runtime_text("editor.clear_all_policy_selections")
                                 } else {
-                                    "Select all policies"
+                                    "Select all policies".to_string()
                                 }
                             );
 
@@ -6907,7 +6925,7 @@ fn draw_policies_tab(
                                 row_height,
                                 egui::RichText::new(
                                     header_text(
-                                        "Policy Name",
+                                        &crate::manage_localization::runtime_text("editor.policy_name_2"),
                                         PolicySortColumn::Filename,
                                         *sort_column,
                                         *sort_ascending,
@@ -6961,7 +6979,7 @@ fn draw_policies_tab(
                                 row_height,
                                 egui::RichText::new(
                                     header_text(
-                                        "Policy Type",
+                                        &crate::manage_localization::runtime_text("editor.policy_type"),
                                         PolicySortColumn::PolicyType,
                                         *sort_column,
                                         *sort_ascending,
@@ -7031,7 +7049,7 @@ fn draw_policies_tab(
                                 filename_width,
                                 row_height,
                                 egui::RichText::new(
-                                    "No shader policies are currently defined."
+                                    crate::manage_localization::runtime_text("editor.no_shader_policies_are_currently_defined")
                                 )
                                 .weak(),
                                 egui::Sense::hover(),
@@ -7116,7 +7134,7 @@ fn draw_policies_tab(
                                 )
                                 .inner
                                 .on_hover_text(
-                                    "Include this policy in Bulk Edit mode"
+                                    crate::manage_localization::runtime_text("editor.include_this_policy_in_bulk_edit_mode")
                                 );
 
 
@@ -7161,15 +7179,7 @@ fn draw_policies_tab(
                                     row_selected,
                                 )
                                 .on_hover_text(
-                                    format!(
-                                        "Policy Name: {}\nShader: {}\nPath: {}\nShader Added: {}\nPolicy Created: {}\nPolicy Modified: {}",
-                                        row.policy_key,
-                                        row.filename,
-                                        row.full_path,
-                                        display_local_timestamp(&row.shader_added_local),
-                                        display_local_timestamp(&row.policy_created_local),
-                                        display_local_timestamp(&row.policy_modified_local),
-                                    )
+                                    editor_runtime_text_with_values("editor.policy_name_shader_path_shader_added_policy_created_policy_modified", &[format!("{}", row.policy_key), format!("{}", row.filename), format!("{}", row.full_path), format!("{}", display_local_timestamp(&row.shader_added_local)), format!("{}", display_local_timestamp(&row.policy_created_local)), format!("{}", display_local_timestamp(&row.policy_modified_local))])
                                 );
 
                             if *restore_selected_policy_scroll
@@ -7307,7 +7317,7 @@ fn draw_policies_tab(
                                             if ui.add_enabled(
                                                 row.shader_renderable(),
                                                 egui::Button::new(
-                                                    "Edit Policy..."
+                                                    crate::manage_localization::runtime_text("editor.edit_policy")
                                                 ),
                                             )
                                             .clicked()
@@ -7330,7 +7340,7 @@ fn draw_policies_tab(
 
                                             if allow_clone {
                                                 if ui.button(
-                                                    "Clone Policy..."
+                                                    crate::manage_localization::runtime_text("editor.clone_policy")
                                                 )
                                                 .clicked()
                                                 {
@@ -7351,7 +7361,7 @@ fn draw_policies_tab(
                                                 }
 
                                                 if ui.button(
-                                                    "Rename Policy..."
+                                                    crate::manage_localization::runtime_text("editor.rename_policy")
                                                 )
                                                 .clicked()
                                                 {
@@ -7372,7 +7382,7 @@ fn draw_policies_tab(
                                                 }
 
                                                 if ui.button(
-                                                    "Add to Playlist..."
+                                                    crate::manage_localization::runtime_text("editor.add_to_playlist")
                                                 )
                                                 .clicked()
                                                 {
@@ -7396,7 +7406,7 @@ fn draw_policies_tab(
                                             }
 
                                             if ui.button(
-                                                "Refresh Shader"
+                                                crate::manage_localization::runtime_text("editor.refresh_shader")
                                             )
                                             .clicked()
                                             {
@@ -7525,10 +7535,7 @@ fn draw_policies_tab(
                 policy_rows.len();
 
             *status_message =
-                format!(
-                    "Policy query cleared — displaying all {} policies.",
-                    policy_rows.len(),
-                );
+                editor_runtime_text_with_values("editor.policy_query_cleared_displaying_all_policies", &[format!("{}", policy_rows.len())]);
         }
 
         crate::qbe_layout::QbeStripAction::Query => {
@@ -7556,19 +7563,12 @@ fn draw_policies_tab(
                         result.total_count;
 
                     *status_message =
-                        format!(
-                            "Policy query returned {} / {} policies.",
-                            result.returned_count,
-                            result.total_count,
-                        );
+                        editor_runtime_text_with_values("editor.policy_query_returned_policies", &[format!("{}", result.returned_count), format!("{}", result.total_count)]);
                 }
 
                 Err(error) => {
                     *status_message =
-                        format!(
-                            "Policy query failed: {}",
-                            error,
-                        );
+                        editor_runtime_text_with_values("editor.policy_query_failed", &[format!("{}", error)]);
                 }
             }
         }
@@ -7676,18 +7676,16 @@ fn draw_bulk_create_confirmation_modal(
         context,
         |ui| {
             ui.label(
-                format!(
-                    "{} usable shader{} selected.",
-                    total_count,
-                    if total_count == 1 { "" } else { "s" },
+                editor_runtime_text_with_values(
+                    if total_count == 1 { "editor.bulk_create.usable_shader_selected_one" } else { "editor.bulk_create.usable_shaders_selected_many" },
+                    &[format!("{}", total_count)],
                 )
             );
 
             ui.label(
-                format!(
-                    "{} texture-enabled shader{} detected.",
-                    texture_count,
-                    if texture_count == 1 { "" } else { "s" },
+                editor_runtime_text_with_values(
+                    if texture_count == 1 { "editor.bulk_create.texture_shader_detected_one" } else { "editor.bulk_create.texture_shaders_detected_many" },
+                    &[format!("{}", texture_count)],
                 )
             );
 
@@ -7696,27 +7694,19 @@ fn draw_bulk_create_confirmation_modal(
             );
 
             ui.label(
-                format!(
-                    "Managed targets: {} Screensaver, {} Wallpaper.",
-                    screensaver_count,
-                    wallpaper_count,
-                )
+                editor_runtime_text_with_values("editor.managed_targets_screensaver_wallpaper", &[format!("{}", screensaver_count), format!("{}", wallpaper_count)])
             );
 
             ui.label(
-                format!(
-                    "External shaders requiring a target: {}.",
-                    external_count,
-                )
+                editor_runtime_text_with_values("editor.external_shaders_requiring_a_target", &[format!("{}", external_count)])
             );
 
 
             if rejected_count > 0 {
                 ui.label(
-                    format!(
-                        "{} selected shader{} could not be analyzed and will not be included.",
-                        rejected_count,
-                        if rejected_count == 1 { "" } else { "s" },
+                    editor_runtime_text_with_values(
+                        if rejected_count == 1 { "editor.bulk_create.rejected_shader_one" } else { "editor.bulk_create.rejected_shaders_many" },
+                        &[format!("{}", rejected_count)],
                     )
                 );
             }
@@ -7728,7 +7718,7 @@ fn draw_bulk_create_confirmation_modal(
                 );
 
                 ui.label(
-                    "Policy target for all external shaders:"
+                    crate::manage_localization::runtime_text("editor.policy_target_for_all_external_shaders")
                 );
 
                 ui.horizontal(
@@ -7929,7 +7919,7 @@ fn draw_bulk_save_confirmation_modal(
 
 
     egui::Window::new(
-        "Confirm Bulk Policy Changes"
+        crate::manage_localization::runtime_text("editor.confirm_bulk_policy_changes")
     )
     .id(
         egui::Id::new(
@@ -7954,19 +7944,11 @@ fn draw_bulk_save_confirmation_modal(
         |ui| {
             if excluded_count == 0 {
                 ui.label(
-                    format!(
-                        "Changes will be applied to {} policies. Click OK to continue or Cancel to abort.",
-                        selected_count,
-                    )
+                    editor_runtime_text_with_values("editor.changes_will_be_applied_to_policies_click_ok_to_continue", &[format!("{}", selected_count)])
                 );
             } else {
                 ui.label(
-                    format!(
-                        "{} policies were selected. {} will be updated and {} will be skipped because the shader file is unavailable.",
-                        selected_count,
-                        eligible_count,
-                        excluded_count,
-                    )
+                    editor_runtime_text_with_values("editor.policies_were_selected_will_be_updated_and_will_be_skipped", &[format!("{}", selected_count), format!("{}", eligible_count), format!("{}", excluded_count)])
                 );
 
 
@@ -7977,9 +7959,9 @@ fn draw_bulk_save_confirmation_modal(
 
                 ui.label(
                     if excluded_count == 1 {
-                        "Excluded policy:"
+                        crate::manage_localization::runtime_text("editor.excluded_policy")
                     } else {
-                        "Excluded policies:"
+                        crate::manage_localization::runtime_text("editor.excluded_policies")
                     }
                 );
 
@@ -8007,19 +7989,15 @@ fn draw_bulk_save_confirmation_modal(
 
             if eligible_count > 0 {
                 ui.label(
-                    format!(
-                        "Texture and Palette settings will apply to {} texture-enabled shader{}.",
-                        texture_enabled_count,
-                        if texture_enabled_count == 1 {
+                    editor_runtime_text_with_values("editor.texture_and_palette_settings_will_apply_to_texture_enabled_shader", &[format!("{}", texture_enabled_count), format!("{}", if texture_enabled_count == 1 {
                             ""
                         } else {
                             "s"
-                        },
-                    )
+                        })])
                 );
             } else {
                 ui.label(
-                    "No selected policies are eligible for Bulk Edit because their shader files are unavailable."
+                    crate::manage_localization::runtime_text("editor.no_selected_policies_are_eligible_for_bulk_edit_because_their")
                 );
             }
 
@@ -8099,7 +8077,7 @@ fn draw_exit_confirmation_modal(
 
 
     egui::Window::new(
-        "Unsaved Changes"
+        crate::manage_localization::runtime_text("editor.unsaved_changes")
     )
     .id(
         egui::Id::new(
@@ -8123,7 +8101,7 @@ fn draw_exit_confirmation_modal(
         context,
         |ui| {
             ui.label(
-                "The Screenshaver Control Center has unsaved changes."
+                crate::manage_localization::runtime_text("editor.the_screenshaver_control_center_has_unsaved_changes")
             );
 
             ui.add_space(
@@ -8131,7 +8109,7 @@ fn draw_exit_confirmation_modal(
             );
 
             ui.label(
-                "Would you like to save those changes before exiting?"
+                crate::manage_localization::runtime_text("editor.would_you_like_to_save_those_changes_before_exiting")
             );
 
             ui.add_space(
@@ -8151,7 +8129,7 @@ fn draw_exit_confirmation_modal(
                         ui.add_enabled(
                             save_exit_enabled,
                             egui::Button::new(
-                                "Save and Exit"
+                                crate::manage_localization::runtime_text("editor.save_and_exit")
                             ),
                         );
 
@@ -8181,7 +8159,7 @@ fn draw_exit_confirmation_modal(
 
 
                     if ui.button(
-                        "Exit Without Saving"
+                        crate::manage_localization::runtime_text("editor.exit_without_saving")
                     )
                     .clicked()
                     {
@@ -8245,7 +8223,7 @@ fn draw_policy_rename_modal(
     let mut cancel_clicked = false;
 
     egui::Window::new(
-        "Rename Policy"
+        crate::manage_localization::runtime_text("editor.rename_policy_2")
     )
     .id(
         egui::Id::new(
@@ -8269,13 +8247,13 @@ fn draw_policy_rename_modal(
         context,
         |ui| {
             ui.label(
-                "Change the user-facing Policy Name. The shader and policy settings are unchanged."
+                crate::manage_localization::runtime_text("editor.change_the_user_facing_policy_name_the_shader_and_policy")
             );
 
             ui.add_space(8.0);
 
             ui.label(
-                "Policy Name:"
+                crate::manage_localization::runtime_text("editor.policy_name")
             );
 
             let response =
@@ -8334,10 +8312,7 @@ fn draw_policy_rename_modal(
             &length
         ) {
             rename.validation_message =
-                format!(
-                    "Policy Name must contain between 1 and 128 characters; found {}.",
-                    length,
-                );
+                editor_runtime_text_with_values("editor.policy_name_must_contain_between_1_and_128_characters_found", &[format!("{}", length)]);
         } else {
             *rename_requested =
                 Some(
@@ -8377,7 +8352,7 @@ fn draw_policy_clone_modal(
         false;
 
     egui::Window::new(
-        "Clone Policy"
+        crate::manage_localization::runtime_text("editor.clone_policy_2")
     )
     .id(
         egui::Id::new(
@@ -8407,7 +8382,7 @@ fn draw_policy_clone_modal(
             ui.add_space(8.0);
 
             ui.label(
-                "Policy Name:"
+                crate::manage_localization::runtime_text("editor.policy_name")
             );
 
             let response =
@@ -8467,10 +8442,7 @@ fn draw_policy_clone_modal(
             &length
         ) {
             clone.validation_message =
-                format!(
-                    "Policy Name must contain between 1 and 128 characters; found {}.",
-                    length,
-                );
+                editor_runtime_text_with_values("editor.policy_name_must_contain_between_1_and_128_characters_found", &[format!("{}", length)]);
         } else {
             *clone_requested =
                 Some(
@@ -8508,16 +8480,16 @@ fn draw_policy_confirmation_modal(
     let title =
         match confirmation.command {
             PolicyRowCommand::MoveToScreensavers =>
-                "Move Shader?",
+                crate::manage_localization::runtime_text("editor.move_shader"),
 
             PolicyRowCommand::MoveToWallpapers =>
-                "Move Shader?",
+                crate::manage_localization::runtime_text("editor.move_shader"),
 
             PolicyRowCommand::DeletePolicy =>
-                "Delete Policy?",
+                "Delete Policy?".to_string(),
 
             PolicyRowCommand::DeleteShader =>
-                "Delete Shader?",
+                "Delete Shader?".to_string(),
 
             _ =>
                 return,
@@ -8566,10 +8538,7 @@ fn draw_policy_confirmation_modal(
                         };
 
                     ui.label(
-                        format!(
-                            "Move this shader to {}:",
-                            destination,
-                        )
+                        editor_runtime_text_with_values("editor.move_this_shader_to", &[format!("{}", destination)])
                     );
 
                     ui.add_space(6.0);
@@ -8597,24 +8566,17 @@ fn draw_policy_confirmation_modal(
                         != destination_target
                     {
                         ui.label(
-                            format!(
-                                "The existing {} policy will be changed to a {} policy. All policy settings will be preserved.",
-                                policy_target_name(
+                            editor_runtime_text_with_values("editor.the_existing_policy_will_be_changed_to_a_policy_all", &[format!("{}", policy_target_name(
                                     confirmation.row.policy_target
-                                ),
-                                policy_target_name(
+                                )), format!("{}", policy_target_name(
                                     destination_target
-                                ),
-                            )
+                                ))])
                         );
                     } else {
                         ui.label(
-                            format!(
-                                "The existing {} policy will be retained and its path will be updated automatically.",
-                                policy_target_name(
+                            editor_runtime_text_with_values("editor.the_existing_policy_will_be_retained_and_its_path_will", &[format!("{}", policy_target_name(
                                     confirmation.row.policy_target
-                                ),
-                            )
+                                ))])
                         );
                     }
                 }
@@ -8636,16 +8598,13 @@ fn draw_policy_confirmation_modal(
                     ui.add_space(8.0);
 
                     ui.label(
-                        "The shader file will not be deleted."
+                        crate::manage_localization::runtime_text("editor.the_shader_file_will_not_be_deleted")
                     );
                 }
 
                 PolicyRowCommand::DeleteShader => {
                     ui.label(
-                        format!(
-                            "Permanently delete this {} shader:",
-                            target_name,
-                        )
+                        editor_runtime_text_with_values("editor.permanently_delete_this_shader", &[format!("{}", target_name)])
                     );
 
                     ui.add_space(6.0);
@@ -8657,22 +8616,19 @@ fn draw_policy_confirmation_modal(
                     ui.add_space(8.0);
 
                     ui.label(
-                        format!(
-                            "The associated {} policy will also be deleted.",
-                            target_name,
-                        )
+                        editor_runtime_text_with_values("editor.the_associated_policy_will_also_be_deleted", &[format!("{}", target_name)])
                     );
 
                     ui.label(
                         match confirmation.row.policy_target {
                             PolicyTarget::Screensaver =>
-                                "Any Wallpaper shader or Wallpaper policy with the same filename will not be changed.",
+                                crate::manage_localization::runtime_text("editor.any_wallpaper_shader_or_wallpaper_policy_with_the_same_filename"),
 
                             PolicyTarget::Wallpaper =>
-                                "Any Screensaver shader or Screensaver policy with the same filename will not be changed.",
+                                crate::manage_localization::runtime_text("editor.any_screensaver_shader_or_screensaver_policy_with_the_same_filename"),
 
                             PolicyTarget::Unassigned =>
-                                "The shader file will not be changed.",
+                                crate::manage_localization::runtime_text("editor.the_shader_file_will_not_be_changed"),
                         }
                     );
                 }
@@ -8871,8 +8827,8 @@ fn draw_playlists_tab(
     let playlists = match crate::manage_playlists::list_playlists() {
         Ok(playlists) => playlists,
         Err(error) => {
-            *status_message = format!("Unable to load playlists: {}", error);
-            ui.label("Unable to load the Playlist inventory.");
+            *status_message = editor_runtime_text_with_values("editor.unable_to_load_playlists", &[format!("{}", error)]);
+            ui.label(crate::manage_localization::runtime_text("editor.unable_to_load_the_playlist_inventory"));
             return;
         }
     };
@@ -8898,7 +8854,7 @@ fn draw_playlists_tab(
             Ok(members) => members,
             Err(error) => {
                 *status_message =
-                    format!("Unable to load playlist policies: {}", error);
+                    editor_runtime_text_with_values("editor.unable_to_load_playlist_policies", &[format!("{}", error)]);
                 Vec::new()
             }
         }
@@ -8930,13 +8886,13 @@ fn draw_playlists_tab(
             egui::Layout::top_down(egui::Align::Min),
             |ui| {
                 ui.label(
-                    egui::RichText::new("Playlist Name")
+                    egui::RichText::new(crate::manage_localization::runtime_text("editor.playlist_name"))
                         .strong(),
                 );
                 ui.add_space(metrics.row_gap);
 
                 if playlists.is_empty() {
-                    ui.label("No playlists have been created.");
+                    ui.label(crate::manage_localization::runtime_text("editor.no_playlists_have_been_created"));
                 } else {
                     egui::ScrollArea::vertical()
                         .id_source("playlist_master_scroll")
@@ -8966,11 +8922,7 @@ fn draw_playlists_tab(
                                         },
                                     )
                                     .inner
-                                    .on_hover_text(format!(
-                                        "Playlist Created: {}\nPlaylist Modified: {}",
-                                        display_local_timestamp(&playlist.playlist_created_local),
-                                        display_local_timestamp(&playlist.playlist_modified_local),
-                                    ));
+                                    .on_hover_text(editor_runtime_text_with_values("editor.playlist_created_playlist_modified", &[format!("{}", display_local_timestamp(&playlist.playlist_created_local)), format!("{}", display_local_timestamp(&playlist.playlist_modified_local))]));
 
                                 if response.clicked() {
                                     if *selected_playlist_id
@@ -8983,10 +8935,7 @@ fn draw_playlists_tab(
 
                                     *selected_playlist_id =
                                         Some(playlist.playlist_id);
-                                    *status_message = format!(
-                                        "Selected playlist '{}'.",
-                                        playlist.playlist_name,
-                                    );
+                                    *status_message = editor_runtime_text_with_values("editor.selected_playlist", &[format!("{}", playlist.playlist_name)]);
                                 }
 
                                 if response.double_clicked() {
@@ -9022,7 +8971,7 @@ fn draw_playlists_tab(
             |ui| {
                 // Playlist-record controls stay fixed at the top of the Detail pane.
                 ui.horizontal(|ui| {
-                    if ui.button("New Playlist").clicked() {
+                    if ui.button(crate::manage_localization::runtime_text("editor.new_playlist")).clicked() {
                         *pending_playlist_create =
                             Some(PendingPlaylistCreate {
                                 playlist_name: String::new(),
@@ -9034,7 +8983,7 @@ fn draw_playlists_tab(
                     if ui
                         .add_enabled(
                             selected_playlist.is_some(),
-                            egui::Button::new("Edit Playlist Info"),
+                            egui::Button::new(crate::manage_localization::runtime_text("editor.edit_playlist_info")),
                         )
                         .clicked()
                     {
@@ -9097,8 +9046,8 @@ fn draw_playlists_tab(
 
                 let selected_id = *selected_playlist_id;
                 let selected_name = selected_playlist
-                    .map(|playlist| playlist.playlist_name.as_str())
-                    .unwrap_or("Selected Playlist");
+                    .map(|playlist| playlist.playlist_name.clone())
+                    .unwrap_or_else(|| crate::manage_localization::runtime_text("editor.selected_playlist_2"));
 
                 let selected_member =
                     selected_playlist_policy_id.and_then(|policy_id| {
@@ -9136,7 +9085,7 @@ fn draw_playlists_tab(
 
                         if members.is_empty() {
                             ui.label(
-                                "This playlist contains no policies.",
+                                crate::manage_localization::runtime_text("editor.this_playlist_contains_no_policies"),
                             );
                             return;
                         }
@@ -9163,12 +9112,12 @@ fn draw_playlists_tab(
                                         for (width, heading, column) in [
                                             (
                                                 policy_name_width,
-                                                "Policy Name",
+                                                crate::manage_localization::runtime_text("editor.policy_name_2"),
                                                 PlaylistSortColumn::PolicyName,
                                             ),
                                             (
                                                 target_width,
-                                                "Policy Target",
+                                                crate::manage_localization::runtime_text("editor.policy_target_2"),
                                                 PlaylistSortColumn::PolicyTarget,
                                             ),
                                         ] {
@@ -9235,30 +9184,20 @@ fn draw_playlists_tab(
                                                             ) {
                                                                 Ok(()) => {
                                                                     *status_message = if shift {
-                                                                        format!(
-                                                                            "Sorted playlist '{}' by compound criteria.",
-                                                                            selected_name,
-                                                                        )
+                                                                        editor_runtime_text_with_values("editor.sorted_playlist_by_compound_criteria", &[format!("{}", selected_name)])
                                                                     } else {
-                                                                        format!(
-                                                                            "Sorted playlist '{}' by {}.",
-                                                                            selected_name,
-                                                                            heading,
-                                                                        )
+                                                                        editor_runtime_text_with_values("editor.sorted_playlist_by", &[format!("{}", selected_name), format!("{}", heading)])
                                                                     };
                                                                 }
                                                                 Err(error) => {
-                                                                    *status_message = format!(
-                                                                        "Unable to sort playlist: {}",
-                                                                        error,
-                                                                    );
+                                                                    *status_message = editor_runtime_text_with_values("editor.unable_to_sort_playlist", &[format!("{}", error)]);
                                                                 }
                                                             }
                                                         }
                                                     }
 
                                                     response.on_hover_text(
-                                                        "Click to sort and persist playlist order. Shift-click adds or changes a secondary sort key.",
+                                                        crate::manage_localization::runtime_text("editor.click_to_sort_and_persist_playlist_order_shift_click_adds"),
                                                     );
                                                 },
                                             );
@@ -9308,22 +9247,9 @@ fn draw_playlists_tab(
                                                         .iter()
                                                         .find(|row| row.policy_id == member.policy_id)
                                                     {
-                                                        format!(
-                                                            "Policy Name: {}\nShader: {}\nPath: {}\nShader Added: {}\nPolicy Created: {}\nPolicy Modified: {}",
-                                                            member.policy_name,
-                                                            member.shader_filename,
-                                                            shader_path,
-                                                            display_local_timestamp(&row.shader_added_local),
-                                                            display_local_timestamp(&row.policy_created_local),
-                                                            display_local_timestamp(&row.policy_modified_local),
-                                                        )
+                                                        editor_runtime_text_with_values("editor.policy_name_shader_path_shader_added_policy_created_policy_modified", &[format!("{}", member.policy_name), format!("{}", member.shader_filename), format!("{}", shader_path), format!("{}", display_local_timestamp(&row.shader_added_local)), format!("{}", display_local_timestamp(&row.policy_created_local)), format!("{}", display_local_timestamp(&row.policy_modified_local))])
                                                     } else {
-                                                        format!(
-                                                            "Policy Name: {}\nShader: {}\nPath: {}",
-                                                            member.policy_name,
-                                                            member.shader_filename,
-                                                            shader_path,
-                                                        )
+                                                        editor_runtime_text_with_values("editor.policy_name_shader_path", &[format!("{}", member.policy_name), format!("{}", member.shader_filename), format!("{}", shader_path)])
                                                     }
                                                 );
 
@@ -9331,11 +9257,7 @@ fn draw_playlists_tab(
                                                 *selected_playlist_policy_id =
                                                     Some(member.policy_id);
 
-                                                *status_message = format!(
-                                                    "Selected policy '{}' in playlist '{}'.",
-                                                    member.policy_name,
-                                                    selected_name,
-                                                );
+                                                *status_message = editor_runtime_text_with_values("editor.selected_policy_in_playlist", &[format!("{}", member.policy_name), format!("{}", selected_name)]);
                                             }
 
                                             let row = policy_rows
@@ -9383,7 +9305,7 @@ fn draw_playlists_tab(
                                                     .add_enabled(
                                                         edit_enabled,
                                                         egui::Button::new(
-                                                            "Edit Policy..."
+                                                            crate::manage_localization::runtime_text("editor.edit_policy")
                                                         ),
                                                     )
                                                     .clicked()
@@ -9406,7 +9328,7 @@ fn draw_playlists_tab(
 
                                                 if ui
                                                     .button(
-                                                        "Remove Policy"
+                                                        crate::manage_localization::runtime_text("editor.remove_policy")
                                                     )
                                                     .clicked()
                                                 {
@@ -9419,10 +9341,7 @@ fn draw_playlists_tab(
                                                         ) {
                                                             Ok(true) => {
                                                                 *status_message =
-                                                                    format!(
-                                                                        "Removed policy '{}' from playlist.",
-                                                                        member.policy_name,
-                                                                    );
+                                                                    editor_runtime_text_with_values("editor.removed_policy_from_playlist", &[format!("{}", member.policy_name)]);
 
                                                                 if *selected_playlist_policy_id
                                                                     == Some(member.policy_id)
@@ -9434,16 +9353,13 @@ fn draw_playlists_tab(
 
                                                             Ok(false) => {
                                                                 *status_message =
-                                                                    "Policy is no longer a member of this playlist."
+                                                                    crate::manage_localization::runtime_text("editor.policy_is_no_longer_a_member_of_this_playlist")
                                                                         .to_string();
                                                             }
 
                                                             Err(error) => {
                                                                 *status_message =
-                                                                    format!(
-                                                                        "Unable to remove policy from playlist: {}",
-                                                                        error,
-                                                                    );
+                                                                    editor_runtime_text_with_values("editor.unable_to_remove_policy_from_playlist", &[format!("{}", error)]);
                                                             }
                                                         }
                                                     }
@@ -9479,7 +9395,7 @@ fn draw_playlists_tab(
                     if ui
                         .add_enabled(
                             can_add,
-                            egui::Button::new("Add Policy"),
+                            egui::Button::new(crate::manage_localization::runtime_text("editor.add_policy")),
                         )
                         .clicked()
                     {
@@ -9507,7 +9423,7 @@ fn draw_playlists_tab(
                     if ui
                         .add_enabled(
                             selected_member.is_some(),
-                            egui::Button::new("Remove Policy"),
+                            egui::Button::new(crate::manage_localization::runtime_text("editor.remove_policy")),
                         )
                         .clicked()
                     {
@@ -9519,28 +9435,17 @@ fn draw_playlists_tab(
                                 member.policy_id,
                             ) {
                                 Ok(true) => {
-                                    *status_message = format!(
-                                        "Removed policy '{}' from playlist '{}'.",
-                                        member.policy_name,
-                                        selected_name,
-                                    );
+                                    *status_message = editor_runtime_text_with_values("editor.removed_policy_from_playlist_2", &[format!("{}", member.policy_name), format!("{}", selected_name)]);
                                     *selected_playlist_policy_id = None;
                                     *playlist_sort_primary = None;
                                     *playlist_sort_secondary = None;
                                 }
                                 Ok(false) => {
-                                    *status_message = format!(
-                                        "Policy '{}' was not present in playlist '{}'.",
-                                        member.policy_name,
-                                        selected_name,
-                                    );
+                                    *status_message = editor_runtime_text_with_values("editor.policy_was_not_present_in_playlist", &[format!("{}", member.policy_name), format!("{}", selected_name)]);
                                     *selected_playlist_policy_id = None;
                                 }
                                 Err(error) => {
-                                    *status_message = format!(
-                                        "Unable to remove policy from playlist: {}",
-                                        error,
-                                    );
+                                    *status_message = editor_runtime_text_with_values("editor.unable_to_remove_policy_from_playlist", &[format!("{}", error)]);
                                 }
                             }
                         }
@@ -9549,7 +9454,7 @@ fn draw_playlists_tab(
                     if ui
                         .add_enabled(
                             can_move_up,
-                            egui::Button::new("Move Up"),
+                            egui::Button::new(crate::manage_localization::runtime_text("editor.move_up")),
                         )
                         .clicked()
                     {
@@ -9566,16 +9471,10 @@ fn draw_playlists_tab(
                                 new_position,
                             ) {
                                 Ok(()) => {
-                                    *status_message = format!(
-                                        "Moved policy '{}' up.",
-                                        member.policy_name,
-                                    );
+                                    *status_message = editor_runtime_text_with_values("editor.moved_policy_up", &[format!("{}", member.policy_name)]);
                                 }
                                 Err(error) => {
-                                    *status_message = format!(
-                                        "Unable to move policy: {}",
-                                        error,
-                                    );
+                                    *status_message = editor_runtime_text_with_values("editor.unable_to_move_policy", &[format!("{}", error)]);
                                 }
                             }
                         }
@@ -9584,7 +9483,7 @@ fn draw_playlists_tab(
                     if ui
                         .add_enabled(
                             can_move_down,
-                            egui::Button::new("Move Down"),
+                            egui::Button::new(crate::manage_localization::runtime_text("editor.move_down")),
                         )
                         .clicked()
                     {
@@ -9601,16 +9500,10 @@ fn draw_playlists_tab(
                                 new_position,
                             ) {
                                 Ok(()) => {
-                                    *status_message = format!(
-                                        "Moved policy '{}' down.",
-                                        member.policy_name,
-                                    );
+                                    *status_message = editor_runtime_text_with_values("editor.moved_policy_down", &[format!("{}", member.policy_name)]);
                                 }
                                 Err(error) => {
-                                    *status_message = format!(
-                                        "Unable to move policy: {}",
-                                        error,
-                                    );
+                                    *status_message = editor_runtime_text_with_values("editor.unable_to_move_policy", &[format!("{}", error)]);
                                 }
                             }
                         }
@@ -9713,7 +9606,7 @@ fn draw_policy_add_to_playlist_modal(
         false;
 
     egui::Window::new(
-        "Add to Playlist"
+        crate::manage_localization::runtime_text("editor.add_to_playlist_2")
     )
     .id(
         egui::Id::new(
@@ -9737,10 +9630,7 @@ fn draw_policy_add_to_playlist_modal(
         context,
         |ui| {
             ui.label(
-                format!(
-                    "Add policy '{}' to an existing playlist.",
-                    add.row.policy_key,
-                )
+                editor_runtime_text_with_values("editor.add_policy_to_an_existing_playlist", &[format!("{}", add.row.policy_key)])
             );
 
             ui.add_space(
@@ -9777,7 +9667,7 @@ fn draw_policy_add_to_playlist_modal(
                 );
 
                 ui.label(
-                    "No playlists have been created."
+                    crate::manage_localization::runtime_text("editor.no_playlists_have_been_created")
                 );
             } else if available_playlists.is_empty() {
                 ui.add_space(
@@ -9785,7 +9675,7 @@ fn draw_policy_add_to_playlist_modal(
                 );
 
                 ui.label(
-                    "This policy is already a member of every playlist."
+                    crate::manage_localization::runtime_text("editor.this_policy_is_already_a_member_of_every_playlist")
                 );
             }
 
@@ -9840,7 +9730,7 @@ fn draw_policy_add_to_playlist_modal(
                     )
                     .unwrap_or_else(
                         || {
-                            "selected playlist"
+                            crate::manage_localization::runtime_text("editor.selected_playlist_3")
                                 .to_string()
                         }
                     );
@@ -9851,11 +9741,7 @@ fn draw_policy_add_to_playlist_modal(
             ) {
                 Ok(true) => {
                     *status_message =
-                        format!(
-                            "Added policy '{}' to playlist '{}'.",
-                            add.row.policy_key,
-                            playlist_name,
-                        );
+                        editor_runtime_text_with_values("editor.added_policy_to_playlist", &[format!("{}", add.row.policy_key), format!("{}", playlist_name)]);
 
                     *pending_add =
                         None;
@@ -9863,11 +9749,7 @@ fn draw_policy_add_to_playlist_modal(
 
                 Ok(false) => {
                     *status_message =
-                        format!(
-                            "Policy '{}' is already a member of playlist '{}'.",
-                            add.row.policy_key,
-                            playlist_name,
-                        );
+                        editor_runtime_text_with_values("editor.policy_is_already_a_member_of_playlist", &[format!("{}", add.row.policy_key), format!("{}", playlist_name)]);
 
                     *pending_add =
                         None;
@@ -9875,10 +9757,7 @@ fn draw_policy_add_to_playlist_modal(
 
                 Err(error) => {
                     *status_message =
-                        format!(
-                            "Unable to add policy to playlist: {}",
-                            error,
-                        );
+                        editor_runtime_text_with_values("editor.unable_to_add_policy_to_playlist", &[format!("{}", error)]);
                 }
             }
         }
@@ -9917,13 +9796,13 @@ fn draw_playlist_add_policy_modal(
     let selected_label = add.policy_id
         .and_then(|policy_id| available_rows.iter().find(|row| row.policy_id == policy_id).copied())
         .map(|row| format!("{} — {}", row.policy_key, row.filename))
-        .unwrap_or_else(|| "No policies available".to_string());
+        .unwrap_or_else(|| crate::manage_localization::runtime_text("editor.no_policies_available").to_string());
 
     let mut keep_open = true;
     let mut add_clicked = false;
     let mut cancel_clicked = false;
 
-    egui::Window::new("Add Policy to Playlist")
+    egui::Window::new(crate::manage_localization::runtime_text("editor.add_policy_to_playlist"))
         .id(egui::Id::new("editor_add_policy_to_playlist"))
         .order(egui::Order::Foreground)
         .collapsible(false)
@@ -9950,7 +9829,7 @@ fn draw_playlist_add_policy_modal(
 
             if available_rows.is_empty() {
                 ui.add_space(6.0);
-                ui.label("All available policies are already members of this playlist.");
+                ui.label(crate::manage_localization::runtime_text("editor.all_available_policies_are_already_members_of_this_playlist"));
             }
 
             ui.add_space(12.0);
@@ -9970,18 +9849,18 @@ fn draw_playlist_add_policy_modal(
                 Ok(true) => {
                     let policy_name = policy_rows.iter()
                         .find(|row| row.policy_id == policy_id)
-                        .map(|row| row.policy_key.as_str())
-                        .unwrap_or("Selected policy");
+                        .map(|row| row.policy_key.clone())
+                        .unwrap_or_else(|| crate::manage_localization::runtime_text("editor.selected_policy"));
                     *selected_playlist_policy_id = Some(policy_id);
-                    *status_message = format!("Added policy '{}' to playlist.", policy_name);
+                    *status_message = editor_runtime_text_with_values("editor.added_policy_to_playlist_2", &[format!("{}", policy_name)]);
                     *pending_add = None;
                 }
                 Ok(false) => {
-                    *status_message = "That policy is already a member of the playlist.".to_string();
+                    *status_message = crate::manage_localization::runtime_text("editor.that_policy_is_already_a_member_of_the_playlist").to_string();
                     *pending_add = None;
                 }
                 Err(error) => {
-                    *status_message = format!("Unable to add policy to playlist: {}", error);
+                    *status_message = editor_runtime_text_with_values("editor.unable_to_add_policy_to_playlist", &[format!("{}", error)]);
                 }
             }
         }
@@ -10007,7 +9886,7 @@ fn draw_playlist_create_modal(
     let mut cancel_clicked = false;
 
     egui::Window::new(
-        "New Playlist"
+        crate::manage_localization::runtime_text("editor.new_playlist")
     )
     .id(
         egui::Id::new(
@@ -10037,7 +9916,7 @@ fn draw_playlist_create_modal(
             ui.add_space(8.0);
 
             ui.label(
-                "Playlist Name:"
+                crate::manage_localization::runtime_text("editor.playlist_name_2")
             );
 
             let name_response =
@@ -10055,7 +9934,7 @@ fn draw_playlist_create_modal(
             ui.add_space(8.0);
 
             ui.label(
-                "Description (optional):"
+                crate::manage_localization::runtime_text("editor.description_optional")
             );
 
             let description_response =
@@ -10124,10 +10003,7 @@ fn draw_playlist_create_modal(
                     Some(playlist_id);
 
                 *status_message =
-                    format!(
-                        "Created playlist '{}'.",
-                        playlist_name.trim(),
-                    );
+                    editor_runtime_text_with_values("editor.created_playlist", &[format!("{}", playlist_name.trim())]);
 
                 *pending_create = None;
             }
@@ -10161,7 +10037,7 @@ fn draw_playlist_edit_modal(
     let mut cancel_clicked = false;
 
     egui::Window::new(
-        "Edit Playlist Info"
+        crate::manage_localization::runtime_text("editor.edit_playlist_info")
     )
     .id(
         egui::Id::new(
@@ -10181,11 +10057,11 @@ fn draw_playlist_edit_modal(
         context,
         |ui| {
             ui.label(
-                "Edit the playlist name and description. Playlist membership and policy order are unchanged."
+                crate::manage_localization::runtime_text("editor.edit_the_playlist_name_and_description_playlist_membership_and_policy")
             );
 
             ui.add_space(8.0);
-            ui.label("Playlist Name:");
+            ui.label(crate::manage_localization::runtime_text("editor.playlist_name_2"));
 
             let name_response =
                 ui.add(
@@ -10200,7 +10076,7 @@ fn draw_playlist_edit_modal(
             }
 
             ui.add_space(8.0);
-            ui.label("Description (optional):");
+            ui.label(crate::manage_localization::runtime_text("editor.description_optional"));
 
             let description_response =
                 ui.add(
@@ -10258,10 +10134,7 @@ fn draw_playlist_edit_modal(
                 ) {
                     Ok(()) => {
                         *status_message =
-                            format!(
-                                "Updated playlist '{}'.",
-                                playlist_name.trim(),
-                            );
+                            editor_runtime_text_with_values("editor.updated_playlist", &[format!("{}", playlist_name.trim())]);
 
                         *pending_edit = None;
                     }
@@ -10331,7 +10204,7 @@ fn draw_playlist_delete_modal(
             ui.add_space(8.0);
 
             ui.label(
-                "Shader policies and shader files will not be deleted."
+                crate::manage_localization::runtime_text("editor.shader_policies_and_shader_files_will_not_be_deleted")
             );
 
             ui.add_space(14.0);
@@ -10360,21 +10233,14 @@ fn draw_playlist_delete_modal(
                 }
 
                 *status_message =
-                    format!(
-                        "Deleted playlist '{}'.",
-                        playlist_name,
-                    );
+                    editor_runtime_text_with_values("editor.deleted_playlist", &[format!("{}", playlist_name)]);
 
                 *pending_delete = None;
             }
 
             Err(error) => {
                 *status_message =
-                    format!(
-                        "Unable to delete playlist '{}': {}",
-                        playlist_name,
-                        error,
-                    );
+                    editor_runtime_text_with_values("editor.unable_to_delete_playlist", &[format!("{}", playlist_name), format!("{}", error)]);
 
                 *pending_delete = None;
             }
@@ -10418,11 +10284,11 @@ fn draw_render_panel(
     bulk_starting_offset_selected: &mut bool,
     bulk_render_scale_selected: &mut bool,
     bulk_edit_baseline: Option<EditorConfiguration>,
-    hover_help_message: &mut Option<&'static str>,
+    hover_help_message: &mut Option<String>,
 ) {
     editor_theme::section_heading(
         ui,
-        "Render Controls",
+        &crate::manage_localization::runtime_text("editor.render_controls"),
     );
 
     ui.add_space(
@@ -10475,11 +10341,8 @@ fn draw_render_panel(
             let (fps_response, fps_value_response) =
                 draw_aligned_slider_grid_row(
                     ui,
-                    "FPS (Max)",
-                    &format!(
-                        "{} FPS",
-                        *displayed_fps,
-                    ),
+                    &crate::manage_localization::runtime_text("editor.fps_max"),
+                    &editor_runtime_text_with_values("editor.fps", &[format!("{}", *displayed_fps)]),
                     &mut fps_value,
                     crate::define_constants::MIN_RENDER_FPS as f32,
                     crate::define_constants::MAX_RENDER_FPS as f32,
@@ -10491,17 +10354,17 @@ fn draw_render_panel(
                     fps_drag_state,
                     bulk_edit_mode,
                     *bulk_fps_selected,
-                    "Click to include FPS in Bulk Edit",
-                    "Click to exclude FPS from Bulk Edit",
+                    &crate::manage_localization::runtime_text("editor.click_to_include_fps_in_bulk_edit"),
+                    &crate::manage_localization::runtime_text("editor.click_to_exclude_fps_from_bulk_edit"),
                 );
 
             update_hover_help(
                 &fps_response,
                 hover_help_message,
                 if bulk_edit_mode && !*bulk_fps_selected {
-                    "Click the numeric FPS value to enable this slider for Bulk Edit."
+                    crate::manage_localization::runtime_text("editor.click_the_numeric_fps_value_to_enable_this_slider_for")
                 } else {
-                    "Set the maximum rendering frame rate. Hold Shift for fine adjustment."
+                    crate::manage_localization::runtime_text("editor.set_the_maximum_rendering_frame_rate_hold_shift_for_fine")
                 },
             );
 
@@ -10528,7 +10391,7 @@ fn draw_render_panel(
             let (speed_response, speed_value_response) =
                 draw_aligned_log_speed_grid_row(
                     ui,
-                    "Animation Speed",
+                    &crate::manage_localization::runtime_text("editor.animation_speed"),
                     &format!(
                         "{:.2}x",
                         *displayed_animation_speed,
@@ -10544,17 +10407,17 @@ fn draw_render_panel(
                     animation_speed_drag_state,
                     bulk_edit_mode,
                     *bulk_animation_speed_selected,
-                    "Click to include Animation Speed in Bulk Edit",
-                    "Click to exclude Animation Speed from Bulk Edit",
+                    &crate::manage_localization::runtime_text("editor.click_to_include_animation_speed_in_bulk_edit"),
+                    &crate::manage_localization::runtime_text("editor.click_to_exclude_animation_speed_from_bulk_edit"),
                 );
 
             update_hover_help(
                 &speed_response,
                 hover_help_message,
                 if bulk_edit_mode && !*bulk_animation_speed_selected {
-                    "Click the numeric Animation Speed value to enable this slider for Bulk Edit."
+                    crate::manage_localization::runtime_text("editor.click_the_numeric_animation_speed_value_to_enable_this_slider")
                 } else {
-                    "Adjust animation speed on a logarithmic scale. The slider midpoint is 1.0x. Hold Shift for fine adjustment."
+                    crate::manage_localization::runtime_text("editor.adjust_animation_speed_on_a_logarithmic_scale_the_slider_midpoint")
                 },
             );
 
@@ -10581,7 +10444,7 @@ fn draw_render_panel(
                 if bulk_edit_mode {
                     draw_slider_label_cell(
                         ui,
-                        "Starting Offset",
+                        &crate::manage_localization::runtime_text("editor.starting_offset"),
                         label_width,
                     );
 
@@ -10642,7 +10505,7 @@ fn draw_render_panel(
                 } else {
                     draw_aligned_slider_grid_row(
                         ui,
-                        "Starting Offset",
+                        &crate::manage_localization::runtime_text("editor.starting_offset"),
                         &starting_offset_display,
                         displayed_starting_offset_seconds,
                         STARTING_OFFSET_MIN,
@@ -10665,16 +10528,16 @@ fn draw_render_panel(
                 &starting_offset_response,
                 hover_help_message,
                 if bulk_edit_mode {
-                    "Starting Offset is not available during Bulk Edit."
+                    crate::manage_localization::runtime_text("editor.starting_offset_is_not_available_during_bulk_edit")
                 } else {
-                    "Drag to choose where the shader begins. Hold Shift while dragging for 10x finer adjustment."
+                    crate::manage_localization::runtime_text("editor.drag_to_choose_where_the_shader_begins_hold_shift_while")
                 },
             );
 
             let (scale_response, scale_value_response) =
                 draw_aligned_slider_grid_row(
                     ui,
-                    "Render Scale",
+                    &crate::manage_localization::runtime_text("editor.render_scale"),
                     &format!(
                         "{:.2}x",
                         *displayed_render_scale,
@@ -10690,17 +10553,17 @@ fn draw_render_panel(
                     render_scale_drag_state,
                     bulk_edit_mode,
                     *bulk_render_scale_selected,
-                    "Click to include Render Scale in Bulk Edit",
-                    "Click to exclude Render Scale from Bulk Edit",
+                    &crate::manage_localization::runtime_text("editor.click_to_include_render_scale_in_bulk_edit"),
+                    &crate::manage_localization::runtime_text("editor.click_to_exclude_render_scale_from_bulk_edit"),
                 );
 
             update_hover_help(
                 &scale_response,
                 hover_help_message,
                 if bulk_edit_mode && !*bulk_render_scale_selected {
-                    "Click the numeric Render Scale value to enable this slider for Bulk Edit."
+                    crate::manage_localization::runtime_text("editor.click_the_numeric_render_scale_value_to_enable_this_slider")
                 } else {
-                    "Change internal rendering resolution. Lower values improve performance; higher values improve quality."
+                    crate::manage_localization::runtime_text("editor.change_internal_rendering_resolution_lower_values_improve_performance_higher_values")
                 },
             );
 
@@ -10736,8 +10599,8 @@ fn draw_aligned_slider_grid_row(
     drag_state: &mut Option<SliderDragState>,
     bulk_edit_mode: bool,
     bulk_selected: bool,
-    bulk_include_help: &'static str,
-    bulk_exclude_help: &'static str,
+    bulk_include_help: &str,
+    bulk_exclude_help: &str,
 ) -> (egui::Response, egui::Response) {
     draw_slider_label_cell(
         ui,
@@ -10810,8 +10673,8 @@ fn draw_aligned_log_speed_grid_row(
     drag_state: &mut Option<SliderDragState>,
     bulk_edit_mode: bool,
     bulk_selected: bool,
-    bulk_include_help: &'static str,
-    bulk_exclude_help: &'static str,
+    bulk_include_help: &str,
+    bulk_exclude_help: &str,
 ) -> (egui::Response, egui::Response) {
     draw_slider_label_cell(
         ui,
@@ -10895,8 +10758,8 @@ fn draw_slider_value_cell(
     width: f32,
     bulk_edit_mode: bool,
     bulk_selected: bool,
-    bulk_include_help: &'static str,
-    bulk_exclude_help: &'static str,
+    bulk_include_help: &str,
+    bulk_exclude_help: &str,
 ) -> egui::Response {
     ui.allocate_ui_with_layout(
         egui::vec2(
@@ -11385,7 +11248,7 @@ fn draw_texture_panel(
     _palette: &mut PaletteSelection,
     primitive_count: &mut u32,
     bulk_edit_baseline: Option<EditorConfiguration>,
-    hover_help_message: &mut Option<&'static str>,
+    hover_help_message: &mut Option<String>,
 ) {
     ui.add_enabled_ui(
         texture_required,
@@ -11618,7 +11481,7 @@ fn draw_texture_panel(
                     update_hover_help(
                         &primitive_response,
                         hover_help_message,
-                        "Set the number of graphical elements used to generate the procedural texture.",
+                        crate::manage_localization::runtime_text("editor.set_the_number_of_graphical_elements_used_to_generate_the"),
                     );
 
                     if bulk_edit_baseline.is_some_and(
@@ -11701,10 +11564,7 @@ fn ensure_texture_thumbnail(
                 None;
 
             *status_message =
-                format!(
-                    "Unable to generate texture thumbnail: {}",
-                    error,
-                );
+                editor_runtime_text_with_values("editor.unable_to_generate_texture_thumbnail", &[format!("{}", error)]);
         }
     }
 }
@@ -11771,7 +11631,7 @@ fn draw_texture_thumbnail(
             ),
             |ui| {
                 ui.label(
-                    "Texture preview unavailable"
+                    crate::manage_localization::runtime_text("editor.texture_preview_unavailable")
                 );
             },
         );
@@ -12465,7 +12325,7 @@ fn draw_color_picker_placeholder(
     palette_hex_input: &mut String,
     color_picker_preview: &mut egui::Color32,
     texture_thumbnail: Option<&egui::TextureHandle>,
-    hover_help_message: &mut Option<&'static str>,
+    hover_help_message: &mut Option<String>,
 ) {
     let label_width =
         120.0 * metrics.scale;
@@ -12497,7 +12357,7 @@ fn draw_color_picker_placeholder(
                                 ),
                                 |ui| {
                                     ui.label(
-                                        "Palette Color:"
+                                        crate::manage_localization::runtime_text("editor.palette_color")
                                     );
                                 },
                             );
@@ -12513,11 +12373,11 @@ fn draw_color_picker_placeholder(
                 selected_curated_color
                     .map(
                         |entry| {
-                            entry.name
+                            entry.name.to_string()
                         }
                     )
                     .unwrap_or(
-                        "Custom Color"
+                        crate::manage_localization::runtime_text("editor.custom_color")
                     );
 
 
@@ -12630,7 +12490,7 @@ fn draw_color_picker_placeholder(
             update_hover_help(
                 &curated_response,
                 hover_help_message,
-                "Choose a curated palette color. The selected color is written to the hexadecimal field.",
+                crate::manage_localization::runtime_text("editor.choose_a_curated_palette_color_the_selected_color_is_written"),
             );
                         },
                     );
@@ -12667,7 +12527,7 @@ fn draw_color_picker_placeholder(
                     update_hover_help(
                         &hex_response,
                         hover_help_message,
-                        "Enter a palette color using six-digit hexadecimal notation (#rrggbb).",
+                        crate::manage_localization::runtime_text("editor.enter_a_palette_color_using_six_digit_hexadecimal_notation_rrggbb"),
                     );
 
                     if hex_response.changed() {
@@ -12819,7 +12679,7 @@ fn draw_policy_target_panel(
     wallpaper_target_session_restricted: bool,
     policy_target_change_requested: &mut Option<PolicyTarget>,
     status_message: &mut String,
-    hover_help_message: &mut Option<&'static str>,
+    hover_help_message: &mut Option<String>,
 ) {
     editor_theme::panel_frame(
         ui,
@@ -12830,7 +12690,7 @@ fn draw_policy_target_panel(
         |ui| {
             editor_theme::section_heading(
                 ui,
-                "Policy Target",
+                &crate::manage_localization::runtime_text("editor.policy_target_2"),
             );
 
             ui.add_space(
@@ -12853,11 +12713,11 @@ fn draw_policy_target_panel(
                 &screensaver_response,
                 hover_help_message,
                 if screensaver_target_available {
-                    "Load or create the policy used for screensaver rendering."
+                    crate::manage_localization::runtime_text("editor.load_or_create_the_policy_used_for_screensaver_rendering")
                 } else if screensaver_target_session_restricted {
-                    "This editing session was opened for the active wallpaper. Only the Wallpaper policy can be edited."
+                    crate::manage_localization::runtime_text("editor.this_editing_session_was_opened_for_the_active_wallpaper_only")
                 } else {
-                    "This shader is unavailable for Screensaver use because it does not exist in the screensavers folder."
+                    crate::manage_localization::runtime_text("editor.this_shader_is_unavailable_for_screensaver_use_because_it_does")
                 },
             );
 
@@ -12871,7 +12731,7 @@ fn draw_policy_target_panel(
                     && policy_target.is_some()
                 {
                     *status_message =
-                        "Save or cancel the current changes before switching policy targets."
+                        crate::manage_localization::runtime_text("editor.save_or_cancel_the_current_changes_before_switching_policy_targets")
                             .to_string();
                 } else {
                     *policy_target_change_requested =
@@ -12897,11 +12757,11 @@ fn draw_policy_target_panel(
                 &wallpaper_response,
                 hover_help_message,
                 if wallpaper_target_available {
-                    "Load or create the policy used for wallpaper rendering."
+                    crate::manage_localization::runtime_text("editor.load_or_create_the_policy_used_for_wallpaper_rendering")
                 } else if wallpaper_target_session_restricted {
-                    "This editing session was opened for the active screensaver. Only the Screensaver policy can be edited."
+                    crate::manage_localization::runtime_text("editor.this_editing_session_was_opened_for_the_active_screensaver_only")
                 } else {
-                    "This shader is unavailable for Wallpaper use because it does not exist in the wallpapers folder."
+                    crate::manage_localization::runtime_text("editor.this_shader_is_unavailable_for_wallpaper_use_because_it_does")
                 },
             );
 
@@ -12915,7 +12775,7 @@ fn draw_policy_target_panel(
                     && policy_target.is_some()
                 {
                     *status_message =
-                        "Save or cancel the current changes before switching policy targets."
+                        crate::manage_localization::runtime_text("editor.save_or_cancel_the_current_changes_before_switching_policy_targets")
                             .to_string();
                 } else {
                     *policy_target_change_requested =
@@ -12954,7 +12814,7 @@ fn draw_policy_actions_panel(
     animation_speed_drag_state: &mut Option<SliderDragState>,
     render_scale_drag_state: &mut Option<SliderDragState>,
     status_message: &mut String,
-    hover_help_message: &mut Option<&'static str>,
+    hover_help_message: &mut Option<String>,
 ) {
     editor_theme::panel_frame(
         ui,
@@ -12965,7 +12825,7 @@ fn draw_policy_actions_panel(
         |ui| {
             editor_theme::section_heading(
                 ui,
-                "Policy Actions",
+                &crate::manage_localization::runtime_text("editor.policy_actions"),
             );
 
             ui.add_space(
@@ -12976,7 +12836,7 @@ fn draw_policy_actions_panel(
                 ui.add_enabled(
                     can_save,
                     egui::Button::new(
-                        "Save Policy"
+                        crate::manage_localization::runtime_text("editor.save_policy")
                     )
                     .min_size(
                         egui::vec2(
@@ -12996,7 +12856,7 @@ fn draw_policy_actions_panel(
             update_hover_help(
                 &save_response,
                 hover_help_message,
-                "Save the current per-shader policy after all mandatory information is supplied.",
+                crate::manage_localization::runtime_text("editor.save_the_current_per_shader_policy_after_all_mandatory_information"),
             );
 
             if save_response.clicked() {
@@ -13004,7 +12864,7 @@ fn draw_policy_actions_panel(
                     true;
 
                 *status_message =
-                    "Saving policy..."
+                    crate::manage_localization::runtime_text("editor.saving_policy")
                         .to_string();
             }
 
@@ -13025,7 +12885,7 @@ fn draw_policy_actions_panel(
             update_hover_help(
                 &cancel_response,
                 hover_help_message,
-                "Discard changes made during this editor session.",
+                crate::manage_localization::runtime_text("editor.discard_changes_made_during_this_editor_session"),
             );
 
             if cancel_response.clicked() {
@@ -13059,7 +12919,7 @@ fn draw_policy_actions_panel(
                 *render_scale_drag_state =
                     None;
                 *status_message =
-                    "Changes canceled"
+                    crate::manage_localization::runtime_text("editor.changes_canceled")
                         .to_string();
             }
 
@@ -13087,7 +12947,7 @@ fn draw_policy_actions_panel(
             update_hover_help(
                 &delete_response,
                 hover_help_message,
-                "Permanently remove the shader file after confirmation.",
+                crate::manage_localization::runtime_text("editor.permanently_remove_the_shader_file_after_confirmation"),
             );
 
             if delete_response.clicked() {
@@ -13116,7 +12976,7 @@ fn draw_about_panel(
         |ui| {
             editor_theme::section_heading(
                 ui,
-                "About Shader Policies",
+                &crate::manage_localization::runtime_text("editor.about_shader_policies"),
             );
 
             ui.add_space(
@@ -13124,7 +12984,7 @@ fn draw_about_panel(
             );
 
             ui.label(
-                "A shader policy determines how the selected shader is rendered as a screensaver or wallpaper."
+                crate::manage_localization::runtime_text("editor.a_shader_policy_determines_how_the_selected_shader_is_rendered")
             );
         },
     );
@@ -13161,9 +13021,9 @@ fn draw_status_panel(
                         |ui| {
                             ui.label(
                                 if configuration_changed {
-                                    "Policy: Unsaved changes"
+                                    crate::manage_localization::runtime_text("editor.policy_unsaved_changes")
                                 } else {
-                                    "Policy: Unchanged"
+                                    crate::manage_localization::runtime_text("editor.policy_unchanged")
                                 }
                             );
                         },

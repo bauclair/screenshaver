@@ -4040,4 +4040,1056 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
         english_text: "Unknown Audiovisual Effect value '{value}'.",
         translator_context: "QBE parse error. {value} is user-entered text and must remain unchanged.",
     },
+
+    FactoryTranslationKey {
+        key: "editor.shader_file_cannot_be_accessed",
+        english_text: "Shader file cannot be accessed:\n{value1}",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.shader_validation_failed",
+        english_text: "Shader validation failed.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.shader_cannot_be_rendered_status_reason_see_screenshaver_log_for",
+        english_text: "Shader cannot be rendered.\nStatus: {value1}\nReason: {value2}\nSee screenshaver.log for further details.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.shader_validation_state_is_unavailable",
+        english_text: "Shader validation state is unavailable.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.unassigned_policy_this_shader_cannot_be_rendered_until_its_policy",
+        english_text: "Unassigned policy — this shader cannot be rendered until its Policy Target is changed to Screensaver or Wallpaper.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.shader_is_accessible_and_validated",
+        english_text: "Shader is accessible and validated:\n{value1}",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.unable_to_create_egui_opengl_painter",
+        english_text: "Unable to create egui OpenGL painter: {value1}",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.unable_to_decode_embedded_control_center_branding_image",
+        english_text: "Unable to decode embedded Control Center branding image: {value1}",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.embedded_control_center_branding_image_has_invalid_dimensions",
+        english_text: "Embedded Control Center branding image has invalid dimensions.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.screenshaver_control_center_esc_or_q_to_exit",
+        english_text: "Screenshaver Control Center (ESC or Q to exit)",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.bulk_edit_mode_active_click_cancel_to_return_to_single",
+        english_text: "Bulk Edit Mode active-- click Cancel to return to Single Edit mode.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.select",
+        english_text: "Select...",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.policy_target",
+        english_text: "Policy Target:",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.no_change",
+        english_text: "No Change",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.leave_policy_target_unchanged_for_every_checked_policy",
+        english_text: "Leave Policy Target unchanged for every checked policy.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.load_or_create_the_policy_used_for_screensaver_rendering",
+        english_text: "Load or create the policy used for screensaver rendering.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.this_editing_session_was_opened_for_the_active_wallpaper_only",
+        english_text: "This editing session was opened for the active wallpaper. Only the Wallpaper policy can be edited.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.this_shader_is_unavailable_for_screensaver_use_because_it_does",
+        english_text: "This shader is unavailable for Screensaver use because it does not exist in the screensavers folder.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.save_or_cancel_the_current_changes_before_switching_policy_targets",
+        english_text: "Save or cancel the current changes before switching policy targets.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.load_or_create_the_policy_used_for_wallpaper_rendering",
+        english_text: "Load or create the policy used for wallpaper rendering.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.this_editing_session_was_opened_for_the_active_screensaver_only",
+        english_text: "This editing session was opened for the active screensaver. Only the Screensaver policy can be edited.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.this_shader_is_unavailable_for_wallpaper_use_because_it_does",
+        english_text: "This shader is unavailable for Wallpaper use because it does not exist in the wallpapers folder.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.keep_this_policy_and_all_of_its_settings_but_exclude",
+        english_text: "Keep this policy and all of its settings, but exclude it from screensaver and wallpaper rendering until it is reassigned.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.no_shader_loaded",
+        english_text: "No shader loaded",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.policy_name",
+        english_text: "Policy Name:",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.filename",
+        english_text: "Filename:",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.folder",
+        english_text: "Folder:",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.type",
+        english_text: "Type:",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.save_policy",
+        english_text: "Save Policy",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.save_the_current_per_shader_policy",
+        english_text: "Save the current per-shader policy.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.saving_policy",
+        english_text: "Saving policy...",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.discard_changes_made_during_this_editor_session",
+        english_text: "Discard changes made during this editor session.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.bulk_edit_mode_canceled",
+        english_text: "Bulk Edit Mode canceled",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.changes_canceled",
+        english_text: "Changes canceled",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.policy",
+        english_text: "Policy: --",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.policy_modified",
+        english_text: "Policy: Modified",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.policy_unchanged",
+        english_text: "Policy: Unchanged",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.config_modified",
+        english_text: "Config: Modified",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.config_unchanged",
+        english_text: "Config: Unchanged",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.loaded_and_rendering",
+        english_text: "loaded and rendering",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.clear_all_policy_selections",
+        english_text: "Clear all policy selections",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.policy_name_2",
+        english_text: "Policy Name",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.policy_type",
+        english_text: "Policy Type",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.no_shader_policies_are_currently_defined",
+        english_text: "No shader policies are currently defined.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.include_this_policy_in_bulk_edit_mode",
+        english_text: "Include this policy in Bulk Edit mode",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.policy_name_shader_path_shader_added_policy_created_policy_modified",
+        english_text: "Policy Name: {value1}\nShader: {value2}\nPath: {value3}\nShader Added: {value4}\nPolicy Created: {value5}\nPolicy Modified: {value6}",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.edit_policy",
+        english_text: "Edit Policy...",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.clone_policy",
+        english_text: "Clone Policy...",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.rename_policy",
+        english_text: "Rename Policy...",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.add_to_playlist",
+        english_text: "Add to Playlist...",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.refresh_shader",
+        english_text: "Refresh Shader",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.policy_query_cleared_displaying_all_policies",
+        english_text: "Policy query cleared — displaying all {value1} policies.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.policy_query_returned_policies",
+        english_text: "Policy query returned {value1} / {value2} policies.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.policy_query_failed",
+        english_text: "Policy query failed: {value1}",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.usable_shader_selected",
+        english_text: "{value1} usable shader{value2} selected.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.texture_enabled_shader_detected",
+        english_text: "{value1} texture-enabled shader{value2} detected.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.managed_targets_screensaver_wallpaper",
+        english_text: "Managed targets: {value1} Screensaver, {value2} Wallpaper.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.external_shaders_requiring_a_target",
+        english_text: "External shaders requiring a target: {value1}.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.selected_shader_could_not_be_analyzed_and_will_not_be",
+        english_text: "{value1} selected shader{value2} could not be analyzed and will not be included.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.policy_target_for_all_external_shaders",
+        english_text: "Policy target for all external shaders:",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.confirm_bulk_policy_changes",
+        english_text: "Confirm Bulk Policy Changes",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.changes_will_be_applied_to_policies_click_ok_to_continue",
+        english_text: "Changes will be applied to {value1} policies. Click OK to continue or Cancel to abort.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.policies_were_selected_will_be_updated_and_will_be_skipped",
+        english_text: "{value1} policies were selected. {value2} will be updated and {value3} will be skipped because the shader file is unavailable.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.excluded_policy",
+        english_text: "Excluded policy:",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.excluded_policies",
+        english_text: "Excluded policies:",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.texture_and_palette_settings_will_apply_to_texture_enabled_shader",
+        english_text: "Texture and Palette settings will apply to {value1} texture-enabled shader{value2}.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.no_selected_policies_are_eligible_for_bulk_edit_because_their",
+        english_text: "No selected policies are eligible for Bulk Edit because their shader files are unavailable.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.unsaved_changes",
+        english_text: "Unsaved Changes",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.the_screenshaver_control_center_has_unsaved_changes",
+        english_text: "The Screenshaver Control Center has unsaved changes.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.would_you_like_to_save_those_changes_before_exiting",
+        english_text: "Would you like to save those changes before exiting?",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.save_and_exit",
+        english_text: "Save and Exit",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.exit_without_saving",
+        english_text: "Exit Without Saving",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.rename_policy_2",
+        english_text: "Rename Policy",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.change_the_user_facing_policy_name_the_shader_and_policy",
+        english_text: "Change the user-facing Policy Name. The shader and policy settings are unchanged.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.policy_name_must_contain_between_1_and_128_characters_found",
+        english_text: "Policy Name must contain between 1 and 128 characters; found {value1}.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.clone_policy_2",
+        english_text: "Clone Policy",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.move_shader",
+        english_text: "Move Shader?",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.move_this_shader_to",
+        english_text: "Move this shader to {value1}:",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.the_existing_policy_will_be_changed_to_a_policy_all",
+        english_text: "The existing {value1} policy will be changed to a {value2} policy. All policy settings will be preserved.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.the_existing_policy_will_be_retained_and_its_path_will",
+        english_text: "The existing {value1} policy will be retained and its path will be updated automatically.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.the_shader_file_will_not_be_deleted",
+        english_text: "The shader file will not be deleted.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.permanently_delete_this_shader",
+        english_text: "Permanently delete this {value1} shader:",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.the_associated_policy_will_also_be_deleted",
+        english_text: "The associated {value1} policy will also be deleted.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.any_wallpaper_shader_or_wallpaper_policy_with_the_same_filename",
+        english_text: "Any Wallpaper shader or Wallpaper policy with the same filename will not be changed.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.any_screensaver_shader_or_screensaver_policy_with_the_same_filename",
+        english_text: "Any Screensaver shader or Screensaver policy with the same filename will not be changed.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.the_shader_file_will_not_be_changed",
+        english_text: "The shader file will not be changed.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.unable_to_load_playlists",
+        english_text: "Unable to load playlists: {value1}",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.unable_to_load_the_playlist_inventory",
+        english_text: "Unable to load the Playlist inventory.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.unable_to_load_playlist_policies",
+        english_text: "Unable to load playlist policies: {value1}",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.playlist_name",
+        english_text: "Playlist Name",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.no_playlists_have_been_created",
+        english_text: "No playlists have been created.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.playlist_created_playlist_modified",
+        english_text: "Playlist Created: {value1}\nPlaylist Modified: {value2}",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.selected_playlist",
+        english_text: "Selected playlist '{value1}'.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.new_playlist",
+        english_text: "New Playlist",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.edit_playlist_info",
+        english_text: "Edit Playlist Info",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.selected_playlist_2",
+        english_text: "Selected Playlist",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.this_playlist_contains_no_policies",
+        english_text: "This playlist contains no policies.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.policy_target_2",
+        english_text: "Policy Target",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.sorted_playlist_by_compound_criteria",
+        english_text: "Sorted playlist '{value1}' by compound criteria.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.sorted_playlist_by",
+        english_text: "Sorted playlist '{value1}' by {value2}.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.unable_to_sort_playlist",
+        english_text: "Unable to sort playlist: {value1}",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.click_to_sort_and_persist_playlist_order_shift_click_adds",
+        english_text: "Click to sort and persist playlist order. Shift-click adds or changes a secondary sort key.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.policy_name_shader_path",
+        english_text: "Policy Name: {value1}\nShader: {value2}\nPath: {value3}",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.selected_policy_in_playlist",
+        english_text: "Selected policy '{value1}' in playlist '{value2}'.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.remove_policy",
+        english_text: "Remove Policy",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.removed_policy_from_playlist",
+        english_text: "Removed policy '{value1}' from playlist.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.policy_is_no_longer_a_member_of_this_playlist",
+        english_text: "Policy is no longer a member of this playlist.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.unable_to_remove_policy_from_playlist",
+        english_text: "Unable to remove policy from playlist: {value1}",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.add_policy",
+        english_text: "Add Policy",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.removed_policy_from_playlist_2",
+        english_text: "Removed policy '{value1}' from playlist '{value2}'.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.policy_was_not_present_in_playlist",
+        english_text: "Policy '{value1}' was not present in playlist '{value2}'.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.move_up",
+        english_text: "Move Up",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.moved_policy_up",
+        english_text: "Moved policy '{value1}' up.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.unable_to_move_policy",
+        english_text: "Unable to move policy: {value1}",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.move_down",
+        english_text: "Move Down",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.moved_policy_down",
+        english_text: "Moved policy '{value1}' down.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.add_to_playlist_2",
+        english_text: "Add to Playlist",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.add_policy_to_an_existing_playlist",
+        english_text: "Add policy '{value1}' to an existing playlist.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.this_policy_is_already_a_member_of_every_playlist",
+        english_text: "This policy is already a member of every playlist.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.selected_playlist_3",
+        english_text: "selected playlist",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.added_policy_to_playlist",
+        english_text: "Added policy '{value1}' to playlist '{value2}'.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.policy_is_already_a_member_of_playlist",
+        english_text: "Policy '{value1}' is already a member of playlist '{value2}'.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.unable_to_add_policy_to_playlist",
+        english_text: "Unable to add policy to playlist: {value1}",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.no_policies_available",
+        english_text: "No policies available",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.add_policy_to_playlist",
+        english_text: "Add Policy to Playlist",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.all_available_policies_are_already_members_of_this_playlist",
+        english_text: "All available policies are already members of this playlist.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.selected_policy",
+        english_text: "Selected policy",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.added_policy_to_playlist_2",
+        english_text: "Added policy '{value1}' to playlist.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.that_policy_is_already_a_member_of_the_playlist",
+        english_text: "That policy is already a member of the playlist.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.playlist_name_2",
+        english_text: "Playlist Name:",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.description_optional",
+        english_text: "Description (optional):",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.created_playlist",
+        english_text: "Created playlist '{value1}'.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.edit_the_playlist_name_and_description_playlist_membership_and_policy",
+        english_text: "Edit the playlist name and description. Playlist membership and policy order are unchanged.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.updated_playlist",
+        english_text: "Updated playlist '{value1}'.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.shader_policies_and_shader_files_will_not_be_deleted",
+        english_text: "Shader policies and shader files will not be deleted.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.deleted_playlist",
+        english_text: "Deleted playlist '{value1}'.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.unable_to_delete_playlist",
+        english_text: "Unable to delete playlist '{value1}': {value2}",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.render_controls",
+        english_text: "Render Controls",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.fps_max",
+        english_text: "FPS (Max)",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.fps",
+        english_text: "{value1} FPS",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.click_to_include_fps_in_bulk_edit",
+        english_text: "Click to include FPS in Bulk Edit",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.click_to_exclude_fps_from_bulk_edit",
+        english_text: "Click to exclude FPS from Bulk Edit",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.click_the_numeric_fps_value_to_enable_this_slider_for",
+        english_text: "Click the numeric FPS value to enable this slider for Bulk Edit.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.set_the_maximum_rendering_frame_rate_hold_shift_for_fine",
+        english_text: "Set the maximum rendering frame rate. Hold Shift for fine adjustment.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.animation_speed",
+        english_text: "Animation Speed",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.click_to_include_animation_speed_in_bulk_edit",
+        english_text: "Click to include Animation Speed in Bulk Edit",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.click_to_exclude_animation_speed_from_bulk_edit",
+        english_text: "Click to exclude Animation Speed from Bulk Edit",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.click_the_numeric_animation_speed_value_to_enable_this_slider",
+        english_text: "Click the numeric Animation Speed value to enable this slider for Bulk Edit.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.adjust_animation_speed_on_a_logarithmic_scale_the_slider_midpoint",
+        english_text: "Adjust animation speed on a logarithmic scale. The slider midpoint is 1.0x. Hold Shift for fine adjustment.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.starting_offset",
+        english_text: "Starting Offset",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.starting_offset_is_not_available_during_bulk_edit",
+        english_text: "Starting Offset is not available during Bulk Edit.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.drag_to_choose_where_the_shader_begins_hold_shift_while",
+        english_text: "Drag to choose where the shader begins. Hold Shift while dragging for 10x finer adjustment.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.render_scale",
+        english_text: "Render Scale",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.click_to_include_render_scale_in_bulk_edit",
+        english_text: "Click to include Render Scale in Bulk Edit",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.click_to_exclude_render_scale_from_bulk_edit",
+        english_text: "Click to exclude Render Scale from Bulk Edit",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.click_the_numeric_render_scale_value_to_enable_this_slider",
+        english_text: "Click the numeric Render Scale value to enable this slider for Bulk Edit.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.change_internal_rendering_resolution_lower_values_improve_performance_higher_values",
+        english_text: "Change internal rendering resolution. Lower values improve performance; higher values improve quality.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.set_the_number_of_graphical_elements_used_to_generate_the",
+        english_text: "Set the number of graphical elements used to generate the procedural texture.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.unable_to_generate_texture_thumbnail",
+        english_text: "Unable to generate texture thumbnail: {value1}",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.texture_preview_unavailable",
+        english_text: "Texture preview unavailable",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.palette_color",
+        english_text: "Palette Color:",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.custom_color",
+        english_text: "Custom Color",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.choose_a_curated_palette_color_the_selected_color_is_written",
+        english_text: "Choose a curated palette color. The selected color is written to the hexadecimal field.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.enter_a_palette_color_using_six_digit_hexadecimal_notation_rrggbb",
+        english_text: "Enter a palette color using six-digit hexadecimal notation (#rrggbb).",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.policy_actions",
+        english_text: "Policy Actions",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.save_the_current_per_shader_policy_after_all_mandatory_information",
+        english_text: "Save the current per-shader policy after all mandatory information is supplied.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.permanently_remove_the_shader_file_after_confirmation",
+        english_text: "Permanently remove the shader file after confirmation.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.about_shader_policies",
+        english_text: "About Shader Policies",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.a_shader_policy_determines_how_the_selected_shader_is_rendered",
+        english_text: "A shader policy determines how the selected shader is rendered as a screensaver or wallpaper.",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.policy_unsaved_changes",
+        english_text: "Policy: Unsaved changes",
+        translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.bulk_create.usable_shader_selected_one",
+        english_text: "{value1} usable shader selected.",
+        translator_context: "Screenshaver Control Center count-sensitive user-interface text. {value1} is a supplied count and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.bulk_create.usable_shaders_selected_many",
+        english_text: "{value1} usable shaders selected.",
+        translator_context: "Screenshaver Control Center count-sensitive user-interface text. {value1} is a supplied count and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.bulk_create.texture_shader_detected_one",
+        english_text: "{value1} texture-enabled shader detected.",
+        translator_context: "Screenshaver Control Center count-sensitive user-interface text. {value1} is a supplied count and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.bulk_create.texture_shaders_detected_many",
+        english_text: "{value1} texture-enabled shaders detected.",
+        translator_context: "Screenshaver Control Center count-sensitive user-interface text. {value1} is a supplied count and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.bulk_create.rejected_shader_one",
+        english_text: "{value1} selected shader could not be analyzed and will not be included.",
+        translator_context: "Screenshaver Control Center count-sensitive user-interface text. {value1} is a supplied count and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.bulk_create.rejected_shaders_many",
+        english_text: "{value1} selected shaders could not be analyzed and will not be included.",
+        translator_context: "Screenshaver Control Center count-sensitive user-interface text. {value1} is a supplied count and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.bulk_edit.texture_settings_one",
+        english_text: "Texture and Palette settings will apply to {value1} texture-enabled shader.",
+        translator_context: "Screenshaver Control Center count-sensitive user-interface text. {value1} is a supplied count and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.bulk_edit.texture_settings_many",
+        english_text: "Texture and Palette settings will apply to {value1} texture-enabled shaders.",
+        translator_context: "Screenshaver Control Center count-sensitive user-interface text. {value1} is a supplied count and must remain unchanged.",
+    },
+
+    FactoryTranslationKey {
+        key: "qbe.field.policy_name",
+        english_text: "Policy Name",
+        translator_context: "QBE field selector label for policy name.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.field.playlist_name",
+        english_text: "Playlist Name",
+        translator_context: "QBE field selector label for playlist name.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.field.shader_added_date",
+        english_text: "Shader Added Date",
+        translator_context: "QBE field selector label for shader added date.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.field.policy_created_date",
+        english_text: "Policy Created Date",
+        translator_context: "QBE field selector label for policy creation date.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.field.policy_modified_date",
+        english_text: "Policy Modified Date",
+        translator_context: "QBE field selector label for policy modification date.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.field.playlist_created_date",
+        english_text: "Playlist Created Date",
+        translator_context: "QBE field selector label for playlist creation date.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.field.playlist_modified_date",
+        english_text: "Playlist Modified Date",
+        translator_context: "QBE field selector label for playlist modification date.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.field.shader_filename",
+        english_text: "Shader Filename",
+        translator_context: "QBE field selector label for shader filename.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.field.shader_type",
+        english_text: "Shader Type",
+        translator_context: "QBE field selector label for shader type.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.field.policy_target",
+        english_text: "Policy Target",
+        translator_context: "QBE field selector label for policy target.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.field.status",
+        english_text: "Status",
+        translator_context: "QBE field selector label for status.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.field.texture",
+        english_text: "Texture",
+        translator_context: "QBE field selector label for texture.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.field.palette",
+        english_text: "Palette",
+        translator_context: "QBE field selector label for palette.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.field.rendered_fps",
+        english_text: "Rendered FPS",
+        translator_context: "QBE field selector label for rendered FPS.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.field.animation_speed",
+        english_text: "Animation Speed",
+        translator_context: "QBE field selector label for animation speed.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.field.render_scale",
+        english_text: "Render Scale",
+        translator_context: "QBE field selector label for render scale.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.field.anti_aliasing",
+        english_text: "Anti-Aliasing",
+        translator_context: "QBE field selector label for anti-aliasing.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.field.dithering",
+        english_text: "Dithering",
+        translator_context: "QBE field selector label for dithering.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.field.color_precision",
+        english_text: "Color Precision",
+        translator_context: "QBE field selector label for color precision.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.field.audiovisual_effect",
+        english_text: "Audiovisual Effect",
+        translator_context: "QBE field selector label for audiovisual effect.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.field.invert_frequency_mapping",
+        english_text: "Invert Frequency Mapping",
+        translator_context: "QBE field selector label for inverted frequency mapping.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.operator.is",
+        english_text: "is",
+        translator_context: "QBE operator display label. Query semantics remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.operator.eq",
+        english_text: "eq",
+        translator_context: "QBE equality operator display label. Query semantics remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.operator.ne",
+        english_text: "ne",
+        translator_context: "QBE inequality operator display label. Query semantics remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.operator.like",
+        english_text: "like",
+        translator_context: "QBE pattern-match operator display label. Query semantics remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.operator.not_like",
+        english_text: "not like",
+        translator_context: "QBE negative pattern-match operator display label. Query semantics remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.operator.lt",
+        english_text: "lt",
+        translator_context: "QBE less-than operator display label. Query semantics remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.operator.le",
+        english_text: "le",
+        translator_context: "QBE less-than-or-equal operator display label. Query semantics remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.operator.gt",
+        english_text: "gt",
+        translator_context: "QBE greater-than operator display label. Query semantics remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.operator.ge",
+        english_text: "ge",
+        translator_context: "QBE greater-than-or-equal operator display label. Query semantics remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.conditional.and",
+        english_text: "AND",
+        translator_context: "QBE conditional display label. SQL token remains the invariant AND keyword.",
+    },
+    FactoryTranslationKey {
+        key: "qbe.conditional.or",
+        english_text: "OR",
+        translator_context: "QBE conditional display label. SQL token remains the invariant OR keyword.",
+    },
 ];

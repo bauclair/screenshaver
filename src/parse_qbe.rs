@@ -66,73 +66,73 @@ impl QbeField {
     ];
 
 
-    pub const fn label(
+    pub fn label(
         self,
-    ) -> &'static str {
+    ) -> String {
 
         match self {
             Self::PolicyName =>
-                "Policy Name",
+                crate::manage_localization::runtime_text("qbe.field.policy_name"),
 
             Self::PlaylistName =>
-                "Playlist Name",
+                crate::manage_localization::runtime_text("qbe.field.playlist_name"),
 
             Self::ShaderAddedDate =>
-                "Shader Added Date",
+                crate::manage_localization::runtime_text("qbe.field.shader_added_date"),
 
             Self::PolicyCreatedDate =>
-                "Policy Created Date",
+                crate::manage_localization::runtime_text("qbe.field.policy_created_date"),
 
             Self::PolicyModifiedDate =>
-                "Policy Modified Date",
+                crate::manage_localization::runtime_text("qbe.field.policy_modified_date"),
 
             Self::PlaylistCreatedDate =>
-                "Playlist Created Date",
+                crate::manage_localization::runtime_text("qbe.field.playlist_created_date"),
 
             Self::PlaylistModifiedDate =>
-                "Playlist Modified Date",
+                crate::manage_localization::runtime_text("qbe.field.playlist_modified_date"),
 
             Self::ShaderFilename =>
-                "Shader Filename",
+                crate::manage_localization::runtime_text("qbe.field.shader_filename"),
 
             Self::ShaderType =>
-                "Shader Type",
+                crate::manage_localization::runtime_text("qbe.field.shader_type"),
 
             Self::PolicyTarget =>
-                "Policy Target",
+                crate::manage_localization::runtime_text("qbe.field.policy_target"),
 
             Self::Status =>
-                "Status",
+                crate::manage_localization::runtime_text("qbe.field.status"),
 
             Self::Texture =>
-                "Texture",
+                crate::manage_localization::runtime_text("qbe.field.texture"),
 
             Self::Palette =>
-                "Palette",
+                crate::manage_localization::runtime_text("qbe.field.palette"),
 
             Self::RenderedFps =>
-                "Rendered FPS",
+                crate::manage_localization::runtime_text("qbe.field.rendered_fps"),
 
             Self::AnimationSpeed =>
-                "Animation Speed",
+                crate::manage_localization::runtime_text("qbe.field.animation_speed"),
 
             Self::RenderScale =>
-                "Render Scale",
+                crate::manage_localization::runtime_text("qbe.field.render_scale"),
 
             Self::AntiAliasing =>
-                "Anti-Aliasing",
+                crate::manage_localization::runtime_text("qbe.field.anti_aliasing"),
 
             Self::Dithering =>
-                "Dithering",
+                crate::manage_localization::runtime_text("qbe.field.dithering"),
 
             Self::ColorPrecision =>
-                "Color Precision",
+                crate::manage_localization::runtime_text("qbe.field.color_precision"),
 
             Self::BloomMode =>
-                "Audiovisual Effect",
+                crate::manage_localization::runtime_text("qbe.field.audiovisual_effect"),
 
             Self::BloomFrequencyInvert =>
-                "Invert Frequency Mapping",
+                crate::manage_localization::runtime_text("qbe.field.invert_frequency_mapping"),
         }
     }
 }
@@ -154,37 +154,37 @@ pub enum QbeOperator {
 
 impl QbeOperator {
 
-    pub const fn label(
+    pub fn label(
         self,
-    ) -> &'static str {
+    ) -> String {
 
         match self {
             Self::Is =>
-                "is",
+                crate::manage_localization::runtime_text("qbe.operator.is"),
 
             Self::Eq =>
-                "eq",
+                crate::manage_localization::runtime_text("qbe.operator.eq"),
 
             Self::Ne =>
-                "ne",
+                crate::manage_localization::runtime_text("qbe.operator.ne"),
 
             Self::Like =>
-                "like",
+                crate::manage_localization::runtime_text("qbe.operator.like"),
 
             Self::NotLike =>
-                "not like",
+                crate::manage_localization::runtime_text("qbe.operator.not_like"),
 
             Self::Lt =>
-                "lt",
+                crate::manage_localization::runtime_text("qbe.operator.lt"),
 
             Self::Le =>
-                "le",
+                crate::manage_localization::runtime_text("qbe.operator.le"),
 
             Self::Gt =>
-                "gt",
+                crate::manage_localization::runtime_text("qbe.operator.gt"),
 
             Self::Ge =>
-                "ge",
+                crate::manage_localization::runtime_text("qbe.operator.ge"),
         }
     }
 }
@@ -205,7 +205,20 @@ impl QbeConditional {
     ];
 
 
-    pub const fn label(
+    pub fn label(
+        self,
+    ) -> String {
+
+        match self {
+            Self::And =>
+                crate::manage_localization::runtime_text("qbe.conditional.and"),
+
+            Self::Or =>
+                crate::manage_localization::runtime_text("qbe.conditional.or"),
+        }
+    }
+
+    pub const fn sql_token(
         self,
     ) -> &'static str {
 
@@ -995,7 +1008,7 @@ pub fn build_sql(
                 format!(
                     "({}) {} ({})",
                     where_clause,
-                    conditional.label(),
+                    conditional.sql_token(),
                     second.sql,
                 );
 

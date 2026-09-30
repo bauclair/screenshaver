@@ -215,7 +215,7 @@ fn draw_field_combo(
                     .map(
                         |field| field.label()
                     )
-                    .unwrap_or("")
+                    .unwrap_or_default()
             )
             .width(width)
             .show_ui(
@@ -295,7 +295,7 @@ fn draw_operator_combo(
             .map(
                 |operator| operator.label()
             )
-            .unwrap_or("");
+            .unwrap_or_default();
 
 
     // egui ComboBox constrains its internal ScrollArea before popup
@@ -323,7 +323,7 @@ fn draw_operator_combo(
                 if selected_text.is_empty() {
                     " "
                 } else {
-                    selected_text
+                    selected_text.as_str()
                 }
             ),
         );
@@ -421,7 +421,7 @@ fn draw_conditional_combo(
                     .map(
                         |conditional| conditional.label()
                     )
-                    .unwrap_or("")
+                    .unwrap_or_default()
             )
             .width(width)
             .show_ui(
