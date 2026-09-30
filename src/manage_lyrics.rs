@@ -12,6 +12,7 @@ const LRCMUX_GET_URL: &str = "https://api.lrcmux.dev/get";
 const POSITION_POLL_INTERVAL: Duration = Duration::from_millis(50);
 const METADATA_POLL_INTERVAL: Duration = Duration::from_millis(500);
 const PLAYER_SCAN_INTERVAL: Duration = Duration::from_millis(500);
+const FALLBACK_CLOCK_MIN_TRUSTED_POSITION: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LyricsState {
@@ -204,6 +205,12 @@ fn run_worker(
     let mut vocal_intervals: Vec<VocalInterval> = Vec::new();
     let mut last_line_index: Option<usize> = None;
     let mut last_vocal_interval_index: Option<usize> = None;
+    // Firefox/regular YouTube can keep reporting Playing while MPRIS Position
+    // collapses to zero and mpris:length disappears.  Keep the last trustworthy
+    // nonzero position and its monotonic observation time so lyrics can continue
+    // across that specific broken-MPRIS state.
+    let mut last_trusted_position: Option<(Duration, Instant)> = None;
+    let mut fallback_clock_active = false;
 
     while running.load(Ordering::SeqCst) {
         if let Some(player) = active_player.as_ref() {
@@ -220,6 +227,8 @@ fn run_worker(
                     vocal_intervals.clear();
                     last_line_index = None;
                     last_vocal_interval_index = None;
+                    last_trusted_position = None;
+                    fallback_clock_active = false;
                     publish_state(&state, LyricsState::default());
                     publish_vocal_timing_state(&vocal_timing_state, VocalTimingState::default());
                     last_player_scan = Instant::now() - PLAYER_SCAN_INTERVAL;
@@ -235,6 +244,8 @@ fn run_worker(
                     vocal_intervals.clear();
                     last_line_index = None;
                     last_vocal_interval_index = None;
+                    last_trusted_position = None;
+                    fallback_clock_active = false;
                     publish_state(&state, LyricsState::default());
                     publish_vocal_timing_state(&vocal_timing_state, VocalTimingState::default());
                     last_player_scan = Instant::now() - PLAYER_SCAN_INTERVAL;
@@ -258,6 +269,8 @@ fn run_worker(
                         last_line_index = None;
                         last_vocal_interval_index = None;
                         active_player = Some(player);
+                        last_trusted_position = None;
+                        fallback_clock_active = false;
                         last_metadata_poll = Instant::now();
                         last_position_poll = Instant::now() - POSITION_POLL_INTERVAL;
                         publish_state(&state, LyricsState::default());
@@ -285,7 +298,7 @@ fn run_worker(
             if let (Some(player), Some(track)) =
                 (active_player.as_ref(), current_track.as_mut())
             {
-                match read_track_information(player) {
+                match read_track_information(player, Some(track)) {
                     Ok(observed_track) => {
                         if observed_track.identity != track.identity {
                             log_information(&format!(
@@ -315,6 +328,8 @@ fn run_worker(
                             };
                             last_line_index = None;
                             last_vocal_interval_index = None;
+                            last_trusted_position = None;
+                            fallback_clock_active = false;
                             publish_state(&state, LyricsState::default());
                             publish_vocal_timing_state(
                                 &vocal_timing_state,
@@ -338,14 +353,67 @@ fn run_worker(
             last_position_poll = Instant::now();
 
             if let Some(player) = active_player.as_ref() {
-                if let Ok(position) = player.get_position() {
-                    let active = find_active_line(&synchronized_lines, position);
+                let position_result = player.get_position();
+
+                if let Ok(reported_position) = position_result {
+                    let now = Instant::now();
+
+                    // A normal nonzero MPRIS position is always authoritative.
+                    // It also ends any temporary fallback immediately.
+                    let effective_position = if reported_position > Duration::ZERO {
+                        if fallback_clock_active {
+                            log_information(&format!(
+                                "[LYRICS] MPRIS position recovered on '{}'; returning to the player clock at {:.3}s",
+                                player.identity(),
+                                reported_position.as_secs_f64()
+                            ));
+                        }
+                        fallback_clock_active = false;
+                        last_trusted_position = Some((reported_position, now));
+                        reported_position
+                    } else {
+                        let duration_missing = player
+                            .get_metadata()
+                            .ok()
+                            .and_then(|metadata| metadata.length())
+                            .is_none();
+
+                        let fallback_candidate = last_trusted_position
+                            .filter(|(position, _)| {
+                                *position >= FALLBACK_CLOCK_MIN_TRUSTED_POSITION
+                            });
+
+                        if duration_missing {
+                            if let Some((trusted_position, trusted_at)) = fallback_candidate {
+                                if !fallback_clock_active {
+                                    log_warning(&format!(
+                                        "[LYRICS] MPRIS position collapsed to zero while '{}' remains Playing and duration is missing; continuing with guarded fallback clock from {:.3}s",
+                                        player.identity(),
+                                        trusted_position.as_secs_f64()
+                                    ));
+                                }
+                                fallback_clock_active = true;
+                                trusted_position.saturating_add(trusted_at.elapsed())
+                            } else {
+                                reported_position
+                            }
+                        } else {
+                            // Duration is still present, so zero is treated as a real seek/start
+                            // rather than the Firefox failure signature.
+                            fallback_clock_active = false;
+                            last_trusted_position = Some((reported_position, now));
+                            reported_position
+                        }
+                    };
+
+                    let active = find_active_line(&synchronized_lines, effective_position);
                     if active != last_line_index {
                         last_line_index = active;
                         publish_line_state(&state, &synchronized_lines, active);
                     }
 
-                    let vocal_active = find_active_vocal_interval(&vocal_intervals, position);
+                    let vocal_active =
+                        find_active_vocal_interval(&vocal_intervals, effective_position);
                     if vocal_active != last_vocal_interval_index {
                         last_vocal_interval_index = vocal_active;
                         publish_vocal_interval_state(
@@ -451,7 +519,7 @@ fn find_playing_player() -> Result<Option<Player>, String> {
 fn load_player_track(
     player: &Player,
 ) -> Result<(TrackInformation, Vec<SynchronizedLine>, Vec<VocalInterval>), String> {
-    let track = read_track_information(player)?;
+    let track = read_track_information(player, None)?;
     let lines = match retrieve_synchronized_lines(&track) {
         Ok(lines) => lines,
         Err(error) => {
@@ -477,7 +545,10 @@ fn load_player_track(
     Ok((track, lines, vocal_intervals))
 }
 
-fn read_track_information(player: &Player) -> Result<TrackInformation, String> {
+fn read_track_information(
+    player: &Player,
+    previous_track: Option<&TrackInformation>,
+) -> Result<TrackInformation, String> {
     let metadata = player.get_metadata().map_err(|error| {
         format!(
             "Unable to obtain metadata from {}: {}",
@@ -497,9 +568,14 @@ fn read_track_information(player: &Player) -> Result<TrackInformation, String> {
         .to_string();
 
     let album = metadata.album_name().unwrap_or("").to_string();
-    let duration = metadata
-        .length()
-        .ok_or_else(|| "The selected MPRIS player did not provide a track duration.".to_string())?;
+    let duration = match metadata.length() {
+        Some(duration) => duration,
+        None => previous_track
+            .map(|track| track.duration)
+            .ok_or_else(|| {
+                "The selected MPRIS player did not provide a track duration.".to_string()
+            })?,
+    };
 
     Ok(TrackInformation {
         identity: TrackIdentity {
