@@ -258,10 +258,7 @@ pub(crate) fn register_default_shader(
 #[path = "localization_catalog/mod.rs"]
 mod localization_catalog;
 
-use localization_catalog::{
-    es_us,
-    keys,
-};
+use localization_catalog::keys;
 
 // Preserve the existing database_factory catalog interface for validation and
 // other current callers while the actual catalog data lives in
@@ -416,25 +413,27 @@ pub(crate) fn synchronize_localization_catalog(
                 )?;
 
 
-        for entry in es_us::TRANSLATIONS {
-            statement
-                .execute(
-                    params![
-                        entry.locale,
-                        entry.key,
-                        entry.translated_text,
-                    ]
-                )
-                .map_err(
-                    |error| {
-                        format!(
-                            "Unable to synchronize factory translation '{}:{}': {}",
+        for catalog in localization_catalog::FACTORY_TRANSLATION_CATALOGS {
+            for entry in *catalog {
+                statement
+                    .execute(
+                        params![
                             entry.locale,
                             entry.key,
-                            error,
-                        )
-                    }
-                )?;
+                            entry.translated_text,
+                        ]
+                    )
+                    .map_err(
+                        |error| {
+                            format!(
+                                "Unable to synchronize factory translation '{}:{}': {}",
+                                entry.locale,
+                                entry.key,
+                                error,
+                            )
+                        }
+                    )?;
+            }
         }
     }
 

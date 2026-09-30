@@ -28,6 +28,7 @@ pub(crate) struct FactoryTranslation {
 
 pub(crate) mod keys;
 pub(crate) mod es_us;
+pub(crate) mod fr_fr;
 
 pub(crate) const FACTORY_LANGUAGES: &[FactoryLanguage] = &[
     FactoryLanguage {
@@ -43,4 +44,16 @@ pub(crate) const FACTORY_LANGUAGES: &[FactoryLanguage] = &[
         native_name: "Español (Estados Unidos)",
         text_direction: "ltr",
     },
+
+    FactoryLanguage {
+        locale: "fr-FR",
+        english_name: "French (France)",
+        native_name: "Français (France)",
+        text_direction: "ltr",
+    },
+];
+
+pub(crate) const FACTORY_TRANSLATION_CATALOGS: &[&[FactoryTranslation]] = &[
+    es_us::TRANSLATIONS,
+    fr_fr::TRANSLATIONS,
 ];

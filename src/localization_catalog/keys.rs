@@ -5092,4 +5092,36 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
         english_text: "OR",
         translator_context: "QBE conditional display label. SQL token remains the invariant OR keyword.",
     },
+
+    FactoryTranslationKey {
+        key: "editor.tab.policies",
+        english_text: "Policies",
+        translator_context: "Control Center parent-tab label for shader policies.",
+    },
+    FactoryTranslationKey {
+        key: "editor.tab.playlists",
+        english_text: "Playlists",
+        translator_context: "Control Center parent-tab label for playlists.",
+    },
+    FactoryTranslationKey {
+        key: "editor.tab.rendering",
+        english_text: "Rendering",
+        translator_context: "Control Center parent-tab label for rendering controls.",
+    },
+    FactoryTranslationKey {
+        key: "editor.tab.textures",
+        english_text: "Textures",
+        translator_context: "Control Center parent-tab label for texture controls.",
+    },
+    FactoryTranslationKey {
+        key: "editor.tab.post_processing",
+        english_text: "Post-Processing",
+        translator_context: "Control Center parent-tab label for post-processing controls.",
+    },
+    FactoryTranslationKey {
+        key: "editor.tab.configuration",
+        english_text: "Configuration",
+        translator_context: "Control Center parent-tab label for application configuration.",
+    },
+
 ];

@@ -5085,4 +5085,36 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
         key: "qbe.conditional.or",
         translated_text: "O",
     },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.tab.policies",
+        translated_text: "Políticas",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.tab.playlists",
+        translated_text: "Listas de reproducción",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.tab.rendering",
+        translated_text: "Renderizado",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.tab.textures",
+        translated_text: "Texturas",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.tab.post_processing",
+        translated_text: "Posprocesamiento",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.tab.configuration",
+        translated_text: "Configuración",
+    },
+
 ];

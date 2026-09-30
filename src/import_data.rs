@@ -2058,13 +2058,13 @@ fn inspect_archive(path: &Path) -> (ArchiveInspection, Option<ValidatedPackage>)
     }
 
     let policy_table = inspect_metadata_file(
-        "Policies", &schema.datasets.policies, &manifest, &entries, &mut result);
+        "export.policies", &schema.datasets.policies, &manifest, &entries, &mut result);
     let shader_table = inspect_metadata_file(
-        "Shaders", &schema.datasets.shaders, &manifest, &entries, &mut result);
+        "export.shaders", &schema.datasets.shaders, &manifest, &entries, &mut result);
     let playlist_table = inspect_metadata_file(
-        "Playlists", &schema.datasets.playlists, &manifest, &entries, &mut result);
+        "import.dataset.playlists", &schema.datasets.playlists, &manifest, &entries, &mut result);
     let membership_table = inspect_metadata_file(
-        "Playlist memberships", &schema.datasets.playlist_members, &manifest, &entries, &mut result);
+        "import.dataset.playlist_memberships", &schema.datasets.playlist_members, &manifest, &entries, &mut result);
 
     let (Ok(policies), Ok(shaders), Ok(playlists), Ok(memberships)) =
         (policy_table, shader_table, playlist_table, membership_table)
@@ -2188,18 +2188,8 @@ fn build_validated_package(
     })
 }
 
-fn localized_dataset_label(label: &str) -> String {
-    match label {
-        "Policies" => tr("export.policies"),
-        "Shaders" => tr("export.shaders"),
-        "Playlists" => tr("import.dataset.playlists"),
-        "Playlist members" | "Playlist memberships" => tr("import.dataset.playlist_memberships"),
-        other => other.to_string(),
-    }
-}
-
 fn inspect_metadata_file(
-    label: &str,
+    label_key: &str,
     dataset: &SchemaDataset,
     manifest: &Manifest,
     entries: &BTreeMap<String, Payload>,
@@ -2207,35 +2197,35 @@ fn inspect_metadata_file(
 ) -> Result<Tsv, ()> {
     let Some(payload) = entries.get(&dataset.file) else {
         result.fail(
-            trp("import.check.metadata_title", &[("dataset", &localized_dataset_label(label))]),
+            trp("import.check.metadata_title", &[("dataset", &tr(label_key))]),
             trp("import.check.required_file_missing", &[("file", &dataset.file)]),
         );
         return Err(());
     };
 
     let Some(expected) = manifest.files.get(&dataset.file) else {
-        result.fail(trp("import.check.metadata_hash_title", &[("dataset", &localized_dataset_label(label))]),
+        result.fail(trp("import.check.metadata_hash_title", &[("dataset", &tr(label_key))]),
             tr("import.diag.integrity_record_missing"));
         return Err(());
     };
 
     if valid_hash(&expected.sha256) && sha256_hex(&payload.bytes) == expected.sha256 {
-        result.pass(trp("import.check.metadata_hash_title", &[("dataset", &localized_dataset_label(label))]), tr("import.diag.sha_verified"));
+        result.pass(trp("import.check.metadata_hash_title", &[("dataset", &tr(label_key))]), tr("import.diag.sha_verified"));
     } else {
-        result.fail(trp("import.check.metadata_hash_title", &[("dataset", &localized_dataset_label(label))]), tr("import.diag.sha_mismatch"));
+        result.fail(trp("import.check.metadata_hash_title", &[("dataset", &tr(label_key))]), tr("import.diag.sha_mismatch"));
     }
 
     match parse_tsv(&payload.bytes, dataset) {
         Ok(table) => {
             result.pass(
-                trp("import.check.structure_title", &[("dataset", &localized_dataset_label(label))]),
+                trp("import.check.structure_title", &[("dataset", &tr(label_key))]),
                 trp("import.check.rows_header_verified", &[("rows", &table.rows.len().to_string())]),
             );
             Ok(table)
         }
         Err(error) => {
             result.fail(
-                trp("import.check.structure_title", &[("dataset", &localized_dataset_label(label))]),
+                trp("import.check.structure_title", &[("dataset", &tr(label_key))]),
                 error,
             );
             Err(())

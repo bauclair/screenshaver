@@ -83,7 +83,7 @@ pub fn run(requested_locale: Option<&str>, requested_module: Option<&str>) -> Re
         if requested_module_is_orphaned {
             continue;
         }
-        if path == &keys_path || path == &locale_path || path.ends_with("audit_translation.rs") {
+        if is_localization_catalog_source(path) || path.ends_with("audit_translation.rs") {
             continue;
         }
         let text = fs::read_to_string(path)
@@ -99,7 +99,7 @@ pub fn run(requested_locale: Option<&str>, requested_module: Option<&str>) -> Re
     }
 
     println!("[TRANSLATION AUDIT] Locale: {}", locale);
-    println!("[TRANSLATION AUDIT] Auditor revision: v15-verified-fix");
+    println!("[TRANSLATION AUDIT] Auditor revision: v18-localized-choice-stored-values");
     println!("[TRANSLATION AUDIT] Source root: {}", src.display());
     match requested_module {
         Some(_) => println!("[TRANSLATION AUDIT] Source scope: {}", files[0].display()),
@@ -401,6 +401,13 @@ fn is_intentional_source_copy(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+fn is_localization_catalog_source(path: &Path) -> bool {
+    path.parent()
+        .and_then(|parent| parent.file_name())
+        .and_then(|value| value.to_str())
+        == Some("localization_catalog")
+}
+
 fn display_relative(root: &Path, path: &Path) -> String {
     path.strip_prefix(root)
         .unwrap_or(path)
@@ -551,7 +558,18 @@ fn scan_file(
                 english.contains(&literal)
                     || english.contains(&catalog_literal);
 
-            if (matches_catalog && !is_direct_presentation_literal(line))
+            // A canonical English literal is not automatically safe merely because the same
+            // text exists in keys.rs.  Multi-line egui construction often places the literal
+            // several source lines away from the presentation sink, so inspect nearby source
+            // context as well as the literal's own line.
+            let presentation_context =
+                source_context(&lines, idx, 48);
+            let direct_presentation =
+                is_direct_presentation_literal(line)
+                    || direct_presentation_context(&presentation_context);
+
+            if (matches_catalog && !direct_presentation)
+                || localized_choice_stored_value(&literal, line, &presentation_context)
                 || intentionally_invariant(&literal, line, path)
             {
                 *suppressed_count += 1;
@@ -683,6 +701,36 @@ fn looks_human(s: &str) -> bool {
         || t.ends_with(':')
         || t.ends_with('!')
         || t.ends_with('?')
+}
+
+fn localized_choice_stored_value(s: &str, line: &str, context: &str) -> bool {
+    // draw_localized_value_combo() deliberately separates the stable stored/query value
+    // from the localization key used for presentation:
+    //
+    //     ("Audio Bloom", "post.audio.audio_bloom")
+    //
+    // The first string is machine-facing state and must not be translated. Restrict this
+    // exemption to tuple lines inside a nearby draw_localized_value_combo() call, and require
+    // the second literal to look like a localization key, so ordinary UI tuples remain audited.
+    if !context.contains("draw_localized_value_combo(") {
+        return false;
+    }
+
+    let literals = string_literals(line);
+    if literals.len() != 2 || literals[0] != s {
+        return false;
+    }
+
+    let key = literals[1].as_str();
+    key.contains('.')
+        && key
+            .chars()
+            .all(|character| {
+                character.is_ascii_lowercase()
+                    || character.is_ascii_digit()
+                    || character == '_'
+                    || character == '.'
+            })
 }
 
 fn intentionally_invariant(s: &str, line: &str, path: &Path) -> bool {

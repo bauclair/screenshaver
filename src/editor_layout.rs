@@ -5552,27 +5552,27 @@ fn draw_editor_tab_bar(
             ) in [
                 (
                     EditorTab::Policies,
-                    "Policies",
+                    crate::manage_localization::runtime_text("editor.tab.policies"),
                 ),
                 (
                     EditorTab::Playlists,
-                    "Playlists",
+                    crate::manage_localization::runtime_text("editor.tab.playlists"),
                 ),
                 (
                     EditorTab::Rendering,
-                    "Rendering",
+                    crate::manage_localization::runtime_text("editor.tab.rendering"),
                 ),
                 (
                     EditorTab::Textures,
-                    "Textures",
+                    crate::manage_localization::runtime_text("editor.tab.textures"),
                 ),
                 (
                     EditorTab::PostProcessing,
-                    "Post-Processing",
+                    crate::manage_localization::runtime_text("editor.tab.post_processing"),
                 ),
                 (
                     EditorTab::Config,
-                    "Configuration",
+                    crate::manage_localization::runtime_text("editor.tab.configuration"),
                 ),
             ] {
                 let selected =
@@ -9591,8 +9591,9 @@ fn draw_policy_add_to_playlist_modal(
             )
             .unwrap_or_else(
                 || {
-                    "No playlists available"
-                        .to_string()
+                    crate::manage_localization::runtime_text(
+                        "target.no_playlists"
+                    )
                 }
             );
 
@@ -11318,7 +11319,9 @@ fn draw_texture_panel(
                         ),
                         |ui| {
                             ui.label(
-                                "Texture:"
+                                crate::manage_localization::runtime_text(
+                                    "target.texture"
+                                )
                             );
                         },
                     );
