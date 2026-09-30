@@ -2354,16 +2354,29 @@ fn main() {
                         &config_path
                     ) {
                         Ok(config_result) => {
-                            for diagnostic in
-                                &config_result.diagnostics
-                            {
-                                crate::logger::warning(
-                                    &logfile,
-                                    &format!(
-                                        "[TRAY] Configuration reload diagnostic: {}",
+                            let reloaded_debug_log =
+                                config_result.config.debug_log;
+
+                            let reloaded_log_level =
+                                config_result.config.log_level;
+
+                            crate::logger::set_enabled(
+                                reloaded_debug_log
+                            );
+
+                            crate::logger::set_log_level(
+                                reloaded_log_level
+                            );
+
+                            if reloaded_debug_log {
+                                for diagnostic in
+                                    &config_result.diagnostics
+                                {
+                                    crate::logger::debug(
+                                        &logfile,
                                         diagnostic,
-                                    ),
-                                );
+                                    );
+                                }
                             }
 
                             cfg = config_result.config;
@@ -2951,16 +2964,29 @@ fn main() {
                                 &config_path
                             ) {
                                 Ok(config_result) => {
-                                    for diagnostic in
-                                        &config_result.diagnostics
-                                    {
-                                        crate::logger::warning(
-                                            &logfile,
-                                            &format!(
-                                                "[SCREENSAVER EDIT] Configuration reload diagnostic: {}",
+                                    let reloaded_debug_log =
+                                        config_result.config.debug_log;
+
+                                    let reloaded_log_level =
+                                        config_result.config.log_level;
+
+                                    crate::logger::set_enabled(
+                                        reloaded_debug_log
+                                    );
+
+                                    crate::logger::set_log_level(
+                                        reloaded_log_level
+                                    );
+
+                                    if reloaded_debug_log {
+                                        for diagnostic in
+                                            &config_result.diagnostics
+                                        {
+                                            crate::logger::debug(
+                                                &logfile,
                                                 diagnostic,
-                                            ),
-                                        );
+                                            );
+                                        }
                                     }
 
                                     cfg = config_result.config;

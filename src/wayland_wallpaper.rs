@@ -214,6 +214,8 @@ struct WaylandState {
     removed_output_names: Vec<u32>,
     windowed_pending_width: i32,
     windowed_pending_height: i32,
+    windowed_activation_established: bool,
+    windowed_activated: bool,
 }
 
 
@@ -626,8 +628,50 @@ impl Dispatch<XdgToplevel, ()>
             xdg_toplevel::Event::Configure {
                 width,
                 height,
-                ..
+                states,
             } => {
+
+                // The first xdg_toplevel configure may legitimately contain
+                // no states.  Do not treat that initial, unestablished state
+                // as an inactive workspace.  Once the compositor supplies a
+                // non-empty state set, track Activated as the Windowshader's
+                // presentation-visibility signal.
+                if !states.is_empty() {
+                    state.windowed_activation_established =
+                        true;
+
+
+                    state.windowed_activated =
+                        states
+                            .chunks_exact(
+                                std::mem::size_of::<u32>()
+                            )
+                            .map(
+                                |bytes| {
+                                    u32::from_ne_bytes(
+                                        [
+                                            bytes[0],
+                                            bytes[1],
+                                            bytes[2],
+                                            bytes[3],
+                                        ]
+                                    )
+                                }
+                            )
+                            .any(
+                                |raw_state| {
+                                    matches!(
+                                        xdg_toplevel::State::try_from(
+                                            raw_state
+                                        ),
+                                        Ok(
+                                            xdg_toplevel::State::Activated
+                                        )
+                                    )
+                                }
+                            );
+                }
+
 
                 state.windowed_pending_width =
                     width;
@@ -3128,6 +3172,10 @@ fn render_mirror_frames(
         None;
 
 
+    let mut windowed_inactive_started: Option<Instant> =
+        None;
+
+
     let result =
         'render_loop: loop {
 
@@ -3395,6 +3443,64 @@ fn render_mirror_frames(
 
 
                 frame_times.clear();
+            }
+
+
+            // Mango removes Activated from an established Windowshader
+            // xdg_toplevel while its workspace is inactive.  Do not submit
+            // frames in that state: eglSwapBuffers() may otherwise block in
+            // the compositor and prevent this worker from observing a global
+            // Screenshaver shutdown request.  Keep servicing Wayland events
+            // and control state so Stop remains workspace-independent.
+            let windowed_inactive =
+                runtime.display_format
+                    == crate::manage_configuration::WallpaperDisplayFormat::Windowed
+                    && state.windowed_activation_established
+                    && !state.windowed_activated;
+
+
+            if windowed_inactive {
+                if windowed_inactive_started.is_none() {
+                    windowed_inactive_started =
+                        Some(
+                            Instant::now()
+                        );
+                }
+
+
+                thread::sleep(
+                    Duration::from_millis(10)
+                );
+
+
+                continue 'render_loop;
+            }
+
+
+            if let Some(inactive_at) =
+                windowed_inactive_started.take()
+            {
+                let inactive_duration =
+                    inactive_at.elapsed();
+
+
+                start_time +=
+                    inactive_duration;
+
+
+                last_shader_switch +=
+                    inactive_duration;
+
+
+                next_frame_deadline =
+                    Instant::now();
+
+
+                frame_times.clear();
+
+
+                fps_warning_state =
+                    crate::fps_monitor::FpsWarningState::Normal;
             }
 
 
