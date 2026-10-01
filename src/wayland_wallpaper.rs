@@ -213,6 +213,55 @@ pub struct WallpaperSurfaceConfiguration {
 }
 
 
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+struct WindowshaderGeometry {
+    width: i32,
+    height: i32,
+    #[serde(default)]
+    maximized: bool,
+}
+
+impl Default for WindowshaderGeometry {
+    fn default() -> Self {
+        Self { width: 960, height: 540, maximized: false }
+    }
+}
+
+fn load_windowshader_geometry() -> WindowshaderGeometry {
+    let default = WindowshaderGeometry::default();
+    let Some(geometry) = std::fs::read_to_string(crate::locate_paths::state_path())
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .and_then(|root| root.get("windowshader").cloned())
+        .and_then(|value| serde_json::from_value::<WindowshaderGeometry>(value).ok())
+    else { return default; };
+    if !(64..=16384).contains(&geometry.width)
+        || !(64..=16384).contains(&geometry.height) {
+        return default;
+    }
+    geometry
+}
+
+fn save_windowshader_geometry(geometry: WindowshaderGeometry) -> Result<(), String> {
+    let path = crate::locate_paths::state_path();
+    let mut root = std::fs::read_to_string(&path).ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .filter(serde_json::Value::is_object)
+        .unwrap_or_else(|| serde_json::json!({}));
+    root.as_object_mut().expect("object root").insert(
+        "windowshader".to_string(),
+        serde_json::to_value(geometry).map_err(|error| error.to_string())?,
+    );
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let temporary = path.with_extension("json.tmp");
+    std::fs::write(&temporary, serde_json::to_string_pretty(&root)
+        .map_err(|error| error.to_string())?)
+        .map_err(|error| error.to_string())?;
+    std::fs::rename(&temporary, &path).map_err(|error| error.to_string())
+}
+
 #[derive(Debug, Default)]
 struct WaylandState {
     compositor: Option<wl_compositor::WlCompositor>,
@@ -228,6 +277,9 @@ struct WaylandState {
     removed_output_names: Vec<u32>,
     windowed_pending_width: i32,
     windowed_pending_height: i32,
+    windowed_maximized: bool,
+    windowed_normal_width: i32,
+    windowed_normal_height: i32,
     windowed_activation_established: bool,
     windowed_activated: bool,
     frame_ready: HashMap<u32, bool>,
@@ -700,6 +752,18 @@ impl Dispatch<XdgToplevel, ()>
                             );
                 }
 
+
+                let maximized = states.chunks_exact(4)
+                    .map(|bytes| u32::from_ne_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+                    .any(|raw| matches!(
+                        xdg_toplevel::State::try_from(raw),
+                        Ok(xdg_toplevel::State::Maximized)
+                    ));
+                state.windowed_maximized = maximized;
+                if !maximized {
+                    if width > 0 { state.windowed_normal_width = width; }
+                    if height > 0 { state.windowed_normal_height = height; }
+                }
 
                 state.windowed_pending_width =
                     width;
@@ -1756,8 +1820,7 @@ pub fn run_egl_windowed_surface(
 ) -> Result<(), String> {
 
     const WINDOWED_TARGET_ID: u32 = 0;
-    const DEFAULT_WINDOW_WIDTH: i32 = 960;
-    const DEFAULT_WINDOW_HEIGHT: i32 = 540;
+    let saved_geometry = load_windowshader_geometry();
 
 
     runtime.tray_status
@@ -1790,6 +1853,9 @@ pub fn run_egl_windowed_surface(
     ) =
         connect_and_bind_windowed()?;
 
+
+    state.windowed_normal_width = saved_geometry.width;
+    state.windowed_normal_height = saved_geometry.height;
 
     let queue_handle =
         event_queue.handle();
@@ -1877,6 +1943,13 @@ pub fn run_egl_windowed_surface(
             .to_string()
     );
 
+    xdg_toplevel.set_min_size(64, 64);
+    xdg_toplevel.set_max_size(0, 0);
+    xdg_surface.set_window_geometry(0, 0, saved_geometry.width, saved_geometry.height);
+    if saved_geometry.maximized {
+        xdg_toplevel.set_maximized();
+    }
+
 
     surface.commit();
 
@@ -1963,7 +2036,7 @@ pub fn run_egl_windowed_surface(
     let width =
         configured_dimension(
             configuration.width,
-            DEFAULT_WINDOW_WIDTH,
+            saved_geometry.width,
             "width",
         )?;
 
@@ -1971,7 +2044,7 @@ pub fn run_egl_windowed_surface(
     let height =
         configured_dimension(
             configuration.height,
-            DEFAULT_WINDOW_HEIGHT,
+            saved_geometry.height,
             "height",
         )?;
 
@@ -2095,6 +2168,21 @@ pub fn run_egl_windowed_surface(
             &control,
         );
 
+
+    if let Some(target) = native_targets.first() {
+        let geometry = WindowshaderGeometry {
+            width: if state.windowed_maximized {
+                state.windowed_normal_width
+            } else { target.width },
+            height: if state.windowed_maximized {
+                state.windowed_normal_height
+            } else { target.height },
+            maximized: state.windowed_maximized,
+        };
+        if let Err(error) = save_windowshader_geometry(geometry) {
+            eprintln!("[WINDOWSHADER] Unable to save window geometry: {}", error);
+        }
+    }
 
     for target in native_targets {
 

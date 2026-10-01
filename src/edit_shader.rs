@@ -93,6 +93,9 @@ struct ControlCenterState {
     #[serde(default)]
     ordered:
     PersistentOrderedState,
+
+    #[serde(default, flatten)]
+    other_state: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
 
@@ -10543,9 +10546,23 @@ fn save_control_center_state(
         }
 
 
+        let mut merged_state = serde_json::to_value(state)
+            .map_err(|error| error.to_string())?;
+        if let Ok(text) = std::fs::read_to_string(&state_path) {
+            if let Ok(existing) = serde_json::from_str::<serde_json::Value>(&text) {
+                if let (Some(destination), Some(source)) =
+                    (merged_state.as_object_mut(), existing.as_object()) {
+                    for (key, value) in source {
+                        if !matches!(key.as_str(), "recent_shaders" | "policy_list" | "window" | "ordered") {
+                            destination.insert(key.clone(), value.clone());
+                        }
+                    }
+                }
+            }
+        }
         let serialized =
         serde_json::to_string_pretty(
-            state
+            &merged_state
         )
         .map_err(
             |error| {
