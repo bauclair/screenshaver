@@ -58,6 +58,7 @@ pub(crate) struct WindowshaderKwinGuard {
     object_path: String,
     script_path: PathBuf,
     _connection: zbus::blocking::Connection,
+    _runtime: tokio::runtime::Runtime,
     position: Arc<Mutex<Option<(i32, i32)>>>,
 }
 
@@ -79,10 +80,23 @@ impl WindowshaderKwinGuard {
         let script_path = dir.join(format!("screenshaver-windowshader-{}.js", std::process::id()));
         let service = format!("org.screenshaver.Windowshader.P{}", std::process::id());
         let position = Arc::new(Mutex::new(None));
-        let connection = zbus::blocking::Connection::session().map_err(|e| e.to_string())?;
-        connection.request_name(service.as_str()).map_err(|e| e.to_string())?;
-        connection.object_server().at("/Windowshader", PositionReceiver(position.clone()))
-            .map_err(|e| e.to_string())?;
+        // zbus is built with the Tokio executor. Establish its connection and
+        // object server within a dedicated runtime, which remains alive while
+        // this process-scoped KWin integration is installed.
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .map_err(|e| format!("Unable to initialize Windowshader D-Bus runtime: {e}"))?;
+        let connection = {
+            let _entered = runtime.enter();
+            let connection = zbus::blocking::Connection::session()
+                .map_err(|e| e.to_string())?;
+            connection.request_name(service.as_str()).map_err(|e| e.to_string())?;
+            connection.object_server().at("/Windowshader", PositionReceiver(position.clone()))
+                .map_err(|e| e.to_string())?;
+            connection
+        };
         let (restore, x, y) = match saved_position {
             Some((x, y)) => ("true", x, y),
             None => ("false", 0, 0),
@@ -106,7 +120,7 @@ impl WindowshaderKwinGuard {
             return Err(format!("Unexpected KWin script identifier: {id}"));
         }
         let object_path = format!("/Scripting/Script{id}");
-        let guard = Self { qdbus, object_path, script_path, _connection: connection, position };
+        let guard = Self { qdbus, object_path, script_path, _connection: connection, _runtime: runtime, position };
         let run = Command::new(qdbus).args([
             "org.kde.KWin", &guard.object_path, "org.kde.kwin.Script.run",
         ]).output().map_err(|e| e.to_string())?;
