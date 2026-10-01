@@ -1217,6 +1217,15 @@ fn run_empty_session(
                                                       &mut window,
                                                       &mut fullscreen_restore_requested_at,
                 );
+                process_restore_archive_browse_request(
+                    &edit_window,
+                    editor_output
+                    .restore_archive_browse_requested
+                    .as_ref(),
+                    &mut window,
+                    &mut fullscreen_restore_requested_at,
+                );
+
 
                 process_policy_rename_ui(
                     &mut edit_window,
@@ -2436,6 +2445,46 @@ fn process_import_archive_browse_request(
 }
 
 
+fn process_restore_archive_browse_request(
+    edit_window: &crate::editor_layout::EditWindowOverlay,
+    request: Option<&PathBuf>,
+    window: &mut sdl2::video::Window,
+    fullscreen_restore_requested_at: &mut Option<Instant>,
+) {
+    let Some(starting_directory) = request else {
+        return;
+    };
+
+    let mut dialog =
+        rfd::FileDialog::new()
+        .add_filter(
+            localized_edit!("edit.export_archive"),
+            &["zip"],
+        );
+
+    if starting_directory.is_dir() {
+        dialog = dialog.set_directory(starting_directory);
+    }
+
+    let selected_archive = dialog.pick_file();
+
+    if let Err(error) = restore_editor_fullscreen(window) {
+        log_warning(
+            &format!(
+                "[EDIT_SHADER] Immediate fullscreen restoration failed after restore archive selection: {}",
+                error,
+            )
+        );
+    }
+
+    *fullscreen_restore_requested_at = Some(Instant::now());
+
+    if let Some(selected_archive) = selected_archive {
+        edit_window.set_restore_archive(&selected_archive);
+    }
+}
+
+
 fn restore_editor_fullscreen(
     window: &mut sdl2::video::Window,
 ) -> Result<(), String> {
@@ -3400,6 +3449,15 @@ fn run_paths(
                                                                   &mut window,
                                                                   &mut fullscreen_restore_requested_at,
                             );
+                            process_restore_archive_browse_request(
+                                &edit_window,
+                                editor_output
+                                .restore_archive_browse_requested
+                                .as_ref(),
+                                &mut window,
+                                &mut fullscreen_restore_requested_at,
+                            );
+
 
 
                             // The active shader has intentionally been unloaded during
@@ -4569,6 +4627,15 @@ fn run_paths(
                                                                               &mut window,
                                                                               &mut fullscreen_restore_requested_at,
                                         );
+                                        process_restore_archive_browse_request(
+                                            &edit_window,
+                                            editor_output
+                                            .restore_archive_browse_requested
+                                            .as_ref(),
+                                            &mut window,
+                                            &mut fullscreen_restore_requested_at,
+                                        );
+
 
                                         process_policy_rename_ui(
                                             &mut edit_window,

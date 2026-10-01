@@ -272,6 +272,98 @@ pub fn prepare(database_path: &Path) -> Result<Connection, String> {
 }
 
 
+/// Prepare a database that is isolated from the live Screenshaver database for
+/// restore validation. Older supported schemas are reconstructed in place beside
+/// the supplied path. This function never opens, renames, or otherwise modifies
+/// the operational database returned by locate_paths::database_path().
+pub fn prepare_staged_restore(database_path: &Path) -> Result<i64, String> {
+    if !database_path.exists() {
+        return Err(format!(
+            "Unable to prepare staged restore database because '{}' does not exist",
+            database_path.display(),
+        ));
+    }
+
+    let source_connection = open_read_only(database_path)?;
+    let source_schema_version = read_schema_version(&source_connection)?;
+    validate_schema_version(source_schema_version)?;
+
+    if source_schema_version == CURRENT_SCHEMA_VERSION {
+        drop(source_connection);
+        let connection = open_existing_read_write(database_path)?;
+        crate::validate_database::validate_startup(&connection)?;
+        crate::validate_database::validate_integrity(&connection)?;
+        drop(connection);
+        return Ok(source_schema_version);
+    }
+
+    let migration_data = read_historical_database(
+        source_schema_version,
+        &source_connection,
+    )?;
+    let expectations = reconstruction_expectations(&migration_data);
+    drop(source_connection);
+
+    let reconstructed_path = migrating_path(database_path);
+    remove_if_exists(&reconstructed_path)?;
+
+    let reconstructed_connection =
+        match crate::database_migration::write_current::write(
+            &reconstructed_path,
+            &migration_data,
+        ) {
+            Ok(connection) => connection,
+            Err(error) => {
+                let _ = remove_if_exists(&reconstructed_path);
+                return Err(format!(
+                    "Staged restore database reconstruction from schema {} to schema {} failed: {}",
+                    source_schema_version,
+                    CURRENT_SCHEMA_VERSION,
+                    error,
+                ));
+            }
+        };
+
+    if let Err(error) = validate_reconstructed_database(
+        &reconstructed_connection,
+        expectations,
+    ) {
+        drop(reconstructed_connection);
+        let _ = remove_if_exists(&reconstructed_path);
+        return Err(format!(
+            "Staged restore database reconstructed from schema {} failed validation: {}",
+            source_schema_version,
+            error,
+        ));
+    }
+    drop(reconstructed_connection);
+
+    // Both files are inside the disposable restore staging directory. Replacing
+    // the extracted historical snapshot here cannot affect the live database.
+    fs::remove_file(database_path).map_err(|error| {
+        format!(
+            "Unable to replace historical staged restore database '{}': {}",
+            database_path.display(),
+            error,
+        )
+    })?;
+
+    if let Err(error) = fs::rename(&reconstructed_path, database_path) {
+        return Err(format!(
+            "Unable to promote reconstructed staged restore database '{}' to '{}': {}",
+            reconstructed_path.display(),
+            database_path.display(),
+            error,
+        ));
+    }
+
+    let final_connection = open_existing_read_write(database_path)?;
+    validate_reconstructed_database(&final_connection, expectations)?;
+    drop(final_connection);
+
+    Ok(source_schema_version)
+}
+
 fn read_historical_database(
     schema_version: i64,
     connection: &Connection,

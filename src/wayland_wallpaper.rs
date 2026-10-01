@@ -1,4 +1,5 @@
 use wayland_client::protocol::{
+    wl_callback,
     wl_compositor,
     wl_output,
     wl_region,
@@ -156,6 +157,12 @@ struct LayerSurfaceDispatchData {
 }
 
 
+#[derive(Debug, Clone)]
+struct FrameCallbackDispatchData {
+    registry_name: u32,
+}
+
+
 #[derive(Debug, Clone, Default)]
 struct WallpaperSurfaceState {
     registry_name: u32,
@@ -216,6 +223,7 @@ struct WaylandState {
     windowed_pending_height: i32,
     windowed_activation_established: bool,
     windowed_activated: bool,
+    frame_ready: HashMap<u32, bool>,
 }
 
 
@@ -704,6 +712,30 @@ impl Dispatch<XdgToplevel, ()>
 
 
             _ => {}
+        }
+    }
+}
+
+
+impl Dispatch<wl_callback::WlCallback, FrameCallbackDispatchData>
+    for WaylandState
+{
+    fn event(
+        state: &mut Self,
+        _callback: &wl_callback::WlCallback,
+        event: wl_callback::Event,
+        data: &FrameCallbackDispatchData,
+        _connection: &Connection,
+        _queue_handle: &QueueHandle<Self>,
+    ) {
+        if matches!(
+            event,
+            wl_callback::Event::Done { .. }
+        ) {
+            state.frame_ready.insert(
+                data.registry_name,
+                true,
+            );
         }
     }
 }
@@ -3446,20 +3478,38 @@ fn render_mirror_frames(
             }
 
 
-            // Mango removes Activated from an established Windowshader
-            // xdg_toplevel while its workspace is inactive.  Do not submit
-            // frames in that state: eglSwapBuffers() may otherwise block in
-            // the compositor and prevent this worker from observing a global
-            // Screenshaver shutdown request.  Keep servicing Wayland events
-            // and control state so Stop remains workspace-independent.
-            let windowed_inactive =
-                runtime.display_format
+            // Do not use xdg_toplevel::State::Activated as a visibility
+            // signal.  Activated represents compositor activation/focus, so
+            // Mango legitimately removes it when the pointer/keyboard focus
+            // leaves a still-visible Windowshader.  Instead, pace Windowed
+            // presentation with wl_surface.frame callbacks.  A visible,
+            // unfocused Windowshader continues receiving callbacks, while a
+            // surface on a non-visible workspace can stop receiving them.
+            // The render worker therefore remains in this event/control loop
+            // instead of entering a compositor-throttled eglSwapBuffers().
+            let windowed_frame_ready =
+                if runtime.display_format
                     == crate::manage_configuration::WallpaperDisplayFormat::Windowed
-                    && state.windowed_activation_established
-                    && !state.windowed_activated;
+                {
+                    native_targets
+                        .iter()
+                        .all(
+                            |target| {
+                                state
+                                    .frame_ready
+                                    .get(
+                                        &target.info.registry_name
+                                    )
+                                    .copied()
+                                    .unwrap_or(true)
+                            }
+                        )
+                } else {
+                    true
+                };
 
 
-            if windowed_inactive {
+            if !windowed_frame_ready {
                 if windowed_inactive_started.is_none() {
                     windowed_inactive_started =
                         Some(
@@ -3480,27 +3530,36 @@ fn render_mirror_frames(
             if let Some(inactive_at) =
                 windowed_inactive_started.take()
             {
-                let inactive_duration =
+                let callback_wait =
                     inactive_at.elapsed();
 
 
-                start_time +=
-                    inactive_duration;
+                // Ordinary frame-callback pacing is only a frame or two and
+                // must remain part of shader animation time.  A long callback
+                // silence indicates that presentation was suppressed (for
+                // example because the workspace was not visible); exclude
+                // only that long interval from shader/rotation timing.
+                if callback_wait
+                    >= Duration::from_millis(250)
+                {
+                    start_time +=
+                        callback_wait;
 
 
-                last_shader_switch +=
-                    inactive_duration;
+                    last_shader_switch +=
+                        callback_wait;
 
 
-                next_frame_deadline =
-                    Instant::now();
+                    next_frame_deadline =
+                        Instant::now();
 
 
-                frame_times.clear();
+                    frame_times.clear();
 
 
-                fps_warning_state =
-                    crate::fps_monitor::FpsWarningState::Normal;
+                    fps_warning_state =
+                        crate::fps_monitor::FpsWarningState::Normal;
+                }
             }
 
 
@@ -4038,6 +4097,10 @@ fn render_mirror_frames(
             }
 
 
+            let frame_queue_handle =
+                event_queue.handle();
+
+
             for (
                 egl_target,
                 native_target,
@@ -4332,6 +4395,24 @@ fn render_mirror_frames(
                             );
                         }
                     }
+                }
+
+
+                if runtime.display_format
+                    == crate::manage_configuration::WallpaperDisplayFormat::Windowed
+                {
+                    native_target.surface.frame(
+                        &frame_queue_handle,
+                        FrameCallbackDispatchData {
+                            registry_name:
+                                native_target.info.registry_name,
+                        },
+                    );
+
+                    state.frame_ready.insert(
+                        native_target.info.registry_name,
+                        false,
+                    );
                 }
 
 

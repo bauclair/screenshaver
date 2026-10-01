@@ -124,6 +124,7 @@ pub fn draw_configuration(
     status_message: &mut String,
     export_destination_browse_requested: &mut Option<std::path::PathBuf>,
     import_archive_browse_requested: &mut Option<std::path::PathBuf>,
+    restore_archive_browse_requested: &mut Option<std::path::PathBuf>,
 ) {
     let Some(configuration) =
         configuration.as_mut()
@@ -258,6 +259,7 @@ pub fn draw_configuration(
                                         status_message,
                                         export_destination_browse_requested,
                                         import_archive_browse_requested,
+                                        restore_archive_browse_requested,
                                     );
                                 }
                             }
@@ -374,6 +376,7 @@ fn draw_data_io_shell(
     status_message: &mut String,
     export_destination_browse_requested: &mut Option<std::path::PathBuf>,
     import_archive_browse_requested: &mut Option<std::path::PathBuf>,
+    restore_archive_browse_requested: &mut Option<std::path::PathBuf>,
 ) {
     ui.heading(
         crate::manage_localization::runtime_text("data_io.heading")
@@ -394,6 +397,7 @@ fn draw_data_io_shell(
     crate::manage_backup::draw_controls(
         ui,
         status_message,
+        restore_archive_browse_requested,
     );
 
     ui.add_space(12.0);
