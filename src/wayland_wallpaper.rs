@@ -1953,7 +1953,8 @@ pub fn run_egl_windowed_surface(
 
     xdg_toplevel.set_min_size(64, 64);
     xdg_toplevel.set_max_size(0, 0);
-    xdg_surface.set_window_geometry(0, 0, saved_geometry.width, saved_geometry.height);
+    // Let xdg_surface derive its window geometry from the resized wl_surface.
+    // A fixed startup geometry would constrain the KWin frame after EGL grows.
     if saved_geometry.maximized {
         xdg_toplevel.set_maximized();
     }
