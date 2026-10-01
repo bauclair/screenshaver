@@ -215,6 +215,10 @@ pub struct WallpaperSurfaceConfiguration {
 
 #[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 struct WindowshaderGeometry {
+    #[serde(default)]
+    x: Option<i32>,
+    #[serde(default)]
+    y: Option<i32>,
     width: i32,
     height: i32,
     #[serde(default)]
@@ -223,7 +227,7 @@ struct WindowshaderGeometry {
 
 impl Default for WindowshaderGeometry {
     fn default() -> Self {
-        Self { width: 960, height: 540, maximized: false }
+        Self { x: None, y: None, width: 960, height: 540, maximized: false }
     }
 }
 
@@ -1822,7 +1826,7 @@ pub fn run_egl_windowed_surface(
     const WINDOWED_TARGET_ID: u32 = 0;
     let saved_geometry = load_windowshader_geometry();
     // A failed KDE integration must never prevent Windowshader rendering.
-    let _kwin_guard = match crate::manage_windowshader_kde::WindowshaderKwinGuard::start() {
+    let _kwin_guard = match crate::manage_windowshader_kde::WindowshaderKwinGuard::start(saved_geometry.x.zip(saved_geometry.y)) {
         Ok(guard) => guard,
         Err(error) => {
             eprintln!("[WINDOWSHADER] KDE window integration unavailable: {}", error);
@@ -2181,7 +2185,11 @@ pub fn run_egl_windowed_surface(
 
 
     if let Some(target) = native_targets.first() {
+        let position = _kwin_guard.as_ref().and_then(|guard| guard.last_position())
+            .or(saved_geometry.x.zip(saved_geometry.y));
         let geometry = WindowshaderGeometry {
+            x: position.map(|(x, _)| x),
+            y: position.map(|(_, y)| y),
             width: if state.windowed_maximized {
                 state.windowed_normal_width
             } else { target.width },
