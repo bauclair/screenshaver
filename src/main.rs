@@ -1008,6 +1008,47 @@ fn main() {
     }
 
 
+    // The first-run policy assignment dialog runs before load_config().
+    // Initialize runtime translations now, after factory catalog synchronization,
+    // so every startup dialog can resolve its localization keys.
+    let startup_locale = match crate::load_config::load_locale(
+        &crate::locate_paths::config_path()
+    ) {
+        Ok(locale) => locale,
+        Err(error) => {
+            eprintln!("[MAIN] LOCALIZATION CONFIG ERROR: {}", error);
+            crate::logger::error(&logfile, &format!(
+                "[LOCALIZATION] Unable to load startup locale: {}", error
+            ));
+            return;
+        }
+    };
+
+    if let Err(error) =
+        crate::manage_localization::initialize_runtime(
+            &database_connection,
+            &startup_locale,
+        )
+    {
+        eprintln!(
+            "[MAIN] LOCALIZATION ERROR: {}",
+            error
+        );
+
+
+        crate::logger::error(
+            &logfile,
+            &format!(
+                "[LOCALIZATION] Unable to initialize runtime localization: {}",
+                error,
+            ),
+        );
+
+
+        return;
+    }
+
+
     // Keep the managed shader inventory current before configuration is
     // hydrated from SQLite.  This is normal production startup behavior.
     match crate::reconcile_shaders::reconcile(
@@ -1156,29 +1197,6 @@ fn main() {
         result.config;
 
 
-    if let Err(error) =
-        crate::manage_localization::initialize_runtime(
-            &database_connection,
-            &cfg.locale,
-        )
-    {
-        eprintln!(
-            "[MAIN] LOCALIZATION ERROR: {}",
-            error
-        );
-
-
-        crate::logger::error(
-            &logfile,
-            &format!(
-                "[LOCALIZATION] Unable to initialize runtime localization: {}",
-                error,
-            ),
-        );
-
-
-        return;
-    }
 
 
     if let Err(error) =
