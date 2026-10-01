@@ -36,6 +36,11 @@ use wayland_client::{
     QueueHandle,
 };
 
+use wayland_protocols::xdg::decoration::zv1::client::{
+    zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
+    zxdg_toplevel_decoration_v1::{self, ZxdgToplevelDecorationV1},
+};
+
 use wayland_protocols::xdg::shell::client::{
     xdg_surface::{
         self,
@@ -178,6 +183,7 @@ struct NativeWallpaperTarget {
     input_region: Option<wl_region::WlRegion>,
     xdg_surface: Option<XdgSurface>,
     xdg_toplevel: Option<XdgToplevel>,
+    toplevel_decoration: Option<ZxdgToplevelDecorationV1>,
     egl_window: wayland_egl::WlEglSurface,
     width: i32,
     height: i32,
@@ -212,6 +218,7 @@ struct WaylandState {
     compositor: Option<wl_compositor::WlCompositor>,
     layer_shell: Option<ZwlrLayerShellV1>,
     xdg_wm_base: Option<XdgWmBase>,
+    decoration_manager: Option<ZxdgDecorationManagerV1>,
     compositor_version: Option<u32>,
     layer_shell_version: Option<u32>,
     xdg_wm_base_version: Option<u32>,
@@ -341,6 +348,19 @@ impl Dispatch<wl_registry::WlRegistry, ()>
                         }
                     }
 
+
+                    "zxdg_decoration_manager_v1" => {
+                        if state.decoration_manager.is_none() {
+                            state.decoration_manager = Some(
+                                registry.bind::<ZxdgDecorationManagerV1, _, _>(
+                                    name,
+                                    version.min(1),
+                                    queue_handle,
+                                    (),
+                                )
+                            );
+                        }
+                    }
 
                     "wl_output" => {
 
@@ -740,6 +760,24 @@ impl Dispatch<wl_callback::WlCallback, FrameCallbackDispatchData>
     }
 }
 
+
+delegate_noop!(
+    WaylandState:
+    ignore ZxdgDecorationManagerV1
+);
+
+impl Dispatch<ZxdgToplevelDecorationV1, ()> for WaylandState {
+    fn event(
+        _state: &mut Self,
+        _decoration: &ZxdgToplevelDecorationV1,
+        _event: zxdg_toplevel_decoration_v1::Event,
+        _data: &(),
+        _connection: &Connection,
+        _queue_handle: &QueueHandle<Self>,
+    ) {
+        // The compositor chooses the effective decoration mode.
+    }
+}
 
 delegate_noop!(
     WaylandState:
@@ -1619,6 +1657,8 @@ pub fn run_egl_background_surface(
                     None,
                 xdg_toplevel:
                     None,
+                toplevel_decoration:
+                    None,
                 egl_window,
                 width,
                 height,
@@ -1655,6 +1695,10 @@ pub fn run_egl_background_surface(
             layer_surface.destroy();
         }
 
+
+        if let Some(decoration) = target.toplevel_decoration {
+            decoration.destroy();
+        }
 
         if let Some(xdg_toplevel) =
             target.xdg_toplevel
@@ -1810,6 +1854,17 @@ pub fn run_egl_windowed_surface(
             (),
         );
 
+
+    let toplevel_decoration =
+        state.decoration_manager.as_ref().map(|manager| {
+            let decoration = manager.get_toplevel_decoration(
+                &xdg_toplevel,
+                &queue_handle,
+                (),
+            );
+            decoration.set_mode(zxdg_toplevel_decoration_v1::Mode::ServerSide);
+            decoration
+        });
 
     xdg_toplevel.set_title(
         "Screenshaver Windowshader"
@@ -2017,6 +2072,7 @@ pub fn run_egl_windowed_surface(
                     Some(
                         xdg_toplevel
                     ),
+                toplevel_decoration,
                 egl_window,
                 width,
                 height,
@@ -2047,6 +2103,10 @@ pub fn run_egl_windowed_surface(
         );
 
 
+        if let Some(decoration) = target.toplevel_decoration {
+            decoration.destroy();
+        }
+
         if let Some(xdg_toplevel) =
             target.xdg_toplevel
         {
@@ -2064,6 +2124,10 @@ pub fn run_egl_windowed_surface(
         target.surface.destroy();
     }
 
+
+    if let Some(manager) = state.decoration_manager.take() {
+        manager.destroy();
+    }
 
     xdg_wm_base.destroy();
 
@@ -4865,6 +4929,7 @@ fn remove_disconnected_targets(
             input_region,
             xdg_surface,
             xdg_toplevel,
+            toplevel_decoration,
             egl_window,
             ..
         } = native_target;
@@ -4881,6 +4946,10 @@ fn remove_disconnected_targets(
             layer_surface.destroy();
         }
 
+
+        if let Some(decoration) = toplevel_decoration {
+            decoration.destroy();
+        }
 
         if let Some(xdg_toplevel) =
             xdg_toplevel
