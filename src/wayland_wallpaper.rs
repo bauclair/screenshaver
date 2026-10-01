@@ -2023,6 +2023,8 @@ pub fn run_egl_windowed_surface(
     if surface_state.closed
         && surface_state.configured.is_none()
     {
+        // A compositor Close request for Windowshader is an application quit.
+        running.store(false, Ordering::SeqCst);
         return Err(
             "The compositor closed the Windowed wallpaper before configuring it"
                 .to_string()
@@ -3406,18 +3408,20 @@ fn render_mirror_frames(
             )?;
 
 
-            if state
+            let compositor_closed = state
                 .surface_states
                 .iter()
-                .any(
-                    |surface_state| {
-                        surface_state.closed
-                    }
-                )
-                || !running.load(
-                    Ordering::SeqCst
-                )
-            {
+                .any(|surface_state| surface_state.closed);
+
+            if compositor_closed {
+                // Only Windowshader's xdg_toplevel Close means Quit.
+                // A wallpaper layer closing must not terminate Screenshaver.
+                if native_targets.iter().any(|target| target.xdg_toplevel.is_some()) {
+                    running.store(false, Ordering::SeqCst);
+                }
+                break Ok(());
+            }
+            if !running.load(Ordering::SeqCst) {
                 break Ok(());
             }
 
