@@ -111,22 +111,29 @@ fn safe_archive_member(name: &str) -> bool {
         })
 }
 
+
+fn localized_restore_text(key: &str, params: &[(&str, String)]) -> String {
+    let borrowed = params
+        .iter()
+        .map(|(name, value)| (*name, value.as_str()))
+        .collect::<Vec<_>>();
+    crate::manage_localization::runtime_text_with_params(key, &borrowed)
+}
+
 fn restore_staging_directory() -> Result<PathBuf, String> {
     let root = crate::locate_paths::backup_dir().join(".restore-staging");
     if root.exists() {
         std::fs::remove_dir_all(&root).map_err(|error| {
-            format!(
-                "Unable to remove stale restore staging directory '{}': {}",
-                root.display(),
-                error,
+            localized_restore_text(
+                "backup.restore.stale_staging_remove_failed",
+                &[("path", root.display().to_string()), ("error", error.to_string())],
             )
         })?;
     }
     std::fs::create_dir_all(&root).map_err(|error| {
-        format!(
-            "Unable to create restore staging directory '{}': {}",
-            root.display(),
-            error,
+        localized_restore_text(
+            "backup.restore.staging_create_failed",
+            &[("path", root.display().to_string()), ("error", error.to_string())],
         )
     })?;
     Ok(root)
@@ -136,14 +143,13 @@ fn inspect_and_stage_backup(archive_path: &std::path::Path) -> Result<RestoreIns
     use std::io::Read;
 
     let file = std::fs::File::open(archive_path).map_err(|error| {
-        format!(
-            "Unable to open backup archive '{}': {}",
-            archive_path.display(),
-            error,
+        localized_restore_text(
+            "backup.restore.archive_open_failed",
+            &[("path", archive_path.display().to_string()), ("error", error.to_string())],
         )
     })?;
     let mut zip = zip::ZipArchive::new(file).map_err(|error| {
-        format!("Unable to read backup ZIP archive: {}", error)
+        localized_restore_text("backup.restore.zip_read_failed", &[("error", error.to_string())])
     })?;
 
     let mut payloads = std::collections::BTreeMap::<String, Vec<u8>>::new();
@@ -151,7 +157,7 @@ fn inspect_and_stage_backup(archive_path: &std::path::Path) -> Result<RestoreIns
 
     for index in 0..zip.len() {
         let mut entry = zip.by_index(index).map_err(|error| {
-            format!("Unable to inspect backup ZIP member {}: {}", index, error)
+            localized_restore_text("backup.restore.zip_member_inspect_failed", &[("index", index.to_string()), ("error", error.to_string())])
         })?;
         if entry.is_dir() {
             continue;
@@ -159,21 +165,21 @@ fn inspect_and_stage_backup(archive_path: &std::path::Path) -> Result<RestoreIns
 
         let name = entry.name().to_string();
         if !safe_archive_member(&name) {
-            return Err(format!(
-                "Backup archive contains an unsafe member path '{}'; restore was refused",
-                name,
+            return Err(localized_restore_text(
+                "backup.restore.unsafe_member",
+                &[("member", name.to_string())],
             ));
         }
         if payloads.contains_key(&name) || (name == "manifest.json" && manifest_bytes.is_some()) {
-            return Err(format!(
-                "Backup archive contains duplicate member '{}'; restore was refused",
-                name,
+            return Err(localized_restore_text(
+                "backup.restore.duplicate_member",
+                &[("member", name.to_string())],
             ));
         }
 
         let mut bytes = Vec::new();
         entry.read_to_end(&mut bytes).map_err(|error| {
-            format!("Unable to read backup ZIP member '{}': {}", name, error)
+            localized_restore_text("backup.restore.zip_member_read_failed", &[("member", name.to_string()), ("error", error.to_string())])
         })?;
 
         if name == "manifest.json" {
@@ -187,68 +193,65 @@ fn inspect_and_stage_backup(archive_path: &std::path::Path) -> Result<RestoreIns
         "Selected archive does not contain manifest.json".to_string()
     })?;
     let manifest: RestoreManifest = serde_json::from_slice(&manifest_bytes).map_err(|error| {
-        format!("Unable to parse backup manifest: {}", error)
+        localized_restore_text("backup.restore.manifest_parse_failed", &[("error", error.to_string())])
     })?;
 
     if manifest.format.trim().is_empty() || manifest.format_version != 1 {
-        return Err(format!(
-            "Unsupported Screenshaver backup format '{}' version {}",
-            manifest.format,
-            manifest.format_version,
+        return Err(localized_restore_text(
+            "backup.restore.unsupported_format",
+            &[("format", manifest.format.to_string()), ("version", manifest.format_version.to_string())],
         ));
     }
     if !manifest.backup {
-        return Err("Selected Screenshaver archive is an export, not a full backup".to_string());
+        return Err(crate::manage_localization::runtime_text("backup.restore.export_not_backup"));
     }
 
     let database_member = manifest.database_snapshot.as_deref().ok_or_else(|| {
-        "Backup manifest does not identify a database snapshot".to_string()
+        crate::manage_localization::runtime_text("backup.restore.snapshot_missing_from_manifest")
     })?;
     if database_member != "backup/screenshaver.db" || !safe_archive_member(database_member) {
-        return Err(format!(
-            "Backup manifest contains an unsupported database snapshot path '{}'",
-            database_member,
+        return Err(localized_restore_text(
+            "backup.restore.unsupported_snapshot_path",
+            &[("path", database_member.to_string())],
         ));
     }
 
     for (name, integrity) in &manifest.files {
         let bytes = payloads.get(name).ok_or_else(|| {
-            format!("Backup manifest references missing archive member '{}'", name)
+            localized_restore_text("backup.restore.manifest_member_missing", &[("member", name.to_string())])
         })?;
         let actual = sha256_hex(bytes);
         if actual != integrity.sha256.to_lowercase() {
-            return Err(format!(
-                "Backup archive member '{}' failed SHA-256 verification",
-                name,
+            return Err(localized_restore_text(
+                "backup.restore.member_sha256_failed",
+                &[("member", name.to_string())],
             ));
         }
     }
 
     let actual_package_hash = package_sha256(&payloads);
     if actual_package_hash != manifest.package_sha256.to_lowercase() {
-        return Err("Backup archive failed package SHA-256 verification".to_string());
+        return Err(crate::manage_localization::runtime_text("backup.restore.package_sha256_failed"));
     }
 
     let database_bytes = payloads.get(database_member).ok_or_else(|| {
-        "Backup archive does not contain its declared database snapshot".to_string()
+        crate::manage_localization::runtime_text("backup.restore.snapshot_payload_missing")
     })?;
 
     let staging_directory = restore_staging_directory()?;
     let staged_database = staging_directory.join("screenshaver.db");
     std::fs::write(&staged_database, database_bytes).map_err(|error| {
-        format!(
-            "Unable to write staged restore database '{}': {}",
-            staged_database.display(),
-            error,
+        localized_restore_text(
+            "backup.restore.staged_database_write_failed",
+            &[("path", staged_database.display().to_string()), ("error", error.to_string())],
         )
     })?;
 
     let managed_shader_directory = staging_directory.join("managed-shaders");
     std::fs::create_dir_all(&managed_shader_directory).map_err(|error| {
-        format!(
-            "Unable to create staged managed-shader directory '{}': {}",
-            managed_shader_directory.display(),
-            error,
+        localized_restore_text(
+            "backup.restore.staged_shader_directory_create_failed",
+            &[("path", managed_shader_directory.display().to_string()), ("error", error.to_string())],
         )
     })?;
 
@@ -258,13 +261,13 @@ fn inspect_and_stage_backup(archive_path: &std::path::Path) -> Result<RestoreIns
             continue;
         };
         if filename.is_empty() || filename.contains('/') || filename.contains('\\') {
-            return Err(format!(
-                "Backup contains an invalid managed-shader member '{}'",
-                name,
+            return Err(localized_restore_text(
+                "backup.restore.invalid_managed_shader_member",
+                &[("member", name.to_string())],
             ));
         }
         std::fs::write(managed_shader_directory.join(filename), bytes).map_err(|error| {
-            format!("Unable to stage managed shader '{}': {}", filename, error)
+            localized_restore_text("backup.restore.managed_shader_stage_failed", &[("filename", filename.to_string()), ("error", error.to_string())])
         })?;
         managed_shader_count += 1;
     }
@@ -272,10 +275,9 @@ fn inspect_and_stage_backup(archive_path: &std::path::Path) -> Result<RestoreIns
     let source_schema_version = manifest.database_schema_version as i64;
     let migrated_from_schema = crate::migrate_database::prepare_staged_restore(&staged_database)?;
     if migrated_from_schema != source_schema_version {
-        return Err(format!(
-            "Backup manifest reports database schema {}, but the staged database reports schema {}",
-            source_schema_version,
-            migrated_from_schema,
+        return Err(localized_restore_text(
+            "backup.restore.schema_mismatch",
+            &[("manifest_schema", source_schema_version.to_string()), ("database_schema", migrated_from_schema.to_string())],
         ));
     }
 
@@ -296,10 +298,9 @@ fn open_restore_database(path: &std::path::Path) -> Result<rusqlite::Connection,
         rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE,
     )
     .map_err(|error| {
-        format!(
-            "Unable to open restore database '{}': {}",
-            path.display(),
-            error,
+        localized_restore_text(
+            "backup.restore.database_open_failed",
+            &[("path", path.display().to_string()), ("error", error.to_string())],
         )
     })?;
 
@@ -325,7 +326,7 @@ fn remove_path_if_exists(path: &std::path::Path) -> Result<(), String> {
         std::fs::remove_file(path)
     }
     .map_err(|error| {
-        format!("Unable to remove '{}': {}", path.display(), error)
+        localized_restore_text("backup.restore.path_remove_failed", &[("path", path.display().to_string()), ("error", error.to_string())])
     })
 }
 
@@ -334,10 +335,9 @@ fn copy_directory_tree(
     destination: &std::path::Path,
 ) -> Result<(), String> {
     std::fs::create_dir_all(destination).map_err(|error| {
-        format!(
-            "Unable to create restore directory '{}': {}",
-            destination.display(),
-            error,
+        localized_restore_text(
+            "backup.restore.directory_create_failed",
+            &[("path", destination.display().to_string()), ("error", error.to_string())],
         )
     })?;
 
@@ -346,32 +346,30 @@ fn copy_directory_tree(
     }
 
     for entry in std::fs::read_dir(source).map_err(|error| {
-        format!("Unable to enumerate '{}': {}", source.display(), error)
+        localized_restore_text("backup.restore.directory_enumerate_failed", &[("path", source.display().to_string()), ("error", error.to_string())])
     })? {
         let entry = entry.map_err(|error| {
-            format!("Unable to read directory entry in '{}': {}", source.display(), error)
+            localized_restore_text("backup.restore.directory_entry_read_failed", &[("path", source.display().to_string()), ("error", error.to_string())])
         })?;
         let source_path = entry.path();
         let destination_path = destination.join(entry.file_name());
         let file_type = entry.file_type().map_err(|error| {
-            format!("Unable to inspect '{}': {}", source_path.display(), error)
+            localized_restore_text("backup.restore.entry_inspect_failed", &[("path", source_path.display().to_string()), ("error", error.to_string())])
         })?;
 
         if file_type.is_dir() {
             copy_directory_tree(&source_path, &destination_path)?;
         } else if file_type.is_file() {
             std::fs::copy(&source_path, &destination_path).map_err(|error| {
-                format!(
-                    "Unable to copy '{}' to '{}': {}",
-                    source_path.display(),
-                    destination_path.display(),
-                    error,
+                localized_restore_text(
+                    "backup.restore.copy_failed",
+                    &[("source", source_path.display().to_string()), ("destination", destination_path.display().to_string()), ("error", error.to_string())],
                 )
             })?;
         } else {
-            return Err(format!(
-                "Restore refused to copy unsupported filesystem entry '{}'",
-                source_path.display(),
+            return Err(localized_restore_text(
+                "backup.restore.unsupported_filesystem_entry",
+                &[("path", source_path.display().to_string())],
             ));
         }
     }
@@ -384,9 +382,9 @@ fn create_rollback_database_snapshot(
     rollback_database: &std::path::Path,
 ) -> Result<(), String> {
     if !live_database.exists() {
-        return Err(format!(
-            "Live database '{}' does not exist; restore was refused",
-            live_database.display(),
+        return Err(localized_restore_text(
+            "backup.restore.live_database_missing",
+            &[("path", live_database.display().to_string())],
         ));
     }
 
@@ -396,10 +394,9 @@ fn create_rollback_database_snapshot(
     connection
         .execute_batch(&format!("VACUUM INTO '{}';", quoted))
         .map_err(|error| {
-            format!(
-                "Unable to create pre-restore database snapshot '{}': {}",
-                rollback_database.display(),
-                error,
+            localized_restore_text(
+                "backup.restore.rollback_snapshot_create_failed",
+                &[("path", rollback_database.display().to_string()), ("error", error.to_string())],
             )
         })?;
     drop(connection);
@@ -419,16 +416,16 @@ fn restore_pre_restore_state(
 
     if live_database.exists() {
         std::fs::rename(live_database, &failed_database).map_err(|error| {
-            format!("Unable to preserve failed restored database: {}", error)
+            localized_restore_text("backup.restore.failed_database_preserve_failed", &[("error", error.to_string())])
         })?;
     }
     std::fs::copy(rollback_database, live_database).map_err(|error| {
-        format!("Unable to restore pre-restore database: {}", error)
+        localized_restore_text("backup.restore.database_rollback_failed", &[("error", error.to_string())])
     })?;
 
     if live_shaders.exists() {
         std::fs::rename(live_shaders, &failed_shaders).map_err(|error| {
-            format!("Unable to preserve failed restored shader directory: {}", error)
+            localized_restore_text("backup.restore.failed_shader_directory_preserve_failed", &[("error", error.to_string())])
         })?;
     }
     copy_directory_tree(rollback_shaders, live_shaders)?;
@@ -448,10 +445,9 @@ fn commit_staged_restore(inspection: &RestoreInspection) -> Result<(), String> {
     let live_shaders = crate::locate_paths::shader_dir();
     let screenshaver_directory = crate::locate_paths::screenshaver_dir();
     std::fs::create_dir_all(&screenshaver_directory).map_err(|error| {
-        format!(
-            "Unable to prepare Screenshaver configuration directory '{}': {}",
-            screenshaver_directory.display(),
-            error,
+        localized_restore_text(
+            "backup.restore.configuration_directory_prepare_failed",
+            &[("path", screenshaver_directory.display().to_string()), ("error", error.to_string())],
         )
     })?;
 
@@ -461,7 +457,7 @@ fn commit_staged_restore(inspection: &RestoreInspection) -> Result<(), String> {
     remove_path_if_exists(&install_shaders)?;
 
     std::fs::copy(&staged_database, &install_database).map_err(|error| {
-        format!("Unable to prepare restored database for cutover: {}", error)
+        localized_restore_text("backup.restore.database_cutover_prepare_failed", &[("error", error.to_string())])
     })?;
     copy_directory_tree(&staged_shaders, &install_shaders)?;
     validate_restore_database(&install_database)?;
@@ -469,7 +465,7 @@ fn commit_staged_restore(inspection: &RestoreInspection) -> Result<(), String> {
     let rollback_root = crate::locate_paths::backup_dir().join(".restore-rollback");
     remove_path_if_exists(&rollback_root)?;
     std::fs::create_dir_all(&rollback_root).map_err(|error| {
-        format!("Unable to create restore rollback directory: {}", error)
+        localized_restore_text("backup.restore.rollback_directory_create_failed", &[("error", error.to_string())])
     })?;
     let rollback_database = rollback_root.join("screenshaver.db");
     let rollback_shaders = rollback_root.join("managed-shaders");
@@ -483,19 +479,19 @@ fn commit_staged_restore(inspection: &RestoreInspection) -> Result<(), String> {
     remove_path_if_exists(&old_shaders)?;
 
     std::fs::rename(&live_database, &old_database).map_err(|error| {
-        format!("Unable to begin database restore cutover: {}", error)
+        localized_restore_text("backup.restore.database_cutover_begin_failed", &[("error", error.to_string())])
     })?;
 
     if let Err(error) = std::fs::rename(&install_database, &live_database) {
         let _ = std::fs::rename(&old_database, &live_database);
-        return Err(format!("Unable to install restored database; original database was retained: {}", error));
+        return Err(localized_restore_text("backup.restore.database_install_failed_retained", &[("error", error.to_string())]));
     }
 
     if live_shaders.exists() {
         if let Err(error) = std::fs::rename(&live_shaders, &old_shaders) {
             let _ = remove_path_if_exists(&live_database);
             let _ = std::fs::rename(&old_database, &live_database);
-            return Err(format!("Unable to begin managed-shader restore; original database was restored: {}", error));
+            return Err(localized_restore_text("backup.restore.shader_cutover_begin_failed", &[("error", error.to_string())]));
         }
     }
 
@@ -507,8 +503,8 @@ fn commit_staged_restore(inspection: &RestoreInspection) -> Result<(), String> {
             &rollback_shaders,
         );
         return match rollback_result {
-            Ok(()) => Err(format!("Unable to install restored managed shaders; pre-restore state was restored: {}", error)),
-            Err(rollback_error) => Err(format!("Unable to install restored managed shaders: {}. Automatic rollback also failed: {}", error, rollback_error)),
+            Ok(()) => Err(localized_restore_text("backup.restore.shader_install_failed_rolled_back", &[("error", error.to_string())])),
+            Err(rollback_error) => Err(localized_restore_text("backup.restore.shader_install_and_rollback_failed", &[("error", error.to_string()), ("rollback_error", rollback_error.to_string())])),
         };
     }
 
@@ -521,8 +517,8 @@ fn commit_staged_restore(inspection: &RestoreInspection) -> Result<(), String> {
             &rollback_shaders,
         );
         return match rollback_result {
-            Ok(()) => Err(format!("Restored database failed final validation; pre-restore state was restored: {}", error)),
-            Err(rollback_error) => Err(format!("Restored database failed final validation: {}. Automatic rollback also failed: {}", error, rollback_error)),
+            Ok(()) => Err(localized_restore_text("backup.restore.final_validation_failed_rolled_back", &[("error", error.to_string())])),
+            Err(rollback_error) => Err(localized_restore_text("backup.restore.final_validation_and_rollback_failed", &[("error", error.to_string()), ("rollback_error", rollback_error.to_string())])),
         };
     }
 
@@ -599,23 +595,25 @@ pub fn set_restore_archive(
 
     match inspect_and_stage_backup(archive_path) {
         Ok(inspection) => {
-            let message = format!(
-                "Backup verified and staged successfully: {} | created {} | Screenshaver {} | database schema {} -> {} | managed shaders {} | staging {}. No live Screenshaver files were changed.",
-                inspection.archive_path.display(),
-                inspection.created,
-                inspection.source_screenshaver_version,
-                inspection.source_schema_version,
-                inspection.staged_schema_version,
-                inspection.managed_shader_count,
-                inspection.staging_directory.display(),
+            let message = localized_restore_text(
+                "backup.restore.staged_successfully",
+                &[
+                    ("archive", inspection.archive_path.display().to_string()),
+                    ("created", inspection.created.to_string()),
+                    ("version", inspection.source_screenshaver_version.to_string()),
+                    ("source_schema", inspection.source_schema_version.to_string()),
+                    ("staged_schema", inspection.staged_schema_version.to_string()),
+                    ("shader_count", inspection.managed_shader_count.to_string()),
+                    ("staging", inspection.staging_directory.display().to_string()),
+                ],
             );
             state.result_message = Some((true, message));
             state.pending_restore = Some(inspection);
         }
         Err(error) => {
-            let message = format!(
-                "Backup restore staging failed: {}",
-                error,
+            let message = localized_restore_text(
+                "backup.restore.staging_failed",
+                &[("error", error.to_string())],
             );
             state.result_message = Some((false, message));
             state.pending_restore = None;
@@ -791,44 +789,44 @@ pub fn draw_controls(
         ui.separator();
         ui.add_space(6.0);
         ui.label(
-            egui::RichText::new("Restore is ready to install")
+            egui::RichText::new(crate::manage_localization::runtime_text("backup.restore.ready_to_install"))
                 .strong()
         );
         ui.label(
-            "The selected backup has passed verification. Confirming will replace the current Screenshaver database and managed shaders. A verified rollback copy of the current installation will be created before cutover."
+            crate::manage_localization::runtime_text("backup.restore.confirmation_explanation")
         );
         ui.label(
             egui::RichText::new(
-                format!("Backup: {}", inspection.archive_path.display())
+                localized_restore_text("backup.restore.selected_backup", &[("path", inspection.archive_path.display().to_string())])
             )
             .weak()
         );
 
         ui.horizontal(|ui| {
-            if ui.button("Confirm Restore").clicked() {
-                *status_message = "Installing verified Screenshaver backup...".to_string();
+            if ui.button(crate::manage_localization::runtime_text("backup.restore.confirm")).clicked() {
+                *status_message = crate::manage_localization::runtime_text("backup.restore.installing");
                 match commit_staged_restore(&inspection) {
                     Ok(()) => {
                         state.pending_restore = None;
                         if let Ok(settings) = crate::manage_configuration::load_backup_settings() {
                             state.last_backup = settings.last_backup;
                         }
-                        let message = "Backup restored successfully. The restored database and managed shaders passed final validation. Close the Control Center so Screenshaver can reload the restored configuration.".to_string();
+                        let message = crate::manage_localization::runtime_text("backup.restore.success");
                         *status_message = message.clone();
                         state.result_message = Some((true, message));
                     }
                     Err(error) => {
-                        let message = format!("Backup restore failed: {}", error);
+                        let message = localized_restore_text("backup.restore.failed", &[("error", error.to_string())]);
                         *status_message = message.clone();
                         state.result_message = Some((false, message));
                     }
                 }
             }
 
-            if ui.button("Cancel Restore").clicked() {
+            if ui.button(crate::manage_localization::runtime_text("backup.restore.cancel")).clicked() {
                 let _ = remove_path_if_exists(&inspection.staging_directory);
                 state.pending_restore = None;
-                let message = "Restore cancelled. No live Screenshaver files were changed.".to_string();
+                let message = crate::manage_localization::runtime_text("backup.restore.cancelled");
                 *status_message = message.clone();
                 state.result_message = Some((true, message));
             }

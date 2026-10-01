@@ -276,11 +276,19 @@ pub fn prepare(database_path: &Path) -> Result<Connection, String> {
 /// restore validation. Older supported schemas are reconstructed in place beside
 /// the supplied path. This function never opens, renames, or otherwise modifies
 /// the operational database returned by locate_paths::database_path().
+fn localized_staged_restore_text(key: &str, params: &[(&str, String)]) -> String {
+    let borrowed = params
+        .iter()
+        .map(|(name, value)| (*name, value.as_str()))
+        .collect::<Vec<_>>();
+    crate::manage_localization::runtime_text_with_params(key, &borrowed)
+}
+
 pub fn prepare_staged_restore(database_path: &Path) -> Result<i64, String> {
     if !database_path.exists() {
-        return Err(format!(
-            "Unable to prepare staged restore database because '{}' does not exist",
-            database_path.display(),
+        return Err(localized_staged_restore_text(
+            "database.restore.staged_database_missing",
+            &[("path", database_path.display().to_string())],
         ));
     }
 
@@ -315,11 +323,13 @@ pub fn prepare_staged_restore(database_path: &Path) -> Result<i64, String> {
             Ok(connection) => connection,
             Err(error) => {
                 let _ = remove_if_exists(&reconstructed_path);
-                return Err(format!(
-                    "Staged restore database reconstruction from schema {} to schema {} failed: {}",
-                    source_schema_version,
-                    CURRENT_SCHEMA_VERSION,
-                    error,
+                return Err(localized_staged_restore_text(
+                    "database.restore.reconstruction_failed",
+                    &[
+                        ("source_schema", source_schema_version.to_string()),
+                        ("destination_schema", CURRENT_SCHEMA_VERSION.to_string()),
+                        ("error", error.to_string()),
+                    ],
                 ));
             }
         };
@@ -330,10 +340,9 @@ pub fn prepare_staged_restore(database_path: &Path) -> Result<i64, String> {
     ) {
         drop(reconstructed_connection);
         let _ = remove_if_exists(&reconstructed_path);
-        return Err(format!(
-            "Staged restore database reconstructed from schema {} failed validation: {}",
-            source_schema_version,
-            error,
+        return Err(localized_staged_restore_text(
+            "database.restore.reconstruction_validation_failed",
+            &[("source_schema", source_schema_version.to_string()), ("error", error.to_string())],
         ));
     }
     drop(reconstructed_connection);
@@ -341,19 +350,20 @@ pub fn prepare_staged_restore(database_path: &Path) -> Result<i64, String> {
     // Both files are inside the disposable restore staging directory. Replacing
     // the extracted historical snapshot here cannot affect the live database.
     fs::remove_file(database_path).map_err(|error| {
-        format!(
-            "Unable to replace historical staged restore database '{}': {}",
-            database_path.display(),
-            error,
+        localized_staged_restore_text(
+            "database.restore.historical_staged_replace_failed",
+            &[("path", database_path.display().to_string()), ("error", error.to_string())],
         )
     })?;
 
     if let Err(error) = fs::rename(&reconstructed_path, database_path) {
-        return Err(format!(
-            "Unable to promote reconstructed staged restore database '{}' to '{}': {}",
-            reconstructed_path.display(),
-            database_path.display(),
-            error,
+        return Err(localized_staged_restore_text(
+            "database.restore.reconstructed_promote_failed",
+            &[
+                ("source", reconstructed_path.display().to_string()),
+                ("destination", database_path.display().to_string()),
+                ("error", error.to_string()),
+            ],
         ));
     }
 

@@ -100,12 +100,314 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
         translator_context: "Button for restoring Screenshaver from a backup.",
     },
 
-    FactoryTranslationKey {
-        key: "backup.restore_disabled",
-        english_text: "Restore from Backup will be enabled in the restore implementation phase.",
-        translator_context: "Tooltip explaining why Restore from Backup is currently disabled.",
-    },
 
+
+// Restore from Backup.
+    FactoryTranslationKey {
+        key: "backup.restore.archive_open_failed",
+        english_text: "Unable to open backup archive '{path}': {error}",
+        translator_context: "Restore from Backup user-facing message. {path}, {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.cancel",
+        english_text: "Cancel Restore",
+        translator_context: "Restore from Backup user-facing message.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.cancelled",
+        english_text: "Restore cancelled. No live Screenshaver files were changed.",
+        translator_context: "Restore from Backup user-facing message.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.configuration_directory_prepare_failed",
+        english_text: "Unable to prepare Screenshaver configuration directory '{path}': {error}",
+        translator_context: "Restore from Backup user-facing message. {path}, {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.confirm",
+        english_text: "Confirm Restore",
+        translator_context: "Restore from Backup user-facing message.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.confirmation_explanation",
+        english_text: "The selected backup has passed verification. Confirming will replace the current Screenshaver database and managed shaders. A verified rollback copy of the current installation will be created before cutover.",
+        translator_context: "Restore from Backup user-facing message.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.copy_failed",
+        english_text: "Unable to copy '{source}' to '{destination}': {error}",
+        translator_context: "Restore from Backup user-facing message. {source}, {destination}, {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.database_cutover_begin_failed",
+        english_text: "Unable to begin database restore cutover: {error}",
+        translator_context: "Restore from Backup user-facing message. {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.database_cutover_prepare_failed",
+        english_text: "Unable to prepare restored database for cutover: {error}",
+        translator_context: "Restore from Backup user-facing message. {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.database_install_failed_retained",
+        english_text: "Unable to install restored database; original database was retained: {error}",
+        translator_context: "Restore from Backup user-facing message. {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.database_open_failed",
+        english_text: "Unable to open restore database '{path}': {error}",
+        translator_context: "Restore from Backup user-facing message. {path}, {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.database_rollback_failed",
+        english_text: "Unable to restore pre-restore database: {error}",
+        translator_context: "Restore from Backup user-facing message. {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.directory_create_failed",
+        english_text: "Unable to create restore directory '{path}': {error}",
+        translator_context: "Restore from Backup user-facing message. {path}, {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.directory_entry_read_failed",
+        english_text: "Unable to read directory entry in '{path}': {error}",
+        translator_context: "Restore from Backup user-facing message. {path}, {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.directory_enumerate_failed",
+        english_text: "Unable to enumerate '{path}': {error}",
+        translator_context: "Restore from Backup user-facing message. {path}, {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.duplicate_member",
+        english_text: "Backup archive contains duplicate member '{member}'; restore was refused",
+        translator_context: "Restore from Backup user-facing message. {member} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.entry_inspect_failed",
+        english_text: "Unable to inspect '{path}': {error}",
+        translator_context: "Restore from Backup user-facing message. {path}, {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.export_not_backup",
+        english_text: "Selected Screenshaver archive is an export, not a full backup",
+        translator_context: "Restore from Backup user-facing message.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.failed",
+        english_text: "Backup restore failed: {error}",
+        translator_context: "Restore from Backup user-facing message. {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.failed_database_preserve_failed",
+        english_text: "Unable to preserve failed restored database: {error}",
+        translator_context: "Restore from Backup user-facing message. {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.failed_shader_directory_preserve_failed",
+        english_text: "Unable to preserve failed restored shader directory: {error}",
+        translator_context: "Restore from Backup user-facing message. {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.final_validation_and_rollback_failed",
+        english_text: "Restored database failed final validation: {error}. Automatic rollback also failed: {rollback_error}",
+        translator_context: "Restore from Backup user-facing message. {error}, {rollback_error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.final_validation_failed_rolled_back",
+        english_text: "Restored database failed final validation; pre-restore state was restored: {error}",
+        translator_context: "Restore from Backup user-facing message. {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.installing",
+        english_text: "Installing verified Screenshaver backup...",
+        translator_context: "Restore from Backup user-facing message.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.invalid_managed_shader_member",
+        english_text: "Backup contains an invalid managed-shader member '{member}'",
+        translator_context: "Restore from Backup user-facing message. {member} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.live_database_missing",
+        english_text: "Live database '{path}' does not exist; restore was refused",
+        translator_context: "Restore from Backup user-facing message. {path} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.managed_shader_stage_failed",
+        english_text: "Unable to stage managed shader '{filename}': {error}",
+        translator_context: "Restore from Backup user-facing message. {filename}, {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.manifest_member_missing",
+        english_text: "Backup manifest references missing archive member '{member}'",
+        translator_context: "Restore from Backup user-facing message. {member} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.manifest_parse_failed",
+        english_text: "Unable to parse backup manifest: {error}",
+        translator_context: "Restore from Backup user-facing message. {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.member_sha256_failed",
+        english_text: "Backup archive member '{member}' failed SHA-256 verification",
+        translator_context: "Restore from Backup user-facing message. {member} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.package_sha256_failed",
+        english_text: "Backup archive failed package SHA-256 verification",
+        translator_context: "Restore from Backup user-facing message.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.path_remove_failed",
+        english_text: "Unable to remove '{path}': {error}",
+        translator_context: "Restore from Backup user-facing message. {path}, {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.ready_to_install",
+        english_text: "Restore is ready to install",
+        translator_context: "Restore from Backup user-facing message.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.rollback_directory_create_failed",
+        english_text: "Unable to create restore rollback directory: {error}",
+        translator_context: "Restore from Backup user-facing message. {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.rollback_snapshot_create_failed",
+        english_text: "Unable to create pre-restore database snapshot '{path}': {error}",
+        translator_context: "Restore from Backup user-facing message. {path}, {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.schema_mismatch",
+        english_text: "Backup manifest reports database schema {manifest_schema}, but the staged database reports schema {database_schema}",
+        translator_context: "Restore from Backup user-facing message. {manifest_schema}, {database_schema} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.selected_backup",
+        english_text: "Backup: {path}",
+        translator_context: "Restore from Backup user-facing message. {path} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.shader_cutover_begin_failed",
+        english_text: "Unable to begin managed-shader restore; original database was restored: {error}",
+        translator_context: "Restore from Backup user-facing message. {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.shader_install_and_rollback_failed",
+        english_text: "Unable to install restored managed shaders: {error}. Automatic rollback also failed: {rollback_error}",
+        translator_context: "Restore from Backup user-facing message. {error}, {rollback_error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.shader_install_failed_rolled_back",
+        english_text: "Unable to install restored managed shaders; pre-restore state was restored: {error}",
+        translator_context: "Restore from Backup user-facing message. {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.snapshot_missing_from_manifest",
+        english_text: "Backup manifest does not identify a database snapshot",
+        translator_context: "Restore from Backup user-facing message.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.snapshot_payload_missing",
+        english_text: "Backup archive does not contain its declared database snapshot",
+        translator_context: "Restore from Backup user-facing message.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.staged_database_write_failed",
+        english_text: "Unable to write staged restore database '{path}': {error}",
+        translator_context: "Restore from Backup user-facing message. {path}, {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.staged_shader_directory_create_failed",
+        english_text: "Unable to create staged managed-shader directory '{path}': {error}",
+        translator_context: "Restore from Backup user-facing message. {path}, {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.staged_successfully",
+        english_text: "Backup verified and staged successfully: {archive} | created {created} | Screenshaver {version} | database schema {source_schema} -> {staged_schema} | managed shaders {shader_count} | staging {staging}. No live Screenshaver files were changed.",
+        translator_context: "Restore from Backup user-facing message. {archive}, {created}, {version}, {source_schema}, {staged_schema}, {shader_count}, {staging} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.staging_create_failed",
+        english_text: "Unable to create restore staging directory '{path}': {error}",
+        translator_context: "Restore from Backup user-facing message. {path}, {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.staging_failed",
+        english_text: "Backup restore staging failed: {error}",
+        translator_context: "Restore from Backup user-facing message. {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.stale_staging_remove_failed",
+        english_text: "Unable to remove stale restore staging directory '{path}': {error}",
+        translator_context: "Restore from Backup user-facing message. {path}, {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.success",
+        english_text: "Backup restored successfully. The restored database and managed shaders passed final validation. Close the Control Center so Screenshaver can reload the restored configuration.",
+        translator_context: "Restore from Backup user-facing message.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.unsafe_member",
+        english_text: "Backup archive contains an unsafe member path '{member}'; restore was refused",
+        translator_context: "Restore from Backup user-facing message. {member} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.unsupported_filesystem_entry",
+        english_text: "Restore refused to copy unsupported filesystem entry '{path}'",
+        translator_context: "Restore from Backup user-facing message. {path} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.unsupported_format",
+        english_text: "Unsupported Screenshaver backup format '{format}' version {version}",
+        translator_context: "Restore from Backup user-facing message. {format}, {version} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.unsupported_snapshot_path",
+        english_text: "Backup manifest contains an unsupported database snapshot path '{path}'",
+        translator_context: "Restore from Backup user-facing message. {path} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.zip_member_inspect_failed",
+        english_text: "Unable to inspect backup ZIP member {index}: {error}",
+        translator_context: "Restore from Backup user-facing message. {index}, {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.zip_member_read_failed",
+        english_text: "Unable to read backup ZIP member '{member}': {error}",
+        translator_context: "Restore from Backup user-facing message. {member}, {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "backup.restore.zip_read_failed",
+        english_text: "Unable to read backup ZIP archive: {error}",
+        translator_context: "Restore from Backup user-facing message. {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "database.restore.historical_staged_replace_failed",
+        english_text: "Unable to replace historical staged restore database '{path}': {error}",
+        translator_context: "Restore from Backup user-facing message. {path}, {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "database.restore.reconstructed_promote_failed",
+        english_text: "Unable to promote reconstructed staged restore database '{source}' to '{destination}': {error}",
+        translator_context: "Restore from Backup user-facing message. {source}, {destination}, {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "database.restore.reconstruction_failed",
+        english_text: "Staged restore database reconstruction from schema {source_schema} to schema {destination_schema} failed: {error}",
+        translator_context: "Restore from Backup user-facing message. {source_schema}, {destination_schema}, {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "database.restore.reconstruction_validation_failed",
+        english_text: "Staged restore database reconstructed from schema {source_schema} failed validation: {error}",
+        translator_context: "Restore from Backup user-facing message. {source_schema}, {error} are supplied values and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "database.restore.staged_database_missing",
+        english_text: "Unable to prepare staged restore database because '{path}' does not exist",
+        translator_context: "Restore from Backup user-facing message. {path} are supplied values and must remain unchanged.",
+    },
 
     FactoryTranslationKey {
         key: "tab.appearance",

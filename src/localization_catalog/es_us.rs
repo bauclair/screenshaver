@@ -93,12 +93,314 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
         translated_text: "Restaurar desde copia de seguridad",
     },
 
+
+
+// Restore from Backup.
     FactoryTranslation {
         locale: "es-US",
-        key: "backup.restore_disabled",
-        translated_text: "Restaurar desde copia de seguridad se habilitará en la fase de implementación de la restauración.",
+        key: "backup.restore.archive_open_failed",
+        translated_text: "No se pudo abrir el archivo de copia de seguridad '{path}': {error}",
     },
-
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.cancel",
+        translated_text: "Cancelar restauración",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.cancelled",
+        translated_text: "Restauración cancelada. No se modificó ningún archivo activo de Screenshaver.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.configuration_directory_prepare_failed",
+        translated_text: "No se pudo preparar el directorio de configuración de Screenshaver '{path}': {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.confirm",
+        translated_text: "Confirmar restauración",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.confirmation_explanation",
+        translated_text: "La copia de seguridad seleccionada superó la verificación. Al confirmar, se reemplazarán la base de datos actual de Screenshaver y los shaders administrados. Antes del cambio se creará una copia de reversión verificada de la instalación actual.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.copy_failed",
+        translated_text: "No se pudo copiar '{source}' a '{destination}': {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.database_cutover_begin_failed",
+        translated_text: "No se pudo iniciar el cambio de la base de datos para la restauración: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.database_cutover_prepare_failed",
+        translated_text: "No se pudo preparar la base de datos restaurada para el cambio: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.database_install_failed_retained",
+        translated_text: "No se pudo instalar la base de datos restaurada; se conservó la base de datos original: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.database_open_failed",
+        translated_text: "No se pudo abrir la base de datos de restauración '{path}': {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.database_rollback_failed",
+        translated_text: "No se pudo restaurar la base de datos previa a la restauración: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.directory_create_failed",
+        translated_text: "No se pudo crear el directorio de restauración '{path}': {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.directory_entry_read_failed",
+        translated_text: "No se pudo leer una entrada del directorio '{path}': {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.directory_enumerate_failed",
+        translated_text: "No se pudo enumerar '{path}': {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.duplicate_member",
+        translated_text: "El archivo de copia de seguridad contiene el elemento duplicado '{member}'; se rechazó la restauración",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.entry_inspect_failed",
+        translated_text: "No se pudo inspeccionar '{path}': {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.export_not_backup",
+        translated_text: "El archivo de Screenshaver seleccionado es una exportación, no una copia de seguridad completa",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.failed",
+        translated_text: "Error al restaurar la copia de seguridad: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.failed_database_preserve_failed",
+        translated_text: "No se pudo conservar la base de datos restaurada que falló: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.failed_shader_directory_preserve_failed",
+        translated_text: "No se pudo conservar el directorio de shaders restaurado que falló: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.final_validation_and_rollback_failed",
+        translated_text: "La base de datos restaurada no superó la validación final: {error}. La reversión automática también falló: {rollback_error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.final_validation_failed_rolled_back",
+        translated_text: "La base de datos restaurada no superó la validación final; se restauró el estado previo: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.installing",
+        translated_text: "Instalando la copia de seguridad verificada de Screenshaver...",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.invalid_managed_shader_member",
+        translated_text: "La copia de seguridad contiene un elemento de shader administrado no válido '{member}'",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.live_database_missing",
+        translated_text: "La base de datos activa '{path}' no existe; se rechazó la restauración",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.managed_shader_stage_failed",
+        translated_text: "No se pudo preparar el shader administrado '{filename}': {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.manifest_member_missing",
+        translated_text: "El manifiesto de la copia de seguridad hace referencia al elemento ausente '{member}'",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.manifest_parse_failed",
+        translated_text: "No se pudo analizar el manifiesto de la copia de seguridad: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.member_sha256_failed",
+        translated_text: "El elemento '{member}' de la copia de seguridad no superó la verificación SHA-256",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.package_sha256_failed",
+        translated_text: "La copia de seguridad no superó la verificación SHA-256 del paquete",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.path_remove_failed",
+        translated_text: "No se pudo eliminar '{path}': {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.ready_to_install",
+        translated_text: "La restauración está lista para instalarse",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.rollback_directory_create_failed",
+        translated_text: "No se pudo crear el directorio de reversión de la restauración: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.rollback_snapshot_create_failed",
+        translated_text: "No se pudo crear la instantánea de base de datos previa a la restauración '{path}': {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.schema_mismatch",
+        translated_text: "El manifiesto de la copia de seguridad indica el esquema de base de datos {manifest_schema}, pero la base de datos preparada indica el esquema {database_schema}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.selected_backup",
+        translated_text: "Copia de seguridad: {path}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.shader_cutover_begin_failed",
+        translated_text: "No se pudo iniciar la restauración de shaders administrados; se restauró la base de datos original: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.shader_install_and_rollback_failed",
+        translated_text: "No se pudieron instalar los shaders administrados restaurados: {error}. La reversión automática también falló: {rollback_error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.shader_install_failed_rolled_back",
+        translated_text: "No se pudieron instalar los shaders administrados restaurados; se restauró el estado previo: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.snapshot_missing_from_manifest",
+        translated_text: "El manifiesto de la copia de seguridad no identifica una instantánea de la base de datos",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.snapshot_payload_missing",
+        translated_text: "La copia de seguridad no contiene la instantánea de base de datos declarada",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.staged_database_write_failed",
+        translated_text: "No se pudo escribir la base de datos de restauración preparada '{path}': {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.staged_shader_directory_create_failed",
+        translated_text: "No se pudo crear el directorio preparado de shaders administrados '{path}': {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.staged_successfully",
+        translated_text: "Copia de seguridad verificada y preparada correctamente: {archive} | creada {created} | Screenshaver {version} | esquema de base de datos {source_schema} -> {staged_schema} | shaders administrados {shader_count} | preparación {staging}. No se modificó ningún archivo activo de Screenshaver.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.staging_create_failed",
+        translated_text: "No se pudo crear el directorio de preparación de restauración '{path}': {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.staging_failed",
+        translated_text: "Error al preparar la restauración de la copia de seguridad: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.stale_staging_remove_failed",
+        translated_text: "No se pudo eliminar el directorio obsoleto de preparación de restauración '{path}': {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.success",
+        translated_text: "Copia de seguridad restaurada correctamente. La base de datos y los shaders administrados restaurados superaron la validación final. Cierre el Centro de control para que Screenshaver pueda volver a cargar la configuración restaurada.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.unsafe_member",
+        translated_text: "El archivo de copia de seguridad contiene una ruta de elemento no segura '{member}'; se rechazó la restauración",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.unsupported_filesystem_entry",
+        translated_text: "La restauración se negó a copiar la entrada del sistema de archivos no compatible '{path}'",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.unsupported_format",
+        translated_text: "Formato de copia de seguridad de Screenshaver no compatible '{format}' versión {version}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.unsupported_snapshot_path",
+        translated_text: "El manifiesto de la copia de seguridad contiene una ruta de instantánea de base de datos no compatible '{path}'",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.zip_member_inspect_failed",
+        translated_text: "No se pudo inspeccionar el elemento {index} del ZIP de copia de seguridad: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.zip_member_read_failed",
+        translated_text: "No se pudo leer el elemento '{member}' del ZIP de copia de seguridad: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "backup.restore.zip_read_failed",
+        translated_text: "No se pudo leer el archivo ZIP de copia de seguridad: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "database.restore.historical_staged_replace_failed",
+        translated_text: "No se pudo reemplazar la base de datos histórica de restauración preparada '{path}': {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "database.restore.reconstructed_promote_failed",
+        translated_text: "No se pudo promover la base de datos de restauración preparada reconstruida de '{source}' a '{destination}': {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "database.restore.reconstruction_failed",
+        translated_text: "Falló la reconstrucción de la base de datos de restauración preparada del esquema {source_schema} al esquema {destination_schema}: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "database.restore.reconstruction_validation_failed",
+        translated_text: "La base de datos de restauración preparada reconstruida desde el esquema {source_schema} no superó la validación: {error}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "database.restore.staged_database_missing",
+        translated_text: "No se pudo preparar la base de datos de restauración porque '{path}' no existe",
+    },
 
     FactoryTranslation {
         locale: "es-US",

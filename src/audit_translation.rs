@@ -99,7 +99,7 @@ pub fn run(requested_locale: Option<&str>, requested_module: Option<&str>) -> Re
     }
 
     println!("[TRANSLATION AUDIT] Locale: {}", locale);
-    println!("[TRANSLATION AUDIT] Auditor revision: v18-localized-choice-stored-values");
+    println!("[TRANSLATION AUDIT] Auditor revision: v19-lyrics-diagnostic-invariants");
     println!("[TRANSLATION AUDIT] Source root: {}", src.display());
     match requested_module {
         Some(_) => println!("[TRANSLATION AUDIT] Source scope: {}", files[0].display()),
@@ -1149,6 +1149,16 @@ fn intentionally_invariant(s: &str, line: &str, path: &Path) -> bool {
 
     if filename == "parse_mode.rs"
         && t.starts_with("[PARSE_MODE]")
+    {
+        return true;
+    }
+
+    // manage_lyrics.rs uses the [LYRICS] prefix for developer/runtime MPRIS and
+    // synchronized-lyrics diagnostics. These tagged messages are stable telemetry rather
+    // than localized presentation text. Keep the exemption module-scoped so untagged
+    // human-readable prose in manage_lyrics.rs remains subject to normal auditing.
+    if filename == "manage_lyrics.rs"
+        && t.starts_with("[LYRICS]")
     {
         return true;
     }

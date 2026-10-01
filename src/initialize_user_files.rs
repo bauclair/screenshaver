@@ -6,6 +6,14 @@ use std::path::{Path, PathBuf};
 const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 
 ################################
+# LANGUAGE / LOCALE
+################################
+[language]
+locale = "en-US"            # U.S. English
+#locale = "es-US"            # Spanish
+#locale = "fr-FR"            # Francais
+
+################################
 # SCREENSAVER
 ################################
 [screensaver]
