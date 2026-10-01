@@ -31,6 +31,7 @@ mod lock_screen_widget;
 mod define_lock_screen_widget;
 mod construct_lock_screen_xfce;
 mod manage_screen_lock_kde;
+mod manage_windowshader_kde;
 mod detect_desktop_environment;
 mod manage_textures;
 mod manage_policies;
