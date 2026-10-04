@@ -75,13 +75,16 @@ unsafe fn run_with_display(
     let opcode_atom = CString::new("_NET_SYSTEM_TRAY_OPCODE").unwrap();
     let embed = unsafe { xlib::XInternAtom(display, embed_atom.as_ptr(), xlib::False) };
     let opcode = unsafe { xlib::XInternAtom(display, opcode_atom.as_ptr(), xlib::False) };
+    let xembed_name = CString::new("_XEMBED").unwrap();
+    let xembed_message = unsafe { xlib::XInternAtom(display, xembed_name.as_ptr(), xlib::False) };
     let icon = unsafe { xlib::XCreateSimpleWindow(display, root, 0, 0, 32, 32, 0, 0, 0) };
     if icon == 0 { return Err("XCreateSimpleWindow failed".into()); }
-    // XEMBED_MAPPED = 1; version = 0. The property format is 32 bits,
+    // XEMBED_MAPPED = 1; version = 0. Property type must be CARDINAL.
+    // The property format is 32 bits,
     // but Xlib expects native-long storage for format-32 properties.
     let info: [c_long; 2] = [0, 1];
     unsafe {
-        xlib::XChangeProperty(display, icon, embed, embed, 32, xlib::PropModeReplace,
+        xlib::XChangeProperty(display, icon, embed, xlib::XA_CARDINAL, 32, xlib::PropModeReplace,
             info.as_ptr() as *const c_uchar, 2);
         xlib::XSelectInput(display, icon, xlib::ExposureMask | xlib::StructureNotifyMask);
     }
@@ -89,6 +92,7 @@ unsafe fn run_with_display(
         .map_err(|e| format!("Unable to decode embedded tray artwork: {e}"))?
         .to_rgba8();
     let gc = unsafe { xlib::XCreateGC(display, icon, 0, std::ptr::null_mut()) };
+    crate::logger::information(logfile, "[TRAY/X11] _XEMBED_INFO installed as CARDINAL[2], version=0, mapped=1");
     // Request docking before mapping; the tray manager reparents the icon.
     let mut message: xlib::XClientMessageEvent = unsafe { std::mem::zeroed() };
     message.type_ = xlib::ClientMessage;
@@ -141,10 +145,19 @@ unsafe fn run_with_display(
                 }
                 xlib::ClientMessage => {
                     let event = unsafe { &*((&next as *const xlib::XEvent).cast::<xlib::XClientMessageEvent>()) };
+                    let code = if event.format == 32 { event.data.get_long(1) } else { -1 };
                     crate::logger::information(logfile, &format!(
-                        "[TRAY/X11] ClientMessage: type=0x{:X}, format={}, opcode={}",
-                        event.message_type, event.format,
-                        if event.format == 32 { event.data.get_long(1) } else { -1 }));
+                        "[TRAY/X11] ClientMessage: type=0x{:X}, xembed={}, format={}, opcode={}",
+                        event.message_type, event.message_type == xembed_message, event.format, code));
+                    if event.message_type == xembed_message && event.format == 32 {
+                        if code == 0 {
+                            crate::logger::information(logfile, "[TRAY/X11] XEMBED_EMBEDDED_NOTIFY received");
+                        } else if code == 1 {
+                            crate::logger::information(logfile, "[TRAY/X11] XEMBED_WINDOW_ACTIVATE received");
+                        } else if code == 2 {
+                            crate::logger::information(logfile, "[TRAY/X11] XEMBED_WINDOW_DEACTIVATE received");
+                        }
+                    }
                 }
                 xlib::DestroyNotify => {
                 crate::logger::warning(logfile, "[TRAY/X11] Tray icon window destroyed");
@@ -180,7 +193,15 @@ unsafe fn draw_icon(
         let maximum = mask >> shift;
         (((value as u64 * maximum + 127) / 255) << shift) & mask
     };
-    for (x, y, pixel) in pixels.enumerate_pixels() {
+    let mut attrs: xlib::XWindowAttributes = unsafe { std::mem::zeroed() };
+    if unsafe { xlib::XGetWindowAttributes(display, window, &mut attrs) } == 0 { return; }
+    let width = attrs.width.max(1) as u32;
+    let height = attrs.height.max(1) as u32;
+    for y in 0..height {
+      for x in 0..width {
+        let source_x = x * pixels.width() / width;
+        let source_y = y * pixels.height() / height;
+        let pixel = pixels.get_pixel(source_x, source_y);
         let alpha = pixel[3] as u16;
         let r = (pixel[0] as u16 * alpha / 255) as u8;
         let g = (pixel[1] as u16 * alpha / 255) as u8;
@@ -192,6 +213,7 @@ unsafe fn draw_icon(
             xlib::XSetForeground(display, gc, value as _);
             xlib::XFillRectangle(display, window, gc, x as i32, y as i32, 1, 1);
         }
+      }
     }
     unsafe { xlib::XFlush(display); }
 }
