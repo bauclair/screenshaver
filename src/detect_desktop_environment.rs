@@ -302,65 +302,115 @@ fn is_lxde_identifier(value: &str) -> bool {
         || normalized.starts_with("lxde_")
 }
 
-/// Detect an actual PCManFM desktop window, rather than merely an installed
-/// PCManFM executable. Fail closed if the X11 inspection is unavailable.
+/// Detect PCManFM's actual X11 desktop window. Check EWMH's client list,
+/// then walk the X11 window hierarchy (some window managers omit desktop
+/// windows from the client list or reparent them).
 pub fn pcmanfm_manages_x11_desktop() -> bool {
     use std::ffi::{CStr, CString};
     use std::ptr;
     use x11::xlib;
 
-    unsafe {
-        let display = xlib::XOpenDisplay(ptr::null());
-        if display.is_null() {
+    unsafe fn matches_desktop(
+        display: *mut xlib::Display,
+        window: xlib::Window,
+        type_atom: xlib::Atom,
+        desktop_atom: xlib::Atom,
+    ) -> bool {
+        let mut hint: xlib::XClassHint = std::mem::zeroed();
+        if xlib::XGetClassHint(display, window, &mut hint) == 0 {
             return false;
         }
-        let desktop_atom_name = CString::new("_NET_WM_WINDOW_TYPE_DESKTOP").unwrap();
-        let type_atom_name = CString::new("_NET_WM_WINDOW_TYPE").unwrap();
-        let desktop_atom = xlib::XInternAtom(display, desktop_atom_name.as_ptr(), xlib::True);
-        let type_atom = xlib::XInternAtom(display, type_atom_name.as_ptr(), xlib::True);
-        let mut found = false;
-        if desktop_atom != 0 && type_atom != 0 {
-            let mut root = 0;
-            let mut parent = 0;
-            let mut children: *mut xlib::Window = ptr::null_mut();
-            let mut count = 0;
-            let root_window = xlib::XDefaultRootWindow(display);
-            if xlib::XQueryTree(display, root_window, &mut root, &mut parent,
-                &mut children, &mut count) != 0 {
-                for index in 0..count {
-                    let window = *children.add(index as usize);
-                    let mut hint: xlib::XClassHint = std::mem::zeroed();
-                    if xlib::XGetClassHint(display, window, &mut hint) == 0 {
-                        continue;
-                    }
-                    let matches_pcmanfm = [hint.res_name, hint.res_class].iter().any(|&s| {
-                        !s.is_null() && CStr::from_ptr(s).to_string_lossy()
-                            .to_ascii_lowercase().contains("pcmanfm")
-                    });
-                    if !hint.res_name.is_null() { xlib::XFree(hint.res_name as *mut _); }
-                    if !hint.res_class.is_null() { xlib::XFree(hint.res_class as *mut _); }
-                    if !matches_pcmanfm { continue; }
+        let pcmanfm = [hint.res_name, hint.res_class].iter().any(|&value| {
+            !value.is_null()
+                && CStr::from_ptr(value).to_string_lossy()
+                    .eq_ignore_ascii_case("pcmanfm")
+        });
+        if !hint.res_name.is_null() { xlib::XFree(hint.res_name as *mut _); }
+        if !hint.res_class.is_null() { xlib::XFree(hint.res_class as *mut _); }
+        if !pcmanfm { return false; }
 
-                    let mut actual_type = 0;
-                    let mut actual_format = 0;
-                    let mut item_count = 0;
-                    let mut bytes_after = 0;
-                    let mut property: *mut u8 = ptr::null_mut();
-                    let status = xlib::XGetWindowProperty(display, window, type_atom,
-                        0, 32, xlib::False, xlib::XA_ATOM,
-                        &mut actual_type, &mut actual_format, &mut item_count,
-                        &mut bytes_after, &mut property);
-                    if status == xlib::Success as i32 && actual_type == xlib::XA_ATOM
-                        && actual_format == 32 && !property.is_null() {
-                        let atoms = std::slice::from_raw_parts(
-                            property as *const xlib::Atom, item_count as usize);
-                        found = atoms.contains(&desktop_atom);
-                    }
-                    if !property.is_null() { xlib::XFree(property as *mut _); }
-                    if found { break; }
-                }
+        let mut actual_type = 0;
+        let mut actual_format = 0;
+        let mut count = 0;
+        let mut remaining = 0;
+        let mut property: *mut u8 = ptr::null_mut();
+        let status = xlib::XGetWindowProperty(
+            display, window, type_atom, 0, 32, xlib::False, xlib::XA_ATOM,
+            &mut actual_type, &mut actual_format, &mut count,
+            &mut remaining, &mut property,
+        );
+        let matched = status == xlib::Success as i32
+            && actual_type == xlib::XA_ATOM
+            && actual_format == 32
+            && !property.is_null()
+            && std::slice::from_raw_parts(property as *const xlib::Atom, count as usize)
+                .contains(&desktop_atom);
+        if !property.is_null() { xlib::XFree(property as *mut _); }
+        matched
+    }
+
+    unsafe fn search_tree(
+        display: *mut xlib::Display,
+        window: xlib::Window,
+        type_atom: xlib::Atom,
+        desktop_atom: xlib::Atom,
+        depth: usize,
+    ) -> bool {
+        if matches_desktop(display, window, type_atom, desktop_atom) { return true; }
+        if depth == 0 { return false; }
+        let mut root = 0;
+        let mut parent = 0;
+        let mut children: *mut xlib::Window = ptr::null_mut();
+        let mut count = 0;
+        if xlib::XQueryTree(display, window, &mut root, &mut parent,
+            &mut children, &mut count) == 0 { return false; }
+        let mut found = false;
+        for index in 0..count {
+            if search_tree(display, *children.add(index as usize),
+                type_atom, desktop_atom, depth - 1) {
+                found = true;
+                break;
             }
-            if !children.is_null() { xlib::XFree(children as *mut _); }
+        }
+        if !children.is_null() { xlib::XFree(children as *mut _); }
+        found
+    }
+
+    unsafe {
+        let display = xlib::XOpenDisplay(ptr::null());
+        if display.is_null() { return false; }
+        let type_name = CString::new("_NET_WM_WINDOW_TYPE").unwrap();
+        let desktop_name = CString::new("_NET_WM_WINDOW_TYPE_DESKTOP").unwrap();
+        let client_name = CString::new("_NET_CLIENT_LIST").unwrap();
+        let type_atom = xlib::XInternAtom(display, type_name.as_ptr(), xlib::True);
+        let desktop_atom = xlib::XInternAtom(display, desktop_name.as_ptr(), xlib::True);
+        let client_atom = xlib::XInternAtom(display, client_name.as_ptr(), xlib::True);
+        let mut found = false;
+        if type_atom != 0 && desktop_atom != 0 {
+            let root = xlib::XDefaultRootWindow(display);
+            if client_atom != 0 {
+                let mut actual_type = 0;
+                let mut actual_format = 0;
+                let mut count = 0;
+                let mut remaining = 0;
+                let mut property: *mut u8 = ptr::null_mut();
+                let status = xlib::XGetWindowProperty(display, root, client_atom,
+                    0, 4096, xlib::False, xlib::XA_WINDOW,
+                    &mut actual_type, &mut actual_format, &mut count,
+                    &mut remaining, &mut property);
+                if status == xlib::Success as i32 && actual_type == xlib::XA_WINDOW
+                    && actual_format == 32 && !property.is_null() {
+                    for &window in std::slice::from_raw_parts(
+                        property as *const xlib::Window, count as usize) {
+                        if matches_desktop(display, window, type_atom, desktop_atom) {
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                if !property.is_null() { xlib::XFree(property as *mut _); }
+            }
+            if !found { found = search_tree(display, root, type_atom, desktop_atom, 4); }
         }
         xlib::XCloseDisplay(display);
         found

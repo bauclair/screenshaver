@@ -2228,14 +2228,26 @@ fn main() {
     // Warn once per launch before starting the wallpaper supervisor thread.
     // Cancel affects this launch only; the persisted configuration is unchanged.
     let mut wallpaper_enabled_this_launch = cfg.wallpaper_enabled;
+    let lxde_wallpaper_fullscreen = cfg.wallpaper_display_format
+        == crate::manage_configuration::WallpaperDisplayFormat::FullScreen;
+    let lxde_session = desktop_environment.is_lxde();
+    let lxde_x11 = std::env::var("XDG_SESSION_TYPE")
+        .map(|value| value.trim().eq_ignore_ascii_case("x11"))
+        .unwrap_or(false);
+    let lxde_pcmanfm = if wallpaper_enabled_this_launch
+        && lxde_wallpaper_fullscreen && lxde_session && lxde_x11 {
+        crate::detect_desktop_environment::pcmanfm_manages_x11_desktop()
+    } else {
+        false
+    };
+    crate::logger::information(&logfile, &format!(
+        "[WALLPAPER] LXDE compatibility check: enabled={} display_format={:?} fullscreen={} desktop={} lxde={} x11={} pcmanfm_desktop={}",
+        wallpaper_enabled_this_launch, cfg.wallpaper_display_format,
+        lxde_wallpaper_fullscreen, desktop_environment.name(),
+        lxde_session, lxde_x11, lxde_pcmanfm,
+    ));
     if wallpaper_enabled_this_launch
-        && cfg.wallpaper_display_format
-            == crate::manage_configuration::WallpaperDisplayFormat::FullScreen
-        && desktop_environment.is_lxde()
-        && std::env::var("XDG_SESSION_TYPE")
-            .map(|value| value.eq_ignore_ascii_case("x11"))
-            .unwrap_or(false)
-        && crate::detect_desktop_environment::pcmanfm_manages_x11_desktop()
+        && lxde_wallpaper_fullscreen && lxde_session && lxde_x11 && lxde_pcmanfm
     {
         let title = "Desktop Icon Compatibility Warning";
         let message = "Screenshaver has detected an LXDE desktop running under X11. \
