@@ -90,7 +90,7 @@ unsafe fn run_with_display(
     unsafe {
         xlib::XChangeProperty(display, icon, embed, xlib::XA_CARDINAL, 32, xlib::PropModeReplace,
             info.as_ptr() as *const c_uchar, 2);
-        xlib::XSelectInput(display, icon, xlib::ExposureMask | xlib::StructureNotifyMask | xlib::ButtonPressMask);
+        xlib::XSelectInput(display, icon, xlib::ExposureMask | xlib::StructureNotifyMask | xlib::ButtonPressMask | xlib::ButtonReleaseMask);
     }
     let decoded = image::load_from_memory(ARTWORK)
         .map_err(|e| format!("Unable to decode embedded tray artwork: {e}"))?
@@ -149,6 +149,7 @@ unsafe fn run_with_display(
                 },
                 xlib::ButtonPress => {
                     let e = unsafe { &*((&next as *const xlib::XEvent).cast::<xlib::XButtonEvent>()) };
+                    crate::logger::information(logfile, &format!("[TRAY/X11] ButtonPress: window=0x{:X}, icon={}, menu={}, button={}, root=({}, {})", e.window, e.window == icon, e.window == menu, e.button, e.x_root, e.y_root));
                     if e.window == icon && (e.button == 1 || e.button == 3) {
                         if menu_open {
                             unsafe { close_menu(display, menu); }
@@ -170,6 +171,7 @@ unsafe fn run_with_display(
                                 }
                             }
                             menu_open = true;
+                            crate::logger::information(logfile, "[TRAY/X11] Popup menu requested and mapped");
                         }
                     } else if menu_open && e.window == menu {
                         // With the pointer grabbed, outside clicks have coordinates outside the popup.
@@ -188,6 +190,10 @@ unsafe fn run_with_display(
                             let _ = command_sender.send(command);
                         }
                     }
+                },
+                xlib::ButtonRelease => {
+                    let e = unsafe { &*((&next as *const xlib::XEvent).cast::<xlib::XButtonEvent>()) };
+                    crate::logger::information(logfile, &format!("[TRAY/X11] ButtonRelease: window=0x{:X}, icon={}, button={}", e.window, e.window == icon, e.button));
                 },
                 xlib::ReparentNotify => {
                     let event = unsafe { &*((&next as *const xlib::XEvent).cast::<xlib::XReparentEvent>()) };
