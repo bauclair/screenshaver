@@ -1888,7 +1888,7 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
     // LXPanel's traditional notification area uses XEmbed, not KSNI.
     // Keep the existing KSNI tray unchanged on all other desktops.
     let _x11_tray_handle = if lxde_x11 {
-        match crate::tray_icon_x11::start(&logfile) {
+        match crate::tray_icon_x11::start(&logfile, tray_command_sender.clone()) {
             Ok(handle) => {
                 crate::logger::information(&logfile,
                     "[TRAY/X11] LXDE XEmbed tray prototype started");

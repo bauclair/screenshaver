@@ -1,8 +1,10 @@
-//! LXDE/X11 XEmbed tray prototype: icon docking only.
-//! Menu commands are deliberately reserved for stage 2.
+//! LXDE/X11 XEmbed tray with an independent Xlib popup menu.
+//! Keep the icon unmapped until LXPanel docks it.
 use std::ffi::CString;
 use std::os::raw::{c_long, c_uchar};
 use std::path::Path;
+use std::sync::mpsc::Sender;
+use crate::tray_icon::TrayCommand;
 use std::sync::mpsc::{self, Receiver};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -26,14 +28,14 @@ impl Drop for X11TrayHandle {
 
 /// Start a separate X connection so tray events do not block the renderer.
 /// The startup handshake reports a missing notification-area owner immediately.
-pub fn start(logfile: &Path) -> Result<X11TrayHandle, String> {
+pub fn start(logfile: &Path, command_sender: Sender<TrayCommand>) -> Result<X11TrayHandle, String> {
     let (shutdown_tx, shutdown_rx) = mpsc::channel();
     let (ready_tx, ready_rx) = mpsc::channel();
     let log = logfile.to_path_buf();
     let thread = thread::Builder::new()
         .name("screenshaver-xembed-tray".into())
         .spawn(move || {
-            let result = unsafe { run_tray(&log, &shutdown_rx, &ready_tx) };
+            let result = unsafe { run_tray(&log, &shutdown_rx, &ready_tx, &command_sender) };
             if let Err(error) = result {
                 let _ = ready_tx.send(Err(error.clone()));
                 crate::logger::warning(&log, &format!("[TRAY/X11] {}", error));
@@ -51,10 +53,11 @@ unsafe fn run_tray(
     logfile: &Path,
     shutdown: &Receiver<()>,
     ready: &mpsc::Sender<Result<(), String>>,
+    command_sender: &Sender<TrayCommand>,
 ) -> Result<(), String> {
     let display = unsafe { xlib::XOpenDisplay(std::ptr::null()) };
     if display.is_null() { return Err("Cannot open X11 display".into()); }
-    let result = unsafe { run_with_display(display, logfile, shutdown, ready) };
+    let result = unsafe { run_with_display(display, logfile, shutdown, ready, command_sender) };
     unsafe { xlib::XCloseDisplay(display); }
     result
 }
@@ -64,6 +67,7 @@ unsafe fn run_with_display(
     logfile: &Path,
     shutdown: &Receiver<()>,
     ready: &mpsc::Sender<Result<(), String>>,
+    command_sender: &Sender<TrayCommand>,
 ) -> Result<(), String> {
     let screen = unsafe { xlib::XDefaultScreen(display) };
     let root = unsafe { xlib::XRootWindow(display, screen) };
@@ -86,7 +90,7 @@ unsafe fn run_with_display(
     unsafe {
         xlib::XChangeProperty(display, icon, embed, xlib::XA_CARDINAL, 32, xlib::PropModeReplace,
             info.as_ptr() as *const c_uchar, 2);
-        xlib::XSelectInput(display, icon, xlib::ExposureMask | xlib::StructureNotifyMask);
+        xlib::XSelectInput(display, icon, xlib::ExposureMask | xlib::StructureNotifyMask | xlib::ButtonPressMask);
     }
     let decoded = image::load_from_memory(ARTWORK)
         .map_err(|e| format!("Unable to decode embedded tray artwork: {e}"))?
@@ -118,6 +122,17 @@ unsafe fn run_with_display(
     crate::logger::information(logfile,
         &format!("[TRAY/X11] Sent XEmbed dock request: owner=0x{owner:X}, icon=0x{icon:X}"));
     let _ = ready.send(Ok(()));
+    // Override-redirect popup is independent of the embedded icon window.
+    let menu = unsafe { xlib::XCreateSimpleWindow(display, root, 0, 0, 170, 90, 1,
+        xlib::XBlackPixel(display, screen), xlib::XWhitePixel(display, screen)) };
+    unsafe {
+        let mut attrs: xlib::XSetWindowAttributes = std::mem::zeroed();
+        attrs.override_redirect = xlib::True;
+        xlib::XChangeWindowAttributes(display, menu, xlib::CWOverrideRedirect, &mut attrs);
+        xlib::XSelectInput(display, menu, xlib::ExposureMask | xlib::ButtonPressMask);
+    }
+    let menu_gc = unsafe { xlib::XCreateGC(display, menu, 0, std::ptr::null_mut()) };
+    let mut menu_open = false;
     loop {
         if shutdown.try_recv().is_ok() {
             crate::logger::information(logfile, "[TRAY/X11] Shutdown requested by tray handle");
@@ -127,7 +142,53 @@ unsafe fn run_with_display(
             let mut next: xlib::XEvent = unsafe { std::mem::zeroed() };
             unsafe { xlib::XNextEvent(display, &mut next); }
             match next.get_type() {
-                xlib::Expose => unsafe { draw_icon(display, icon, gc, &decoded); },
+                xlib::Expose => {
+                    let e = unsafe { &*((&next as *const xlib::XEvent).cast::<xlib::XExposeEvent>()) };
+                    if e.window == icon { unsafe { draw_icon(display, icon, gc, &decoded); } }
+                    else if e.window == menu { unsafe { paint_menu(display, menu, menu_gc, screen); } }
+                },
+                xlib::ButtonPress => {
+                    let e = unsafe { &*((&next as *const xlib::XEvent).cast::<xlib::XButtonEvent>()) };
+                    if e.window == icon && (e.button == 1 || e.button == 3) {
+                        if menu_open {
+                            unsafe { close_menu(display, menu); }
+                            menu_open = false;
+                        } else {
+                            let screen_width = unsafe { xlib::XDisplayWidth(display, screen) };
+                            let screen_height = unsafe { xlib::XDisplayHeight(display, screen) };
+                            let x = e.x_root.clamp(0, (screen_width - 172).max(0));
+                            let y = (e.y_root - 90).clamp(0, (screen_height - 92).max(0));
+                            unsafe {
+                                xlib::XMoveWindow(display, menu, x, y);
+                                xlib::XMapRaised(display, menu);
+                                paint_menu(display, menu, menu_gc, screen);
+                                let grab = xlib::XGrabPointer(display, menu, xlib::False,
+                                    xlib::ButtonPressMask as u32, xlib::GrabModeAsync,
+                                    xlib::GrabModeAsync, 0, 0, xlib::CurrentTime);
+                                if grab != xlib::GrabSuccess {
+                                    crate::logger::warning(logfile, &format!("[TRAY/X11] Menu pointer grab failed: {grab}"));
+                                }
+                            }
+                            menu_open = true;
+                        }
+                    } else if menu_open && e.window == menu {
+                        // With the pointer grabbed, outside clicks have coordinates outside the popup.
+                        let chosen = if e.x >= 0 && e.x < 170 {
+                            match e.y {
+                                0..=29 => Some(TrayCommand::Edit),
+                                30..=59 => Some(TrayCommand::Restart),
+                                60..=89 => Some(TrayCommand::Stop),
+                                _ => None,
+                            }
+                        } else { None };
+                        unsafe { close_menu(display, menu); }
+                        menu_open = false;
+                        if let Some(command) = chosen {
+                            crate::logger::information(logfile, &format!("[TRAY/X11] Menu command: {command:?}"));
+                            let _ = command_sender.send(command);
+                        }
+                    }
+                },
                 xlib::ReparentNotify => {
                     let event = unsafe { &*((&next as *const xlib::XEvent).cast::<xlib::XReparentEvent>()) };
                     if event.window == icon {
@@ -164,7 +225,7 @@ unsafe fn run_with_display(
                 let e = unsafe { &*((&next as *const xlib::XEvent).cast::<xlib::XDestroyWindowEvent>()) };
                 if e.window != icon { continue; }
                 crate::logger::warning(logfile, "[TRAY/X11] Tray icon window destroyed");
-                unsafe { xlib::XFreeGC(display, gc); }
+                unsafe { xlib::XFreeGC(display, menu_gc); xlib::XDestroyWindow(display, menu); xlib::XFreeGC(display, gc); }
                 return Ok(());
                 }
                 _ => {}
@@ -173,7 +234,7 @@ unsafe fn run_with_display(
         thread::sleep(Duration::from_millis(40));
     }
     crate::logger::information(logfile, "[TRAY/X11] Worker exiting and destroying icon window");
-    unsafe { xlib::XFreeGC(display, gc); xlib::XDestroyWindow(display, icon); }
+    unsafe { if menu_open { close_menu(display, menu); } xlib::XFreeGC(display, menu_gc); xlib::XDestroyWindow(display, menu); xlib::XFreeGC(display, gc); xlib::XDestroyWindow(display, icon); }
     Ok(())
 }
 
@@ -219,4 +280,22 @@ unsafe fn draw_icon(
       }
     }
     unsafe { xlib::XFlush(display); }
+}
+
+unsafe fn close_menu(display: *mut xlib::Display, menu: xlib::Window) {
+    unsafe { xlib::XUngrabPointer(display, xlib::CurrentTime); xlib::XUnmapWindow(display, menu); xlib::XFlush(display); }
+}
+
+unsafe fn paint_menu(display: *mut xlib::Display, menu: xlib::Window, gc: xlib::GC, screen: i32) {
+    unsafe {
+        xlib::XSetForeground(display, gc, xlib::XWhitePixel(display, screen));
+        xlib::XFillRectangle(display, menu, gc, 0, 0, 170, 90);
+        xlib::XSetForeground(display, gc, xlib::XBlackPixel(display, screen));
+        for (i, label) in ["Edit", "Restart", "Stop"].iter().enumerate() {
+            xlib::XDrawString(display, menu, gc, 12, 20 + i as i32 * 30,
+                label.as_ptr().cast(), label.len() as i32);
+            if i < 2 { xlib::XDrawLine(display, menu, gc, 4, 29 + i as i32 * 30, 165, 29 + i as i32 * 30); }
+        }
+        xlib::XFlush(display);
+    }
 }
