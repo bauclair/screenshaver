@@ -92,8 +92,8 @@ unsafe fn run_with_display(
         .map_err(|e| format!("Unable to decode embedded tray artwork: {e}"))?
         .to_rgba8();
     let gc = unsafe { xlib::XCreateGC(display, icon, 0, std::ptr::null_mut()) };
-    crate::logger::information(logfile, "[TRAY/X11] _XEMBED_INFO installed as CARDINAL[2], version=0, mapped=1");
-    // Request docking before mapping; the tray manager reparents the icon.
+    crate::logger::information(logfile, "[TRAY/X11] _XEMBED_INFO installed as CARDINAL[2], version=0, mapped=1; initial XMapWindow deliberately omitted");
+    // Controlled experiment: leave icon unmapped until tray manager docks it.
     let mut message: xlib::XClientMessageEvent = unsafe { std::mem::zeroed() };
     message.type_ = xlib::ClientMessage;
     message.window = owner;
@@ -110,7 +110,6 @@ unsafe fn run_with_display(
         );
     }
     unsafe {
-        xlib::XMapWindow(display, icon);
         let sent = xlib::XSendEvent(display, owner, xlib::False, xlib::NoEventMask, &mut event);
         crate::logger::information(logfile, &format!("[TRAY/X11] XSendEvent result={sent}"));
         draw_icon(display, icon, gc, &decoded);
@@ -138,10 +137,12 @@ unsafe fn run_with_display(
                     }
                 }
                 xlib::MapNotify => {
-                    crate::logger::information(logfile, "[TRAY/X11] MapNotify");
+                    let e = unsafe { &*((&next as *const xlib::XEvent).cast::<xlib::XMapEvent>()) };
+                    crate::logger::information(logfile, &format!("[TRAY/X11] MapNotify: window=0x{:X}, icon={}, event=0x{:X}", e.window, e.window == icon, e.event));
                 }
                 xlib::UnmapNotify => {
-                    crate::logger::warning(logfile, "[TRAY/X11] UnmapNotify");
+                    let e = unsafe { &*((&next as *const xlib::XEvent).cast::<xlib::XUnmapEvent>()) };
+                    crate::logger::warning(logfile, &format!("[TRAY/X11] UnmapNotify: window=0x{:X}, icon={}, event=0x{:X}", e.window, e.window == icon, e.event));
                 }
                 xlib::ClientMessage => {
                     let event = unsafe { &*((&next as *const xlib::XEvent).cast::<xlib::XClientMessageEvent>()) };
@@ -160,6 +161,8 @@ unsafe fn run_with_display(
                     }
                 }
                 xlib::DestroyNotify => {
+                let e = unsafe { &*((&next as *const xlib::XEvent).cast::<xlib::XDestroyWindowEvent>()) };
+                if e.window != icon { continue; }
                 crate::logger::warning(logfile, "[TRAY/X11] Tray icon window destroyed");
                 unsafe { xlib::XFreeGC(display, gc); }
                 return Ok(());
