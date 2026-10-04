@@ -1475,6 +1475,55 @@ fn main() {
     }
 
 
+    // Warn before acquiring the singleton or initializing runtime resources.
+    // Exit terminates normally without modifying persistent configuration.
+    let wallpaper_enabled_this_launch = cfg.wallpaper_enabled;
+    let lxde_wallpaper_fullscreen = cfg.wallpaper_display_format
+        == crate::manage_configuration::WallpaperDisplayFormat::FullScreen;
+    let lxde_session = desktop_environment.is_lxde();
+    let lxde_x11 = std::env::var("XDG_SESSION_TYPE")
+        .map(|value| value.trim().eq_ignore_ascii_case("x11"))
+        .unwrap_or(false);
+    let lxde_pcmanfm = if wallpaper_enabled_this_launch
+        && lxde_wallpaper_fullscreen && lxde_session && lxde_x11 {
+        crate::detect_desktop_environment::pcmanfm_manages_x11_desktop()
+    } else {
+        false
+    };
+    crate::logger::information(&logfile, &format!(
+        "[WALLPAPER] LXDE compatibility check: enabled={} display_format={:?} fullscreen={} desktop={} lxde={} x11={} pcmanfm_desktop={}",
+        wallpaper_enabled_this_launch, cfg.wallpaper_display_format,
+        lxde_wallpaper_fullscreen, desktop_environment.name(),
+        lxde_session, lxde_x11, lxde_pcmanfm,
+    ));
+    if wallpaper_enabled_this_launch
+        && lxde_wallpaper_fullscreen && lxde_session && lxde_x11 && lxde_pcmanfm
+    {
+        let title = "Desktop Icon Compatibility Warning";
+        let message = "Screenshaver has detected an LXDE desktop running under X11. \
+PCManFM manages desktop icons and the desktop background together. \
+When Screenshaver renders an animated wallpaper, your desktop icons will be obscured.\n\n\
+Your icons and files will not be deleted or modified. \
+They will become visible again when wallpaper rendering stops.";
+        match crate::display_message::confirm_warning(
+            title, message, "Continue", "Exit",
+        ) {
+            Ok(true) => {}
+            Ok(false) => {
+                crate::logger::information(&logfile,
+                    "[WALLPAPER] LXDE desktop icon warning declined; Screenshaver exiting normally");
+                drop(database_connection);
+                return;
+            }
+            Err(error) => {
+                crate::logger::warning(&logfile, &format!(
+                    "[WALLPAPER] Unable to display LXDE compatibility warning; Screenshaver exiting without wallpaper: {}", error));
+                drop(database_connection);
+                return;
+            }
+        }
+    }
+
     // Keep one stable audio-band handle for every renderer in this process.
     // Accessing it does not initialize PulseAudio or create a capture stream;
     // active renderers demand Audio Bloom capture only while their current
@@ -2224,59 +2273,6 @@ fn main() {
         "Ctrl-C handler failed"
     );
 
-
-    // Warn once per launch before starting the wallpaper supervisor thread.
-    // Cancel affects this launch only; the persisted configuration is unchanged.
-    let mut wallpaper_enabled_this_launch = cfg.wallpaper_enabled;
-    let lxde_wallpaper_fullscreen = cfg.wallpaper_display_format
-        == crate::manage_configuration::WallpaperDisplayFormat::FullScreen;
-    let lxde_session = desktop_environment.is_lxde();
-    let lxde_x11 = std::env::var("XDG_SESSION_TYPE")
-        .map(|value| value.trim().eq_ignore_ascii_case("x11"))
-        .unwrap_or(false);
-    let lxde_pcmanfm = if wallpaper_enabled_this_launch
-        && lxde_wallpaper_fullscreen && lxde_session && lxde_x11 {
-        crate::detect_desktop_environment::pcmanfm_manages_x11_desktop()
-    } else {
-        false
-    };
-    crate::logger::information(&logfile, &format!(
-        "[WALLPAPER] LXDE compatibility check: enabled={} display_format={:?} fullscreen={} desktop={} lxde={} x11={} pcmanfm_desktop={}",
-        wallpaper_enabled_this_launch, cfg.wallpaper_display_format,
-        lxde_wallpaper_fullscreen, desktop_environment.name(),
-        lxde_session, lxde_x11, lxde_pcmanfm,
-    ));
-    if wallpaper_enabled_this_launch
-        && lxde_wallpaper_fullscreen && lxde_session && lxde_x11 && lxde_pcmanfm
-    {
-        let title = "Desktop Icon Compatibility Warning";
-        let message = "Screenshaver has detected an LXDE desktop running under X11. \
-PCManFM manages desktop icons and the desktop background together. \
-When Screenshaver renders an animated wallpaper, your desktop icons will be obscured.\n\n\
-Your icons and files will not be deleted or modified. \
-They will become visible again when wallpaper rendering stops.";
-        match crate::display_message::confirm_warning(
-            title, message, "Continue", "Cancel",
-        ) {
-            Ok(true) => {}
-            Ok(false) => {
-                wallpaper_enabled_this_launch = false;
-                crate::logger::information(&logfile,
-                    "[WALLPAPER] LXDE desktop icon warning declined; wallpaper skipped for this launch");
-            }
-            Err(error) => {
-                wallpaper_enabled_this_launch = false;
-                crate::logger::warning(&logfile, &format!(
-                    "[WALLPAPER] Unable to display LXDE compatibility warning; wallpaper skipped: {}", error));
-            }
-        }
-    }
-
-    if !wallpaper_enabled_this_launch && !cfg.screensaver_enabled {
-        crate::logger::information(&logfile,
-            "[MAIN] Wallpaper declined and screensaver disabled; exiting normally");
-        return;
-    }
 
     let wallpaper_runtime =
         crate::define_wallpaper::WallpaperRuntime {
