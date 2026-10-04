@@ -73,6 +73,7 @@ mod display_message;
 mod construct_text_overlay;
 mod display_overlay;
 mod tray_icon;
+mod tray_icon_x11;
 
 mod define_operation;
 mod define_wallpaper;
@@ -1884,7 +1885,28 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
         );
 
 
-    let _tray_handle =
+    // LXPanel's traditional notification area uses XEmbed, not KSNI.
+    // Keep the existing KSNI tray unchanged on all other desktops.
+    let _x11_tray_handle = if lxde_x11 {
+        match crate::tray_icon_x11::start(&logfile) {
+            Ok(handle) => {
+                crate::logger::information(&logfile,
+                    "[TRAY/X11] LXDE XEmbed tray prototype started");
+                Some(handle)
+            }
+            Err(error) => {
+                crate::logger::warning(&logfile,
+                    &format!("[TRAY/X11] XEmbed tray unavailable: {}", error));
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    let _tray_handle = if lxde_x11 {
+        None
+    } else {
         match crate::tray_icon::start(
             tray_command_sender,
             crate::tray_icon::TrayStatus {
@@ -1930,7 +1952,8 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
 
                 None
             }
-        };
+        }
+    };
 
     println!(
         "[MAIN] Parsing shader mode..."
@@ -3233,6 +3256,7 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
 
     if restart_requested {
 
+        drop(_x11_tray_handle);
         drop(_tray_handle);
         drop(_singleton);
 
