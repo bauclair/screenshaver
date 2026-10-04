@@ -1524,6 +1524,27 @@ They will become visible again when wallpaper rendering stops.";
         }
     }
 
+    // LXDE under X11 has no supported Screenshaver secure-lock presentation.
+    // This restriction applies only to this launch; preserve the saved setting.
+    let lxde_x11_lock_unsupported = lxde_session && lxde_x11;
+    if lxde_x11_lock_unsupported && cfg.screen_lock_enabled {
+        let message = "Screenshaver does not support screen locking in the current LXDE/X11 desktop environment.\n\n\
+Screensaver and wallpaper functionality will remain available. Screen locking must be managed separately by your desktop's native locking application.";
+        crate::logger::warning(
+            &logfile,
+            "[LOCK] LXDE/X11 screen locking is unsupported; suppressing Screenshaver secure locking for this launch. Normal screensaver rendering remains available; saved configuration is unchanged.",
+        );
+        if let Err(error) = crate::display_message::show_warning(
+            "Screen Locking Unavailable",
+            message,
+        ) {
+            crate::logger::warning(&logfile, &format!(
+                "[LOCK] Unable to display LXDE/X11 screen-lock compatibility warning: {}",
+                error,
+            ));
+        }
+    }
+
     // Keep one stable audio-band handle for every renderer in this process.
     // Accessing it does not initialize PulseAudio or create a capture stream;
     // active renderers demand Audio Bloom capture only while their current
@@ -2095,7 +2116,7 @@ They will become visible again when wallpaper rendering stops.";
     // 60-second minimum whenever screen locking is enabled.
     //---------------------------------------------------------
 
-    if cfg.screen_lock_enabled {
+    if cfg.screen_lock_enabled && !lxde_x11_lock_unsupported {
         println!(
             "[LOCK] Screen locking enabled; using screensaver idle timeout ({} seconds)",
             parsed_idle.duration.as_secs(),
@@ -2109,7 +2130,7 @@ They will become visible again when wallpaper rendering stops.";
                 parsed_idle.duration.as_secs(),
             ),
         );
-    } else {
+    } else if !cfg.screen_lock_enabled {
         crate::logger::information(
             &logfile,
             "[LOCK] Screen locking disabled",
@@ -2664,7 +2685,7 @@ They will become visible again when wallpaper rendering stops.";
                             )
                         };
 
-                    if cfg.screen_lock_enabled {
+                    if cfg.screen_lock_enabled && !lxde_x11_lock_unsupported {
                         crate::logger::information(
                             &logfile,
                             "[LOCK] Screensaver idle threshold reached; engaging negotiated secure-lock backend",
