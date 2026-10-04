@@ -89,7 +89,8 @@ unsafe fn run_with_display(
         .map_err(|e| format!("Unable to decode embedded tray artwork: {e}"))?
         .to_rgba8();
     let gc = unsafe { xlib::XCreateGC(display, icon, 0, std::ptr::null_mut()) };
-    // Request docking before mapping; the tray manager reparents the icon.
+    // Map before docking so LXPanel can embed a visible client.
+    unsafe { xlib::XMapWindow(display, icon); xlib::XFlush(display); }
     let mut message: xlib::XClientMessageEvent = unsafe { std::mem::zeroed() };
     message.type_ = xlib::ClientMessage;
     message.window = owner;
@@ -106,25 +107,61 @@ unsafe fn run_with_display(
         );
     }
     unsafe {
-        xlib::XSendEvent(display, owner, xlib::False, xlib::NoEventMask, &mut event);
-        xlib::XMapWindow(display, icon);
+        let sent = xlib::XSendEvent(display, owner, xlib::False, xlib::NoEventMask, &mut event);
+        crate::logger::information(logfile, &format!("[TRAY/X11] XSendEvent result: {sent}"));
         draw_icon(display, icon, gc, &decoded);
         xlib::XFlush(display);
     }
     crate::logger::information(logfile,
         &format!("[TRAY/X11] Sent XEmbed dock request: owner=0x{owner:X}, icon=0x{icon:X}"));
     let _ = ready.send(Ok(()));
+    let mut embedded = false;
     loop {
         if shutdown.try_recv().is_ok() { break; }
         while unsafe { xlib::XPending(display) } > 0 {
             let mut next: xlib::XEvent = unsafe { std::mem::zeroed() };
             unsafe { xlib::XNextEvent(display, &mut next); }
-            if next.get_type() == xlib::Expose {
-                unsafe { draw_icon(display, icon, gc, &decoded); }
-            } else if next.get_type() == xlib::DestroyNotify {
-                crate::logger::warning(logfile, "[TRAY/X11] Tray icon window destroyed");
-                unsafe { xlib::XFreeGC(display, gc); }
-                return Ok(());
+            match next.get_type() {
+                xlib::Expose => unsafe { draw_icon(display, icon, gc, &decoded); },
+                xlib::ReparentNotify => {
+                    let reparent = unsafe { next.reparent };
+                    if reparent.window == icon {
+                        embedded = reparent.parent != root;
+                        crate::logger::information(logfile, &format!(
+                            "[TRAY/X11] ReparentNotify: icon=0x{icon:X}, parent=0x{:X}, embedded={embedded}",
+                            reparent.parent));
+                    }
+                }
+                xlib::MapNotify => {
+                    let map = unsafe { next.map };
+                    if map.window == icon {
+                        crate::logger::information(logfile, "[TRAY/X11] MapNotify: icon mapped");
+                    }
+                }
+                xlib::UnmapNotify => {
+                    let unmap = unsafe { next.unmap };
+                    if unmap.window == icon {
+                        crate::logger::warning(logfile, &format!(
+                            "[TRAY/X11] UnmapNotify: icon unmapped (embedded={embedded})"));
+                    }
+                }
+                xlib::ConfigureNotify => {
+                    let configure = unsafe { next.configure };
+                    if configure.window == icon {
+                        crate::logger::information(logfile, &format!(
+                            "[TRAY/X11] ConfigureNotify: {}x{} at {},{}",
+                            configure.width, configure.height, configure.x, configure.y));
+                    }
+                }
+                xlib::DestroyNotify => {
+                    let destroy = unsafe { next.destroy_window };
+                    if destroy.window == icon {
+                        crate::logger::warning(logfile, "[TRAY/X11] Tray icon window destroyed");
+                        unsafe { xlib::XFreeGC(display, gc); }
+                        return Ok(());
+                    }
+                }
+                _ => {}
             }
         }
         thread::sleep(Duration::from_millis(40));
