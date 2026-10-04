@@ -22,6 +22,7 @@ pub enum DesktopEnvironment {
     KdePlasma,
     Gnome,
     Xfce,
+    Lxde,
     Other,
     Unknown,
 }
@@ -41,6 +42,10 @@ impl DesktopEnvironment {
 
             Self::Xfce => {
                 "XFCE"
+            }
+
+            Self::Lxde => {
+                "LXDE"
             }
 
             Self::Other => {
@@ -63,6 +68,10 @@ impl DesktopEnvironment {
         self,
     ) -> bool {
         self == Self::Gnome
+    }
+
+    pub fn is_lxde(self) -> bool {
+        self == Self::Lxde
     }
 
     pub fn is_xfce(
@@ -165,6 +174,12 @@ pub fn detect(
         is_xfce_identifier,
     ) {
         return DesktopEnvironment::Xfce;
+    }
+
+    for variable in ["XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "DESKTOP_SESSION"] {
+        if environment_variable_contains_desktop(variable, is_lxde_identifier) {
+            return DesktopEnvironment::Lxde;
+        }
     }
 
     if has_any_desktop_marker() {
@@ -281,6 +296,77 @@ fn is_xfce_identifier(
         )
 }
 
+fn is_lxde_identifier(value: &str) -> bool {
+    let normalized = normalize_identifier(value);
+    normalized == "lxde" || normalized.starts_with("lxde-")
+        || normalized.starts_with("lxde_")
+}
+
+/// Detect an actual PCManFM desktop window, rather than merely an installed
+/// PCManFM executable. Fail closed if the X11 inspection is unavailable.
+pub fn pcmanfm_manages_x11_desktop() -> bool {
+    use std::ffi::{CStr, CString};
+    use std::ptr;
+    use x11::xlib;
+
+    unsafe {
+        let display = xlib::XOpenDisplay(ptr::null());
+        if display.is_null() {
+            return false;
+        }
+        let desktop_atom_name = CString::new("_NET_WM_WINDOW_TYPE_DESKTOP").unwrap();
+        let type_atom_name = CString::new("_NET_WM_WINDOW_TYPE").unwrap();
+        let desktop_atom = xlib::XInternAtom(display, desktop_atom_name.as_ptr(), xlib::True);
+        let type_atom = xlib::XInternAtom(display, type_atom_name.as_ptr(), xlib::True);
+        let mut found = false;
+        if desktop_atom != 0 && type_atom != 0 {
+            let mut root = 0;
+            let mut parent = 0;
+            let mut children: *mut xlib::Window = ptr::null_mut();
+            let mut count = 0;
+            let root_window = xlib::XDefaultRootWindow(display);
+            if xlib::XQueryTree(display, root_window, &mut root, &mut parent,
+                &mut children, &mut count) != 0 {
+                for index in 0..count {
+                    let window = *children.add(index as usize);
+                    let mut hint: xlib::XClassHint = std::mem::zeroed();
+                    if xlib::XGetClassHint(display, window, &mut hint) == 0 {
+                        continue;
+                    }
+                    let matches_pcmanfm = [hint.res_name, hint.res_class].iter().any(|&s| {
+                        !s.is_null() && CStr::from_ptr(s).to_string_lossy()
+                            .to_ascii_lowercase().contains("pcmanfm")
+                    });
+                    if !hint.res_name.is_null() { xlib::XFree(hint.res_name as *mut _); }
+                    if !hint.res_class.is_null() { xlib::XFree(hint.res_class as *mut _); }
+                    if !matches_pcmanfm { continue; }
+
+                    let mut actual_type = 0;
+                    let mut actual_format = 0;
+                    let mut item_count = 0;
+                    let mut bytes_after = 0;
+                    let mut property: *mut u8 = ptr::null_mut();
+                    let status = xlib::XGetWindowProperty(display, window, type_atom,
+                        0, 32, xlib::False, xlib::XA_ATOM,
+                        &mut actual_type, &mut actual_format, &mut item_count,
+                        &mut bytes_after, &mut property);
+                    if status == xlib::Success as i32 && actual_type == xlib::XA_ATOM
+                        && actual_format == 32 && !property.is_null() {
+                        let atoms = std::slice::from_raw_parts(
+                            property as *const xlib::Atom, item_count as usize);
+                        found = atoms.contains(&desktop_atom);
+                    }
+                    if !property.is_null() { xlib::XFree(property as *mut _); }
+                    if found { break; }
+                }
+            }
+            if !children.is_null() { xlib::XFree(children as *mut _); }
+        }
+        xlib::XCloseDisplay(display);
+        found
+    }
+}
+
 fn normalize_identifier(
     value: &str,
 ) -> String {
@@ -312,8 +398,17 @@ mod tests {
     use super::{
         is_gnome_identifier,
         is_kde_identifier,
+        is_lxde_identifier,
         is_xfce_identifier,
     };
+
+    #[test]
+    fn recognizes_lxde_identifiers() {
+        assert!(is_lxde_identifier("LXDE"));
+        assert!(is_lxde_identifier("lxde-pi"));
+        assert!(!is_lxde_identifier("LXQt"));
+        assert!(!is_lxde_identifier("XFCE"));
+    }
 
     #[test]
     fn recognizes_kde_identifiers(

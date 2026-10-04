@@ -2225,6 +2225,47 @@ fn main() {
     );
 
 
+    // Warn once per launch before starting the wallpaper supervisor thread.
+    // Cancel affects this launch only; the persisted configuration is unchanged.
+    let mut wallpaper_enabled_this_launch = cfg.wallpaper_enabled;
+    if wallpaper_enabled_this_launch
+        && cfg.wallpaper_display_format
+            == crate::manage_configuration::WallpaperDisplayFormat::FullScreen
+        && desktop_environment.is_lxde()
+        && std::env::var("XDG_SESSION_TYPE")
+            .map(|value| value.eq_ignore_ascii_case("x11"))
+            .unwrap_or(false)
+        && crate::detect_desktop_environment::pcmanfm_manages_x11_desktop()
+    {
+        let title = "Desktop Icon Compatibility Warning";
+        let message = "Screenshaver has detected an LXDE desktop running under X11. \
+PCManFM manages desktop icons and the desktop background together. \
+When Screenshaver renders an animated wallpaper, your desktop icons will be obscured.\n\n\
+Your icons and files will not be deleted or modified. \
+They will become visible again when wallpaper rendering stops.";
+        match crate::display_message::confirm_warning(
+            title, message, "Continue", "Cancel",
+        ) {
+            Ok(true) => {}
+            Ok(false) => {
+                wallpaper_enabled_this_launch = false;
+                crate::logger::information(&logfile,
+                    "[WALLPAPER] LXDE desktop icon warning declined; wallpaper skipped for this launch");
+            }
+            Err(error) => {
+                wallpaper_enabled_this_launch = false;
+                crate::logger::warning(&logfile, &format!(
+                    "[WALLPAPER] Unable to display LXDE compatibility warning; wallpaper skipped: {}", error));
+            }
+        }
+    }
+
+    if !wallpaper_enabled_this_launch && !cfg.screensaver_enabled {
+        crate::logger::information(&logfile,
+            "[MAIN] Wallpaper declined and screensaver disabled; exiting normally");
+        return;
+    }
+
     let wallpaper_runtime =
         crate::define_wallpaper::WallpaperRuntime {
             display_format:
@@ -2254,7 +2295,7 @@ fn main() {
 
     let mut wallpaper_manager =
         crate::manage_wallpaper_runtime::WallpaperRuntimeManager::start(
-            cfg.wallpaper_enabled,
+            wallpaper_enabled_this_launch,
             cfg.wallpaper_mode.clone(),
             wallpaper_runtime,
             logfile.clone(),

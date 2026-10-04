@@ -6,6 +6,10 @@
 
 use sdl2::messagebox::{
     show_simple_message_box,
+    show_message_box,
+    ClickedButton,
+    ButtonData,
+    MessageBoxButtonFlag,
     MessageBoxFlag,
 };
 
@@ -72,4 +76,38 @@ fn show_message(
         None,
     )
     .map_err(|error| error.to_string())
+}
+
+/// Display a modal warning with Continue and Cancel choices.
+/// Closing the dialog is equivalent to Cancel.
+pub fn confirm_warning(
+    title: &str,
+    message: &str,
+    continue_label: &str,
+    cancel_label: &str,
+) -> Result<bool, String> {
+    let buttons = [
+        ButtonData {
+            flags: MessageBoxButtonFlag::RETURNKEY_DEFAULT,
+            button_id: 1,
+            text: continue_label,
+        },
+        ButtonData {
+            flags: MessageBoxButtonFlag::ESCAPEKEY_DEFAULT,
+            button_id: 0,
+            text: cancel_label,
+        },
+    ];
+
+    match show_message_box(
+        MessageBoxFlag::WARNING,
+        &buttons,
+        title,
+        message,
+        None,
+        None,
+    ).map_err(|error| error.to_string())? {
+        ClickedButton::CustomButton(button) => Ok(button.button_id == 1),
+        ClickedButton::CloseButton => Ok(false),
+    }
 }
