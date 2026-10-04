@@ -78,6 +78,45 @@ struct X11WallpaperWindow {
     colormap: xlib::Colormap,
     width: i32,
     height: i32,
+    windowed: bool,
+    wm_delete: xlib::Atom,
+    normal_width: i32,
+    normal_height: i32,
+    maximized: bool,
+}
+
+#[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
+struct WindowGeometry {
+    #[serde(default)] x: Option<i32>,
+    #[serde(default)] y: Option<i32>,
+    width: i32,
+    height: i32,
+    #[serde(default)] maximized: bool,
+}
+
+fn load_geometry() -> WindowGeometry {
+    let default = WindowGeometry { x: None, y: None, width: 960, height: 540, maximized: false };
+    std::fs::read_to_string(crate::locate_paths::state_path()).ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| v.get("windowshader").cloned())
+        .and_then(|v| serde_json::from_value::<WindowGeometry>(v).ok())
+        .filter(|g| (64..=16384).contains(&g.width) && (64..=16384).contains(&g.height))
+        .unwrap_or(default)
+}
+
+fn save_geometry(g: WindowGeometry) -> Result<(), String> {
+    let path = crate::locate_paths::state_path();
+    let mut root = std::fs::read_to_string(&path).ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .filter(serde_json::Value::is_object)
+        .unwrap_or_else(|| serde_json::json!({}));
+    root.as_object_mut().unwrap().insert("windowshader".into(),
+        serde_json::to_value(g).map_err(|e| e.to_string())?);
+    if let Some(parent) = path.parent() { std::fs::create_dir_all(parent).map_err(|e| e.to_string())?; }
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    std::fs::rename(tmp, path).map_err(|e| e.to_string())
 }
 
 fn intern_atom(
@@ -120,6 +159,7 @@ fn set_atom_property(
 fn create_wallpaper_window(
     connection: &X11Connection,
     glx_config: &GlxFramebufferConfig,
+    windowed: bool,
 ) -> Result<X11WallpaperWindow, String> {
     unsafe {
         let display = connection.display();
@@ -131,8 +171,11 @@ fn create_wallpaper_window(
             );
         }
 
-        let width = connection.width() as u32;
-        let height = connection.height() as u32;
+        let saved = load_geometry();
+        let width = if windowed { saved.width as u32 } else { connection.width() };
+        let height = if windowed { saved.height as u32 } else { connection.height() };
+        let x = if windowed { saved.x.unwrap_or(80) } else { 0 };
+        let y = if windowed { saved.y.unwrap_or(80) } else { 0 };
         let visual_info = glx_config.visual_info();
 
         diagnostic("Interning EWMH atoms...");
@@ -184,8 +227,8 @@ fn create_wallpaper_window(
         let window = xlib::XCreateWindow(
             display,
             connection.root_window(),
-            0,
-            0,
+            x,
+            y,
             width,
             height,
             0,
@@ -221,27 +264,28 @@ fn create_wallpaper_window(
             return Err("glXCreateWindow() failed.".to_string());
         }
 
-        diagnostic("Applying desktop window hints...");
-
-        set_atom_property(
-            display,
-            window,
-            wm_type,
-            &[wm_type_desktop],
-        );
-
-        set_atom_property(
-            display,
-            window,
-            wm_state,
-            &[
-                wm_state_below,
-                wm_state_skip_taskbar,
-                wm_state_skip_pager,
-            ],
-        );
-
-        xlib::XMapRaised(display, window);
+        let mut wm_delete = 0;
+        if windowed {
+            diagnostic("Applying normal Windowshader window properties...");
+            let normal = intern_atom(display, "_NET_WM_WINDOW_TYPE_NORMAL")?;
+            set_atom_property(display, window, wm_type, &[normal]);
+            let title = CString::new("Screenshaver Windowshader").unwrap();
+            xlib::XStoreName(display, window, title.as_ptr());
+            wm_delete = intern_atom(display, "WM_DELETE_WINDOW")?;
+            xlib::XSetWMProtocols(display, window, &mut wm_delete, 1);
+            if saved.maximized {
+                let max_v = intern_atom(display, "_NET_WM_STATE_MAXIMIZED_VERT")?;
+                let max_h = intern_atom(display, "_NET_WM_STATE_MAXIMIZED_HORZ")?;
+                set_atom_property(display, window, wm_state, &[max_v, max_h]);
+            }
+            xlib::XMapWindow(display, window);
+        } else {
+            diagnostic("Applying desktop window hints...");
+            set_atom_property(display, window, wm_type, &[wm_type_desktop]);
+            set_atom_property(display, window, wm_state,
+                &[wm_state_below, wm_state_skip_taskbar, wm_state_skip_pager]);
+            xlib::XMapRaised(display, window);
+        }
         xlib::XSync(display, xlib::False);
 
         diagnostic(&format!(
@@ -258,6 +302,11 @@ fn create_wallpaper_window(
             colormap,
             width: width as i32,
             height: height as i32,
+            windowed,
+            wm_delete,
+            normal_width: saved.width,
+            normal_height: saved.height,
+            maximized: saved.maximized,
         })
     }
 }
@@ -453,25 +502,46 @@ fn notify_wallpaper_events(
     }
 }
 
-fn drain_x11_events(
-    display: *mut xlib::Display,
-) {
+fn drain_x11_events(display: *mut xlib::Display, window: &mut X11WallpaperWindow,
+    running: &AtomicBool) {
     unsafe {
         while xlib::XPending(display) > 0 {
-            let mut event: xlib::XEvent =
-                std::mem::zeroed();
-
-            xlib::XNextEvent(
-                display,
-                &mut event,
-            );
+            let mut event: xlib::XEvent = std::mem::zeroed();
+            xlib::XNextEvent(display, &mut event);
+            if !window.windowed { continue; }
+            match event.get_type() {
+                xlib::ConfigureNotify => {
+                    let e = event.configure;
+                    if e.window == window.window {
+                        window.width = e.width.max(1);
+                        window.height = e.height.max(1);
+                        if !window.maximized {
+                            window.normal_width = window.width;
+                            window.normal_height = window.height;
+                        }
+                    }
+                }
+                xlib::ClientMessage => {
+                    let e = event.client_message;
+                    if e.window == window.window && e.data.get_long(0) as xlib::Atom == window.wm_delete {
+                        running.store(false, Ordering::SeqCst);
+                    }
+                }
+                xlib::DestroyNotify => {
+                    if event.destroy_window.window == window.window {
+                        window.window = 0;
+                        running.store(false, Ordering::SeqCst);
+                    }
+                }
+                _ => {}
+            }
         }
     }
 }
 
 fn run_window_loop(
     display: *mut xlib::Display,
-    wallpaper_window: &X11WallpaperWindow,
+    wallpaper_window: &mut X11WallpaperWindow,
     engine: &mut FrameRenderEngine,
     running: &AtomicBool,
     control: &WallpaperRuntimeControl,
@@ -486,7 +556,8 @@ fn run_window_loop(
     let mut first_frame_presented = false;
 
     while running.load(Ordering::SeqCst) {
-        drain_x11_events(display);
+        drain_x11_events(display, wallpaper_window, running);
+        if !running.load(Ordering::SeqCst) { break; }
 
         if let Some(reload) =
             control.take_policy_reload()
@@ -601,10 +672,11 @@ impl WallpaperBackend for X11WallpaperBackend {
 
         diagnostic("Creating native X11 wallpaper window...");
 
-        let wallpaper_window =
+        let mut wallpaper_window =
             create_wallpaper_window(
                 &self.connection,
                 &glx_config,
+                runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed,
             )?;
 
         let glx_context =
@@ -704,7 +776,7 @@ impl WallpaperBackend for X11WallpaperBackend {
 
             run_window_loop(
                 display,
-                &wallpaper_window,
+                &mut wallpaper_window,
                 &mut engine,
                 running.as_ref(),
                 &control,
@@ -717,6 +789,26 @@ impl WallpaperBackend for X11WallpaperBackend {
             Ok(())
         })();
 
+        if wallpaper_window.windowed {
+            unsafe {
+                if wallpaper_window.window != 0 {
+                    let mut root = 0;
+                    let mut child = 0;
+                    let mut x = 0;
+                    let mut y = 0;
+                    xlib::XTranslateCoordinates(display, wallpaper_window.window,
+                        self.connection.root_window(), 0, 0, &mut x, &mut y, &mut child);
+                    root = xlib::XDefaultRootWindow(display);
+                    let _ = root;
+                    if let Err(error) = save_geometry(WindowGeometry {
+                        x: Some(x), y: Some(y),
+                        width: wallpaper_window.normal_width,
+                        height: wallpaper_window.normal_height,
+                        maximized: wallpaper_window.maximized,
+                    }) { eprintln!("[WINDOWSHADER] Unable to save X11 window geometry: {}", error); }
+                }
+            }
+        }
         let release_result =
             GlxContext::release_current(display);
 
