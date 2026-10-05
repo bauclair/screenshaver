@@ -815,20 +815,50 @@ impl WallpaperBackend for X11WallpaperBackend {
         if wallpaper_window.windowed {
             unsafe {
                 if wallpaper_window.window != 0 {
-                    let mut root = 0;
-                    let mut child = 0;
+                    let mut root_return: xlib::Window = 0;
                     let mut x = 0;
                     let mut y = 0;
-                    xlib::XTranslateCoordinates(display, wallpaper_window.window,
-                        self.connection.root_window(), 0, 0, &mut x, &mut y, &mut child);
-                    root = xlib::XDefaultRootWindow(display);
-                    let _ = root;
-                    if let Err(error) = save_geometry(WindowGeometry {
-                        x: Some(x), y: Some(y),
-                        width: wallpaper_window.normal_width,
-                        height: wallpaper_window.normal_height,
-                        maximized: wallpaper_window.maximized,
-                    }) { eprintln!("[WINDOWSHADER] Unable to save X11 window geometry: {}", error); }
+                    let mut width = 0;
+                    let mut height = 0;
+                    let mut border_width = 0;
+                    let mut depth = 0;
+
+                    // XGetGeometry() reports the managed client window's x/y
+                    // relative to its parent. After reparenting, that parent is
+                    // the window-manager frame. Those client coordinates are
+                    // the values that correspond to the x/y supplied when the
+                    // Windowshader is recreated. Saving root-translated client
+                    // coordinates instead includes the decoration offset and
+                    // causes that offset to accumulate across restarts.
+                    if xlib::XGetGeometry(
+                        display,
+                        wallpaper_window.window,
+                        &mut root_return,
+                        &mut x,
+                        &mut y,
+                        &mut width,
+                        &mut height,
+                        &mut border_width,
+                        &mut depth,
+                    ) != 0
+                    {
+                        if let Err(error) = save_geometry(WindowGeometry {
+                            x: Some(x),
+                            y: Some(y),
+                            width: wallpaper_window.normal_width,
+                            height: wallpaper_window.normal_height,
+                            maximized: wallpaper_window.maximized,
+                        }) {
+                            eprintln!(
+                                "[WINDOWSHADER] Unable to save X11 window geometry: {}",
+                                error
+                            );
+                        }
+                    } else {
+                        eprintln!(
+                            "[WINDOWSHADER] Unable to query X11 Windowshader geometry for persistence."
+                        );
+                    }
                 }
             }
         }
