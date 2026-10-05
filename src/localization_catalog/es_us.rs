@@ -17,6 +17,19 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
 
     FactoryTranslation {
         locale: "es-US",
+        key: "warning.desktop_icon_compatibility_title",
+        translated_text: "Advertencia de compatibilidad de iconos del escritorio",
+    },
+
+    FactoryTranslation {
+        locale: "es-US",
+        key: "warning.screen_locking_unavailable_title",
+        translated_text: "Bloqueo de pantalla no disponible",
+    },
+
+
+    FactoryTranslation {
+        locale: "es-US",
         key: "backup.created",
         translated_text: "Copia de seguridad creada: {path}",
     },

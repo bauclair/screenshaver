@@ -23,6 +23,19 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
     },
 
     FactoryTranslationKey {
+        key: "warning.desktop_icon_compatibility_title",
+        english_text: "Desktop Icon Compatibility Warning",
+        translator_context: "Title of the LXDE/X11 warning dialog explaining that PCManFM-managed desktop icons will be obscured while animated wallpaper rendering is active.",
+    },
+
+    FactoryTranslationKey {
+        key: "warning.screen_locking_unavailable_title",
+        english_text: "Screen Locking Unavailable",
+        translator_context: "Title of the LXDE/X11 warning dialog explaining that Screenshaver secure screen locking is unavailable in that desktop environment.",
+    },
+
+
+    FactoryTranslationKey {
         key: "backup.directory_create_failed",
         english_text: "Unable to create Screenshaver backup directory '{path}': {error}",
         translator_context: "Error creating the backup directory. {path} and {error} are supplied values and must remain unchanged.",

@@ -243,11 +243,16 @@ fn main() {
         }
 
 
-        crate::parse_arguments::Command::AuditTranslation { locale, module } => {
+        crate::parse_arguments::Command::AuditTranslation {
+            locale,
+            module,
+            all_locales,
+        } => {
 
             match crate::audit_translation::run(
                 locale.as_deref(),
                 module.as_deref(),
+                *all_locales,
             ) {
                 Ok(true) => {}
                 Ok(false) => std::process::exit(1),
@@ -1500,14 +1505,16 @@ fn main() {
     if wallpaper_enabled_this_launch
         && lxde_wallpaper_fullscreen && lxde_session && lxde_x11 && lxde_pcmanfm
     {
-        let title = "Desktop Icon Compatibility Warning";
+        let title = crate::manage_localization::runtime_text(
+            "warning.desktop_icon_compatibility_title"
+        );
         let message = "Screenshaver has detected an LXDE desktop running under X11. \
 PCManFM manages desktop icons and the desktop background together. \
 When Screenshaver renders an animated wallpaper, your desktop icons will be obscured.\n\n\
 Your icons and files will not be deleted or modified. \
 They will become visible again when wallpaper rendering stops.";
         match crate::display_message::confirm_warning(
-            title, message, "Continue", "Exit",
+            &title, message, "Continue", "Exit",
         ) {
             Ok(true) => {}
             Ok(false) => {
@@ -1536,7 +1543,9 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
             "[LOCK] LXDE/X11 screen locking is unsupported; suppressing Screenshaver secure locking for this launch. Normal screensaver rendering remains available; saved configuration is unchanged.",
         );
         if let Err(error) = crate::display_message::show_warning(
-            "Screen Locking Unavailable",
+            &crate::manage_localization::runtime_text(
+                "warning.screen_locking_unavailable_title"
+            ),
             message,
         ) {
             crate::logger::warning(&logfile, &format!(

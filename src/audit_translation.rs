@@ -25,7 +25,74 @@ struct Finding {
     text: String,
 }
 
-pub fn run(requested_locale: Option<&str>, requested_module: Option<&str>) -> Result<bool, String> {
+pub fn run(
+    requested_locale: Option<&str>,
+    requested_module: Option<&str>,
+    all_locales: bool,
+) -> Result<bool, String> {
+    if !all_locales {
+        return run_one(requested_locale, requested_module);
+    }
+
+    println!("[TRANSLATION AUDIT] Auditing all supported locales");
+    println!(
+        "[TRANSLATION AUDIT] Supported locales: {}",
+        crate::database_factory::FACTORY_LANGUAGES
+            .iter()
+            .map(|language| language.locale)
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+
+    let mut results = Vec::new();
+
+    for language in crate::database_factory::FACTORY_LANGUAGES {
+        println!(
+            "\n============================================================\nLOCALE: {}\n============================================================",
+            language.locale
+        );
+
+        let passed =
+            run_one(
+                Some(language.locale),
+                requested_module,
+            )?;
+
+        results.push(
+            (language.locale, passed)
+        );
+    }
+
+    let passed_count =
+        results
+            .iter()
+            .filter(|(_, passed)| *passed)
+            .count();
+
+    let failed_count =
+        results.len() - passed_count;
+
+    println!(
+        "\n============================================================\nTRANSLATION AUDIT SUMMARY\n============================================================"
+    );
+    println!("    Locales audited: {}", results.len());
+    println!("    Passed:          {}", passed_count);
+    println!("    Failed:          {}", failed_count);
+    println!();
+
+    for (locale, passed) in &results {
+        println!(
+            "    {}: {}",
+            locale,
+            if *passed { "PASS" } else { "FAIL" }
+        );
+    }
+
+    Ok(failed_count == 0)
+}
+
+
+fn run_one(requested_locale: Option<&str>, requested_module: Option<&str>) -> Result<bool, String> {
     let root = project_root()?;
     let src = root.join("src");
     let locale = match requested_locale {
@@ -99,7 +166,7 @@ pub fn run(requested_locale: Option<&str>, requested_module: Option<&str>) -> Re
     }
 
     println!("[TRANSLATION AUDIT] Locale: {}", locale);
-    println!("[TRANSLATION AUDIT] Auditor revision: v19-lyrics-diagnostic-invariants");
+    println!("[TRANSLATION AUDIT] Auditor revision: v20-x11-windowshader-invariants");
     println!("[TRANSLATION AUDIT] Source root: {}", src.display());
     match requested_module {
         Some(_) => println!("[TRANSLATION AUDIT] Source scope: {}", files[0].display()),
@@ -2716,6 +2783,8 @@ fn intentionally_invariant(s: &str, line: &str, path: &Path) -> bool {
                 | "Unexpected argument: {}"
                 | "--audit-translation accepts at most a locale and a module (for example: es-US import_data)"
                 | "--audit-translation accepts an optional locale such as es-US, followed by an optional module"
+                | "--audit-translation accepts at most a locale (or --all) and a module"
+                | "--audit-translation accepts an optional locale such as es-US, or --all, followed by an optional module"
                 | "--audit-translation MODULE must name a Rust source module such as import_data"
                 | "--compare-databases accepts --exclude-metadata only once"
                 | "--compare-databases accepts --exclude-local-config only once"
@@ -4775,6 +4844,97 @@ fn intentionally_invariant(s: &str, line: &str, path: &Path) -> bool {
     {
         return true;
     }
+
+    // Full-project v20: X11/LXDE tray and Windowshader work introduced new
+    // backend/protocol diagnostics after the v19 audit baseline. These strings
+    // are developer/runtime telemetry, backend errors, stable protocol/object
+    // identifiers, or product/window identity. Keep every exemption module-scoped
+    // and exact so genuine presentation prose remains auditable.
+    //
+    // Deliberately NOT exempted here:
+    //   "Desktop Icon Compatibility Warning"
+    //   "Screen Locking Unavailable"
+    // Those are user-visible dialog titles and remain actionable localization defects.
+    if filename == "main.rs"
+        && matches!(
+            t,
+            "[MAIN] LOCALIZATION CONFIG ERROR: {}"
+                | "[LOCALIZATION] Unable to load startup locale: {}"
+                | "[WALLPAPER] LXDE compatibility check: enabled={} display_format={:?} fullscreen={} desktop={} lxde={} x11={} pcmanfm_desktop={}"
+                | "[WALLPAPER] LXDE desktop icon warning declined; Screenshaver exiting normally"
+                | "[WALLPAPER] Unable to display LXDE compatibility warning; Screenshaver exiting without wallpaper: {}"
+                | "[LOCK] LXDE/X11 screen locking is unsupported; suppressing Screenshaver secure locking for this launch. Normal screensaver rendering remains available; saved configuration is unchanged."
+                | "[LOCK] Unable to display LXDE/X11 screen-lock compatibility warning: {}"
+                | "[TRAY/X11] LXDE XEmbed tray backend started"
+                | "[TRAY/X11] XEmbed tray unavailable: {}"
+        )
+    {
+        return true;
+    }
+
+    if filename == "manage_windowshader_kde.rs"
+        && matches!(
+            t,
+            "Neither qdbus6 nor qdbus is installed"
+                | "XDG_RUNTIME_DIR is unavailable"
+                | "screenshaver-windowshader-{}.js"
+                | "org.screenshaver.Windowshader.P{}"
+                | "Unable to initialize Windowshader D-Bus runtime: {e}"
+                | "screenshaver-windowshader-{}"
+                | "KWin loadScript failed: {}"
+                | "Unexpected KWin script identifier: {id}"
+                | "KWin script run failed: {}"
+        )
+    {
+        return true;
+    }
+
+    if filename == "tray_icon_x11.rs"
+        && matches!(
+            t,
+            "[TRAY/X11] {}"
+                | "Unable to start XEmbed thread: {e}"
+                | "XEmbed startup handshake failed: {error}"
+                | "Cannot open X11 display"
+                | "No XEmbed notification-area manager owns the system-tray selection"
+                | "XCreateSimpleWindow failed"
+                | "Unable to decode embedded tray artwork: {e}"
+                | "[TRAY/X11] XEmbed dock request was not delivered"
+                | "[TRAY/X11] XEmbed tray backend started"
+                | "[TRAY/X11] Shutdown requested by tray handle"
+                | "[TRAY/X11] Menu pointer grab failed: {grab}"
+                | "[TRAY/X11] Menu command: {command:?}"
+                | "[TRAY/X11] UnmapNotify: window=0x{:X}, icon={}, event=0x{:X}"
+                | "[TRAY/X11] XEmbed dock request accepted"
+                | "[TRAY/X11] Tray icon window destroyed"
+        )
+    {
+        return true;
+    }
+
+    if filename == "wayland_wallpaper.rs"
+        && matches!(
+            t,
+            "object root"
+                | "[WINDOWSHADER] KDE window integration unavailable: {}"
+                | "[WINDOWSHADER] Unable to save window geometry: {}"
+        )
+    {
+        return true;
+    }
+
+    if filename == "x11_wallpaper.rs"
+        && matches!(
+            t,
+            "Applying normal Windowshader window properties..."
+                | "Screenshaver Windowshader"
+                | "[WINDOWSHADER] Unable to save X11 window geometry: {}"
+                | "[WINDOWSHADER] Unable to query X11 Windowshader position for persistence."
+        )
+    {
+        return true;
+    }
+
 
 
     false

@@ -17,6 +17,19 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
         key: "target.wallpaper",
         translated_text: "Fond d’écran",
     },
+
+    FactoryTranslation {
+        locale: "fr-FR",
+        key: "warning.desktop_icon_compatibility_title",
+        translated_text: "Avertissement de compatibilité des icônes du bureau",
+    },
+
+    FactoryTranslation {
+        locale: "fr-FR",
+        key: "warning.screen_locking_unavailable_title",
+        translated_text: "Verrouillage de l’écran indisponible",
+    },
+
     FactoryTranslation {
         locale: "fr-FR",
         key: "backup.directory_create_failed",

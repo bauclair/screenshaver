@@ -26,6 +26,7 @@ pub enum Command {
     AuditTranslation {
         locale: Option<String>,
         module: Option<String>,
+        all_locales: bool,
     },
 
     TestSchemaReader {
@@ -338,24 +339,33 @@ fn parse_audit_translation(
 
     if args.len() > 2 {
         return Err(
-            "--audit-translation accepts at most a locale and a module (for example: es-US import_data)"
+            "--audit-translation accepts at most a locale (or --all) and a module"
                 .to_string()
         );
     }
 
+    let all_locales =
+        args.first()
+            .map(|value| value.trim() == "--all")
+            .unwrap_or(false);
+
     let locale =
-        match args.first() {
-            Some(value) => {
-                let value = value.trim();
-                if value.is_empty() || value.starts_with('-') {
-                    return Err(
-                        "--audit-translation accepts an optional locale such as es-US, followed by an optional module"
-                            .to_string()
-                    );
+        if all_locales {
+            None
+        } else {
+            match args.first() {
+                Some(value) => {
+                    let value = value.trim();
+                    if value.is_empty() || value.starts_with('-') {
+                        return Err(
+                            "--audit-translation accepts an optional locale such as es-US, or --all, followed by an optional module"
+                                .to_string()
+                        );
+                    }
+                    Some(value.to_string())
                 }
-                Some(value.to_string())
+                None => None,
             }
-            None => None,
         };
 
     let module =
@@ -373,9 +383,14 @@ fn parse_audit_translation(
             None => None,
         };
 
-    Ok(Command::AuditTranslation { locale, module })
+    Ok(
+        Command::AuditTranslation {
+            locale,
+            module,
+            all_locales,
+        }
+    )
 }
-
 
 fn parse_compare_databases(
     args: &[String],
@@ -862,10 +877,11 @@ pub fn print_help() {
              --test-localization\n\
                  Test locale selection, translation lookup, and English fallback.\n\
          \n\
-             --audit-translation [LOCALE] [MODULE]\n\
+             --audit-translation [LOCALE|--all] [MODULE]\n\
                  Audit Rust source for user-facing English text not covered by localization.\n\
                  If LOCALE is omitted, use [language].locale from screenshaver.toml.\n\
-                 If MODULE is supplied, scan only that Rust module while still auditing the full locale catalog.\n\
+                 Use --all to audit every locale supported by the current Screenshaver build.\n\
+                 If MODULE is supplied, scan only that Rust module while still auditing the selected locale catalog(s).\n\
          \n\
              --test-schema-reader [DATABASE_PATH]\n\
                  Read a Schema-1 database through the historical migration reader and exit.\n\
