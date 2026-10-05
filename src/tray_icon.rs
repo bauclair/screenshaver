@@ -212,7 +212,7 @@ impl TrayStatusControl {
         }
     }
 
-    fn wallpaper_label(
+    pub(crate) fn wallpaper_label(
         &self,
     ) -> String {
         let status =

@@ -4,7 +4,7 @@ use std::ffi::CString;
 use std::os::raw::{c_long, c_uchar};
 use std::path::Path;
 use std::sync::mpsc::Sender;
-use crate::tray_icon::TrayCommand;
+use crate::tray_icon::{TrayCommand, TrayStatus};
 use std::sync::mpsc::{self, Receiver};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -28,14 +28,18 @@ impl Drop for X11TrayHandle {
 
 /// Start a separate X connection so tray events do not block the renderer.
 /// The startup handshake reports a missing notification-area owner immediately.
-pub fn start(logfile: &Path, command_sender: Sender<TrayCommand>) -> Result<X11TrayHandle, String> {
+pub fn start(
+    logfile: &Path,
+    command_sender: Sender<TrayCommand>,
+    status: TrayStatus,
+) -> Result<X11TrayHandle, String> {
     let (shutdown_tx, shutdown_rx) = mpsc::channel();
     let (ready_tx, ready_rx) = mpsc::channel();
     let log = logfile.to_path_buf();
     let thread = thread::Builder::new()
         .name("screenshaver-xembed-tray".into())
         .spawn(move || {
-            let result = unsafe { run_tray(&log, &shutdown_rx, &ready_tx, &command_sender) };
+            let result = unsafe { run_tray(&log, &shutdown_rx, &ready_tx, &command_sender, &status) };
             if let Err(error) = result {
                 let _ = ready_tx.send(Err(error.clone()));
                 crate::logger::warning(&log, &format!("[TRAY/X11] {}", error));
@@ -54,10 +58,11 @@ unsafe fn run_tray(
     shutdown: &Receiver<()>,
     ready: &mpsc::Sender<Result<(), String>>,
     command_sender: &Sender<TrayCommand>,
+    status: &TrayStatus,
 ) -> Result<(), String> {
     let display = unsafe { xlib::XOpenDisplay(std::ptr::null()) };
     if display.is_null() { return Err("Cannot open X11 display".into()); }
-    let result = unsafe { run_with_display(display, logfile, shutdown, ready, command_sender) };
+    let result = unsafe { run_with_display(display, logfile, shutdown, ready, command_sender, status) };
     unsafe { xlib::XCloseDisplay(display); }
     result
 }
@@ -68,6 +73,7 @@ unsafe fn run_with_display(
     shutdown: &Receiver<()>,
     ready: &mpsc::Sender<Result<(), String>>,
     command_sender: &Sender<TrayCommand>,
+    status: &TrayStatus,
 ) -> Result<(), String> {
     let screen = unsafe { xlib::XDefaultScreen(display) };
     let root = unsafe { xlib::XRootWindow(display, screen) };
@@ -123,7 +129,7 @@ unsafe fn run_with_display(
         &format!("[TRAY/X11] Sent XEmbed dock request: owner=0x{owner:X}, icon=0x{icon:X}"));
     let _ = ready.send(Ok(()));
     // Override-redirect popup is independent of the embedded icon window.
-    let menu = unsafe { xlib::XCreateSimpleWindow(display, root, 0, 0, 170, 90, 1,
+    let menu = unsafe { xlib::XCreateSimpleWindow(display, root, 0, 0, 220, 180, 1,
         xlib::XBlackPixel(display, screen), xlib::XWhitePixel(display, screen)) };
     unsafe {
         let mut attrs: xlib::XSetWindowAttributes = std::mem::zeroed();
@@ -145,7 +151,7 @@ unsafe fn run_with_display(
                 xlib::Expose => {
                     let e = unsafe { &*((&next as *const xlib::XEvent).cast::<xlib::XExposeEvent>()) };
                     if e.window == icon { unsafe { draw_icon(display, icon, gc, &decoded); } }
-                    else if e.window == menu { unsafe { paint_menu(display, menu, menu_gc, screen); } }
+                    else if e.window == menu { unsafe { paint_menu(display, menu, menu_gc, screen, status); } }
                 },
                 xlib::ButtonPress => {
                     let e = unsafe { &*((&next as *const xlib::XEvent).cast::<xlib::XButtonEvent>()) };
@@ -157,12 +163,12 @@ unsafe fn run_with_display(
                         } else {
                             let screen_width = unsafe { xlib::XDisplayWidth(display, screen) };
                             let screen_height = unsafe { xlib::XDisplayHeight(display, screen) };
-                            let x = e.x_root.clamp(0, (screen_width - 172).max(0));
-                            let y = (e.y_root - 90).clamp(0, (screen_height - 92).max(0));
+                            let x = e.x_root.clamp(0, (screen_width - 222).max(0));
+                            let y = (e.y_root - 180).clamp(0, (screen_height - 182).max(0));
                             unsafe {
                                 xlib::XMoveWindow(display, menu, x, y);
                                 xlib::XMapRaised(display, menu);
-                                paint_menu(display, menu, menu_gc, screen);
+                                paint_menu(display, menu, menu_gc, screen, status);
                                 let grab = xlib::XGrabPointer(display, menu, xlib::False,
                                     xlib::ButtonPressMask as u32, xlib::GrabModeAsync,
                                     xlib::GrabModeAsync, 0, 0, xlib::CurrentTime);
@@ -175,11 +181,11 @@ unsafe fn run_with_display(
                         }
                     } else if menu_open && e.window == menu {
                         // With the pointer grabbed, outside clicks have coordinates outside the popup.
-                        let chosen = if e.x >= 0 && e.x < 170 {
+                        let chosen = if e.x >= 0 && e.x < 220 {
                             match e.y {
-                                0..=29 => Some(TrayCommand::Edit),
-                                30..=59 => Some(TrayCommand::Restart),
-                                60..=89 => Some(TrayCommand::Stop),
+                                90..=119 => Some(TrayCommand::Edit),
+                                120..=149 => Some(TrayCommand::Restart),
+                                150..=179 => Some(TrayCommand::Stop),
                                 _ => None,
                             }
                         } else { None };
@@ -292,15 +298,61 @@ unsafe fn close_menu(display: *mut xlib::Display, menu: xlib::Window) {
     unsafe { xlib::XUngrabPointer(display, xlib::CurrentTime); xlib::XUnmapWindow(display, menu); xlib::XFlush(display); }
 }
 
-unsafe fn paint_menu(display: *mut xlib::Display, menu: xlib::Window, gc: xlib::GC, screen: i32) {
+unsafe fn paint_menu(
+    display: *mut xlib::Display,
+    menu: xlib::Window,
+    gc: xlib::GC,
+    screen: i32,
+    status: &TrayStatus,
+) {
+    let screensaver_status = if status.screensaver_enabled {
+        crate::manage_localization::runtime_text("tray.status.enabled")
+    } else {
+        crate::manage_localization::runtime_text("tray.status.disabled")
+    };
+    let screensaver_label = crate::manage_localization::runtime_text_with_params(
+        "tray.menu.screensaver_status",
+        &[("status", &screensaver_status)],
+    );
+    let wallpaper_heading = crate::manage_localization::runtime_text("tray.menu.wallpaper");
+    let wallpaper_label = status.wallpaper.wallpaper_label();
+    let edit_label = crate::manage_localization::runtime_text("tray.menu.edit");
+    let restart_label = crate::manage_localization::runtime_text("tray.menu.restart");
+    let stop_label = crate::manage_localization::runtime_text("tray.menu.stop");
+    let labels = [
+        screensaver_label,
+        wallpaper_heading,
+        wallpaper_label,
+        edit_label,
+        restart_label,
+        stop_label,
+    ];
+
     unsafe {
         xlib::XSetForeground(display, gc, xlib::XWhitePixel(display, screen));
-        xlib::XFillRectangle(display, menu, gc, 0, 0, 170, 90);
+        xlib::XFillRectangle(display, menu, gc, 0, 0, 220, 180);
         xlib::XSetForeground(display, gc, xlib::XBlackPixel(display, screen));
-        for (i, label) in ["Edit", "Restart", "Stop"].iter().enumerate() {
-            xlib::XDrawString(display, menu, gc, 12, 20 + i as i32 * 30,
-                label.as_ptr().cast(), label.len() as i32);
-            if i < 2 { xlib::XDrawLine(display, menu, gc, 4, 29 + i as i32 * 30, 165, 29 + i as i32 * 30); }
+        for (i, label) in labels.iter().enumerate() {
+            xlib::XDrawString(
+                display,
+                menu,
+                gc,
+                12,
+                20 + i as i32 * 30,
+                label.as_ptr().cast(),
+                label.len() as i32,
+            );
+            if i < labels.len() - 1 {
+                xlib::XDrawLine(
+                    display,
+                    menu,
+                    gc,
+                    4,
+                    29 + i as i32 * 30,
+                    215,
+                    29 + i as i32 * 30,
+                );
+            }
         }
         xlib::XFlush(display);
     }
