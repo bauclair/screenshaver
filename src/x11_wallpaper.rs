@@ -273,6 +273,20 @@ fn create_wallpaper_window(
             set_atom_property(display, window, wm_type, &[normal]);
             let title = CString::new("Screenshaver Windowshader").unwrap();
             xlib::XStoreName(display, window, title.as_ptr());
+
+            // When a previous Windowshader position exists, tell the window
+            // manager that the restored coordinates are intentional. Without
+            // WM_NORMAL_HINTS/PPosition, a managed top-level window manager
+            // such as Openbox may apply its own placement policy instead of
+            // honoring the x/y supplied to XCreateWindow().
+            if saved.x.is_some() && saved.y.is_some() {
+                let mut size_hints: xlib::XSizeHints = std::mem::zeroed();
+                size_hints.flags = xlib::PPosition;
+                size_hints.x = x;
+                size_hints.y = y;
+                xlib::XSetWMNormalHints(display, window, &mut size_hints);
+            }
+
             wm_delete = intern_atom(display, "WM_DELETE_WINDOW")?;
             xlib::XSetWMProtocols(display, window, &mut wm_delete, 1);
             if saved.maximized {
