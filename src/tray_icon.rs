@@ -370,16 +370,13 @@ impl Tray for ScreenshaverTray {
             .into(),
             StandardItem {
                 label:
-                    crate::manage_localization::runtime_text("tray.menu.wallpaper"),
-                enabled: false,
-                ..Default::default()
-            }
-            .into(),
-            StandardItem {
-                label:
-                    self.status
-                        .wallpaper
-                        .wallpaper_label(),
+                    format!(
+                        "{} {}",
+                        crate::manage_localization::runtime_text("tray.menu.wallpaper"),
+                        self.status
+                            .wallpaper
+                            .wallpaper_label(),
+                    ),
                 enabled: false,
                 ..Default::default()
             }
