@@ -186,6 +186,8 @@ fn create_wallpaper_window(
         let wm_state = intern_atom(display, "_NET_WM_STATE")?;
         let wm_state_below =
             intern_atom(display, "_NET_WM_STATE_BELOW")?;
+        let wm_state_above =
+            intern_atom(display, "_NET_WM_STATE_ABOVE")?;
         let wm_state_skip_taskbar =
             intern_atom(display, "_NET_WM_STATE_SKIP_TASKBAR")?;
         let wm_state_skip_pager =
@@ -276,7 +278,14 @@ fn create_wallpaper_window(
             if saved.maximized {
                 let max_v = intern_atom(display, "_NET_WM_STATE_MAXIMIZED_VERT")?;
                 let max_h = intern_atom(display, "_NET_WM_STATE_MAXIMIZED_HORZ")?;
-                set_atom_property(display, window, wm_state, &[max_v, max_h]);
+                set_atom_property(
+                    display,
+                    window,
+                    wm_state,
+                    &[wm_state_above, max_v, max_h],
+                );
+            } else {
+                set_atom_property(display, window, wm_state, &[wm_state_above]);
             }
             xlib::XMapWindow(display, window);
         } else {
