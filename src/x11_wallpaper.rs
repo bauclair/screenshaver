@@ -815,36 +815,78 @@ impl WallpaperBackend for X11WallpaperBackend {
         if wallpaper_window.windowed {
             unsafe {
                 if wallpaper_window.window != 0 {
-                    let mut root_return: xlib::Window = 0;
-                    let mut x = 0;
-                    let mut y = 0;
-                    let mut width = 0;
-                    let mut height = 0;
-                    let mut border_width = 0;
-                    let mut depth = 0;
+                    let mut child = 0;
+                    let mut client_x = 0;
+                    let mut client_y = 0;
 
-                    // XGetGeometry() reports the managed client window's x/y
-                    // relative to its parent. After reparenting, that parent is
-                    // the window-manager frame. Those client coordinates are
-                    // the values that correspond to the x/y supplied when the
-                    // Windowshader is recreated. Saving root-translated client
-                    // coordinates instead includes the decoration offset and
-                    // causes that offset to accumulate across restarts.
-                    if xlib::XGetGeometry(
+                    if xlib::XTranslateCoordinates(
                         display,
                         wallpaper_window.window,
-                        &mut root_return,
-                        &mut x,
-                        &mut y,
-                        &mut width,
-                        &mut height,
-                        &mut border_width,
-                        &mut depth,
+                        self.connection.root_window(),
+                        0,
+                        0,
+                        &mut client_x,
+                        &mut client_y,
+                        &mut child,
                     ) != 0
                     {
+                        // EWMH _NET_FRAME_EXTENTS contains:
+                        // left, right, top, bottom. XTranslateCoordinates()
+                        // gives the root-relative client origin, so subtract
+                        // the left/top decoration extents before persisting.
+                        // This stores the outer frame position and prevents
+                        // decorations from accumulating across restarts.
+                        let frame_extents =
+                            intern_atom(display, "_NET_FRAME_EXTENTS").ok();
+
+                        let mut left: i32 = 0;
+                        let mut top: i32 = 0;
+
+                        if let Some(frame_extents) = frame_extents {
+                            let mut actual_type: xlib::Atom = 0;
+                            let mut actual_format: i32 = 0;
+                            let mut item_count: libc::c_ulong = 0;
+                            let mut bytes_after: libc::c_ulong = 0;
+                            let mut property: *mut u8 = std::ptr::null_mut();
+
+                            let status = xlib::XGetWindowProperty(
+                                display,
+                                wallpaper_window.window,
+                                frame_extents,
+                                0,
+                                4,
+                                xlib::False,
+                                xlib::XA_CARDINAL,
+                                &mut actual_type,
+                                &mut actual_format,
+                                &mut item_count,
+                                &mut bytes_after,
+                                &mut property,
+                            );
+
+                            if status == xlib::Success as i32
+                                && !property.is_null()
+                                && actual_format == 32
+                                && item_count >= 4
+                            {
+                                let values =
+                                    std::slice::from_raw_parts(
+                                        property as *const libc::c_ulong,
+                                        item_count as usize,
+                                    );
+
+                                left = values[0] as i32;
+                                top = values[2] as i32;
+                            }
+
+                            if !property.is_null() {
+                                xlib::XFree(property as *mut libc::c_void);
+                            }
+                        }
+
                         if let Err(error) = save_geometry(WindowGeometry {
-                            x: Some(x),
-                            y: Some(y),
+                            x: Some(client_x - left),
+                            y: Some(client_y - top),
                             width: wallpaper_window.normal_width,
                             height: wallpaper_window.normal_height,
                             maximized: wallpaper_window.maximized,
@@ -856,7 +898,7 @@ impl WallpaperBackend for X11WallpaperBackend {
                         }
                     } else {
                         eprintln!(
-                            "[WINDOWSHADER] Unable to query X11 Windowshader geometry for persistence."
+                            "[WINDOWSHADER] Unable to query X11 Windowshader position for persistence."
                         );
                     }
                 }
