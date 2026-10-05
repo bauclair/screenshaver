@@ -60,6 +60,7 @@ impl ActiveWallpaperInfo {
 #[derive(Clone)]
 pub struct TrayStatusControl {
     wallpaper_status: Arc<RwLock<WallpaperTrayStatus>>,
+    wallpaper_display_enabled: bool,
     tray_handle: Arc<Mutex<Option<TrayHandle>>>,
 }
 
@@ -81,6 +82,7 @@ impl std::fmt::Debug for TrayStatusControl {
 impl TrayStatusControl {
     pub fn new(
         wallpaper_enabled: bool,
+        wallpaper_display_enabled: bool,
     ) -> Self {
         let wallpaper_status =
             if wallpaper_enabled {
@@ -96,6 +98,7 @@ impl TrayStatusControl {
                         wallpaper_status
                     )
                 ),
+            wallpaper_display_enabled,
             tray_handle:
                 Arc::new(
                     Mutex::new(None)
@@ -215,6 +218,12 @@ impl TrayStatusControl {
     pub(crate) fn wallpaper_label(
         &self,
     ) -> String {
+        if !self.wallpaper_display_enabled {
+            return crate::manage_localization::runtime_text(
+                "tray.status.disabled"
+            );
+        }
+
         let status =
             match self.wallpaper_status.read() {
                 Ok(status) => {
@@ -247,6 +256,7 @@ impl TrayStatusControl {
 #[derive(Debug, Clone)]
 pub struct TrayStatus {
     pub screensaver_enabled: bool,
+    pub windowshader_enabled: bool,
     pub wallpaper:
         TrayStatusControl,
 }
@@ -370,6 +380,19 @@ impl Tray for ScreenshaverTray {
                     self.status
                         .wallpaper
                         .wallpaper_label(),
+                enabled: false,
+                ..Default::default()
+            }
+            .into(),
+            StandardItem {
+                label:
+                    format!(
+                        "{}: {}",
+                        crate::manage_localization::runtime_text("target.windowshader"),
+                        enabled_status(
+                            self.status.windowshader_enabled
+                        ),
+                    ),
                 enabled: false,
                 ..Default::default()
             }

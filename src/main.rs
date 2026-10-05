@@ -1879,9 +1879,16 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
             crate::tray_icon::TrayCommand
         >();
 
+    let windowshader_enabled =
+        cfg.wallpaper_enabled
+            && cfg.wallpaper_display_format
+                == crate::manage_configuration::WallpaperDisplayFormat::Windowed;
+
     let tray_status =
         crate::tray_icon::TrayStatusControl::new(
+            cfg.wallpaper_enabled,
             cfg.wallpaper_enabled
+                && !windowshader_enabled,
         );
 
 
@@ -1893,12 +1900,13 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
             tray_command_sender.clone(),
             crate::tray_icon::TrayStatus {
                 screensaver_enabled: cfg.screensaver_enabled,
+                windowshader_enabled,
                 wallpaper: tray_status.clone(),
             },
         ) {
             Ok(handle) => {
                 crate::logger::information(&logfile,
-                    "[TRAY/X11] LXDE XEmbed tray prototype started");
+                    "[TRAY/X11] LXDE XEmbed tray backend started");
                 Some(handle)
             }
             Err(error) => {
@@ -1919,6 +1927,7 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
             crate::tray_icon::TrayStatus {
                 screensaver_enabled:
                     cfg.screensaver_enabled,
+                windowshader_enabled,
                 wallpaper:
                     tray_status.clone(),
             },
