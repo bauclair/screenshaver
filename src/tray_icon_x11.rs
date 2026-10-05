@@ -1,5 +1,8 @@
-//! LXDE/X11 XEmbed tray with an independent Xlib popup menu.
-//! Keep the icon unmapped until LXPanel docks it.
+//! X11/XEmbed system-tray backend for notification areas such as LXPanel.
+//!
+//! The icon must remain unmapped until the tray manager accepts the dock request
+//! and maps the embedded window. Mapping it before docking can cause LXPanel to
+//! detach the icon immediately after the XEmbed handshake.
 use std::ffi::CString;
 use std::os::raw::{c_long, c_uchar};
 use std::path::Path;
@@ -102,8 +105,7 @@ unsafe fn run_with_display(
         .map_err(|e| format!("Unable to decode embedded tray artwork: {e}"))?
         .to_rgba8();
     let gc = unsafe { xlib::XCreateGC(display, icon, 0, std::ptr::null_mut()) };
-    crate::logger::information(logfile, "[TRAY/X11] _XEMBED_INFO installed as CARDINAL[2], version=0, mapped=1; initial XMapWindow deliberately omitted");
-    // Controlled experiment: leave icon unmapped until tray manager docks it.
+    // Do not map the icon here. The XEmbed tray manager owns initial mapping.
     let mut message: xlib::XClientMessageEvent = unsafe { std::mem::zeroed() };
     message.type_ = xlib::ClientMessage;
     message.window = owner;
@@ -121,12 +123,13 @@ unsafe fn run_with_display(
     }
     unsafe {
         let sent = xlib::XSendEvent(display, owner, xlib::False, xlib::NoEventMask, &mut event);
-        crate::logger::information(logfile, &format!("[TRAY/X11] XSendEvent result={sent}"));
+        if sent == 0 {
+            crate::logger::warning(logfile, "[TRAY/X11] XEmbed dock request was not delivered");
+        }
         draw_icon(display, icon, gc, &decoded);
         xlib::XFlush(display);
     }
-    crate::logger::information(logfile,
-        &format!("[TRAY/X11] Sent XEmbed dock request: owner=0x{owner:X}, icon=0x{icon:X}"));
+    crate::logger::information(logfile, "[TRAY/X11] XEmbed tray backend started");
     let _ = ready.send(Ok(()));
     // Override-redirect popup is independent of the embedded icon window.
     let menu = unsafe { xlib::XCreateSimpleWindow(display, root, 0, 0, 220, 180, 1,
@@ -155,7 +158,6 @@ unsafe fn run_with_display(
                 },
                 xlib::ButtonPress => {
                     let e = unsafe { &*((&next as *const xlib::XEvent).cast::<xlib::XButtonEvent>()) };
-                    crate::logger::information(logfile, &format!("[TRAY/X11] ButtonPress: window=0x{:X}, icon={}, menu={}, button={}, root=({}, {})", e.window, e.window == icon, e.window == menu, e.button, e.x_root, e.y_root));
                     if e.window == icon && (e.button == 1 || e.button == 3) {
                         if menu_open {
                             unsafe { close_menu(display, menu); }
@@ -177,7 +179,6 @@ unsafe fn run_with_display(
                                 }
                             }
                             menu_open = true;
-                            crate::logger::information(logfile, "[TRAY/X11] Popup menu requested and mapped");
                         }
                     } else if menu_open && e.window == menu {
                         // With the pointer grabbed, outside clicks have coordinates outside the popup.
@@ -197,40 +198,22 @@ unsafe fn run_with_display(
                         }
                     }
                 },
-                xlib::ButtonRelease => {
-                    let e = unsafe { &*((&next as *const xlib::XEvent).cast::<xlib::XButtonEvent>()) };
-                    crate::logger::information(logfile, &format!("[TRAY/X11] ButtonRelease: window=0x{:X}, icon={}, button={}", e.window, e.window == icon, e.button));
-                },
-                xlib::ReparentNotify => {
-                    let event = unsafe { &*((&next as *const xlib::XEvent).cast::<xlib::XReparentEvent>()) };
-                    if event.window == icon {
-                        crate::logger::information(logfile, &format!(
-                            "[TRAY/X11] ReparentNotify: parent=0x{:X}, root={}, override_redirect={}",
-                            event.parent, event.parent == root, event.override_redirect));
-                    }
-                }
-                xlib::MapNotify => {
-                    let e = unsafe { &*((&next as *const xlib::XEvent).cast::<xlib::XMapEvent>()) };
-                    crate::logger::information(logfile, &format!("[TRAY/X11] MapNotify: window=0x{:X}, icon={}, event=0x{:X}", e.window, e.window == icon, e.event));
-                }
                 xlib::UnmapNotify => {
                     let e = unsafe { &*((&next as *const xlib::XEvent).cast::<xlib::XUnmapEvent>()) };
                     crate::logger::warning(logfile, &format!("[TRAY/X11] UnmapNotify: window=0x{:X}, icon={}, event=0x{:X}", e.window, e.window == icon, e.event));
                 }
                 xlib::ClientMessage => {
-                    let event = unsafe { &*((&next as *const xlib::XEvent).cast::<xlib::XClientMessageEvent>()) };
-                    let code = if event.format == 32 { event.data.get_long(1) } else { -1 };
-                    crate::logger::information(logfile, &format!(
-                        "[TRAY/X11] ClientMessage: type=0x{:X}, xembed={}, format={}, opcode={}",
-                        event.message_type, event.message_type == xembed_message, event.format, code));
-                    if event.message_type == xembed_message && event.format == 32 {
-                        if code == 0 {
-                            crate::logger::information(logfile, "[TRAY/X11] XEMBED_EMBEDDED_NOTIFY received");
-                        } else if code == 1 {
-                            crate::logger::information(logfile, "[TRAY/X11] XEMBED_WINDOW_ACTIVATE received");
-                        } else if code == 2 {
-                            crate::logger::information(logfile, "[TRAY/X11] XEMBED_WINDOW_DEACTIVATE received");
-                        }
+                    let event = unsafe {
+                        &*((&next as *const xlib::XEvent).cast::<xlib::XClientMessageEvent>())
+                    };
+                    if event.message_type == xembed_message
+                        && event.format == 32
+                        && event.data.get_long(1) == 0
+                    {
+                        crate::logger::information(
+                            logfile,
+                            "[TRAY/X11] XEmbed dock request accepted",
+                        );
                     }
                 }
                 xlib::DestroyNotify => {
@@ -245,7 +228,6 @@ unsafe fn run_with_display(
         }
         thread::sleep(Duration::from_millis(40));
     }
-    crate::logger::information(logfile, "[TRAY/X11] Worker exiting and destroying icon window");
     unsafe { if menu_open { close_menu(display, menu); } xlib::XFreeGC(display, menu_gc); xlib::XDestroyWindow(display, menu); xlib::XFreeGC(display, gc); xlib::XDestroyWindow(display, icon); }
     Ok(())
 }
@@ -256,8 +238,8 @@ unsafe fn draw_icon(
     gc: xlib::GC,
     pixels: &image::RgbaImage,
 ) {
-    // For this first-stage prototype, paint directly into the XEmbed window.
-    // Convert RGB to the server's TrueColor masks rather than assuming RGB/BGR order.
+    // Paint directly into the XEmbed window using the server's TrueColor masks
+    // rather than assuming a particular RGB/BGR byte order.
     let screen = unsafe { xlib::XDefaultScreen(display) };
     let visual = unsafe { xlib::XDefaultVisual(display, screen) };
     let (red_mask, green_mask, blue_mask) = unsafe {
