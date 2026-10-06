@@ -1173,7 +1173,7 @@ impl ShaderManager {
 
                     log_warning(
                         &format!(
-                            "[SHADER] Requested Single policy '{}' is unavailable; selecting another policy",
+                            "[SHADER] Requested Single policy '{}' is unavailable or not renderable; Single-mode recovery is selecting a random eligible policy for this session without changing the saved configuration",
                             selector
                         )
                     );

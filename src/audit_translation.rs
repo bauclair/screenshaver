@@ -25,6 +25,14 @@ struct Finding {
     text: String,
 }
 
+#[derive(Debug, Clone)]
+struct CatalogFinding {
+    key: String,
+    english_text: String,
+    translated_text: String,
+    leaked_words: Vec<String>,
+}
+
 pub fn run(
     requested_locale: Option<&str>,
     requested_module: Option<&str>,
@@ -104,16 +112,26 @@ fn run_one(requested_locale: Option<&str>, requested_module: Option<&str>) -> Re
     let locale_path = locale_module_path(&src, &locale)?;
     let english = parse_key_catalog(&keys_path)?;
     let translated = if locale.eq_ignore_ascii_case(DEFAULT_LOCALE) {
-        english.keys().cloned().collect::<BTreeSet<_>>()
+        english
+            .iter()
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect::<BTreeMap<_, _>>()
     } else {
         parse_translation_catalog(&locale_path)?
     };
 
     let missing = english
         .keys()
-        .filter(|key| !translated.contains(*key) && !locale_invariant_key(key))
+        .filter(|key| !translated.contains_key(*key) && !locale_invariant_key(key))
         .cloned()
         .collect::<Vec<_>>();
+
+    let catalog_findings =
+        if locale.eq_ignore_ascii_case(DEFAULT_LOCALE) {
+            Vec::new()
+        } else {
+            mixed_language_catalog_findings(&english, &translated)
+        };
 
     let source_inventory = source_inventory(&src)?;
     let active_graph = active_rust_files(&root, &src)?;
@@ -166,7 +184,7 @@ fn run_one(requested_locale: Option<&str>, requested_module: Option<&str>) -> Re
     }
 
     println!("[TRANSLATION AUDIT] Locale: {}", locale);
-    println!("[TRANSLATION AUDIT] Auditor revision: v20-x11-windowshader-invariants");
+    println!("[TRANSLATION AUDIT] Auditor revision: v22-structural-mixed-language-analysis");
     println!("[TRANSLATION AUDIT] Source root: {}", src.display());
     match requested_module {
         Some(_) => println!("[TRANSLATION AUDIT] Source scope: {}", files[0].display()),
@@ -191,6 +209,23 @@ fn run_one(requested_locale: Option<&str>, requested_module: Option<&str>) -> Re
             for path in &orphaned_files {
                 println!("    {}", display_relative(&root, path));
             }
+        }
+    }
+
+    println!("\nHIGH-CONFIDENCE MIXED-LANGUAGE REVIEW");
+    if locale.eq_ignore_ascii_case(DEFAULT_LOCALE) {
+        println!("    not applicable to the English fallback catalog");
+    } else if catalog_findings.is_empty() {
+        println!("    none");
+    } else {
+        for finding in &catalog_findings {
+            println!("    key: {}", finding.key);
+            println!("        English:    {:?}", finding.english_text);
+            println!("        Translation:{:?}", finding.translated_text);
+            println!(
+                "        Suspected English leakage: {}",
+                finding.leaked_words.join(", ")
+            );
         }
     }
 
@@ -224,6 +259,7 @@ fn run_one(requested_locale: Option<&str>, requested_module: Option<&str>) -> Re
     println!("    Definite source defects:   {}", actionable_source);
     println!("    Non-actionable review:     {}", review);
     println!("    Missing translations:      {}", missing.len());
+    println!("    High-confidence mixed:     {}", catalog_findings.len());
     println!("    Actionable findings:       {}", actionable);
     println!("\n[TRANSLATION AUDIT] {}", if actionable == 0 { "PASS" } else { "FAIL" });
     Ok(actionable == 0)
@@ -542,20 +578,379 @@ fn parse_key_catalog(path: &Path) -> Result<BTreeMap<String, String>, String> {
     }
 }
 
-fn parse_translation_catalog(path: &Path) -> Result<BTreeSet<String>, String> {
+fn parse_translation_catalog(path: &Path) -> Result<BTreeMap<String, String>, String> {
     let text = fs::read_to_string(path)
         .map_err(|e| format!("Unable to read '{}': {}", path.display(), e))?;
-    let mut out = BTreeSet::new();
+    let mut out = BTreeMap::new();
+    let mut key: Option<String> = None;
+
     for line in text.lines() {
-        if let Some(v) = field_string(line.trim(), "key:") {
-            out.insert(v);
+        let t = line.trim();
+
+        if let Some(value) = field_string(t, "key:") {
+            key = Some(value);
+        }
+
+        if let Some(value) = field_string(t, "translated_text:") {
+            if let Some(current_key) = key.take() {
+                out.insert(current_key, value);
+            }
         }
     }
+
     if out.is_empty() {
         Err(format!("No translations parsed from '{}'.", path.display()))
     } else {
         Ok(out)
     }
+}
+
+fn mixed_language_catalog_findings(
+    english: &BTreeMap<String, String>,
+    translated: &BTreeMap<String, String>,
+) -> Vec<CatalogFinding> {
+    let mut findings = Vec::new();
+
+    for (key, english_text) in english {
+        if locale_invariant_key(key) {
+            continue;
+        }
+
+        let Some(translated_text) = translated.get(key) else {
+            continue;
+        };
+
+        let english_words = prose_words(english_text);
+        let translated_words = prose_words(translated_text);
+
+        if english_words.is_empty() || translated_words.is_empty() {
+            continue;
+        }
+
+        let english_lower =
+            english_words
+                .iter()
+                .map(|word| word.to_lowercase())
+                .collect::<Vec<_>>();
+        let translated_lower =
+            translated_words
+                .iter()
+                .map(|word| word.to_lowercase())
+                .collect::<Vec<_>>();
+
+        /*
+         * High-confidence rule:
+         *
+         * Report only when at least two adjacent source-language prose words
+         * survive adjacently in the target translation. Structural material
+         * such as placeholders, command-line switches, URLs, identifiers,
+         * diagnostic tags, filenames, hashes/standards, and known product or
+         * effect names is removed before this comparison.
+         *
+         * Requiring a source bigram is intentionally conservative. It avoids
+         * treating shared cognates such as "audio", "color", "final", or
+         * "configuration" as evidence of contamination while still catching
+         * fragments such as "that does", "You can", "assignment dialog", etc.
+         */
+        let mut leaked_phrases = Vec::new();
+
+        for width in (2usize..=5usize).rev() {
+            if english_lower.len() < width || translated_lower.len() < width {
+                continue;
+            }
+
+            for i in 0..=english_lower.len() - width {
+                let candidate = &english_lower[i..i + width];
+
+                if candidate
+                    .iter()
+                    .all(|word| permitted_cross_locale_word(word))
+                {
+                    continue;
+                }
+
+                for j in 0..=translated_lower.len() - width {
+                    if candidate == &translated_lower[j..j + width] {
+                        let display = english_words[i..i + width].join(" ");
+
+                        let contained =
+                            leaked_phrases
+                                .iter()
+                                .any(|existing: &String| {
+                                    let existing_lower = existing.to_lowercase();
+                                    let display_lower = display.to_lowercase();
+                                    existing_lower.contains(&display_lower)
+                                        || display_lower.contains(&existing_lower)
+                                });
+
+                        if !contained {
+                            leaked_phrases.push(display);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        /*
+         * Also catch two or more isolated, unmistakably English function words.
+         * These are deliberately limited to words that should not normally
+         * survive as French or Spanish prose. This catches broken word-by-word
+         * substitutions even when punctuation interrupts a phrase.
+         */
+        let mut leaked_function_words = Vec::new();
+        for (index, word) in translated_lower.iter().enumerate() {
+            if english_lower.contains(word)
+                && unmistakably_english_function_word(word)
+            {
+                let display = translated_words[index].clone();
+                if !leaked_function_words
+                    .iter()
+                    .any(|existing: &String| existing.eq_ignore_ascii_case(&display))
+                {
+                    leaked_function_words.push(display);
+                }
+            }
+        }
+
+        if !leaked_phrases.is_empty() || leaked_function_words.len() >= 2 {
+            let mut evidence = leaked_phrases;
+            evidence.extend(leaked_function_words);
+
+            findings.push(CatalogFinding {
+                key: key.clone(),
+                english_text: english_text.clone(),
+                translated_text: translated_text.clone(),
+                leaked_words: evidence,
+            });
+        }
+    }
+
+    findings
+}
+
+fn prose_words(text: &str) -> Vec<String> {
+    let chars = text.chars().collect::<Vec<_>>();
+    let mut words = Vec::new();
+    let mut i = 0usize;
+
+    while i < chars.len() {
+        let ch = chars[i];
+
+        /*
+         * Mask brace placeholders wholesale: {error}, {policy_count}, etc.
+         */
+        if ch == '{' {
+            i += 1;
+            while i < chars.len() && chars[i] != '}' {
+                i += 1;
+            }
+            if i < chars.len() {
+                i += 1;
+            }
+            continue;
+        }
+
+        /*
+         * Mask command-line options such as --control and --edit-shader.
+         */
+        if ch == '-' && i + 1 < chars.len() && chars[i + 1] == '-' {
+            i += 2;
+            while i < chars.len()
+                && !chars[i].is_whitespace()
+                && !matches!(chars[i], '"' | '\'' | ')' | '(' | ',' | ';')
+            {
+                i += 1;
+            }
+            continue;
+        }
+
+        /*
+         * Mask URLs as structural/non-prose material.
+         */
+        if starts_with_chars(&chars, i, "http://")
+            || starts_with_chars(&chars, i, "https://")
+        {
+            while i < chars.len() && !chars[i].is_whitespace() {
+                i += 1;
+            }
+            continue;
+        }
+
+        /*
+         * Mask bracketed diagnostic prefixes such as [WALLPAPER].
+         */
+        if ch == '[' {
+            i += 1;
+            while i < chars.len() && chars[i] != ']' {
+                i += 1;
+            }
+            if i < chars.len() {
+                i += 1;
+            }
+            continue;
+        }
+
+        if ch.is_alphabetic() {
+            let start = i;
+            i += 1;
+            while i < chars.len()
+                && (chars[i].is_alphabetic()
+                    || chars[i].is_ascii_digit()
+                    || matches!(chars[i], '_' | '-' | '.'))
+            {
+                i += 1;
+            }
+
+            let token = chars[start..i].iter().collect::<String>();
+            if structural_token(&token) || permitted_cross_locale_word(&token.to_lowercase()) {
+                continue;
+            }
+
+            words.push(token);
+            continue;
+        }
+
+        i += 1;
+    }
+
+    words
+}
+
+fn starts_with_chars(chars: &[char], start: usize, needle: &str) -> bool {
+    let needle_chars = needle.chars().collect::<Vec<_>>();
+    start + needle_chars.len() <= chars.len()
+        && chars[start..start + needle_chars.len()] == needle_chars[..]
+}
+
+fn structural_token(token: &str) -> bool {
+    let lower = token.to_lowercase();
+
+    if token.contains('_') {
+        return true;
+    }
+
+    if lower.contains(".json")
+        || lower.contains(".toml")
+        || lower.contains(".log")
+        || lower.contains(".glsl")
+        || lower.contains(".fs")
+        || lower.contains(".zip")
+        || lower.contains(".db")
+    {
+        return true;
+    }
+
+    if matches!(
+        lower.as_str(),
+        "sha-256"
+            | "utf-8"
+            | "rrggbb"
+            | "mm"
+            | "dd"
+            | "yyyy"
+            | "true"
+            | "false"
+    ) {
+        return true;
+    }
+
+    /*
+     * ALL-CAPS tokens are generally standards, acronyms, or runtime literals,
+     * not ordinary source-language prose.
+     */
+    let letters = token.chars().filter(|ch| ch.is_alphabetic()).collect::<Vec<_>>();
+    if letters.len() >= 2 && letters.iter().all(|ch| ch.is_uppercase()) {
+        return true;
+    }
+
+    false
+}
+
+fn unmistakably_english_function_word(word: &str) -> bool {
+    matches!(
+        word,
+        "the"
+            | "this"
+            | "these"
+            | "those"
+            | "that"
+            | "with"
+            | "without"
+            | "using"
+            | "should"
+            | "would"
+            | "could"
+            | "cannot"
+            | "until"
+            | "their"
+            | "there"
+            | "where"
+            | "when"
+            | "while"
+            | "from"
+            | "into"
+            | "have"
+            | "has"
+            | "does"
+            | "did"
+            | "not"
+            | "yet"
+            | "any"
+            | "each"
+            | "every"
+            | "your"
+            | "you"
+    )
+}
+
+fn permitted_cross_locale_word(word: &str) -> bool {
+    matches!(
+        word,
+        "screenshaver"
+            | "shader"
+            | "shaders"
+            | "glsl"
+            | "opengl"
+            | "wayland"
+            | "x11"
+            | "xorg"
+            | "kde"
+            | "gnome"
+            | "xfce"
+            | "lxde"
+            | "sdl"
+            | "sdl2"
+            | "sdl3"
+            | "sqlite"
+            | "dbus"
+            | "d-bus"
+            | "mpris"
+            | "fps"
+            | "cpu"
+            | "gpu"
+            | "rgb"
+            | "rgba"
+            | "api"
+            | "cli"
+            | "pam"
+            | "pipewire"
+            | "pulseaudio"
+            | "xembed"
+            | "windowshader"
+            | "qbe"
+            | "egui"
+            | "lrclmux"
+            | "lrcmux"
+            | "fft"
+            | "bloom"
+            | "woofer"
+            | "hell"
+            | "mirror"
+            | "warp"
+            | "polar"
+            | "propeller"
+    )
 }
 
 fn field_string(line: &str, prefix: &str) -> Option<String> {

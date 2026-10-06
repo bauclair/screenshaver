@@ -814,23 +814,31 @@ pub fn load_runtime_mode(
 
     match display_mode.as_str() {
         "single" => {
-            let policy_id =
+            if let Some(policy_id) =
                 single_policy_id
-                    .ok_or_else(
-                        || {
-                            format!(
-                                "{} runtime target is Single but has no selected policy",
-                                target,
-                            )
-                        }
-                    )?;
-
-            Ok(
-                format!(
-                    "single:{}",
-                    policy_id,
+            {
+                Ok(
+                    format!(
+                        "single:{}",
+                        policy_id,
+                    )
                 )
-            )
+            } else {
+                crate::logger::warning(
+                    &crate::locate_paths::runtime_log_path(),
+                    &format!(
+                        "[CONFIG] {} runtime target is Single but has no selected policy; allowing startup so Single-mode recovery can select a random eligible policy without changing the saved configuration",
+                        target,
+                    ),
+                );
+
+                // Preserve Single mode while carrying an intentionally unresolved
+                // selector to ShaderManager. The runtime selector treats this as
+                // unavailable and performs the normal random Single-mode fallback.
+                Ok(
+                    "single:".to_string()
+                )
+            }
         }
 
         "playlist" => {
