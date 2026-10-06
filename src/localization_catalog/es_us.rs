@@ -5432,4 +5432,5 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
         translated_text: "Configuración",
     },
 
+
 ];

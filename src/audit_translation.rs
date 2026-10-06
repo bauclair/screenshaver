@@ -7,7 +7,10 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::thread;
+use std::time::Duration;
 
 const DEFAULT_LOCALE: &str = "en-US";
 
@@ -33,13 +36,34 @@ struct CatalogFinding {
     leaked_words: Vec<String>,
 }
 
+#[derive(Debug, Clone)]
+struct OnlineCatalogFinding {
+    key: String,
+    english_text: String,
+    translated_text: String,
+    reference_text: String,
+    suspected_words: Vec<String>,
+    provider: String,
+}
+
+#[derive(Debug, Clone)]
+struct OnlineAuditSummary {
+    findings: Vec<OnlineCatalogFinding>,
+    requested: usize,
+    examined: usize,
+    incomplete: usize,
+    rate_limited: usize,
+    provider_failures: usize,
+}
+
 pub fn run(
     requested_locale: Option<&str>,
     requested_module: Option<&str>,
     all_locales: bool,
+    online: bool,
 ) -> Result<bool, String> {
     if !all_locales {
-        return run_one(requested_locale, requested_module);
+        return run_one(requested_locale, requested_module, online);
     }
 
     println!("[TRANSLATION AUDIT] Auditing all supported locales");
@@ -64,6 +88,7 @@ pub fn run(
             run_one(
                 Some(language.locale),
                 requested_module,
+                online,
             )?;
 
         results.push(
@@ -100,7 +125,7 @@ pub fn run(
 }
 
 
-fn run_one(requested_locale: Option<&str>, requested_module: Option<&str>) -> Result<bool, String> {
+fn run_one(requested_locale: Option<&str>, requested_module: Option<&str>, online: bool) -> Result<bool, String> {
     let root = project_root()?;
     let src = root.join("src");
     let locale = match requested_locale {
@@ -184,7 +209,8 @@ fn run_one(requested_locale: Option<&str>, requested_module: Option<&str>) -> Re
     }
 
     println!("[TRANSLATION AUDIT] Locale: {}", locale);
-    println!("[TRANSLATION AUDIT] Auditor revision: v22-structural-mixed-language-analysis");
+    println!("[TRANSLATION AUDIT] Auditor revision: v26-presentation-precision");
+    println!("[TRANSLATION AUDIT] Online reference review: {}", if online { "enabled" } else { "disabled" });
     println!("[TRANSLATION AUDIT] Source root: {}", src.display());
     match requested_module {
         Some(_) => println!("[TRANSLATION AUDIT] Source scope: {}", files[0].display()),
@@ -248,7 +274,7 @@ fn run_one(requested_locale: Option<&str>, requested_module: Option<&str>) -> Re
         .count();
     let actionable = actionable_source + missing.len();
 
-    println!("\nSUMMARY");
+    println!("\nDETERMINISTIC SUMMARY");
     let scanned_files = if requested_module_is_orphaned { 0 } else { files.len() };
     println!("    Active Rust files scanned: {}", scanned_files);
     if requested_module.is_none() {
@@ -261,6 +287,66 @@ fn run_one(requested_locale: Option<&str>, requested_module: Option<&str>) -> Re
     println!("    Missing translations:      {}", missing.len());
     println!("    High-confidence mixed:     {}", catalog_findings.len());
     println!("    Actionable findings:       {}", actionable);
+    println!(
+        "\n[TRANSLATION AUDIT] DETERMINISTIC RESULT: {}",
+        if actionable == 0 { "PASS" } else { "FAIL" }
+    );
+
+    let online_summary =
+        if online && !locale.eq_ignore_ascii_case(DEFAULT_LOCALE) {
+            println!("\nONLINE TRANSLATION QA");
+            println!("    Advisory only; online results do not change the deterministic result.");
+            let _ = io::stdout().flush();
+            Some(online_catalog_audit(&locale, &english, &translated))
+        } else {
+            if online {
+                println!("\nONLINE TRANSLATION QA");
+                println!("    not applicable to the English fallback catalog");
+            }
+            None
+        };
+
+    if let Some(summary) = &online_summary {
+        println!("\nONLINE REFERENCE REVIEW");
+        if summary.findings.is_empty() {
+            println!("    none among successfully completed examinations");
+        } else {
+            for finding in &summary.findings {
+                println!("    key: {}", finding.key);
+                println!("        English:     {:?}", finding.english_text);
+                println!("        Translation: {:?}", finding.translated_text);
+                println!("        Online ref:  {:?}", finding.reference_text);
+                println!("        Provider:    {}", finding.provider);
+                println!(
+                    "        Suspected source-language leakage: {}",
+                    finding.suspected_words.join(", ")
+                );
+            }
+        }
+        println!("    Candidates requiring examination: {}", summary.requested);
+        println!("    Successfully examined:            {}", summary.examined);
+        println!("    Incomplete examinations:          {}", summary.incomplete);
+        println!("    Rate-limit events:                {}", summary.rate_limited);
+        println!("    Provider-chain failures:          {}", summary.provider_failures);
+        if summary.incomplete > 0 {
+            println!("    ONLINE STATUS: INCOMPLETE — findings may be missing");
+        } else if summary.findings.is_empty() {
+            println!("    ONLINE STATUS: COMPLETE — NO FINDINGS");
+        } else {
+            println!("    ONLINE STATUS: COMPLETE — FINDINGS PRESENT");
+        }
+    }
+
+    println!("\nFINAL SUMMARY");
+    println!("    Deterministic result:      {}", if actionable == 0 { "PASS" } else { "FAIL" });
+    if let Some(summary) = &online_summary {
+        println!("    Online review findings:    {}", summary.findings.len());
+        println!("    Online incomplete:         {}", summary.incomplete);
+    } else if online {
+        println!("    Online review:             not applicable");
+    } else {
+        println!("    Online review:             not requested");
+    }
     println!("\n[TRANSLATION AUDIT] {}", if actionable == 0 { "PASS" } else { "FAIL" });
     Ok(actionable == 0)
 }
@@ -602,6 +688,334 @@ fn parse_translation_catalog(path: &Path) -> Result<BTreeMap<String, String>, St
         Err(format!("No translations parsed from '{}'.", path.display()))
     } else {
         Ok(out)
+    }
+}
+
+fn online_catalog_audit(
+    locale: &str,
+    english: &BTreeMap<String, String>,
+    translated: &BTreeMap<String, String>,
+) -> OnlineAuditSummary {
+    let mut findings = Vec::new();
+    let mut examined = 0usize;
+    let mut incomplete = 0usize;
+    let mut rate_limited = 0usize;
+    let mut provider_failures = 0usize;
+
+    let candidates = english
+        .iter()
+        .filter_map(|(key, english_text)| {
+            if locale_invariant_key(key) {
+                return None;
+            }
+            let translated_text = translated.get(key)?;
+            let suspected = isolated_source_survivals(english_text, translated_text);
+            if suspected.is_empty() {
+                None
+            } else {
+                Some((key, english_text, translated_text, suspected))
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let requested = candidates.len();
+    println!("    Candidates requiring online examination: {}", requested);
+    if requested == 0 {
+        println!("    No online provider requests are necessary.");
+        return OnlineAuditSummary {
+            findings,
+            requested,
+            examined,
+            incomplete,
+            rate_limited,
+            provider_failures,
+        };
+    }
+
+    println!("    Request timeout: 4 seconds per provider attempt");
+    println!("    Provider order: MyMemory, Google reference endpoint");
+    println!("    Starting online examinations...");
+    let _ = io::stdout().flush();
+
+    let target_language = online_language_code(locale);
+    let client = match reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(4))
+        .user_agent("Screenshaver translation auditor")
+        .build()
+    {
+        Ok(client) => client,
+        Err(error) => {
+            println!("    Online client unavailable: {}", error);
+            return OnlineAuditSummary {
+                findings,
+                requested,
+                examined,
+                incomplete: requested,
+                rate_limited,
+                provider_failures: requested,
+            };
+        }
+    };
+
+    let mut consecutive_total_failures = 0usize;
+
+    for (index, (key, english_text, translated_text, suspected)) in
+        candidates.iter().enumerate()
+    {
+        println!(
+            "    [{}/{}] {} — checking: {}",
+            index + 1,
+            requested,
+            key,
+            suspected.join(", ")
+        );
+        let _ = io::stdout().flush();
+
+        match online_reference_translation(&client, english_text, target_language) {
+            Ok((reference_text, provider)) => {
+                examined += 1;
+                consecutive_total_failures = 0;
+
+                let reference_words = prose_words(&reference_text)
+                    .into_iter()
+                    .map(|word| word.to_lowercase())
+                    .collect::<BTreeSet<_>>();
+
+                let suspected_words = suspected
+                    .iter()
+                    .filter(|word| !reference_words.contains(&word.to_lowercase()))
+                    .cloned()
+                    .collect::<Vec<_>>();
+
+                if suspected_words.is_empty() {
+                    println!("        completed via {} — no finding", provider);
+                } else {
+                    println!(
+                        "        completed via {} — review finding: {}",
+                        provider,
+                        suspected_words.join(", ")
+                    );
+                    findings.push(OnlineCatalogFinding {
+                        key: (*key).clone(),
+                        english_text: (*english_text).clone(),
+                        translated_text: (*translated_text).clone(),
+                        reference_text,
+                        suspected_words,
+                        provider,
+                    });
+                }
+            }
+            Err(error) => {
+                incomplete += 1;
+                consecutive_total_failures += 1;
+                if error.rate_limited {
+                    rate_limited += 1;
+                }
+                provider_failures += 1;
+                println!("        INCOMPLETE — {}", error.message);
+
+                // Do not spend minutes walking the catalog when the provider chain is
+                // clearly unavailable. Every unattempted candidate remains explicitly
+                // incomplete; it is never interpreted as a clean linguistic result.
+                if consecutive_total_failures >= 2 {
+                    let remaining = requested.saturating_sub(index + 1);
+                    if remaining > 0 {
+                        incomplete += remaining;
+                        println!(
+                            "    Provider chain is unhealthy after two consecutive failures; {} remaining examination(s) marked INCOMPLETE without submission.",
+                            remaining
+                        );
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    OnlineAuditSummary {
+        findings,
+        requested,
+        examined,
+        incomplete,
+        rate_limited,
+        provider_failures,
+    }
+}
+
+#[derive(Debug, Clone)]
+struct OnlineProviderError {
+    message: String,
+    rate_limited: bool,
+}
+
+fn isolated_source_survivals(english_text: &str, translated_text: &str) -> Vec<String> {
+    let english_words = prose_words(english_text);
+    let translated_words = prose_words(translated_text);
+    let translated_lower = translated_words
+        .iter()
+        .map(|word| word.to_lowercase())
+        .collect::<BTreeSet<_>>();
+
+    let mut out = Vec::new();
+    for word in english_words {
+        let lower = word.to_lowercase();
+        if lower.chars().count() < 4
+            || permitted_cross_locale_word(&lower)
+            || structural_token(&lower)
+            || !translated_lower.contains(&lower)
+        {
+            continue;
+        }
+        if !out.iter().any(|existing: &String| existing.eq_ignore_ascii_case(&word)) {
+            out.push(word);
+        }
+    }
+    out
+}
+
+fn online_language_code(locale: &str) -> &str {
+    locale.split(['-', '_']).next().unwrap_or(locale)
+}
+
+fn online_reference_translation(
+    client: &reqwest::blocking::Client,
+    english_text: &str,
+    target_language: &str,
+) -> Result<(String, String), OnlineProviderError> {
+    let mut errors = Vec::new();
+    let mut any_rate_limited = false;
+
+    match mymemory_reference_translation(client, english_text, target_language) {
+        Ok(text) => return Ok((text, "MyMemory".to_string())),
+        Err(error) => {
+            any_rate_limited |= error.rate_limited;
+            errors.push(format!("MyMemory: {}", error.message));
+        }
+    }
+
+    // A small inter-provider pause prevents an immediate burst into the fallback.
+    thread::sleep(Duration::from_millis(250));
+
+    match google_reference_translation(client, english_text, target_language) {
+        Ok(text) => return Ok((text, "Google reference endpoint".to_string())),
+        Err(error) => {
+            any_rate_limited |= error.rate_limited;
+            errors.push(format!("Google: {}", error.message));
+        }
+    }
+
+    Err(OnlineProviderError {
+        message: errors.join("; "),
+        rate_limited: any_rate_limited,
+    })
+}
+
+fn response_error(provider: &str, status: reqwest::StatusCode) -> OnlineProviderError {
+    OnlineProviderError {
+        message: format!("{} returned HTTP {}", provider, status),
+        rate_limited: status.as_u16() == 429,
+    }
+}
+
+fn transport_error(provider: &str, error: reqwest::Error) -> OnlineProviderError {
+    let kind = if error.is_timeout() { "timeout" } else { "transport failure" };
+    OnlineProviderError {
+        message: format!("{} {}: {}", provider, kind, error),
+        rate_limited: false,
+    }
+}
+
+fn mymemory_reference_translation(
+    client: &reqwest::blocking::Client,
+    english_text: &str,
+    target_language: &str,
+) -> Result<String, OnlineProviderError> {
+    let langpair = format!("en|{}", target_language);
+    let response = client
+        .get("https://api.mymemory.translated.net/get")
+        .query(&[("q", english_text), ("langpair", langpair.as_str())])
+        .send()
+        .map_err(|error| transport_error("MyMemory", error))?;
+
+    if !response.status().is_success() {
+        return Err(response_error("MyMemory", response.status()));
+    }
+
+    let value: serde_json::Value = response.json().map_err(|error| OnlineProviderError {
+        message: format!("MyMemory malformed JSON response: {}", error),
+        rate_limited: false,
+    })?;
+    let status = value.get("responseStatus").and_then(|value| value.as_i64()).unwrap_or(200);
+    if status != 200 {
+        let detail = value.get("responseDetails").and_then(|value| value.as_str()).unwrap_or("provider rejected request");
+        return Err(OnlineProviderError {
+            message: format!("MyMemory provider status {}: {}", status, detail),
+            rate_limited: status == 429,
+        });
+    }
+
+    let text = value
+        .get("responseData")
+        .and_then(|value| value.get("translatedText"))
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| OnlineProviderError {
+            message: "MyMemory response missing translatedText".to_string(),
+            rate_limited: false,
+        })?;
+
+    Ok(text.to_string())
+}
+
+fn google_reference_translation(
+    client: &reqwest::blocking::Client,
+    english_text: &str,
+    target_language: &str,
+) -> Result<String, OnlineProviderError> {
+    let response = client
+        .get("https://translate.googleapis.com/translate_a/single")
+        .query(&[
+            ("client", "gtx"),
+            ("sl", "en"),
+            ("tl", target_language),
+            ("dt", "t"),
+            ("q", english_text),
+        ])
+        .send()
+        .map_err(|error| transport_error("Google reference endpoint", error))?;
+
+    if !response.status().is_success() {
+        return Err(response_error("Google reference endpoint", response.status()));
+    }
+
+    let value: serde_json::Value = response.json().map_err(|error| OnlineProviderError {
+        message: format!("Google reference endpoint malformed JSON response: {}", error),
+        rate_limited: false,
+    })?;
+    let segments = value
+        .get(0)
+        .and_then(|value| value.as_array())
+        .ok_or_else(|| OnlineProviderError {
+            message: "Google reference endpoint malformed translation response".to_string(),
+            rate_limited: false,
+        })?;
+
+    let mut text = String::new();
+    for segment in segments {
+        if let Some(piece) = segment.get(0).and_then(|value| value.as_str()) {
+            text.push_str(piece);
+        }
+    }
+
+    let text = text.trim();
+    if text.is_empty() {
+        Err(OnlineProviderError {
+            message: "Google reference endpoint returned an empty translation".to_string(),
+            rate_limited: false,
+        })
+    } else {
+        Ok(text.to_string())
     }
 }
 
@@ -1007,7 +1421,25 @@ fn scan_file(
         }
 
         for literal in string_literals(line) {
-            if !looks_human(&literal) {
+            // Single-word UI labels such as "Description" are still presentation text, but
+            // candidate admission must remain tied closely to the literal itself.  A broad
+            // nearby-UI window admits localization keys, widget IDs, format-only strings, and
+            // glyphs that merely happen to live in the same layout block.
+            let immediate_presentation_context =
+                source_context(&lines, idx, 3);
+            let immediate_presentation =
+                is_direct_presentation_literal(line)
+                    || direct_presentation_context(&immediate_presentation_context);
+
+            if !literal_has_translatable_letters(&literal) {
+                continue;
+            }
+
+            if looks_like_machine_identifier(&literal) {
+                continue;
+            }
+
+            if !looks_human(&literal) && !immediate_presentation {
                 continue;
             }
             *candidate_count += 1;
@@ -1027,12 +1459,12 @@ fn scan_file(
             let presentation_context =
                 source_context(&lines, idx, 48);
             let direct_presentation =
-                is_direct_presentation_literal(line)
+                immediate_presentation
                     || direct_presentation_context(&presentation_context);
 
             if (matches_catalog && !direct_presentation)
                 || localized_choice_stored_value(&literal, line, &presentation_context)
-                || intentionally_invariant(&literal, line, path)
+                || intentionally_invariant(&literal, line, path, immediate_presentation)
             {
                 *suppressed_count += 1;
                 continue;
@@ -1074,8 +1506,33 @@ fn is_direct_presentation_literal(line: &str) -> bool {
 fn contains_localization_call(line: &str) -> bool {
     line.contains("runtime_text(")
         || line.contains("runtime_text_with_params(")
+        || line.contains("editor_runtime_text_with_values(")
         || line.contains("tr(")
         || line.contains("trp(")
+}
+
+fn literal_has_translatable_letters(s: &str) -> bool {
+    let t = s.trim();
+    t.len() >= 2 && t.chars().any(|character| character.is_alphabetic())
+}
+
+fn looks_like_machine_identifier(s: &str) -> bool {
+    let t = s.trim();
+
+    // Localization keys and egui/widget IDs are machine-facing identifiers.  Keep this
+    // deliberately structural: ordinary labels such as "Description", "Status", and
+    // "Unassigned" contain uppercase letters and therefore remain auditable.
+    let identifier_chars_only =
+        t.chars().all(|character| {
+            character.is_ascii_lowercase()
+                || character.is_ascii_digit()
+                || character == '_'
+                || character == '.'
+                || character == '-'
+        });
+
+    identifier_chars_only
+        && (t.contains('.') || t.contains('_'))
 }
 
 fn source_context(lines: &[&str], index: usize, radius: usize) -> String {
@@ -1195,7 +1652,12 @@ fn localized_choice_stored_value(s: &str, line: &str, context: &str) -> bool {
             })
 }
 
-fn intentionally_invariant(s: &str, line: &str, path: &Path) -> bool {
+fn intentionally_invariant(
+    s: &str,
+    line: &str,
+    path: &Path,
+    direct_presentation: bool,
+) -> bool {
     let t = s.trim();
 
     if line.contains("include_str!") || line.contains("include_bytes!") {
@@ -1203,15 +1665,19 @@ fn intentionally_invariant(s: &str, line: &str, path: &Path) -> bool {
     }
 
     // SQL/SQLite statements and fragments are executable machine text, not presentation.
+    // Presentation context wins over SQL-keyword spelling: UI prose such as "Delete Playlist"
+    // and "Select a playlist to view its policies." must not be mistaken for SQL merely because
+    // the first word is DELETE or SELECT.
     let upper = t.to_ascii_uppercase();
-    if [
-        "SELECT ", "INSERT ", "UPDATE ", "DELETE ", "CREATE ", "ALTER ", "DROP ",
-        "PRAGMA ", "VACUUM ", "BEGIN ", "COMMIT", "ROLLBACK", "WITH ",
-    ]
-    .iter()
-    .any(|prefix| upper.starts_with(prefix))
-        || line.contains("query_row(")
-        || line.contains("prepare(") && upper.contains("SELECT")
+    if !direct_presentation
+        && ([
+            "SELECT ", "INSERT ", "UPDATE ", "DELETE ", "CREATE ", "ALTER ", "DROP ",
+            "PRAGMA ", "VACUUM ", "BEGIN ", "COMMIT", "ROLLBACK", "WITH ",
+        ]
+        .iter()
+        .any(|prefix| upper.starts_with(prefix))
+            || line.contains("query_row(")
+            || line.contains("prepare(") && upper.contains("SELECT"))
     {
         return true;
     }
@@ -3108,6 +3574,7 @@ fn intentionally_invariant(s: &str, line: &str, path: &Path) -> bool {
                 | "Unable to write temporary runtime state {}: {}"
                 | "Unable to replace runtime state {}: {}"
                 | "[SHADER] Requested resume shader '{}' is unavailable; continuing with configured selection mode"
+                | "[SHADER] Requested Single policy '{}' is unavailable or not renderable; Single-mode recovery is selecting a random eligible policy for this session without changing the saved configuration"
                 | "[PLAYLIST] Playlist ID {} references {} policy_id={} ('{}'), but that policy is not currently renderable; skipping it"
                 | "[PLAYLIST] Unable to resolve playlist ID {} for {} rendering: {}"
                 | "[PLAYLIST] Playlist ID {} has no renderable {} policies"
@@ -3180,6 +3647,10 @@ fn intentionally_invariant(s: &str, line: &str, path: &Path) -> bool {
                 | "--audit-translation accepts an optional locale such as es-US, followed by an optional module"
                 | "--audit-translation accepts at most a locale (or --all) and a module"
                 | "--audit-translation accepts an optional locale such as es-US, or --all, followed by an optional module"
+                | "--audit-translation accepts --online only once"
+                | "--audit-translation accepts at most a locale (or --all), a module, and optional --online"
+                | "--audit-translation cannot use --online together with --all; online evaluation must be run for one locale at a time"
+                | "--audit-translation accepts an optional locale such as es-US, or --all, followed by an optional module and --online"
                 | "--audit-translation MODULE must name a Rust source module such as import_data"
                 | "--compare-databases accepts --exclude-metadata only once"
                 | "--compare-databases accepts --exclude-local-config only once"
@@ -4441,6 +4912,8 @@ fn intentionally_invariant(s: &str, line: &str, path: &Path) -> bool {
                 | "Unable to load {} runtime target configuration: {}"
                 | "Invalid negative {} runtime interval_seconds value {}"
                 | "{} runtime target is Single but has no selected policy"
+                | "[CONFIG] {} runtime target is Single but has no selected policy; allowing startup so Single-mode recovery can select a random eligible policy without changing the saved configuration"
+                | "single:"
                 | "single:{}"
                 | "{} runtime target is Playlist but has no selected playlist"
                 | "{} runtime target Playlist mode has no valid interval"

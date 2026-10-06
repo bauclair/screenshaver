@@ -247,12 +247,14 @@ fn main() {
             locale,
             module,
             all_locales,
+            online,
         } => {
 
             match crate::audit_translation::run(
                 locale.as_deref(),
                 module.as_deref(),
                 *all_locales,
+                *online,
             ) {
                 Ok(true) => {}
                 Ok(false) => std::process::exit(1),

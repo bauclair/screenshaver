@@ -27,6 +27,7 @@ pub enum Command {
         locale: Option<String>,
         module: Option<String>,
         all_locales: bool,
+        online: bool,
     },
 
     TestSchemaReader {
@@ -336,60 +337,73 @@ pub fn parse() -> Result<Command, String> {
 fn parse_audit_translation(
     args: &[String],
 ) -> Result<Command, String> {
+    let mut online = false;
+    let mut positional = Vec::new();
 
-    if args.len() > 2 {
+    for argument in args {
+        let value = argument.trim();
+        if value == "--online" {
+            if online {
+                return Err("--audit-translation accepts --online only once".to_string());
+            }
+            online = true;
+        } else {
+            positional.push(value);
+        }
+    }
+
+    if positional.len() > 2 {
         return Err(
-            "--audit-translation accepts at most a locale (or --all) and a module"
+            "--audit-translation accepts at most a locale (or --all), a module, and optional --online"
                 .to_string()
         );
     }
 
-    let all_locales =
-        args.first()
-            .map(|value| value.trim() == "--all")
-            .unwrap_or(false);
+    let all_locales = positional.first().map(|value| *value == "--all").unwrap_or(false);
 
-    let locale =
-        if all_locales {
-            None
-        } else {
-            match args.first() {
-                Some(value) => {
-                    let value = value.trim();
-                    if value.is_empty() || value.starts_with('-') {
-                        return Err(
-                            "--audit-translation accepts an optional locale such as es-US, or --all, followed by an optional module"
-                                .to_string()
-                        );
-                    }
-                    Some(value.to_string())
-                }
-                None => None,
-            }
-        };
+    if online && all_locales {
+        return Err(
+            "--audit-translation cannot use --online together with --all; online evaluation must be run for one locale at a time"
+                .to_string()
+        );
+    }
 
-    let module =
-        match args.get(1) {
+    let locale = if all_locales {
+        None
+    } else {
+        match positional.first() {
             Some(value) => {
-                let value = value.trim();
                 if value.is_empty() || value.starts_with('-') {
                     return Err(
-                        "--audit-translation MODULE must name a Rust source module such as import_data"
+                        "--audit-translation accepts an optional locale such as es-US, or --all, followed by an optional module and --online"
                             .to_string()
                     );
                 }
-                Some(value.to_string())
+                Some((*value).to_string())
             }
             None => None,
-        };
-
-    Ok(
-        Command::AuditTranslation {
-            locale,
-            module,
-            all_locales,
         }
-    )
+    };
+
+    let module = match positional.get(1) {
+        Some(value) => {
+            if value.is_empty() || value.starts_with('-') {
+                return Err(
+                    "--audit-translation MODULE must name a Rust source module such as import_data"
+                        .to_string()
+                );
+            }
+            Some((*value).to_string())
+        }
+        None => None,
+    };
+
+    Ok(Command::AuditTranslation {
+        locale,
+        module,
+        all_locales,
+        online,
+    })
 }
 
 fn parse_compare_databases(
