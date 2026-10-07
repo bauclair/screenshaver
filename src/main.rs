@@ -126,6 +126,7 @@ mod authenticate_user;
 mod manage_playlists;
 mod test_playlists;
 mod test_lyrics;
+mod test_ambient_lighting;
 mod test_localization;
 mod manage_localization;
 mod audit_translation;
@@ -460,6 +461,30 @@ fn main() {
 
                     eprintln!(
                         "[LYRICS TEST] FAILED: {}",
+                        error
+                    );
+
+                    std::process::exit(
+                        1
+                    );
+                }
+            }
+
+
+            return;
+        }
+
+
+        crate::parse_arguments::Command::AmbientLightingTest => {
+
+            match crate::test_ambient_lighting::run() {
+
+                Ok(()) => {}
+
+                Err(error) => {
+
+                    eprintln!(
+                        "[AMBIENT LIGHTING TEST] FAILED: {}",
                         error
                     );
 
@@ -1463,6 +1488,7 @@ fn main() {
         | crate::parse_arguments::Command::Version
         | crate::parse_arguments::Command::TestPlaylists
         | crate::parse_arguments::Command::TestLyrics
+        | crate::parse_arguments::Command::AmbientLightingTest
         | crate::parse_arguments::Command::TestLocalization
         | crate::parse_arguments::Command::TestReverseAnimation { .. }
         | crate::parse_arguments::Command::AuditTranslation { .. }

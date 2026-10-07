@@ -21,6 +21,8 @@ pub enum Command {
 
     TestLyrics,
 
+    AmbientLightingTest,
+
     TestLocalization,
 
     AuditTranslation {
@@ -186,6 +188,19 @@ pub fn parse() -> Result<Command, String> {
 
             Ok(
                 Command::TestLyrics
+            )
+        }
+
+
+        "--ambient-lighting-test" => {
+
+            require_no_extra_arguments(
+                &args,
+                "--ambient-lighting-test",
+            )?;
+
+            Ok(
+                Command::AmbientLightingTest
             )
         }
 
@@ -937,6 +952,10 @@ pub fn print_help() {
          \n\
              --test-lyrics\n\
                  Run the synchronized-lyrics development test and exit.\n\
+         \n\
+             --ambient-lighting-test\n\
+                 Run the read-only ambient-lighting hardware identification harness and exit.\n\
+                 The initial harness identifies supported candidate hardware without changing lighting settings.\n\
          \n\
              --test-localization\n\
                  Test locale selection, translation lookup, and English fallback.\n\
