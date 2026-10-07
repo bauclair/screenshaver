@@ -22,6 +22,12 @@ pub const WALLPAPER_SPEED_MIN: f32 = 0.01;
 pub const WALLPAPER_SPEED_DEFAULT: f32 = 0.025;
 pub const WALLPAPER_SPEED_MAX: f32 = 10.0;
 
+// Per-policy animation speed may be signed. Negative values run shader time
+// backward, zero freezes shader time, and positive values run forward.
+// Target/global defaults intentionally retain their positive-only ranges above.
+pub const POLICY_SPEED_MIN: f32 = -10.0;
+pub const POLICY_SPEED_MAX: f32 = 10.0;
+
 
 // Supported render-scale limits.
 pub const RENDER_SCALE_MIN: f32 = 0.25;

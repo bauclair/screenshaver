@@ -2005,26 +2005,13 @@ impl PolicyTarget {
         self,
     ) -> (f32, f32) {
 
-        match self {
-            Self::Screensaver => (
-                crate::define_constants::SCREENSAVER_SPEED_MIN,
-                crate::define_constants::SCREENSAVER_SPEED_MAX,
-            ),
-            Self::Wallpaper => (
-                crate::define_constants::WALLPAPER_SPEED_MIN,
-                crate::define_constants::WALLPAPER_SPEED_MAX,
-            ),
-            Self::Unassigned => (
-                crate::define_constants::SCREENSAVER_SPEED_MIN
-                    .min(
-                        crate::define_constants::WALLPAPER_SPEED_MIN
-                    ),
-                crate::define_constants::SCREENSAVER_SPEED_MAX
-                    .max(
-                        crate::define_constants::WALLPAPER_SPEED_MAX
-                    ),
-            ),
-        }
+        let _ =
+            self;
+
+        (
+            crate::define_constants::POLICY_SPEED_MIN,
+            crate::define_constants::POLICY_SPEED_MAX,
+        )
     }
 }
 

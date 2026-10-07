@@ -5015,7 +5015,7 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
     FactoryTranslation {
         locale: "fr-FR",
         key: "editor.adjust_animation_speed_on_a_logarithmic_scale_the_slider_midpoint",
-        translated_text: "Régler la vitesse d’animation sur une échelle logarithmique. Le milieu du curseur correspond à 1,0x. Maintenez Maj pour un réglage précis.",
+        translated_text: "Régler la vitesse d’animation sur une échelle non linéaire symétrique. Faites glisser vers la gauche pour inverser l’animation, au centre sur 0x pour la mettre en pause ou vers la droite pour avancer. Maintenez Maj pour un réglage précis.",
     },
     FactoryTranslation {
         locale: "fr-FR",

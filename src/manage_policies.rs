@@ -2709,32 +2709,11 @@ fn validate_properties(
     if let Some(speed) =
         properties.speed
     {
-        let (
-            minimum,
-            maximum,
-        ) =
-            match target {
-                PolicyTarget::Screensaver => (
-                    crate::define_constants::SCREENSAVER_SPEED_MIN,
-                    crate::define_constants::SCREENSAVER_SPEED_MAX,
-                ),
+        let minimum =
+            crate::define_constants::POLICY_SPEED_MIN;
 
-                PolicyTarget::Wallpaper => (
-                    crate::define_constants::WALLPAPER_SPEED_MIN,
-                    crate::define_constants::WALLPAPER_SPEED_MAX,
-                ),
-
-                PolicyTarget::Unassigned => (
-                    crate::define_constants::SCREENSAVER_SPEED_MIN
-                        .min(
-                            crate::define_constants::WALLPAPER_SPEED_MIN
-                        ),
-                    crate::define_constants::SCREENSAVER_SPEED_MAX
-                        .max(
-                            crate::define_constants::WALLPAPER_SPEED_MAX
-                        ),
-                ),
-            };
+        let maximum =
+            crate::define_constants::POLICY_SPEED_MAX;
 
 
         if !speed.is_finite()

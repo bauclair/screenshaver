@@ -2592,8 +2592,8 @@ impl EditWindowOverlay {
             self.displayed_animation_speed
                 .unwrap_or(
                     resolved_animation_speed.clamp(
-                        crate::define_constants::SCREENSAVER_SPEED_MIN,
-                        crate::define_constants::SCREENSAVER_SPEED_MAX,
+                        crate::define_constants::POLICY_SPEED_MIN,
+                        crate::define_constants::POLICY_SPEED_MAX,
                     )
                 );
 
@@ -10415,8 +10415,8 @@ fn draw_render_panel(
                         *displayed_animation_speed,
                     ),
                     displayed_animation_speed,
-                    crate::define_constants::SCREENSAVER_SPEED_MIN,
-                    crate::define_constants::SCREENSAVER_SPEED_MAX,
+                    crate::define_constants::POLICY_SPEED_MIN,
+                    crate::define_constants::POLICY_SPEED_MAX,
                     shift_held,
                     metrics,
                     label_width,
@@ -10942,9 +10942,10 @@ pub(crate) fn draw_fine_slider(
 }
 
 
-// Animation-speed slider.  Position is piecewise logarithmic:
-//   0.00 .. 0.50 = minimum .. 1.0x
-//   0.50 .. 1.00 = 1.0x .. maximum
+// Animation-speed slider. Position is symmetric around 0x:
+//   0.00 .. 0.50 = -maximum .. 0x
+//   0.50 .. 1.00 = 0x .. +maximum
+// Each side uses the same nonlinear magnitude curve, with mirrored ±1x points.
 
 fn draw_log_animation_speed_slider(
     ui: &mut egui::Ui,
@@ -11096,48 +11097,42 @@ fn animation_speed_to_slider_fraction(
     minimum: f32,
     maximum: f32,
 ) -> f32 {
-    let minimum =
-        minimum.max(
-            f32::MIN_POSITIVE
-        );
-
-    let maximum =
-        maximum.max(
-            1.0
-        );
+    let maximum_magnitude =
+        minimum
+            .abs()
+            .max(
+                maximum.abs()
+            )
+            .max(
+                1.0
+            );
 
     let value =
         value.clamp(
-            minimum,
-            maximum,
+            -maximum_magnitude,
+            maximum_magnitude,
         );
 
-    if value <= 1.0 {
-        if minimum >= 1.0 {
-            return 0.5;
-        }
+    if value.abs()
+        <= f32::EPSILON
+    {
+        return 0.5;
+    }
 
-        let ratio =
-            (value / minimum)
-                .ln()
-                / (1.0 / minimum)
-                    .ln();
+    let magnitude_fraction =
+        signed_animation_speed_magnitude_to_fraction(
+            value.abs(),
+            maximum_magnitude,
+        );
 
-        (ratio * 0.5)
+    if value.is_sign_negative() {
+        (0.5 - magnitude_fraction * 0.5)
             .clamp(
                 0.0,
                 0.5,
             )
     } else {
-        if maximum <= 1.0 {
-            return 0.5;
-        }
-
-        let ratio =
-            value.ln()
-                / maximum.ln();
-
-        (0.5 + ratio * 0.5)
+        (0.5 + magnitude_fraction * 0.5)
             .clamp(
                 0.5,
                 1.0,
@@ -11157,29 +11152,95 @@ fn animation_speed_from_slider_fraction(
             1.0,
         );
 
-    let minimum =
-        minimum.max(
-            f32::MIN_POSITIVE
+    let maximum_magnitude =
+        minimum
+            .abs()
+            .max(
+                maximum.abs()
+            )
+            .max(
+                1.0
+            );
+
+    let signed_position =
+        (fraction - 0.5)
+            * 2.0;
+
+    // Give the physical midpoint a small stable zero region. This makes 0x
+    // selectable despite the logarithmic magnitude curve and prevents tiny
+    // pointer jitter around center from changing animation direction.
+    const ZERO_POSITION_EPSILON: f32 =
+        0.0025;
+
+    if signed_position.abs()
+        <= ZERO_POSITION_EPSILON
+    {
+        return 0.0;
+    }
+
+    let magnitude =
+        signed_animation_speed_fraction_to_magnitude(
+            signed_position.abs(),
+            maximum_magnitude,
         );
 
-    let maximum =
-        maximum.max(
-            1.0
-        );
+    if signed_position.is_sign_negative() {
+        -magnitude
+    } else {
+        magnitude
+    }
+}
 
-    if fraction <= 0.5 {
-        if minimum >= 1.0 {
+
+fn signed_animation_speed_magnitude_to_fraction(
+    magnitude: f32,
+    maximum: f32,
+) -> f32 {
+    // Preserve the useful feel of the old logarithmic slider: 1x is a
+    // prominent reference point, while still allowing a continuous approach
+    // to the special 0x midpoint. The 0..1x half uses a quadratic curve;
+    // 1..maximum retains logarithmic scaling.
+    if magnitude <= 1.0 {
+        magnitude
+            .sqrt()
+            .clamp(
+                0.0,
+                1.0,
+            )
+            * 0.5
+    } else {
+        if maximum <= 1.0 {
             return 1.0;
         }
 
+        let ratio =
+            magnitude.ln()
+                / maximum.ln();
+
+        (0.5 + ratio * 0.5)
+            .clamp(
+                0.5,
+                1.0,
+            )
+    }
+}
+
+
+fn signed_animation_speed_fraction_to_magnitude(
+    fraction: f32,
+    maximum: f32,
+) -> f32 {
+    let fraction =
+        fraction.clamp(
+            0.0,
+            1.0,
+        );
+
+    if fraction <= 0.5 {
         let local =
             fraction / 0.5;
 
-        minimum
-            * (1.0 / minimum)
-                .powf(
-                    local
-                )
+        local * local
     } else {
         if maximum <= 1.0 {
             return 1.0;
@@ -11194,7 +11255,6 @@ fn animation_speed_from_slider_fraction(
         )
     }
 }
-
 
 fn paint_slider(
     ui: &egui::Ui,

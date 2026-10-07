@@ -5247,7 +5247,7 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
     },
     FactoryTranslationKey {
         key: "editor.adjust_animation_speed_on_a_logarithmic_scale_the_slider_midpoint",
-        english_text: "Adjust animation speed on a logarithmic scale. The slider midpoint is 1.0x. Hold Shift for fine adjustment.",
+        english_text: "Adjust animation speed on a symmetric nonlinear scale. Drag left for reverse, center at 0x to pause animation, or right for forward. Hold Shift for fine adjustment.",
         translator_context: "Screenshaver Control Center user-interface text. Supplied {valueN} placeholders, when present, must remain unchanged.",
     },
     FactoryTranslationKey {
