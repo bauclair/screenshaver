@@ -58,6 +58,10 @@ pub enum Command {
         shader_path: String,
     },
 
+    TestReverseAnimation {
+        shader_path: String,
+    },
+
     Control {
         shader_name: Option<String>,
     },
@@ -265,6 +269,14 @@ pub fn parse() -> Result<Command, String> {
         "--test-audio-motion" => {
 
             parse_test_audio_motion(
+                &args[1..]
+            )
+        }
+
+
+        "--test-reverse-animation" => {
+
+            parse_test_reverse_animation(
                 &args[1..]
             )
         }
@@ -702,6 +714,39 @@ fn parse_test_audio_motion(
 }
 
 
+
+fn parse_test_reverse_animation(
+    args: &[String],
+) -> Result<Command, String> {
+
+    if args.len() != 1 {
+        return Err(
+            "--test-reverse-animation requires exactly one shader filename or path"
+                .to_string()
+        );
+    }
+
+    let shader_path =
+        args[0].trim();
+
+    if shader_path.is_empty()
+        || shader_path.starts_with('-')
+    {
+        return Err(
+            "--test-reverse-animation requires a valid shader filename or path"
+                .to_string()
+        );
+    }
+
+    Ok(
+        Command::TestReverseAnimation {
+            shader_path:
+                shader_path.to_string(),
+        }
+    )
+}
+
+
 fn parse_reset_idle_timeout(
     args: &[String],
 ) -> Result<Command, String> {
@@ -881,6 +926,11 @@ pub fn print_help() {
              --test-audio-motion <SHADER_PATH>\n\
                   Run the experimental audio-motion shader harness.\n\
                   Press Esc or close the test window to exit.\n\
+         \n\
+             --test-reverse-animation <SHADER_PATH>\n\
+                 Render one shader at exactly -1.0x animation speed for 60 seconds.\n\
+                 Press Esc to stop the test and return to the command line.\n\
+                 Test load failures do not change shader validation/rejection state.\n\
          \n\
              --test-playlists\n\
                  Run developer Playlist database-management tests and exit.\n\

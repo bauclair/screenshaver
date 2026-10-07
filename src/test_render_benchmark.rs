@@ -734,6 +734,485 @@ impl BenchmarkAudioDiagnostic {
 
 
 #[allow(clippy::too_many_arguments)]
+
+pub fn run_reverse_animation(
+    shader_path: &str,
+    config: &crate::load_config::Config,
+) -> Result<(), String> {
+    const TEST_WIDTH: u32 = 1280;
+    const TEST_HEIGHT: u32 = 720;
+    const TEST_SECONDS: u64 = 60;
+    const TEST_SPEED: f32 = -1.0;
+
+    let shader_path =
+        Path::new(
+            shader_path
+        );
+
+    if !shader_path.is_file() {
+        return Err(
+            format!(
+                "Reverse-animation test shader does not exist or is not a file: {}",
+                shader_path.display(),
+            )
+        );
+    }
+
+    let loaded =
+        crate::load_shader::load_shader_for_preview(
+            shader_path
+        );
+
+    let (
+        source,
+        shader_name,
+        channel_usage,
+        shader_inputs,
+    ) =
+        match loaded {
+            crate::load_shader::ShaderLoadResult::Ready {
+                source,
+                shader_name,
+                channel_usage,
+                shader_inputs,
+                ..
+            } => {
+                (
+                    source,
+                    shader_name,
+                    channel_usage,
+                    shader_inputs,
+                )
+            }
+
+            crate::load_shader::ShaderLoadResult::Rejected {
+                shader_name,
+                reasons,
+            } => {
+                return Err(
+                    format!(
+                        "Shader '{}' was rejected by the normal preview loader: {}",
+                        shader_name,
+                        reasons.join("; "),
+                    )
+                );
+            }
+
+            crate::load_shader::ShaderLoadResult::Unavailable {
+                shader_name,
+                error,
+            } => {
+                return Err(
+                    format!(
+                        "Shader '{}' is unavailable: {}",
+                        shader_name,
+                        error,
+                    )
+                );
+            }
+        };
+
+    println!("Screenshaver Reverse Animation Test");
+    println!("==================================");
+    println!();
+    println!(
+        "Shader: {}",
+        shader_path.display(),
+    );
+    println!(
+        "Processed shader: {}",
+        shader_name,
+    );
+    println!(
+        "Animation speed: {:.1}x",
+        TEST_SPEED,
+    );
+    println!(
+        "Test duration: {} seconds",
+        TEST_SECONDS,
+    );
+    println!(
+        "Press Esc or close the rendering window to stop immediately."
+    );
+    println!();
+
+    let sdl =
+        sdl2::init()
+            .map_err(
+                |error| {
+                    format!(
+                        "SDL initialization failed: {}",
+                        error
+                    )
+                }
+            )?;
+
+    let video =
+        sdl.video()
+            .map_err(
+                |error| {
+                    format!(
+                        "SDL video initialization failed: {}",
+                        error
+                    )
+                }
+            )?;
+
+    {
+        let gl_attr =
+            video.gl_attr();
+
+        gl_attr.set_context_profile(
+            GLProfile::Core
+        );
+
+        gl_attr.set_context_version(
+            crate::define_constants::GL_MAJOR,
+            crate::define_constants::GL_MINOR,
+        );
+    }
+
+    let window =
+        video
+            .window(
+                "Screenshaver Reverse Animation Test",
+                TEST_WIDTH,
+                TEST_HEIGHT,
+            )
+            .position_centered()
+            .opengl()
+            .build()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to create reverse-animation test window: {}",
+                        error
+                    )
+                }
+            )?;
+
+    let _gl_context =
+        window
+            .gl_create_context()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to create reverse-animation OpenGL context: {}",
+                        error
+                    )
+                }
+            )?;
+
+    gl::load_with(
+        |symbol| {
+            video.gl_get_proc_address(
+                symbol
+            ) as *const _
+        }
+    );
+
+    // Use normal swap synchronization where available.  This is a visual
+    // compatibility test, not a throughput benchmark.
+    let _ =
+        video.gl_set_swap_interval(
+            1
+        );
+
+    let program =
+        crate::compile_shader::build_program(
+            crate::define_constants::VERTEX_SHADER,
+            &source,
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Reverse-animation shader compilation failed: {}",
+                    error
+                )
+            }
+        )?;
+
+    let mut vao =
+        0_u32;
+
+    unsafe {
+        gl::GenVertexArrays(
+            1,
+            &mut vao,
+        );
+
+        gl::BindVertexArray(
+            vao
+        );
+    }
+
+    let time_location =
+        uniform_location(
+            program,
+            b"iTime\0",
+        );
+
+    let delta_location =
+        uniform_location(
+            program,
+            b"iTimeDelta\0",
+        );
+
+    let frame_location =
+        uniform_location(
+            program,
+            b"iFrame\0",
+        );
+
+    let resolution_location =
+        uniform_location(
+            program,
+            b"iResolution\0",
+        );
+
+    let mouse_location =
+        uniform_location(
+            program,
+            b"iMouse\0",
+        );
+
+    let mut texture_manager =
+        crate::manage_textures::TextureManager::new(
+            config.texture_policy.clone()
+        );
+
+    texture_manager.prepare_for_policy_with_path(
+        0,
+        &shader_name,
+        Some(
+            shader_path
+        ),
+        channel_usage,
+    )?;
+
+    texture_manager.configure_program(
+        program
+    );
+
+    let mut event_pump =
+        sdl.event_pump()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to create reverse-animation event pump: {}",
+                        error
+                    )
+                }
+            )?;
+
+    let test_start =
+        Instant::now();
+
+    let mut previous_frame =
+        Instant::now();
+
+    let mut frame =
+        0_i32;
+
+    let mut aborted =
+        false;
+
+    while test_start.elapsed()
+        < Duration::from_secs(
+            TEST_SECONDS
+        )
+    {
+        for event in
+            event_pump.poll_iter()
+        {
+            match event {
+                Event::Quit {
+                    ..
+                }
+                | Event::KeyDown {
+                    keycode:
+                        Some(
+                            Keycode::Escape
+                        ),
+                    ..
+                } => {
+                    aborted =
+                        true;
+
+                    break;
+                }
+
+                _ => {}
+            }
+        }
+
+        if aborted {
+            break;
+        }
+
+        if let Err(error) =
+            texture_manager
+                .update_animations()
+        {
+            eprintln!(
+                "[REVERSE ANIMATION TEST] Animated texture update warning: {}",
+                error,
+            );
+        }
+
+        let elapsed =
+            test_start
+                .elapsed()
+                .as_secs_f32()
+                * TEST_SPEED;
+
+        let delta =
+            previous_frame
+                .elapsed()
+                .as_secs_f32()
+                * TEST_SPEED;
+
+        previous_frame =
+            Instant::now();
+
+        unsafe {
+            gl::Viewport(
+                0,
+                0,
+                TEST_WIDTH as i32,
+                TEST_HEIGHT as i32,
+            );
+
+            gl::ClearColor(
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+            );
+
+            gl::Clear(
+                gl::COLOR_BUFFER_BIT
+            );
+
+            gl::UseProgram(
+                program
+            );
+
+            texture_manager
+                .bind_channels();
+
+            crate::apply_shader_inputs::apply(
+                program,
+                &shader_inputs,
+            );
+
+            gl::BindVertexArray(
+                vao
+            );
+
+            if time_location
+                != -1
+            {
+                gl::Uniform1f(
+                    time_location,
+                    elapsed,
+                );
+            }
+
+            if delta_location
+                != -1
+            {
+                gl::Uniform1f(
+                    delta_location,
+                    delta,
+                );
+            }
+
+            if frame_location
+                != -1
+            {
+                gl::Uniform1i(
+                    frame_location,
+                    frame,
+                );
+            }
+
+            if resolution_location
+                != -1
+            {
+                gl::Uniform3f(
+                    resolution_location,
+                    TEST_WIDTH as f32,
+                    TEST_HEIGHT as f32,
+                    1.0,
+                );
+            }
+
+            if mouse_location
+                != -1
+            {
+                gl::Uniform4f(
+                    mouse_location,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                );
+            }
+
+            gl::DrawArrays(
+                gl::TRIANGLES,
+                0,
+                3,
+            );
+        }
+
+        window.gl_swap_window();
+
+        frame =
+            frame.saturating_add(
+                1
+            );
+    }
+
+    unsafe {
+        gl::UseProgram(
+            0
+        );
+
+        if vao
+            != 0
+        {
+            gl::DeleteVertexArrays(
+                1,
+                &vao,
+            );
+        }
+
+        if program
+            != 0
+        {
+            gl::DeleteProgram(
+                program
+            );
+        }
+    }
+
+    if aborted {
+        println!(
+            "[REVERSE ANIMATION TEST] Stopped by user."
+        );
+    } else {
+        println!(
+            "[REVERSE ANIMATION TEST] Completed {}-second test.",
+            TEST_SECONDS,
+        );
+    }
+
+    Ok(())
+}
+
+
 fn run_for_duration(
     case: BenchmarkCase,
     duration: Duration,

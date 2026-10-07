@@ -659,6 +659,7 @@ fn main() {
         | crate::parse_arguments::Command::TestLocalization
         | crate::parse_arguments::Command::BenchmarkRender { .. }
         | crate::parse_arguments::Command::TestAudioMotion { .. }
+        | crate::parse_arguments::Command::TestReverseAnimation { .. }
         | crate::parse_arguments::Command::ResetIdleTimeout { .. } => {}
     }
 
@@ -1329,6 +1330,44 @@ fn main() {
         }
 
 
+        crate::parse_arguments::Command::TestReverseAnimation {
+            shader_path,
+        } => {
+
+            match crate::test_render_benchmark::run_reverse_animation(
+                &shader_path,
+                &cfg,
+            ) {
+                Ok(()) => {}
+
+                Err(error) => {
+                    eprintln!(
+                        "[REVERSE ANIMATION TEST] FAILED: {}",
+                        error
+                    );
+
+                    crate::logger::error(
+                        &logfile,
+                        &format!(
+                            "[REVERSE_ANIMATION_TEST] {}",
+                            error,
+                        ),
+                    );
+
+                    std::process::exit(
+                        1
+                    );
+                }
+            }
+
+            drop(
+                database_connection
+            );
+
+            return;
+        }
+
+
         crate::parse_arguments::Command::BenchmarkRender {
             shader_path,
         } => {
@@ -1425,6 +1464,7 @@ fn main() {
         | crate::parse_arguments::Command::TestPlaylists
         | crate::parse_arguments::Command::TestLyrics
         | crate::parse_arguments::Command::TestLocalization
+        | crate::parse_arguments::Command::TestReverseAnimation { .. }
         | crate::parse_arguments::Command::AuditTranslation { .. }
         | crate::parse_arguments::Command::TestSchemaReader { .. }
         | crate::parse_arguments::Command::TestSchemaReconstruction { .. }
