@@ -209,7 +209,7 @@ fn run_one(requested_locale: Option<&str>, requested_module: Option<&str>, onlin
     }
 
     println!("[TRANSLATION AUDIT] Locale: {}", locale);
-    println!("[TRANSLATION AUDIT] Auditor revision: v26-presentation-precision");
+    println!("[TRANSLATION AUDIT] Auditor revision: v28-localized-restore-parameter-precision");
     println!("[TRANSLATION AUDIT] Online reference review: {}", if online { "enabled" } else { "disabled" });
     println!("[TRANSLATION AUDIT] Source root: {}", src.display());
     match requested_module {
@@ -1439,6 +1439,14 @@ fn scan_file(
                 continue;
             }
 
+            // Parameter names supplied to parameterized localization calls are substitution
+            // identifiers, not presentation text. Require tuple-key syntax plus a nearby
+            // localization call so ordinary one-word UI labels remain auditable.
+            if localization_parameter_name(&literal, line, &immediate_presentation_context) {
+                *suppressed_count += 1;
+                continue;
+            }
+
             if !looks_human(&literal) && !immediate_presentation {
                 continue;
             }
@@ -1533,6 +1541,30 @@ fn looks_like_machine_identifier(s: &str) -> bool {
 
     identifier_chars_only
         && (t.contains('.') || t.contains('_'))
+}
+
+fn localization_parameter_name(s: &str, line: &str, context: &str) -> bool {
+    let t = s.trim();
+
+    if t.is_empty()
+        || !t.chars().all(|character| {
+            character.is_ascii_lowercase()
+                || character.is_ascii_digit()
+                || character == '_'
+        })
+    {
+        return false;
+    }
+
+    let tuple_prefix = format!("(\"{}\",", t);
+    if !line.contains(&tuple_prefix) {
+        return false;
+    }
+
+    context.contains("runtime_text_with_params(")
+        || context.contains("editor_runtime_text_with_values(")
+        || context.contains("localized_restore_text(")
+        || context.contains("trp(")
 }
 
 fn source_context(lines: &[&str], index: usize, radius: usize) -> String {
@@ -1736,6 +1768,12 @@ fn intentionally_invariant(
         return true;
     }
 
+    // $HOME is the conventional environment-variable name shown as a destination hint,
+    // not English prose. Keep this exemption scoped to the Export Wizard.
+    if is_export_data && t == "$HOME" {
+        return true;
+    }
+
     // compile_shader.rs is shared by the normal Screenshaver executable and the
     // standalone KDE renderer library. This exact message reports an internal programming
     // error if the process-global formatter hook is registered more than once; it is not
@@ -1914,6 +1952,27 @@ fn intentionally_invariant(
     // This value is an egui widget identity, not text rendered to the user.
     if filename == "nested_tabs.rs"
         && t == "nested_config_disabled_grid_{}"
+    {
+        return true;
+    }
+
+    // nested_tabs.rs compares and stores these exact configuration/database values.
+    // They are machine-facing state, not the localized labels presented beside them.
+    // FXAA is the invariant technical acronym for the rendering algorithm.
+    if filename == "nested_tabs.rs"
+        && matches!(
+            t,
+            "bottom:center"
+                | "bottom:right"
+                | "single"
+                | "playlist"
+                | "off"
+                | "fxaa"
+                | "subtle"
+                | "standard"
+                | "high"
+                | "FXAA"
+        )
     {
         return true;
     }

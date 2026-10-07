@@ -880,11 +880,11 @@ pub enum BulkBooleanSelection {
 }
 
 impl BulkBooleanSelection {
-    fn display_name(self) -> &'static str {
+    fn display_name(self) -> String {
         match self {
-            Self::Unchanged => "Unchanged",
-            Self::True => "True",
-            Self::False => "False",
+            Self::Unchanged => crate::manage_localization::runtime_text("post.common.unchanged"),
+            Self::True => crate::manage_localization::runtime_text("qbe.boolean.true"),
+            Self::False => crate::manage_localization::runtime_text("qbe.boolean.false"),
         }
     }
 
@@ -5802,7 +5802,7 @@ fn draw_compact_header(
                                                                         == Some(
                                                                             PolicyTarget::Screensaver
                                                                         ),
-                                                                    "Screensaver",
+                                                                    crate::manage_localization::runtime_text("target.screensaver"),
                                                                 ),
                                                             );
 
@@ -5860,7 +5860,7 @@ fn draw_compact_header(
                                                                         == Some(
                                                                             PolicyTarget::Wallpaper
                                                                         ),
-                                                                    "Wallpaper",
+                                                                    crate::manage_localization::runtime_text("target.wallpaper"),
                                                                 ),
                                                             );
 
@@ -6178,7 +6178,7 @@ fn draw_compact_action_row(
                         can_cancel
                     },
                     egui::Button::new(
-                        "Cancel"
+                        crate::manage_localization::runtime_text("common.cancel")
                     )
                     .min_size(
                         egui::vec2(
@@ -6960,7 +6960,7 @@ fn draw_policies_tab(
                                 row_height,
                                 egui::RichText::new(
                                     header_text(
-                                        "Status",
+                                        &crate::manage_localization::runtime_text("qbe.field.status"),
                                         PolicySortColumn::Status,
                                         *sort_column,
                                         *sort_ascending,
@@ -6978,7 +6978,7 @@ fn draw_policies_tab(
                                 row_height,
                                 egui::RichText::new(
                                     header_text(
-                                        "Texture",
+                                        &crate::manage_localization::runtime_text("qbe.field.texture"),
                                         PolicySortColumn::Texture,
                                         *sort_column,
                                         *sort_ascending,
@@ -7253,9 +7253,9 @@ fn draw_policies_tab(
                                     texture_width,
                                     row_height,
                                     if row.texture {
-                                        "Yes"
+                                        crate::manage_localization::runtime_text("common.yes")
                                     } else {
-                                        "No"
+                                        crate::manage_localization::runtime_text("common.no")
                                     },
                                     egui::Sense::click(),
                                     row_selected,
@@ -7451,7 +7451,7 @@ fn draw_policies_tab(
                                             ui.separator();
 
                                             if ui.button(
-                                                "Delete Policy..."
+                                                crate::manage_localization::runtime_text("editor.delete_policy_menu")
                                             )
                                             .clicked()
                                             {
@@ -7475,7 +7475,7 @@ fn draw_policies_tab(
                                             }
 
                                             if ui.button(
-                                                "Delete Shader..."
+                                                crate::manage_localization::runtime_text("editor.delete_shader_menu")
                                             )
                                             .clicked()
                                             {
@@ -7745,7 +7745,7 @@ fn draw_bulk_create_confirmation_modal(
                             Some(
                                 PolicyTarget::Screensaver
                             ),
-                            "Screensaver",
+                            crate::manage_localization::runtime_text("target.screensaver"),
                         );
 
                         ui.selectable_value(
@@ -7753,7 +7753,7 @@ fn draw_bulk_create_confirmation_modal(
                             Some(
                                 PolicyTarget::Wallpaper
                             ),
-                            "Wallpaper",
+                            crate::manage_localization::runtime_text("target.wallpaper"),
                         );
                     },
                 );
@@ -7787,7 +7787,7 @@ fn draw_bulk_create_confirmation_modal(
 
 
                     if ui.button(
-                        "Cancel"
+                        crate::manage_localization::runtime_text("common.cancel")
                     )
                     .clicked()
                     {
@@ -8051,7 +8051,7 @@ fn draw_bulk_save_confirmation_modal(
 
 
                     if ui.button(
-                        "Cancel"
+                        crate::manage_localization::runtime_text("common.cancel")
                     )
                     .clicked()
                     {
@@ -8189,7 +8189,7 @@ fn draw_exit_confirmation_modal(
 
 
                     if ui.button(
-                        "Cancel"
+                        crate::manage_localization::runtime_text("common.cancel")
                     )
                     .clicked()
                     {
@@ -8207,7 +8207,7 @@ fn draw_exit_confirmation_modal(
 
                 ui.label(
                     egui::RichText::new(
-                        "Select a policy target before saving the modified policy."
+                        crate::manage_localization::runtime_text("editor.select_policy_target_before_saving_modified_policy")
                     )
                     .weak(),
                 );
@@ -8299,7 +8299,7 @@ fn draw_policy_rename_modal(
             ui.horizontal(
                 |ui| {
                     if ui.button(
-                        "Save"
+                        crate::manage_localization::runtime_text("common.save")
                     )
                     .clicked()
                     {
@@ -8307,7 +8307,7 @@ fn draw_policy_rename_modal(
                     }
 
                     if ui.button(
-                        "Cancel"
+                        crate::manage_localization::runtime_text("common.cancel")
                     )
                     .clicked()
                     {
@@ -8393,7 +8393,7 @@ fn draw_policy_clone_modal(
         context,
         |ui| {
             ui.label(
-                "Create a new policy with the same shader, target, and settings."
+                crate::manage_localization::runtime_text("editor.clone_policy_description")
             );
 
             ui.add_space(8.0);
@@ -8429,7 +8429,7 @@ fn draw_policy_clone_modal(
             ui.horizontal(
                 |ui| {
                     if ui.button(
-                        "Save"
+                        crate::manage_localization::runtime_text("common.save")
                     )
                     .clicked()
                     {
@@ -8437,7 +8437,7 @@ fn draw_policy_clone_modal(
                     }
 
                     if ui.button(
-                        "Cancel"
+                        crate::manage_localization::runtime_text("common.cancel")
                     )
                     .clicked()
                     {
@@ -8601,8 +8601,8 @@ fn draw_policy_confirmation_modal(
                 PolicyRowCommand::DeletePolicy => {
                     ui.label(
                         format!(
-                            "Delete this {} policy:",
-                            target_name,
+                            "{}",
+                            editor_runtime_text_with_values("editor.delete_this_policy", &[target_name.to_string()]),
                         )
                     );
 
@@ -8658,7 +8658,7 @@ fn draw_policy_confirmation_modal(
             ui.horizontal(
                 |ui| {
                     if ui.button(
-                        "Yes"
+                        crate::manage_localization::runtime_text("common.yes")
                     )
                     .clicked()
                     {
@@ -8675,7 +8675,7 @@ fn draw_policy_confirmation_modal(
                     }
 
                     if ui.button(
-                        "Cancel"
+                        crate::manage_localization::runtime_text("common.cancel")
                     )
                     .clicked()
                     {
@@ -9023,7 +9023,7 @@ fn draw_playlists_tab(
                     if ui
                         .add_enabled(
                             selected_playlist.is_some(),
-                            egui::Button::new("Delete Playlist"),
+                            egui::Button::new(crate::manage_localization::runtime_text("editor.delete_playlist")),
                         )
                         .clicked()
                     {
@@ -9042,7 +9042,7 @@ fn draw_playlists_tab(
 
                 // Description is a single context-sensitive field for the selected playlist.
                 ui.label(
-                    egui::RichText::new("Description")
+                    egui::RichText::new(crate::manage_localization::runtime_text("editor.description"))
                         .strong(),
                 );
 
@@ -9095,7 +9095,7 @@ fn draw_playlists_tab(
                     |ui| {
                         if selected_id.is_none() {
                             ui.label(
-                                "Select a playlist to view its policies.",
+                                crate::manage_localization::runtime_text("editor.select_playlist_to_view_policies"),
                             );
                             return;
                         }
@@ -9706,7 +9706,7 @@ fn draw_policy_add_to_playlist_modal(
                     if ui.add_enabled(
                         add.playlist_id.is_some(),
                         egui::Button::new(
-                            "Add"
+                            crate::manage_localization::runtime_text("common.add")
                         ),
                     )
                     .clicked()
@@ -9716,7 +9716,7 @@ fn draw_policy_add_to_playlist_modal(
                     }
 
                     if ui.button(
-                        "Cancel"
+                        crate::manage_localization::runtime_text("common.cancel")
                     )
                     .clicked()
                     {
@@ -9829,10 +9829,10 @@ fn draw_playlist_add_policy_modal(
         .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
         .open(&mut keep_open)
         .show(context, |ui| {
-            ui.label("Select an existing shader policy to add to this playlist.");
+            ui.label(crate::manage_localization::runtime_text("editor.select_policy_to_add_to_playlist"));
             ui.add_space(8.0);
 
-            egui::ComboBox::from_label("Policy")
+            egui::ComboBox::from_label(crate::manage_localization::runtime_text("editor.policy_label"))
                 .selected_text(selected_label)
                 .width(360.0)
                 .show_ui(ui, |ui| {
@@ -9852,10 +9852,10 @@ fn draw_playlist_add_policy_modal(
 
             ui.add_space(12.0);
             ui.horizontal(|ui| {
-                if ui.add_enabled(add.policy_id.is_some(), egui::Button::new("Add")).clicked() {
+                if ui.add_enabled(add.policy_id.is_some(), egui::Button::new(crate::manage_localization::runtime_text("common.add"))).clicked() {
                     add_clicked = true;
                 }
-                if ui.button("Cancel").clicked() {
+                if ui.button(crate::manage_localization::runtime_text("common.cancel")).clicked() {
                     cancel_clicked = true;
                 }
             });
@@ -9928,7 +9928,7 @@ fn draw_playlist_create_modal(
         context,
         |ui| {
             ui.label(
-                "Create a playlist for grouping shader policies."
+                crate::manage_localization::runtime_text("editor.create_playlist_description")
             );
 
             ui.add_space(8.0);
@@ -9980,7 +9980,7 @@ fn draw_playlist_create_modal(
             ui.horizontal(
                 |ui| {
                     if ui.button(
-                        "Create"
+                        crate::manage_localization::runtime_text("common.create")
                     )
                     .clicked()
                     {
@@ -9988,7 +9988,7 @@ fn draw_playlist_create_modal(
                     }
 
                     if ui.button(
-                        "Cancel"
+                        crate::manage_localization::runtime_text("common.cancel")
                     )
                     .clicked()
                     {
@@ -10118,11 +10118,11 @@ fn draw_playlist_edit_modal(
 
             ui.horizontal(
                 |ui| {
-                    if ui.button("Save").clicked() {
+                    if ui.button(crate::manage_localization::runtime_text("common.save")).clicked() {
                         save_clicked = true;
                     }
 
-                    if ui.button("Cancel").clicked() {
+                    if ui.button(crate::manage_localization::runtime_text("common.cancel")).clicked() {
                         cancel_clicked = true;
                     }
                 },
@@ -10194,7 +10194,7 @@ fn draw_playlist_delete_modal(
     let mut cancel_clicked = false;
 
     egui::Window::new(
-        "Delete Playlist"
+        crate::manage_localization::runtime_text("editor.delete_playlist")
     )
     .id(
         egui::Id::new(
@@ -10214,7 +10214,7 @@ fn draw_playlist_delete_modal(
         context,
         |ui| {
             ui.label(
-                "Delete this playlist?"
+                crate::manage_localization::runtime_text("editor.delete_this_playlist")
             );
 
             ui.add_space(6.0);
@@ -10229,11 +10229,11 @@ fn draw_playlist_delete_modal(
 
             ui.horizontal(
                 |ui| {
-                    if ui.button("Delete").clicked() {
+                    if ui.button(crate::manage_localization::runtime_text("common.delete")).clicked() {
                         delete_clicked = true;
                     }
 
-                    if ui.button("Cancel").clicked() {
+                    if ui.button(crate::manage_localization::runtime_text("common.cancel")).clicked() {
                         cancel_clicked = true;
                     }
                 },
@@ -11410,7 +11410,7 @@ fn draw_texture_panel(
                         ),
                         |ui| {
                             ui.label(
-                                "Primitives"
+                                crate::manage_localization::runtime_text("editor.primitives")
                             );
                         },
                     );
@@ -12651,17 +12651,17 @@ fn draw_bulk_boolean_selector(
                 ui.selectable_value(
                     selection,
                     BulkBooleanSelection::Unchanged,
-                    "Unchanged",
+                    crate::manage_localization::runtime_text("post.common.unchanged"),
                 );
                 ui.selectable_value(
                     selection,
                     BulkBooleanSelection::True,
-                    "True",
+                    crate::manage_localization::runtime_text("qbe.boolean.true"),
                 );
                 ui.selectable_value(
                     selection,
                     BulkBooleanSelection::False,
-                    "False",
+                    crate::manage_localization::runtime_text("qbe.boolean.false"),
                 );
             },
         )
@@ -12725,7 +12725,7 @@ fn draw_policy_target_panel(
                             == Some(
                                 PolicyTarget::Screensaver
                             ),
-                        "Screensaver",
+                        crate::manage_localization::runtime_text("target.screensaver"),
                     ),
                 );
 
@@ -12769,7 +12769,7 @@ fn draw_policy_target_panel(
                             == Some(
                                 PolicyTarget::Wallpaper
                             ),
-                        "Wallpaper",
+                        crate::manage_localization::runtime_text("target.wallpaper"),
                     ),
                 );
 
@@ -12892,7 +12892,7 @@ fn draw_policy_actions_panel(
                 ui.add_enabled(
                     can_cancel,
                     egui::Button::new(
-                        "Cancel"
+                        crate::manage_localization::runtime_text("common.cancel")
                     )
                     .min_size(
                         egui::vec2(

@@ -1055,7 +1055,7 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
 
     FactoryTranslationKey {
         key: "post.audio.effect_help",
-        english_text: "Selects the audio-driven post-processing effect: Off, Audio Bloom, Spectral Bloom, or experimental Loudness Bloom.",
+        english_text: "Selects the audio-driven post-processing effect: Off, Audio Bloom, Spectral Bloom, or Loudness Bloom.",
         translator_context: "Help for audiovisual effect selector.",
     },
 
@@ -1152,19 +1152,19 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
     FactoryTranslationKey {
         key: "post.motion.woofer",
         english_text: "Woofer from Hell",
-        translator_context: "Audio Motion effect name; proper feature name remains unchanged.",
+        translator_context: "Audio Motion effect name; localize this user-visible feature name.",
     },
 
     FactoryTranslationKey {
         key: "post.motion.fft_mirror",
         english_text: "FFT Mirror Warp",
-        translator_context: "Audio Motion effect name; proper feature name remains unchanged.",
+        translator_context: "Audio Motion effect name; localize this user-visible feature name.",
     },
 
     FactoryTranslationKey {
         key: "post.motion.polar_propeller",
         english_text: "Polar Propeller",
-        translator_context: "Audio Motion effect name; proper feature name remains unchanged.",
+        translator_context: "Audio Motion effect name; localize this user-visible feature name.",
     },
 
     FactoryTranslationKey {
@@ -1250,8 +1250,8 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
     },
     FactoryTranslationKey {
         key: "export.focus_help",
-        english_text: "Choose whether Policies, Shaders, or Playlists will be the selectable focus that drives this export.",
-        translator_context: "Help text explaining export focus.",
+        english_text: "Select the type of Screenshaver data that will drive this export. Policies lets you choose policies and automatically includes their required shaders and related playlists. Shaders lets you choose shaders and automatically includes their associated policies and playlists. Playlists lets you choose playlists and automatically includes their member policies and required shaders. Automatically included items are read-only.",
+        translator_context: "Export wizard help text explaining how the selected export focus determines automatically included policies, shaders, and playlists.",
     },
     FactoryTranslationKey {
         key: "export.destination_help",
@@ -1348,6 +1348,12 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
         english_text: "Playlists:",
         translator_context: "Export review/result label.",
     },
+    FactoryTranslationKey {
+        key: "export.format_name",
+        english_text: "Screenshaver Export Format 1",
+        translator_context: "User-visible name of Screenshaver portable export format; Screenshaver remains unchanged.",
+    },
+
     FactoryTranslationKey {
         key: "export.format",
         english_text: "Export Format",
@@ -1503,6 +1509,144 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
         english_text: "Inspection is read-only. No changes have been made to Screenshaver.",
         translator_context: "Safety note.",
     },
+    FactoryTranslationKey {
+        key: "import.browse",
+        english_text: "Browse...",
+        translator_context: "Import wizard archive browser button.",
+    },
+
+    FactoryTranslationKey {
+        key: "import.archive_inspection_status",
+        english_text: "Archive Inspection: {status}",
+        translator_context: "Import inspection heading with localized status.",
+    },
+
+    FactoryTranslationKey {
+        key: "import.passed",
+        english_text: "PASSED",
+        translator_context: "Import archive inspection overall success status.",
+    },
+
+    FactoryTranslationKey {
+        key: "import.failed_status",
+        english_text: "FAILED",
+        translator_context: "Import archive inspection overall failure status.",
+    },
+
+    FactoryTranslationKey {
+        key: "import.export_focus_colon",
+        english_text: "Export Focus:",
+        translator_context: "Import inspection summary label.",
+    },
+
+    FactoryTranslationKey {
+        key: "import.stage.select_contents",
+        english_text: "Select Import Contents",
+        translator_context: "Import wizard stage label.",
+    },
+
+    FactoryTranslationKey {
+        key: "import.package_objects_selected",
+        english_text: "{count} package objects selected automatically",
+        translator_context: "Import package selection summary.",
+    },
+
+    FactoryTranslationKey {
+        key: "import.policies",
+        english_text: "Policies",
+        translator_context: "Import content category label.",
+    },
+
+    FactoryTranslationKey {
+        key: "import.policy_requires_shader",
+        english_text: "[{target}] — requires shader package ID {id}",
+        translator_context: "Import policy dependency detail.",
+    },
+
+    FactoryTranslationKey {
+        key: "import.shaders",
+        english_text: "Shaders",
+        translator_context: "Import content category label.",
+    },
+
+    FactoryTranslationKey {
+        key: "import.package_id",
+        english_text: "package ID {id}",
+        translator_context: "Import package object identifier label.",
+    },
+
+    FactoryTranslationKey {
+        key: "import.member_count",
+        english_text: "{count} members",
+        translator_context: "Import playlist member count.",
+    },
+
+    FactoryTranslationKey {
+        key: "import.shaders_colon",
+        english_text: "Shaders:",
+        translator_context: "Import review summary label.",
+    },
+
+    FactoryTranslationKey {
+        key: "import.policies_colon",
+        english_text: "Policies:",
+        translator_context: "Import review summary label.",
+    },
+
+    FactoryTranslationKey {
+        key: "import.playlists_colon",
+        english_text: "Playlists:",
+        translator_context: "Import review summary label.",
+    },
+
+    FactoryTranslationKey {
+        key: "import.back",
+        english_text: "< Back",
+        translator_context: "Import wizard Back button.",
+    },
+
+    FactoryTranslationKey {
+        key: "import.next",
+        english_text: "Next >",
+        translator_context: "Import wizard Next button.",
+    },
+
+    FactoryTranslationKey {
+        key: "import.byte_count",
+        english_text: "{count} bytes",
+        translator_context: "Import inspection byte count.",
+    },
+
+    FactoryTranslationKey {
+        key: "import.zip_summary",
+        english_text: "{entries} entries; {bytes} expanded bytes",
+        translator_context: "Import ZIP inspection size summary.",
+    },
+
+    FactoryTranslationKey {
+        key: "import.object_type.shader",
+        english_text: "Shader",
+        translator_context: "User-visible Import object type.",
+    },
+
+    FactoryTranslationKey {
+        key: "import.object_type.policy",
+        english_text: "Policy",
+        translator_context: "User-visible Import object type.",
+    },
+
+    FactoryTranslationKey {
+        key: "import.object_type.playlist",
+        english_text: "Playlist",
+        translator_context: "User-visible Import object type.",
+    },
+
+    FactoryTranslationKey {
+        key: "import.object_type.receiving_installation",
+        english_text: "Receiving installation",
+        translator_context: "User-visible Import conflict object type.",
+    },
+
     FactoryTranslationKey {
         key: "import.conflict.new",
         english_text: "NEW",
@@ -3849,6 +3993,11 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
         translator_context: "User-facing shader-stage name used in shader compilation errors.",
     },
     FactoryTranslationKey {
+        key: "common.unknown",
+        english_text: "Unknown",
+        translator_context: "Generic user-facing fallback when a displayed value is not known.",
+    },
+    FactoryTranslationKey {
         key: "compile_shader.kind.unknown",
         english_text: "Unknown",
         translator_context: "User-facing fallback shader-stage name used in shader compilation errors.",
@@ -5440,4 +5589,100 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
     },
 
 
+
+    FactoryTranslationKey {
+        key: "common.save",
+        english_text: "Save",
+        translator_context: "Generic save button.",
+    },
+    FactoryTranslationKey {
+        key: "common.yes",
+        english_text: "Yes",
+        translator_context: "Generic affirmative confirmation button.",
+    },
+    FactoryTranslationKey {
+        key: "common.add",
+        english_text: "Add",
+        translator_context: "Generic add button.",
+    },
+    FactoryTranslationKey {
+        key: "common.create",
+        english_text: "Create",
+        translator_context: "Generic create button.",
+    },
+    FactoryTranslationKey {
+        key: "common.delete",
+        english_text: "Delete",
+        translator_context: "Generic delete button.",
+    },
+    FactoryTranslationKey {
+        key: "editor.delete_policy_menu",
+        english_text: "Delete Policy...",
+        translator_context: "Policy List context-menu command that opens policy deletion confirmation.",
+    },
+    FactoryTranslationKey {
+        key: "editor.delete_shader_menu",
+        english_text: "Delete Shader...",
+        translator_context: "Policy List context-menu command that opens shader deletion confirmation.",
+    },
+    FactoryTranslationKey {
+        key: "editor.select_policy_target_before_saving_modified_policy",
+        english_text: "Select a policy target before saving the modified policy.",
+        translator_context: "Validation guidance in the policy rename/edit workflow.",
+    },
+    FactoryTranslationKey {
+        key: "editor.clone_policy_description",
+        english_text: "Create a new policy with the same shader, target, and settings.",
+        translator_context: "Description in the Clone Policy dialog.",
+    },
+    FactoryTranslationKey {
+        key: "editor.delete_this_policy",
+        english_text: "Delete this {value1} policy:",
+        translator_context: "Policy deletion confirmation prompt. {value1} is the localized policy target and must remain unchanged.",
+    },
+    FactoryTranslationKey {
+        key: "editor.delete_playlist",
+        english_text: "Delete Playlist",
+        translator_context: "Playlist deletion command and dialog title.",
+    },
+    FactoryTranslationKey {
+        key: "editor.description",
+        english_text: "Description",
+        translator_context: "Playlist details field heading.",
+    },
+    FactoryTranslationKey {
+        key: "editor.select_playlist_to_view_policies",
+        english_text: "Select a playlist to view its policies.",
+        translator_context: "Playlists tab instruction shown when no playlist is selected.",
+    },
+    FactoryTranslationKey {
+        key: "editor.select_policy_to_add_to_playlist",
+        english_text: "Select an existing shader policy to add to this playlist.",
+        translator_context: "Add Policy to Playlist dialog instruction.",
+    },
+    FactoryTranslationKey {
+        key: "editor.policy_label",
+        english_text: "Policy",
+        translator_context: "Label for the policy selector in the Add Policy to Playlist dialog.",
+    },
+    FactoryTranslationKey {
+        key: "editor.create_playlist_description",
+        english_text: "Create a playlist for grouping shader policies.",
+        translator_context: "New Playlist dialog description.",
+    },
+    FactoryTranslationKey {
+        key: "editor.delete_this_playlist",
+        english_text: "Delete this playlist?",
+        translator_context: "Playlist deletion confirmation question.",
+    },
+    FactoryTranslationKey {
+        key: "editor.primitives",
+        english_text: "Primitives",
+        translator_context: "Texture primitive-count control label in the shader policy editor.",
+    },
+    FactoryTranslationKey {
+        key: "common.no",
+        english_text: "No",
+        translator_context: "Generic negative value or response shown in the user interface.",
+    },
 ];

@@ -8,44 +8,16 @@
 // Export Format 1 as a ZIP archive after final confirmation.
 
 
-fn localized_export_values(
-    key: &str,
-    values: &[String],
-) -> String {
-    let parameter_names = [
-        "value1", "value2", "value3", "value4",
-    ];
-
-    let parameters = values
-        .iter()
-        .enumerate()
-        .filter_map(
-            |(index, value)| {
-                parameter_names
-                    .get(index)
-                    .map(|name| (*name, value.as_str()))
-            }
-        )
-        .collect::<Vec<_>>();
-
-    crate::manage_localization::runtime_text_with_params(
-        key,
-        &parameters,
-    )
+fn tr(key: &str) -> String {
+    crate::manage_localization::runtime_text(key)
 }
 
-macro_rules! localized_export {
-    ($key:expr) => {
-        crate::manage_localization::runtime_text($key)
-    };
-    ($key:expr, $($value:expr),+ $(,)?) => {{
-        localized_export_values(
-            $key,
-            &[
-                $($value.to_string()),+
-            ],
-        )
-    }};
+fn trp(key: &str, params: &[(&str, String)]) -> String {
+    let borrowed = params
+        .iter()
+        .map(|(name, value)| (*name, value.as_str()))
+        .collect::<Vec<_>>();
+    crate::manage_localization::runtime_text_with_params(key, &borrowed)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -79,25 +51,19 @@ impl ExportSelectionRoot {
         }
     }
 
-    fn select_label(self) -> String {
+    fn ui_label(self) -> String {
         match self {
-            ExportSelectionRoot::Policies =>
-                crate::manage_localization::runtime_text("export.select_policies"),
-            ExportSelectionRoot::Shaders =>
-                crate::manage_localization::runtime_text("export.select_shaders"),
-            ExportSelectionRoot::Playlists =>
-                crate::manage_localization::runtime_text("export.select_playlists"),
+            ExportSelectionRoot::Policies => tr("export.policies"),
+            ExportSelectionRoot::Shaders => tr("export.shaders"),
+            ExportSelectionRoot::Playlists => tr("export.playlists"),
         }
     }
 
-    fn display_label(self) -> String {
+    fn select_label(self) -> String {
         match self {
-            ExportSelectionRoot::Policies =>
-                crate::manage_localization::runtime_text("export.policies"),
-            ExportSelectionRoot::Shaders =>
-                crate::manage_localization::runtime_text("export.shaders"),
-            ExportSelectionRoot::Playlists =>
-                crate::manage_localization::runtime_text("export.playlists"),
+            ExportSelectionRoot::Policies => tr("export.select_policies"),
+            ExportSelectionRoot::Shaders => tr("export.select_shaders"),
+            ExportSelectionRoot::Playlists => tr("export.select_playlists"),
         }
     }
 
@@ -132,12 +98,9 @@ enum SelectDataTab {
 impl SelectDataTab {
     fn label(self) -> String {
         match self {
-            SelectDataTab::Policies =>
-                crate::manage_localization::runtime_text("export.policies"),
-            SelectDataTab::Shaders =>
-                crate::manage_localization::runtime_text("export.shaders"),
-            SelectDataTab::Playlists =>
-                crate::manage_localization::runtime_text("export.playlists"),
+            SelectDataTab::Policies => tr("export.policies"),
+            SelectDataTab::Shaders => tr("export.shaders"),
+            SelectDataTab::Playlists => tr("export.playlists"),
         }
     }
 }
@@ -145,16 +108,11 @@ impl SelectDataTab {
 impl ExportStage {
     fn label(self) -> String {
         match self {
-            ExportStage::SelectFocus =>
-                crate::manage_localization::runtime_text("export.stage.select_focus"),
-            ExportStage::SelectData =>
-                crate::manage_localization::runtime_text("export.stage.select_data"),
-            ExportStage::Destination =>
-                crate::manage_localization::runtime_text("export.destination"),
-            ExportStage::Review =>
-                crate::manage_localization::runtime_text("export.review_confirm"),
-            ExportStage::Results =>
-                crate::manage_localization::runtime_text("export.results"),
+            ExportStage::SelectFocus => tr("export.stage.select_focus"),
+            ExportStage::SelectData => tr("export.stage.select_data"),
+            ExportStage::Destination => tr("export.destination"),
+            ExportStage::Review => tr("export.review_confirm"),
+            ExportStage::Results => tr("export.results"),
         }
     }
 }
@@ -656,9 +614,7 @@ fn load_export_playlist_choices(
         )
         .map_err(
             |error| {
-                localized_export!("export.error.unable_to_load_playlists_for_export_selection",
-                    error,
-                )
+                trp("export.error.unable_to_load_playlists_for_export_selection", &[("value1", (error).to_string())])
             }
         )
 }
@@ -717,21 +673,21 @@ fn export_schema() -> Result<ExportSchema, String> {
         )
         .map_err(
             |error| {
-                localized_export!("export.error.unable_to_load_schema",
-                    error,
-                )
+                trp("export.error.unable_to_load_schema", &[("value1", (error).to_string())])
             }
         )?;
 
     if schema.format.trim().is_empty() {
         return Err(
-            localized_export!("export.error.schema_has_an_empty_format_identifier")
+            "Screenshaver Export Schema V1 has an empty format identifier."
+                .to_string()
         );
     }
 
     if schema.format_version == 0 {
         return Err(
-            localized_export!("export.error.schema_has_an_invalid_format_version")
+            "Screenshaver Export Schema V1 has an invalid format version."
+                .to_string()
         );
     }
 
@@ -740,7 +696,8 @@ fn export_schema() -> Result<ExportSchema, String> {
             != "screenshaver-package-v1"
     {
         return Err(
-            localized_export!("export.error.schema_requests_an_unsupported_integrity_algorithm_or_canonicalization")
+            "Screenshaver Export Schema V1 requests an unsupported integrity algorithm or canonicalization."
+                .to_string()
         );
     }
 
@@ -751,7 +708,8 @@ fn export_schema() -> Result<ExportSchema, String> {
         .any(|name| name == &schema.archive.manifest)
     {
         return Err(
-            localized_export!("export.error.schema_must_exclude_its_manifest_from_the_package_hash")
+            "Screenshaver Export Schema V1 must exclude its manifest from the package hash."
+                .to_string()
         );
     }
 
@@ -765,9 +723,7 @@ fn export_schema() -> Result<ExportSchema, String> {
     for file in expected_metadata {
         if !schema.archive.metadata_files.iter().any(|name| name == file) {
             return Err(
-                localized_export!("export.error.schema_dataset_is_not_declared_as_archive_metadata",
-                    file,
-                )
+                trp("export.error.schema_dataset_is_not_declared_as_archive_metadata", &[("value1", (file).to_string())])
             );
         }
     }
@@ -808,6 +764,8 @@ struct ExportManifest {
     database_snapshot: Option<String>,
     files: ExportManifestFiles,
 }
+
+const DATABASE_SCHEMA_VERSION: u32 = 1;
 
 fn export_created_timestamp() -> String {
     std::process::Command::new("date")
@@ -980,19 +938,14 @@ fn build_policies_tsv(
             .get(&policy.policy_id)
             .copied()
             .ok_or_else(|| {
-                localized_export!("export.error.missing_package_local_export_id_for_policy",
-                    policy.policy_name,
-                )
+                trp("export.error.missing_package_local_export_id_for_policy", &[("value1", (policy.policy_name).to_string())])
             })?;
 
         let shader_export_id = shader_export_ids
             .get(&policy.shader_id)
             .copied()
             .ok_or_else(|| {
-                localized_export!("export.error.missing_package_local_export_id_for_shader_referenced_by_policy",
-                    policy.shader_filename,
-                    policy.policy_name,
-                )
+                trp("export.error.missing_package_local_export_id_for_shader_referenced_by_policy", &[("value1", (policy.shader_filename).to_string()), ("value2", (policy.policy_name).to_string())])
             })?;
 
         let fields = vec![
@@ -1045,9 +998,7 @@ fn build_playlists_tsv(
             .get(&playlist.playlist_id)
             .copied()
             .ok_or_else(|| {
-                localized_export!("export.error.missing_package_local_export_id_for_playlist",
-                    playlist.playlist_name,
-                )
+                trp("export.error.missing_package_local_export_id_for_playlist", &[("value1", (playlist.playlist_name).to_string())])
             })?;
 
         output.push_str(
@@ -1077,19 +1028,14 @@ fn build_playlist_members_tsv(
             .get(&playlist.playlist_id)
             .copied()
             .ok_or_else(|| {
-                localized_export!("export.error.missing_package_local_export_id_for_playlist",
-                    playlist.playlist_name,
-                )
+                trp("export.error.missing_package_local_export_id_for_playlist", &[("value1", (playlist.playlist_name).to_string())])
             })?;
 
         let members =
             crate::manage_playlists::playlist_members(playlist.playlist_id)
                 .map_err(
                     |error| {
-                        localized_export!("export.error.unable_to_load_members_for_playlist_while_exporting",
-                            playlist.playlist_id,
-                            error,
-                        )
+                        trp("export.error.unable_to_load_members_for_playlist_while_exporting", &[("value1", (playlist.playlist_id).to_string()), ("value2", (error).to_string())])
                     }
                 )?;
 
@@ -1101,10 +1047,7 @@ fn build_playlist_members_tsv(
                     .get(&member.policy_id)
                     .copied()
                     .ok_or_else(|| {
-                        localized_export!("export.error.missing_package_local_export_id_for_policy_in_playlist",
-                            member.policy_id,
-                            playlist.playlist_name,
-                        )
+                        trp("export.error.missing_package_local_export_id_for_policy_in_playlist", &[("value1", (member.policy_id).to_string()), ("value2", (playlist.playlist_name).to_string())])
                     })?;
 
                 output.push_str(
@@ -1164,11 +1107,7 @@ fn build_shaders_tsv(
             std::fs::read(&path)
                 .map_err(
                     |error| {
-                        localized_export!("export.error.unable_to_read_shader_at",
-                            filename,
-                            path.display(),
-                            error,
-                        )
+                        trp("export.error.unable_to_read_shader_at", &[("value1", (filename).to_string()), ("value2", (path.display()).to_string()), ("value3", (error).to_string())])
                     }
                 )?;
 
@@ -1183,9 +1122,7 @@ fn build_shaders_tsv(
             .get(shader_id)
             .copied()
             .ok_or_else(|| {
-                localized_export!("export.error.missing_package_local_export_id_for_shader",
-                    filename,
-                )
+                trp("export.error.missing_package_local_export_id_for_shader", &[("value1", (filename).to_string())])
             })?;
 
         let archive_name =
@@ -1223,20 +1160,14 @@ fn write_zip_text(
     zip.start_file(name, options)
         .map_err(
             |error| {
-                localized_export!("export.error.unable_to_create_in_export_archive",
-                    name,
-                    error,
-                )
+                trp("export.error.unable_to_create_in_export_archive", &[("value1", (name).to_string()), ("value2", (error).to_string())])
             }
         )?;
 
     zip.write_all(contents.as_bytes())
         .map_err(
             |error| {
-                localized_export!("export.error.unable_to_write_to_export_archive",
-                    name,
-                    error,
-                )
+                trp("export.error.unable_to_write_to_export_archive", &[("value1", (name).to_string()), ("value2", (error).to_string())])
             }
         )
 }
@@ -1252,20 +1183,18 @@ fn create_export_archive(
     let final_path =
         state.resolved_export_path()
             .ok_or_else(
-                || localized_export!("export.error.the_export_destination_is_not_valid")
+                || "The export destination is not valid.".to_string()
             )?;
 
     let destination_folder =
         final_path.parent()
             .ok_or_else(
-                || localized_export!("export.error.the_export_destination_folder_is_not_valid")
+                || "The export destination folder is not valid.".to_string()
             )?;
 
     if !destination_folder.is_dir() {
         return Err(
-            localized_export!("export.error.export_destination_folder_does_not_exist",
-                destination_folder.display(),
-            )
+            trp("export.error.export_destination_folder_does_not_exist", &[("value1", (destination_folder.display()).to_string())])
         );
     }
 
@@ -1305,7 +1234,8 @@ fn create_export_archive(
         != included_policy_ids.len()
     {
         return Err(
-            localized_export!("export.error.the_effective_policy_snapshot_is_incomplete_return_to_selection_and_try_again")
+            "The effective policy snapshot is incomplete. Return to selection and try again."
+                .to_string()
         );
     }
 
@@ -1355,10 +1285,7 @@ fn create_export_archive(
                         .map(|bytes| (archive_name.clone(), bytes))
                         .map_err(
                             |error| {
-                                localized_export!("export.error.unable_to_read_shader_while_calculating_package_integrity",
-                                    source_path.display(),
-                                    error,
-                                )
+                                trp("export.error.unable_to_read_shader_while_calculating_package_integrity", &[("value1", (source_path.display()).to_string()), ("value2", (error).to_string())])
                             }
                         )
                 }
@@ -1453,7 +1380,7 @@ fn create_export_archive(
             screenshaver_version:
                 env!("CARGO_PKG_VERSION"),
             database_schema_version:
-                crate::migrate_database::CURRENT_SCHEMA_VERSION as u32,
+                DATABASE_SCHEMA_VERSION,
             created:
                 export_created_timestamp(),
             export_focus:
@@ -1475,9 +1402,7 @@ fn create_export_archive(
         serde_json::to_string_pretty(&manifest)
             .map_err(
                 |error| {
-                    localized_export!("export.error.unable_to_serialize_export_manifest",
-                        error,
-                    )
+                    trp("export.error.unable_to_serialize_export_manifest", &[("value1", (error).to_string())])
                 }
             )?;
 
@@ -1488,10 +1413,7 @@ fn create_export_archive(
         std::fs::remove_file(&temporary_path)
             .map_err(
                 |error| {
-                    localized_export!("export.error.unable_to_remove_stale_temporary_export",
-                        temporary_path.display(),
-                        error,
-                    )
+                    trp("export.error.unable_to_remove_stale_temporary_export", &[("value1", (temporary_path.display()).to_string()), ("value2", (error).to_string())])
                 }
             )?;
     }
@@ -1500,10 +1422,7 @@ fn create_export_archive(
         std::fs::File::create(&temporary_path)
             .map_err(
                 |error| {
-                    localized_export!("export.error.unable_to_create_temporary_export_archive",
-                        temporary_path.display(),
-                        error,
-                    )
+                    trp("export.error.unable_to_create_temporary_export_archive", &[("value1", (temporary_path.display()).to_string()), ("value2", (error).to_string())])
                 }
             )?;
 
@@ -1549,10 +1468,10 @@ fn create_export_archive(
                     DATABASE_ARCHIVE_PATH,
                     options,
                 )
-                .map_err(|error| localized_export!("export.error.unable_to_add_database_snapshot_to_backup_archive", error))?;
+                .map_err(|error| trp("export.error.unable_to_add_database_snapshot_to_backup_archive", &[("value1", (error).to_string())]))?;
 
                 zip.write_all(bytes)
-                    .map_err(|error| localized_export!("export.error.unable_to_write_database_snapshot_to_backup_archive", error))?;
+                    .map_err(|error| trp("export.error.unable_to_write_database_snapshot_to_backup_archive", &[("value1", (error).to_string())]))?;
             }
 
             for (archive_name, bytes) in &managed_shader_payloads {
@@ -1560,10 +1479,10 @@ fn create_export_archive(
                     archive_name,
                     options,
                 )
-                .map_err(|error| localized_export!("export.error.unable_to_add_managed_shader_to_backup_archive", archive_name, error))?;
+                .map_err(|error| trp("export.error.unable_to_add_managed_shader_to_backup_archive", &[("value1", (archive_name).to_string()), ("value2", (error).to_string())]))?;
 
                 zip.write_all(bytes)
-                    .map_err(|error| localized_export!("export.error.unable_to_write_managed_shader_to_backup_archive", archive_name, error))?;
+                    .map_err(|error| trp("export.error.unable_to_write_managed_shader_to_backup_archive", &[("value1", (archive_name).to_string()), ("value2", (error).to_string())]))?;
             }
 
             let mut buffer = [0_u8; 64 * 1024];
@@ -1577,10 +1496,7 @@ fn create_export_archive(
                 )
                 .map_err(
                     |error| {
-                        localized_export!("export.error.unable_to_add_shader_to_export_archive",
-                            source_path.display(),
-                            error,
-                        )
+                        trp("export.error.unable_to_add_shader_to_export_archive", &[("value1", (source_path.display()).to_string()), ("value2", (error).to_string())])
                     }
                 )?;
 
@@ -1588,10 +1504,7 @@ fn create_export_archive(
                     std::fs::File::open(source_path)
                         .map_err(
                             |error| {
-                                localized_export!("export.error.unable_to_open_shader",
-                                    source_path.display(),
-                                    error,
-                                )
+                                trp("export.error.unable_to_open_shader", &[("value1", (source_path.display()).to_string()), ("value2", (error).to_string())])
                             }
                         )?;
 
@@ -1600,10 +1513,7 @@ fn create_export_archive(
                         source.read(&mut buffer)
                             .map_err(
                                 |error| {
-                                    localized_export!("export.error.unable_to_read_shader",
-                                        source_path.display(),
-                                        error,
-                                    )
+                                    trp("export.error.unable_to_read_shader", &[("value1", (source_path.display()).to_string()), ("value2", (error).to_string())])
                                 }
                             )?;
 
@@ -1614,10 +1524,7 @@ fn create_export_archive(
                     zip.write_all(&buffer[..read])
                         .map_err(
                             |error| {
-                                localized_export!("export.error.unable_to_write_shader_to_export_archive",
-                                    source_path.display(),
-                                    error,
-                                )
+                                trp("export.error.unable_to_write_shader_to_export_archive", &[("value1", (source_path.display()).to_string()), ("value2", (error).to_string())])
                             }
                         )?;
                 }
@@ -1638,9 +1545,7 @@ fn create_export_archive(
             |error| {
                 let _ =
                     std::fs::remove_file(&temporary_path);
-                localized_export!("export.error.unable_to_finalize_export_archive",
-                    error,
-                )
+                trp("export.error.unable_to_finalize_export_archive", &[("value1", (error).to_string())])
             }
         )?;
 
@@ -1652,10 +1557,7 @@ fn create_export_archive(
         |error| {
             let _ =
                 std::fs::remove_file(&temporary_path);
-            localized_export!("export.error.unable_to_move_completed_export_archive_to",
-                final_path.display(),
-                error,
-            )
+            trp("export.error.unable_to_move_completed_export_archive_to", &[("value1", (final_path.display()).to_string()), ("value2", (error).to_string())])
         }
     )?;
 
@@ -1682,12 +1584,12 @@ fn load_all_managed_shader_payloads(
     }
 
     let entries = std::fs::read_dir(&shader_directory)
-        .map_err(|error| localized_export!("export.error.unable_to_enumerate_managed_shader_directory", shader_directory.display(), error))?;
+        .map_err(|error| trp("export.error.unable_to_enumerate_managed_shader_directory", &[("value1", (shader_directory.display()).to_string()), ("value2", (error).to_string())]))?;
 
     for entry in entries {
-        let entry = entry.map_err(|error| localized_export!("export.error.unable_to_read_managed_shader_directory_entry", error))?;
+        let entry = entry.map_err(|error| trp("export.error.unable_to_read_managed_shader_directory_entry", &[("value1", (error).to_string())]))?;
         let file_type = entry.file_type()
-            .map_err(|error| localized_export!("export.error.unable_to_inspect_managed_shader_entry", entry.path().display(), error))?;
+            .map_err(|error| trp("export.error.unable_to_inspect_managed_shader_entry", &[("value1", (entry.path().display()).to_string()), ("value2", (error).to_string())]))?;
 
         if !file_type.is_file() {
             continue;
@@ -1696,7 +1598,7 @@ fn load_all_managed_shader_payloads(
         let filename = entry.file_name().to_string_lossy().to_string();
         let archive_name = format!("backup/managed-shaders/{}", filename);
         let bytes = std::fs::read(entry.path())
-            .map_err(|error| localized_export!("export.error.unable_to_read_managed_shader_for_full_backup", entry.path().display(), error))?;
+            .map_err(|error| trp("export.error.unable_to_read_managed_shader_for_full_backup", &[("value1", (entry.path().display()).to_string()), ("value2", (error).to_string())]))?;
 
         payloads.push((archive_name, bytes));
     }
@@ -1714,11 +1616,11 @@ fn create_database_snapshot_bytes(
 
     if temporary_path.exists() {
         std::fs::remove_file(&temporary_path)
-            .map_err(|error| localized_export!("export.error.unable_to_remove_stale_database_snapshot", temporary_path.display(), error))?;
+            .map_err(|error| trp("export.error.unable_to_remove_stale_database_snapshot", &[("value1", (temporary_path.display()).to_string()), ("value2", (error).to_string())]))?;
     }
 
     let connection = crate::open_database::open()
-        .map_err(|error| localized_export!("export.error.unable_to_open_database_for_backup_snapshot", error))?;
+        .map_err(|error| trp("export.error.unable_to_open_database_for_backup_snapshot", &[("value1", (error).to_string())]))?;
 
     let quoted = temporary_path.to_string_lossy().replace('\'', "''");
     let result = connection.execute_batch(
@@ -1727,31 +1629,31 @@ fn create_database_snapshot_bytes(
 
     if let Err(error) = result {
         let _ = std::fs::remove_file(&temporary_path);
-        return Err(localized_export!("export.error.unable_to_create_consistent_database_snapshot", error));
+        return Err(trp("export.error.unable_to_create_consistent_database_snapshot", &[("value1", (error).to_string())]));
     }
 
     let verify = rusqlite::Connection::open_with_flags(
         &temporary_path,
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
     )
-    .map_err(|error| localized_export!("export.error.unable_to_open_database_snapshot_for_verification", error))?;
+    .map_err(|error| trp("export.error.unable_to_open_database_snapshot_for_verification", &[("value1", (error).to_string())]))?;
 
     let integrity: String = verify.query_row(
         "PRAGMA integrity_check",
         [],
         |row| row.get(0),
     )
-    .map_err(|error| localized_export!("export.error.unable_to_verify_database_snapshot", error))?;
+    .map_err(|error| trp("export.error.unable_to_verify_database_snapshot", &[("value1", (error).to_string())]))?;
 
     if integrity != "ok" {
         let _ = std::fs::remove_file(&temporary_path);
-        return Err(localized_export!("export.error.database_snapshot_failed_integrity_verification", integrity));
+        return Err(trp("export.error.database_snapshot_failed_integrity_verification", &[("value1", (integrity).to_string())]));
     }
 
     drop(verify);
 
     let bytes = std::fs::read(&temporary_path)
-        .map_err(|error| localized_export!("export.error.unable_to_read_verified_database_snapshot", temporary_path.display(), error));
+        .map_err(|error| trp("export.error.unable_to_read_verified_database_snapshot", &[("value1", (temporary_path.display()).to_string()), ("value2", (error).to_string())]));
 
     let _ = std::fs::remove_file(&temporary_path);
     bytes
@@ -1761,16 +1663,16 @@ fn create_database_snapshot_bytes(
 pub fn create_full_backup() -> Result<std::path::PathBuf, String> {
     let backup_directory = crate::locate_paths::backup_dir();
     std::fs::create_dir_all(&backup_directory)
-        .map_err(|error| localized_export!("export.error.unable_to_create_backup_directory", backup_directory.display(), error))?;
+        .map_err(|error| trp("export.error.unable_to_create_backup_directory", &[("value1", (backup_directory.display()).to_string()), ("value2", (error).to_string())]))?;
 
     let mut state = ExportWizardState::default();
     state.reset_for_open();
 
     if let Some(error) = state.selection_error.as_ref() {
-        return Err(localized_export!("export.error.unable_to_prepare_full_backup_selection", error));
+        return Err(trp("export.error.unable_to_prepare_full_backup_selection", &[("value1", (error).to_string())]));
     }
     if let Some(error) = state.portable_policy_error.as_ref() {
-        return Err(localized_export!("export.error.unable_to_resolve_full_backup_policies", error));
+        return Err(trp("export.error.unable_to_resolve_full_backup_policies", &[("value1", (error).to_string())]));
     }
 
     // Full backup is deliberately non-interactive: every policy and every
@@ -1790,7 +1692,7 @@ pub fn create_full_backup() -> Result<std::path::PathBuf, String> {
         .and_then(|output| String::from_utf8(output.stdout).ok())
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| localized_export!("export.error.unable_to_determine_backup_filename_timestamp"))?;
+        .ok_or_else(|| "Unable to determine backup filename timestamp.".to_string())?;
 
     state.destination = backup_directory.to_string_lossy().to_string();
     state.export_filename = format!("{}.zip", stamp);
@@ -1984,9 +1886,7 @@ fn resolve_portable_policies(
             )
             .map_err(
                 |error| {
-                    localized_export!("export.error.unable_to_prepare_effective_export_policy_query",
-                        error,
-                    )
+                    trp("export.error.unable_to_prepare_effective_export_policy_query", &[("value1", (error).to_string())])
                 }
             )?;
 
@@ -2040,10 +1940,7 @@ fn resolve_portable_policies(
                 )
                 .map_err(
                     |error| {
-                        localized_export!("export.error.unable_to_read_selected_policy_id_while_resolving_export_data",
-                            policy_id,
-                            error,
-                        )
+                        trp("export.error.unable_to_read_selected_policy_id_while_resolving_export_data", &[("value1", (policy_id).to_string()), ("value2", (error).to_string())])
                     }
                 )?;
 
@@ -2085,10 +1982,7 @@ fn resolve_portable_policies(
                 "unassigned" => None,
                 other => {
                     return Err(
-                        localized_export!("export.error.policy_has_unsupported_target",
-                            policy_name,
-                            other,
-                        )
+                        trp("export.error.policy_has_unsupported_target", &[("value1", (policy_name).to_string()), ("value2", (other).to_string())])
                     );
                 }
             };
@@ -2201,7 +2095,8 @@ fn resolve_portable_policies(
 
     if portable_policies.len() != selected_policy_ids.len() {
         return Err(
-            localized_export!("export.error.one_or_more_selected_policies_disappeared_while_export_data_was_being_resolved")
+            "One or more selected policies disappeared while export data was being resolved"
+                .to_string()
         );
     }
 
@@ -2219,17 +2114,13 @@ fn resolve_portable_texture(
         Some("specific") => {
             let family = family.ok_or_else(
                 || {
-                    localized_export!("export.error.policy_has_a_specific_texture_without_a_texture_family",
-                        policy_name,
-                    )
+                    trp("export.error.policy_has_a_specific_texture_without_a_texture_family", &[("value1", (policy_name).to_string())])
                 }
             )?;
 
             let primitives = primitives.ok_or_else(
                 || {
-                    localized_export!("export.error.policy_has_a_specific_texture_without_a_primitive_count",
-                        policy_name,
-                    )
+                    trp("export.error.policy_has_a_specific_texture_without_a_primitive_count", &[("value1", (policy_name).to_string())])
                 }
             )?;
 
@@ -2268,10 +2159,7 @@ fn resolve_portable_texture(
         }
 
         Some(other) => Err(
-            localized_export!("export.error.policy_has_unsupported_texture_mode",
-                policy_name,
-                other,
-            )
+            trp("export.error.policy_has_unsupported_texture_mode", &[("value1", (policy_name).to_string()), ("value2", (other).to_string())])
         ),
     }
 }
@@ -2288,10 +2176,7 @@ fn portable_texture_from_target_defaults(
                     .clone()
                     .ok_or_else(
                         || {
-                            localized_export!("export.error.defaults_specify_a_specific_texture_without_a_texture_family_while_resolving_policy",
-                                defaults.target,
-                                policy_name,
-                            )
+                            trp("export.error.defaults_specify_a_specific_texture_without_a_texture_family_while_resolving_policy", &[("value1", (defaults.target).to_string()), ("value2", (policy_name).to_string())])
                         }
                     )?;
 
@@ -2310,11 +2195,7 @@ fn portable_texture_from_target_defaults(
         ),
 
         other => Err(
-            localized_export!("export.error.defaults_contain_unsupported_texture_mode_while_resolving_policy",
-                defaults.target,
-                other,
-                policy_name,
-            )
+            trp("export.error.defaults_contain_unsupported_texture_mode_while_resolving_policy", &[("value1", (defaults.target).to_string()), ("value2", (other).to_string()), ("value3", (policy_name).to_string())])
         ),
     }
 }
@@ -2329,9 +2210,7 @@ fn resolve_portable_palette(
         Some("specific") => {
             let color = color.ok_or_else(
                 || {
-                    localized_export!("export.error.policy_has_a_specific_palette_without_a_palette_color",
-                        policy_name,
-                    )
+                    trp("export.error.policy_has_a_specific_palette_without_a_palette_color", &[("value1", (policy_name).to_string())])
                 }
             )?;
 
@@ -2360,10 +2239,7 @@ fn resolve_portable_palette(
         }
 
         Some(other) => Err(
-            localized_export!("export.error.policy_has_unsupported_palette_mode",
-                policy_name,
-                other,
-            )
+            trp("export.error.policy_has_unsupported_palette_mode", &[("value1", (policy_name).to_string()), ("value2", (other).to_string())])
         ),
     }
 }
@@ -2380,10 +2256,7 @@ fn portable_palette_from_target_defaults(
                     .clone()
                     .ok_or_else(
                         || {
-                            localized_export!("export.error.defaults_specify_a_specific_palette_without_a_palette_color_while_resolving_policy",
-                                defaults.target,
-                                policy_name,
-                            )
+                            trp("export.error.defaults_specify_a_specific_palette_without_a_palette_color_while_resolving_policy", &[("value1", (defaults.target).to_string()), ("value2", (policy_name).to_string())])
                         }
                     )?;
 
@@ -2397,11 +2270,7 @@ fn portable_palette_from_target_defaults(
         ),
 
         other => Err(
-            localized_export!("export.error.defaults_contain_unsupported_palette_mode_while_resolving_policy",
-                defaults.target,
-                other,
-                policy_name,
-            )
+            trp("export.error.defaults_contain_unsupported_palette_mode_while_resolving_policy", &[("value1", (defaults.target).to_string()), ("value2", (other).to_string()), ("value3", (policy_name).to_string())])
         ),
     }
 }
@@ -2415,11 +2284,7 @@ fn database_boolean(
         0 => Ok(false),
         1 => Ok(true),
         other => Err(
-            localized_export!("export.error.policy_has_invalid_boolean_value_for",
-                policy_name,
-                other,
-                field_name,
-            )
+            trp("export.error.policy_has_invalid_boolean_value_for", &[("value1", (policy_name).to_string()), ("value2", (other).to_string()), ("value3", (field_name).to_string())])
         ),
     }
 }
@@ -2437,9 +2302,7 @@ fn validate_portable_policy(
             PortableTextureSelection::InheritTarget
         ) {
             return Err(
-                localized_export!("export.error.assigned_policy_retained_unresolved_target_texture_inheritance",
-                    policy.policy_name,
-                )
+                trp("export.error.assigned_policy_retained_unresolved_target_texture_inheritance", &[("value1", (policy.policy_name).to_string())])
             );
         }
 
@@ -2448,9 +2311,7 @@ fn validate_portable_policy(
             PortablePaletteSelection::InheritTarget
         ) {
             return Err(
-                localized_export!("export.error.assigned_policy_retained_unresolved_target_palette_inheritance",
-                    policy.policy_name,
-                )
+                trp("export.error.assigned_policy_retained_unresolved_target_palette_inheritance", &[("value1", (policy.policy_name).to_string())])
             );
         }
 
@@ -2459,9 +2320,7 @@ fn validate_portable_policy(
             PortableTargetValue::InheritTarget
         ) {
             return Err(
-                localized_export!("export.error.assigned_policy_retained_unresolved_target_animation_speed_inheritance",
-                    policy.policy_name,
-                )
+                trp("export.error.assigned_policy_retained_unresolved_target_animation_speed_inheritance", &[("value1", (policy.policy_name).to_string())])
             );
         }
     }
@@ -2473,9 +2332,7 @@ fn validate_portable_policy(
         } => {
             if family.trim().is_empty() || *primitives <= 0 {
                 return Err(
-                    localized_export!("export.error.policy_resolved_to_an_invalid_specific_texture",
-                        policy.policy_name,
-                    )
+                    trp("export.error.policy_resolved_to_an_invalid_specific_texture", &[("value1", (policy.policy_name).to_string())])
                 );
             }
         }
@@ -2485,18 +2342,14 @@ fn validate_portable_policy(
         } => {
             if assigned && primitives.is_none() {
                 return Err(
-                    localized_export!("export.error.assigned_policy_resolved_to_random_texture_without_an_explicit_primitive_count",
-                        policy.policy_name,
-                    )
+                    trp("export.error.assigned_policy_resolved_to_random_texture_without_an_explicit_primitive_count", &[("value1", (policy.policy_name).to_string())])
                 );
             }
 
             if let Some(primitives) = primitives {
                 if *primitives <= 0 {
                     return Err(
-                        localized_export!("export.error.policy_resolved_to_an_invalid_random_texture_primitive_count",
-                            policy.policy_name,
-                        )
+                        trp("export.error.policy_resolved_to_an_invalid_random_texture_primitive_count", &[("value1", (policy.policy_name).to_string())])
                     );
                 }
             }
@@ -2517,9 +2370,7 @@ fn validate_portable_policy(
         || !policy.hue_rotation.is_finite()
     {
         return Err(
-            localized_export!("export.error.policy_resolved_to_one_or_more_invalid_numeric_export_values",
-                policy.policy_name,
-            )
+            trp("export.error.policy_resolved_to_one_or_more_invalid_numeric_export_values", &[("value1", (policy.policy_name).to_string())])
         );
     }
 
@@ -2528,9 +2379,7 @@ fn validate_portable_policy(
     {
         if !speed.is_finite() {
             return Err(
-                localized_export!("export.error.policy_resolved_to_an_invalid_animation_speed",
-                    policy.policy_name,
-                )
+                trp("export.error.policy_resolved_to_an_invalid_animation_speed", &[("value1", (policy.policy_name).to_string())])
             );
         }
     }
@@ -2580,9 +2429,7 @@ fn load_export_policy_choices(
             )
             .map_err(
                 |error| {
-                    localized_export!("export.error.unable_to_prepare_export_policy_selection_query",
-                        error,
-                    )
+                    trp("export.error.unable_to_prepare_export_policy_selection_query", &[("value1", (error).to_string())])
                 }
             )?;
 
@@ -2607,9 +2454,7 @@ fn load_export_policy_choices(
             )
             .map_err(
                 |error| {
-                    localized_export!("export.error.unable_to_query_policies_for_export_selection",
-                        error,
-                    )
+                    trp("export.error.unable_to_query_policies_for_export_selection", &[("value1", (error).to_string())])
                 }
             )?;
 
@@ -2632,9 +2477,7 @@ fn load_export_policy_choices(
         ) =
             row.map_err(
                 |error| {
-                    localized_export!("export.error.unable_to_decode_export_policy_selection_row",
-                        error,
-                    )
+                    trp("export.error.unable_to_decode_export_policy_selection_row", &[("value1", (error).to_string())])
                 }
             )?;
 
@@ -2772,7 +2615,7 @@ pub fn draw(
         crate::editor_layout::EDIT_WINDOW_REFERENCE_HEIGHT_PIXELS
             * export_resolution_scale;
 
-    egui::Window::new(crate::manage_localization::runtime_text("export.window_title"))
+    egui::Window::new("Export Screenshaver Data")
         .id(egui::Id::new("screenshaver_export_data_wizard_window"))
         .collapsible(false)
         .resizable(true)
@@ -2902,12 +2745,12 @@ fn draw_stage_rail(
                     || state.stage == ExportStage::SelectFocus,
                 egui::SelectableLabel::new(
                     state.stage == ExportStage::SelectFocus,
-                    egui::RichText::new(crate::manage_localization::runtime_text("export.stage.select_focus"))
+                    egui::RichText::new(tr("export.stage.select_focus"))
                         .strong(),
                 ),
             )
             .on_hover_text(
-                &crate::manage_localization::runtime_text("export.focus_help")
+                tr("export.focus_help")
             );
 
             if focus_response.clicked()
@@ -2989,10 +2832,10 @@ fn draw_stage_rail(
 
                 let response = match stage {
                     ExportStage::Destination => response.on_hover_text(
-                        &crate::manage_localization::runtime_text("export.destination_help")
+                        tr("export.destination_help")
                     ),
                     ExportStage::Review => response.on_hover_text(
-                        localized_export!("export.review_instruction")
+                        tr("export.review_instruction")
                     ),
                     ExportStage::Results => response,
                     ExportStage::SelectFocus | ExportStage::SelectData => response,
@@ -3012,12 +2855,12 @@ fn draw_select_focus_page(
     ui: &mut egui::Ui,
     state: &mut ExportWizardState,
 ) {
-    ui.heading(crate::manage_localization::runtime_text("export.stage.select_focus"));
+    ui.heading(tr("export.stage.select_focus"));
     ui.add_space(12.0);
 
     ui.horizontal(
         |ui| {
-            ui.label(crate::manage_localization::runtime_text("export.focus"));
+            ui.label(tr("export.focus"));
 
             let mut selected_focus =
                 state.export_focus;
@@ -3027,7 +2870,7 @@ fn draw_select_focus_page(
                     "screenshaver_export_focus"
                 )
                 .selected_text(
-                    selected_focus.label()
+                    selected_focus.ui_label()
                 )
                 .show_ui(
                     ui,
@@ -3036,14 +2879,16 @@ fn draw_select_focus_page(
                             ui.selectable_value(
                                 &mut selected_focus,
                                 focus,
-                                focus.label(),
+                                focus.ui_label(),
                             );
                         }
                     },
                 )
                 .response
                 .on_hover_text(
-                    "Select the type of Screenshaver data that will drive this export. Policies lets you choose policies and automatically includes their required shaders and related playlists. Shaders lets you choose shaders and automatically includes their associated policies and playlists. Playlists lets you choose playlists and automatically includes their member policies and required shaders. Automatically included items are read-only."
+                    crate::manage_localization::runtime_text(
+                        "export.focus_help"
+                    )
                 );
 
             if response.changed()
@@ -3109,19 +2954,13 @@ fn draw_export_policies_tab(
     if editable {
         ui.horizontal(
             |ui| {
-                ui.strong(crate::manage_localization::runtime_text("export.policies"));
+                ui.strong(tr("export.policies"));
 
                 ui.label(
-                    crate::manage_localization::runtime_text_with_params(
-                        "export.selected_count",
-                        &[
-                            ("selected", &state.selected_policy_ids.len().to_string()),
-                            ("total", &state.policies.len().to_string()),
-                        ],
-                    )
+                    trp("export.selected_count", &[("selected", (state.selected_policy_ids.len()).to_string()), ("total", (state.policies.len()).to_string())])
                 );
 
-                if ui.button(crate::manage_localization::runtime_text("export.select_all")).clicked() {
+                if ui.button(tr("export.select_all")).clicked() {
                     state.selected_policy_ids =
                         state.policies
                             .iter()
@@ -3132,7 +2971,7 @@ fn draw_export_policies_tab(
                     state.refresh_portable_policies();
                 }
 
-                if ui.button(crate::manage_localization::runtime_text("export.clear_all")).clicked() {
+                if ui.button(tr("export.clear_all")).clicked() {
                     state.selected_policy_ids.clear();
                     state.refresh_portable_policies();
                 }
@@ -3140,10 +2979,7 @@ fn draw_export_policies_tab(
         );
     } else {
         ui.strong(
-            crate::manage_localization::runtime_text_with_params(
-                "export.policies_included",
-                &[("count", &state.included_policy_ids().len().to_string())],
-            )
+            trp("export.policies_included", &[("count", (state.included_policy_ids().len()).to_string())])
         );
     }
 
@@ -3253,19 +3089,13 @@ fn draw_export_shaders_tab(
     if editable {
         ui.horizontal(
             |ui| {
-                ui.strong(crate::manage_localization::runtime_text("export.shaders"));
+                ui.strong(tr("export.shaders"));
 
                 ui.label(
-                    crate::manage_localization::runtime_text_with_params(
-                        "export.selected_count",
-                        &[
-                            ("selected", &state.selected_shader_ids.len().to_string()),
-                            ("total", &state.shaders.len().to_string()),
-                        ],
-                    )
+                    trp("export.selected_count", &[("selected", (state.selected_shader_ids.len()).to_string()), ("total", (state.shaders.len()).to_string())])
                 );
 
-                if ui.button(crate::manage_localization::runtime_text("export.select_all")).clicked() {
+                if ui.button(tr("export.select_all")).clicked() {
                     state.selected_shader_ids =
                         state.shaders
                             .iter()
@@ -3276,7 +3106,7 @@ fn draw_export_shaders_tab(
                     state.refresh_portable_policies();
                 }
 
-                if ui.button(crate::manage_localization::runtime_text("export.clear_all")).clicked() {
+                if ui.button(tr("export.clear_all")).clicked() {
                     state.selected_shader_ids.clear();
                     state.refresh_portable_policies();
                 }
@@ -3284,10 +3114,7 @@ fn draw_export_shaders_tab(
         );
     } else {
         ui.strong(
-            crate::manage_localization::runtime_text_with_params(
-                "export.shaders_included",
-                &[("count", &state.included_shaders().len().to_string())],
-            )
+            trp("export.shaders_included", &[("count", (state.included_shaders().len()).to_string())])
         );
     }
 
@@ -3392,19 +3219,13 @@ fn draw_export_playlists_tab(
     if editable {
         ui.horizontal(
             |ui| {
-                ui.strong(crate::manage_localization::runtime_text("export.playlists"));
+                ui.strong(tr("export.playlists"));
 
                 ui.label(
-                    crate::manage_localization::runtime_text_with_params(
-                        "export.selected_count",
-                        &[
-                            ("selected", &state.selected_playlist_ids.len().to_string()),
-                            ("total", &state.playlists.len().to_string()),
-                        ],
-                    )
+                    trp("export.selected_count", &[("selected", (state.selected_playlist_ids.len()).to_string()), ("total", (state.playlists.len()).to_string())])
                 );
 
-                if ui.button(crate::manage_localization::runtime_text("export.select_all")).clicked() {
+                if ui.button(tr("export.select_all")).clicked() {
                     state.selected_playlist_ids =
                         state.playlists
                             .iter()
@@ -3415,7 +3236,7 @@ fn draw_export_playlists_tab(
                     state.refresh_portable_policies();
                 }
 
-                if ui.button(crate::manage_localization::runtime_text("export.clear_all")).clicked() {
+                if ui.button(tr("export.clear_all")).clicked() {
                     state.selected_playlist_ids.clear();
                     state.refresh_portable_policies();
                 }
@@ -3423,10 +3244,7 @@ fn draw_export_playlists_tab(
         );
     } else {
         ui.strong(
-            crate::manage_localization::runtime_text_with_params(
-                "export.playlists_included",
-                &[("count", &state.included_playlists().len().to_string())],
-            )
+            trp("export.playlists_included", &[("count", (state.included_playlists().len()).to_string())])
         );
     }
 
@@ -3510,10 +3328,7 @@ fn draw_selection_status(
         ui.add_space(6.0);
         ui.label(
             egui::RichText::new(
-                crate::manage_localization::runtime_text_with_params(
-                    "export.resolve_failed",
-                    &[("error", error)],
-                )
+                trp("export.resolve_failed", &[("error", (error).to_string())])
             )
             .strong(),
         );
@@ -3521,10 +3336,7 @@ fn draw_selection_status(
         ui.add_space(6.0);
         ui.label(
             egui::RichText::new(
-                crate::manage_localization::runtime_text_with_params(
-                    "export.policies_resolved",
-                    &[("count", &state.portable_policies.len().to_string())],
-                )
+                trp("export.policies_resolved", &[("count", (state.portable_policies.len()).to_string())])
             )
             .weak(),
         );
@@ -3534,10 +3346,7 @@ fn draw_selection_status(
         ui.add_space(6.0);
         ui.label(
             egui::RichText::new(
-                crate::manage_localization::runtime_text_with_params(
-                    "export.select_at_least_one",
-                    &[("type", &state.export_focus.display_label())],
-                )
+                trp("export.select_at_least_one", &[("type", (state.export_focus.ui_label()).to_string())])
             )
             .weak(),
         );
@@ -3549,10 +3358,10 @@ fn draw_destination_page(
     state: &mut ExportWizardState,
     destination_browse_requested: &mut Option<std::path::PathBuf>,
 ) {
-    ui.heading(crate::manage_localization::runtime_text("export.destination"));
+    ui.heading(tr("export.destination"));
     ui.add_space(8.0);
 
-    ui.label(crate::manage_localization::runtime_text("export.destination_folder"));
+    ui.label(tr("export.destination_folder"));
 
     ui.horizontal(
         |ui| {
@@ -3564,7 +3373,7 @@ fn draw_destination_page(
                 .hint_text("$HOME"),
             );
 
-            if ui.button(crate::manage_localization::runtime_text("export.browse")).clicked() {
+            if ui.button(tr("export.browse")).clicked() {
                 *destination_browse_requested =
                     Some(
                         std::path::PathBuf::from(
@@ -3577,7 +3386,7 @@ fn draw_destination_page(
 
     ui.add_space(10.0);
 
-    ui.label(crate::manage_localization::runtime_text("export.filename"));
+    ui.label(tr("export.filename"));
 
     ui.add(
         egui::TextEdit::singleline(
@@ -3595,7 +3404,7 @@ fn draw_destination_page(
         ui.add_space(4.0);
         ui.label(
             egui::RichText::new(
-                crate::manage_localization::runtime_text("export.filename_invalid")
+                tr("export.filename_invalid")
             )
             .weak(),
         );
@@ -3612,17 +3421,15 @@ fn draw_destination_page(
 
         if path != requested {
             ui.add_space(4.0);
-            let filename =
-                path.file_name()
-                    .and_then(|value| value.to_str())
-                    .unwrap_or(state.export_filename.trim());
-
             ui.label(
                 egui::RichText::new(
-                    crate::manage_localization::runtime_text_with_params(
-                        "export.filename_exists",
-                        &[("filename", filename)],
-                    )
+                    trp("export.filename_exists", &[("filename", (path.file_name()
+                            .and_then(
+                                |value| value.to_str()
+                            )
+                            .unwrap_or(
+                                state.export_filename.trim()
+                            )).to_string())])
                 )
                 .weak(),
             );
@@ -3634,16 +3441,16 @@ fn draw_review_page(
     ui: &mut egui::Ui,
     state: &ExportWizardState,
 ) {
-    ui.heading(crate::manage_localization::runtime_text("export.review_confirm"));
+    ui.heading(tr("export.review_confirm"));
     ui.add_space(12.0);
 
-    ui.strong(crate::manage_localization::runtime_text("export.focus_heading"));
+    ui.strong(tr("export.focus_heading"));
     ui.add_space(4.0);
-    ui.label(state.export_focus.display_label());
+    ui.label(state.export_focus.ui_label());
 
     ui.add_space(14.0);
 
-    ui.strong(crate::manage_localization::runtime_text("export.contents"));
+    ui.strong(tr("export.contents"));
     ui.add_space(4.0);
 
     egui::Grid::new("export_review_contents")
@@ -3652,7 +3459,7 @@ fn draw_review_page(
         .show(
             ui,
             |ui| {
-                ui.label(crate::manage_localization::runtime_text("export.policies_colon"));
+                ui.label(tr("export.policies_colon"));
                 ui.label(
                     state.included_policy_ids()
                         .len()
@@ -3660,7 +3467,7 @@ fn draw_review_page(
                 );
                 ui.end_row();
 
-                ui.label(crate::manage_localization::runtime_text("export.shaders_colon"));
+                ui.label(tr("export.shaders_colon"));
                 ui.label(
                     state.included_shaders()
                         .len()
@@ -3668,7 +3475,7 @@ fn draw_review_page(
                 );
                 ui.end_row();
 
-                ui.label(crate::manage_localization::runtime_text("export.playlists_colon"));
+                ui.label(tr("export.playlists_colon"));
                 ui.label(
                     state.included_playlists()
                         .len()
@@ -3680,7 +3487,7 @@ fn draw_review_page(
 
     ui.add_space(14.0);
 
-    ui.strong(crate::manage_localization::runtime_text("export.destination"));
+    ui.strong("Destination");
     ui.add_space(4.0);
 
     if let Some(path) =
@@ -3699,9 +3506,9 @@ fn draw_review_page(
 
     ui.add_space(14.0);
 
-    ui.strong(crate::manage_localization::runtime_text("export.format"));
+    ui.strong(tr("export.format"));
     ui.add_space(4.0);
-    ui.label("Screenshaver Export Format 1");
+    ui.label(tr("export.format_name"));
 
     ui.add_space(18.0);
     ui.separator();
@@ -3709,7 +3516,7 @@ fn draw_review_page(
 
     ui.label(
         egui::RichText::new(
-            crate::manage_localization::runtime_text("export.review_safety")
+            tr("export.review_safety")
         )
         .strong(),
     );
@@ -3719,50 +3526,40 @@ fn draw_results_page(
     ui: &mut egui::Ui,
     state: &ExportWizardState,
 ) {
-    ui.heading(crate::manage_localization::runtime_text("export.results"));
+    ui.heading(tr("export.results"));
     ui.add_space(12.0);
 
     match state.export_result.as_ref() {
         Some(Ok(result)) => {
             ui.horizontal(|ui| {
                 ui.label(
-                    egui::RichText::new(crate::manage_localization::runtime_text("export.export_colon"))
+                    egui::RichText::new(tr("export.export_colon"))
                         .strong()
                 );
                 ui.label(
-                    egui::RichText::new(crate::manage_localization::runtime_text("export.passed"))
+                    egui::RichText::new(tr("export.passed"))
                         .color(egui::Color32::GREEN)
                         .strong()
                 );
             });
             ui.add_space(8.0);
             ui.label(
-                crate::manage_localization::runtime_text_with_params(
-                    "export.archive",
-                    &[("path", &result.path.display().to_string())],
-                )
+                trp("export.archive", &[("path", (result.path.display()).to_string())])
             );
             ui.add_space(8.0);
             ui.label(
-                crate::manage_localization::runtime_text_with_params(
-                    "export.result_counts",
-                    &[
-                        ("policies", &result.policy_count.to_string()),
-                        ("shaders", &result.shader_count.to_string()),
-                        ("playlists", &result.playlist_count.to_string()),
-                    ],
-                )
+                trp("export.result_counts", &[("policies", (result.policy_count).to_string()), ("shaders", (result.shader_count).to_string()), ("playlists", (result.playlist_count).to_string())])
             );
         }
 
         Some(Err(error)) => {
             ui.horizontal(|ui| {
                 ui.label(
-                    egui::RichText::new(crate::manage_localization::runtime_text("export.export_colon"))
+                    egui::RichText::new(tr("export.export_colon"))
                         .strong()
                 );
                 ui.label(
-                    egui::RichText::new(crate::manage_localization::runtime_text("export.failed"))
+                    egui::RichText::new(tr("export.failed"))
                         .color(egui::Color32::RED)
                         .strong()
                 );
@@ -3772,14 +3569,14 @@ fn draw_results_page(
             ui.add_space(8.0);
             ui.label(
                 egui::RichText::new(
-                    crate::manage_localization::runtime_text("export.no_archive_installed")
+                    tr("export.no_archive_installed")
                 )
                 .weak(),
             );
         }
 
         None => {
-            ui.label(crate::manage_localization::runtime_text("export.not_run"));
+            ui.label(tr("export.not_run"));
         }
     }
 }
@@ -3793,7 +3590,7 @@ fn draw_navigation(
             |ui| {
                 if ui.add_enabled(
                     !state.execution_started,
-                    egui::Button::new(crate::manage_localization::runtime_text("export.back")),
+                    egui::Button::new(tr("export.back")),
                 )
                 .clicked()
                 {
@@ -3810,7 +3607,7 @@ fn draw_navigation(
                             !state.execution_started
                                 && state.select_data_valid()
                                 && state.destination_valid(),
-                            egui::Button::new(crate::manage_localization::runtime_text("export.action")),
+                            egui::Button::new(tr("export.action")),
                         )
                         .clicked()
                         {
@@ -3828,7 +3625,7 @@ fn draw_navigation(
 
                         if ui.add_enabled(
                             !state.execution_started,
-                            egui::Button::new(crate::manage_localization::runtime_text("common.cancel")),
+                            egui::Button::new(tr("common.cancel")),
                         )
                         .clicked()
                         {
@@ -3850,7 +3647,7 @@ fn draw_navigation(
 
             if ui.add_enabled(
                 back_enabled,
-                egui::Button::new(crate::manage_localization::runtime_text("export.back")),
+                egui::Button::new(tr("export.back")),
             )
             .clicked()
             {
@@ -3892,7 +3689,7 @@ fn draw_navigation(
 
             if ui.add_enabled(
                 cancel_enabled,
-                egui::Button::new(crate::manage_localization::runtime_text("common.cancel")),
+                egui::Button::new(tr("common.cancel")),
             )
             .clicked()
             {
@@ -3906,7 +3703,7 @@ fn draw_navigation(
                 |ui| {
                     match state.stage {
                         ExportStage::SelectFocus => {
-                            if ui.button(crate::manage_localization::runtime_text("export.next")).clicked() {
+                            if ui.button(tr("export.next")).clicked() {
                                 state.stage = ExportStage::SelectData;
                                 state.select_data_tab =
                                     state.export_focus.tab_order()[0];
@@ -3919,7 +3716,7 @@ fn draw_navigation(
 
                             if ui.add_enabled(
                                 next_enabled,
-                                egui::Button::new(crate::manage_localization::runtime_text("export.next")),
+                                egui::Button::new(tr("export.next")),
                             )
                             .clicked()
                             {
@@ -3950,7 +3747,7 @@ fn draw_navigation(
                             if ui.add_enabled(
                                 state.select_data_valid()
                                     && state.destination_valid(),
-                                egui::Button::new(crate::manage_localization::runtime_text("export.next")),
+                                egui::Button::new(tr("export.next")),
                             )
                             .clicked()
                             {
@@ -3961,7 +3758,7 @@ fn draw_navigation(
                         ExportStage::Review => {}
 
                         ExportStage::Results => {
-                            if ui.button(crate::manage_localization::runtime_text("export.finish")).clicked() {
+                            if ui.button(tr("export.finish")).clicked() {
                                 state.open = false;
                             }
                         }

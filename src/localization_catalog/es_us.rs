@@ -790,7 +790,7 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
     FactoryTranslation {
         locale: "es-US",
         key: "lyrics.display_help",
-        translated_text: "Muestra letras sincronizadas de la canción que se está reproduciendo sobre el windowshader. Las letras se obtienen automáticamente cuando están disponibles.",
+        translated_text: "Muestra letras sincronizadas de la canción que se está reproduciendo sobre el sombreador de ventana. Las letras se obtienen automáticamente cuando están disponibles.",
     },
 
     FactoryTranslation {
@@ -1049,25 +1049,25 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
     FactoryTranslation {
         locale: "es-US",
         key: "post.audio.effect_help",
-        translated_text: "Selecciona el efecto de posprocesamiento controlado por audio: Desactivado, Bloom de audio, Bloom espectral o el Bloom de sonoridad experimental.",
+        translated_text: "Selecciona el efecto de posprocesamiento controlado por audio: Desactivado, Resplandor de audio, Resplandor espectral o Resplandor de sonoridad.",
     },
 
     FactoryTranslation {
         locale: "es-US",
         key: "post.audio.audio_bloom",
-        translated_text: "Bloom de audio",
+        translated_text: "Resplandor de audio",
     },
 
     FactoryTranslation {
         locale: "es-US",
         key: "post.audio.spectral_bloom",
-        translated_text: "Bloom espectral",
+        translated_text: "Resplandor espectral",
     },
 
     FactoryTranslation {
         locale: "es-US",
         key: "post.audio.loudness_bloom",
-        translated_text: "Bloom de sonoridad",
+        translated_text: "Resplandor de sonoridad",
     },
 
     FactoryTranslation {
@@ -1079,7 +1079,7 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
     FactoryTranslation {
         locale: "es-US",
         key: "post.audio.bloom_intensity_help",
-        translated_text: "Controla la intensidad del modo Bloom seleccionado.",
+        translated_text: "Controla la intensidad del modo de resplandor seleccionado.",
     },
 
     FactoryTranslation {
@@ -1103,7 +1103,7 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
     FactoryTranslation {
         locale: "es-US",
         key: "post.audio.bloom_threshold_help",
-        translated_text: "Controla el umbral de brillo utilizado para extraer el bloom.",
+        translated_text: "Controla el umbral de brillo utilizado para extraer el resplandor.",
     },
 
     FactoryTranslation {
@@ -1115,7 +1115,7 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
     FactoryTranslation {
         locale: "es-US",
         key: "post.audio.frequency_rotation_help",
-        translated_text: "Rota la asignación de frecuencia a color de Audio/Espectral. Se deshabilita para Bloom de sonoridad.",
+        translated_text: "Rota la asignación de frecuencia a color de audio/espectral. Se deshabilita para Resplandor de sonoridad.",
     },
 
     FactoryTranslation {
@@ -1127,7 +1127,7 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
     FactoryTranslation {
         locale: "es-US",
         key: "post.audio.invert_frequency_help",
-        translated_text: "Invierte la asignación de frecuencia-color de baja a alta de Audio/Espectral. Se deshabilita para Bloom de sonoridad.",
+        translated_text: "Invierte la asignación de frecuencia-color de baja a alta de audio/espectral. Se deshabilita para Resplandor de sonoridad.",
     },
 
     FactoryTranslation {
@@ -1139,25 +1139,25 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
     FactoryTranslation {
         locale: "es-US",
         key: "post.motion.effect_help",
-        translated_text: "Selecciona un efecto de movimiento de fotograma completo controlado por audio. Woofer from Hell utiliza la sincronización vocal de LRCMUX para el movimiento de cono inverso. FFT Mirror Warp utiliza una traza FFT reflejada de 48 canales. Polar Propeller utiliza la misma respuesta FFT de 48 canales en una deformación radial giratoria.",
+        translated_text: "Selecciona un efecto de movimiento de fotograma completo controlado por audio. Altavoz de graves infernal utiliza la sincronización vocal de LRCMUX para el movimiento de cono inverso. Deformación espejo FFT utiliza una traza FFT reflejada de 48 canales. Hélice polar utiliza la misma respuesta FFT de 48 canales en una deformación radial giratoria.",
     },
 
     FactoryTranslation {
         locale: "es-US",
         key: "post.motion.woofer",
-        translated_text: "Woofer from Hell",
+        translated_text: "Altavoz de graves infernal",
     },
 
     FactoryTranslation {
         locale: "es-US",
         key: "post.motion.fft_mirror",
-        translated_text: "FFT Mirror Warp",
+        translated_text: "Deformación espejo FFT",
     },
 
     FactoryTranslation {
         locale: "es-US",
         key: "post.motion.polar_propeller",
-        translated_text: "Polar Propeller",
+        translated_text: "Hélice polar",
     },
 
     FactoryTranslation {
@@ -1244,7 +1244,7 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
     FactoryTranslation {
         locale: "es-US",
         key: "export.focus_help",
-        translated_text: "Elija si las políticas, los shaders o las listas de reproducción serán el enfoque seleccionable que determinará esta exportación.",
+        translated_text: "Seleccione el tipo de datos de Screenshaver que determinará el contenido de esta exportación. Políticas le permite elegir políticas e incluye automáticamente los shaders requeridos y las listas de reproducción relacionadas. Shaders le permite elegir shaders e incluye automáticamente sus políticas y listas de reproducción asociadas. Listas de reproducción le permite elegir listas de reproducción e incluye automáticamente sus políticas miembro y los shaders requeridos. Los elementos incluidos automáticamente son de solo lectura.",
     },
     FactoryTranslation {
         locale: "es-US",
@@ -1340,6 +1340,11 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
         locale: "es-US",
         key: "export.playlists_colon",
         translated_text: "Listas de reproducción:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "export.format_name",
+        translated_text: "Formato de exportación Screenshaver 1",
     },
     FactoryTranslation {
         locale: "es-US",
@@ -1495,6 +1500,121 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
         locale: "es-US",
         key: "import.inspection_read_only",
         translated_text: "La inspección es de solo lectura. No se ha realizado ningún cambio en Screenshaver.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.browse",
+        translated_text: "Examinar...",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.archive_inspection_status",
+        translated_text: "Inspección del archivo: {status}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.passed",
+        translated_text: "SUPERADA",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.failed_status",
+        translated_text: "FALLIDA",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.export_focus_colon",
+        translated_text: "Enfoque de exportación:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.stage.select_contents",
+        translated_text: "Seleccionar contenido para importar",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.package_objects_selected",
+        translated_text: "{count} objetos del paquete seleccionados automáticamente",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.policies",
+        translated_text: "Políticas",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.policy_requires_shader",
+        translated_text: "[{target}] — requiere el ID de sombreador del paquete {id}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.shaders",
+        translated_text: "Sombreadores",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.package_id",
+        translated_text: "ID del paquete {id}",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.member_count",
+        translated_text: "{count} miembros",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.shaders_colon",
+        translated_text: "Sombreadores:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.policies_colon",
+        translated_text: "Políticas:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.playlists_colon",
+        translated_text: "Listas de reproducción:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.back",
+        translated_text: "< Atrás",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.next",
+        translated_text: "Siguiente >",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.byte_count",
+        translated_text: "{count} bytes",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.zip_summary",
+        translated_text: "{entries} entradas; {bytes} bytes expandidos",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.object_type.shader",
+        translated_text: "Sombreador",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.object_type.policy",
+        translated_text: "Política",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.object_type.playlist",
+        translated_text: "Lista de reproducción",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "import.object_type.receiving_installation",
+        translated_text: "Instalación de destino",
     },
     FactoryTranslation {
         locale: "es-US",
@@ -3162,22 +3282,22 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
     FactoryTranslation {
         locale: "es-US",
         key: "edit.loaded_existing_screensaver_policy_for_this_shader",
-        translated_text: "Se cargó la política de salvapantallas existente para este shader.",
+        translated_text: "Se cargó la política de salvapantallas existente para este sombreador.",
     },
     FactoryTranslation {
         locale: "es-US",
         key: "edit.loaded_existing_unassigned_policy_for_this_shader",
-        translated_text: "Se cargó la política sin asignar existente para este shader.",
+        translated_text: "Se cargó la política sin asignar existente para este sombreador.",
     },
     FactoryTranslation {
         locale: "es-US",
         key: "edit.loaded_existing_wallpaper_policy_for_this_shader",
-        translated_text: "Se cargó la política de fondo de pantalla existente para este shader.",
+        translated_text: "Se cargó la política de fondo de pantalla existente para este sombreador.",
     },
     FactoryTranslation {
         locale: "es-US",
         key: "edit.loaded_existing_policy_for_this_shader",
-        translated_text: "Se cargó la política {value1} existente para este shader.",
+        translated_text: "Se cargó la política {value1} existente para este sombreador.",
     },
     FactoryTranslation {
         locale: "es-US",
@@ -3723,12 +3843,12 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
     FactoryTranslation {
         locale: "es-US",
         key: "assign_shader_policies.assignment_message.singular",
-        translated_text: "Screenshaver encontró {count} shader en la carpeta de shaders administrados que aún no tiene una política.\n\nElija cómo se debe crear una política para este shader.\n\nLas políticas sin asignar no se pueden renderizar hasta que su Destino de política se cambie a Protector de pantalla o Fondo de pantalla.",
+        translated_text: "Screenshaver encontró {count} sombreador en la carpeta de sombreadores administrados que aún no tiene una política.\\n\\nElija cómo se debe crear una política para este sombreador.\\n\\nLas políticas sin asignar no se pueden renderizar hasta que su Destino de política se cambie a Protector de pantalla o Fondo de pantalla.",
     },
     FactoryTranslation {
         locale: "es-US",
         key: "assign_shader_policies.assignment_message.plural",
-        translated_text: "Screenshaver encontró {count} shaders en la carpeta de shaders administrados que aún no tienen una política.\n\nElija cómo se deben crear las políticas para estos shaders.\n\nLas políticas sin asignar no se pueden renderizar hasta que su Destino de política se cambie a Protector de pantalla o Fondo de pantalla.",
+        translated_text: "Screenshaver encontró {count} sombreadores en la carpeta de sombreadores administrados que aún no tienen una política.\\n\\nElija cómo se deben crear las políticas para estos sombreadores.\\n\\nLas políticas sin asignar no se pueden renderizar hasta que su Destino de política se cambie a Protector de pantalla o Fondo de pantalla.",
     },
     FactoryTranslation {
         locale: "es-US",
@@ -3840,6 +3960,11 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
         locale: "es-US",
         key: "compile_shader.kind.fragment",
         translated_text: "Fragmento",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "common.unknown",
+        translated_text: "Desconocido",
     },
     FactoryTranslation {
         locale: "es-US",
@@ -5433,4 +5558,102 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
     },
 
 
+
+
+    // Editor-layout localization additions synchronized from the canonical catalog.
+    FactoryTranslation {
+        locale: "es-US",
+        key: "common.add",
+        translated_text: "Agregar",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "common.create",
+        translated_text: "Crear",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "common.delete",
+        translated_text: "Eliminar",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "common.no",
+        translated_text: "No",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "common.save",
+        translated_text: "Guardar",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "common.yes",
+        translated_text: "Sí",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.clone_policy_description",
+        translated_text: "Crea una nueva política con el mismo shader, destino y configuración.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.create_playlist_description",
+        translated_text: "Cree una lista de reproducción para agrupar políticas de shader.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.delete_playlist",
+        translated_text: "Eliminar lista de reproducción",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.delete_policy_menu",
+        translated_text: "Eliminar política...",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.delete_shader_menu",
+        translated_text: "Eliminar sombreador...",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.delete_this_playlist",
+        translated_text: "¿Eliminar esta lista de reproducción?",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.delete_this_policy",
+        translated_text: "Eliminar esta política de {value1}:",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.description",
+        translated_text: "Descripción",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.policy_label",
+        translated_text: "Política",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.primitives",
+        translated_text: "Primitivas",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.select_playlist_to_view_policies",
+        translated_text: "Seleccione una lista de reproducción para ver sus políticas.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.select_policy_target_before_saving_modified_policy",
+        translated_text: "Seleccione un destino de política antes de guardar la política modificada.",
+    },
+    FactoryTranslation {
+        locale: "es-US",
+        key: "editor.select_policy_to_add_to_playlist",
+        translated_text: "Seleccione una política de shader existente para agregarla a esta lista de reproducción.",
+    },
 ];

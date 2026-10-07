@@ -10,22 +10,34 @@ use std::path::{Path, PathBuf};
 use sha2::{Digest, Sha256};
 use rusqlite::OptionalExtension;
 
-fn tr(key: &str) -> String { crate::manage_localization::runtime_text(key) }
-fn trp(key: &str, p: &[(&str, &str)]) -> String { crate::manage_localization::runtime_text_with_params(key, p) }
+
+fn tr(key: &str) -> String {
+    crate::manage_localization::runtime_text(key)
+}
+
+fn trp(key: &str, params: &[(&str, String)]) -> String {
+    let borrowed = params
+        .iter()
+        .map(|(name, value)| (*name, value.as_str()))
+        .collect::<Vec<_>>();
+    crate::manage_localization::runtime_text_with_params(key, &borrowed)
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ImportStage {
     SelectArchive,
     InspectArchive,
+    SelectContents,
     ResolveConflicts,
     Review,
     Results,
 }
 
 impl ImportStage {
-    const ALL: [Self; 5] = [
+    const ALL: [Self; 6] = [
         Self::SelectArchive,
         Self::InspectArchive,
+        Self::SelectContents,
         Self::ResolveConflicts,
         Self::Review,
         Self::Results,
@@ -35,6 +47,7 @@ impl ImportStage {
         match self {
             Self::SelectArchive => tr("import.stage.select_archive"),
             Self::InspectArchive => tr("import.stage.inspect_archive"),
+            Self::SelectContents => tr("import.stage.select_contents"),
             Self::ResolveConflicts => tr("import.stage.resolve_conflicts"),
             Self::Review => tr("import.review_confirm"),
             Self::Results => tr("import.results"),
@@ -49,6 +62,7 @@ struct ImportWizardState {
     archive_path: String,
     inspection: Option<ArchiveInspection>,
     package: Option<ValidatedPackage>,
+    selection: ImportSelection,
     conflicts: Option<ConflictReport>,
     proposed_plan: Option<ProposedImportPlan>,
     import_result: Option<ImportExecutionResult>,
@@ -64,6 +78,7 @@ impl Default for ImportWizardState {
             archive_path: String::new(),
             inspection: None,
             package: None,
+            selection: ImportSelection::default(),
             conflicts: None,
             proposed_plan: None,
             import_result: None,
@@ -90,6 +105,7 @@ impl ImportWizardState {
         match stage {
             ImportStage::SelectArchive => true,
             ImportStage::InspectArchive => self.archive_selected(),
+            ImportStage::SelectContents => self.inspection_passed() && self.package.is_some(),
             ImportStage::ResolveConflicts => self.conflicts.is_some(),
             ImportStage::Review => self.proposed_plan.is_some() && self.conflicts.is_some(),
             ImportStage::Results => self.import_result.is_some(),
@@ -263,6 +279,27 @@ struct ValidatedPackage {
     memberships: Vec<PackageMembership>,
 }
 
+#[derive(Clone, Debug, Default)]
+struct ImportSelection {
+    policy_ids: BTreeSet<u64>,
+    shader_ids: BTreeSet<u64>,
+    playlist_ids: BTreeSet<u64>,
+}
+
+impl ImportSelection {
+    fn from_package(package: &ValidatedPackage) -> Self {
+        Self {
+            policy_ids: package.policies.iter().map(|item| item.export_id).collect(),
+            shader_ids: package.shaders.iter().map(|item| item.export_id).collect(),
+            playlist_ids: package.playlists.iter().map(|item| item.export_id).collect(),
+        }
+    }
+
+    fn selected_count(&self) -> usize {
+        self.policy_ids.len() + self.shader_ids.len() + self.playlist_ids.len()
+    }
+}
+
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ConflictKind {
@@ -316,8 +353,8 @@ enum ProposedDestination {
 impl ProposedDestination {
     fn label(self, object_type: &str) -> String {
         match self {
-            Self::Existing(id) => trp("import.keep_existing", &[("type", object_type), ("id", &id.to_string())]),
-            Self::New => trp("import.import_new", &[("type", object_type)]),
+            Self::Existing(id) => trp("import.keep_existing", &[("type", (object_type).to_string()), ("id", (id).to_string())]),
+            Self::New => trp("import.import_new", &[("type", (object_type).to_string())]),
             Self::Unresolved => tr("import.unresolved_conflict"),
         }
     }
@@ -412,6 +449,7 @@ pub fn set_archive(ctx: &egui::Context, archive: &Path) {
             state.archive_path = archive.to_string_lossy().into_owned();
             state.inspection = None;
             state.package = None;
+            state.selection = ImportSelection::default();
             state.conflicts = None;
             state.proposed_plan = None;
             state.import_result = None;
@@ -446,7 +484,7 @@ pub fn draw(
     let window_height =
         crate::editor_layout::EDIT_WINDOW_REFERENCE_HEIGHT_PIXELS * scale;
 
-    egui::Window::new(tr("import.window_title"))
+    egui::Window::new("Import Screenshaver Data")
         .id(egui::Id::new("screenshaver_import_data_wizard_window"))
         .collapsible(false)
         .resizable(true)
@@ -475,6 +513,9 @@ pub fn draw(
                             }
                             ImportStage::InspectArchive => {
                                 draw_inspection(ui, &state);
+                            }
+                            ImportStage::SelectContents => {
+                                draw_select_contents(ui, &state);
                             }
                             ImportStage::ResolveConflicts => {
                                 draw_conflict_report(ui, &mut state);
@@ -515,6 +556,11 @@ fn draw_stage_rail(ui: &mut egui::Ui, state: &mut ImportWizardState) {
                 if stage == ImportStage::InspectArchive && state.inspection.is_none() {
                     let (inspection, package) =
                         inspect_archive(Path::new(state.archive_path.trim()));
+                    if inspection.passed {
+                        if let Some(ref package) = package {
+                            state.selection = ImportSelection::from_package(package);
+                        }
+                    }
                     state.inspection = Some(inspection);
                     state.package = package;
                 }
@@ -560,7 +606,7 @@ fn draw_select_archive(
                         .desired_width(300.0)
                         .interactive(false),
                 );
-                if ui.button(tr("export.browse")).clicked() {
+                if ui.button(tr("import.browse")).clicked() {
                     *browse = Some(starting_directory(&state.archive_path));
                 }
             });
@@ -584,25 +630,10 @@ fn draw_inspection(ui: &mut egui::Ui, state: &ImportWizardState) {
         return;
     };
 
-    ui.horizontal(|ui| {
-        ui.label(
-            egui::RichText::new(tr("import.archive_inspection_colon"))
-                .strong()
-        );
-        ui.label(
-            egui::RichText::new(
-                if result.passed { tr("export.passed") } else { tr("export.failed") }
-            )
-            .color(
-                if result.passed {
-                    egui::Color32::GREEN
-                } else {
-                    egui::Color32::RED
-                }
-            )
-            .strong()
-        );
-    });
+    ui.label(
+        egui::RichText::new(trp("import.archive_inspection_status", &[("status", (if result.passed { tr("import.passed") } else { tr("import.failed_status") }).to_string())]))
+        .strong(),
+    );
 
     ui.add_space(8.0);
     egui::Grid::new("screenshaver_import_inspection_summary")
@@ -610,19 +641,14 @@ fn draw_inspection(ui: &mut egui::Ui, state: &ImportWizardState) {
         .spacing(egui::vec2(12.0, 4.0))
         .show(ui, |ui| {
             summary(ui, tr("import.export_format_colon"),
-                result.format_version.map(|v| v.to_string()).unwrap_or_else(|| "Unknown".into()));
+                result.format_version.map(|v| v.to_string()).unwrap_or_else(|| crate::manage_localization::runtime_text("common.unknown")));
             summary(ui, tr("import.source_screenshaver_colon"),
-                result.source_version.clone().unwrap_or_else(|| "Unknown".into()));
+                result.source_version.clone().unwrap_or_else(|| crate::manage_localization::runtime_text("common.unknown")));
             summary(ui, tr("import.source_db_schema_colon"),
-                result.source_db_schema.map(|v| v.to_string()).unwrap_or_else(|| "Unknown".into()));
-            summary(ui, tr("export.focus"),
-                result.export_focus.clone().unwrap_or_else(|| "Unknown".into()));
-            summary(ui, tr("import.contents_colon"), trp("import.contents_counts", &[
-                ("policies", &result.policies.to_string()),
-                ("shaders", &result.shaders.to_string()),
-                ("playlists", &result.playlists.to_string()),
-                ("memberships", &result.memberships.to_string()),
-            ]));
+                result.source_db_schema.map(|v| v.to_string()).unwrap_or_else(|| crate::manage_localization::runtime_text("common.unknown")));
+            summary(ui, tr("import.export_focus_colon"),
+                result.export_focus.clone().unwrap_or_else(|| crate::manage_localization::runtime_text("common.unknown")));
+            summary(ui, tr("import.contents_colon"), trp("import.contents_counts", &[("policies", (result.policies).to_string()), ("shaders", (result.shaders).to_string()), ("playlists", (result.playlists).to_string()), ("memberships", (result.memberships).to_string())]));
         });
 
     ui.add_space(12.0);
@@ -643,13 +669,6 @@ fn draw_inspection(ui: &mut egui::Ui, state: &ImportWizardState) {
                             ui.label(
                                 egui::RichText::new(
                                     if check.passed { tr("import.pass") } else { tr("import.fail") }
-                                )
-                                .color(
-                                    if check.passed {
-                                        egui::Color32::GREEN
-                                    } else {
-                                        egui::Color32::RED
-                                    }
                                 )
                                 .strong()
                             );
@@ -694,13 +713,89 @@ fn draw_inspection(ui: &mut egui::Ui, state: &ImportWizardState) {
     );
 }
 
-fn summary(ui: &mut egui::Ui, label: impl Into<String>, value: String) {
+fn summary(ui: &mut egui::Ui, label: String, value: String) {
     ui.label(egui::RichText::new(label).strong());
     ui.label(value);
     ui.end_row();
 }
 
-fn content_section(ui: &mut egui::Ui, label: &str, count: usize) {
+fn draw_select_contents(ui: &mut egui::Ui, state: &ImportWizardState) {
+    ui.heading(tr("import.stage.select_contents"));
+    ui.add_space(8.0);
+
+    ui.label(
+        "The validated archive defines the import set. Required shaders, policies, playlists, \
+and playlist relationships are preserved as exported and cannot be independently deselected."
+    );
+
+    ui.add_space(10.0);
+
+    let Some(package) = state.package.as_ref() else {
+        ui.label(tr("import.no_validated_package"));
+        return;
+    };
+
+    ui.label(
+        egui::RichText::new(trp("import.package_objects_selected", &[("count", (state.selection.selected_count()).to_string())]))
+        .strong()
+    );
+
+    ui.add_space(8.0);
+
+    egui::ScrollArea::vertical()
+        .id_source("screenshaver_import_select_contents_scroll")
+        .auto_shrink([false, false])
+        .max_height(ui.available_height().max(120.0))
+        .show(ui, |ui| {
+            content_section(ui, tr("import.policies"), package.policies.len());
+            for policy in &package.policies {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(egui::RichText::new(&policy.name).strong());
+                    ui.label(trp("import.policy_requires_shader", &[("target", import_policy_target_label(&policy.target)), ("id", (policy.shader_export_id).to_string())]));
+                });
+            }
+
+            ui.add_space(12.0);
+            content_section(ui, tr("import.shaders"), package.shaders.len());
+            for shader in &package.shaders {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(egui::RichText::new(&shader.filename).strong());
+                    ui.label(trp("import.package_id", &[("id", (shader.export_id).to_string())]));
+                });
+            }
+
+            ui.add_space(12.0);
+            content_section(ui, tr("import.dataset.playlists"), package.playlists.len());
+            for playlist in &package.playlists {
+                let members = package.memberships.iter()
+                    .filter(|member| playlist.export_id == member.playlist_export_id)
+                    .count();
+
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(egui::RichText::new(&playlist.name).strong());
+                    ui.label(trp("import.member_count", &[("count", (members).to_string())]));
+                });
+
+                if !playlist.description.trim().is_empty() {
+                    ui.add(
+                        egui::Label::new(&playlist.description)
+                            .wrap()
+                    );
+                }
+            }
+        });
+
+    ui.add_space(6.0);
+    ui.label(
+        egui::RichText::new(
+            "This page is a read-only confirmation of the sender-defined package scope. \
+No Screenshaver data has been changed."
+        )
+        .weak()
+    );
+}
+
+fn content_section(ui: &mut egui::Ui, label: String, count: usize) {
     ui.label(
         egui::RichText::new(format!("{} ({})", label, count))
             .strong()
@@ -708,6 +803,25 @@ fn content_section(ui: &mut egui::Ui, label: &str, count: usize) {
     ui.separator();
 }
 
+
+fn import_policy_target_label(target: &str) -> String {
+    match target {
+        "screensaver" => tr("target.screensaver"),
+        "wallpaper" => tr("target.wallpaper"),
+        "unassigned" => tr("target.unassigned"),
+        other => other.to_string(),
+    }
+}
+
+fn import_object_type_label(object_type: &str) -> String {
+    match object_type {
+        "Shader" => tr("import.object_type.shader"),
+        "Policy" => tr("import.object_type.policy"),
+        "Playlist" => tr("import.object_type.playlist"),
+        "Receiving installation" => tr("import.object_type.receiving_installation"),
+        other => other.to_string(),
+    }
+}
 
 fn draw_conflict_report(ui: &mut egui::Ui, state: &mut ImportWizardState) {
     ui.heading(tr("import.stage.resolve_conflicts"));
@@ -723,11 +837,7 @@ fn draw_conflict_report(ui: &mut egui::Ui, state: &mut ImportWizardState) {
     };
     let items = report.items.clone();
 
-    ui.label(egui::RichText::new(trp("import.conflict_counts", &[
-        ("new", &report.count(ConflictKind::New).to_string()),
-        ("duplicates", &report.count(ConflictKind::Duplicate).to_string()),
-        ("conflicts", &report.count(ConflictKind::Conflict).to_string()),
-    ])).strong());
+    ui.label(egui::RichText::new(trp("import.conflict_counts", &[("new", (report.count(ConflictKind::New)).to_string()), ("duplicates", (report.count(ConflictKind::Duplicate)).to_string()), ("conflicts", (report.count(ConflictKind::Conflict)).to_string())])).strong());
     ui.add_space(8.0);
 
     egui::ScrollArea::vertical()
@@ -744,15 +854,12 @@ fn draw_conflict_report(ui: &mut egui::Ui, state: &mut ImportWizardState) {
                         let width = ui.available_width().max(120.0);
                         ui.allocate_ui_with_layout(egui::vec2(width, 0.0), egui::Layout::top_down(egui::Align::Min), |ui| {
                             ui.set_max_width(width);
-                            ui.label(egui::RichText::new(format!("{}: {}", item.object_type, item.name)).strong());
+                            ui.label(egui::RichText::new(format!("{}: {}", import_object_type_label(item.object_type), item.name)).strong());
                             ui.add(egui::Label::new(&item.detail).wrap());
                             if item.kind == ConflictKind::Conflict {
                                 let key = (item.object_type.to_string(), item.package_id);
                                 if let Some(resolution) = state.resolutions.get(&key) {
-                                    ui.label(egui::RichText::new(trp(
-                                        "import.automatic_resolution_rename",
-                                        &[("name", &resolution.renamed_name)],
-                                    )).strong());
+                                    ui.label(egui::RichText::new(trp("import.automatic_rename", &[("name", (resolution.renamed_name).to_string())])).strong());
                                 } else {
                                     ui.label(egui::RichText::new(tr("import.rename_blocked")).strong());
                                 }
@@ -770,10 +877,7 @@ fn draw_conflict_report(ui: &mut egui::Ui, state: &mut ImportWizardState) {
                 if plan.unresolved_dependencies == 0 && unresolved_conflict_count(state) == 0 {
                     ui.label(tr("import.dependencies_resolved"));
                 } else {
-                    ui.label(trp("import.unresolved_rename_dependency_counts", &[
-                        ("renames", &unresolved_conflict_count(state).to_string()),
-                        ("dependencies", &plan.unresolved_dependencies.to_string()),
-                    ]));
+                    ui.label(trp("import.unresolved_rename_dependency_counts", &[("renames", (unresolved_conflict_count(state)).to_string()), ("dependencies", (plan.unresolved_dependencies).to_string())]));
                 }
             }
         });
@@ -797,7 +901,7 @@ fn local_import_name_stamp() -> Result<String, String> {
         "SELECT strftime('%Y%m%d-%H%M', 'now', 'localtime')",
         [],
         |row| row.get::<_, String>(0),
-    ).map_err(|error| trp("import.diag.local_timestamp_failed", &[("error", &error.to_string())]))
+    ).map_err(|error| trp("import.diag.local_timestamp_failed", &[("error", (error).to_string())]))
 }
 
 fn generate_automatic_conflict_resolutions(
@@ -869,7 +973,7 @@ fn deterministic_import_name(
         let reserved = resolutions.values().any(|r| r.renamed_name.eq_ignore_ascii_case(&candidate));
         if !db_exists && !package_exists && !reserved { return Ok(candidate); }
     }
-    Err(trp("import.diag.unique_import_name_failed", &[("name", &item.name)]))
+    Err(trp("import.diag.unique_import_name_failed", &[("name", (item.name).to_string())]))
 }
 
 fn resolved_package_and_report(
@@ -885,24 +989,24 @@ fn resolved_package_and_report(
         }
         let key = (item.object_type.to_string(), item.package_id);
         let resolution = resolutions.get(&key)
-            .ok_or_else(|| trp("import.diag.no_deterministic_rename", &[("type", item.object_type), ("name", &item.name)]))?;
+            .ok_or_else(|| trp("import.diag.no_deterministic_rename", &[("type", import_object_type_label(item.object_type)), ("name", (item.name).to_string())]))?;
         let name = resolution.renamed_name.clone();
         match item.object_type {
             "Shader" => {
                 package.shaders.iter_mut().find(|v| v.export_id == item.package_id)
-                    .ok_or_else(|| tr("import.diag.missing_package_shader"))?.filename = name;
+                    .ok_or("Missing package shader.")?.filename = name;
                 report.shader_kinds.insert(item.package_id, ConflictKind::New);
                 report.shader_local_ids.remove(&item.package_id);
             }
             "Policy" => {
                 package.policies.iter_mut().find(|v| v.export_id == item.package_id)
-                    .ok_or_else(|| tr("import.diag.missing_package_policy"))?.name = name;
+                    .ok_or("Missing package policy.")?.name = name;
                 report.policy_kinds.insert(item.package_id, ConflictKind::New);
                 report.policy_local_ids.remove(&item.package_id);
             }
             "Playlist" => {
                 package.playlists.iter_mut().find(|v| v.export_id == item.package_id)
-                    .ok_or_else(|| tr("import.diag.missing_package_playlist"))?.name = name;
+                    .ok_or("Missing package playlist.")?.name = name;
                 report.playlist_kinds.insert(item.package_id, ConflictKind::New);
                 report.playlist_local_ids.remove(&item.package_id);
             }
@@ -948,7 +1052,7 @@ fn discover_conflicts(package: &ValidatedPackage) -> ConflictReport {
                 kind: ConflictKind::Conflict,
                 object_type: "Receiving installation",
                 package_id: 0,
-                name: tr("import.diag.conflict_discovery_unavailable"),
+                name: "Conflict discovery unavailable".to_string(),
                 detail: error,
             }],
             ..ConflictReport::default()
@@ -958,7 +1062,7 @@ fn discover_conflicts(package: &ValidatedPackage) -> ConflictReport {
 
 fn discover_conflicts_inner(package: &ValidatedPackage) -> Result<ConflictReport, String> {
     let connection = crate::open_database::open()
-        .map_err(|error| trp("import.diag.conflict_database_open_failed", &[("error", &error.to_string())]))?;
+        .map_err(|error| format!("Unable to open screenshaver.db for read-only conflict discovery: {}", error))?;
     let managed_source = crate::locate_paths::shader_dir().to_string_lossy().to_string();
     let mut report = ConflictReport::default();
 
@@ -967,11 +1071,11 @@ fn discover_conflicts_inner(package: &ValidatedPackage) -> Result<ConflictReport
     for shader in &package.shaders {
         let mut by_hash = connection.prepare(
             "SELECT shader_id, filename FROM shaders WHERE source_path = ?1 AND source_hash = ?2 ORDER BY shader_id"
-        ).map_err(|e| trp("import.diag.shader_hash_prepare_failed", &[("error", &e.to_string())]))?;
+        ).map_err(|e| trp("import.diag.shader_hash_prepare_failed", &[("error", (e).to_string())]))?;
         let matches = by_hash.query_map(rusqlite::params![&managed_source, shader.sha256], |row| {
             Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
-        }).map_err(|e| trp("import.diag.shader_hash_query_failed", &[("hash", &shader.sha256), ("error", &e.to_string())]))?
-          .collect::<Result<Vec<_>, _>>().map_err(|e| trp("import.diag.shader_hash_decode_failed", &[("error", &e.to_string())]))?;
+        }).map_err(|e| trp("import.diag.shader_hash_query_failed", &[("hash", (shader.sha256).to_string()), ("error", (e).to_string())]))?
+          .collect::<Result<Vec<_>, _>>().map_err(|e| trp("import.diag.shader_hash_decode_failed", &[("error", (e).to_string())]))?;
 
         if let Some((local_id, local_name)) = matches.first() {
             report.shader_local_ids.insert(shader.export_id, *local_id);
@@ -982,9 +1086,9 @@ fn discover_conflicts_inner(package: &ValidatedPackage) -> Result<ConflictReport
                 package_id: shader.export_id,
                 name: shader.filename.clone(),
                 detail: if local_name == &shader.filename {
-                    tr("import.diag.shader_identical_same_name")
+                    "Identical shader content is already installed under the same filename.".into()
                 } else {
-                    trp("import.diag.shader_identical_other_name", &[("name", local_name)])
+                    trp("import.diag.shader_identical_other_name", &[("name", (local_name).to_string())])
                 },
             });
             continue;
@@ -994,17 +1098,17 @@ fn discover_conflicts_inner(package: &ValidatedPackage) -> Result<ConflictReport
             "SELECT shader_id, source_hash FROM shaders WHERE source_path = ?1 AND filename = ?2 ORDER BY shader_id LIMIT 1",
             rusqlite::params![&managed_source, shader.filename],
             |row| Ok((row.get(0)?, row.get(1)?)),
-        ).optional().map_err(|e| trp("import.diag.shader_filename_check_failed", &[("filename", &shader.filename), ("error", &e.to_string())]))?;
+        ).optional().map_err(|e| trp("import.diag.shader_filename_check_failed", &[("filename", (shader.filename).to_string()), ("error", (e).to_string())]))?;
 
         let kind = if same_name.is_some() { ConflictKind::Conflict } else { ConflictKind::New };
         if let Some((local_id, _)) = same_name { report.shader_local_ids.insert(shader.export_id, local_id); }
         report.shader_kinds.insert(shader.export_id, kind);
         report.items.push(if kind == ConflictKind::Conflict {
             ConflictItem { kind, object_type: "Shader", package_id: shader.export_id, name: shader.filename.clone(),
-                detail: tr("import.diag.shader_name_content_conflict") }
+                detail: "The filename already exists in the managed shader inventory, but its content differs from the imported shader.".into() }
         } else {
             ConflictItem { kind, object_type: "Shader", package_id: shader.export_id, name: shader.filename.clone(),
-                detail: tr("import.diag.shader_new") }
+                detail: "No installed shader has this content or managed filename.".into() }
         });
     }
 
@@ -1015,15 +1119,15 @@ fn discover_conflicts_inner(package: &ValidatedPackage) -> Result<ConflictReport
         let key = policy.name.trim().to_lowercase();
         let mut stmt = connection.prepare(
             "SELECT policy_id, shader_id, texture_mode, texture_family, texture_primitives, palette_mode, palette_color, rendered_fps, animation_speed, starting_offset, anti_aliasing, dithering, color_precision, render_scale, audiovisual_effect, bloom_intensity, bloom_saturation, bloom_threshold, bloom_frequency_rotation, bloom_frequency_invert, invert_colors, flip_horizontal, flip_vertical, hue_rotation FROM shader_policies WHERE policy_name_key = ?1 AND policy_target = ?2 ORDER BY policy_id"
-        ).map_err(|e| trp("import.diag.policy_name_prepare_failed", &[("error", &e.to_string())]))?;
+        ).map_err(|e| trp("import.diag.policy_name_prepare_failed", &[("error", (e).to_string())]))?;
         let rows = stmt.query_map(rusqlite::params![key, policy.target], |r| Ok(LocalPolicyValues {
             policy_id:r.get(0)?, shader_id:r.get(1)?, texture_mode:r.get(2)?, texture_family:r.get(3)?, texture_primitives:r.get(4)?, palette_mode:r.get(5)?, palette_color:r.get(6)?, rendered_fps:r.get(7)?, animation_speed:r.get(8)?, starting_offset:r.get(9)?, anti_aliasing:r.get(10)?, dithering:r.get(11)?, color_precision:r.get(12)?, render_scale:r.get(13)?, audiovisual_effect:r.get(14)?, bloom_intensity:r.get(15)?, bloom_saturation:r.get(16)?, bloom_threshold:r.get(17)?, bloom_frequency_rotation:r.get(18)?, bloom_frequency_invert:r.get::<_,i64>(19)?!=0, invert_colors:r.get::<_,i64>(20)?!=0, flip_horizontal:r.get::<_,i64>(21)?!=0, flip_vertical:r.get::<_,i64>(22)?!=0, hue_rotation:r.get(23)?
-        })).map_err(|e| trp("import.diag.policy_name_query_failed", &[("name", &policy.name), ("error", &e.to_string())]))?
-          .collect::<Result<Vec<_>,_>>().map_err(|e| trp("import.diag.policy_name_decode_failed", &[("error", &e.to_string())]))?;
+        })).map_err(|e| trp("import.diag.policy_name_query_failed", &[("name", (policy.name).to_string()), ("error", (e).to_string())]))?
+          .collect::<Result<Vec<_>,_>>().map_err(|e| trp("import.diag.policy_name_decode_failed", &[("error", (e).to_string())]))?;
 
         if rows.is_empty() {
             report.policy_kinds.insert(policy.export_id, ConflictKind::New);
-            report.items.push(ConflictItem { kind: ConflictKind::New, object_type:"Policy", package_id: policy.export_id, name:policy.name.clone(), detail:trp("import.diag.policy_new", &[("target", &policy.target)]) });
+            report.items.push(ConflictItem { kind: ConflictKind::New, object_type:"Policy", package_id: policy.export_id, name:policy.name.clone(), detail:trp("import.diag.policy_new", &[("target", import_policy_target_label(&policy.target))]) });
         } else if rows.len() == 1 {
             let local = &rows[0];
             let expected_shader = report.shader_local_ids.get(&policy.shader_export_id).copied();
@@ -1049,7 +1153,7 @@ fn discover_conflicts_inner(package: &ValidatedPackage) -> Result<ConflictReport
         let found: Option<(i64, Option<String>)> = connection.query_row(
             "SELECT playlist_id, description FROM playlists WHERE playlist_name_key = ?1 ORDER BY playlist_id LIMIT 1",
             [key], |r| Ok((r.get(0)?, r.get(1)?))
-        ).optional().map_err(|e| trp("import.diag.playlist_query_failed", &[("name", &playlist.name), ("error", &e.to_string())]))?;
+        ).optional().map_err(|e| trp("import.diag.playlist_query_failed", &[("name", (playlist.name).to_string()), ("error", (e).to_string())]))?;
         let Some((playlist_id, local_description)) = found else {
             report.playlist_kinds.insert(playlist.export_id, ConflictKind::New);
             report.items.push(ConflictItem { kind:ConflictKind::New, object_type:"Playlist", package_id: playlist.export_id, name:playlist.name.clone(), detail:tr("import.diag.playlist_new") });
@@ -1059,10 +1163,10 @@ fn discover_conflicts_inner(package: &ValidatedPackage) -> Result<ConflictReport
         let imported_members = package.memberships.iter().filter(|m| m.playlist_export_id == playlist.export_id).collect::<Vec<_>>();
         let all_resolved = imported_members.iter().all(|m| report.policy_local_ids.contains_key(&m.policy_export_id));
         let mut stmt = connection.prepare("SELECT policy_id FROM playlist_members WHERE playlist_id = ?1 ORDER BY position, policy_id")
-            .map_err(|e| trp("import.diag.playlist_member_prepare_failed", &[("error", &e.to_string())]))?;
+            .map_err(|e| trp("import.diag.playlist_member_prepare_failed", &[("error", (e).to_string())]))?;
         let local_members = stmt.query_map([playlist_id], |r| r.get::<_,i64>(0))
-            .map_err(|e| trp("import.diag.playlist_members_query_failed", &[("error", &e.to_string())]))?
-            .collect::<Result<Vec<_>,_>>().map_err(|e| trp("import.diag.playlist_members_decode_failed", &[("error", &e.to_string())]))?;
+            .map_err(|e| trp("import.diag.playlist_members_query_failed", &[("error", (e).to_string())]))?
+            .collect::<Result<Vec<_>,_>>().map_err(|e| trp("import.diag.playlist_members_decode_failed", &[("error", (e).to_string())]))?;
         let expected_members = imported_members.iter().filter_map(|m| report.policy_local_ids.get(&m.policy_export_id).copied()).collect::<Vec<_>>();
         let imported_description = if playlist.description.trim().is_empty() { None } else { Some(playlist.description.trim()) };
         let local_description_trimmed = local_description.as_deref().map(str::trim).filter(|v| !v.is_empty());
@@ -1149,7 +1253,7 @@ fn build_proposed_import_plan(
                 position: membership.position,
                 policy_package_id: membership.policy_export_id,
                 policy_name: policy.map(|policy| policy.name.clone())
-                    .unwrap_or_else(|| trp("import.policy_with_id", &[("id", &membership.policy_export_id.to_string())])),
+                    .unwrap_or_else(|| trp("import.policy_with_id", &[("id", (membership.policy_export_id).to_string())])),
                 policy_destination,
             });
         }
@@ -1167,15 +1271,15 @@ fn build_proposed_import_plan(
 fn policy_values_match(policy: &PackagePolicy, local: &LocalPolicyValues) -> Result<bool, String> {
     let v = &policy.values;
     let get = |name: &str| v.get(name).map(String::as_str)
-        .ok_or_else(|| trp("import.diag.validated_policy_missing_field", &[("policy", &policy.name), ("field", name)]));
+        .ok_or_else(|| trp("import.diag.validated_policy_missing_field", &[("policy", (policy.name).to_string()), ("field", (name).to_string())]));
     let f64v = |name: &str| -> Result<f64,String> {
-        let x=get(name)?; x.parse::<f64>().map_err(|_|trp("import.diag.invalid_number_in_field", &[("value", x), ("field", name)]))
+        let x=get(name)?; x.parse::<f64>().map_err(|_|trp("import.diag.invalid_number_in_field", &[("value", (x).to_string()), ("field", (name).to_string())]))
     };
     let i64v = |name: &str| -> Result<i64,String> {
-        let x=get(name)?; x.parse::<i64>().map_err(|_|trp("import.diag.invalid_integer_in_field", &[("value", x), ("field", name)]))
+        let x=get(name)?; x.parse::<i64>().map_err(|_|trp("import.diag.invalid_integer_in_field", &[("value", (x).to_string()), ("field", (name).to_string())]))
     };
     let boolv = |name: &str| -> Result<bool,String> {
-        match get(name)? {"true"=>Ok(true),"false"=>Ok(false),x=>Err(trp("import.diag.invalid_boolean_in_field", &[("value", x), ("field", name)]))}
+        match get(name)? {"true"=>Ok(true),"false"=>Ok(false),x=>Err(trp("import.diag.invalid_boolean_in_field", &[("value", (x).to_string()), ("field", (name).to_string())]))}
     };
     let close = |a:f64,b:f64| (a-b).abs() <= 0.000_001;
 
@@ -1183,7 +1287,7 @@ fn policy_values_match(policy: &PackagePolicy, local: &LocalPolicyValues) -> Res
     let target = match policy.target.as_str() {
         "screensaver" | "wallpaper" => Some(crate::manage_configuration::load_target_defaults(&policy.target)?),
         "unassigned" => None,
-        other => return Err(trp("import.diag.unsupported_policy_target", &[("target", other)])),
+        other => return Err(trp("import.diag.unsupported_policy_target", &[("target", (other).to_string())])),
     };
 
     let (texture_mode, texture_family, texture_primitives) = match local.texture_mode.as_deref() {
@@ -1192,10 +1296,10 @@ fn policy_values_match(policy: &PackagePolicy, local: &LocalPolicyValues) -> Res
         None => match target.as_ref() {
             Some(d) if d.texture_mode == "specific" => ("specific", d.texture_family.clone().unwrap_or_default(), Some(d.texture_primitives)),
             Some(d) if d.texture_mode == "random" => ("random", String::new(), Some(d.texture_primitives)),
-            Some(d) => return Err(trp("import.diag.receiving_defaults_texture_mode", &[("target", &d.target), ("mode", &d.texture_mode)])),
+            Some(d) => return Err(trp("import.diag.receiving_defaults_texture_mode", &[("target", (d.target).to_string()), ("mode", (d.texture_mode).to_string())])),
             None => ("inherit_target", String::new(), None),
         },
-        Some(other) => return Err(trp("import.diag.receiving_policy_texture_mode", &[("mode", other)])),
+        Some(other) => return Err(trp("import.diag.receiving_policy_texture_mode", &[("mode", (other).to_string())])),
     };
 
     let (palette_mode, palette_color) = match local.palette_mode.as_deref() {
@@ -1204,10 +1308,10 @@ fn policy_values_match(policy: &PackagePolicy, local: &LocalPolicyValues) -> Res
         None => match target.as_ref() {
             Some(d) if d.palette_mode == "specific" => ("specific", d.palette_color.clone().unwrap_or_default()),
             Some(d) if d.palette_mode == "random" => ("random", String::new()),
-            Some(d) => return Err(trp("import.diag.receiving_defaults_palette_mode", &[("target", &d.target), ("mode", &d.palette_mode)])),
+            Some(d) => return Err(trp("import.diag.receiving_defaults_palette_mode", &[("target", (d.target).to_string()), ("mode", (d.palette_mode).to_string())])),
             None => ("inherit_target", String::new()),
         },
-        Some(other) => return Err(trp("import.diag.receiving_policy_palette_mode", &[("mode", other)])),
+        Some(other) => return Err(trp("import.diag.receiving_policy_palette_mode", &[("mode", (other).to_string())])),
     };
 
     let (speed_mode, speed) = match local.animation_speed {
@@ -1272,11 +1376,10 @@ fn draw_review(ui: &mut egui::Ui, state: &ImportWizardState) {
     let conflicts = &resolved_conflicts;
     let package = &resolved_package;
     if conflict_count != 0 || unresolved_dependencies != 0 {
-        ui.label(egui::RichText::new(trp("import.blocked_counts", &[
-            ("conflicts", &conflict_count.to_string()),
-            ("dependencies", &unresolved_dependencies.to_string()),
-        ])).strong());
-        ui.label(tr("import.review_blocked_explanation"));
+        ui.label(egui::RichText::new(trp("import.blocked_counts", &[("conflicts", (conflict_count).to_string()), ("dependencies", (unresolved_dependencies).to_string())])).strong());
+        ui.label(
+            tr("import.review_blocked_explanation")
+        );
         ui.add_space(10.0);
     }
 
@@ -1291,18 +1394,9 @@ fn draw_review(ui: &mut egui::Ui, state: &ImportWizardState) {
         .num_columns(2)
         .spacing(egui::vec2(12.0, 4.0))
         .show(ui, |ui| {
-            summary(ui, tr("export.shaders_colon"), trp("import.review_count", &[
-                ("new", &new_shaders.to_string()),
-                ("duplicates", &duplicate_shaders.to_string()),
-            ]));
-            summary(ui, tr("export.policies_colon"), trp("import.review_count", &[
-                ("new", &new_policies.to_string()),
-                ("duplicates", &duplicate_policies.to_string()),
-            ]));
-            summary(ui, tr("export.playlists_colon"), trp("import.review_count", &[
-                ("new", &new_playlists.to_string()),
-                ("duplicates", &duplicate_playlists.to_string()),
-            ]));
+            summary(ui, tr("import.shaders_colon"), trp("import.review_count", &[("new", (new_shaders).to_string()), ("duplicates", (duplicate_shaders).to_string())]));
+            summary(ui, tr("import.policies_colon"), trp("import.review_count", &[("new", (new_policies).to_string()), ("duplicates", (duplicate_policies).to_string())]));
+            summary(ui, tr("import.playlists_colon"), trp("import.review_count", &[("new", (new_playlists).to_string()), ("duplicates", (duplicate_playlists).to_string())]));
             summary(ui, tr("import.playlist_memberships_colon"), package.memberships.len().to_string());
         });
 
@@ -1348,12 +1442,13 @@ fn draw_results(ui: &mut egui::Ui, state: &ImportWizardState) {
 fn draw_navigation(ui: &mut egui::Ui, state: &mut ImportWizardState) {
     ui.horizontal(|ui| {
         if ui.add_enabled(
-            matches!(state.stage, ImportStage::InspectArchive | ImportStage::ResolveConflicts | ImportStage::Review),
-            egui::Button::new(tr("export.back")),
+            matches!(state.stage, ImportStage::InspectArchive | ImportStage::SelectContents | ImportStage::ResolveConflicts | ImportStage::Review),
+            egui::Button::new(tr("import.back")),
         ).clicked() {
             state.stage = match state.stage {
                 ImportStage::Review => ImportStage::ResolveConflicts,
-                ImportStage::ResolveConflicts => ImportStage::InspectArchive,
+                ImportStage::ResolveConflicts => ImportStage::SelectContents,
+                ImportStage::SelectContents => ImportStage::InspectArchive,
                 _ => ImportStage::SelectArchive,
             };
         }
@@ -1367,6 +1462,7 @@ fn draw_navigation(ui: &mut egui::Ui, state: &mut ImportWizardState) {
             let next_enabled = match state.stage {
                 ImportStage::SelectArchive => state.archive_selected(),
                 ImportStage::InspectArchive => state.inspection_passed() && state.package.is_some(),
+                ImportStage::SelectContents => state.package.is_some(),
                 // Review remains available even when conflicts exist so the user can
                 // inspect the complete proposed operation. Persistent Import itself is
                 // blocked until every conflict/dependency is resolved.
@@ -1383,23 +1479,29 @@ fn draw_navigation(ui: &mut egui::Ui, state: &mut ImportWizardState) {
                     && unresolved_conflict_count(state) == 0,
                 ImportStage::Results => false,
             };
-            let button_text = if state.stage == ImportStage::Review { tr("import.action") } else { tr("export.next") };
+            let button_text = if state.stage == ImportStage::Review { tr("import.action") } else { tr("import.next") };
 
             if ui.add_enabled(next_enabled, egui::Button::new(button_text)).clicked() {
                 match state.stage {
                     ImportStage::SelectArchive => {
                         let (inspection, package) = inspect_archive(Path::new(state.archive_path.trim()));
+                        if inspection.passed {
+                            if let Some(ref package) = package {
+                                state.selection = ImportSelection::from_package(package);
+                            }
+                        }
                         state.inspection = Some(inspection);
                         state.package = package;
                         state.stage = ImportStage::InspectArchive;
                     }
-                    ImportStage::InspectArchive => {
+                    ImportStage::InspectArchive => state.stage = ImportStage::SelectContents,
+                    ImportStage::SelectContents => {
                         if let Some(package) = state.package.as_ref() {
                             let conflicts = discover_conflicts(package);
                             state.conflict_rename_stamp = local_import_name_stamp().ok();
-                            state.resolutions = state.conflict_rename_stamp.as_deref()
-                                .map(|stamp| generate_automatic_conflict_resolutions(package, &conflicts, stamp))
-                                .unwrap_or_default();
+                        state.resolutions = state.conflict_rename_stamp.as_deref()
+                            .map(|stamp| generate_automatic_conflict_resolutions(package, &conflicts, stamp))
+                            .unwrap_or_default();
                             state.conflicts = Some(conflicts);
                             refresh_resolved_plan(state);
                             state.stage = ImportStage::ResolveConflicts;
@@ -1427,12 +1529,12 @@ fn execute_clean_import(
     let (inspection, package) = inspect_archive(archive_path);
     if !inspection.passed {
         return ImportExecutionResult::failure(
-            tr("import.exec.archive_reinspection_failed"),
+            "The archive no longer passes inspection. No Import changes were made.",
             None,
         );
     }
     let Some(package) = package else {
-        return ImportExecutionResult::failure(tr("import.exec.validated_package_unavailable"), None);
+        return ImportExecutionResult::failure("Validated package is unavailable.", None);
     };
 
     let discovered = discover_conflicts(&package);
@@ -1440,7 +1542,7 @@ fn execute_clean_import(
     let rename_stamp = match (has_conflicts, conflict_rename_stamp) {
         (true, Some(stamp)) => stamp,
         (true, None) => return ImportExecutionResult::failure(
-            tr("import.exec.conflict_timestamp_unavailable"),
+            "The Import conflict timestamp is unavailable. No Import changes were made.",
             None,
         ),
         (false, _) => "",
@@ -1450,24 +1552,24 @@ fn execute_clean_import(
         match refreshed_resolutions.get(key) {
             Some(refreshed) if refreshed.renamed_name == resolution.renamed_name => {}
             Some(refreshed) => return ImportExecutionResult::failure(
-                trp("import.exec.destination_name_changed", &[("previous", &resolution.renamed_name), ("current", &refreshed.renamed_name)]),
+                trp("import.exec.destination_name_changed", &[("previous", (resolution.renamed_name).to_string()), ("current", (refreshed.renamed_name).to_string())]),
                 None,
             ),
             None => return ImportExecutionResult::failure(
-                tr("import.exec.conflict_set_changed"),
+                "The receiving installation changed after Review and the conflict set is no longer the same. No Import changes were made.",
                 None,
             ),
         }
     }
     if refreshed_resolutions.len() != resolutions.len() {
         return ImportExecutionResult::failure(
-            tr("import.exec.new_conflicts_discovered"),
+            "The receiving installation changed after Review and new conflicts were discovered. No Import changes were made.",
             None,
         );
     }
     let (package, conflicts) = match resolved_package_and_report(&package, &discovered, &refreshed_resolutions) {
         Ok(value) => value,
-        Err(error) => return ImportExecutionResult::failure(trp("import.exec.conflict_resolution_stale", &[("error", &error)]), None),
+        Err(error) => return ImportExecutionResult::failure(trp("import.exec.conflict_resolution_stale", &[("error", (error).to_string())]), None),
     };
     let conflict_items = conflicts.items.iter()
         .filter(|item| item.kind == ConflictKind::Conflict)
@@ -1475,11 +1577,7 @@ fn execute_clean_import(
         .collect::<Vec<_>>();
     if !conflict_items.is_empty() {
         return ImportExecutionResult::failure(
-            trp("import.exec.unresolved_conflicts", &[
-                ("count", &conflict_items.len().to_string()),
-                ("details", &conflict_items.join("
-")),
-            ]),
+            trp("import.exec.unresolved_conflicts", &[("count", (conflict_items.len()).to_string()), ("details", (conflict_items.join("\n")).to_string())]),
             None,
         );
     }
@@ -1488,37 +1586,24 @@ fn execute_clean_import(
         let mut unresolved = Vec::new();
         for policy in &plan.policies {
             if policy.destination == ProposedDestination::Unresolved {
-                unresolved.push(trp("import.exec.policy_unresolved_destination", &[("name", &policy.name), ("id", &policy.package_id.to_string())]));
+                unresolved.push(trp("import.exec.policy_unresolved_destination", &[("name", (policy.name).to_string()), ("id", (policy.package_id).to_string())]));
             }
             if policy.shader_destination == ProposedDestination::Unresolved {
-                unresolved.push(trp("import.exec.policy_unresolved_shader", &[
-                    ("name", &policy.name),
-                    ("id", &policy.package_id.to_string()),
-                    ("shader_id", &policy.shader_package_id.to_string()),
-                ]));
+                unresolved.push(trp("import.exec.policy_unresolved_shader", &[("name", (policy.name).to_string()), ("id", (policy.package_id).to_string()), ("shader_id", (policy.shader_package_id).to_string())]));
             }
         }
         for playlist in &plan.playlists {
             if playlist.destination == ProposedDestination::Unresolved {
-                unresolved.push(trp("import.exec.playlist_unresolved_destination", &[("name", &playlist.name), ("id", &playlist.package_id.to_string())]));
+                unresolved.push(trp("import.exec.playlist_unresolved_destination", &[("name", (playlist.name).to_string()), ("id", (playlist.package_id).to_string())]));
             }
             for member in &playlist.members {
                 if member.policy_destination == ProposedDestination::Unresolved {
-                    unresolved.push(trp("import.exec.playlist_member_unresolved_policy", &[
-                        ("playlist", &playlist.name),
-                        ("position", &member.position.to_string()),
-                        ("policy", &member.policy_name),
-                        ("policy_id", &member.policy_package_id.to_string()),
-                    ]));
+                    unresolved.push(trp("import.exec.playlist_member_unresolved_policy", &[("playlist", (playlist.name).to_string()), ("position", (member.position).to_string()), ("policy", (member.policy_name).to_string()), ("policy_id", (member.policy_package_id).to_string())]));
                 }
             }
         }
         return ImportExecutionResult::failure(
-            trp("import.exec.unresolved_dependencies", &[
-                ("count", &unresolved.len().to_string()),
-                ("details", &unresolved.join("
-")),
-            ]),
+            trp("import.exec.unresolved_dependencies", &[("count", (plan.unresolved_dependencies).to_string()), ("details", (unresolved.join("\n")).to_string())]),
             None,
         );
     }
@@ -1537,8 +1622,8 @@ fn execute_clean_import(
         Err(error) => {
             let restore = restore_database_backup(&database_path, &backup_path);
             let detail = match restore {
-                Ok(()) => trp("import.exec.failed_database_restored", &[("error", &error)]),
-                Err(restore_error) => trp("import.exec.failed_restore_also_failed", &[("error", &error), ("restore_error", &restore_error), ("backup", &backup_path.display().to_string())]),
+                Ok(()) => trp("import.exec.failed_database_restored", &[("error", (error).to_string())]),
+                Err(restore_error) => trp("import.exec.failed_restore_also_failed", &[("error", (error).to_string()), ("restore_error", (restore_error).to_string()), ("backup", (backup_path.display()).to_string())]),
             };
             ImportExecutionResult::failure(detail, Some(backup_path))
         }
@@ -1551,7 +1636,7 @@ fn create_verified_database_backup(database_path: &Path) -> Result<PathBuf, Stri
         "SELECT strftime('%Y%m%d-%H%M%S', 'now', 'localtime')",
         [],
         |row| row.get(0),
-    ).map_err(|error| trp("import.exec.backup_timestamp_failed", &[("error", &error.to_string())]))?;
+    ).map_err(|error| trp("import.exec.backup_timestamp_failed", &[("error", (error).to_string())]))?;
 
     let base_name = database_path.file_name().and_then(|value| value.to_str()).unwrap_or("screenshaver.db");
     let parent = database_path.parent().unwrap_or_else(|| Path::new("."));
@@ -1567,29 +1652,29 @@ fn create_verified_database_backup(database_path: &Path) -> Result<PathBuf, Stri
     // generated locally rather than from archive data; quote it defensively.
     let quoted = backup_path.to_string_lossy().replace('\'', "''");
     connection.execute_batch(&format!("VACUUM INTO '{}';", quoted))
-        .map_err(|error| trp("import.exec.backup_create_failed", &[("path", &backup_path.display().to_string()), ("error", &error.to_string())]))?;
+        .map_err(|error| trp("import.exec.backup_create_failed", &[("path", (backup_path.display()).to_string()), ("error", (error).to_string())]))?;
     drop(connection);
 
     let verify = rusqlite::Connection::open_with_flags(
         &backup_path,
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    ).map_err(|error| trp("import.exec.backup_open_verify_failed", &[("error", &error.to_string())]))?;
+    ).map_err(|error| trp("import.exec.backup_open_verify_failed", &[("error", (error).to_string())]))?;
     let integrity: String = verify.query_row("PRAGMA integrity_check", [], |row| row.get(0))
-        .map_err(|error| trp("import.exec.backup_verify_failed", &[("error", &error.to_string())]))?;
+        .map_err(|error| trp("import.exec.backup_verify_failed", &[("error", (error).to_string())]))?;
     if integrity != "ok" {
-        return Err(trp("import.exec.backup_integrity_failed", &[("result", &integrity)]));
+        return Err(trp("import.exec.backup_integrity_failed", &[("result", (integrity).to_string())]));
     }
     Ok(backup_path)
 }
 
 fn restore_database_backup(database_path: &Path, backup_path: &Path) -> Result<(), String> {
     std::fs::copy(backup_path, database_path)
-        .map_err(|error| trp("import.exec.restore_copy_failed", &[("database", &database_path.display().to_string()), ("backup", &backup_path.display().to_string()), ("error", &error.to_string())]))?;
+        .map_err(|error| trp("import.exec.restore_copy_failed", &[("database", (database_path.display()).to_string()), ("backup", (backup_path.display()).to_string()), ("error", (error).to_string())]))?;
     let verify = rusqlite::Connection::open_with_flags(database_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-        .map_err(|error| trp("import.exec.restored_database_open_failed", &[("error", &error.to_string())]))?;
+        .map_err(|error| trp("import.exec.restored_database_open_failed", &[("error", (error).to_string())]))?;
     let integrity: String = verify.query_row("PRAGMA integrity_check", [], |row| row.get(0))
-        .map_err(|error| trp("import.exec.restored_database_verify_failed", &[("error", &error.to_string())]))?;
-    if integrity == "ok" { Ok(()) } else { Err(trp("import.exec.restored_database_integrity_result", &[("result", &integrity)])) }
+        .map_err(|error| trp("import.exec.restored_database_verify_failed", &[("error", (error).to_string())]))?;
+    if integrity == "ok" { Ok(()) } else { Err(trp("import.exec.restored_database_integrity_result", &[("result", (integrity).to_string())])) }
 }
 
 fn execute_clean_import_after_backup(
@@ -1599,37 +1684,37 @@ fn execute_clean_import_after_backup(
 ) -> Result<ImportExecutionResult, String> {
     let shader_dir = crate::locate_paths::shader_dir();
     std::fs::create_dir_all(&shader_dir)
-        .map_err(|error| trp("import.exec.shader_directory_create_failed", &[("path", &shader_dir.display().to_string()), ("error", &error.to_string())]))?;
+        .map_err(|error| trp("import.exec.shader_directory_create_failed", &[("path", (shader_dir.display()).to_string()), ("error", (error).to_string())]))?;
 
     let mut created_files = Vec::<PathBuf>::new();
     let operation = (|| -> Result<ImportExecutionResult, String> {
         let file = std::fs::File::open(archive_path)
-            .map_err(|error| trp("import.exec.archive_reopen_failed", &[("error", &error.to_string())]))?;
+            .map_err(|error| trp("import.exec.archive_reopen_failed", &[("error", (error).to_string())]))?;
         let mut zip = zip::ZipArchive::new(file)
-            .map_err(|error| trp("import.exec.zip_reopen_failed", &[("error", &error.to_string())]))?;
+            .map_err(|error| trp("import.exec.zip_reopen_failed", &[("error", (error).to_string())]))?;
 
         for shader in package.shaders.iter().filter(|shader| conflicts.shader_kinds.get(&shader.export_id) == Some(&ConflictKind::New)) {
             let destination = shader_dir.join(&shader.filename);
             if destination.exists() {
-                return Err(trp("import.exec.shader_overwrite_refused", &[("path", &destination.display().to_string())]));
+                return Err(trp("import.exec.shader_overwrite_refused", &[("path", (destination.display()).to_string())]));
             }
             let mut entry = zip.by_name(&shader.archive_path)
-                .map_err(|error| trp("import.exec.shader_payload_read_failed", &[("path", &shader.archive_path), ("error", &error.to_string())]))?;
+                .map_err(|error| trp("import.exec.shader_payload_read_failed", &[("path", (shader.archive_path).to_string()), ("error", (error).to_string())]))?;
             let mut bytes = Vec::new();
             entry.read_to_end(&mut bytes)
-                .map_err(|error| trp("import.exec.shader_payload_read_failed", &[("path", &shader.archive_path), ("error", &error.to_string())]))?;
+                .map_err(|error| trp("import.exec.shader_payload_read_failed", &[("path", (shader.archive_path).to_string()), ("error", (error).to_string())]))?;
             if sha256_hex(&bytes) != shader.sha256 {
-                return Err(trp("import.exec.shader_changed_after_inspection", &[("filename", &shader.filename)]));
+                return Err(trp("import.exec.shader_changed_after_inspection", &[("filename", (shader.filename).to_string())]));
             }
             std::fs::write(&destination, &bytes)
-                .map_err(|error| trp("import.exec.shader_install_failed", &[("path", &destination.display().to_string()), ("error", &error.to_string())]))?;
+                .map_err(|error| trp("import.exec.shader_install_failed", &[("path", (destination.display()).to_string()), ("error", (error).to_string())]))?;
             created_files.push(destination);
         }
         drop(zip);
 
         let mut connection = crate::open_database::open()?;
         crate::reconcile_shaders::reconcile(&mut connection)
-            .map_err(|error| trp("import.exec.shader_reconcile_failed", &[("error", &error.to_string())]))?;
+            .map_err(|error| trp("import.exec.shader_reconcile_failed", &[("error", (error).to_string())]))?;
 
         let managed_source = shader_dir.to_string_lossy().to_string();
         let mut shader_map = conflicts.shader_local_ids.clone();
@@ -1638,18 +1723,18 @@ fn execute_clean_import_after_backup(
                 "SELECT shader_id FROM shaders WHERE source_path = ?1 AND filename = ?2 AND source_hash = ?3 ORDER BY shader_id LIMIT 1",
                 rusqlite::params![&managed_source, &shader.filename, &shader.sha256],
                 |row| row.get(0),
-            ).map_err(|error| trp("import.exec.shader_registration_failed", &[("filename", &shader.filename), ("error", &error.to_string())]))?;
+            ).map_err(|error| trp("import.exec.shader_registration_failed", &[("filename", (shader.filename).to_string()), ("error", (error).to_string())]))?;
             shader_map.insert(shader.export_id, local_id);
         }
 
         let transaction = connection.transaction()
-            .map_err(|error| trp("import.exec.transaction_begin_failed", &[("error", &error.to_string())]))?;
+            .map_err(|error| trp("import.exec.transaction_begin_failed", &[("error", (error).to_string())]))?;
         let mut policy_map = conflicts.policy_local_ids.clone();
         let mut policies_created = 0_usize;
 
         for policy in package.policies.iter().filter(|policy| conflicts.policy_kinds.get(&policy.export_id) == Some(&ConflictKind::New)) {
             let shader_id = shader_map.get(&policy.shader_export_id).copied()
-                .ok_or_else(|| trp("import.exec.policy_no_destination_shader", &[("name", &policy.name)]))?;
+                .ok_or_else(|| trp("import.exec.policy_no_destination_shader", &[("name", (policy.name).to_string())]))?;
             let policy_id = insert_imported_policy(&transaction, policy, shader_id)?;
             policy_map.insert(policy.export_id, policy_id);
             policies_created += 1;
@@ -1664,7 +1749,7 @@ fn execute_clean_import_after_backup(
             transaction.execute(
                 "INSERT INTO playlists (playlist_created_at, playlist_modified_at, playlist_name, playlist_name_key, description) VALUES (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?1, ?2, ?3)",
                 rusqlite::params![name, key, description],
-            ).map_err(|error| trp("import.exec.playlist_import_failed", &[("name", &playlist.name), ("error", &error.to_string())]))?;
+            ).map_err(|error| trp("import.exec.playlist_import_failed", &[("name", (playlist.name).to_string()), ("error", (error).to_string())]))?;
             playlist_map.insert(playlist.export_id, transaction.last_insert_rowid());
             playlists_created += 1;
         }
@@ -1678,21 +1763,21 @@ fn execute_clean_import_after_backup(
                 continue;
             }
             let playlist_id = playlist_map.get(&membership.playlist_export_id).copied()
-                .ok_or_else(|| trp("import.exec.playlist_id_no_mapping", &[("id", &membership.playlist_export_id.to_string())]))?;
+                .ok_or_else(|| trp("import.exec.playlist_id_no_mapping", &[("id", (membership.playlist_export_id).to_string())]))?;
             let policy_id = policy_map.get(&membership.policy_export_id).copied()
-                .ok_or_else(|| trp("import.exec.policy_id_no_membership_mapping", &[("id", &membership.policy_export_id.to_string())]))?;
+                .ok_or_else(|| trp("import.exec.policy_id_no_membership_mapping", &[("id", (membership.policy_export_id).to_string())]))?;
             transaction.execute(
                 "INSERT INTO playlist_members (playlist_id, policy_id, position) VALUES (?1, ?2, ?3)",
                 rusqlite::params![playlist_id, policy_id, membership.position as i64],
-            ).map_err(|error| trp("import.exec.membership_restore_failed", &[("position", &membership.position.to_string()), ("error", &error.to_string())]))?;
+            ).map_err(|error| trp("import.exec.membership_restore_failed", &[("position", (membership.position).to_string()), ("error", (error).to_string())]))?;
             memberships_created += 1;
         }
 
-        transaction.commit().map_err(|error| trp("import.exec.transaction_commit_failed", &[("error", &error.to_string())]))?;
+        transaction.commit().map_err(|error| trp("import.exec.transaction_commit_failed", &[("error", (error).to_string())]))?;
 
         Ok(ImportExecutionResult {
             success: true,
-            detail: tr("import.exec.success_detail"),
+            detail: "The validated package was imported successfully. Genuine conflicts were preserved additively under deterministic imported names; existing recipient objects were not modified. Truly identical duplicates were reused, and imported dependencies were mapped to their destination identities. screenshaver.toml was not changed.".to_string(),
             backup_path: None,
             shaders_created: created_files.len(),
             policies_created,
@@ -1716,17 +1801,17 @@ fn insert_imported_policy(
 ) -> Result<i64, String> {
     let v = &policy.values;
     let get = |name: &str| v.get(name).map(String::as_str)
-        .ok_or_else(|| trp("import.exec.imported_policy_missing_field", &[("policy", &policy.name), ("field", name)]));
+        .ok_or_else(|| trp("import.exec.imported_policy_missing_field", &[("policy", (policy.name).to_string()), ("field", (name).to_string())]));
     let parse_i64 = |name: &str| -> Result<i64, String> {
         let value = get(name)?;
-        value.parse::<i64>().map_err(|_| trp("import.exec.invalid_policy_integer", &[("value", value), ("field", name)]))
+        value.parse::<i64>().map_err(|_| trp("import.exec.invalid_policy_integer", &[("value", (value).to_string()), ("field", (name).to_string())]))
     };
     let parse_f64 = |name: &str| -> Result<f64, String> {
         let value = get(name)?;
-        value.parse::<f64>().map_err(|_| trp("import.exec.invalid_policy_number", &[("value", value), ("field", name)]))
+        value.parse::<f64>().map_err(|_| trp("import.exec.invalid_policy_number", &[("value", (value).to_string()), ("field", (name).to_string())]))
     };
     let parse_bool = |name: &str| -> Result<i64, String> {
-        match get(name)? { "true" => Ok(1), "false" => Ok(0), value => Err(trp("import.exec.invalid_policy_boolean", &[("value", value), ("field", name)])) }
+        match get(name)? { "true" => Ok(1), "false" => Ok(0), value => Err(trp("import.exec.invalid_policy_boolean", &[("value", (value).to_string()), ("field", (name).to_string())])) }
     };
 
     let texture_mode = get("texture_mode")?;
@@ -1734,19 +1819,19 @@ fn insert_imported_policy(
         "specific" => (Some("specific"), Some(get("texture_family")?), Some(parse_i64("texture_primitives")?)),
         "random" => (Some("random"), None, None),
         "inherit_target" => (None, None, None),
-        other => return Err(trp("import.exec.unsupported_texture_mode", &[("mode", other)])),
+        other => return Err(trp("import.exec.unsupported_texture_mode", &[("mode", (other).to_string())])),
     };
     let palette_mode = get("palette_mode")?;
     let (db_palette_mode, palette_color): (Option<&str>, Option<&str>) = match palette_mode {
         "specific" => (Some("specific"), Some(get("palette_color")?)),
         "random" => (Some("random"), None),
         "inherit_target" => (None, None),
-        other => return Err(trp("import.exec.unsupported_palette_mode", &[("mode", other)])),
+        other => return Err(trp("import.exec.unsupported_palette_mode", &[("mode", (other).to_string())])),
     };
     let animation_speed = match get("animation_speed_mode")? {
         "explicit" => Some(parse_f64("animation_speed")?),
         "inherit_target" => None,
-        other => return Err(trp("import.exec.unsupported_animation_speed_mode", &[("mode", other)])),
+        other => return Err(trp("import.exec.unsupported_animation_speed_mode", &[("mode", (other).to_string())])),
     };
 
     let name = policy.name.trim();
@@ -1762,7 +1847,7 @@ fn insert_imported_policy(
             parse_bool("bloom_frequency_invert")?, parse_bool("invert_colors")?, parse_bool("flip_horizontal")?,
             parse_bool("flip_vertical")?, parse_f64("hue_rotation")?,
         ],
-    ).map_err(|error| trp("import.exec.policy_import_failed", &[("name", &policy.name), ("error", &error.to_string())]))?;
+    ).map_err(|error| trp("import.exec.policy_import_failed", &[("name", (policy.name).to_string()), ("error", (error).to_string())]))?;
     Ok(transaction.last_insert_rowid())
 }
 
@@ -1770,10 +1855,10 @@ fn import_name_key(name: &str) -> Result<String, String> {
     let trimmed = name.trim();
     let length = trimmed.chars().count();
     if !(1..=128).contains(&length) {
-        return Err(trp("import.exec.imported_name_length_invalid", &[("length", &length.to_string())]));
+        return Err(trp("import.exec.imported_name_length_invalid", &[("length", (length).to_string())]));
     }
     let key = trimmed.chars().flat_map(|character| character.to_lowercase()).collect::<String>();
-    if key.is_empty() { Err(tr("import.exec.imported_name_empty_key")) } else { Ok(key) }
+    if key.is_empty() { Err("Imported name produced an empty comparison key.".into()) } else { Ok(key) }
 }
 
 fn starting_directory(archive_path: &str) -> PathBuf {
@@ -1793,26 +1878,26 @@ fn starting_directory(archive_path: &str) -> PathBuf {
 fn schema_for_version(version: u32) -> Result<ExportSchema, String> {
     let text = match version {
         1 => include_str!("../assets/export/schema_v001.json"),
-        _ => return Err(trp("import.validation.export_format_unsupported", &[("version", &version.to_string())])),
+        _ => return Err(trp("import.validation.export_format_unsupported", &[("version", (version).to_string())])),
     };
 
     let schema: ExportSchema = serde_json::from_str(text)
-        .map_err(|error| trp("import.validation.export_schema_load_failed", &[("version", &version.to_string()), ("error", &error.to_string())]))?;
+        .map_err(|error| trp("import.validation.export_schema_load_failed", &[("version", (version).to_string()), ("error", (error).to_string())]))?;
 
     if schema.format_version != version {
-        return Err(tr("import.validation.export_schema_version_mismatch"));
+        return Err(tr("import.validation.export_schema_version_mismatch").into());
     }
 
     if schema.integrity.algorithm != "sha256"
         || schema.integrity.package_canonicalization != "screenshaver-package-v1"
     {
-        return Err(tr("import.validation.export_schema_integrity_unsupported"));
+        return Err(tr("import.validation.export_schema_integrity_unsupported").into());
     }
 
     if !schema.integrity.package_hash_excludes.iter()
         .any(|name| name == &schema.archive.manifest)
     {
-        return Err(tr("import.validation.export_schema_manifest_hashing"));
+        return Err(tr("import.validation.export_schema_manifest_hashing").into());
     }
 
     for file in [
@@ -1822,7 +1907,7 @@ fn schema_for_version(version: u32) -> Result<ExportSchema, String> {
         &schema.datasets.playlist_members.file,
     ] {
         if !schema.archive.metadata_files.iter().any(|name| name == file) {
-            return Err(trp("import.validation.schema_metadata_undeclared", &[("file", file)]));
+            return Err(trp("import.validation.schema_metadata_undeclared", &[("file", (file).to_string())]));
         }
     }
 
@@ -1840,26 +1925,23 @@ fn inspect_archive(path: &Path) -> (ArchiveInspection, Option<ValidatedPackage>)
             return (result, None);
         }
         Err(error) => {
-            result.fail(tr("import.check.archive_file"), trp("import.diag.access_archive", &[("error", &error.to_string())]));
+            result.fail(tr("import.check.archive_file"), trp("import.diag.access_archive", &[("error", (error).to_string())]));
             result.finish();
             return (result, None);
         }
     };
 
     if metadata.len() > MAX_ZIP_BYTES {
-        result.fail(tr("import.check.archive_size"), trp("import.diag.archive_bytes_exceed_limit", &[
-            ("actual", &metadata.len().to_string()),
-            ("limit", &MAX_ZIP_BYTES.to_string()),
-        ]));
+        result.fail(tr("import.check.archive_size"), trp("import.diag.archive_bytes_exceed_limit", &[("actual", (metadata.len()).to_string()), ("limit", (MAX_ZIP_BYTES).to_string())]));
         result.finish();
         return (result, None);
     }
-    result.pass(tr("import.check.archive_file"), format!("{} bytes", metadata.len()));
+    result.pass(tr("import.check.archive_file"), trp("import.byte_count", &[("count", (metadata.len()).to_string())]));
 
     let file = match std::fs::File::open(path) {
         Ok(file) => file,
         Err(error) => {
-            result.fail(tr("import.check.zip_container"), trp("import.diag.open_archive", &[("error", &error.to_string())]));
+            result.fail(tr("import.check.zip_container"), trp("import.diag.open_archive", &[("error", (error).to_string())]));
             result.finish();
             return (result, None);
         }
@@ -1868,17 +1950,14 @@ fn inspect_archive(path: &Path) -> (ArchiveInspection, Option<ValidatedPackage>)
     let mut zip = match zip::ZipArchive::new(file) {
         Ok(zip) => zip,
         Err(error) => {
-            result.fail(tr("import.check.zip_container"), trp("import.diag.invalid_zip", &[("error", &error.to_string())]));
+            result.fail(tr("import.check.zip_container"), trp("import.diag.invalid_zip", &[("error", (error).to_string())]));
             result.finish();
             return (result, None);
         }
     };
 
     if zip.len() > MAX_ENTRIES {
-        result.fail(tr("import.check.zip_entry_count"), trp("import.diag.archive_entries_exceed_limit", &[
-            ("actual", &zip.len().to_string()),
-            ("limit", &MAX_ENTRIES.to_string()),
-        ]));
+        result.fail(tr("import.check.zip_entry_count"), trp("import.diag.archive_entries_exceed_limit", &[("actual", (zip.len()).to_string()), ("limit", (MAX_ENTRIES).to_string())]));
         result.finish();
         return (result, None);
     }
@@ -1893,7 +1972,7 @@ fn inspect_archive(path: &Path) -> (ArchiveInspection, Option<ValidatedPackage>)
         let mut entry = match zip.by_index(index) {
             Ok(entry) => entry,
             Err(error) => {
-                result.fail(tr("import.check.zip_entry_access"), trp("import.diag.zip_entry_error", &[("index", &index.to_string()), ("error", &error.to_string())]));
+                result.fail(tr("import.check.zip_entry_access"), trp("import.diag.zip_entry_error", &[("index", (index).to_string()), ("error", (error).to_string())]));
                 result.finish();
                 return (result, None);
             }
@@ -1927,7 +2006,7 @@ fn inspect_archive(path: &Path) -> (ArchiveInspection, Option<ValidatedPackage>)
         let mut bytes = Vec::new();
         if !is_dir {
             if let Err(error) = entry.read_to_end(&mut bytes) {
-                result.fail(tr("import.check.member_read"), trp("import.diag.member_error", &[("name", &name), ("error", &error.to_string())]));
+                result.fail(tr("import.check.member_read"), format!("{}: {}", name, error));
                 result.finish();
                 return (result, None);
             }
@@ -1936,7 +2015,7 @@ fn inspect_archive(path: &Path) -> (ArchiveInspection, Option<ValidatedPackage>)
         entries.insert(name, Payload { bytes, is_dir, unix_mode });
     }
 
-    result.pass(tr("import.check.zip_container"), format!("{} entries; {} expanded bytes", zip.len(), expanded));
+    result.pass(tr("import.check.zip_container"), trp("import.zip_summary", &[("entries", (zip.len()).to_string()), ("bytes", (expanded).to_string())]));
 
     if duplicate.is_empty() {
         result.pass(tr("import.check.unique_names"), tr("import.diag.no_duplicate_names"));
@@ -1959,7 +2038,7 @@ fn inspect_archive(path: &Path) -> (ArchiveInspection, Option<ValidatedPackage>)
     let manifest_payload = match entries.get("manifest.json") {
         Some(payload) if !payload.is_dir => payload,
         _ => {
-            result.fail(tr("import.check.manifest"), tr("import.diag.manifest_missing"));
+            result.fail(tr("import.check.manifest"), "Required manifest.json is missing.");
             result.finish();
             return (result, None);
         }
@@ -1968,7 +2047,7 @@ fn inspect_archive(path: &Path) -> (ArchiveInspection, Option<ValidatedPackage>)
     let manifest: Manifest = match serde_json::from_slice(&manifest_payload.bytes) {
         Ok(manifest) => manifest,
         Err(error) => {
-            result.fail(tr("import.check.manifest"), trp("import.diag.manifest_invalid", &[("error", &error.to_string())]));
+            result.fail(tr("import.check.manifest"), format!("manifest.json is invalid: {}", error));
             result.finish();
             return (result, None);
         }
@@ -1982,7 +2061,7 @@ fn inspect_archive(path: &Path) -> (ArchiveInspection, Option<ValidatedPackage>)
     let schema = match schema_for_version(manifest.format_version) {
         Ok(schema) => {
             result.pass(tr("import.check.export_schema"),
-                trp("import.diag.format_supported", &[("version", &manifest.format_version.to_string())]));
+                trp("import.diag.format_supported", &[("version", (manifest.format_version).to_string())]));
             schema
         }
         Err(error) => {
@@ -1995,10 +2074,7 @@ fn inspect_archive(path: &Path) -> (ArchiveInspection, Option<ValidatedPackage>)
     if manifest.format == schema.format {
         result.pass(tr("import.check.format_identifier"), manifest.format.clone());
     } else {
-        result.fail(tr("import.check.format_identifier"), trp("import.diag.manifest_schema_format_mismatch", &[
-            ("manifest", &manifest.format),
-            ("schema", &schema.format),
-        ]));
+        result.fail(tr("import.check.format_identifier"), trp("import.diag.manifest_schema_format_mismatch", &[("manifest", (manifest.format).to_string()), ("schema", (schema.format).to_string())]));
     }
 
     let shader_table = match parse_tsv(
@@ -2032,7 +2108,7 @@ fn inspect_archive(path: &Path) -> (ArchiveInspection, Option<ValidatedPackage>)
         let archive_path = &row[archive_path_col];
         if !safe_name(archive_path) || !archive_path.starts_with(&shader_prefix) {
             result.fail(tr("import.check.shader_archive_paths"),
-                trp("import.diag.shader_path_not_permitted", &[("path", archive_path)]));
+                trp("import.diag.shader_path_not_permitted", &[("path", (archive_path).to_string())]));
         }
         expected.insert(archive_path.clone());
     }
@@ -2058,13 +2134,13 @@ fn inspect_archive(path: &Path) -> (ArchiveInspection, Option<ValidatedPackage>)
     }
 
     let policy_table = inspect_metadata_file(
-        "export.policies", &schema.datasets.policies, &manifest, &entries, &mut result);
+        &tr("import.policies"), &schema.datasets.policies, &manifest, &entries, &mut result);
     let shader_table = inspect_metadata_file(
-        "export.shaders", &schema.datasets.shaders, &manifest, &entries, &mut result);
+        &tr("import.shaders"), &schema.datasets.shaders, &manifest, &entries, &mut result);
     let playlist_table = inspect_metadata_file(
-        "import.dataset.playlists", &schema.datasets.playlists, &manifest, &entries, &mut result);
+        &tr("import.dataset.playlists"), &schema.datasets.playlists, &manifest, &entries, &mut result);
     let membership_table = inspect_metadata_file(
-        "import.dataset.playlist_memberships", &schema.datasets.playlist_members, &manifest, &entries, &mut result);
+        &tr("import.dataset.playlist_memberships"), &schema.datasets.playlist_members, &manifest, &entries, &mut result);
 
     let (Ok(policies), Ok(shaders), Ok(playlists), Ok(memberships)) =
         (policy_table, shader_table, playlist_table, membership_table)
@@ -2189,45 +2265,38 @@ fn build_validated_package(
 }
 
 fn inspect_metadata_file(
-    label_key: &str,
+    label: &str,
     dataset: &SchemaDataset,
     manifest: &Manifest,
     entries: &BTreeMap<String, Payload>,
     result: &mut ArchiveInspection,
 ) -> Result<Tsv, ()> {
     let Some(payload) = entries.get(&dataset.file) else {
-        result.fail(
-            trp("import.check.metadata_title", &[("dataset", &tr(label_key))]),
-            trp("import.check.required_file_missing", &[("file", &dataset.file)]),
-        );
+        result.fail(trp("import.check.metadata_title", &[("dataset", (label).to_string())]),
+            trp("import.check.required_file_missing", &[("file", (dataset.file).to_string())]));
         return Err(());
     };
 
     let Some(expected) = manifest.files.get(&dataset.file) else {
-        result.fail(trp("import.check.metadata_hash_title", &[("dataset", &tr(label_key))]),
+        result.fail(trp("import.check.metadata_hash_title", &[("dataset", (label).to_string())]),
             tr("import.diag.integrity_record_missing"));
         return Err(());
     };
 
     if valid_hash(&expected.sha256) && sha256_hex(&payload.bytes) == expected.sha256 {
-        result.pass(trp("import.check.metadata_hash_title", &[("dataset", &tr(label_key))]), tr("import.diag.sha_verified"));
+        result.pass(trp("import.check.metadata_hash_title", &[("dataset", (label).to_string())]), tr("import.diag.sha_verified"));
     } else {
-        result.fail(trp("import.check.metadata_hash_title", &[("dataset", &tr(label_key))]), tr("import.diag.sha_mismatch"));
+        result.fail(trp("import.check.metadata_hash_title", &[("dataset", (label).to_string())]), tr("import.diag.sha_mismatch"));
     }
 
     match parse_tsv(&payload.bytes, dataset) {
         Ok(table) => {
-            result.pass(
-                trp("import.check.structure_title", &[("dataset", &tr(label_key))]),
-                trp("import.check.rows_header_verified", &[("rows", &table.rows.len().to_string())]),
-            );
+            result.pass(trp("import.check.structure_title", &[("dataset", (label).to_string())]),
+                trp("import.check.rows_header_verified", &[("rows", (table.rows.len()).to_string())]));
             Ok(table)
         }
         Err(error) => {
-            result.fail(
-                trp("import.check.structure_title", &[("dataset", &tr(label_key))]),
-                error,
-            );
+            result.fail(trp("import.check.structure_title", &[("dataset", (label).to_string())]), error);
             Err(())
         }
     }
@@ -2235,15 +2304,15 @@ fn inspect_metadata_file(
 
 fn parse_tsv(bytes: &[u8], dataset: &SchemaDataset) -> Result<Tsv, String> {
     let text = std::str::from_utf8(bytes)
-        .map_err(|error| trp("import.validation.dataset_not_utf8", &[("file", &dataset.file), ("error", &error.to_string())]))?;
+        .map_err(|error| trp("import.validation.dataset_not_utf8", &[("file", (dataset.file).to_string()), ("error", (error).to_string())]))?;
 
     let mut lines = text.lines();
     let header = lines.next()
-        .ok_or_else(|| trp("import.validation.dataset_empty", &[("file", &dataset.file)]))?
+        .ok_or_else(|| trp("import.validation.dataset_empty", &[("file", (dataset.file).to_string())]))?
         .split('\t').collect::<Vec<_>>();
 
     if header != dataset.columns.iter().map(String::as_str).collect::<Vec<_>>() {
-        return Err(trp("import.validation.dataset_header_mismatch", &[("file", &dataset.file)]));
+        return Err(trp("import.validation.dataset_header_mismatch", &[("file", (dataset.file).to_string())]));
     }
 
     let mut rows = Vec::new();
@@ -2254,15 +2323,10 @@ fn parse_tsv(bytes: &[u8], dataset: &SchemaDataset) -> Result<Tsv, String> {
         let row = line.split('\t')
             .map(unescape)
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| trp("import.validation.dataset_row_error", &[("file", &dataset.file), ("row", &(number + 2).to_string()), ("error", &error)]))?;
+            .map_err(|error| trp("import.validation.dataset_row_error", &[("file", (dataset.file).to_string()), ("row", (number + 2).to_string()), ("error", (error).to_string())]))?;
 
         if row.len() != dataset.columns.len() {
-            return Err(trp("import.validation.dataset_column_count", &[
-                ("file", &dataset.file),
-                ("row", &(number + 2).to_string()),
-                ("actual", &row.len().to_string()),
-                ("required", &dataset.columns.len().to_string()),
-            ]));
+            return Err(trp("import.validation.dataset_column_count", &[("file", (dataset.file).to_string()), ("row", (number + 2).to_string()), ("actual", (row.len()).to_string()), ("required", (dataset.columns.len()).to_string())]));
         }
         rows.push(row);
     }
@@ -2285,7 +2349,7 @@ fn unescape(value: &str) -> Result<String, String> {
             't' => out.push('\t'),
             'r' => out.push('\r'),
             'n' => out.push('\n'),
-            other => return Err(trp("import.validation.tsv_escape_unsupported", &[("escape", &other.to_string())])),
+            other => return Err(trp("import.validation.tsv_escape_unsupported", &[("escape", (other).to_string())])),
         }
     }
     Ok(out)
@@ -2293,7 +2357,7 @@ fn unescape(value: &str) -> Result<String, String> {
 
 fn column(dataset: &SchemaDataset, name: &str) -> Result<usize, String> {
     dataset.columns.iter().position(|column| column == name)
-        .ok_or_else(|| trp("import.validation.schema_dataset_missing_column", &[("file", &dataset.file), ("column", name)]))
+        .ok_or_else(|| trp("import.validation.schema_dataset_missing_column", &[("file", (dataset.file).to_string()), ("column", (name).to_string())]))
 }
 
 fn ids(table: &Tsv, index: usize, label: &str) -> Result<HashSet<u64>, String> {
@@ -2301,7 +2365,7 @@ fn ids(table: &Tsv, index: usize, label: &str) -> Result<HashSet<u64>, String> {
     for row in &table.rows {
         let id = positive_id(&row[index], label)?;
         if !result.insert(id) {
-            return Err(trp("import.validation.duplicate_id", &[("label", label), ("id", &id.to_string())]));
+            return Err(trp("import.validation.duplicate_id", &[("label", (label).to_string()), ("id", (id).to_string())]));
         }
     }
     Ok(result)
@@ -2309,9 +2373,9 @@ fn ids(table: &Tsv, index: usize, label: &str) -> Result<HashSet<u64>, String> {
 
 fn positive_id(value: &str, label: &str) -> Result<u64, String> {
     let id = value.parse::<u64>()
-        .map_err(|_| trp("import.validation.not_positive_integer", &[("label", label), ("value", value)]))?;
+        .map_err(|_| trp("import.validation.not_positive_integer", &[("label", (label).to_string()), ("value", (value).to_string())]))?;
     if id == 0 {
-        Err(trp("import.validation.must_be_positive", &[("label", label)]))
+        Err(trp("import.validation.must_be_positive", &[("label", (label).to_string())]))
     } else {
         Ok(id)
     }
@@ -2341,7 +2405,7 @@ fn inspect_relationships(
         for row in &policies.rows {
             let id = positive_id(&row[policy_shader], "policy shader_export_id")?;
             if !shader_ids.contains(&id) {
-                return Err(trp("import.validation.policy_missing_shader_id", &[("id", &id.to_string())]));
+                return Err(trp("import.validation.policy_missing_shader_id", &[("id", (id).to_string())]));
             }
         }
 
@@ -2353,13 +2417,13 @@ fn inspect_relationships(
             let pos = positive_id(&row[member_position], "membership position")?;
 
             if !playlist_ids.contains(&pl) || !policy_ids.contains(&po) {
-                return Err(tr("import.validation.membership_unresolved_id"));
+                return Err(tr("import.validation.membership_unresolved_id").into());
             }
             if !pairs.insert((pl, po)) {
-                return Err(trp("import.validation.playlist_duplicate_policy", &[("playlist", &pl.to_string()), ("policy", &po.to_string())]));
+                return Err(trp("import.validation.playlist_duplicate_policy", &[("playlist", (pl).to_string()), ("policy", (po).to_string())]));
             }
             if !positions.insert((pl, pos)) {
-                return Err(trp("import.validation.playlist_duplicate_position", &[("playlist", &pl.to_string()), ("position", &pos.to_string())]));
+                return Err(trp("import.validation.playlist_duplicate_position", &[("playlist", (pl).to_string()), ("position", (pos).to_string())]));
             }
         }
         Ok(())
@@ -2388,26 +2452,26 @@ fn inspect_shaders(
             let expected = &row[hash_col];
 
             if !paths.insert(path.clone()) {
-                return Err(trp("import.validation.shader_declared_twice", &[("path", path)]));
+                return Err(trp("import.validation.shader_declared_twice", &[("path", (path).to_string())]));
             }
             if !valid_hash(expected) {
-                return Err(trp("import.validation.shader_sha_malformed", &[("path", path)]));
+                return Err(trp("import.validation.shader_sha_malformed", &[("path", (path).to_string())]));
             }
 
             let payload = entries.get(path)
-                .ok_or_else(|| trp("import.validation.declared_shader_missing", &[("path", path)]))?;
+                .ok_or_else(|| trp("import.validation.declared_shader_missing", &[("path", (path).to_string())]))?;
 
             if payload.is_dir {
-                return Err(trp("import.validation.declared_shader_directory", &[("path", path)]));
+                return Err(trp("import.validation.declared_shader_directory", &[("path", (path).to_string())]));
             }
             if payload.unix_mode.map(|mode| mode & 0o111 != 0).unwrap_or(false) {
-                return Err(trp("import.validation.shader_executable", &[("path", path)]));
+                return Err(trp("import.validation.shader_executable", &[("path", (path).to_string())]));
             }
             if sha256_hex(&payload.bytes) != *expected {
-                return Err(trp("import.validation.shader_sha_failed", &[("path", path)]));
+                return Err(trp("import.validation.shader_sha_failed", &[("path", (path).to_string())]));
             }
             std::str::from_utf8(&payload.bytes)
-                .map_err(|_| trp("import.validation.shader_not_utf8", &[("path", path)]))?;
+                .map_err(|_| trp("import.validation.shader_not_utf8", &[("path", (path).to_string())]))?;
         }
         Ok(())
     })();
@@ -2415,7 +2479,7 @@ fn inspect_shaders(
     match outcome {
         Ok(()) => {
             result.pass(tr("import.check.shader_payloads"),
-                trp("import.diag.shader_files_present", &[("count", &shaders.rows.len().to_string())]));
+                trp("import.diag.shader_files_present", &[("count", (shaders.rows.len()).to_string())]));
             result.pass(tr("import.check.shader_integrity"), tr("import.diag.all_shader_hashes_verified"));
             result.pass(tr("import.check.shader_encoding"), tr("import.diag.all_shader_utf8"));
         }
