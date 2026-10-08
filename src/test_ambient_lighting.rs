@@ -3,7 +3,7 @@
 //! Supports protocol negotiation, one virtual controller, and LED updates.
 use std::time::{Duration, Instant};
 use std::io::{Read, Write};
-use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
+use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream, UdpSocket};
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -141,7 +141,37 @@ pub fn run() -> Result<(), String> {
     let resolution_uniform = uniform_location(program, b"iResolution\0");
     let mut events = sdl.event_pump().map_err(|e| e.to_string())?;
     let mut pixels = vec![0u8; SAMPLE_WIDTH * SAMPLE_HEIGHT * 3];
-    let (address, mock_state, server_stop, mock_thread) = start_restarting_mock_server()?;
+    // Opt-in independent endpoint: no built-in server, no real OpenRGB port.
+    let external = std::env::var("SCREENSHAVER_AMBIENT_EXTERNAL_TEST").as_deref() == Ok("1");
+    let (address, mock_state, server_control): (_, _, Option<(Arc<AtomicBool>, thread::JoinHandle<Result<(), String>>)>) = if external {
+        let feedback = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 16744))
+            .map_err(|e| format!("Cannot bind independent feedback socket 127.0.0.1:16744: {e}"))?;
+        feedback.set_nonblocking(true).map_err(|e| e.to_string())?;
+        let shared = Arc::new(Mutex::new([0u8; LED_COUNT * 3]));
+        let shared_thread = Arc::clone(&shared);
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop_thread = Arc::clone(&stop);
+        let handle = thread::spawn(move || -> Result<(), String> {
+            let mut bytes = [0u8; LED_COUNT * 3];
+            while !stop_thread.load(Ordering::Relaxed) {
+                match feedback.recv_from(&mut bytes) {
+                    Ok((n, peer)) if n == bytes.len() && peer.ip().is_loopback() => {
+                        *shared_thread.lock().map_err(|_| "Feedback mutex poisoned".to_string())? = bytes;
+                    }
+                    Ok(_) => {},
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock =>
+                        thread::sleep(Duration::from_millis(2)),
+                    Err(e) => return Err(format!("Feedback receive failed: {e}")),
+                }
+            }
+            Ok(())
+        });
+        println!("[AMBIENT LIGHTING TEST] Independent Python endpoint: 127.0.0.1:16743; verified LED feedback: 127.0.0.1:16744.");
+        (SocketAddrV4::new(Ipv4Addr::LOCALHOST, 16743), shared, Some((stop, handle)))
+    } else {
+        let (address, shared, stop, handle) = start_restarting_mock_server()?;
+        (address, shared, Some((stop, handle)))
+    };
     // All TCP operations, including timeouts and recovery, run off the GL thread.
     // A one-frame mailbox bounds latency: stale frames are discarded rather than queued.
     let (lighting_tx, lighting_rx) = mpsc::sync_channel::<[u8; LED_COUNT * 3]>(1);
@@ -267,13 +297,15 @@ pub fn run() -> Result<(), String> {
     drop(lighting_tx);
     transport_thread.join()
         .map_err(|_| "OpenRGB transport worker panicked".to_string())??;
-    server_stop.store(true, Ordering::Relaxed);
-    mock_thread.join()
-        .map_err(|_| "Mock lighting server thread panicked".to_string())??;
+    if let Some((server_stop, mock_thread)) = server_control {
+        server_stop.store(true, Ordering::Relaxed);
+        mock_thread.join()
+            .map_err(|_| "Lighting server/feedback thread panicked".to_string())??;
+    }
     let stats = *worker_stats.lock().map_err(|_| "Transport stats mutex poisoned".to_string())?;
     println!("[AMBIENT LIGHTING TEST] Completed {sample_count} shader samples; {} lighting updates, {} disconnect(s), {} reconnection(s); zero hardware writes.",
         stats.delivered, stats.disconnections, stats.reconnections);
-    if start.elapsed() >= Duration::from_secs(27) && (stats.disconnections == 0 || stats.reconnections == 0) {
+    if !external && start.elapsed() >= Duration::from_secs(27) && (stats.disconnections == 0 || stats.reconnections == 0) {
         return Err("Connection recovery test failed: expected a disconnect and reconnection".into());
     }
     Ok(())
@@ -292,9 +324,16 @@ fn run_transport_worker(
     stop: Arc<AtomicBool>,
     stats: Arc<Mutex<TransportStats>>,
 ) -> Result<(), String> {
-    let mut client = Some(connect_mock_client(address)?);
-    let mut next_reconnect = Instant::now();
-    let mut was_connected = true;
+    // External endpoint might start after Screenshaver; retry rather than fail.
+    let mut client = match connect_mock_client(address) {
+        Ok(socket) => Some(socket),
+        Err(e) => {
+            println!("[AMBIENT LIGHTING TEST] Waiting for endpoint: {e}");
+            None
+        }
+    };
+    let mut next_reconnect = Instant::now() + RECONNECT_INTERVAL;
+    let mut was_connected = client.is_some();
     while !stop.load(Ordering::Relaxed) {
         if client.is_none() && Instant::now() >= next_reconnect {
             match connect_mock_client(address) {
@@ -759,6 +798,6 @@ fn connect_mock_client(address: SocketAddrV4) -> Result<TcpStream, String> {
         u32::from_le_bytes(reply[0..4].try_into().unwrap()) as usize != reply.len() {
         return Err("OpenRGB simulator controller description invalid".into());
     }
-    println!("[AMBIENT LIGHTING TEST] OpenRGB SDK v1 negotiated; virtual 70-LED keyboard discovered.");
+    println!("[AMBIENT LIGHTING TEST] OpenRGB SDK v1 negotiated; virtual controller response received.");
     Ok(client)
 }
