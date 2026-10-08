@@ -1,6 +1,11 @@
 //! Software-only ambient-lighting proof of concept.
-//! No HID, USB, OpenRGB, Hyperion, network, or hardware-control operations.
+//! Loopback-only mock lighting transport. No HID, USB, OpenRGB, Hyperion, or hardware access.
+//! The mock framing is NOT the OpenRGB SDK protocol.
 use std::time::{Duration, Instant};
+use std::io::{Read, Write};
+use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
+use std::sync::{Arc, Mutex};
+use std::thread;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::video::GLProfile;
@@ -83,6 +88,7 @@ struct VirtualLed { rgb: [f32; 3] }
 
 pub fn run() -> Result<(), String> {
     println!("[AMBIENT LIGHTING TEST] Software-only virtual keyboard; no hardware access.");
+    println!("[AMBIENT LIGHTING TEST] Loopback TCP mock transport (NOT the OpenRGB SDK).");
     println!("[AMBIENT LIGHTING TEST] Top: GLSL shader. Bottom: virtual 70-key RGB keyboard.");
     println!("[AMBIENT LIGHTING TEST] Press S for spatial mapping, A for soft ambiance, Esc to exit.");
     let sdl = sdl2::init().map_err(|e| e.to_string())?;
@@ -128,6 +134,7 @@ pub fn run() -> Result<(), String> {
     let resolution_uniform = uniform_location(program, b"iResolution\0");
     let mut events = sdl.event_pump().map_err(|e| e.to_string())?;
     let mut pixels = vec![0u8; SAMPLE_WIDTH * SAMPLE_HEIGHT * 3];
+    let (mut mock_client, mock_state, mock_thread) = start_mock_server()?;
     let mut leds = [VirtualLed { rgb: [0.0; 3] }; KEY_ROWS * KEY_COLS];
     let mut soft = [0.0f32; 3];
     let mut spatial = true;
@@ -191,17 +198,33 @@ pub fn run() -> Result<(), String> {
                     }
                 }
             }
+            let mut frame = [0u8; KEY_ROWS * KEY_COLS * 3];
+            for (index, led) in leds.iter().enumerate() {
+                for channel in 0..3 {
+                    frame[index * 3 + channel] = float_to_u8(led.rgb[channel]);
+                }
+            }
+            mock_client.write_all(&frame)
+                .map_err(|e| format!("Mock lighting frame delivery failed: {e}"))?;
             first_sample = false;
             last_sample = Instant::now();
             sample_count += 1;
         }
+        // Display ONLY frames received by the mock TCP server, not the client buffer.
+        let displayed = *mock_state.lock()
+            .map_err(|_| "Mock lighting state mutex poisoned".to_string())?;
         // GL scissor rectangles are a virtual keyboard, not hardware output.
         let key_width = (WINDOW_WIDTH as i32 - 40) / KEY_COLS as i32;
         let key_height = 35;
         unsafe { gl::Enable(gl::SCISSOR_TEST); }
         for row in 0..KEY_ROWS {
             for col in 0..KEY_COLS {
-                let led = leds[row * KEY_COLS + col];
+                let index = row * KEY_COLS + col;
+                let led = VirtualLed { rgb: [
+                    displayed[index * 3] as f32 / 255.0,
+                    displayed[index * 3 + 1] as f32 / 255.0,
+                    displayed[index * 3 + 2] as f32 / 255.0,
+                ] };
                 let x = 20 + col as i32 * key_width + 2;
                 let y = 20 + (KEY_ROWS - row - 1) as i32 * 41;
                 unsafe {
@@ -222,7 +245,10 @@ pub fn run() -> Result<(), String> {
         gl::DeleteVertexArrays(1, &vao);
         gl::DeleteProgram(program);
     }
-    println!("[AMBIENT LIGHTING TEST] Completed {sample_count} software samples; zero hardware writes.");
+    drop(mock_client);
+    mock_thread.join()
+        .map_err(|_| "Mock lighting server thread panicked".to_string())??;
+    println!("[AMBIENT LIGHTING TEST] Completed {sample_count} software samples via loopback TCP; zero hardware writes.");
     Ok(())
 }
 
@@ -384,3 +410,56 @@ fn uniform_location(
 }
 
 
+
+// This deliberately uses private test framing, not an OpenRGB packet ID or port.
+// Binding port zero ensures that the mock cannot collide with a real OpenRGB server.
+fn start_mock_server() -> Result<(
+    TcpStream,
+    Arc<Mutex<[u8; KEY_ROWS * KEY_COLS * 3]>>,
+    thread::JoinHandle<Result<(), String>>,
+), String> {
+    let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))
+        .map_err(|e| format!("Unable to bind loopback mock server: {e}"))?;
+    let address = listener.local_addr().map_err(|e| e.to_string())?;
+    let state = Arc::new(Mutex::new([0u8; KEY_ROWS * KEY_COLS * 3]));
+    let server_state = Arc::clone(&state);
+    let server = thread::spawn(move || -> Result<(), String> {
+        let (mut socket, peer) = listener.accept()
+            .map_err(|e| format!("Mock server accept failed: {e}"))?;
+        if !peer.ip().is_loopback() {
+            return Err("Mock server rejected non-loopback peer".to_string());
+        }
+        let mut handshake = [0u8; 8];
+        socket.read_exact(&mut handshake).map_err(|e| e.to_string())?;
+        if &handshake[0..4] != b"SHAV" ||
+            u32::from_le_bytes(handshake[4..8].try_into().unwrap()) != (KEY_ROWS * KEY_COLS) as u32 {
+            return Err("Mock lighting handshake rejected".to_string());
+        }
+        socket.write_all(b"OKAY").map_err(|e| e.to_string())?;
+        let mut frame = [0u8; KEY_ROWS * KEY_COLS * 3];
+        loop {
+            match socket.read_exact(&mut frame) {
+                Ok(()) => {
+                    *server_state.lock().map_err(|_| "Mock mutex poisoned".to_string())? = frame;
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof ||
+                    e.kind() == std::io::ErrorKind::ConnectionReset => break,
+                Err(e) => return Err(format!("Mock frame receive failed: {e}")),
+            }
+        }
+        Ok(())
+    });
+    let mut client = TcpStream::connect(address)
+        .map_err(|e| format!("Mock client connect failed: {e}"))?;
+    client.set_nodelay(true).map_err(|e| e.to_string())?;
+    client.write_all(b"SHAV").map_err(|e| e.to_string())?;
+    client.write_all(&((KEY_ROWS * KEY_COLS) as u32).to_le_bytes())
+        .map_err(|e| e.to_string())?;
+    let mut reply = [0u8; 4];
+    client.read_exact(&mut reply).map_err(|e| e.to_string())?;
+    if &reply != b"OKAY" {
+        return Err("Mock server returned invalid handshake".to_string());
+    }
+    println!("[AMBIENT LIGHTING TEST] Connected to ephemeral localhost mock server.");
+    Ok((client, state, server))
+}
