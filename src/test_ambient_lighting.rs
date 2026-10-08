@@ -5,6 +5,8 @@ use std::time::{Duration, Instant};
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
+use std::sync::mpsc::{self, Receiver};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
@@ -21,6 +23,10 @@ const SMOOTHING_ALPHA: f32 = 0.22;
 const DARK_PIXEL_THRESHOLD: f32 = 0.055;
 const KEY_ROWS: usize = 5;
 const KEY_COLS: usize = 14;
+const OUTAGE_START: Duration = Duration::from_secs(15);
+const OUTAGE_END: Duration = Duration::from_secs(22);
+const RECONNECT_INTERVAL: Duration = Duration::from_millis(500);
+const SOCKET_TIMEOUT: Duration = Duration::from_millis(150);
 
 const TEST_FRAGMENT_SHADER: &str = r#"
 #version 330 core
@@ -135,7 +141,17 @@ pub fn run() -> Result<(), String> {
     let resolution_uniform = uniform_location(program, b"iResolution\0");
     let mut events = sdl.event_pump().map_err(|e| e.to_string())?;
     let mut pixels = vec![0u8; SAMPLE_WIDTH * SAMPLE_HEIGHT * 3];
-    let (mut mock_client, mock_state, mock_thread) = start_mock_server()?;
+    let (address, mock_state, server_stop, mock_thread) = start_restarting_mock_server()?;
+    // All TCP operations, including timeouts and recovery, run off the GL thread.
+    // A one-frame mailbox bounds latency: stale frames are discarded rather than queued.
+    let (lighting_tx, lighting_rx) = mpsc::sync_channel::<[u8; LED_COUNT * 3]>(1);
+    let worker_stop = Arc::new(AtomicBool::new(false));
+    let worker_stop_thread = Arc::clone(&worker_stop);
+    let worker_stats = Arc::new(Mutex::new(TransportStats::default()));
+    let worker_stats_thread = Arc::clone(&worker_stats);
+    let transport_thread = thread::spawn(move || {
+        run_transport_worker(address, lighting_rx, worker_stop_thread, worker_stats_thread)
+    });
     let mut leds = [VirtualLed { rgb: [0.0; 3] }; KEY_ROWS * KEY_COLS];
     let mut soft = [0.0f32; 3];
     let mut spatial = true;
@@ -205,13 +221,9 @@ pub fn run() -> Result<(), String> {
                     frame[index * 3 + channel] = float_to_u8(led.rgb[channel]);
                 }
             }
-            let mut payload = Vec::with_capacity(6 + frame.len() / 3 * 4);
-            payload.extend_from_slice(&((6 + KEY_ROWS * KEY_COLS * 4) as u32).to_le_bytes());
-            payload.extend_from_slice(&((KEY_ROWS * KEY_COLS) as u16).to_le_bytes());
-            for color in frame.chunks_exact(3) {
-                payload.extend_from_slice(&[color[0], color[1], color[2], 0]);
-            }
-            send_packet(&mut mock_client, 0, 1050, &payload)?;
+            // Never block the GL thread on a socket, handshake, or reconnect.
+            // The worker consumes the most recent available lighting frame.
+            let _ = lighting_tx.try_send(frame);
             first_sample = false;
             last_sample = Instant::now();
             sample_count += 1;
@@ -251,10 +263,88 @@ pub fn run() -> Result<(), String> {
         gl::DeleteVertexArrays(1, &vao);
         gl::DeleteProgram(program);
     }
-    drop(mock_client);
+    worker_stop.store(true, Ordering::Relaxed);
+    drop(lighting_tx);
+    transport_thread.join()
+        .map_err(|_| "OpenRGB transport worker panicked".to_string())??;
+    server_stop.store(true, Ordering::Relaxed);
     mock_thread.join()
         .map_err(|_| "Mock lighting server thread panicked".to_string())??;
-    println!("[AMBIENT LIGHTING TEST] Completed {sample_count} software samples via loopback TCP; zero hardware writes.");
+    let stats = *worker_stats.lock().map_err(|_| "Transport stats mutex poisoned".to_string())?;
+    println!("[AMBIENT LIGHTING TEST] Completed {sample_count} shader samples; {} lighting updates, {} disconnect(s), {} reconnection(s); zero hardware writes.",
+        stats.delivered, stats.disconnections, stats.reconnections);
+    if start.elapsed() >= Duration::from_secs(27) && (stats.disconnections == 0 || stats.reconnections == 0) {
+        return Err("Connection recovery test failed: expected a disconnect and reconnection".into());
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy, Default)]
+struct TransportStats {
+    delivered: usize,
+    disconnections: usize,
+    reconnections: usize,
+}
+
+fn run_transport_worker(
+    address: SocketAddrV4,
+    rx: Receiver<[u8; LED_COUNT * 3]>,
+    stop: Arc<AtomicBool>,
+    stats: Arc<Mutex<TransportStats>>,
+) -> Result<(), String> {
+    let mut client = Some(connect_mock_client(address)?);
+    let mut next_reconnect = Instant::now();
+    let mut was_connected = true;
+    while !stop.load(Ordering::Relaxed) {
+        if client.is_none() && Instant::now() >= next_reconnect {
+            match connect_mock_client(address) {
+                Ok(socket) => {
+                    client = Some(socket);
+                    if !was_connected {
+                        stats.lock().map_err(|_| "Transport stats mutex poisoned".to_string())?.reconnections += 1;
+                        println!("[AMBIENT LIGHTING TEST] OpenRGB connection restored; lighting resumed.");
+                    }
+                    was_connected = true;
+                }
+                Err(_) => next_reconnect = Instant::now() + RECONNECT_INTERVAL,
+            }
+        }
+        // Receive with a short bounded wait, then collapse queued work to the newest frame.
+        let mut frame = match rx.recv_timeout(Duration::from_millis(10)) {
+            Ok(frame) => frame,
+            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        };
+        while let Ok(newer) = rx.try_recv() { frame = newer; }
+        if let Some(socket) = client.as_mut() {
+            // A nonblocking peek detects EOF without delaying the GL thread or worker.
+            socket.set_nonblocking(true).map_err(|e| e.to_string())?;
+            let mut probe = [0u8; 1];
+            let disconnected = match socket.peek(&mut probe) {
+                Ok(0) => true,
+                Ok(_) => false,
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => false,
+                Err(_) => true,
+            };
+            socket.set_nonblocking(false).map_err(|e| e.to_string())?;
+            let mut payload = Vec::with_capacity(6 + LED_COUNT * 4);
+            payload.extend_from_slice(&((6 + LED_COUNT * 4) as u32).to_le_bytes());
+            payload.extend_from_slice(&(LED_COUNT as u16).to_le_bytes());
+            for color in frame.chunks_exact(3) {
+                payload.extend_from_slice(&[color[0], color[1], color[2], 0]);
+            }
+            if disconnected || send_packet(socket, 0, 1050, &payload).is_err() {
+                client = None;
+                was_connected = false;
+                next_reconnect = Instant::now() + RECONNECT_INTERVAL;
+                stats.lock().map_err(|_| "Transport stats mutex poisoned".to_string())?.disconnections += 1;
+                println!("[AMBIENT LIGHTING TEST] OpenRGB connection lost; shader continues rendering.");
+            } else {
+                stats.lock().map_err(|_| "Transport stats mutex poisoned".to_string())?.delivered += 1;
+            }
+        }
+    }
+    drop(client);
     Ok(())
 }
 
@@ -558,48 +648,100 @@ fn run_protocol_fault_tests() -> Result<(), String> {
     Ok(())
 }
 
-fn start_mock_server() -> Result<(
-    TcpStream,
+// The listener remains bound to an OS-selected loopback port throughout the test.
+// Its simulated service drops connections at 15s and refuses them until 22s.
+// No real OpenRGB server or physical RGB controller is contacted.
+fn start_restarting_mock_server() -> Result<(
+    SocketAddrV4,
     Arc<Mutex<[u8; LED_COUNT * 3]>>,
+    Arc<AtomicBool>,
     thread::JoinHandle<Result<(), String>>,
 ), String> {
     let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))
-        .map_err(|e| format!("Unable to bind loopback OpenRGB simulator: {e}"))?;
-    let address = listener.local_addr().map_err(|e| e.to_string())?;
+        .map_err(|e| format!("Unable to bind loopback simulator: {e}"))?;
+    listener.set_nonblocking(true).map_err(|e| e.to_string())?;
+    let address = match listener.local_addr().map_err(|e| e.to_string())? {
+        std::net::SocketAddr::V4(a) => a,
+        _ => return Err("Unexpected IPv6 address".into()),
+    };
     let state = Arc::new(Mutex::new([0u8; LED_COUNT * 3]));
-    let server_state = Arc::clone(&state);
-    let server = thread::spawn(move || -> Result<(), String> {
-        let (mut socket, peer) = listener.accept().map_err(|e| e.to_string())?;
-        if !peer.ip().is_loopback() { return Err("Rejected non-loopback peer".into()); }
-        while let Some((device, command, payload)) = recv_packet(&mut socket)? {
-            match command {
-                40 if payload.len() == 4 => {
-                    send_packet(&mut socket, 0, 40, &SDK_VERSION.to_le_bytes())?;
+    let shared_state = Arc::clone(&state);
+    let stop = Arc::new(AtomicBool::new(false));
+    let thread_stop = Arc::clone(&stop);
+    let thread_handle = thread::spawn(move || -> Result<(), String> {
+        let start = Instant::now();
+        let mut connection: Option<TcpStream> = None;
+        let mut outage_reported = false;
+        let mut restored_reported = false;
+        while !thread_stop.load(Ordering::Relaxed) {
+            let elapsed = start.elapsed();
+            let outage = elapsed >= OUTAGE_START && elapsed < OUTAGE_END;
+            if outage {
+                if !outage_reported {
+                    println!("[AMBIENT LIGHTING TEST] Simulated OpenRGB service stopped (15–22s).");
+                    outage_reported = true;
                 }
-                0 if payload.is_empty() => {
-                    send_packet(&mut socket, 0, 0, &1u32.to_le_bytes())?;
-                }
-                1 if device == 0 && payload.len() == 4 &&
-                    u32::from_le_bytes(payload[..4].try_into().unwrap()) == SDK_VERSION => {
-                    send_packet(&mut socket, 0, 1, &controller_description())?;
-                }
-                50 if payload.last() == Some(&0) => {} // client name
-                1050 if device == 0 && payload.len() == 6 + LED_COUNT * 4 => {
-                    validate_led_update(&payload)?;
-                    let mut frame = [0u8; LED_COUNT * 3];
-                    for (index, rgba) in payload[6..].chunks_exact(4).enumerate() {
-                        frame[index * 3..index * 3 + 3].copy_from_slice(&rgba[..3]);
-                    }
-                    *server_state.lock().map_err(|_| "Mock mutex poisoned".to_string())? = frame;
-                }
-                _ => return Err(format!("Unsupported OpenRGB simulator packet: device={device}, command={command}, length={}", payload.len())),
+                connection.take();
+            } else if outage_reported && !restored_reported {
+                println!("[AMBIENT LIGHTING TEST] Simulated OpenRGB service restarted.");
+                restored_reported = true;
             }
+            if connection.is_none() {
+                match listener.accept() {
+                    Ok((socket, peer)) => {
+                        if !peer.ip().is_loopback() || outage { drop(socket); }
+                        else {
+                            socket.set_read_timeout(Some(SOCKET_TIMEOUT)).map_err(|e| e.to_string())?;
+                            socket.set_write_timeout(Some(SOCKET_TIMEOUT)).map_err(|e| e.to_string())?;
+                            socket.set_nodelay(true).map_err(|e| e.to_string())?;
+                            connection = Some(socket);
+                        }
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+                    Err(e) => return Err(format!("Simulator accept failed: {e}")),
+                }
+            }
+            if let Some(socket) = connection.as_mut() {
+                match recv_packet(socket) {
+                    Ok(Some((device, command, payload))) => {
+                        let result = match command {
+                            40 if payload.len() == 4 => send_packet(socket, 0, 40, &SDK_VERSION.to_le_bytes()),
+                            0 if payload.is_empty() => send_packet(socket, 0, 0, &1u32.to_le_bytes()),
+                            1 if device == 0 && payload == SDK_VERSION.to_le_bytes() =>
+                                send_packet(socket, 0, 1, &controller_description()),
+                            50 if payload.last() == Some(&0) => Ok(()),
+                            1050 if device == 0 => {
+                                validate_led_update(&payload)?;
+                                let mut frame = [0u8; LED_COUNT * 3];
+                                for (index, rgba) in payload[6..].chunks_exact(4).enumerate() {
+                                    frame[index * 3..index * 3 + 3].copy_from_slice(&rgba[..3]);
+                                }
+                                *shared_state.lock().map_err(|_| "Mock mutex poisoned".to_string())? = frame;
+                                Ok(())
+                            }
+                            _ => Err(format!("Unexpected simulator packet: device={device}, command={command}")),
+                        };
+                        if result.is_err() { connection.take(); }
+                    }
+                    Ok(None) => { connection.take(); }
+                    Err(e) if e.contains("timed out") || e.contains("would block") ||
+                        e.contains("Resource temporarily unavailable") => {}
+                    Err(_) => { connection.take(); }
+                }
+            }
+            thread::sleep(Duration::from_millis(2));
         }
         Ok(())
     });
-    let mut client = TcpStream::connect(address)
-        .map_err(|e| format!("Mock client connect failed: {e}"))?;
+    Ok((address, state, stop, thread_handle))
+}
+
+fn connect_mock_client(address: SocketAddrV4) -> Result<TcpStream, String> {
+    let mut client = TcpStream::connect_timeout(&address.into(), SOCKET_TIMEOUT)
+        .map_err(|e| format!("Simulator connection failed: {e}"))?;
     client.set_nodelay(true).map_err(|e| e.to_string())?;
+    client.set_read_timeout(Some(SOCKET_TIMEOUT)).map_err(|e| e.to_string())?;
+    client.set_write_timeout(Some(SOCKET_TIMEOUT)).map_err(|e| e.to_string())?;
     send_packet(&mut client, 0, 40, &SDK_VERSION.to_le_bytes())?;
     let (_, command, reply) = recv_packet(&mut client)?.ok_or("Missing OpenRGB version response")?;
     if command != 40 || reply != SDK_VERSION.to_le_bytes() {
@@ -617,6 +759,6 @@ fn start_mock_server() -> Result<(
         u32::from_le_bytes(reply[0..4].try_into().unwrap()) as usize != reply.len() {
         return Err("OpenRGB simulator controller description invalid".into());
     }
-    println!("[AMBIENT LIGHTING TEST] OpenRGB SDK v1 negotiated; one virtual 70-LED keyboard discovered on ephemeral localhost port.");
-    Ok((client, state, server))
+    println!("[AMBIENT LIGHTING TEST] OpenRGB SDK v1 negotiated; virtual 70-LED keyboard discovered.");
+    Ok(client)
 }
