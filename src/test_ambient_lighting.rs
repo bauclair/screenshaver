@@ -91,6 +91,7 @@ pub fn run() -> Result<(), String> {
     println!("[AMBIENT LIGHTING TEST] Loopback OpenRGB SDK protocol v1 simulator (virtual device only).");
     println!("[AMBIENT LIGHTING TEST] Top: GLSL shader. Bottom: virtual 70-key RGB keyboard.");
     println!("[AMBIENT LIGHTING TEST] Press S for spatial mapping, A for soft ambiance, Esc to exit.");
+    run_protocol_fault_tests()?;
     let sdl = sdl2::init().map_err(|e| e.to_string())?;
     let video = sdl.video().map_err(|e| e.to_string())?;
     {
@@ -435,12 +436,16 @@ fn send_packet(socket: &mut TcpStream, device: u32, command: u32, payload: &[u8]
 
 fn recv_packet(socket: &mut TcpStream) -> Result<Option<(u32, u32, Vec<u8>)>, String> {
     let mut header = [0u8; 16];
-    match socket.read_exact(&mut header) {
-        Ok(()) => (),
-        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof ||
-            e.kind() == std::io::ErrorKind::ConnectionReset => return Ok(None),
+    // Distinguish an orderly close between packets from a truncated header.
+    match socket.read(&mut header[..1]) {
+        Ok(0) => return Ok(None),
+        Ok(1) => (),
+        Ok(_) => unreachable!(),
+        Err(e) if e.kind() == std::io::ErrorKind::ConnectionReset => return Ok(None),
         Err(e) => return Err(format!("OpenRGB mock header receive failed: {e}")),
     }
+    socket.read_exact(&mut header[1..])
+        .map_err(|e| format!("Truncated OpenRGB packet header: {e}"))?;
     if &header[0..4] != b"ORGB" { return Err("Invalid OpenRGB magic".into()); }
     let device = u32::from_le_bytes(header[4..8].try_into().unwrap());
     let command = u32::from_le_bytes(header[8..12].try_into().unwrap());
@@ -487,6 +492,72 @@ fn controller_description() -> Vec<u8> {
     data
 }
 
+
+// Protocol validation is shared by the normal server and the fault tests.
+fn validate_led_update(payload: &[u8]) -> Result<(), String> {
+    if payload.len() < 6 { return Err("Truncated OpenRGB LED update".into()); }
+    let declared_size = u32::from_le_bytes(payload[0..4].try_into().unwrap()) as usize;
+    let count = u16::from_le_bytes(payload[4..6].try_into().unwrap()) as usize;
+    if declared_size != payload.len() || count != LED_COUNT ||
+        payload.len() != 6 + LED_COUNT * 4 {
+        return Err(format!("OpenRGB LED update mismatch: declared_size={declared_size}, actual_size={}, count={count}, expected_count={LED_COUNT}", payload.len()));
+    }
+    Ok(())
+}
+
+// Each case uses its own short-lived ephemeral loopback socket pair.
+// No device discovery, hardware handles, or real OpenRGB server connections.
+fn fault_socket_pair() -> Result<(TcpStream, TcpStream), String> {
+    let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))
+        .map_err(|e| e.to_string())?;
+    let address = listener.local_addr().map_err(|e| e.to_string())?;
+    let sender = TcpStream::connect(address).map_err(|e| e.to_string())?;
+    let (receiver, _) = listener.accept().map_err(|e| e.to_string())?;
+    receiver.set_read_timeout(Some(Duration::from_secs(2))).map_err(|e| e.to_string())?;
+    Ok((sender, receiver))
+}
+
+fn expect_protocol_error(name: &str, bytes: &[u8]) -> Result<(), String> {
+    let (mut sender, mut receiver) = fault_socket_pair()?;
+    sender.write_all(bytes).map_err(|e| e.to_string())?;
+    drop(sender);
+    match recv_packet(&mut receiver) {
+        Err(_) => { println!("[AMBIENT LIGHTING TEST] Fault test passed: {name}"); Ok(()) },
+        Ok(_) => Err(format!("Fault test FAILED: {name} was accepted")),
+    }
+}
+
+fn run_protocol_fault_tests() -> Result<(), String> {
+    println!("[AMBIENT LIGHTING TEST] Running localhost-only OpenRGB protocol fault tests.");
+    let mut header = [0u8; 16];
+    header[0..4].copy_from_slice(b"BAD!");
+    expect_protocol_error("invalid magic", &header)?;
+    header[0..4].copy_from_slice(b"ORGB");
+    header[12..16].copy_from_slice(&((MAX_PACKET + 1) as u32).to_le_bytes());
+    expect_protocol_error("oversized payload", &header)?;
+    header[12..16].copy_from_slice(&12u32.to_le_bytes());
+    expect_protocol_error("truncated payload", &header)?;
+    expect_protocol_error("truncated header", b"ORGB")?;
+
+    let (sender, mut receiver) = fault_socket_pair()?;
+    drop(sender);
+    if recv_packet(&mut receiver)?.is_some() {
+        return Err("Fault test FAILED: orderly disconnect".into());
+    }
+    println!("[AMBIENT LIGHTING TEST] Fault test passed: orderly disconnect");
+
+    let mut bad_count = vec![0u8; 6 + LED_COUNT * 4];
+    let bad_size = bad_count.len() as u32;
+    bad_count[0..4].copy_from_slice(&bad_size.to_le_bytes());
+    bad_count[4..6].copy_from_slice(&((LED_COUNT - 1) as u16).to_le_bytes());
+    if validate_led_update(&bad_count).is_ok() {
+        return Err("Fault test FAILED: mismatched LED count".into());
+    }
+    println!("[AMBIENT LIGHTING TEST] Fault test passed: mismatched LED count");
+    println!("[AMBIENT LIGHTING TEST] All six protocol fault tests passed.");
+    Ok(())
+}
+
 fn start_mock_server() -> Result<(
     TcpStream,
     Arc<Mutex<[u8; LED_COUNT * 3]>>,
@@ -514,11 +585,7 @@ fn start_mock_server() -> Result<(
                 }
                 50 if payload.last() == Some(&0) => {} // client name
                 1050 if device == 0 && payload.len() == 6 + LED_COUNT * 4 => {
-                    let declared_size = u32::from_le_bytes(payload[0..4].try_into().unwrap()) as usize;
-                    let count = u16::from_le_bytes(payload[4..6].try_into().unwrap()) as usize;
-                    if declared_size != payload.len() || count != LED_COUNT {
-                        return Err("Invalid OpenRGB LED update length".into());
-                    }
+                    validate_led_update(&payload)?;
                     let mut frame = [0u8; LED_COUNT * 3];
                     for (index, rgba) in payload[6..].chunks_exact(4).enumerate() {
                         frame[index * 3..index * 3 + 3].copy_from_slice(&rgba[..3]);
