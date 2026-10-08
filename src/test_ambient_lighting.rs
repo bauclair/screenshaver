@@ -1,6 +1,6 @@
 //! Software-only ambient-lighting proof of concept.
-//! Loopback-only mock lighting transport. No HID, USB, OpenRGB, Hyperion, or hardware access.
-//! The mock framing is NOT the OpenRGB SDK protocol.
+//! Loopback-only OpenRGB SDK v1 simulator; never connects to real hardware or servers.
+//! Supports protocol negotiation, one virtual controller, and LED updates.
 use std::time::{Duration, Instant};
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream};
@@ -88,7 +88,7 @@ struct VirtualLed { rgb: [f32; 3] }
 
 pub fn run() -> Result<(), String> {
     println!("[AMBIENT LIGHTING TEST] Software-only virtual keyboard; no hardware access.");
-    println!("[AMBIENT LIGHTING TEST] Loopback TCP mock transport (NOT the OpenRGB SDK).");
+    println!("[AMBIENT LIGHTING TEST] Loopback OpenRGB SDK protocol v1 simulator (virtual device only).");
     println!("[AMBIENT LIGHTING TEST] Top: GLSL shader. Bottom: virtual 70-key RGB keyboard.");
     println!("[AMBIENT LIGHTING TEST] Press S for spatial mapping, A for soft ambiance, Esc to exit.");
     let sdl = sdl2::init().map_err(|e| e.to_string())?;
@@ -204,8 +204,13 @@ pub fn run() -> Result<(), String> {
                     frame[index * 3 + channel] = float_to_u8(led.rgb[channel]);
                 }
             }
-            mock_client.write_all(&frame)
-                .map_err(|e| format!("Mock lighting frame delivery failed: {e}"))?;
+            let mut payload = Vec::with_capacity(6 + frame.len() / 3 * 4);
+            payload.extend_from_slice(&((6 + KEY_ROWS * KEY_COLS * 4) as u32).to_le_bytes());
+            payload.extend_from_slice(&((KEY_ROWS * KEY_COLS) as u16).to_le_bytes());
+            for color in frame.chunks_exact(3) {
+                payload.extend_from_slice(&[color[0], color[1], color[2], 0]);
+            }
+            send_packet(&mut mock_client, 0, 1050, &payload)?;
             first_sample = false;
             last_sample = Instant::now();
             sample_count += 1;
@@ -411,40 +416,116 @@ fn uniform_location(
 
 
 
-// This deliberately uses private test framing, not an OpenRGB packet ID or port.
-// Binding port zero ensures that the mock cannot collide with a real OpenRGB server.
+// OpenRGB SDK protocol version 1 is deliberately chosen to keep discovery
+// metadata simple while exercising the documented OpenRGB wire format.
+// This listener binds to an ephemeral loopback port, never the OpenRGB port 6742.
+const SDK_VERSION: u32 = 1;
+const LED_COUNT: usize = KEY_ROWS * KEY_COLS;
+const MAX_PACKET: usize = 65536;
+
+fn send_packet(socket: &mut TcpStream, device: u32, command: u32, payload: &[u8]) -> Result<(), String> {
+    let mut header = [0u8; 16];
+    header[0..4].copy_from_slice(b"ORGB");
+    header[4..8].copy_from_slice(&device.to_le_bytes());
+    header[8..12].copy_from_slice(&command.to_le_bytes());
+    header[12..16].copy_from_slice(&(payload.len() as u32).to_le_bytes());
+    socket.write_all(&header).and_then(|_| socket.write_all(payload))
+        .map_err(|e| format!("OpenRGB mock send failed: {e}"))
+}
+
+fn recv_packet(socket: &mut TcpStream) -> Result<Option<(u32, u32, Vec<u8>)>, String> {
+    let mut header = [0u8; 16];
+    match socket.read_exact(&mut header) {
+        Ok(()) => (),
+        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof ||
+            e.kind() == std::io::ErrorKind::ConnectionReset => return Ok(None),
+        Err(e) => return Err(format!("OpenRGB mock header receive failed: {e}")),
+    }
+    if &header[0..4] != b"ORGB" { return Err("Invalid OpenRGB magic".into()); }
+    let device = u32::from_le_bytes(header[4..8].try_into().unwrap());
+    let command = u32::from_le_bytes(header[8..12].try_into().unwrap());
+    let size = u32::from_le_bytes(header[12..16].try_into().unwrap()) as usize;
+    if size > MAX_PACKET { return Err("Oversized OpenRGB packet".into()); }
+    let mut payload = vec![0u8; size];
+    socket.read_exact(&mut payload).map_err(|e| format!("OpenRGB mock payload receive failed: {e}"))?;
+    Ok(Some((device, command, payload)))
+}
+
+fn append_string(out: &mut Vec<u8>, value: &str) {
+    out.extend_from_slice(&((value.len() + 1) as u16).to_le_bytes());
+    out.extend_from_slice(value.as_bytes());
+    out.push(0);
+}
+
+fn controller_description() -> Vec<u8> {
+    let mut data = vec![0u8; 4]; // data_size includes this field
+    data.extend_from_slice(&5i32.to_le_bytes()); // DEVICE_TYPE_KEYBOARD
+    append_string(&mut data, "Screenshaver Virtual 70-Key Keyboard");
+    append_string(&mut data, "Screenshaver Simulation"); // v1 vendor
+    append_string(&mut data, "Loopback-only virtual OpenRGB controller");
+    append_string(&mut data, "1.0");
+    append_string(&mut data, ""); // serial
+    append_string(&mut data, "virtual://screenshaver/keyboard");
+    data.extend_from_slice(&0u16.to_le_bytes()); // modes
+    data.extend_from_slice(&(-1i32).to_le_bytes()); // active mode
+    data.extend_from_slice(&1u16.to_le_bytes()); // zones
+    append_string(&mut data, "Virtual Keyboard");
+    data.extend_from_slice(&2i32.to_le_bytes()); // ZONE_TYPE_MATRIX
+    data.extend_from_slice(&(LED_COUNT as u32).to_le_bytes()); // min
+    data.extend_from_slice(&(LED_COUNT as u32).to_le_bytes()); // max
+    data.extend_from_slice(&(LED_COUNT as u32).to_le_bytes()); // count
+    data.extend_from_slice(&0u16.to_le_bytes()); // no matrix map
+    data.extend_from_slice(&(LED_COUNT as u16).to_le_bytes());
+    for index in 0..LED_COUNT {
+        append_string(&mut data, &format!("Key {:02}", index + 1));
+        data.extend_from_slice(&(index as u32).to_le_bytes());
+    }
+    data.extend_from_slice(&(LED_COUNT as u16).to_le_bytes());
+    data.resize(data.len() + LED_COUNT * 4, 0); // initial RGBColor values
+    let size = data.len() as u32;
+    data[0..4].copy_from_slice(&size.to_le_bytes());
+    data
+}
+
 fn start_mock_server() -> Result<(
     TcpStream,
-    Arc<Mutex<[u8; KEY_ROWS * KEY_COLS * 3]>>,
+    Arc<Mutex<[u8; LED_COUNT * 3]>>,
     thread::JoinHandle<Result<(), String>>,
 ), String> {
     let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))
-        .map_err(|e| format!("Unable to bind loopback mock server: {e}"))?;
+        .map_err(|e| format!("Unable to bind loopback OpenRGB simulator: {e}"))?;
     let address = listener.local_addr().map_err(|e| e.to_string())?;
-    let state = Arc::new(Mutex::new([0u8; KEY_ROWS * KEY_COLS * 3]));
+    let state = Arc::new(Mutex::new([0u8; LED_COUNT * 3]));
     let server_state = Arc::clone(&state);
     let server = thread::spawn(move || -> Result<(), String> {
-        let (mut socket, peer) = listener.accept()
-            .map_err(|e| format!("Mock server accept failed: {e}"))?;
-        if !peer.ip().is_loopback() {
-            return Err("Mock server rejected non-loopback peer".to_string());
-        }
-        let mut handshake = [0u8; 8];
-        socket.read_exact(&mut handshake).map_err(|e| e.to_string())?;
-        if &handshake[0..4] != b"SHAV" ||
-            u32::from_le_bytes(handshake[4..8].try_into().unwrap()) != (KEY_ROWS * KEY_COLS) as u32 {
-            return Err("Mock lighting handshake rejected".to_string());
-        }
-        socket.write_all(b"OKAY").map_err(|e| e.to_string())?;
-        let mut frame = [0u8; KEY_ROWS * KEY_COLS * 3];
-        loop {
-            match socket.read_exact(&mut frame) {
-                Ok(()) => {
+        let (mut socket, peer) = listener.accept().map_err(|e| e.to_string())?;
+        if !peer.ip().is_loopback() { return Err("Rejected non-loopback peer".into()); }
+        while let Some((device, command, payload)) = recv_packet(&mut socket)? {
+            match command {
+                40 if payload.len() == 4 => {
+                    send_packet(&mut socket, 0, 40, &SDK_VERSION.to_le_bytes())?;
+                }
+                0 if payload.is_empty() => {
+                    send_packet(&mut socket, 0, 0, &1u32.to_le_bytes())?;
+                }
+                1 if device == 0 && payload.len() == 4 &&
+                    u32::from_le_bytes(payload[..4].try_into().unwrap()) == SDK_VERSION => {
+                    send_packet(&mut socket, 0, 1, &controller_description())?;
+                }
+                50 if payload.last() == Some(&0) => {} // client name
+                1050 if device == 0 && payload.len() == 6 + LED_COUNT * 4 => {
+                    let declared_size = u32::from_le_bytes(payload[0..4].try_into().unwrap()) as usize;
+                    let count = u16::from_le_bytes(payload[4..6].try_into().unwrap()) as usize;
+                    if declared_size != payload.len() || count != LED_COUNT {
+                        return Err("Invalid OpenRGB LED update length".into());
+                    }
+                    let mut frame = [0u8; LED_COUNT * 3];
+                    for (index, rgba) in payload[6..].chunks_exact(4).enumerate() {
+                        frame[index * 3..index * 3 + 3].copy_from_slice(&rgba[..3]);
+                    }
                     *server_state.lock().map_err(|_| "Mock mutex poisoned".to_string())? = frame;
                 }
-                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof ||
-                    e.kind() == std::io::ErrorKind::ConnectionReset => break,
-                Err(e) => return Err(format!("Mock frame receive failed: {e}")),
+                _ => return Err(format!("Unsupported OpenRGB simulator packet: device={device}, command={command}, length={}", payload.len())),
             }
         }
         Ok(())
@@ -452,14 +533,23 @@ fn start_mock_server() -> Result<(
     let mut client = TcpStream::connect(address)
         .map_err(|e| format!("Mock client connect failed: {e}"))?;
     client.set_nodelay(true).map_err(|e| e.to_string())?;
-    client.write_all(b"SHAV").map_err(|e| e.to_string())?;
-    client.write_all(&((KEY_ROWS * KEY_COLS) as u32).to_le_bytes())
-        .map_err(|e| e.to_string())?;
-    let mut reply = [0u8; 4];
-    client.read_exact(&mut reply).map_err(|e| e.to_string())?;
-    if &reply != b"OKAY" {
-        return Err("Mock server returned invalid handshake".to_string());
+    send_packet(&mut client, 0, 40, &SDK_VERSION.to_le_bytes())?;
+    let (_, command, reply) = recv_packet(&mut client)?.ok_or("Missing OpenRGB version response")?;
+    if command != 40 || reply != SDK_VERSION.to_le_bytes() {
+        return Err("OpenRGB simulator protocol version mismatch".into());
     }
-    println!("[AMBIENT LIGHTING TEST] Connected to ephemeral localhost mock server.");
+    send_packet(&mut client, 0, 50, b"Screenshaver Ambient Test\0")?;
+    send_packet(&mut client, 0, 0, &[])?;
+    let (_, command, reply) = recv_packet(&mut client)?.ok_or("Missing OpenRGB controller count")?;
+    if command != 0 || reply != 1u32.to_le_bytes() {
+        return Err("OpenRGB simulator controller count mismatch".into());
+    }
+    send_packet(&mut client, 0, 1, &SDK_VERSION.to_le_bytes())?;
+    let (_, command, reply) = recv_packet(&mut client)?.ok_or("Missing OpenRGB controller data")?;
+    if command != 1 || reply.len() < 12 ||
+        u32::from_le_bytes(reply[0..4].try_into().unwrap()) as usize != reply.len() {
+        return Err("OpenRGB simulator controller description invalid".into());
+    }
+    println!("[AMBIENT LIGHTING TEST] OpenRGB SDK v1 negotiated; one virtual 70-LED keyboard discovered on ephemeral localhost port.");
     Ok((client, state, server))
 }
