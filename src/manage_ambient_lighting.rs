@@ -103,6 +103,91 @@ pub fn representative_color(rgb: &[u8]) -> [u8; 3] {
     output
 }
 
+/// Output transfer settings, expressed as percentages of the device's 8-bit RGB range.
+/// This stage is pure color processing: it never accesses OpenGL or OpenRGB.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AmbientBrightness {
+    /// Maximum output for a full-brightness shader channel (10..=100).
+    pub brightness_percent: u8,
+    /// Neutral illumination for a black shader channel (0..=brightness_percent).
+    pub minimum_percent: u8,
+}
+
+impl Default for AmbientBrightness {
+    fn default() -> Self {
+        Self { brightness_percent: 75, minimum_percent: 0 }
+    }
+}
+
+impl AmbientBrightness {
+    pub fn validate(self) -> Result<Self, String> {
+        if !(10..=100).contains(&self.brightness_percent) {
+            return Err("Ambient brightness must be between 10% and 100%".into());
+        }
+        if self.minimum_percent > self.brightness_percent {
+            return Err("Minimum key illumination must not exceed ambient brightness".into());
+        }
+        Ok(self)
+    }
+
+    /// Apply the neutral minimum and output ceiling to spatially mapped LEDs.
+    /// Channel mapping is affine, so spatial variation is preserved, no channel
+    /// exceeds the ceiling, and black remains black with a zero minimum.
+    /// The SDK's fourth color byte is preserved unchanged.
+    pub fn apply(self, colors: &mut [LedColor]) -> Result<(), String> {
+        let settings = self.validate()?;
+        let ceiling = u32::from(settings.brightness_percent) * 255;
+        let floor = u32::from(settings.minimum_percent) * 255;
+        for color in colors {
+            for channel in &mut color[..3] {
+                // Combine percentage and input scaling before rounding, to
+                // avoid double-rounding at low illumination levels.
+                let numerator = floor * 255 + (ceiling - floor) * u32::from(*channel);
+                *channel = ((numerator + 12_750) / 25_500).min(255) as u8;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod ambient_brightness_tests {
+    use super::*;
+
+    #[test]
+    fn defaults_and_black_without_floor() {
+        let mut colors = [[0, 0, 0, 0], [255, 255, 255, 0], [128, 64, 32, 7]];
+        AmbientBrightness::default().apply(&mut colors).unwrap();
+        assert_eq!(colors[0], [0, 0, 0, 0]);
+        assert_eq!(colors[1], [191, 191, 191, 0]);
+        assert_eq!(colors[2], [96, 48, 24, 7]);
+    }
+
+    #[test]
+    fn neutral_floor_and_ceiling() {
+        let mut colors = [[0, 0, 0, 0], [255, 255, 255, 0], [255, 0, 128, 0]];
+        AmbientBrightness { brightness_percent: 75, minimum_percent: 10 }
+            .apply(&mut colors).unwrap();
+        assert_eq!(colors[0], [26, 26, 26, 0]);
+        assert_eq!(colors[1], [191, 191, 191, 0]);
+        assert_eq!(colors[2], [191, 26, 109, 0]);
+    }
+
+    #[test]
+    fn rejects_invalid_limits_without_modifying_colors() {
+        let original = [[123, 45, 67, 9]];
+        for settings in [
+            AmbientBrightness { brightness_percent: 9, minimum_percent: 0 },
+            AmbientBrightness { brightness_percent: 101, minimum_percent: 0 },
+            AmbientBrightness { brightness_percent: 50, minimum_percent: 51 },
+        ] {
+            let mut colors = original;
+            assert!(settings.apply(&mut colors).is_err());
+            assert_eq!(colors, original);
+        }
+    }
+}
+
 /// Smooths successive per-LED colors; first frame initializes immediately.
 pub fn smooth_colors(previous: &mut [LedColor], next: &[LedColor], alpha: f32) -> Result<(), String> {
     if previous.len() != next.len() { return Err("LED smoothing length mismatch".into()); }
