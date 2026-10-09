@@ -311,6 +311,18 @@ pub fn run(apply: bool, animate: bool) -> Result<(), String> {
         return Ok(());
     }
     let _owner = ambient_owner_lock()?;
+    // Recheck under the owner lock. The user may have waited at the consent
+    // prompt while another process changed the keyboard or recovery state.
+    // This is intentionally before writing a recovery record or SDK mode.
+    let pending_after_lock = manage_runtime_state::pending_ambient_recoveries()?;
+    if pending_after_lock.iter().any(|r|
+        r.endpoint == endpoint && r.device_name == info.name)
+    {
+        return Err("A Cynosa recovery record appeared during confirmation; refusing physical test".into());
+    }
+    let fresh = read_target(&mut socket, id)?;
+    verify_physical_test_baseline(&info, &fresh)?;
+    println!("[OPENRGB TEST] Revalidated controller, Spectrum Cycle and recovery state under ownership lock.");
     // The test does not take ownership of a controller while any recovery is
     // outstanding for this endpoint/model. Even a different fingerprint can
     // represent the same physical keyboard after firmware/topology changes.
@@ -419,6 +431,31 @@ fn read_target(socket: &mut TcpStream, id: u32) -> Result<Target, String> {
     let (returned, data) = receive(socket, 1)?;
     if returned != id { return Err("Controller ID changed".into()); }
     parse_target(&data)
+}
+
+// No mode-changing SDK command is permitted unless the post-consent snapshot
+// matches the validated baseline, including exact original mode bytes.
+fn verify_physical_test_baseline(baseline: &Target, fresh: &Target) -> Result<(), String> {
+    if baseline.name != fresh.name || baseline.serial != fresh.serial
+        || topology_fingerprint(baseline) != topology_fingerprint(fresh)
+        || baseline.active >= baseline.modes.len()
+        || fresh.active != baseline.active
+        || fresh.modes.len() != baseline.modes.len()
+        || fresh.modes != baseline.modes
+        || fresh.modes.get(fresh.active).map(|mode| mode.0.as_str()) != Some("Spectrum Cycle")
+        || !fresh.modes.iter().any(|mode| mode.0 == "Direct")
+    {
+        return Err("Cynosa identity, mode table or Spectrum Cycle baseline changed during confirmation; no lighting writes sent".into());
+    }
+    if fresh.led_names.len() != 132 || fresh.colors.len() != 132
+        || fresh.zone_counts != [132]
+        || TEST_KEYS.iter().any(|(index, label, _)|
+            fresh.led_names.get(*index).map(String::as_str)
+                != Some(format!("Key: {label}").as_str()))
+    {
+        return Err("Cynosa LED layout changed during confirmation; no lighting writes sent".into());
+    }
+    Ok(())
 }
 
 fn verify_target(info: &Target, record: &AmbientRecoveryRecord) -> Result<(), String> {
@@ -1064,6 +1101,43 @@ mod openrgb_recovery_regression_tests {
         let (result, writes) = mock_recovery_case(1, 0, true, false);
         assert!(result.is_err());
         assert_eq!(writes, 0);
+    }
+
+    // Full physical-layout fixture for Stage 3E. The minimal SDK controller
+    // fixture used by Stage 3C/3D intentionally has no LEDs or zones.
+    fn stage3e_cynosa_fixture() -> Target {
+        let mut info = target();
+        for (index, label, _) in TEST_KEYS {
+            info.led_names[index] = format!("Key: {label}");
+        }
+        info
+    }
+
+    #[test]
+    fn stage3e_post_consent_baseline_accepts_unchanged_controller() {
+        let baseline = stage3e_cynosa_fixture();
+        assert!(verify_physical_test_baseline(&baseline, &baseline).is_ok());
+    }
+
+    #[test]
+    fn stage3e_post_consent_baseline_rejects_changed_mode_and_bytes() {
+        let baseline = stage3e_cynosa_fixture();
+        let mut changed = { let mut info = stage3e_cynosa_fixture(); info.active = 1; info };
+        assert!(verify_physical_test_baseline(&baseline, &changed).is_err());
+        changed.active = baseline.active;
+        changed.modes[0].1.push(0x7f);
+        assert!(verify_physical_test_baseline(&baseline, &changed).is_err());
+    }
+
+    #[test]
+    fn stage3e_post_consent_baseline_rejects_changed_identity_and_layout() {
+        let baseline = stage3e_cynosa_fixture();
+        let mut changed = stage3e_cynosa_fixture();
+        changed.serial.push('x');
+        assert!(verify_physical_test_baseline(&baseline, &changed).is_err());
+        changed.serial = baseline.serial.clone();
+        changed.led_names[1].push('x');
+        assert!(verify_physical_test_baseline(&baseline, &changed).is_err());
     }
 
     // Stage 3D: an end-to-end *fixture* lifecycle. The SDK connection uses
