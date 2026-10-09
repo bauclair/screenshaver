@@ -118,35 +118,49 @@ pub fn restore_ambient_recovery() -> Result<(), String> {
         println!("[AMBIENT RECOVERY] Cancelled; record unchanged.");
         return Ok(());
     }
-    // Recheck after human input; the controller may have changed in the meantime.
-    let before = read_target(&mut socket, id)?;
+    // Shared with the mock transaction tests: validate, restore and verify.
+    restore_verified_mode(&mut socket, id, record, &original_bytes)?;
+    manage_runtime_state::complete_ambient_recovery(&record.device_identity(), &record.ownership_token)?;
+    println!("[AMBIENT RECOVERY] Original mode verified; pending record cleared.");
+    Ok(())
+}
+
+/// Shared restoration transaction. State cleanup deliberately happens only
+/// after this returns Ok; callers retain their record on any failure.
+fn restore_verified_mode(
+    socket: &mut TcpStream,
+    id: u32,
+    record: &AmbientRecoveryRecord,
+    original_bytes: &[u8],
+) -> Result<(), String> {
+    let index = usize::try_from(record.original_mode_index).map_err(|e| e.to_string())?;
+    let before = read_target(socket, id)?;
     verify_target(&before, record)?;
-    if before.modes.get(original_index).map(|(name, bytes)|
-        name == &record.original_mode_name && bytes == &original_bytes) != Some(true) {
-        return Err("Original mode record changed while waiting for confirmation".into());
+    if before.modes.get(index).map(|(name, bytes)|
+        name == &record.original_mode_name && bytes == original_bytes) != Some(true) {
+        return Err("Original mode record changed; refusing restoration".into());
     }
-    let before_active = before.modes.get(before.active).map(|m| m.0.as_str())
+    let active = before.modes.get(before.active).map(|m| m.0.as_str())
         .ok_or("Invalid active mode before restoration")?;
-    if before_active != "Direct" && before_active != record.original_mode_name {
-        return Err("Active mode changed while waiting; refusing restoration".into());
+    if active != "Direct" && active != record.original_mode_name {
+        return Err("Active mode changed; refusing restoration".into());
     }
-    // A stale process cannot clear a newer token: state completion is token-checked.
-    if before_active == "Direct" {
-        let size = u32::try_from(8usize + original_bytes.len()).map_err(|e| e.to_string())?;
+    if active == "Direct" {
+        let size = u32::try_from(8usize + original_bytes.len())
+            .map_err(|e| e.to_string())?;
         let mut payload = Vec::with_capacity(size as usize);
         payload.extend_from_slice(&size.to_le_bytes());
         payload.extend_from_slice(&record.original_mode_index.to_le_bytes());
-        payload.extend_from_slice(&original_bytes);
-        send(&mut socket, id, 1101, &payload)?;
+        payload.extend_from_slice(original_bytes);
+        send(socket, id, 1101, &payload)?;
         thread::sleep(Duration::from_millis(500));
     }
-    let after = read_target(&mut socket, id)?;
+    let after = read_target(socket, id)?;
     verify_target(&after, record)?;
-    if after.modes.get(after.active).map(|m| m.0.as_str()) != Some(record.original_mode_name.as_str()) {
+    if after.modes.get(after.active).map(|m| m.0.as_str())
+        != Some(record.original_mode_name.as_str()) {
         return Err("Restoration not verified; recovery record retained".into());
     }
-    manage_runtime_state::complete_ambient_recovery(&record.device_identity(), &record.ownership_token)?;
-    println!("[AMBIENT RECOVERY] Original mode verified; pending record cleared.");
     Ok(())
 }
 
@@ -938,4 +952,118 @@ mod openrgb_recovery_regression_tests {
     fn mock_server_rejects_truncated_controller_record() {
         assert!(parse_target(&[0, 0, 0, 0]).is_err());
     }
+    // Construct a valid SDK v6 controller record independently of parse_target.
+    fn short_string(out: &mut Vec<u8>, value: &str) {
+        out.extend_from_slice(&(value.len() as u16).to_le_bytes());
+        out.extend_from_slice(value.as_bytes());
+    }
+
+    fn sdk_mode(name: &str) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        short_string(&mut bytes, name);
+        bytes.extend_from_slice(&[0; 44]);
+        bytes.extend_from_slice(&0u16.to_le_bytes());
+        bytes
+    }
+
+    fn sdk_controller(active: i32, serial: &str) -> Vec<u8> {
+        let mut bytes = vec![0; 4];
+        bytes.extend_from_slice(&0i32.to_le_bytes());
+        for field in ["Razer Cynosa Chroma", "vendor", "description", "version", serial, "location"] {
+            short_string(&mut bytes, field);
+        }
+        bytes.extend_from_slice(&2u16.to_le_bytes());
+        bytes.extend_from_slice(&active.to_le_bytes());
+        bytes.extend_from_slice(&sdk_mode("Spectrum Cycle"));
+        bytes.extend_from_slice(&sdk_mode("Direct"));
+        bytes.extend_from_slice(&0u16.to_le_bytes()); // zones
+        bytes.extend_from_slice(&0u16.to_le_bytes()); // leds
+        bytes.extend_from_slice(&0u16.to_le_bytes()); // colors
+        bytes.extend_from_slice(&0u16.to_le_bytes()); // alt names
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        short_string(&mut bytes, "");
+        bytes.extend_from_slice(&0u32.to_le_bytes()); // long string
+        let size = bytes.len() as u32;
+        bytes[..4].copy_from_slice(&size.to_le_bytes());
+        bytes
+    }
+
+    fn mock_recovery_case(
+        original_active: i32,
+        after_active: i32,
+        changed_serial: bool,
+        expect_write: bool,
+    ) -> (Result<(), String>, usize) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+            let mut writes = 0;
+            for (phase, active) in [original_active, after_active].into_iter().enumerate() {
+                let mut header = [0u8; 16];
+                stream.read_exact(&mut header).unwrap();
+                assert_eq!(&header[..4], b"ORGB");
+                assert_eq!(u32::from_le_bytes(header[8..12].try_into().unwrap()), 1);
+                let size = u32::from_le_bytes(header[12..16].try_into().unwrap()) as usize;
+                let mut body = vec![0; size];
+                stream.read_exact(&mut body).unwrap();
+                let serial = if changed_serial { "different" } else { "fixture" };
+                stream.write_all(&packet(1, 3, &sdk_controller(active, serial))).unwrap();
+                if phase == 0 && original_active == 1 && !changed_serial {
+                    stream.read_exact(&mut header).unwrap();
+                    assert_eq!(u32::from_le_bytes(header[8..12].try_into().unwrap()), 1101);
+                    let size = u32::from_le_bytes(header[12..16].try_into().unwrap()) as usize;
+                    let mut body = vec![0; size];
+                    stream.read_exact(&mut body).unwrap();
+                    assert_eq!(body[4..8], 0u32.to_le_bytes());
+                    assert_eq!(&body[8..], sdk_mode("Spectrum Cycle"));
+                    writes += 1;
+                }
+                if changed_serial || (original_active != 0 && original_active != 1) { break; }
+            }
+            writes
+        });
+        let baseline = parse_target(&sdk_controller(0, "fixture")).unwrap();
+        let record = AmbientRecoveryRecord {
+            original_mode_hex: hex_encode(&baseline.modes[0].1),
+            ..record_for(&baseline)
+        };
+        let mut socket = TcpStream::connect(address).unwrap();
+        socket.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        let result = restore_verified_mode(&mut socket, 3, &record, &baseline.modes[0].1);
+        drop(socket);
+        let writes = server.join().unwrap();
+        assert_eq!(writes > 0, expect_write);
+        (result, writes)
+    }
+
+    #[test]
+    fn mock_complete_restoration_writes_and_verifies() {
+        let (result, writes) = mock_recovery_case(1, 0, false, true);
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(writes, 1);
+    }
+
+    #[test]
+    fn mock_restoration_rejects_unverified_result() {
+        let (result, writes) = mock_recovery_case(1, 1, false, true);
+        assert!(result.is_err());
+        assert_eq!(writes, 1);
+    }
+
+    #[test]
+    fn mock_already_restored_skips_device_write() {
+        let (result, writes) = mock_recovery_case(0, 0, false, false);
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(writes, 0);
+    }
+
+    #[test]
+    fn mock_identity_mismatch_rejects_before_write() {
+        let (result, writes) = mock_recovery_case(1, 0, true, false);
+        assert!(result.is_err());
+        assert_eq!(writes, 0);
+    }
+
 }
