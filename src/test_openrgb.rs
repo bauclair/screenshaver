@@ -784,3 +784,124 @@ fn animate_keyboard(tx: &SyncSender<Vec<u8>>, info: &Target) -> Result<(), Strin
     }
     result
 }
+
+
+// Consolidated, hardware-free recovery regression tests. These tests bind only
+// an ephemeral loopback port and never contact the real OpenRGB SDK endpoint.
+#[cfg(test)]
+mod openrgb_recovery_regression_tests {
+    use super::*;
+    use std::net::TcpListener;
+
+    fn record_for(info: &Target) -> AmbientRecoveryRecord {
+        AmbientRecoveryRecord {
+            endpoint: "127.0.0.1:6742".into(),
+            device_name: info.name.clone(),
+            serial: info.serial.clone(),
+            topology_fingerprint: topology_fingerprint(info),
+            ownership_token: "test-only-token".into(),
+            original_mode_index: 0,
+            original_mode_name: "Spectrum Cycle".into(),
+            original_mode_hex: hex_encode(&[1, 2, 3, 4]),
+        }
+    }
+
+    fn target() -> Target {
+        Target {
+            name: "Razer Cynosa Chroma".into(),
+            serial: "test-serial".into(),
+            active: 0,
+            modes: vec![("Spectrum Cycle".into(), vec![1, 2, 3, 4]),
+                        ("Direct".into(), vec![5, 6, 7, 8])],
+            zone_counts: vec![132],
+            led_names: (0..132).map(|i| format!("LED {i}")).collect(),
+            colors: vec![[0, 0, 0, 0]; 132],
+            matrix: vec![0, 1, 2],
+            width: 22,
+            height: 6,
+        }
+    }
+
+    fn packet(command: u32, id: u32, body: &[u8]) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"ORGB");
+        bytes.extend_from_slice(&id.to_le_bytes());
+        bytes.extend_from_slice(&command.to_le_bytes());
+        bytes.extend_from_slice(&(body.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(body);
+        bytes
+    }
+
+    fn mock_exchange(payload: Vec<u8>, expected: u32) -> Result<(u32, Vec<u8>), String> {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let worker = std::thread::spawn(move || {
+            let (mut connection, _) = listener.accept().unwrap();
+            connection.write_all(&payload).unwrap();
+        });
+        let mut client = TcpStream::connect(addr).unwrap();
+        client.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+        let result = receive(&mut client, expected);
+        worker.join().unwrap();
+        result
+    }
+
+    #[test]
+    fn recovery_identity_accepts_unchanged_device() {
+        let info = target();
+        assert!(verify_target(&info, &record_for(&info)).is_ok());
+    }
+
+    #[test]
+    fn recovery_identity_rejects_changed_serial_and_topology() {
+        let info = target();
+        let record = record_for(&info);
+        let mut changed = target();
+        changed.serial = "replacement-device".into();
+        assert!(verify_target(&changed, &record).is_err());
+        changed = target();
+        changed.led_names[3] = "changed".into();
+        assert!(verify_target(&changed, &record).is_err());
+    }
+
+    #[test]
+    fn recovery_mode_hex_roundtrip_and_bad_input() {
+        let bytes = [0, 1, 127, 128, 255];
+        assert_eq!(decode_mode_hex(&hex_encode(&bytes)).unwrap(), bytes);
+        assert!(decode_mode_hex("0").is_err());
+        assert!(decode_mode_hex("zz").is_err());
+        assert!(decode_mode_hex("").is_err());
+    }
+
+    #[test]
+    fn mock_server_accepts_expected_response_and_skips_notification() {
+        let mut response = packet(10, 0, &[]);
+        response.extend_from_slice(&packet(1, 7, &[4, 3, 2, 1]));
+        let (id, body) = mock_exchange(response, 1).unwrap();
+        assert_eq!(id, 7);
+        assert_eq!(body, [4, 3, 2, 1]);
+    }
+
+    #[test]
+    fn mock_server_rejects_unexpected_command_and_bad_magic() {
+        assert!(mock_exchange(packet(1101, 7, &[]), 1).is_err());
+        let mut bad = packet(1, 7, &[]);
+        bad[0] = b'X';
+        assert!(mock_exchange(bad, 1).is_err());
+    }
+
+    #[test]
+    fn mock_server_rejects_oversized_and_truncated_payload() {
+        let mut huge = packet(1, 7, &[]);
+        huge[12..16].copy_from_slice(&((MAX_PACKET as u32) + 1).to_le_bytes());
+        assert!(mock_exchange(huge, 1).is_err());
+        let mut short = packet(1, 7, &[1, 2]);
+        short.truncate(short.len() - 1);
+        assert!(mock_exchange(short, 1).is_err());
+    }
+
+    #[test]
+    fn mock_server_rejects_truncated_controller_record() {
+        assert!(parse_target(&[0, 0, 0, 0]).is_err());
+    }
+}
