@@ -145,6 +145,8 @@ mod runtime_source_version;
 
 mod manage_ambient_lighting;
 mod determine_ambient_source;
+mod select_ambient_device;
+mod manage_openrgb_session;
 
 use std::sync::Arc;
 use std::sync::atomic::{
