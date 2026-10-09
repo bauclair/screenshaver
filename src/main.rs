@@ -488,6 +488,14 @@ fn main() {
             return;
         }
 
+        crate::parse_arguments::Command::AmbientRecovery => {
+            if let Err(error) = crate::test_openrgb::inspect_ambient_recovery() {
+                eprintln!("[AMBIENT RECOVERY] INSPECTION FAILED: {error}");
+                std::process::exit(1);
+            }
+            return;
+        }
+
         crate::parse_arguments::Command::DiscoverOpenRgb => {
             if let Err(error) = crate::discover_openrgb::run() {
                 eprintln!("[OPENRGB DISCOVERY] FAILED: {}", error);
@@ -1511,6 +1519,7 @@ fn main() {
         | crate::parse_arguments::Command::TestPlaylists
         | crate::parse_arguments::Command::TestLyrics
         | crate::parse_arguments::Command::AmbientLightingTest { .. }
+        | crate::parse_arguments::Command::AmbientRecovery
         | crate::parse_arguments::Command::DiscoverOpenRgb
         | crate::parse_arguments::Command::TestOpenrgb { .. }
         | crate::parse_arguments::Command::TestLocalization

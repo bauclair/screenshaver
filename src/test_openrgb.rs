@@ -2,6 +2,7 @@
  //! --test-openrgb --apply requires typed consent and a Spectrum Cycle baseline.
  //! Never rescans, restarts OpenRGB, or modifies non-Cynosa devices.
 use std::io::{Read, Write};
+use crate::manage_runtime_state::{self, AmbientRecoveryRecord};
 use std::net::{Ipv4Addr, SocketAddrV4, TcpStream};
 use std::time::Duration;
 use std::io::{self, BufRead};
@@ -20,6 +21,77 @@ const TEST_KEYS: [(usize, &str, [u8; 3]); 3] = [
     (46, "Q", [0, 24, 0]),
     (68, "A", [0, 0, 24]),
 ];
+
+/// Stage 3A: read-only diagnostics. Never issues OpenRGB lighting or mode writes.
+/// A matching device does not establish that a previous owner has exited.
+pub fn inspect_ambient_recovery() -> Result<(), String> {
+    let records = manage_runtime_state::pending_ambient_recoveries()?;
+    println!("[AMBIENT RECOVERY] Read-only inspection; no lighting writes or record changes.");
+    if records.is_empty() {
+        println!("[AMBIENT RECOVERY] No pending recovery records.");
+        return Ok(());
+    }
+    println!("[AMBIENT RECOVERY] {} pending record(s). Live-owner status is NOT verified.", records.len());
+    for (index, record) in records.iter().enumerate() {
+        println!("[AMBIENT RECOVERY] Record {}: endpoint={}, device={:?}, serial={:?}, original mode={:?}",
+            index + 1, record.endpoint, record.device_name, record.serial, record.original_mode_name);
+        // This stage deliberately supports only the local test endpoint.
+        // Do not connect to arbitrary endpoints read from state.json.
+        if record.endpoint != "127.0.0.1:6742" {
+            println!("  UNVERIFIED: endpoint is not the guarded local OpenRGB test endpoint.");
+            continue;
+        }
+        let address = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 6742);
+        let result = (|| -> Result<(), String> {
+            let mut socket = TcpStream::connect_timeout(&address.into(), Duration::from_secs(3))
+                .map_err(|e| format!("OpenRGB connection failed: {e}"))?;
+            socket.set_read_timeout(Some(Duration::from_secs(5))).map_err(|e| e.to_string())?;
+            socket.set_write_timeout(Some(Duration::from_secs(5))).map_err(|e| e.to_string())?;
+            send(&mut socket, 0, 40, &PROTOCOL.to_le_bytes())?;
+            let (_, version) = receive(&mut socket, 40)?;
+            if version.len() != 4 || u32::from_le_bytes(version[..4].try_into().unwrap()) < PROTOCOL {
+                return Err("OpenRGB SDK v6 required".into());
+            }
+            send(&mut socket, 0, 0, &[])?;
+            let (_, response) = receive(&mut socket, 0)?;
+            let mut reader = Reader::new(&response);
+            let count = reader.u32()? as usize;
+            if count > 256 || response.len() != 4 + count * 4 {
+                return Err("Invalid controller ID list".into());
+            }
+            let mut matching = Vec::new();
+            for _ in 0..count {
+                let id = reader.u32()?;
+                let info = read_target(&mut socket, id)?;
+                if verify_target(&info, record).is_ok() {
+                    matching.push((id, info));
+                }
+            }
+            if matching.len() != 1 {
+                println!("  UNVERIFIED: {} matching controllers; exactly one required.", matching.len());
+                return Ok(());
+            }
+            let (id, info) = matching.remove(0);
+            let original = usize::try_from(record.original_mode_index).map_err(|e| e.to_string())?;
+            let mode_matches = info.modes.get(original)
+                .map(|(name, raw)| name == &record.original_mode_name && hex_encode(raw) == record.original_mode_hex)
+                .unwrap_or(false);
+            let active = info.modes.get(info.active).map(|m| m.0.as_str()).unwrap_or("<invalid>");
+            println!("  SDK controller ID: {id}; active mode: {active:?}; original mode record matches: {mode_matches}");
+            if mode_matches {
+                println!("  READ-ONLY MATCH: device topology and original mode match. Ownership remains unknown; NO recovery attempted.");
+            } else {
+                println!("  UNVERIFIED: original mode index/name/bytes changed; NO recovery attempted.");
+            }
+            Ok(())
+        })();
+        if let Err(error) = result {
+            println!("  UNVERIFIED: {error}; NO recovery attempted.");
+        }
+    }
+    println!("[AMBIENT RECOVERY] Inspection complete. Pending records remain unchanged.");
+    Ok(())
+}
 
 pub fn run(apply: bool, animate: bool) -> Result<(), String> {
     let address = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 6742);
@@ -77,8 +149,14 @@ pub fn run(apply: bool, animate: bool) -> Result<(), String> {
     if !info.modes.iter().any(|(name, _)| name == "Direct") {
         return Err("Direct mode unavailable".into());
     }
+    // Dry runs validate recovery state too, without writing any state or LEDs.
+    let endpoint = address.to_string();
+    let pending = manage_runtime_state::pending_ambient_recoveries()?;
+    if pending.iter().any(|r| r.endpoint == endpoint && r.device_name == info.name) {
+        return Err("A Cynosa recovery record is pending; refusing another physical test".into());
+    }
     if !apply {
-        println!("[OPENRGB TEST] Dry run complete; no lighting writes. Use --test-openrgb --apply to request physical test.");
+        println!("[OPENRGB TEST] Dry run complete; recovery state clear, no lighting writes. Use --test-openrgb --apply to request physical test.");
         return Ok(());
     }
     println!("{}", if animate { "This will animate shader colors on the Cynosa for up to 30 seconds, then restore Spectrum Cycle." } else { "This will briefly illuminate Escape, Q, A, then attempt to restore Spectrum Cycle." });
@@ -90,6 +168,23 @@ pub fn run(apply: bool, animate: bool) -> Result<(), String> {
         println!("[OPENRGB TEST] Cancelled; no lighting commands sent.");
         return Ok(());
     }
+    // The test does not take ownership of a controller while any recovery is
+    // outstanding for this endpoint/model. Even a different fingerprint can
+    // represent the same physical keyboard after firmware/topology changes.
+    let fingerprint = topology_fingerprint(&info);
+    let token = random_ownership_token()?;
+    let record = AmbientRecoveryRecord {
+        endpoint,
+        device_name: info.name.clone(),
+        serial: info.serial.clone(),
+        topology_fingerprint: fingerprint,
+        ownership_token: token,
+        original_mode_index: u32::try_from(info.active).map_err(|e| e.to_string())?,
+        original_mode_name: original_name.clone(),
+        original_mode_hex: hex_encode(original_raw),
+    };
+    manage_runtime_state::register_ambient_recovery(&record)?;
+    println!("[OPENRGB TEST] Durable recovery record saved before mode change");
     // Capture the original mode record before any write.
     let original_index = info.active;
     let original_record = original_raw.clone();
@@ -145,23 +240,87 @@ pub fn run(apply: bool, animate: bool) -> Result<(), String> {
     restore.extend_from_slice(&(8u32 + original_record.len() as u32).to_le_bytes());
     restore.extend_from_slice(&(original_index as u32).to_le_bytes());
     restore.extend_from_slice(&original_record);
-    let restored = send(&mut socket, id, 1101, &restore)
-        .and_then(|_| {
-            thread::sleep(Duration::from_millis(500));
-            let mode = read_active_mode(&mut socket, id)?;
-            if mode != "Spectrum Cycle" {
-                Err(format!("Restoration not verified: active mode is {mode}"))
-            } else {
-                println!("[OPENRGB TEST] Spectrum Cycle restored and verified.");
-                Ok(())
-            }
-        });
+    // Re-read and verify the controller before sending the restore command.
+    // A controller ID alone is not an identity across OpenRGB enumerations.
+    let restored = (|| -> Result<(), String> {
+        let before = read_target(&mut socket, id)?;
+        verify_target(&before, &record)?;
+        if before.modes.get(original_index).map(|m| m.0.as_str()) != Some(original_name.as_str()) {
+            return Err("Original mode index no longer identifies Spectrum Cycle".into());
+        }
+        send(&mut socket, id, 1101, &restore)?;
+        thread::sleep(Duration::from_millis(500));
+        let after = read_target(&mut socket, id)?;
+        verify_target(&after, &record)?;
+        if after.modes.get(after.active).map(|m| m.0.as_str()) != Some(original_name.as_str()) {
+            return Err("Restoration not verified: original mode is not active".into());
+        }
+        manage_runtime_state::complete_ambient_recovery(&record.device_identity(), &record.ownership_token)?;
+        println!("[OPENRGB TEST] Spectrum Cycle restored, verified, and recovery record cleared.");
+        Ok(())
+    })();
     if let Err(ref error) = restored {
         eprintln!("[OPENRGB TEST] RESTORATION WARNING: {error}");
-        eprintln!("[OPENRGB TEST] Manually select Spectrum Cycle in OpenRGB.");
+        eprintln!("[OPENRGB TEST] Recovery record retained; manually select Spectrum Cycle in OpenRGB if necessary.");
     }
-    result?;
-    restored
+    match (result, restored) {
+        (Err(test), Err(restore)) => Err(format!("Physical test: {test}; restoration: {restore}")),
+        (Err(test), Ok(())) => Err(test),
+        (Ok(()), Err(restore)) => Err(restore),
+        (Ok(()), Ok(())) => Ok(()),
+    }
+}
+
+fn read_target(socket: &mut TcpStream, id: u32) -> Result<Target, String> {
+    send(socket, id, 1, &PROTOCOL.to_le_bytes())?;
+    let (returned, data) = receive(socket, 1)?;
+    if returned != id { return Err("Controller ID changed".into()); }
+    parse_target(&data)
+}
+
+fn verify_target(info: &Target, record: &AmbientRecoveryRecord) -> Result<(), String> {
+    if info.name != record.device_name || info.serial != record.serial ||
+       topology_fingerprint(info) != record.topology_fingerprint {
+        return Err("Controller identity/topology changed; refusing restoration".into());
+    }
+    Ok(())
+}
+
+// Deterministic FNV-1a fingerprint of read-only topology. Not a unique physical
+// identifier; matching identical serial-less keyboards remain ambiguous.
+fn topology_fingerprint(info: &Target) -> String {
+    let mut hash = 0xcbf29ce484222325u64;
+    let mut feed = |bytes: &[u8]| {
+        for byte in bytes { hash ^= u64::from(*byte); hash = hash.wrapping_mul(0x100000001b3); }
+    };
+    feed(info.name.as_bytes()); feed(&[0]);
+    feed(info.serial.as_bytes()); feed(&[0]);
+    feed(&(info.led_names.len() as u64).to_le_bytes());
+    for name in &info.led_names { feed(&(name.len() as u64).to_le_bytes()); feed(name.as_bytes()); }
+    for count in &info.zone_counts { feed(&count.to_le_bytes()); }
+    feed(&(info.width as u64).to_le_bytes());
+    feed(&(info.height as u64).to_le_bytes());
+    for index in &info.matrix { feed(&index.to_le_bytes()); }
+    format!("fnv1a64-v1-{hash:016x}")
+}
+
+fn hex_encode(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        output.push(DIGITS[(byte >> 4) as usize] as char);
+        output.push(DIGITS[(byte & 15) as usize] as char);
+    }
+    output
+}
+
+fn random_ownership_token() -> Result<String, String> {
+    // Linux-only physical test: kernel CSPRNG, not PID or a predictable clock.
+    let mut bytes = [0u8; 32];
+    std::fs::File::open("/dev/urandom")
+        .and_then(|mut file| file.read_exact(&mut bytes))
+        .map_err(|e| format!("Cannot generate recovery ownership token: {e}"))?;
+    Ok(hex_encode(&bytes))
 }
 
 fn read_active_mode(socket: &mut TcpStream, id: u32) -> Result<String, String> {

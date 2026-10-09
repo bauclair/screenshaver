@@ -23,6 +23,8 @@ pub enum Command {
 
     DiscoverOpenRgb,
 
+    AmbientRecovery,
+
     TestOpenrgb { apply: bool, animate: bool },
 
     AmbientLightingTest {
@@ -206,6 +208,11 @@ pub fn parse() -> Result<Command, String> {
                 [_, first, second] if (first == "--animate" && second == "--apply") || (first == "--apply" && second == "--animate") => Ok(Command::TestOpenrgb { apply: true, animate: true }),
                 _ => Err("Usage: --test-openrgb [--animate] [--apply]".into()),
             }
+        }
+
+        "--ambient-recovery" => {
+            require_no_extra_arguments(&args, "--ambient-recovery")?;
+            Ok(Command::AmbientRecovery)
         }
 
         "--discover-openrgb" => {
@@ -977,6 +984,9 @@ pub fn print_help() {
          \n\
              --test-openrgb [--animate] [--apply]\n\
                  Guarded Cynosa lighting test (dry run by default).\n\
+         \n\
+             --ambient-recovery\n\
+                 Read-only inspection of pending OpenRGB recovery records; never changes lighting.\n\
          \n\
              --discover-openrgb\n\
                  Read-only inventory of devices recognized by the local OpenRGB SDK server.\n\
