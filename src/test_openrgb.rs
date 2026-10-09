@@ -847,6 +847,40 @@ mod openrgb_recovery_regression_tests {
     }
 
     #[test]
+    fn mock_transaction_rejects_unexpected_restore_response() {
+        // No physical server: deliberately return a mismatched SDK response.
+        let response = packet(1101, 0, &[1, 2, 3, 4]);
+        assert!(mock_exchange(response, 1).is_err());
+    }
+
+    #[test]
+    fn mock_transaction_accepts_valid_controller_reply() {
+        let response = packet(1, 4, &[9, 8, 7]);
+        let (id, payload) = mock_exchange(response, 1).unwrap();
+        assert_eq!(id, 4);
+        assert_eq!(payload, vec![9, 8, 7]);
+    }
+
+    #[test]
+    fn isolated_owner_lock_rejects_concurrent_acquisition() {
+        // Uses a disposable path; never opens Screenshaver's live owner lock.
+        let mut path = std::env::temp_dir();
+        path.push(format!("screenshaver-openrgb-lock-test-{}-{:?}",
+            std::process::id(), std::thread::current().id()));
+        let first = OpenOptions::new().create_new(true).read(true).write(true)
+            .open(&path).expect("unique disposable lock fixture");
+        let second = OpenOptions::new().read(true).write(true).open(&path).unwrap();
+        first.try_lock_exclusive().unwrap();
+        assert!(second.try_lock_exclusive().is_err());
+        FileExt::unlock(&first).unwrap();
+        second.try_lock_exclusive().unwrap();
+        FileExt::unlock(&second).unwrap();
+        drop(first);
+        drop(second);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
     fn recovery_identity_accepts_unchanged_device() {
         let info = target();
         assert!(verify_target(&info, &record_for(&info)).is_ok());

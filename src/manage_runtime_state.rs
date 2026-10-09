@@ -265,6 +265,52 @@ mod ambient_recovery_tests {
     }
 
     #[test]
+    fn isolated_fixture_recovery_transaction_preserves_unrelated_keys() {
+        // Entirely in-memory disposable state fixture: no live state.json access.
+        let mut fixture = serde_json::json!({
+            "ui": {"selected_policy": 42},
+            "wallpaper": {"running": true}
+        });
+        let before = fixture.clone();
+        let first = record("Keyboard", "token-1");
+        register_recovery_in(&mut fixture, &first).unwrap();
+        assert_eq!(decode_recoveries(&fixture).unwrap(), vec![first.clone()]);
+        assert_eq!(fixture["ui"], before["ui"]);
+        assert_eq!(fixture["wallpaper"], before["wallpaper"]);
+        let serialized = serde_json::to_vec(&fixture).unwrap();
+        let mut restarted: Value = serde_json::from_slice(&serialized).unwrap();
+        assert_eq!(decode_recoveries(&restarted).unwrap(), vec![first.clone()]);
+        complete_recovery_in(&mut restarted, &first.device_identity(), "token-1").unwrap();
+        assert_eq!(restarted, before);
+    }
+
+    #[test]
+    fn isolated_fixture_failed_completion_is_byte_for_byte_unchanged() {
+        let mut fixture = serde_json::json!({"other": [1, 2, 3]});
+        let first = record("Keyboard", "token-1");
+        register_recovery_in(&mut fixture, &first).unwrap();
+        let baseline = serde_json::to_vec(&fixture).unwrap();
+        assert!(complete_recovery_in(&mut fixture, &first.device_identity(), "wrong-token").is_err());
+        assert!(complete_recovery_in(&mut fixture, "wrong-device", "token-1").is_err());
+        assert_eq!(serde_json::to_vec(&fixture).unwrap(), baseline);
+    }
+
+    #[test]
+    fn isolated_fixture_corruption_and_duplicate_tokens_fail_closed() {
+        let first = record("Keyboard", "token-1");
+        let second = record("Mouse", "token-1");
+        let mut fixture = serde_json::json!({
+            "ambient_openrgb_recovery": [first, second], "other": true
+        });
+        let before = fixture.clone();
+        assert!(decode_recoveries(&fixture).is_err());
+        assert!(register_recovery_in(&mut fixture, &record("Lamp", "token-3")).is_err());
+        assert_eq!(fixture, before);
+        fixture[AMBIENT_RECOVERY_KEY] = serde_json::json!([{"missing": "required fields"}]);
+        assert!(decode_recoveries(&fixture).is_err());
+    }
+
+    #[test]
     fn round_trip_serialization_preserves_original_mode_bytes() {
         let first = record("Keyboard", "owner-a");
         let encoded = serde_json::to_string(&first).unwrap();
