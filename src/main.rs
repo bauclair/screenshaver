@@ -144,6 +144,7 @@ mod compare_databases;
 mod runtime_source_version;
 
 mod manage_ambient_lighting;
+mod determine_ambient_source;
 
 use std::sync::Arc;
 use std::sync::atomic::{
