@@ -1066,4 +1066,82 @@ mod openrgb_recovery_regression_tests {
         assert_eq!(writes, 0);
     }
 
+    // Stage 3D: an end-to-end *fixture* lifecycle. The SDK connection uses
+    // mock_recovery_case's ephemeral loopback listener; the state is in memory.
+    // Neither the live state.json nor the physical OpenRGB endpoint is touched.
+    #[test]
+    fn stage3d_successful_interrupted_session_lifecycle() {
+        use crate::manage_runtime_state::{
+            fixture_register_ambient_recovery as register,
+            fixture_pending_ambient_recoveries as pending,
+            fixture_complete_ambient_recovery as complete,
+        };
+        let baseline = parse_target(&sdk_controller(0, "fixture")).unwrap();
+        let mut record = record_for(&baseline);
+        record.original_mode_hex = hex_encode(&baseline.modes[0].1);
+        record.ownership_token = "stage3d-owner-success".into();
+        let original = serde_json::json!({"ui": {"selected_policy": 42}, "wallpaper": true});
+        let mut state = original.clone();
+        register(&mut state, &record).unwrap();
+        let persisted = serde_json::to_vec(&state).unwrap();
+        let mut after_crash: serde_json::Value = serde_json::from_slice(&persisted).unwrap();
+        assert_eq!(pending(&after_crash).unwrap(), vec![record.clone()]);
+        let (result, writes) = mock_recovery_case(1, 0, false, true);
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(writes, 1);
+        complete(&mut after_crash, &record.device_identity(), &record.ownership_token).unwrap();
+        assert!(pending(&after_crash).unwrap().is_empty());
+        assert_eq!(after_crash, original);
+    }
+
+    #[test]
+    fn stage3d_unverified_restoration_retains_recovery_and_other_state() {
+        use crate::manage_runtime_state::{
+            fixture_register_ambient_recovery as register,
+            fixture_pending_ambient_recoveries as pending,
+        };
+        let baseline = parse_target(&sdk_controller(0, "fixture")).unwrap();
+        let mut record = record_for(&baseline);
+        record.original_mode_hex = hex_encode(&baseline.modes[0].1);
+        record.ownership_token = "stage3d-owner-failure".into();
+        let mut state = serde_json::json!({"ui": {"selected_policy": 77}});
+        register(&mut state, &record).unwrap();
+        let snapshot = serde_json::to_vec(&state).unwrap();
+        let (result, writes) = mock_recovery_case(1, 1, false, true);
+        assert!(result.is_err());
+        assert_eq!(writes, 1);
+        assert_eq!(serde_json::to_vec(&state).unwrap(), snapshot);
+        assert_eq!(pending(&state).unwrap(), vec![record]);
+    }
+
+    #[test]
+    fn stage3d_active_owner_blocks_recovery_before_network_access() {
+        use crate::manage_runtime_state::{
+            fixture_register_ambient_recovery as register,
+            fixture_pending_ambient_recoveries as pending,
+        };
+        let baseline = parse_target(&sdk_controller(0, "fixture")).unwrap();
+        let mut record = record_for(&baseline);
+        record.ownership_token = "stage3d-lock-owner".into();
+        let mut state = serde_json::json!({"ui": "untouched"});
+        register(&mut state, &record).unwrap();
+        let mut path = std::env::temp_dir();
+        path.push(format!("screenshaver-stage3d-owner-{}-{:?}",
+            std::process::id(), std::thread::current().id()));
+        let owner = OpenOptions::new().create_new(true).read(true).write(true)
+            .open(&path).unwrap();
+        let recovery = OpenOptions::new().read(true).write(true).open(&path).unwrap();
+        owner.try_lock_exclusive().unwrap();
+        // Mirrors the production ordering: an unsuccessful owner acquisition
+        // must stop recovery before it connects to the SDK or modifies state.
+        assert!(recovery.try_lock_exclusive().is_err());
+        assert_eq!(pending(&state).unwrap(), vec![record]);
+        FileExt::unlock(&owner).unwrap();
+        recovery.try_lock_exclusive().unwrap();
+        FileExt::unlock(&recovery).unwrap();
+        drop(owner);
+        drop(recovery);
+        std::fs::remove_file(path).unwrap();
+    }
+
 }

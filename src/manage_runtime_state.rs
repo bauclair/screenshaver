@@ -216,6 +216,28 @@ fn complete_recovery_in(
     encode_recoveries(root, &records)
 }
 
+// Test-only fixture entry points: these never access the live state path.
+#[cfg(test)]
+pub(crate) fn fixture_register_ambient_recovery(
+    root: &mut Value, record: &AmbientRecoveryRecord,
+) -> Result<(), String> {
+    register_recovery_in(root, record)
+}
+
+#[cfg(test)]
+pub(crate) fn fixture_pending_ambient_recoveries(
+    root: &Value,
+) -> Result<Vec<AmbientRecoveryRecord>, String> {
+    decode_recoveries(root)
+}
+
+#[cfg(test)]
+pub(crate) fn fixture_complete_ambient_recovery(
+    root: &mut Value, identity: &str, token: &str,
+) -> Result<(), String> {
+    complete_recovery_in(root, identity, token)
+}
+
 #[cfg(test)]
 mod ambient_recovery_tests {
     use super::*;
