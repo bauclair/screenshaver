@@ -127,6 +127,8 @@ mod manage_playlists;
 mod test_playlists;
 mod test_lyrics;
 mod test_ambient_lighting;
+mod discover_openrgb;
+mod test_openrgb;
 mod test_localization;
 mod manage_localization;
 mod audit_translation;
@@ -139,6 +141,8 @@ mod manage_backup;
 mod compare_databases;
 
 mod runtime_source_version;
+
+mod manage_ambient_lighting;
 
 use std::sync::Arc;
 use std::sync::atomic::{
@@ -475,9 +479,26 @@ fn main() {
         }
 
 
-        crate::parse_arguments::Command::AmbientLightingTest => {
+        crate::parse_arguments::Command::TestOpenrgb { apply, animate } => {
+            if let Err(error) = crate::test_openrgb::run(*apply, *animate) {
+                eprintln!("[OPENRGB TEST] FAILED: {error}");
+                std::process::exit(1);
+            }
+            return;
+        }
 
-            match crate::test_ambient_lighting::run() {
+        crate::parse_arguments::Command::DiscoverOpenRgb => {
+            if let Err(error) = crate::discover_openrgb::run() {
+                eprintln!("[OPENRGB DISCOVERY] FAILED: {}", error);
+                std::process::exit(1);
+            }
+            return;
+        }
+
+
+        crate::parse_arguments::Command::AmbientLightingTest { openrgb_host } => {
+
+            match crate::test_ambient_lighting::run(*openrgb_host) {
 
                 Ok(()) => {}
 
@@ -1488,7 +1509,9 @@ fn main() {
         | crate::parse_arguments::Command::Version
         | crate::parse_arguments::Command::TestPlaylists
         | crate::parse_arguments::Command::TestLyrics
-        | crate::parse_arguments::Command::AmbientLightingTest
+        | crate::parse_arguments::Command::AmbientLightingTest { .. }
+        | crate::parse_arguments::Command::DiscoverOpenRgb
+        | crate::parse_arguments::Command::TestOpenrgb { .. }
         | crate::parse_arguments::Command::TestLocalization
         | crate::parse_arguments::Command::TestReverseAnimation { .. }
         | crate::parse_arguments::Command::AuditTranslation { .. }

@@ -1,0 +1,498 @@
+//! Guarded physical Cynosa lighting test. Dry-run by default.
+ //! --test-openrgb --apply requires typed consent and a Spectrum Cycle baseline.
+ //! Never rescans, restarts OpenRGB, or modifies non-Cynosa devices.
+use std::io::{Read, Write};
+use std::net::{Ipv4Addr, SocketAddrV4, TcpStream};
+use std::time::Duration;
+use std::io::{self, BufRead};
+use std::thread;
+use std::sync::mpsc::{self, SyncSender, TrySendError};
+use std::time::Instant;
+use sdl2::event::Event;
+use sdl2::keyboard::Keycode;
+use sdl2::video::GLProfile;
+
+const PROTOCOL: u32 = 6;
+const MAX_PACKET: usize = 16 * 1024 * 1024;
+
+const TEST_KEYS: [(usize, &str, [u8; 3]); 3] = [
+    (1, "Escape", [24, 0, 0]),
+    (46, "Q", [0, 24, 0]),
+    (68, "A", [0, 0, 24]),
+];
+
+pub fn run(apply: bool, animate: bool) -> Result<(), String> {
+    let address = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 6742);
+    println!("[OPENRGB TEST] Connecting to {address}; no device rescans");
+    let mut socket = TcpStream::connect_timeout(&address.into(), Duration::from_secs(3))
+        .map_err(|e| format!("Cannot connect to OpenRGB: {e}"))?;
+    socket.set_read_timeout(Some(Duration::from_secs(5))).map_err(|e| e.to_string())?;
+    socket.set_write_timeout(Some(Duration::from_secs(5))).map_err(|e| e.to_string())?;
+    send(&mut socket, 0, 40, &6u32.to_le_bytes())?;
+    let (_, version) = receive(&mut socket, 40)?;
+    if version.len() != 4 || u32::from_le_bytes(version[..4].try_into().unwrap()) < 6 {
+        return Err("OpenRGB SDK v6 required".into());
+    }
+    send(&mut socket, 0, 0, &[])?;
+    let (_, response) = receive(&mut socket, 0)?;
+    let mut r = Reader::new(&response);
+    let count = r.u32()? as usize;
+    if count > 256 || response.len() != 4 + count * 4 {
+        return Err("Invalid controller ID list".into());
+    }
+    let mut matches = Vec::new();
+    for _ in 0..count {
+        let id = r.u32()?;
+        send(&mut socket, id, 1, &6u32.to_le_bytes())?;
+        let (returned, data) = receive(&mut socket, 1)?;
+        if returned != id { return Err("Controller ID mismatch".into()); }
+        let info = parse_target(&data)?;
+        println!("[OPENRGB TEST] Discovered SDK ID {id}: {:?}, serial {:?}", info.name, info.serial);
+        if info.name == "Razer Cynosa Chroma" {
+            matches.push((id, info));
+        }
+    }
+    if matches.len() != 1 {
+        return Err(format!("Expected exactly one matching Cynosa, found {}", matches.len()));
+    }
+    let (id, info) = matches.remove(0);
+    if info.led_names.len() != 132 || info.colors.len() != 132 ||
+        info.zone_counts != [132] || info.active >= info.modes.len() {
+        return Err("Unexpected keyboard topology; refusing physical test".into());
+    }
+    for (index, label, _) in TEST_KEYS {
+        if info.led_names[index] != format!("Key: {label}") {
+            return Err(format!("LED {index} identity mismatch; refusing physical test"));
+        }
+    }
+    let (original_name, original_raw) = &info.modes[info.active];
+    println!("[OPENRGB TEST] Razer Cynosa Chroma: SDK ID {id}, 132 LEDs; serial {:?}", info.serial);
+    println!("[OPENRGB TEST] Current mode: {original_name}");
+    for (index, label, color) in TEST_KEYS {
+        println!("  {label} (LED {index}) -> RGB {color:?}; original {:?}", info.colors[index]);
+    }
+    if original_name != "Spectrum Cycle" {
+        return Err("Safety prerequisite: select Spectrum Cycle in OpenRGB, then rerun. No lighting commands sent.".into());
+    }
+    if !info.modes.iter().any(|(name, _)| name == "Direct") {
+        return Err("Direct mode unavailable".into());
+    }
+    if !apply {
+        println!("[OPENRGB TEST] Dry run complete; no lighting writes. Use --test-openrgb --apply to request physical test.");
+        return Ok(());
+    }
+    println!("{}", if animate { "This will animate shader colors on the Cynosa for up to 30 seconds, then restore Spectrum Cycle." } else { "This will briefly illuminate Escape, Q, A, then attempt to restore Spectrum Cycle." });
+    println!("Restoration is best-effort; manual recovery in OpenRGB may be necessary.");
+    println!("Type TEST CYNOSA to continue:");
+    let mut answer = String::new();
+    io::stdin().lock().read_line(&mut answer).map_err(|e| e.to_string())?;
+    if answer.trim() != "TEST CYNOSA" {
+        println!("[OPENRGB TEST] Cancelled; no lighting commands sent.");
+        return Ok(());
+    }
+    // Capture the original mode record before any write.
+    let original_index = info.active;
+    let original_record = original_raw.clone();
+    let result = (|| -> Result<(), String> {
+        println!("[OPENRGB TEST] Switching to Direct mode...");
+        send(&mut socket, id, 1100, &[])?;
+        thread::sleep(Duration::from_millis(300));
+        if read_active_mode(&mut socket, id)? != "Direct" {
+            return Err("Direct mode not confirmed; no LED colors transmitted".into());
+        }
+        if animate {
+            // The GL thread never waits on TCP. A capacity-one channel drops
+            // obsolete frames instead of building a latency backlog.
+            let (tx, rx) = mpsc::sync_channel::<Vec<u8>>(1);
+            return thread::scope(|scope| {
+                let worker_socket = &mut socket;
+                let worker = scope.spawn(move || -> Result<usize, String> {
+                    let mut transmitted = 0usize;
+                    while let Ok(payload) = rx.recv() {
+                        send(worker_socket, id, 1050, &payload)?;
+                        transmitted += 1;
+                    }
+                    Ok(transmitted)
+                });
+                let render_result = animate_keyboard(&tx, &info);
+                drop(tx);
+                let worker_result = worker.join()
+                    .map_err(|_| "OpenRGB worker thread panicked".to_string())?;
+                match worker_result {
+                    Ok(transmitted) => {
+                        println!("[OPENRGB TEST] Worker transmitted {transmitted} shader-derived frames");
+                        render_result
+                    }
+                    Err(error) => Err(format!("OpenRGB worker failed: {error}; renderer: {render_result:?}")),
+                }
+            });
+        }
+        for (index, label, rgb) in TEST_KEYS {
+            let mut data = Vec::with_capacity(8);
+            data.extend_from_slice(&(index as i32).to_le_bytes());
+            data.extend_from_slice(&[rgb[0], rgb[1], rgb[2], 0]);
+            send(&mut socket, id, 1052, &data)?;
+            println!("[OPENRGB TEST] Set {label}");
+            thread::sleep(Duration::from_millis(250));
+        }
+        println!("[OPENRGB TEST] Holding colors for 3 seconds...");
+        thread::sleep(Duration::from_secs(3));
+        Ok(())
+    })();
+    // Always attempt restoration after the first mode-write attempt.
+    println!("[OPENRGB TEST] Restoring original Spectrum Cycle mode...");
+    let mut restore = Vec::with_capacity(8 + original_record.len());
+    restore.extend_from_slice(&(8u32 + original_record.len() as u32).to_le_bytes());
+    restore.extend_from_slice(&(original_index as u32).to_le_bytes());
+    restore.extend_from_slice(&original_record);
+    let restored = send(&mut socket, id, 1101, &restore)
+        .and_then(|_| {
+            thread::sleep(Duration::from_millis(500));
+            let mode = read_active_mode(&mut socket, id)?;
+            if mode != "Spectrum Cycle" {
+                Err(format!("Restoration not verified: active mode is {mode}"))
+            } else {
+                println!("[OPENRGB TEST] Spectrum Cycle restored and verified.");
+                Ok(())
+            }
+        });
+    if let Err(ref error) = restored {
+        eprintln!("[OPENRGB TEST] RESTORATION WARNING: {error}");
+        eprintln!("[OPENRGB TEST] Manually select Spectrum Cycle in OpenRGB.");
+    }
+    result?;
+    restored
+}
+
+fn read_active_mode(socket: &mut TcpStream, id: u32) -> Result<String, String> {
+    send(socket, id, 1, &6u32.to_le_bytes())?;
+    let (returned, data) = receive(socket, 1)?;
+    if returned != id { return Err("Controller identity changed".into()); }
+    let info = parse_target(&data)?;
+    if info.name != "Razer Cynosa Chroma" {
+        return Err("Device identity changed".into());
+    }
+    info.modes.get(info.active).map(|m| m.0.clone())
+        .ok_or_else(|| "Invalid active mode".into())
+}
+
+struct Target {
+    name: String,
+    serial: String,
+    active: usize,
+    modes: Vec<(String, Vec<u8>)>,
+    zone_counts: Vec<u32>,
+    led_names: Vec<String>,
+    colors: Vec<[u8; 4]>,
+    matrix: Vec<u32>,
+    width: usize,
+    height: usize,
+}
+
+fn send(stream: &mut TcpStream, device: u32, command: u32, data: &[u8]) -> Result<(), String> {
+    if !matches!(command, 0 | 1 | 40 | 1050 | 1052 | 1100 | 1101) { return Err("Refusing unsupported OpenRGB command".into()); }
+    let length = u32::try_from(data.len()).map_err(|_| "Request too large")?;
+    let mut header = [0u8; 16];
+    header[..4].copy_from_slice(b"ORGB");
+    header[4..8].copy_from_slice(&device.to_le_bytes());
+    header[8..12].copy_from_slice(&command.to_le_bytes());
+    header[12..16].copy_from_slice(&length.to_le_bytes());
+    stream.write_all(&header).and_then(|_| stream.write_all(data)).map_err(|e| e.to_string())
+}
+
+fn receive(stream: &mut TcpStream, expected: u32) -> Result<(u32, Vec<u8>), String> {
+    // Animated updates can queue many asynchronous notifications.  Bound the
+    // wait by elapsed time rather than by a small fixed notice count.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if Instant::now() >= deadline {
+            return Err(format!("Timed out waiting for SDK command {expected}"));
+        }
+        let mut header = [0u8; 16];
+        stream.read_exact(&mut header).map_err(|e| format!("OpenRGB packet header: {e}"))?;
+        if &header[..4] != b"ORGB" { return Err("Invalid SDK packet magic".into()); }
+        let id = u32::from_le_bytes(header[4..8].try_into().unwrap());
+        let command = u32::from_le_bytes(header[8..12].try_into().unwrap());
+        let size = u32::from_le_bytes(header[12..16].try_into().unwrap()) as usize;
+        if size > MAX_PACKET { return Err("SDK packet exceeds size limit".into()); }
+        let mut payload = vec![0u8; size];
+        stream.read_exact(&mut payload).map_err(|e| format!("OpenRGB packet body: {e}"))?;
+        if command == expected { return Ok((id, payload)); }
+        if matches!(command, 10 | 51 | 53 | 100 | 1150 | 1200) {
+            // Notification packets are not replies.  Avoid flooding the console
+            // after hundreds of animation frames.
+            continue;
+        }
+        return Err(format!("Unexpected SDK command {command}, expected {expected}"));
+    }
+}
+
+struct Reader<'a> { data: &'a [u8], at: usize }
+impl<'a> Reader<'a> {
+    fn new(data: &'a [u8]) -> Self { Self { data, at: 0 } }
+    fn take(&mut self, n: usize) -> Result<&'a [u8], String> {
+        let end = self.at.checked_add(n).ok_or("Data offset overflow")?;
+        let slice = self.data.get(self.at..end).ok_or_else(|| format!("Truncated controller record at offset {}", self.at))?;
+        self.at = end;
+        Ok(slice)
+    }
+    fn u16(&mut self) -> Result<u16, String> { Ok(u16::from_le_bytes(self.take(2)?.try_into().unwrap())) }
+    fn u32(&mut self) -> Result<u32, String> { Ok(u32::from_le_bytes(self.take(4)?.try_into().unwrap())) }
+    fn i32(&mut self) -> Result<i32, String> { Ok(i32::from_le_bytes(self.take(4)?.try_into().unwrap())) }
+    fn string(&mut self) -> Result<String, String> {
+        let len = self.u16()? as usize;
+        if len > 1024 * 1024 { return Err("Implausible string length".into()); }
+        Ok(String::from_utf8_lossy(self.take(len)?).trim_end_matches('\0').to_string())
+    }
+    fn long_string(&mut self) -> Result<String, String> {
+        let len = self.u32()? as usize;
+        if len > 1024 * 1024 { return Err("Implausible long string length".into()); }
+        Ok(String::from_utf8_lossy(self.take(len)?).trim_end_matches('\0').to_string())
+    }
+    fn matrix(&mut self) -> Result<Option<(u32, u32, usize)>, String> {
+        let len = self.u16()? as usize;
+        if len == 0 { return Ok(None); }
+        if len < 8 || (len - 8) % 4 != 0 { return Err("Malformed LED matrix".into()); }
+        let bytes = self.take(len)?;
+        let mut r = Reader::new(bytes);
+        let height = r.u32()?;
+        let width = r.u32()?;
+        if (height as u64) * (width as u64) != ((len - 8) / 4) as u64 { return Err("Matrix dimensions mismatch".into()); }
+        let mut mapped = 0;
+        for _ in 0..((len - 8) / 4) { if r.u32()? != u32::MAX { mapped += 1; } }
+        Ok(Some((width, height, mapped)))
+    }
+    fn mode(&mut self) -> Result<String, String> {
+        let name = self.string()?;
+        self.take(11 * 4)?;
+        let colors = self.u16()? as usize;
+        self.take(colors.checked_mul(4).ok_or("Color count overflow")?)?;
+        Ok(name)
+    }
+}
+
+fn parse_target(payload: &[u8]) -> Result<Target, String> {
+    let mut r = Reader::new(payload);
+    if r.u32()? as usize != payload.len() { return Err("Controller record size mismatch".into()); }
+    r.i32()?;
+    let name = r.string()?;
+    r.string()?; r.string()?; r.string()?;
+    let serial = r.string()?;
+    r.string()?;
+    let count = r.u16()? as usize;
+    let active = r.i32()?;
+    if count > 512 || active < 0 { return Err("Invalid mode list".into()); }
+    let mut modes = Vec::new();
+    for _ in 0..count {
+        let start = r.at;
+        let mode_name = r.mode()?;
+        modes.push((mode_name, payload[start..r.at].to_vec()));
+    }
+    let zones = r.u16()? as usize;
+    if zones > 512 { return Err("Invalid zone count".into()); }
+    let mut zone_counts = Vec::new();
+    let mut matrix = Vec::new();
+    let (mut width, mut height) = (0usize, 0usize);
+    for _ in 0..zones {
+        r.string()?; r.i32()?; r.u32()?; r.u32()?;
+        zone_counts.push(r.u32()?);
+        let matrix_start = r.at;
+        if let Some((w, h, _)) = r.matrix()? {
+            if zones == 1 {
+                width = w as usize;
+                height = h as usize;
+                let mut mr = Reader::new(&payload[matrix_start..r.at]);
+                let _len = mr.u16()?;
+                mr.u32()?; mr.u32()?;
+                for _ in 0..width * height { matrix.push(mr.u32()?); }
+            }
+        }
+        let segments = r.u16()? as usize;
+        if segments > 2048 { return Err("Invalid segment count".into()); }
+        for _ in 0..segments {
+            r.string()?; r.i32()?; r.u32()?; r.u32()?; r.matrix()?; r.u32()?;
+        }
+        r.u32()?; r.i32()?;
+        let zmodes = r.u16()? as usize;
+        if zmodes > 512 { return Err("Invalid zone mode count".into()); }
+        for _ in 0..zmodes { r.mode()?; }
+        r.string()?;
+    }
+    let led_count = r.u16()? as usize;
+    if led_count > 10000 { return Err("Invalid LED count".into()); }
+    let mut led_names = Vec::new();
+    for _ in 0..led_count { led_names.push(r.string()?); }
+    let color_count = r.u16()? as usize;
+    if color_count > 10000 { return Err("Invalid color count".into()); }
+    let mut colors = Vec::new();
+    for _ in 0..color_count { colors.push(r.take(4)?.try_into().unwrap()); }
+    let alt = r.u16()? as usize;
+    for _ in 0..alt { r.string()?; }
+    r.u32()?; r.string()?; r.long_string()?;
+    if r.at != payload.len() { return Err("Unparsed controller bytes".into()); }
+    Ok(Target { name, serial, active: active as usize, modes, zone_counts, led_names, colors, matrix, width, height })
+}
+
+const TEST_FRAGMENT_SHADER: &str = r#"
+#version 330 core
+
+uniform float iTime;
+uniform vec3 iResolution;
+
+out vec4 FragColor;
+
+vec3 palette(float t)
+{
+    vec3 a = vec3(0.50, 0.50, 0.50);
+    vec3 b = vec3(0.50, 0.50, 0.50);
+    vec3 c = vec3(1.00, 1.00, 1.00);
+    vec3 d = vec3(0.00, 0.33, 0.67);
+
+    return a + b * cos(6.2831853 * (c * t + d));
+}
+
+void main()
+{
+    vec2 uv =
+        (2.0 * gl_FragCoord.xy - iResolution.xy)
+        / iResolution.y;
+
+    float r = length(uv);
+    float angle = atan(uv.y, uv.x);
+
+    float wave =
+        sin(3.0 * angle - 2.2 * iTime + 7.0 * r);
+
+    float glow =
+        exp(-2.4 * abs(r - (0.48 + 0.12 * wave)));
+
+    float core =
+        exp(-3.2 * r);
+
+    float color_phase =
+        0.08 * iTime
+        + 0.10 * wave
+        + 0.12 * r;
+
+    vec3 color =
+        palette(color_phase)
+        * (0.20 + 1.25 * glow + 0.55 * core);
+
+    color +=
+        0.10
+        * palette(color_phase + 0.22)
+        * (0.5 + 0.5 * sin(4.0 * r - iTime));
+
+    FragColor =
+        vec4(
+            max(color, vec3(0.0)),
+            1.0
+        );
+}
+"#;
+fn animate_keyboard(tx: &SyncSender<Vec<u8>>, info: &Target) -> Result<(), String> {
+    if info.width != 22 || info.height != 6 || info.matrix.len() != 132 {
+        return Err("Unexpected LED matrix; animation refused".into());
+    }
+    let sdl = sdl2::init().map_err(|e| e.to_string())?;
+    let video = sdl.video().map_err(|e| e.to_string())?;
+    {
+        let attrs = video.gl_attr();
+        attrs.set_context_profile(GLProfile::Core);
+        attrs.set_context_version(crate::define_constants::GL_MAJOR, crate::define_constants::GL_MINOR);
+    }
+    let window = video.window("Screenshaver - OpenRGB Physical Shader Test (Esc to stop)", 960, 540)
+        .position_centered().opengl().build().map_err(|e| e.to_string())?;
+    let _context = window.gl_create_context().map_err(|e| e.to_string())?;
+    gl::load_with(|name| video.gl_get_proc_address(name) as *const _);
+    let _ = video.gl_set_swap_interval(1);
+    let program = crate::compile_shader::build_program(crate::define_constants::VERTEX_SHADER, TEST_FRAGMENT_SHADER)
+        .map_err(|e| format!("Shader compilation failed: {e}"))?;
+    let mut vao = 0u32;
+    let mut fbo = 0u32;
+    let mut texture = 0u32;
+    unsafe {
+        gl::GenVertexArrays(1, &mut vao);
+        gl::BindVertexArray(vao);
+        gl::GenFramebuffers(1, &mut fbo);
+        gl::BindFramebuffer(gl::FRAMEBUFFER, fbo);
+        gl::GenTextures(1, &mut texture);
+        gl::BindTexture(gl::TEXTURE_2D, texture);
+        gl::TexImage2D(gl::TEXTURE_2D, 0, gl::RGB8 as i32, 32, 18, 0, gl::RGB, gl::UNSIGNED_BYTE, std::ptr::null());
+        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
+        gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
+        gl::FramebufferTexture2D(gl::FRAMEBUFFER, gl::COLOR_ATTACHMENT0, gl::TEXTURE_2D, texture, 0);
+    }
+    let result = (|| -> Result<(), String> {
+        let status = unsafe { gl::CheckFramebufferStatus(gl::FRAMEBUFFER) };
+        if status != gl::FRAMEBUFFER_COMPLETE { return Err("Shader sample framebuffer incomplete".into()); }
+        let time_location = unsafe { gl::GetUniformLocation(program, b"iTime\0".as_ptr() as *const _) };
+        let resolution_location = unsafe { gl::GetUniformLocation(program, b"iResolution\0".as_ptr() as *const _) };
+        let mut events = sdl.event_pump().map_err(|e| e.to_string())?;
+        let start = Instant::now();
+        let mut pixels = [0u8; 32 * 18 * 3];
+        let mut last = Instant::now() - Duration::from_millis(100);
+        let mut frames = 0usize;
+        let mut dropped = 0usize;
+        while start.elapsed() < Duration::from_secs(30) {
+            if events.poll_iter().any(|e| matches!(e, Event::Quit { .. } | Event::KeyDown { keycode: Some(Keycode::Escape), .. })) { break; }
+            unsafe {
+                gl::BindFramebuffer(gl::FRAMEBUFFER, fbo);
+                gl::Viewport(0, 0, 32, 18);
+                gl::UseProgram(program);
+                if time_location >= 0 { gl::Uniform1f(time_location, start.elapsed().as_secs_f32()); }
+                if resolution_location >= 0 { gl::Uniform3f(resolution_location, 32.0, 18.0, 1.0); }
+                gl::DrawArrays(gl::TRIANGLES, 0, 3);
+                gl::BindFramebuffer(gl::READ_FRAMEBUFFER, fbo);
+                gl::BindFramebuffer(gl::DRAW_FRAMEBUFFER, 0);
+                gl::Viewport(0, 0, 960, 540);
+                gl::BlitFramebuffer(0, 0, 32, 18, 0, 0, 960, 540, gl::COLOR_BUFFER_BIT, gl::LINEAR);
+            }
+            window.gl_swap_window();
+            if last.elapsed() >= Duration::from_millis(100) {
+                unsafe {
+                    gl::BindFramebuffer(gl::READ_FRAMEBUFFER, fbo);
+                    gl::PixelStorei(gl::PACK_ALIGNMENT, 1);
+                    gl::ReadPixels(0, 0, 32, 18, gl::RGB, gl::UNSIGNED_BYTE, pixels.as_mut_ptr() as *mut _);
+                }
+                let mut colors = info.colors.clone();
+                for row in 0..info.height {
+                    for col in 0..info.width {
+                        let index = info.matrix[row * info.width + col];
+                        if index == u32::MAX { continue; }
+                        let index = index as usize;
+                        if index >= colors.len() { return Err("LED matrix index out of range".into()); }
+                        let x = ((col as f32 + 0.5) * 32.0 / info.width as f32).floor() as usize;
+                        let y = ((info.height - row) as f32 - 0.5) * 18.0 / info.height as f32;
+                        let y = (y.floor() as usize).min(17);
+                        let offset = (y * 32 + x.min(31)) * 3;
+                        colors[index] = [pixels[offset], pixels[offset + 1], pixels[offset + 2], 0];
+                    }
+                }
+                // OpenRGB SDK 1050 (update all controller LEDs) uses a 32-bit block size, followed by
+                // a 16-bit color count and then 4 bytes per LED.
+                let mut payload = Vec::with_capacity(6 + colors.len() * 4);
+                payload.extend_from_slice(&((colors.len() * 4 + 6) as u32).to_le_bytes());
+                payload.extend_from_slice(&(colors.len() as u16).to_le_bytes());
+                for color in colors { payload.extend_from_slice(&color); }
+                match tx.try_send(payload) {
+                    Ok(()) => frames += 1,
+                    Err(TrySendError::Full(_)) => dropped += 1,
+                    Err(TrySendError::Disconnected(_)) => return Err("OpenRGB worker disconnected".into()),
+                }
+                last = Instant::now();
+            }
+            thread::sleep(Duration::from_millis(2));
+        }
+        println!("[OPENRGB TEST] Queued {frames} shader-derived frames; dropped {dropped} stale frames");
+        Ok(())
+    })();
+    unsafe {
+        gl::BindFramebuffer(gl::FRAMEBUFFER, 0);
+        gl::DeleteTextures(1, &texture);
+        gl::DeleteFramebuffers(1, &fbo);
+        gl::DeleteVertexArrays(1, &vao);
+        gl::DeleteProgram(program);
+    }
+    result
+}

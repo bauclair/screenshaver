@@ -1,4 +1,6 @@
 use std::path::PathBuf;
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
@@ -15,6 +17,90 @@ pub(crate) use render_frame_engine::{
     FrameRenderEvents,
     FrameRenderMetadata,
 };
+
+// Explicit opt-in: SCREENSHAVER_AMBIENT_SAMPLE_DIAGNOSTIC=1 screenshaver
+// This test never opens an OpenRGB connection or changes device lighting.
+struct AmbientSamplingDiagnostic {
+    sampler: crate::manage_ambient_lighting::FramebufferSampler,
+    captured: u64,
+    total_us: u128,
+    maximum_us: u128,
+    last_report: Instant,
+    disabled: bool,
+    hardware: Option<crate::manage_ambient_lighting::AmbientCynosaSession>,
+    hardware_dropped: u64,
+}
+
+impl AmbientSamplingDiagnostic {
+    fn new() -> Result<Self, String> {
+        Ok(Self {
+            sampler: crate::manage_ambient_lighting::FramebufferSampler::new(
+                22, 12, Duration::from_millis(100),
+            )?,
+            captured: 0,
+            total_us: 0,
+            maximum_us: 0,
+            last_report: Instant::now(),
+            disabled: false,
+            hardware: None,
+            hardware_dropped: 0,
+        })
+    }
+
+    fn observe(&mut self, framebuffer: u32, width: u32, height: u32) {
+        if self.disabled || framebuffer != 0 || width == 0 || height == 0 { return; }
+        let source = crate::manage_ambient_lighting::FrameSource {
+            framebuffer, width, height,
+        };
+        match self.sampler.sample(source) {
+            Ok(Some(frame)) => {
+                let elapsed = frame.readback_time.as_micros();
+                self.captured += 1;
+                if self.hardware.as_ref().is_some_and(|hardware| hardware.expired()) {
+                    if let Some(session) = self.hardware.take() {
+                        match session.stop() {
+                            Ok((submitted, stats)) => log_information(&format!(
+                                "[AMBIENT_OPENRGB] 30-second limit reached; submitted={submitted} transmitted={} original mode restored",
+                                stats.transmitted)),
+                            Err(error) => log_warning(&format!("[AMBIENT_OPENRGB] {error}")),
+                        }
+                    }
+                }
+                if let Some(ref mut hardware) = self.hardware {
+                    match hardware.submit(&frame) {
+                        Ok(false) => self.hardware_dropped += 1,
+                        Ok(true) => {},
+                        Err(error) => {
+                            log_warning(&format!("[AMBIENT_OPENRGB] Update failed: {error}"));
+                            if let Some(session) = self.hardware.take() {
+                                if let Err(e) = session.stop() { log_warning(&format!("[AMBIENT_OPENRGB] {e}")); }
+                            }
+                        }
+                    }
+                }
+                self.total_us += elapsed;
+                self.maximum_us = self.maximum_us.max(elapsed);
+                if self.last_report.elapsed() >= Duration::from_secs(5) {
+                    let rgb = crate::manage_ambient_lighting::representative_color(&frame.rgb);
+                    log_information(&format!(
+                        "[AMBIENT_DIAGNOSTIC] samples={} grid={}x{} avg_readback_us={} max_readback_us={} representative_rgb=#{:02X}{:02X}{:02X}",
+                        self.captured, frame.width, frame.height,
+                        self.total_us / self.captured as u128,
+                        self.maximum_us, rgb[0], rgb[1], rgb[2],
+                    ));
+                    self.last_report = Instant::now();
+                }
+            }
+            Ok(None) => {}
+            Err(error) => {
+                self.disabled = true;
+                log_warning(&format!(
+                    "[AMBIENT_DIAGNOSTIC] Sampling disabled after error: {error}"
+                ));
+            }
+        }
+    }
+}
 
 const INPUT_STARTUP_GRACE: Duration = Duration::from_millis(750);
 const MOUSE_MOTION_EXIT_THRESHOLD: i32 = 4;
@@ -33,6 +119,7 @@ pub struct FrameRenderer {
     // Keep the engine first so its OpenGL resources are released before the
     // context and window are destroyed.
     engine: FrameRenderEngine,
+    ambient_diagnostic: Option<Rc<RefCell<AmbientSamplingDiagnostic>>>,
     event_pump: sdl2::EventPump,
     renderer_started: Instant,
     _gl_context: GLContext,
@@ -143,7 +230,7 @@ impl FrameRenderer {
             0
         );
 
-        let engine =
+        let mut engine =
             FrameRenderEngine::new(
                 shader_manager,
                 shader_interval,
@@ -159,9 +246,35 @@ impl FrameRenderer {
                 window_height,
             )?;
 
+        let ambient_diagnostic = if std::env::var_os("SCREENSHAVER_AMBIENT_SAMPLE_DIAGNOSTIC")
+            .is_some_and(|value| value == "1") || std::env::var_os("SCREENSHAVER_AMBIENT_OPENRGB_CYNOSA")
+            .is_some_and(|value| value == "I_ACCEPT_30_SECONDS")
+        {
+            let diagnostic = Rc::new(RefCell::new(AmbientSamplingDiagnostic::new()?));
+            if std::env::var_os("SCREENSHAVER_AMBIENT_OPENRGB_CYNOSA")
+                .is_some_and(|value| value == "I_ACCEPT_30_SECONDS") {
+                match crate::manage_ambient_lighting::AmbientCynosaSession::start() {
+                    Ok(session) => {
+                        diagnostic.borrow_mut().hardware = Some(session);
+                        log_information("[AMBIENT_OPENRGB] Cynosa Direct mode active; max 30 seconds of color updates");
+                    }
+                    Err(error) => log_warning(&format!("[AMBIENT_OPENRGB] Activation refused: {error}")),
+                }
+            }
+            let observer = Rc::clone(&diagnostic);
+            engine.set_ambient_frame_hook(Some(Box::new(move |framebuffer, width, height| {
+                observer.borrow_mut().observe(framebuffer, width, height);
+            })));
+            log_information("[AMBIENT_DIAGNOSTIC] Enabled: 22x12 RGB readback at <=10 Hz; no OpenRGB device access");
+            Some(diagnostic)
+        } else {
+            None
+        };
+
         Ok(
             Self {
                 engine,
+                ambient_diagnostic,
                 event_pump,
                 renderer_started:
                     Instant::now(),
@@ -381,6 +494,32 @@ impl FrameRenderer {
 
 }
 
+
+// Drop runs while the SDL GL context and window fields are still alive.
+// The callback is detached first so the sampler has a single owner during cleanup.
+impl Drop for FrameRenderer {
+    fn drop(&mut self) {
+        self.engine.set_ambient_frame_hook(None);
+        if let Some(diagnostic) = self.ambient_diagnostic.take() {
+            let mut diagnostic = diagnostic.borrow_mut();
+            log_information(&format!(
+                "[AMBIENT_DIAGNOSTIC] Final samples={} avg_readback_us={} max_readback_us={}",
+                diagnostic.captured,
+                if diagnostic.captured == 0 { 0 } else { diagnostic.total_us / diagnostic.captured as u128 },
+                diagnostic.maximum_us,
+            ));
+            if let Some(session) = diagnostic.hardware.take() {
+                match session.stop() {
+                    Ok((submitted, stats)) => log_information(&format!(
+                        "[AMBIENT_OPENRGB] Stopped; submitted={submitted} transmitted={} worker_dropped={} queue_dropped={} original mode restored",
+                        stats.transmitted, stats.dropped, diagnostic.hardware_dropped)),
+                    Err(error) => log_warning(&format!("[AMBIENT_OPENRGB] {error}; check OpenRGB mode")),
+                }
+            }
+            unsafe { diagnostic.sampler.destroy(); }
+        }
+    }
+}
 
 fn edit_shortcut_modifiers_allowed(
     keymod: Mod,

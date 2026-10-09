@@ -21,7 +21,13 @@ pub enum Command {
 
     TestLyrics,
 
-    AmbientLightingTest,
+    DiscoverOpenRgb,
+
+    TestOpenrgb { apply: bool, animate: bool },
+
+    AmbientLightingTest {
+        openrgb_host: Option<std::net::Ipv4Addr>,
+    },
 
     TestLocalization,
 
@@ -192,16 +198,32 @@ pub fn parse() -> Result<Command, String> {
         }
 
 
+        "--test-openrgb" => {
+            match args.as_slice() {
+                [_] => Ok(Command::TestOpenrgb { apply: false, animate: false }),
+                [_, flag] if flag == "--apply" => Ok(Command::TestOpenrgb { apply: true, animate: false }),
+                [_, flag] if flag == "--animate" => Ok(Command::TestOpenrgb { apply: false, animate: true }),
+                [_, first, second] if (first == "--animate" && second == "--apply") || (first == "--apply" && second == "--animate") => Ok(Command::TestOpenrgb { apply: true, animate: true }),
+                _ => Err("Usage: --test-openrgb [--animate] [--apply]".into()),
+            }
+        }
+
+        "--discover-openrgb" => {
+            require_no_extra_arguments(&args, "--discover-openrgb")?;
+            Ok(Command::DiscoverOpenRgb)
+        }
+
+
         "--ambient-lighting-test" => {
-
-            require_no_extra_arguments(
-                &args,
-                "--ambient-lighting-test",
-            )?;
-
-            Ok(
-                Command::AmbientLightingTest
-            )
+            let openrgb_host = match args.as_slice() {
+                [_] => None,
+                [_, flag, value] if flag == "--openrgb-host" => {
+                    Some(value.parse::<std::net::Ipv4Addr>()
+                        .map_err(|_| "--openrgb-host requires a valid IPv4 address".to_string())?)
+                }
+                _ => return Err("Usage: --ambient-lighting-test [--openrgb-host VM_IPV4_ADDRESS]".into()),
+            };
+            Ok(Command::AmbientLightingTest { openrgb_host })
         }
 
 
@@ -953,9 +975,15 @@ pub fn print_help() {
              --test-lyrics\n\
                  Run the synchronized-lyrics development test and exit.\n\
          \n\
-             --ambient-lighting-test\n\
-                 Run the read-only ambient-lighting hardware identification harness and exit.\n\
-                 The initial harness identifies supported candidate hardware without changing lighting settings.\n\
+             --test-openrgb [--animate] [--apply]\n\
+                 Guarded Cynosa lighting test (dry run by default).\n\
+         \n\
+             --discover-openrgb\n\
+                 Read-only inventory of devices recognized by the local OpenRGB SDK server.\n\
+         \n\
+             --ambient-lighting-test [--openrgb-host VM_IPV4_ADDRESS]\n\
+                 Run the software-only ambient-lighting test.\n\
+                 --openrgb-host connects to an explicitly specified OpenRGB VM on TCP port 16743.\n\
          \n\
              --test-localization\n\
                  Test locale selection, translation lookup, and English fallback.\n\

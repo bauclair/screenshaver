@@ -145,6 +145,8 @@ pub(crate) struct FrameRenderEngine {
     target_frame_time: Duration,
     last_frame: Instant,
     audio_motion_previous_frame: Instant,
+    /// Optional sampling hook; never enabled by default.
+    ambient_frame_hook: Option<Box<dyn FnMut(u32, u32, u32)>>,
 }
 
 
@@ -476,6 +478,7 @@ impl FrameRenderEngine {
                     Instant::now(),
                 audio_motion_previous_frame:
                     Instant::now(),
+                ambient_frame_hook: None,
             }
         )
     }
@@ -639,6 +642,18 @@ impl FrameRenderEngine {
             Instant::now();
     }
 
+
+    /// Installs a caller-owned frame observer. It receives the final output
+    /// framebuffer ID and drawable dimensions after postprocessing, before
+    /// overlays. The callback runs on the GL context thread and must not
+    /// perform network I/O or retain GL resources past context destruction.
+    /// No callback is installed unless explicitly requested by the host.
+    pub(crate) fn set_ambient_frame_hook(
+        &mut self,
+        hook: Option<Box<dyn FnMut(u32, u32, u32)>>,
+    ) {
+        self.ambient_frame_hook = hook;
+    }
 
     pub(crate) fn limit_fps(
         &mut self,
@@ -860,6 +875,13 @@ impl FrameRenderEngine {
                 gl::QUERY_RESULT,
                 &mut gpu_end_ns,
             );
+        }
+
+        // The scene has been postprocessed and the GPU timing query is
+        // complete. Observe before text/FPS/lyrics overlays are drawn.
+        // Host owns enabling, throttling, and any readback implementation.
+        if let Some(hook) = self.ambient_frame_hook.as_mut() {
+            hook(output_framebuffer, width, height);
         }
 
         let gpu_elapsed_ns =

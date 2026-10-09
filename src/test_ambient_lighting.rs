@@ -1,5 +1,5 @@
 //! Software-only ambient-lighting proof of concept.
-//! Loopback-only OpenRGB SDK v1 simulator; never connects to real hardware or servers.
+//! Loopback-only simulator plus explicit opt-in official OpenRGB VM test endpoint.
 //! Supports protocol negotiation, one virtual controller, and LED updates.
 use std::time::{Duration, Instant};
 use std::io::{Read, Write};
@@ -92,7 +92,7 @@ void main()
 #[derive(Clone, Copy)]
 struct VirtualLed { rgb: [f32; 3] }
 
-pub fn run() -> Result<(), String> {
+pub fn run(official_host: Option<Ipv4Addr>) -> Result<(), String> {
     println!("[AMBIENT LIGHTING TEST] Software-only virtual keyboard; no hardware access.");
     println!("[AMBIENT LIGHTING TEST] Loopback OpenRGB SDK protocol v1 simulator (virtual device only).");
     println!("[AMBIENT LIGHTING TEST] Top: GLSL shader. Bottom: virtual 70-key RGB keyboard.");
@@ -143,7 +143,15 @@ pub fn run() -> Result<(), String> {
     let mut pixels = vec![0u8; SAMPLE_WIDTH * SAMPLE_HEIGHT * 3];
     // Opt-in independent endpoint: no built-in server, no real OpenRGB port.
     let external = std::env::var("SCREENSHAVER_AMBIENT_EXTERNAL_TEST").as_deref() == Ok("1");
-    let (address, mock_state, server_control): (_, _, Option<(Arc<AtomicBool>, thread::JoinHandle<Result<(), String>>)>) = if external {
+    let official = official_host.is_some() || std::env::var("SCREENSHAVER_AMBIENT_OFFICIAL_VM_TEST").as_deref() == Ok("1");
+    if external && official { return Err("Select only one ambient external test mode".into()); }
+    let acknowledged = Arc::new(Mutex::new([0u8; LED_COUNT * 3]));
+    let acknowledged_worker = Arc::clone(&acknowledged);
+    let (address, mock_state, server_control): (_, _, Option<(Arc<AtomicBool>, thread::JoinHandle<Result<(), String>>)>) = if official {
+        let host = official_host.ok_or("Official OpenRGB VM test requires --openrgb-host <VM_IPV4_ADDRESS>")?;
+        println!("[AMBIENT LIGHTING TEST] Official OpenRGB VM mode: direct TCP {host}:16743; no local detection.");
+        (SocketAddrV4::new(host, 16743), Arc::clone(&acknowledged), None)
+    } else if external {
         let feedback = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 16744))
             .map_err(|e| format!("Cannot bind independent feedback socket 127.0.0.1:16744: {e}"))?;
         feedback.set_nonblocking(true).map_err(|e| e.to_string())?;
@@ -180,7 +188,7 @@ pub fn run() -> Result<(), String> {
     let worker_stats = Arc::new(Mutex::new(TransportStats::default()));
     let worker_stats_thread = Arc::clone(&worker_stats);
     let transport_thread = thread::spawn(move || {
-        run_transport_worker(address, lighting_rx, worker_stop_thread, worker_stats_thread)
+        run_transport_worker(address, lighting_rx, worker_stop_thread, worker_stats_thread, official, acknowledged_worker)
     });
     let mut leds = [VirtualLed { rgb: [0.0; 3] }; KEY_ROWS * KEY_COLS];
     let mut soft = [0.0f32; 3];
@@ -303,10 +311,14 @@ pub fn run() -> Result<(), String> {
             .map_err(|_| "Lighting server/feedback thread panicked".to_string())??;
     }
     let stats = *worker_stats.lock().map_err(|_| "Transport stats mutex poisoned".to_string())?;
-    println!("[AMBIENT LIGHTING TEST] Completed {sample_count} shader samples; {} lighting updates, {} disconnect(s), {} reconnection(s); zero hardware writes.",
+    println!("[AMBIENT LIGHTING TEST] Completed {sample_count} shader samples; {} {} lighting updates, {} disconnect(s), {} reconnection(s); no local hardware discovery.",
+        if official { "acknowledged" } else { "transmitted" },
         stats.delivered, stats.disconnections, stats.reconnections);
-    if !external && start.elapsed() >= Duration::from_secs(27) && (stats.disconnections == 0 || stats.reconnections == 0) {
+    if !external && !official && start.elapsed() >= Duration::from_secs(27) && (stats.disconnections == 0 || stats.reconnections == 0) {
         return Err("Connection recovery test failed: expected a disconnect and reconnection".into());
+    }
+    if official && stats.delivered == 0 {
+        return Err("Official OpenRGB VM test failed: no acknowledged lighting updates".into());
     }
     Ok(())
 }
@@ -323,9 +335,11 @@ fn run_transport_worker(
     rx: Receiver<[u8; LED_COUNT * 3]>,
     stop: Arc<AtomicBool>,
     stats: Arc<Mutex<TransportStats>>,
+    official: bool,
+    acknowledged: Arc<Mutex<[u8; LED_COUNT * 3]>>,
 ) -> Result<(), String> {
     // External endpoint might start after Screenshaver; retry rather than fail.
-    let mut client = match connect_mock_client(address) {
+    let mut client = match connect_test_client(address, official) {
         Ok(socket) => Some(socket),
         Err(e) => {
             println!("[AMBIENT LIGHTING TEST] Waiting for endpoint: {e}");
@@ -336,7 +350,7 @@ fn run_transport_worker(
     let mut was_connected = client.is_some();
     while !stop.load(Ordering::Relaxed) {
         if client.is_none() && Instant::now() >= next_reconnect {
-            match connect_mock_client(address) {
+            match connect_test_client(address, official) {
                 Ok(socket) => {
                     client = Some(socket);
                     if !was_connected {
@@ -372,13 +386,20 @@ fn run_transport_worker(
             for color in frame.chunks_exact(3) {
                 payload.extend_from_slice(&[color[0], color[1], color[2], 0]);
             }
-            if disconnected || send_packet(socket, 0, 1050, &payload).is_err() {
+            let result = if disconnected { Err("Endpoint disconnected".to_string()) }
+                else if official {
+                    send_packet(socket, 0, 1050, &payload)
+                        .and_then(|_| await_sdk_packet(socket, 10, Some(1050)).map(|_| ()))
+                } else { send_packet(socket, 0, 1050, &payload) };
+            if let Err(reason) = result {
+                if official { println!("[AMBIENT LIGHTING TEST] SDK update failed: {reason}"); }
                 client = None;
                 was_connected = false;
                 next_reconnect = Instant::now() + RECONNECT_INTERVAL;
                 stats.lock().map_err(|_| "Transport stats mutex poisoned".to_string())?.disconnections += 1;
                 println!("[AMBIENT LIGHTING TEST] OpenRGB connection lost; shader continues rendering.");
             } else {
+                if official { *acknowledged.lock().map_err(|_| "ACK frame mutex poisoned".to_string())? = frame; }
                 stats.lock().map_err(|_| "Transport stats mutex poisoned".to_string())?.delivered += 1;
             }
         }
@@ -800,4 +821,82 @@ fn connect_mock_client(address: SocketAddrV4) -> Result<TcpStream, String> {
     }
     println!("[AMBIENT LIGHTING TEST] OpenRGB SDK v1 negotiated; virtual controller response received.");
     Ok(client)
+}
+
+
+// Official OpenRGB 1.0 SDK protocol-v6 test, restricted to the known CachyOS VM address.
+// The simulator path above is deliberately unchanged.
+fn connect_test_client(address: SocketAddrV4, official: bool) -> Result<TcpStream, String> {
+    if !official { return connect_mock_client(address); }
+    if address.port() != 16743 {
+        return Err("Official VM test requires port 16743".into());
+    }
+    let mut socket = TcpStream::connect_timeout(&address.into(), SOCKET_TIMEOUT)
+        .map_err(|e| format!("Official OpenRGB test connection failed: {e}"))?;
+    socket.set_nodelay(true).map_err(|e| e.to_string())?;
+    socket.set_read_timeout(Some(Duration::from_secs(2))).map_err(|e| e.to_string())?;
+    socket.set_write_timeout(Some(SOCKET_TIMEOUT)).map_err(|e| e.to_string())?;
+    send_packet(&mut socket, 0, 40, &6u32.to_le_bytes())?;
+    let version = await_sdk_packet(&mut socket, 40, None)?;
+    if version != 6u32.to_le_bytes() {
+        return Err(format!("Expected OpenRGB protocol 6; received {version:?}"));
+    }
+    send_packet(&mut socket, 0, 50, b"Screenshaver Official VM Test\0")?;
+    send_packet(&mut socket, 0, 0, &[])?;
+    let controllers = await_sdk_packet(&mut socket, 0, None)?;
+    if controllers.len() != 8 || controllers[..4] != 1u32.to_le_bytes() {
+        return Err("Official VM test requires exactly one controller and one protocol-v6 ID".into());
+    }
+    let id = u32::from_le_bytes(controllers[4..8].try_into().unwrap());
+    // Only the known isolated VM controller is authorized for this test.
+    if id != 0 { return Err(format!("Unexpected virtual controller ID: {id}")); }
+    send_packet(&mut socket, id, 1, &6u32.to_le_bytes())?;
+    let description = await_sdk_packet(&mut socket, 1, None)?;
+    if description.len() < 12 ||
+        u32::from_le_bytes(description[..4].try_into().unwrap()) as usize != description.len() {
+        return Err("Malformed controller description".into());
+    }
+    // Match the exact debug-controller identity, not just a generic 70-LED keyboard.
+    for required in ["Screenshaver Virtual Keyboard", "SCREENSHAVER-TEST-001", "virtual:screenshaver"] {
+        if !description.windows(required.len() + 1)
+            .any(|w| &w[..required.len()] == required.as_bytes() && w[required.len()] == 0) {
+            return Err(format!("Refusing LED updates: missing virtual controller identity: {required}"));
+        }
+    }
+    // The known OpenRGB debug controller has 70 distinct LED names (0 through 69).
+    for led in 0..LED_COUNT {
+        let label = format!("Custom LED. Zone 0, LED {led}");
+        if !description.windows(label.len() + 1)
+            .any(|w| &w[..label.len()] == label.as_bytes() && w[label.len()] == 0) {
+            return Err(format!("Refusing LED updates: virtual LED {led} absent"));
+        }
+    }
+    let extra = b"Custom LED. Zone 0, LED 70\0";
+    if description.windows(extra.len()).any(|w| w == extra) {
+        return Err("Refusing LED updates: unexpected extra virtual LED".into());
+    }
+    println!("[AMBIENT LIGHTING TEST] OpenRGB SDK v6; controller ID 0; virtual keyboard identity and 70 labels verified.");
+    Ok(socket)
+}
+
+// Dispatch notifications and ACKs without confusing them with requested responses.
+fn await_sdk_packet(socket: &mut TcpStream, expected: u32, acked: Option<u32>) -> Result<Vec<u8>, String> {
+    for _ in 0..32 {
+        let (device, command, data) = recv_packet(socket)?
+            .ok_or("Official OpenRGB connection closed")?;
+        if command == 10 {
+            if data.len() != 8 { return Err("Malformed OpenRGB ACK".into()); }
+            let original = u32::from_le_bytes(data[..4].try_into().unwrap());
+            let status = u32::from_le_bytes(data[4..8].try_into().unwrap());
+            if status != 0 { return Err(format!("OpenRGB ACK rejected command {original}, status {status}")); }
+            if expected == 10 && acked == Some(original) {
+                if device != 0 { return Err("Unexpected ACK controller ID".into()); }
+                return Ok(data);
+            }
+            continue;
+        }
+        if command == expected && expected != 10 { return Ok(data); }
+        // OpenRGB may send server info (51) or other notifications asynchronously.
+    }
+    Err(format!("No matching OpenRGB SDK response for command {expected}"))
 }
