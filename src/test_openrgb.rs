@@ -2,6 +2,8 @@
  //! --test-openrgb --apply requires typed consent and a Spectrum Cycle baseline.
  //! Never rescans, restarts OpenRGB, or modifies non-Cynosa devices.
 use std::io::{Read, Write};
+use std::fs::{File, OpenOptions};
+use fs2::FileExt;
 use crate::manage_runtime_state::{self, AmbientRecoveryRecord};
 use std::net::{Ipv4Addr, SocketAddrV4, TcpStream};
 use std::time::Duration;
@@ -21,6 +23,132 @@ const TEST_KEYS: [(usize, &str, [u8; 3]); 3] = [
     (46, "Q", [0, 24, 0]),
     (68, "A", [0, 0, 24]),
 ];
+
+// Cooperative lifetime lock: held by physical test from before acquisition until
+// after restoration, and by recovery during its entire validation/write cycle.
+// This does NOT detect unrelated OpenRGB applications or old Screenshaver builds.
+fn ambient_owner_lock() -> Result<File, String> {
+    let path = crate::locate_paths::state_path().with_extension("ambient-owner.lock");
+    let parent = path.parent().ok_or("Missing ambient lock parent")?;
+    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let file = OpenOptions::new().create(true).read(true).write(true).open(&path)
+        .map_err(|e| format!("Cannot open ambient owner lock {}: {e}", path.display()))?;
+    file.try_lock_exclusive().map_err(|e| format!(
+        "Ambient lighting owner is active or lock unavailable ({}): {e}; refusing device access",
+        path.display()))?;
+    Ok(file)
+}
+
+fn decode_mode_hex(hex: &str) -> Result<Vec<u8>, String> {
+    if hex.is_empty() || hex.len() % 2 != 0 || hex.len() > 128 * 1024 {
+        return Err("Invalid saved mode length".into());
+    }
+    (0..hex.len()).step_by(2).map(|i| {
+        u8::from_str_radix(&hex[i..i+2], 16).map_err(|e| e.to_string())
+    }).collect()
+}
+
+/// Stage 3B: manual, guarded recovery; never scans/restarts OpenRGB.
+/// Lock excludes cooperating physical tests, not unrelated OpenRGB clients.
+pub fn restore_ambient_recovery() -> Result<(), String> {
+    let _owner = ambient_owner_lock()?;
+    let records = manage_runtime_state::pending_ambient_recoveries()?;
+    if records.is_empty() {
+        println!("[AMBIENT RECOVERY] No pending recovery records; nothing to restore.");
+        return Ok(());
+    }
+    if records.len() != 1 {
+        return Err(format!("{} records pending; manual recovery requires exactly one", records.len()));
+    }
+    let record = &records[0];
+    if record.endpoint != "127.0.0.1:6742" || record.device_name != "Razer Cynosa Chroma"
+        || record.original_mode_name != "Spectrum Cycle" {
+        return Err("Recovery record is outside the guarded Cynosa/local endpoint scope".into());
+    }
+    let address = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 6742);
+    let mut socket = TcpStream::connect_timeout(&address.into(), Duration::from_secs(3))
+        .map_err(|e| format!("OpenRGB unavailable: {e}"))?;
+    socket.set_read_timeout(Some(Duration::from_secs(5))).map_err(|e| e.to_string())?;
+    socket.set_write_timeout(Some(Duration::from_secs(5))).map_err(|e| e.to_string())?;
+    send(&mut socket, 0, 40, &PROTOCOL.to_le_bytes())?;
+    let (_, version) = receive(&mut socket, 40)?;
+    if version.len() != 4 || u32::from_le_bytes(version[..4].try_into().unwrap()) < PROTOCOL {
+        return Err("OpenRGB SDK v6 required".into());
+    }
+    send(&mut socket, 0, 0, &[])?;
+    let (_, response) = receive(&mut socket, 0)?;
+    let mut reader = Reader::new(&response);
+    let count = reader.u32()? as usize;
+    if count > 256 || response.len() != 4 + count * 4 {
+        return Err("Invalid controller list".into());
+    }
+    let mut matches = Vec::new();
+    for _ in 0..count {
+        let id = reader.u32()?;
+        let info = read_target(&mut socket, id)?;
+        if info.name == record.device_name {
+            matches.push((id, info));
+        }
+    }
+    if matches.len() != 1 {
+        return Err(format!("Expected exactly one Cynosa; found {}", matches.len()));
+    }
+    let (id, info) = matches.remove(0);
+    verify_target(&info, record)?;
+    let original_index = usize::try_from(record.original_mode_index).map_err(|e| e.to_string())?;
+    let original_bytes = decode_mode_hex(&record.original_mode_hex)?;
+    if info.modes.get(original_index).map(|(name, bytes)|
+        name == &record.original_mode_name && bytes == &original_bytes) != Some(true) {
+        return Err("Saved mode record differs from current controller; refusing restoration".into());
+    }
+    let active = info.modes.get(info.active).map(|m| m.0.as_str())
+        .ok_or("Invalid active mode")?;
+    if active == record.original_mode_name {
+        // No write necessary, but still require explicit user consent to clear stale record.
+        println!("[AMBIENT RECOVERY] Original mode already active; record can be cleared after confirmation.");
+    } else if active != "Direct" {
+        return Err(format!("Active mode {active:?} is neither Direct nor original; refusing to override"));
+    }
+    println!("[AMBIENT RECOVERY] Verified one Cynosa; current mode={active:?}; original={:?}.", record.original_mode_name);
+    println!("[AMBIENT RECOVERY] Other OpenRGB clients cannot be detected. Close other lighting controllers first.");
+    println!("Type RESTORE CYNOSA to proceed, or anything else to cancel:");
+    let mut answer = String::new();
+    io::stdin().lock().read_line(&mut answer).map_err(|e| e.to_string())?;
+    if answer.trim() != "RESTORE CYNOSA" {
+        println!("[AMBIENT RECOVERY] Cancelled; record unchanged.");
+        return Ok(());
+    }
+    // Recheck after human input; the controller may have changed in the meantime.
+    let before = read_target(&mut socket, id)?;
+    verify_target(&before, record)?;
+    if before.modes.get(original_index).map(|(name, bytes)|
+        name == &record.original_mode_name && bytes == &original_bytes) != Some(true) {
+        return Err("Original mode record changed while waiting for confirmation".into());
+    }
+    let before_active = before.modes.get(before.active).map(|m| m.0.as_str())
+        .ok_or("Invalid active mode before restoration")?;
+    if before_active != "Direct" && before_active != record.original_mode_name {
+        return Err("Active mode changed while waiting; refusing restoration".into());
+    }
+    // A stale process cannot clear a newer token: state completion is token-checked.
+    if before_active == "Direct" {
+        let size = u32::try_from(8usize + original_bytes.len()).map_err(|e| e.to_string())?;
+        let mut payload = Vec::with_capacity(size as usize);
+        payload.extend_from_slice(&size.to_le_bytes());
+        payload.extend_from_slice(&record.original_mode_index.to_le_bytes());
+        payload.extend_from_slice(&original_bytes);
+        send(&mut socket, id, 1101, &payload)?;
+        thread::sleep(Duration::from_millis(500));
+    }
+    let after = read_target(&mut socket, id)?;
+    verify_target(&after, record)?;
+    if after.modes.get(after.active).map(|m| m.0.as_str()) != Some(record.original_mode_name.as_str()) {
+        return Err("Restoration not verified; recovery record retained".into());
+    }
+    manage_runtime_state::complete_ambient_recovery(&record.device_identity(), &record.ownership_token)?;
+    println!("[AMBIENT RECOVERY] Original mode verified; pending record cleared.");
+    Ok(())
+}
 
 /// Stage 3A: read-only diagnostics. Never issues OpenRGB lighting or mode writes.
 /// A matching device does not establish that a previous owner has exited.
@@ -168,6 +296,7 @@ pub fn run(apply: bool, animate: bool) -> Result<(), String> {
         println!("[OPENRGB TEST] Cancelled; no lighting commands sent.");
         return Ok(());
     }
+    let _owner = ambient_owner_lock()?;
     // The test does not take ownership of a controller while any recovery is
     // outstanding for this endpoint/model. Even a different fingerprint can
     // represent the same physical keyboard after firmware/topology changes.
