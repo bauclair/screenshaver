@@ -37,6 +37,10 @@ mod manage_configuration;
 mod manage_shader;
 #[path = "../../src/manage_textures.rs"]
 mod manage_textures;
+
+#[path = "../../src/manage_runtime_state.rs"]
+mod manage_runtime_state;
+
 #[path = "../../src/manage_policies.rs"]
 mod manage_policies;
 #[path = "../../src/manage_playlists.rs"]

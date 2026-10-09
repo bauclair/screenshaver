@@ -10482,117 +10482,35 @@ fn destroy_active_shader(
 
 
 fn load_control_center_state() -> ControlCenterState {
-
-    let state_path =
-    crate::locate_paths::state_path();
-
-
-    if let Ok(text) =
-        std::fs::read_to_string(
-            &state_path
-        )
-        {
-            match serde_json::from_str::<ControlCenterState>(
-                &text
-            ) {
-                Ok(state) => {
-                    return state;
-                }
-
-                Err(error) => {
-                    log_warning(
-                        &format!(
-                            "[EDIT_SHADER] Ignoring invalid Control Center state at {}: {}",
-                            state_path.display(),
-                                 error,
-                        )
-                    );
-
-                    return ControlCenterState::default();
-                }
+    match crate::manage_runtime_state::read_state() {
+        Ok(root) => match serde_json::from_value::<ControlCenterState>(root) {
+            Ok(state) => state,
+            Err(error) => {
+                log_warning(&format!("[EDIT_SHADER] Invalid Control Center state: {error}"));
+                ControlCenterState::default()
             }
+        },
+        Err(error) => {
+            log_warning(&format!("[EDIT_SHADER] Cannot read Control Center state: {error}"));
+            ControlCenterState::default()
         }
-
-
-        ControlCenterState::default()
+    }
 }
 
-
-fn save_control_center_state(
-    state: &ControlCenterState,
-) -> Result<(), String> {
-
-    let state_path =
-    crate::locate_paths::state_path();
-
-
-    if let Some(parent) =
-        state_path.parent()
-        {
-            std::fs::create_dir_all(
-                parent
-            )
-            .map_err(
-                |error| {
-                    localized_edit!(
-"edit.unable_to_create_control_center_state_folder",
-
-                        parent.display(),
-                            error,
-                    
-)
-                }
-            )?;
-        }
-
-
-        let mut merged_state = serde_json::to_value(state)
-            .map_err(|error| error.to_string())?;
-        if let Ok(text) = std::fs::read_to_string(&state_path) {
-            if let Ok(existing) = serde_json::from_str::<serde_json::Value>(&text) {
-                if let (Some(destination), Some(source)) =
-                    (merged_state.as_object_mut(), existing.as_object()) {
-                    for (key, value) in source {
-                        if !matches!(key.as_str(), "recent_shaders" | "policy_list" | "window" | "ordered") {
-                            destination.insert(key.clone(), value.clone());
-                        }
-                    }
-                }
+fn save_control_center_state(state: &ControlCenterState) -> Result<(), String> {
+    let updated = serde_json::to_value(state).map_err(|error| error.to_string())?;
+    crate::manage_runtime_state::update_state(|root| {
+        let destination = root.as_object_mut().ok_or("Runtime state root is not an object")?;
+        let source = updated.as_object().ok_or("Control Center state is not an object")?;
+        // Never replace Ordered-mode continuity with a stale Control Center snapshot.
+        for key in ["recent_shaders", "policy_list", "window"] {
+            if let Some(value) = source.get(key) {
+                destination.insert(key.to_string(), value.clone());
             }
         }
-        let serialized =
-        serde_json::to_string_pretty(
-            &merged_state
-        )
-        .map_err(
-            |error| {
-                localized_edit!(
-"edit.unable_to_serialize_control_center_state",
-
-                    error,
-                
-)
-            }
-        )?;
-
-
-        std::fs::write(
-            &state_path,
-            serialized,
-        )
-        .map_err(
-            |error| {
-                localized_edit!(
-"edit.unable_to_write_control_center_state",
-
-                    state_path.display(),
-                        error,
-                
-)
-            }
-        )
+        Ok(())
+    })
 }
-
 
 fn load_recent_shader_paths() -> Vec<PathBuf> {
 

@@ -233,37 +233,23 @@ impl Default for WindowshaderGeometry {
 
 fn load_windowshader_geometry() -> WindowshaderGeometry {
     let default = WindowshaderGeometry::default();
-    let Some(geometry) = std::fs::read_to_string(crate::locate_paths::state_path())
-        .ok()
-        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+    let geometry = crate::manage_runtime_state::read_state().ok()
         .and_then(|root| root.get("windowshader").cloned())
-        .and_then(|value| serde_json::from_value::<WindowshaderGeometry>(value).ok())
-    else { return default; };
-    if !(64..=16384).contains(&geometry.width)
-        || !(64..=16384).contains(&geometry.height) {
-        return default;
+        .and_then(|value| serde_json::from_value::<WindowshaderGeometry>(value).ok());
+    match geometry {
+        Some(geometry) if (64..=16384).contains(&geometry.width)
+            && (64..=16384).contains(&geometry.height) => geometry,
+        _ => default,
     }
-    geometry
 }
 
 fn save_windowshader_geometry(geometry: WindowshaderGeometry) -> Result<(), String> {
-    let path = crate::locate_paths::state_path();
-    let mut root = std::fs::read_to_string(&path).ok()
-        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
-        .filter(serde_json::Value::is_object)
-        .unwrap_or_else(|| serde_json::json!({}));
-    root.as_object_mut().expect("object root").insert(
-        "windowshader".to_string(),
-        serde_json::to_value(geometry).map_err(|error| error.to_string())?,
-    );
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-    let temporary = path.with_extension("json.tmp");
-    std::fs::write(&temporary, serde_json::to_string_pretty(&root)
-        .map_err(|error| error.to_string())?)
-        .map_err(|error| error.to_string())?;
-    std::fs::rename(&temporary, &path).map_err(|error| error.to_string())
+    let value = serde_json::to_value(geometry).map_err(|error| error.to_string())?;
+    crate::manage_runtime_state::update_state(move |root| {
+        root.as_object_mut().ok_or("Runtime state root is not an object")?
+            .insert("windowshader".to_string(), value);
+        Ok(())
+    })
 }
 
 #[derive(Debug, Default)]

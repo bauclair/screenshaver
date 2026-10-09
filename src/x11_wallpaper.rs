@@ -96,27 +96,21 @@ struct WindowGeometry {
 
 fn load_geometry() -> WindowGeometry {
     let default = WindowGeometry { x: None, y: None, width: 960, height: 540, maximized: false };
-    std::fs::read_to_string(crate::locate_paths::state_path()).ok()
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
-        .and_then(|v| v.get("windowshader").cloned())
-        .and_then(|v| serde_json::from_value::<WindowGeometry>(v).ok())
-        .filter(|g| (64..=16384).contains(&g.width) && (64..=16384).contains(&g.height))
+    crate::manage_runtime_state::read_state().ok()
+        .and_then(|root| root.get("windowshader").cloned())
+        .and_then(|value| serde_json::from_value::<WindowGeometry>(value).ok())
+        .filter(|geometry| (64..=16384).contains(&geometry.width)
+            && (64..=16384).contains(&geometry.height))
         .unwrap_or(default)
 }
 
-fn save_geometry(g: WindowGeometry) -> Result<(), String> {
-    let path = crate::locate_paths::state_path();
-    let mut root = std::fs::read_to_string(&path).ok()
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
-        .filter(serde_json::Value::is_object)
-        .unwrap_or_else(|| serde_json::json!({}));
-    root.as_object_mut().unwrap().insert("windowshader".into(),
-        serde_json::to_value(g).map_err(|e| e.to_string())?);
-    if let Some(parent) = path.parent() { std::fs::create_dir_all(parent).map_err(|e| e.to_string())?; }
-    let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?)
-        .map_err(|e| e.to_string())?;
-    std::fs::rename(tmp, path).map_err(|e| e.to_string())
+fn save_geometry(geometry: WindowGeometry) -> Result<(), String> {
+    let value = serde_json::to_value(geometry).map_err(|error| error.to_string())?;
+    crate::manage_runtime_state::update_state(move |root| {
+        root.as_object_mut().ok_or("Runtime state root is not an object")?
+            .insert("windowshader".to_string(), value);
+        Ok(())
+    })
 }
 
 fn intern_atom(

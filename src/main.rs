@@ -12,6 +12,7 @@ mod parse_texture_specification;
 
 mod define_constants;
 mod locate_paths;
+mod manage_runtime_state;
 
 mod query_session;
 mod session_backend;

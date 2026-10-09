@@ -120,191 +120,39 @@ pub enum OrderedTarget {
 }
 
 
-fn last_ordered_policy_id(
-    target: OrderedTarget,
-) -> Option<i64> {
-    let state_path =
-        crate::locate_paths::state_path();
-
-    let text =
-        std::fs::read_to_string(
-            &state_path
-        ).ok()?;
-
-    let root =
-        serde_json::from_str::<serde_json::Value>(
-            &text
-        ).ok()?;
-
-    let key =
-        match target {
-            OrderedTarget::Screensaver =>
-                "last_screensaver_policy_id",
-            OrderedTarget::Wallpaper =>
-                "last_wallpaper_policy_id",
-        };
-
+fn last_ordered_policy_id(target: OrderedTarget) -> Option<i64> {
+    let root = match crate::manage_runtime_state::read_state() {
+        Ok(root) => root,
+        Err(error) => {
+            log_warning(&format!("[SHADER] Cannot read ordered state: {error}"));
+            return None;
+        }
+    };
+    let key = match target {
+        OrderedTarget::Screensaver => "last_screensaver_policy_id",
+        OrderedTarget::Wallpaper => "last_wallpaper_policy_id",
+    };
     root.get("ordered")
-        .and_then(
-            |ordered| ordered.get(key)
-        )
-        .and_then(
-            serde_json::Value::as_i64
-        )
-        .filter(
-            |policy_id| *policy_id > 0
-        )
+        .and_then(|ordered| ordered.get(key))
+        .and_then(serde_json::Value::as_i64)
+        .filter(|id| *id > 0)
 }
 
-
-fn save_last_ordered_policy_id(
-    target: OrderedTarget,
-    policy_id: i64,
-) -> Result<(), String> {
-    if policy_id <= 0 {
-        return Ok(());
-    }
-
-    let state_path =
-        crate::locate_paths::state_path();
-
-    let mut root =
-        std::fs::read_to_string(
-            &state_path
-        )
-        .ok()
-        .and_then(
-            |text| {
-                serde_json::from_str::<serde_json::Value>(
-                    &text
-                ).ok()
-            }
-        )
-        .filter(
-            serde_json::Value::is_object
-        )
-        .unwrap_or_else(
-            || {
-                serde_json::Value::Object(
-                    serde_json::Map::new()
-                )
-            }
-        );
-
-    let object =
-        root.as_object_mut()
-            .expect(
-                "state root was normalized to an object"
-            );
-
-    let ordered_value =
-        object.entry(
-            "ordered".to_string()
-        )
-        .or_insert_with(
-            || {
-                serde_json::Value::Object(
-                    serde_json::Map::new()
-                )
-            }
-        );
-
-    if !ordered_value.is_object() {
-        *ordered_value =
-            serde_json::Value::Object(
-                serde_json::Map::new()
-            );
-    }
-
-    let key =
-        match target {
-            OrderedTarget::Screensaver =>
-                "last_screensaver_policy_id",
-            OrderedTarget::Wallpaper =>
-                "last_wallpaper_policy_id",
-        };
-
-    ordered_value
-        .as_object_mut()
-        .expect(
-            "ordered state was normalized to an object"
-        )
-        .insert(
-            key.to_string(),
-            serde_json::Value::Number(
-                policy_id.into()
-            ),
-        );
-
-    if let Some(parent) =
-        state_path.parent()
-    {
-        std::fs::create_dir_all(
-            parent
-        )
-        .map_err(
-            |error| {
-                format!(
-                    "Unable to create runtime state folder {}: {}",
-                    parent.display(),
-                    error,
-                )
-            }
-        )?;
-    }
-
-    let serialized =
-        serde_json::to_string_pretty(
-            &root
-        )
-        .map_err(
-            |error| {
-                format!(
-                    "Unable to serialize runtime state: {}",
-                    error,
-                )
-            }
-        )?;
-
-    let temp_path =
-        state_path.with_extension(
-            "json.tmp"
-        );
-
-    std::fs::write(
-        &temp_path,
-        serialized,
-    )
-    .map_err(
-        |error| {
-            format!(
-                "Unable to write temporary runtime state {}: {}",
-                temp_path.display(),
-                error,
-            )
-        }
-    )?;
-
-    std::fs::rename(
-        &temp_path,
-        &state_path,
-    )
-    .map_err(
-        |error| {
-            let _ =
-                std::fs::remove_file(
-                    &temp_path
-                );
-
-            format!(
-                "Unable to replace runtime state {}: {}",
-                state_path.display(),
-                error,
-            )
-        }
-    )
+fn save_last_ordered_policy_id(target: OrderedTarget, policy_id: i64) -> Result<(), String> {
+    if policy_id <= 0 { return Ok(()); }
+    let key = match target {
+        OrderedTarget::Screensaver => "last_screensaver_policy_id",
+        OrderedTarget::Wallpaper => "last_wallpaper_policy_id",
+    };
+    crate::manage_runtime_state::update_state(|root| {
+        let object = root.as_object_mut().ok_or("Runtime state root is not an object")?;
+        let ordered = object.entry("ordered").or_insert_with(|| serde_json::json!({}));
+        let map = ordered.as_object_mut()
+            .ok_or("Runtime ordered state is not an object")?;
+        map.insert(key.to_string(), serde_json::json!(policy_id));
+        Ok(())
+    })
 }
-
 
 /// Manages shader discovery and selection.
 #[derive(Clone)]
