@@ -2611,111 +2611,190 @@ unsafe extern "C" {
 
 
 
-// Experimental Wayland wallpaper OpenRGB integration. The session is owned by
-// this renderer, not by the Wayland surface or the compositor.
+// The Wayland renderer owns GL sampling; this coordinator owns OpenRGB. In
+// particular, its pause path is independent of a blocked eglSwapBuffers().
 struct WaylandWallpaperAmbient {
     sampler: crate::manage_ambient_lighting::FramebufferSampler,
-    session: Option<crate::manage_openrgb_session::ShaderLightingSession>,
-    disabled: bool,
-    restoration_verified: bool,
+    frames: std::sync::mpsc::SyncSender<crate::manage_ambient_lighting::SampledFrame>,
+    state: std::sync::Arc<WallpaperLightingState>,
+    worker: Option<std::thread::JoinHandle<()>>,
+}
+
+struct WallpaperLightingState {
+    want_active: std::sync::atomic::AtomicBool,
+    shutting_down: std::sync::atomic::AtomicBool,
+    released_verified: std::sync::atomic::AtomicBool,
+    disabled: std::sync::atomic::AtomicBool,
+    // Increment on each release request to invalidate already sampled frames.
+    generation: std::sync::atomic::AtomicU64,
 }
 
 impl WaylandWallpaperAmbient {
-    fn new() -> Result<Self, String> {
-        Ok(Self {
-            sampler: crate::manage_ambient_lighting::FramebufferSampler::new(
-                22, 12, Duration::from_millis(50),
-            )?,
-            session: None,
-            disabled: false,
-            restoration_verified: true,
-        })
+    fn new(control: crate::manage_wallpaper_runtime::WallpaperRuntimeControl) -> Result<Self, String> {
+        let sampler = crate::manage_ambient_lighting::FramebufferSampler::new(
+            22, 12, Duration::from_millis(50),
+        )?;
+        let (frames, receiver) = std::sync::mpsc::sync_channel(1);
+        let state = std::sync::Arc::new(WallpaperLightingState {
+            want_active: std::sync::atomic::AtomicBool::new(false),
+            shutting_down: std::sync::atomic::AtomicBool::new(false),
+            released_verified: std::sync::atomic::AtomicBool::new(true),
+            disabled: std::sync::atomic::AtomicBool::new(false),
+            generation: std::sync::atomic::AtomicU64::new(0),
+        });
+        let worker_state = state.clone();
+        let worker = std::thread::Builder::new()
+            .name("screenshaver-wallpaper-lighting".into())
+            .spawn(move || Self::lighting_loop(control, worker_state, receiver))
+            .map_err(|error| format!("Cannot start wallpaper lighting coordinator: {error}"))?;
+        Ok(Self { sampler, frames, state, worker: Some(worker) })
+    }
+
+    fn lighting_loop(
+        control: crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+        state: std::sync::Arc<WallpaperLightingState>,
+        receiver: std::sync::mpsc::Receiver<crate::manage_ambient_lighting::SampledFrame>,
+    ) {
+        use std::sync::atomic::Ordering::SeqCst;
+        let mut session: Option<crate::manage_openrgb_session::ShaderLightingSession> = None;
+        let mut observed_generation = state.generation.load(SeqCst);
+        loop {
+            let shutting_down = state.shutting_down.load(SeqCst);
+            let pause = control.pause_requested();
+            let wants = state.want_active.load(SeqCst);
+            if pause {
+                // Detection is independent of the EGL renderer's progress.
+                control.acknowledge_pause_detected();
+            }
+            if pause || shutting_down || !wants || state.disabled.load(SeqCst) {
+                if pause || shutting_down {
+                    state.want_active.store(false, SeqCst);
+                }
+                if let Some(old) = session.take() {
+                    state.released_verified.store(false, SeqCst);
+                    let started = Instant::now();
+                    match old.stop() {
+                        Ok(_) => {
+                            state.released_verified.store(true, SeqCst);
+                            crate::logger::warning(
+                                &crate::locate_paths::runtime_log_path(),
+                                "[AMBIENT_WALLPAPER_DIAG] Active session stopped; restoration verified (coordinator)",
+                            );
+                        }
+                        Err(error) => {
+                            state.disabled.store(true, SeqCst);
+                            crate::logger::warning(
+                                &crate::locate_paths::runtime_log_path(),
+                                &format!("[AMBIENT_WALLPAPER_DIAG] Coordinator stop failed; handoff refused: {error}"),
+                            );
+                        }
+                    }
+                    crate::logger::warning(
+                        &crate::locate_paths::runtime_log_path(),
+                        &format!("[AMBIENT_HANDOFF_DIAG] Coordinator release elapsed={}ms verified={}",
+                            started.elapsed().as_millis(), state.released_verified.load(SeqCst)),
+                    );
+                }
+                // Drop frames sampled before the release. The producer is
+                // nonblocking and never owns the guarded device session.
+                while receiver.try_recv().is_ok() {}
+                observed_generation = state.generation.load(SeqCst);
+                if pause && state.released_verified.load(SeqCst) {
+                    control.acknowledge_paused();
+                }
+                if shutting_down { break; }
+                std::thread::sleep(Duration::from_millis(2));
+                continue;
+            }
+            if session.is_none() {
+                // Acquisition may take time. Recheck pause immediately after it
+                // completes; do not acknowledge release until stop() succeeds.
+                state.released_verified.store(false, SeqCst);
+                let result = (|| -> Result<_, String> {
+                    let controller = std::env::var("SCREENSHAVER_AMBIENT_LIVE_CONTROLLER")
+                        .map_err(|error| error.to_string())?;
+                    let endpoint = std::env::var("SCREENSHAVER_AMBIENT_LIVE_ENDPOINT")
+                        .unwrap_or_else(|_| "127.0.0.1:6742".into());
+                    let id = controller.parse::<u32>().map_err(|error| error.to_string())?;
+                    let address = endpoint.parse::<std::net::SocketAddr>()
+                        .map_err(|error| error.to_string())?;
+                    crate::manage_openrgb_session::ShaderLightingSession::start(address, id)
+                })();
+                match result {
+                    Ok(acquired) => {
+                        session = Some(acquired);
+                        crate::logger::warning(
+                            &crate::locate_paths::runtime_log_path(),
+                            "[AMBIENT_WALLPAPER_DIAG] Acquisition succeeded; wallpaper session active (coordinator)",
+                        );
+                    }
+                    Err(error) => {
+                        state.disabled.store(true, SeqCst);
+                        crate::logger::warning(
+                            &crate::locate_paths::runtime_log_path(),
+                            &format!("[AMBIENT_WALLPAPER_DIAG] Coordinator acquisition failed; disabled: {error}"),
+                        );
+                    }
+                }
+                continue;
+            }
+            // A release request invalidates all previously sampled frames.
+            let generation = state.generation.load(SeqCst);
+            if generation != observed_generation {
+                while receiver.try_recv().is_ok() {}
+                observed_generation = generation;
+            }
+            match receiver.recv_timeout(Duration::from_millis(2)) {
+                Ok(frame) => {
+                    if control.pause_requested() || !state.want_active.load(SeqCst)
+                        || generation != state.generation.load(SeqCst) {
+                        continue;
+                    }
+                    if let Some(active) = session.as_mut() {
+                        if let Err(error) = active.submit(&frame) {
+                            state.disabled.store(true, SeqCst);
+                            crate::logger::warning(
+                                &crate::locate_paths::runtime_log_path(),
+                                &format!("[AMBIENT_WALLPAPER_DIAG] Coordinator LED submission failed: {error}"),
+                            );
+                        }
+                    }
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+        }
+        if let Some(old) = session.take() {
+            if let Err(error) = old.stop() {
+                state.released_verified.store(false, SeqCst);
+                crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+                    &format!("[AMBIENT_WALLPAPER_DIAG] Coordinator shutdown restoration unverified: {error}"));
+            } else {
+                state.released_verified.store(true, SeqCst);
+            }
+        }
     }
 
     fn acquire(&mut self) {
-        if self.disabled || self.session.is_some() || !self.restoration_verified {
-            crate::logger::warning(
-                &crate::locate_paths::runtime_log_path(),
-                &format!(
-                    "[AMBIENT_WALLPAPER_DIAG] Acquisition skipped: disabled={} session_present={} restoration_verified={}",
-                    self.disabled, self.session.is_some(), self.restoration_verified,
-                ),
-            );
-            return;
-        }
-        let Ok(controller) = std::env::var("SCREENSHAVER_AMBIENT_LIVE_CONTROLLER") else {
-            crate::logger::warning(
-                &crate::locate_paths::runtime_log_path(),
-                "[AMBIENT_WALLPAPER_DIAG] Acquisition skipped: controller environment variable unavailable",
-            );
-            return;
-        };
-        let endpoint = std::env::var("SCREENSHAVER_AMBIENT_LIVE_ENDPOINT")
-            .unwrap_or_else(|_| "127.0.0.1:6742".to_string());
-        let result = (|| -> Result<_, String> {
-            let controller_id = controller.parse::<u32>().map_err(|e| e.to_string())?;
-            let address = endpoint.parse::<std::net::SocketAddr>()
-                .map_err(|e| e.to_string())?;
-            crate::manage_openrgb_session::ShaderLightingSession::start(address, controller_id)
-        })();
-        match result {
-            Ok(session) => {
-                self.session = Some(session);
-                crate::logger::warning(
-                    &crate::locate_paths::runtime_log_path(),
-                    "[AMBIENT_WALLPAPER_DIAG] Acquisition succeeded; wallpaper session active",
-                );
-                eprintln!("[AMBIENT_OPENRGB] Wayland wallpaper acquired keyboard lighting");
-            }
-            Err(error) => {
-                self.disabled = true;
-                crate::logger::warning(
-                    &crate::locate_paths::runtime_log_path(),
-                    &format!("[AMBIENT_WALLPAPER_DIAG] Acquisition failed; renderer disabled for remaining lifetime: {error}"),
-                );
-                eprintln!("[AMBIENT_OPENRGB] Wayland wallpaper acquisition refused: {error}");
-            }
+        use std::sync::atomic::Ordering::SeqCst;
+        if !self.state.disabled.load(SeqCst) {
+            self.state.want_active.store(true, SeqCst);
         }
     }
 
     fn release(&mut self) -> bool {
-        if self.session.is_none() {
-            crate::logger::warning(
-                &crate::locate_paths::runtime_log_path(),
-                &format!(
-                    "[AMBIENT_WALLPAPER_DIAG] Release requested without active session; previous_restoration_verified={} disabled={}",
-                    self.restoration_verified, self.disabled,
-                ),
-            );
-        }
-        if let Some(session) = self.session.take() {
-            match session.stop() {
-                Ok(_) => {
-                    self.restoration_verified = true;
-                    crate::logger::warning(
-                        &crate::locate_paths::runtime_log_path(),
-                        "[AMBIENT_WALLPAPER_DIAG] Active session stopped; restoration verified",
-                    );
-                    eprintln!("[AMBIENT_OPENRGB] Wayland wallpaper original lighting restored");
-                }
-                Err(error) => {
-                    // stop() currently combines worker and restoration errors;
-                    // conservatively refuse the handoff on either failure.
-                    self.restoration_verified = false;
-                    self.disabled = true;
-                    crate::logger::warning(
-                        &crate::locate_paths::runtime_log_path(),
-                        &format!("[AMBIENT_WALLPAPER_DIAG] Session stop failed; restoration treated as unverified; renderer disabled: {error}"),
-                    );
-                    eprintln!("[AMBIENT_OPENRGB] Wayland wallpaper release unverified: {error}");
-                }
-            }
-        }
-        self.restoration_verified
+        use std::sync::atomic::Ordering::SeqCst;
+        self.state.want_active.store(false, SeqCst);
+        self.state.generation.fetch_add(1, SeqCst);
+        // A renderer-side release is only advisory. The coordinator is the
+        // authoritative pause acknowledger, even when EGL is blocked.
+        self.state.released_verified.load(SeqCst)
     }
 
     fn observe(&mut self, width: u32, height: u32) {
-        if self.disabled || self.session.is_none() || width == 0 || height == 0 {
+        use std::sync::atomic::Ordering::SeqCst;
+        if width == 0 || height == 0 || !self.state.want_active.load(SeqCst)
+            || self.state.disabled.load(SeqCst) {
             return;
         }
         let source = crate::manage_ambient_lighting::FrameSource {
@@ -2723,27 +2802,14 @@ impl WaylandWallpaperAmbient {
         };
         match self.sampler.sample(source) {
             Ok(Some(frame)) => {
-                if let Some(session) = self.session.as_mut() {
-                    if let Err(error) = session.submit(&frame) {
-                        eprintln!("[AMBIENT_OPENRGB] Wayland wallpaper update failed: {error}");
-                        crate::logger::warning(
-                            &crate::locate_paths::runtime_log_path(),
-                            &format!("[AMBIENT_WALLPAPER_DIAG] LED submission failed; renderer disabled: {error}"),
-                        );
-                        self.disabled = true;
-                        self.release();
-                    }
-                }
+                // A full queue contains an obsolete frame; never block EGL.
+                let _ = self.frames.try_send(frame);
             }
             Ok(None) => {}
             Err(error) => {
-                eprintln!("[AMBIENT_OPENRGB] Wayland wallpaper sampling failed: {error}");
-                crate::logger::warning(
-                    &crate::locate_paths::runtime_log_path(),
-                    &format!("[AMBIENT_WALLPAPER_DIAG] Framebuffer sampling failed; renderer disabled: {error}"),
-                );
-                self.disabled = true;
-                self.release();
+                self.state.disabled.store(true, SeqCst);
+                crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+                    &format!("[AMBIENT_WALLPAPER_DIAG] Framebuffer sampling failed; disabled: {error}"));
             }
         }
     }
@@ -2751,7 +2817,15 @@ impl WaylandWallpaperAmbient {
 
 impl Drop for WaylandWallpaperAmbient {
     fn drop(&mut self) {
-        self.release();
+        use std::sync::atomic::Ordering::SeqCst;
+        self.state.shutting_down.store(true, SeqCst);
+        self.state.want_active.store(false, SeqCst);
+        if let Some(worker) = self.worker.take() {
+            if worker.join().is_err() {
+                crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+                    "[AMBIENT_WALLPAPER_DIAG] Coordinator thread panicked; restoration unverified");
+            }
+        }
     }
 }
 
@@ -3505,7 +3579,7 @@ fn render_mirror_frames(
     {
         None
     } else {
-        match WaylandWallpaperAmbient::new() {
+        match WaylandWallpaperAmbient::new(control.clone()) {
             Ok(ambient) => Some(ambient),
             Err(error) => {
                 eprintln!("[AMBIENT_OPENRGB] Wayland wallpaper sampler unavailable: {error}");
@@ -3766,8 +3840,10 @@ fn render_mirror_frames(
                         );
 
 
-                    let lighting_released = ambient.as_mut()
-                        .map_or(true, |ambient| ambient.release());
+                    if let Some(ambient) = ambient.as_mut() {
+                        ambient.release();
+                    }
+                    let lighting_released = ambient.is_none();
                     crate::logger::warning(
                         &crate::locate_paths::runtime_log_path(),
                         &format!(
