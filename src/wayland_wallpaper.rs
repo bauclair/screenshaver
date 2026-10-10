@@ -2610,6 +2610,107 @@ unsafe extern "C" {
 }
 
 
+
+// Experimental Wayland wallpaper OpenRGB integration. The session is owned by
+// this renderer, not by the Wayland surface or the compositor.
+struct WaylandWallpaperAmbient {
+    sampler: crate::manage_ambient_lighting::FramebufferSampler,
+    session: Option<crate::manage_openrgb_session::ShaderLightingSession>,
+    disabled: bool,
+    restoration_verified: bool,
+}
+
+impl WaylandWallpaperAmbient {
+    fn new() -> Result<Self, String> {
+        Ok(Self {
+            sampler: crate::manage_ambient_lighting::FramebufferSampler::new(
+                22, 12, Duration::from_millis(50),
+            )?,
+            session: None,
+            disabled: false,
+            restoration_verified: true,
+        })
+    }
+
+    fn acquire(&mut self) {
+        if self.disabled || self.session.is_some() || !self.restoration_verified {
+            return;
+        }
+        let Ok(controller) = std::env::var("SCREENSHAVER_AMBIENT_LIVE_CONTROLLER") else {
+            return;
+        };
+        let endpoint = std::env::var("SCREENSHAVER_AMBIENT_LIVE_ENDPOINT")
+            .unwrap_or_else(|_| "127.0.0.1:6742".to_string());
+        let result = (|| -> Result<_, String> {
+            let controller_id = controller.parse::<u32>().map_err(|e| e.to_string())?;
+            let address = endpoint.parse::<std::net::SocketAddr>()
+                .map_err(|e| e.to_string())?;
+            crate::manage_openrgb_session::ShaderLightingSession::start(address, controller_id)
+        })();
+        match result {
+            Ok(session) => {
+                self.session = Some(session);
+                eprintln!("[AMBIENT_OPENRGB] Wayland wallpaper acquired keyboard lighting");
+            }
+            Err(error) => {
+                self.disabled = true;
+                eprintln!("[AMBIENT_OPENRGB] Wayland wallpaper acquisition refused: {error}");
+            }
+        }
+    }
+
+    fn release(&mut self) -> bool {
+        if let Some(session) = self.session.take() {
+            match session.stop() {
+                Ok(_) => {
+                    self.restoration_verified = true;
+                    eprintln!("[AMBIENT_OPENRGB] Wayland wallpaper original lighting restored");
+                }
+                Err(error) => {
+                    // stop() currently combines worker and restoration errors;
+                    // conservatively refuse the handoff on either failure.
+                    self.restoration_verified = false;
+                    self.disabled = true;
+                    eprintln!("[AMBIENT_OPENRGB] Wayland wallpaper release unverified: {error}");
+                }
+            }
+        }
+        self.restoration_verified
+    }
+
+    fn observe(&mut self, width: u32, height: u32) {
+        if self.disabled || self.session.is_none() || width == 0 || height == 0 {
+            return;
+        }
+        let source = crate::manage_ambient_lighting::FrameSource {
+            framebuffer: 0, width, height,
+        };
+        match self.sampler.sample(source) {
+            Ok(Some(frame)) => {
+                if let Some(session) = self.session.as_mut() {
+                    if let Err(error) = session.submit(&frame) {
+                        eprintln!("[AMBIENT_OPENRGB] Wayland wallpaper update failed: {error}");
+                        self.disabled = true;
+                        self.release();
+                    }
+                }
+            }
+            Ok(None) => {}
+            Err(error) => {
+                eprintln!("[AMBIENT_OPENRGB] Wayland wallpaper sampling failed: {error}");
+                self.disabled = true;
+                self.release();
+            }
+        }
+    }
+}
+
+impl Drop for WaylandWallpaperAmbient {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
+
 fn render_egl_wallpapers(
     connection: &Connection,
     event_queue: &mut wayland_client::EventQueue<WaylandState>,
@@ -3353,6 +3454,23 @@ fn render_mirror_frames(
         crate::fps_monitor::FpsWarningState::Normal;
 
 
+    // Windowshader visibility/ownership is handled separately in Milestone 7B.
+    let mut ambient = if runtime.display_format
+        == crate::manage_configuration::WallpaperDisplayFormat::Windowed
+        || std::env::var_os("SCREENSHAVER_AMBIENT_LIVE_CONTROLLER").is_none()
+    {
+        None
+    } else {
+        match WaylandWallpaperAmbient::new() {
+            Ok(ambient) => Some(ambient),
+            Err(error) => {
+                eprintln!("[AMBIENT_OPENRGB] Wayland wallpaper sampler unavailable: {error}");
+                None
+            }
+        }
+    };
+    let mut ambient_first_frame_presented = false;
+
     let mut paused =
         false;
 
@@ -3594,7 +3712,13 @@ fn render_mirror_frames(
                         );
 
 
-                    control.acknowledge_paused();
+                    let lighting_released = ambient.as_mut()
+                        .map_or(true, |ambient| ambient.release());
+                    if lighting_released {
+                        control.acknowledge_paused();
+                    } else {
+                        eprintln!("[AMBIENT_OPENRGB] Wayland wallpaper pause handoff blocked: restoration unverified");
+                    }
 
 
                     println!(
@@ -4451,6 +4575,17 @@ fn render_mirror_frames(
 
                 postprocess.present_scene();
 
+                // Capture the final postprocessed image before lyrics/overlays.
+                // Mirror-mode wallpaper uses the first target as its lighting
+                // source; avoid combining different monitors' frames.
+                if ambient_first_frame_presented
+                    && native_target.info.registry_name == native_targets[0].info.registry_name
+                {
+                    if let Some(ambient) = ambient.as_mut() {
+                        ambient.observe(target_width, target_height);
+                    }
+                }
+
 
                 if runtime.display_format
                     == crate::manage_configuration::WallpaperDisplayFormat::Windowed
@@ -4607,6 +4742,14 @@ fn render_mirror_frames(
                 }
 
 
+                // Only acquire after the first frame has actually presented.
+                if !ambient_first_frame_presented {
+                    ambient_first_frame_presented = true;
+                    if let Some(ambient) = ambient.as_mut() {
+                        ambient.acquire();
+                    }
+                }
+
                 let presentation_duration =
                     presentation_started.elapsed();
 
@@ -4629,7 +4772,10 @@ fn render_mirror_frames(
                 paused =
                     false;
 
-
+                // Wallpaper reacquires only after a resumed frame is presented.
+                if let Some(ambient) = ambient.as_mut() {
+                    ambient.acquire();
+                }
                 control.acknowledge_resumed_frame();
 
 
@@ -4765,6 +4911,11 @@ fn render_mirror_frames(
             }
         };
 
+
+    // Release OpenRGB before EGL and shader resources are destroyed.
+    if let Some(ambient) = ambient.as_mut() {
+        ambient.release();
+    }
 
     drop(
         postprocess_pipelines
