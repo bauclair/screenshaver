@@ -449,3 +449,222 @@ mod controller_snapshot_tests {
         assert!(snapshot.descriptor(5).matrix.is_none());
     }
 }
+
+// Stage 5A-5 checkpoint 5: guarded, opt-in acquisition and verified restoration.
+// This API is deliberately not called by any rendering backend.
+use std::thread;
+
+fn snapshot_fingerprint(info: &OpenRgbControllerSnapshot) -> String {
+    let mut hash = 0xcbf29ce484222325u64;
+    let mut feed = |bytes: &[u8]| {
+        for byte in bytes { hash ^= u64::from(*byte); hash = hash.wrapping_mul(0x100000001b3); }
+    };
+    feed(info.name.as_bytes()); feed(&[0]);
+    feed(info.serial.as_bytes()); feed(&[0]);
+    feed(&(info.led_names.len() as u64).to_le_bytes());
+    for name in &info.led_names {
+        feed(&(name.len() as u64).to_le_bytes()); feed(name.as_bytes());
+    }
+    for count in &info.zone_counts { feed(&count.to_le_bytes()); }
+    feed(&(info.width as u64).to_le_bytes());
+    feed(&(info.height as u64).to_le_bytes());
+    for index in &info.matrix { feed(&index.to_le_bytes()); }
+    format!("fnv1a64-v1-{hash:016x}")
+}
+
+fn mode_hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes { out.push(HEX[(byte >> 4) as usize] as char); out.push(HEX[(byte & 15) as usize] as char); }
+    out
+}
+
+fn new_ownership_token() -> Result<String, String> {
+    let mut random = [0u8; 32];
+    File::open("/dev/urandom")
+        .and_then(|mut file| file.read_exact(&mut random))
+        .map_err(|error| format!("Cannot obtain recovery ownership token: {error}"))?;
+    Ok(mode_hex(&random))
+}
+
+fn matching_identity(info: &OpenRgbControllerSnapshot, record: &AmbientRecoveryRecord) -> Result<(), String> {
+    if info.name != record.device_name || info.serial != record.serial ||
+        snapshot_fingerprint(info) != record.topology_fingerprint {
+        return Err("OpenRGB controller identity or topology changed; retaining recovery record".into());
+    }
+    let index = record.original_mode_index as usize;
+    if info.modes.get(index).map(|(name, bytes)|
+        name == &record.original_mode_name && mode_hex(bytes) == record.original_mode_hex
+    ) != Some(true) {
+        return Err("Original OpenRGB mode bytes changed; retaining recovery record".into());
+    }
+    Ok(())
+}
+
+fn direct_mode_index(info: &OpenRgbControllerSnapshot) -> Result<usize, String> {
+    let direct: Vec<usize> = info.modes.iter().enumerate()
+        .filter(|(_, (name, _))| name.eq_ignore_ascii_case("Direct"))
+        .map(|(index, _)| index).collect();
+    if direct.len() != 1 { return Err("OpenRGB controller must have exactly one Direct mode".into()); }
+    Ok(direct[0])
+}
+
+impl OpenRgbReadOnlyTransport {
+    /// Only this private function may send a mode-changing SDK command.
+    /// The public transport API remains read-only.
+    fn send_guarded_mode(&mut self, id: u32, command: u32, data: &[u8]) -> Result<(), String> {
+        if !matches!(command, 1100 | 1101) {
+            return Err("Refusing unsupported OpenRGB mode command".into());
+        }
+        let size = u32::try_from(data.len()).map_err(|_| "OpenRGB mode payload too large")?;
+        let mut header = [0u8; 16];
+        header[..4].copy_from_slice(b"ORGB");
+        header[4..8].copy_from_slice(&id.to_le_bytes());
+        header[8..12].copy_from_slice(&command.to_le_bytes());
+        header[12..16].copy_from_slice(&size.to_le_bytes());
+        self.stream.write_all(&header).and_then(|_| self.stream.write_all(data))
+            .map_err(|error| format!("OpenRGB mode command failed: {error}"))
+    }
+}
+
+/// Owns a controller until `restore` has verified the original mode.
+/// Dropping this value does NOT clear recovery state or claim restoration.
+/// Do not introduce asynchronous LED writers without joining them first.
+pub struct GuardedOpenRgbSession {
+    _owner: AmbientSessionPreflight,
+    transport: OpenRgbReadOnlyTransport,
+    controller_id: u32,
+    record: AmbientRecoveryRecord,
+}
+
+impl GuardedOpenRgbSession {
+    /// Explicit opt-in only; not wired into any renderer or automatic startup.
+    /// Registers durable recovery state before attempting the Direct mode switch.
+    pub fn acquire(endpoint: SocketAddr,
+        selected: &crate::select_ambient_device::AmbientDeviceSelection,
+    ) -> Result<Self, String> {
+        let owner = AmbientSessionPreflight::begin()?;
+        let mut transport = OpenRgbReadOnlyTransport::connect(endpoint)?;
+        let ids = transport.controller_ids()?;
+        if !ids.contains(&selected.controller_id) {
+            return Err("Selected OpenRGB controller is no longer present".into());
+        }
+        let snapshot = transport.decoded_controller(selected.controller_id)?;
+        verify_pre_acquisition_device(selected, &snapshot.descriptor(selected.controller_id))?;
+        let direct = direct_mode_index(&snapshot)?;
+        if snapshot.active == direct {
+            return Err("Cannot acquire a controller already in Direct mode".into());
+        }
+        let (original_name, original_bytes) = snapshot.modes.get(snapshot.active)
+            .ok_or("OpenRGB original mode is missing")?;
+        let record = AmbientRecoveryRecord {
+            endpoint: endpoint.to_string(), device_name: snapshot.name.clone(),
+            serial: snapshot.serial.clone(),
+            topology_fingerprint: snapshot_fingerprint(&snapshot),
+            ownership_token: new_ownership_token()?,
+            original_mode_index: u32::try_from(snapshot.active).map_err(|e| e.to_string())?,
+            original_mode_name: original_name.clone(),
+            original_mode_hex: mode_hex(original_bytes),
+        };
+        // Re-read immediately before recording; the mode and topology must be unchanged.
+        let fresh = transport.decoded_controller(selected.controller_id)?;
+        matching_identity(&fresh, &record)?;
+        if fresh.active != snapshot.active || direct_mode_index(&fresh)? != direct {
+            return Err("OpenRGB active mode changed during acquisition preflight".into());
+        }
+        // A second controller with indistinguishable identity cannot be restored safely.
+        for id in ids.into_iter().filter(|id| *id != selected.controller_id) {
+            let other = transport.decoded_controller(id)?;
+            if other.name == record.device_name && other.serial == record.serial &&
+                snapshot_fingerprint(&other) == record.topology_fingerprint {
+                return Err("Ambiguous identical OpenRGB controllers; refusing acquisition".into());
+            }
+        }
+        manage_runtime_state::register_ambient_recovery(&record)?;
+        let mut session = Self { _owner: owner, transport, controller_id: selected.controller_id, record };
+        let switched = (|| -> Result<(), String> {
+            session.transport.send_guarded_mode(session.controller_id, 1100, &[])?;
+            thread::sleep(Duration::from_millis(300));
+            let after = session.transport.decoded_controller(session.controller_id)?;
+            matching_identity(&after, &session.record)?;
+            if after.active != direct_mode_index(&after)? {
+                return Err("Direct mode was not verified".into());
+            }
+            Ok(())
+        })();
+        if let Err(error) = switched {
+            return match session.restore() {
+                Ok(()) => Err(format!("OpenRGB acquisition failed; original mode restored: {error}")),
+                Err(restore_error) => Err(format!("OpenRGB acquisition failed: {error}; restoration unverified: {restore_error}; recovery record retained")),
+            };
+        }
+        Ok(session)
+    }
+
+    /// Must be called after any future LED-update worker has stopped and joined.
+    /// Recovery record is deleted only after a fresh read confirms restoration.
+    pub fn restore(mut self) -> Result<(), String> {
+        let before = self.transport.decoded_controller(self.controller_id)?;
+        matching_identity(&before, &self.record)?;
+        let direct = direct_mode_index(&before)?;
+        let original = self.record.original_mode_index as usize;
+        if before.active != original && before.active != direct {
+            return Err("Another OpenRGB mode became active; refusing to overwrite it".into());
+        }
+        if before.active == direct {
+            let original_bytes = &before.modes[original].1;
+            let size = u32::try_from(8usize + original_bytes.len())
+                .map_err(|e| e.to_string())?;
+            let mut payload = Vec::with_capacity(size as usize);
+            payload.extend_from_slice(&size.to_le_bytes());
+            payload.extend_from_slice(&self.record.original_mode_index.to_le_bytes());
+            payload.extend_from_slice(original_bytes);
+            self.transport.send_guarded_mode(self.controller_id, 1101, &payload)?;
+            thread::sleep(Duration::from_millis(500));
+        }
+        let after = self.transport.decoded_controller(self.controller_id)?;
+        matching_identity(&after, &self.record)?;
+        if after.active != original {
+            return Err("Original OpenRGB lighting mode not verified; recovery record retained".into());
+        }
+        manage_runtime_state::complete_ambient_recovery(
+            &self.record.device_identity(), &self.record.ownership_token)
+    }
+}
+
+#[cfg(test)]
+mod guarded_transaction_tests {
+    use super::*;
+
+    fn sample() -> OpenRgbControllerSnapshot {
+        OpenRgbControllerSnapshot {
+            name: "Generic Device".into(), serial: "sample-serial".into(), active: 0,
+            modes: vec![("Wave".into(), vec![1,2,3]), ("Direct".into(), vec![4,5,6])],
+            zone_counts: vec![2], led_names: vec!["A".into(), "B".into()],
+            colors: vec![[0;4];2], matrix: vec![0,1], width: 2, height: 1,
+        }
+    }
+    #[test]
+    fn fingerprint_detects_topology_changes() {
+        let first = sample();
+        let mut second = first.clone();
+        assert_eq!(snapshot_fingerprint(&first), snapshot_fingerprint(&second));
+        second.led_names[0] = "Changed".into();
+        assert_ne!(snapshot_fingerprint(&first), snapshot_fingerprint(&second));
+    }
+    #[test]
+    fn rejects_changed_original_mode_and_ambiguous_direct_modes() {
+        let mut info = sample();
+        let record = AmbientRecoveryRecord {
+            endpoint: "127.0.0.1:6742".into(), device_name: info.name.clone(),
+            serial: info.serial.clone(), topology_fingerprint: snapshot_fingerprint(&info),
+            ownership_token: "test".into(), original_mode_index: 0,
+            original_mode_name: "Wave".into(), original_mode_hex: mode_hex(&info.modes[0].1),
+        };
+        assert!(matching_identity(&info, &record).is_ok());
+        info.modes[0].1[0] ^= 1;
+        assert!(matching_identity(&info, &record).is_err());
+        info.modes.push(("direct".into(), vec![]));
+        assert!(direct_mode_index(&info).is_err());
+    }
+}
