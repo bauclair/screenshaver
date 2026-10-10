@@ -3829,7 +3829,6 @@ fn render_mirror_frames(
                     );
                     control.acknowledge_pause_detected();
                     control.diagnostic_checkpoint(8);
-                    let release_started = Instant::now();
                     paused =
                         true;
 
@@ -3843,23 +3842,10 @@ fn render_mirror_frames(
                     if let Some(ambient) = ambient.as_mut() {
                         ambient.release();
                     }
-                    let lighting_released = ambient.is_none();
-                    crate::logger::warning(
-                        &crate::locate_paths::runtime_log_path(),
-                        &format!(
-                            "[AMBIENT_HANDOFF_DIAG] Wayland lighting release completed in {}ms; verified={}",
-                            release_started.elapsed().as_millis(), lighting_released,
-                        ),
-                    );
-                    if lighting_released {
-                        control.acknowledge_paused();
-                        crate::logger::warning(
-                            &crate::locate_paths::runtime_log_path(),
-                            "[AMBIENT_HANDOFF_DIAG] Wayland renderer acknowledged pause",
-                        );
-                    } else {
-                        eprintln!("[AMBIENT_OPENRGB] Wayland wallpaper pause handoff blocked: restoration unverified");
-                    }
+                    // Hardware release and pause acknowledgment are owned by
+                    // the independent coordinator. The renderer's release()
+                    // only invalidates pending sampled frames; it cannot
+                    // certify hardware restoration.
 
 
                     println!(
@@ -4886,9 +4872,15 @@ fn render_mirror_frames(
 
 
                 control.diagnostic_checkpoint(6);
-                // Only acquire after the first frame has actually presented.
-                if !ambient_first_frame_presented {
-                    ambient_first_frame_presented = true;
+                // Reassert the lighting request after every successful presentation.
+                // The independent coordinator can observe and release a brief
+                // pause that the EGL renderer never sees at its own checkpoint.
+                // In that case its want_active flag is cleared even though the
+                // renderer's local `paused` flag never changes. Reasserting here
+                // recovers lighting without requiring another screensaver cycle.
+                // This remains idempotent and never acquires before presentation.
+                ambient_first_frame_presented = true;
+                if !control.pause_requested() {
                     if let Some(ambient) = ambient.as_mut() {
                         ambient.acquire();
                     }
@@ -4928,10 +4920,7 @@ fn render_mirror_frames(
                 paused =
                     false;
 
-                // Wallpaper reacquires only after a resumed frame is presented.
-                if let Some(ambient) = ambient.as_mut() {
-                    ambient.acquire();
-                }
+                // Lighting was rearmed by the successful presentation above.
                 control.acknowledge_resumed_frame();
 
 
