@@ -3530,12 +3530,14 @@ fn render_mirror_frames(
     let result =
         'render_loop: loop {
 
+            control.diagnostic_checkpoint(1);
             process_wayland_events(
                 event_queue,
                 state,
             )?;
 
 
+            control.diagnostic_checkpoint(2);
             remove_disconnected_targets(
                 display,
                 context,
@@ -3744,6 +3746,7 @@ fn render_mirror_frames(
                 }
             }
 
+            control.diagnostic_checkpoint(3);
             if control.pause_requested() {
                 if !paused {
                     crate::logger::warning(
@@ -3751,6 +3754,7 @@ fn render_mirror_frames(
                         "[AMBIENT_HANDOFF_DIAG] Wayland renderer detected pause request",
                     );
                     control.acknowledge_pause_detected();
+                    control.diagnostic_checkpoint(8);
                     let release_started = Instant::now();
                     paused =
                         true;
@@ -3822,6 +3826,7 @@ fn render_mirror_frames(
             }
 
 
+            control.diagnostic_checkpoint(4);
             // Do not use xdg_toplevel::State::Activated as a visibility
             // signal.  Activated represents compositor activation/focus, so
             // Mango legitimately removes it when the pointer/keyboard focus
@@ -4784,6 +4789,7 @@ fn render_mirror_frames(
                 }
 
 
+                control.diagnostic_checkpoint(5);
                 let presentation_started =
                     Instant::now();
 
@@ -4803,6 +4809,7 @@ fn render_mirror_frames(
                 }
 
 
+                control.diagnostic_checkpoint(6);
                 // Only acquire after the first frame has actually presented.
                 if !ambient_first_frame_presented {
                     ambient_first_frame_presented = true;
@@ -4971,6 +4978,7 @@ fn render_mirror_frames(
                 Instant::now();
 
 
+            control.diagnostic_checkpoint(7);
             if next_frame_deadline
                 > now
             {

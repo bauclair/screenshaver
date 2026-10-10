@@ -3,13 +3,14 @@ use std::sync::{
     atomic::{
         AtomicBool,
         AtomicU8,
+        AtomicU64,
         Ordering,
     },
     Arc,
     Mutex,
 };
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 
 const MAX_RESTART_ATTEMPTS: usize = 3;
@@ -55,6 +56,8 @@ pub struct WallpaperRuntimeControl {
     pause_acknowledged: Arc<AtomicBool>,
     pause_detected: Arc<AtomicBool>,
     render_checkpoint: Arc<AtomicU8>,
+    checkpoint_clock: Arc<Instant>,
+    checkpoint_millis: Arc<AtomicU64>,
     resume_frame_ready: Arc<AtomicBool>,
     pending_policy_reload:
         Arc<Mutex<Option<WallpaperPolicyReload>>>,
@@ -74,6 +77,8 @@ impl WallpaperRuntimeControl {
             pause_acknowledged: Arc::new(AtomicBool::new(false)),
             pause_detected: Arc::new(AtomicBool::new(false)),
             render_checkpoint: Arc::new(AtomicU8::new(0)),
+            checkpoint_clock: Arc::new(Instant::now()),
+            checkpoint_millis: Arc::new(AtomicU64::new(0)),
             resume_frame_ready: Arc::new(AtomicBool::new(true)),
             pending_policy_reload:
                 Arc::new(Mutex::new(None)),
@@ -133,12 +138,16 @@ impl WallpaperRuntimeControl {
 
         if !detected && !early_acknowledged {
             let checkpoint = self.render_checkpoint.load(Ordering::SeqCst);
+            let last_ms = self.checkpoint_millis.load(Ordering::SeqCst);
+            let checkpoint_age_ms = self.checkpoint_clock.elapsed().as_millis()
+                .saturating_sub(last_ms as u128);
             crate::logger::warning(
                 &crate::locate_paths::runtime_log_path(),
                 &format!(
-                    "[AMBIENT_HANDOFF_DIAG] Pause detection timeout: renderer checkpoint={} ({})",
+                    "[AMBIENT_HANDOFF_DIAG] Pause detection timeout: renderer checkpoint={} ({}), checkpoint_age_ms={}",
                     checkpoint,
                     Self::checkpoint_description(checkpoint),
+                    checkpoint_age_ms,
                 ),
             );
         }
@@ -175,6 +184,10 @@ impl WallpaperRuntimeControl {
     /// Diagnostic-only, lock-free render-loop checkpoint. Never changes ownership.
     pub fn diagnostic_checkpoint(&self, checkpoint: u8) {
         self.render_checkpoint.store(checkpoint, Ordering::SeqCst);
+        self.checkpoint_millis.store(
+            self.checkpoint_clock.elapsed().as_millis().min(u64::MAX as u128) as u64,
+            Ordering::SeqCst,
+        );
     }
 
     fn checkpoint_description(checkpoint: u8) -> &'static str {
