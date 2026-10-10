@@ -2634,9 +2634,20 @@ impl WaylandWallpaperAmbient {
 
     fn acquire(&mut self) {
         if self.disabled || self.session.is_some() || !self.restoration_verified {
+            crate::logger::warning(
+                &crate::locate_paths::runtime_log_path(),
+                &format!(
+                    "[AMBIENT_WALLPAPER_DIAG] Acquisition skipped: disabled={} session_present={} restoration_verified={}",
+                    self.disabled, self.session.is_some(), self.restoration_verified,
+                ),
+            );
             return;
         }
         let Ok(controller) = std::env::var("SCREENSHAVER_AMBIENT_LIVE_CONTROLLER") else {
+            crate::logger::warning(
+                &crate::locate_paths::runtime_log_path(),
+                "[AMBIENT_WALLPAPER_DIAG] Acquisition skipped: controller environment variable unavailable",
+            );
             return;
         };
         let endpoint = std::env::var("SCREENSHAVER_AMBIENT_LIVE_ENDPOINT")
@@ -2650,20 +2661,41 @@ impl WaylandWallpaperAmbient {
         match result {
             Ok(session) => {
                 self.session = Some(session);
+                crate::logger::warning(
+                    &crate::locate_paths::runtime_log_path(),
+                    "[AMBIENT_WALLPAPER_DIAG] Acquisition succeeded; wallpaper session active",
+                );
                 eprintln!("[AMBIENT_OPENRGB] Wayland wallpaper acquired keyboard lighting");
             }
             Err(error) => {
                 self.disabled = true;
+                crate::logger::warning(
+                    &crate::locate_paths::runtime_log_path(),
+                    &format!("[AMBIENT_WALLPAPER_DIAG] Acquisition failed; renderer disabled for remaining lifetime: {error}"),
+                );
                 eprintln!("[AMBIENT_OPENRGB] Wayland wallpaper acquisition refused: {error}");
             }
         }
     }
 
     fn release(&mut self) -> bool {
+        if self.session.is_none() {
+            crate::logger::warning(
+                &crate::locate_paths::runtime_log_path(),
+                &format!(
+                    "[AMBIENT_WALLPAPER_DIAG] Release requested without active session; previous_restoration_verified={} disabled={}",
+                    self.restoration_verified, self.disabled,
+                ),
+            );
+        }
         if let Some(session) = self.session.take() {
             match session.stop() {
                 Ok(_) => {
                     self.restoration_verified = true;
+                    crate::logger::warning(
+                        &crate::locate_paths::runtime_log_path(),
+                        "[AMBIENT_WALLPAPER_DIAG] Active session stopped; restoration verified",
+                    );
                     eprintln!("[AMBIENT_OPENRGB] Wayland wallpaper original lighting restored");
                 }
                 Err(error) => {
@@ -2671,6 +2703,10 @@ impl WaylandWallpaperAmbient {
                     // conservatively refuse the handoff on either failure.
                     self.restoration_verified = false;
                     self.disabled = true;
+                    crate::logger::warning(
+                        &crate::locate_paths::runtime_log_path(),
+                        &format!("[AMBIENT_WALLPAPER_DIAG] Session stop failed; restoration treated as unverified; renderer disabled: {error}"),
+                    );
                     eprintln!("[AMBIENT_OPENRGB] Wayland wallpaper release unverified: {error}");
                 }
             }
@@ -2690,6 +2726,10 @@ impl WaylandWallpaperAmbient {
                 if let Some(session) = self.session.as_mut() {
                     if let Err(error) = session.submit(&frame) {
                         eprintln!("[AMBIENT_OPENRGB] Wayland wallpaper update failed: {error}");
+                        crate::logger::warning(
+                            &crate::locate_paths::runtime_log_path(),
+                            &format!("[AMBIENT_WALLPAPER_DIAG] LED submission failed; renderer disabled: {error}"),
+                        );
                         self.disabled = true;
                         self.release();
                     }
@@ -2698,6 +2738,10 @@ impl WaylandWallpaperAmbient {
             Ok(None) => {}
             Err(error) => {
                 eprintln!("[AMBIENT_OPENRGB] Wayland wallpaper sampling failed: {error}");
+                crate::logger::warning(
+                    &crate::locate_paths::runtime_log_path(),
+                    &format!("[AMBIENT_WALLPAPER_DIAG] Framebuffer sampling failed; renderer disabled: {error}"),
+                );
                 self.disabled = true;
                 self.release();
             }
@@ -3486,14 +3530,12 @@ fn render_mirror_frames(
     let result =
         'render_loop: loop {
 
-            control.diagnostic_checkpoint(1);
             process_wayland_events(
                 event_queue,
                 state,
             )?;
 
 
-            control.diagnostic_checkpoint(2);
             remove_disconnected_targets(
                 display,
                 context,
@@ -3702,14 +3744,12 @@ fn render_mirror_frames(
                 }
             }
 
-            control.diagnostic_checkpoint(3);
             if control.pause_requested() {
                 if !paused {
                     crate::logger::warning(
                         &crate::locate_paths::runtime_log_path(),
                         "[AMBIENT_HANDOFF_DIAG] Wayland renderer detected pause request",
                     );
-                    control.diagnostic_checkpoint(8);
                     control.acknowledge_pause_detected();
                     let release_started = Instant::now();
                     paused =
@@ -3791,7 +3831,6 @@ fn render_mirror_frames(
             // surface on a non-visible workspace can stop receiving them.
             // The render worker therefore remains in this event/control loop
             // instead of entering a compositor-throttled eglSwapBuffers().
-            control.diagnostic_checkpoint(4);
             let windowed_frame_ready =
                 if runtime.display_format
                     == crate::manage_configuration::WallpaperDisplayFormat::Windowed
@@ -4745,7 +4784,6 @@ fn render_mirror_frames(
                 }
 
 
-                control.diagnostic_checkpoint(5);
                 let presentation_started =
                     Instant::now();
 
@@ -4765,7 +4803,6 @@ fn render_mirror_frames(
                 }
 
 
-                control.diagnostic_checkpoint(6);
                 // Only acquire after the first frame has actually presented.
                 if !ambient_first_frame_presented {
                     ambient_first_frame_presented = true;
@@ -4934,7 +4971,6 @@ fn render_mirror_frames(
                 Instant::now();
 
 
-            control.diagnostic_checkpoint(7);
             if next_frame_deadline
                 > now
             {
