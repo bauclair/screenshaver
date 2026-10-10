@@ -1,7 +1,7 @@
-//! Stage 5A-5 checkpoint 4: guarded preflight, read-only SDK transport and controller decoding.
+//! Stage 5A-5 checkpoint 6: guarded OpenRGB sessions and mock-server restoration tests.
 //!
-//! Network I/O is read-only; this module cannot change lighting modes or LEDs.
-//! A successful preflight is NOT an acquired lighting session.
+//! Read-only discovery remains available. Explicit guarded acquisition may change
+//! modes only after registering durable recovery state. No renderer invokes it.
 
 use std::fs::{File, OpenOptions};
 use std::path::Path;
@@ -604,10 +604,24 @@ impl GuardedOpenRgbSession {
     /// Must be called after any future LED-update worker has stopped and joined.
     /// Recovery record is deleted only after a fresh read confirms restoration.
     pub fn restore(mut self) -> Result<(), String> {
-        let before = self.transport.decoded_controller(self.controller_id)?;
-        matching_identity(&before, &self.record)?;
+        restore_mode_verified(&mut self.transport, self.controller_id, &self.record)?;
+        manage_runtime_state::complete_ambient_recovery(
+            &self.record.device_identity(), &self.record.ownership_token)
+    }
+}
+
+/// Restore and verify the original mode without modifying durable recovery state.
+/// Separating this operation permits realistic mock-server failure testing.
+/// The caller alone may clear the record, and only after this returns `Ok`.
+fn restore_mode_verified(
+    transport: &mut OpenRgbReadOnlyTransport,
+    controller_id: u32,
+    record: &AmbientRecoveryRecord,
+) -> Result<(), String> {
+        let before = transport.decoded_controller(controller_id)?;
+        matching_identity(&before, &record)?;
         let direct = direct_mode_index(&before)?;
-        let original = self.record.original_mode_index as usize;
+        let original = record.original_mode_index as usize;
         if before.active != original && before.active != direct {
             return Err("Another OpenRGB mode became active; refusing to overwrite it".into());
         }
@@ -617,19 +631,17 @@ impl GuardedOpenRgbSession {
                 .map_err(|e| e.to_string())?;
             let mut payload = Vec::with_capacity(size as usize);
             payload.extend_from_slice(&size.to_le_bytes());
-            payload.extend_from_slice(&self.record.original_mode_index.to_le_bytes());
+            payload.extend_from_slice(&record.original_mode_index.to_le_bytes());
             payload.extend_from_slice(original_bytes);
-            self.transport.send_guarded_mode(self.controller_id, 1101, &payload)?;
+            transport.send_guarded_mode(controller_id, 1101, &payload)?;
             thread::sleep(Duration::from_millis(500));
         }
-        let after = self.transport.decoded_controller(self.controller_id)?;
-        matching_identity(&after, &self.record)?;
+        let after = transport.decoded_controller(controller_id)?;
+        matching_identity(&after, &record)?;
         if after.active != original {
             return Err("Original OpenRGB lighting mode not verified; recovery record retained".into());
         }
-        manage_runtime_state::complete_ambient_recovery(
-            &self.record.device_identity(), &self.record.ownership_token)
-    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -666,5 +678,163 @@ mod guarded_transaction_tests {
         assert!(matching_identity(&info, &record).is_err());
         info.modes.push(("direct".into(), vec![]));
         assert!(direct_mode_index(&info).is_err());
+    }
+}
+
+// Mock-server tests never access state.json or a physical OpenRGB controller.
+// They exercise the same wire transport and restoration verification used by
+// GuardedOpenRgbSession, with durable-state completion intentionally excluded.
+#[cfg(test)]
+mod mock_server_recovery_tests {
+    use super::*;
+    use std::net::{TcpListener, TcpStream};
+
+    fn short(out: &mut Vec<u8>, value: &str) {
+        out.extend_from_slice(&(value.len() as u16).to_le_bytes());
+        out.extend_from_slice(value.as_bytes());
+    }
+
+    fn mode(name: &str) -> Vec<u8> {
+        let mut result = Vec::new();
+        short(&mut result, name);
+        result.extend_from_slice(&[0; 44]);
+        result.extend_from_slice(&0u16.to_le_bytes());
+        result
+    }
+
+    fn fixture(active: i32, name: &str, original: &[u8]) -> Vec<u8> {
+        let mut out = vec![0; 4];
+        out.extend_from_slice(&0i32.to_le_bytes());
+        for field in [name, "vendor", "description", "version", "serial", "location"] {
+            short(&mut out, field);
+        }
+        out.extend_from_slice(&2u16.to_le_bytes());
+        out.extend_from_slice(&active.to_le_bytes());
+        out.extend_from_slice(original);
+        out.extend_from_slice(&mode("Direct"));
+        out.extend_from_slice(&0u16.to_le_bytes()); // zones
+        out.extend_from_slice(&0u16.to_le_bytes()); // LEDs
+        out.extend_from_slice(&0u16.to_le_bytes()); // colors
+        out.extend_from_slice(&0u16.to_le_bytes()); // alternative names
+        out.extend_from_slice(&0u32.to_le_bytes());
+        short(&mut out, "");
+        out.extend_from_slice(&0u32.to_le_bytes());
+        let size = out.len() as u32;
+        out[..4].copy_from_slice(&size.to_le_bytes());
+        out
+    }
+
+    fn recv_packet(stream: &mut TcpStream) -> (u32, u32, Vec<u8>) {
+        let mut header = [0u8; 16];
+        stream.read_exact(&mut header).unwrap();
+        assert_eq!(&header[..4], b"ORGB");
+        let id = u32::from_le_bytes(header[4..8].try_into().unwrap());
+        let cmd = u32::from_le_bytes(header[8..12].try_into().unwrap());
+        let size = u32::from_le_bytes(header[12..16].try_into().unwrap()) as usize;
+        assert!(size < 1024 * 1024);
+        let mut data = vec![0; size];
+        stream.read_exact(&mut data).unwrap();
+        (id, cmd, data)
+    }
+
+    fn reply(stream: &mut TcpStream, id: u32, cmd: u32, data: &[u8]) {
+        stream.write_all(b"ORGB").unwrap();
+        stream.write_all(&id.to_le_bytes()).unwrap();
+        stream.write_all(&cmd.to_le_bytes()).unwrap();
+        stream.write_all(&(data.len() as u32).to_le_bytes()).unwrap();
+        stream.write_all(data).unwrap();
+    }
+
+    #[derive(Clone, Copy)]
+    enum Outcome { Success, Unchanged, WrongDevice, ChangedMode, Disconnect }
+
+    fn exercise(outcome: Outcome) -> (Result<(), String>, bool) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = listener.local_addr().unwrap();
+        let original = mode("Wave");
+        let initial = parse_controller_snapshot(&fixture(1, "Generic Device", &original)).unwrap();
+        let record = AmbientRecoveryRecord {
+            endpoint: endpoint.to_string(), device_name: initial.name.clone(),
+            serial: initial.serial.clone(), topology_fingerprint: snapshot_fingerprint(&initial),
+            ownership_token: "mock-test-token".into(), original_mode_index: 0,
+            original_mode_name: "Wave".into(), original_mode_hex: mode_hex(&original),
+        };
+        let original_for_server = original.clone();
+        let handle = thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            socket.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+            let (_, cmd, _) = recv_packet(&mut socket);
+            assert_eq!(cmd, 40);
+            reply(&mut socket, 0, 40, &6u32.to_le_bytes());
+            let (id, cmd, _) = recv_packet(&mut socket);
+            assert_eq!((id, cmd), (3, 1));
+            reply(&mut socket, 3, 1, &fixture(1, "Generic Device", &original_for_server));
+            if matches!(outcome, Outcome::WrongDevice | Outcome::ChangedMode) {
+                // Restore must fail closed before emitting a mode-change command.
+                return false;
+            }
+            let (id, cmd, payload) = recv_packet(&mut socket);
+            assert_eq!((id, cmd), (3, 1101));
+            let mut expected = Vec::new();
+            expected.extend_from_slice(&(8u32 + original_for_server.len() as u32).to_le_bytes());
+            expected.extend_from_slice(&0u32.to_le_bytes());
+            expected.extend_from_slice(&original_for_server);
+            assert_eq!(payload, expected);
+            if matches!(outcome, Outcome::Disconnect) { return true; }
+            let (id, cmd, _) = recv_packet(&mut socket);
+            assert_eq!((id, cmd), (3, 1));
+            let active = if matches!(outcome, Outcome::Success) { 0 } else { 1 };
+            reply(&mut socket, 3, 1, &fixture(active, "Generic Device", &original_for_server));
+            true
+        });
+        let mut transport = OpenRgbReadOnlyTransport::connect(endpoint).unwrap();
+        // For identity and mode-mutation cases, use a separate record that
+        // intentionally disagrees with the controller's initial snapshot.
+        let mut check_record = record;
+        if matches!(outcome, Outcome::WrongDevice) {
+            check_record.device_name = "Another Device".into();
+        }
+        if matches!(outcome, Outcome::ChangedMode) {
+            check_record.original_mode_hex = "00".into();
+        }
+        let result = restore_mode_verified(&mut transport, 3, &check_record);
+        drop(transport);
+        let sent_restore = handle.join().unwrap();
+        (result, sent_restore)
+    }
+
+    #[test]
+    fn mock_restoration_success_requires_verified_original_mode() {
+        let (result, sent) = exercise(Outcome::Success);
+        assert!(sent);
+        assert!(result.is_ok(), "{result:?}");
+    }
+
+    #[test]
+    fn mock_restoration_failure_is_not_acknowledged() {
+        let (result, sent) = exercise(Outcome::Unchanged);
+        assert!(sent);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn mock_connection_loss_is_not_acknowledged() {
+        let (result, sent) = exercise(Outcome::Disconnect);
+        assert!(sent);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn mock_identity_change_refuses_mode_write() {
+        let (result, sent) = exercise(Outcome::WrongDevice);
+        assert!(!sent);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn mock_original_mode_change_refuses_mode_write() {
+        let (result, sent) = exercise(Outcome::ChangedMode);
+        assert!(!sent);
+        assert!(result.is_err());
     }
 }
