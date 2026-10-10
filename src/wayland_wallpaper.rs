@@ -2627,10 +2627,15 @@ struct WallpaperLightingState {
     disabled: std::sync::atomic::AtomicBool,
     // Increment on each release request to invalidate already sampled frames.
     generation: std::sync::atomic::AtomicU64,
+    // Windowed surfaces may stop receiving Wayland frame callbacks when hidden.
+    // This clock is updated only after a successful EGL presentation.
+    last_presented_ms: std::sync::atomic::AtomicU64,
+    presentation_clock: Instant,
+    windowed: bool,
 }
 
 impl WaylandWallpaperAmbient {
-    fn new(control: crate::manage_wallpaper_runtime::WallpaperRuntimeControl) -> Result<Self, String> {
+    fn new(control: crate::manage_wallpaper_runtime::WallpaperRuntimeControl, windowed: bool) -> Result<Self, String> {
         let sampler = crate::manage_ambient_lighting::FramebufferSampler::new(
             22, 12, Duration::from_millis(50),
         )?;
@@ -2641,6 +2646,9 @@ impl WaylandWallpaperAmbient {
             released_verified: std::sync::atomic::AtomicBool::new(true),
             disabled: std::sync::atomic::AtomicBool::new(false),
             generation: std::sync::atomic::AtomicU64::new(0),
+            last_presented_ms: std::sync::atomic::AtomicU64::new(0),
+            presentation_clock: Instant::now(),
+            windowed,
         });
         let worker_state = state.clone();
         let worker = std::thread::Builder::new()
@@ -2662,6 +2670,22 @@ impl WaylandWallpaperAmbient {
             let shutting_down = state.shutting_down.load(SeqCst);
             let pause = control.pause_requested();
             let wants = state.want_active.load(SeqCst);
+            // The compositor can withhold callbacks for an off-workspace
+            // windowshader. Never render extra frames to service OpenRGB.
+            // Instead release the session after a sustained lack of presented
+            // frames. The next successful presentation re-enables lighting.
+            if state.windowed && wants && !pause && !shutting_down {
+                let last = state.last_presented_ms.load(SeqCst);
+                let elapsed = state.presentation_clock.elapsed().as_millis() as u64;
+                if elapsed.saturating_sub(last) >= 1500 {
+                    state.want_active.store(false, SeqCst);
+                    state.generation.fetch_add(1, SeqCst);
+                    crate::logger::information(
+                        &crate::locate_paths::runtime_log_path(),
+                        "[AMBIENT_WINDOWSHADER] No presented frame for 1500ms; releasing OpenRGB until presentation resumes",
+                    );
+                }
+            }
             if pause {
                 // Detection is independent of the EGL renderer's progress.
                 control.acknowledge_pause_detected();
@@ -2778,6 +2802,10 @@ impl WaylandWallpaperAmbient {
     fn acquire(&mut self) {
         use std::sync::atomic::Ordering::SeqCst;
         if !self.state.disabled.load(SeqCst) {
+            self.state.last_presented_ms.store(
+                self.state.presentation_clock.elapsed().as_millis() as u64,
+                SeqCst,
+            );
             self.state.want_active.store(true, SeqCst);
         }
     }
@@ -3572,14 +3600,15 @@ fn render_mirror_frames(
         crate::fps_monitor::FpsWarningState::Normal;
 
 
-    // Windowshader visibility/ownership is handled separately in Milestone 7B.
-    let mut ambient = if runtime.display_format
-        == crate::manage_configuration::WallpaperDisplayFormat::Windowed
-        || std::env::var_os("SCREENSHAVER_AMBIENT_LIVE_CONTROLLER").is_none()
-    {
+    // Full-screen wallpaper and windowshader share the same independent
+    // OpenRGB coordinator. Windowed presentation uses an inactivity lease;
+    // it does not alter Mango's existing frame-callback rendering behavior.
+    let ambient_windowed = runtime.display_format
+        == crate::manage_configuration::WallpaperDisplayFormat::Windowed;
+    let mut ambient = if std::env::var_os("SCREENSHAVER_AMBIENT_LIVE_CONTROLLER").is_none() {
         None
     } else {
-        match WaylandWallpaperAmbient::new(control.clone()) {
+        match WaylandWallpaperAmbient::new(control.clone(), ambient_windowed) {
             Ok(ambient) => Some(ambient),
             Err(error) => {
                 eprintln!("[AMBIENT_OPENRGB] Wayland wallpaper sampler unavailable: {error}");
