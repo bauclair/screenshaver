@@ -253,22 +253,9 @@ impl FrameRenderer {
             .is_some_and(|value| value == "1")
         {
             let diagnostic = Rc::new(RefCell::new(AmbientSamplingDiagnostic::new()?));
-            if let Some(controller_id) = live_opt_in {
-                let endpoint = std::env::var("SCREENSHAVER_AMBIENT_LIVE_ENDPOINT")
-                    .unwrap_or_else(|_| "127.0.0.1:6742".to_string());
-                match endpoint.parse::<std::net::SocketAddr>() {
-                    Ok(address) => match crate::manage_openrgb_session::ShaderLightingSession::start(address, controller_id) {
-                        Ok(session) => {
-                            diagnostic.borrow_mut().live_hardware = Some(session);
-                            log_information(&format!(
-                                "[AMBIENT_OPENRGB] Guarded shader mapping active for controller {controller_id}; renderer-lifetime session"
-                            ));
-                        }
-                        Err(error) => log_warning(&format!("[AMBIENT_OPENRGB] Live acquisition refused: {error}")),
-                    },
-                    Err(error) => log_warning(&format!("[AMBIENT_OPENRGB] Invalid endpoint: {error}")),
-                }
-            }
+            // Hardware acquisition is deferred until wallpaper has acknowledged
+            // its pause. The first screensaver frame remains presentation-only.
+            let _ = live_opt_in;
             let observer = Rc::clone(&diagnostic);
             engine.set_ambient_frame_hook(Some(Box::new(move |framebuffer, width, height| {
                 observer.borrow_mut().observe(framebuffer, width, height);
@@ -324,9 +311,14 @@ impl FrameRenderer {
                 first_frame_presented =
                     true;
 
-                wallpaper_control.request_pause_after_first_frame(
+                let wallpaper_paused = wallpaper_control.request_pause_after_first_frame(
                     running
                 );
+                if wallpaper_paused {
+                    self.start_live_hardware_after_wallpaper_pause();
+                } else {
+                    log_warning("[AMBIENT_OPENRGB] Wallpaper pause not acknowledged; screensaver lighting acquisition skipped");
+                }
             }
         };
 
@@ -350,6 +342,24 @@ impl FrameRenderer {
         outcome
     }
 
+
+    fn start_live_hardware_after_wallpaper_pause(&mut self) {
+        let Some(diagnostic) = self.ambient_diagnostic.as_ref() else { return; };
+        let Some(controller_id) = std::env::var("SCREENSHAVER_AMBIENT_LIVE_CONTROLLER")
+            .ok().and_then(|value| value.parse::<u32>().ok()) else { return; };
+        let endpoint = std::env::var("SCREENSHAVER_AMBIENT_LIVE_ENDPOINT")
+            .unwrap_or_else(|_| "127.0.0.1:6742".to_string());
+        match endpoint.parse::<std::net::SocketAddr>() {
+            Ok(address) => match crate::manage_openrgb_session::ShaderLightingSession::start(address, controller_id) {
+                Ok(session) => {
+                    diagnostic.borrow_mut().live_hardware = Some(session);
+                    log_information(&format!("[AMBIENT_OPENRGB] Screensaver acquired controller {controller_id} after wallpaper pause"));
+                }
+                Err(error) => log_warning(&format!("[AMBIENT_OPENRGB] Screensaver acquisition refused: {error}")),
+            },
+            Err(error) => log_warning(&format!("[AMBIENT_OPENRGB] Invalid endpoint: {error}")),
+        }
+    }
 
     pub fn render_frame(
         &mut self,

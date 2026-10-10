@@ -29,6 +29,8 @@ use std::sync::{
     Arc,
 };
 use std::thread;
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::time::Duration;
 
 use x11::{
@@ -556,6 +558,68 @@ fn drain_x11_events(display: *mut xlib::Display, window: &mut X11WallpaperWindow
     }
 }
 
+// The GL callback never performs OpenRGB network I/O; it submits to the
+// existing bounded worker. All ownership changes occur in the render loop.
+struct WallpaperAmbient {
+    sampler: crate::manage_ambient_lighting::FramebufferSampler,
+    session: Option<crate::manage_openrgb_session::ShaderLightingSession>,
+    disabled: bool,
+}
+
+impl WallpaperAmbient {
+    fn new() -> Result<Self, String> {
+        Ok(Self {
+            sampler: crate::manage_ambient_lighting::FramebufferSampler::new(
+                22, 12, Duration::from_millis(50))?,
+            session: None,
+            disabled: false,
+        })
+    }
+
+    fn acquire(&mut self) {
+        if self.disabled || self.session.is_some() { return; }
+        let Some(controller_id) = std::env::var("SCREENSHAVER_AMBIENT_LIVE_CONTROLLER")
+            .ok().and_then(|value| value.parse::<u32>().ok()) else { return; };
+        let endpoint = std::env::var("SCREENSHAVER_AMBIENT_LIVE_ENDPOINT")
+            .unwrap_or_else(|_| "127.0.0.1:6742".to_string());
+        let address = match endpoint.parse::<std::net::SocketAddr>() {
+            Ok(address) => address,
+            Err(error) => { diagnostic(&format!("[AMBIENT_OPENRGB] Invalid endpoint: {error}")); self.disabled = true; return; }
+        };
+        match crate::manage_openrgb_session::ShaderLightingSession::start(address, controller_id) {
+            Ok(session) => { self.session = Some(session); diagnostic("[AMBIENT_OPENRGB] X11 wallpaper acquired keyboard"); }
+            Err(error) => { diagnostic(&format!("[AMBIENT_OPENRGB] X11 wallpaper acquisition refused: {error}")); self.disabled = true; }
+        }
+    }
+
+    fn release(&mut self) {
+        if let Some(session) = self.session.take() {
+            match session.stop() {
+                Ok(_) => diagnostic("[AMBIENT_OPENRGB] X11 wallpaper restored keyboard"),
+                Err(error) => { diagnostic(&format!("[AMBIENT_OPENRGB] X11 wallpaper release unverified: {error}")); self.disabled = true; }
+            }
+        }
+    }
+
+    fn observe(&mut self, framebuffer: u32, width: u32, height: u32) {
+        if self.disabled || framebuffer != 0 || width == 0 || height == 0 { return; }
+        let source = crate::manage_ambient_lighting::FrameSource { framebuffer, width, height };
+        match self.sampler.sample(source) {
+            Ok(Some(frame)) => {
+                if let Some(session) = self.session.as_mut() {
+                    if let Err(error) = session.submit(&frame) {
+                        diagnostic(&format!("[AMBIENT_OPENRGB] X11 wallpaper update failed: {error}"));
+                        self.disabled = true;
+                        self.release();
+                    }
+                }
+            }
+            Ok(None) => {}
+            Err(error) => { diagnostic(&format!("[AMBIENT_OPENRGB] X11 wallpaper sampling disabled: {error}")); self.disabled = true; self.release(); }
+        }
+    }
+}
+
 fn run_window_loop(
     display: *mut xlib::Display,
     wallpaper_window: &mut X11WallpaperWindow,
@@ -571,6 +635,18 @@ fn run_window_loop(
 
     let mut paused = false;
     let mut first_frame_presented = false;
+    let ambient = if std::env::var_os("SCREENSHAVER_AMBIENT_LIVE_CONTROLLER").is_some() {
+        match WallpaperAmbient::new() {
+            Ok(ambient) => Some(Rc::new(RefCell::new(ambient))),
+            Err(error) => { diagnostic(&format!("[AMBIENT_OPENRGB] X11 wallpaper sampler unavailable: {error}")); None }
+        }
+    } else { None };
+    if let Some(ref ambient) = ambient {
+        let observer = Rc::clone(ambient);
+        engine.set_ambient_frame_hook(Some(Box::new(move |fb, w, h| {
+            observer.borrow_mut().observe(fb, w, h);
+        })));
+    }
 
     while running.load(Ordering::SeqCst) {
         drain_x11_events(display, wallpaper_window, running);
@@ -603,6 +679,7 @@ fn run_window_loop(
         if control.pause_requested() {
             if !paused {
                 paused = true;
+                if let Some(ref ambient) = ambient { ambient.borrow_mut().release(); }
                 control.acknowledge_paused();
                 diagnostic("X11 wallpaper rendering paused.");
             }
@@ -617,6 +694,7 @@ fn run_window_loop(
         if paused {
             engine.reset_after_pause();
         }
+        if let Some(ref ambient) = ambient { ambient.borrow_mut().acquire(); }
 
         let status =
             render_shared_engine_frame(
@@ -644,6 +722,12 @@ fn run_window_loop(
         }
     }
 
+    engine.set_ambient_frame_hook(None);
+    if let Some(ref ambient) = ambient {
+        let mut ambient = ambient.borrow_mut();
+        ambient.release();
+        unsafe { ambient.sampler.destroy(); }
+    }
     diagnostic("Leaving continuous X11 wallpaper render loop...");
 }
 
