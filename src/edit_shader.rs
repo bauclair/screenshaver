@@ -29,6 +29,101 @@ use crate::editor_layout::EditWindowOverlay;
 
 
 
+// The editor samples only its completed shader image, before egui overlays.
+// OpenRGB ownership remains exclusive and is restored before the GL context exits.
+struct EditorAmbientLighting {
+    sampler: crate::manage_ambient_lighting::FramebufferSampler,
+    session: Option<crate::manage_openrgb_session::ShaderLightingSession>,
+    disabled: bool,
+}
+
+impl EditorAmbientLighting {
+    fn start() -> Option<Self> {
+        let controller_id = std::env::var("SCREENSHAVER_AMBIENT_LIVE_CONTROLLER")
+            .ok()?.parse::<u32>().ok()?;
+        let endpoint = std::env::var("SCREENSHAVER_AMBIENT_LIVE_ENDPOINT")
+            .unwrap_or_else(|_| "127.0.0.1:6742".to_string());
+        let address = match endpoint.parse::<std::net::SocketAddr>() {
+            Ok(address) => address,
+            Err(error) => {
+                log_warning(&format!("[AMBIENT_EDITOR] Invalid OpenRGB endpoint: {error}"));
+                return None;
+            }
+        };
+        let sampler = match crate::manage_ambient_lighting::FramebufferSampler::new(
+            22, 12, Duration::from_millis(50),
+        ) {
+            Ok(sampler) => sampler,
+            Err(error) => {
+                log_warning(&format!("[AMBIENT_EDITOR] Sampler unavailable: {error}"));
+                return None;
+            }
+        };
+        let session = match crate::manage_openrgb_session::ShaderLightingSession::start(
+            address, controller_id,
+        ) {
+            Ok(session) => session,
+            Err(error) => {
+                log_warning(&format!("[AMBIENT_EDITOR] OpenRGB acquisition refused: {error}"));
+                return None;
+            }
+        };
+        log_information(&format!("[AMBIENT_EDITOR] Acquired OpenRGB controller {controller_id}"));
+        Some(Self { sampler, session: Some(session), disabled: false })
+    }
+
+    fn observe(&mut self, width: u32, height: u32) {
+        if self.disabled || width == 0 || height == 0 { return; }
+        let source = crate::manage_ambient_lighting::FrameSource {
+            framebuffer: 0, width, height,
+        };
+        match self.sampler.sample(source) {
+            Ok(Some(frame)) => {
+                if let Some(session) = self.session.as_mut() {
+                    if let Err(error) = session.submit(&frame) {
+                        log_warning(&format!("[AMBIENT_EDITOR] OpenRGB update failed: {error}"));
+                        self.disabled = true;
+                        self.stop_session();
+                    }
+                }
+            }
+            Ok(None) => {}
+            Err(error) => {
+                log_warning(&format!("[AMBIENT_EDITOR] Sampling disabled: {error}"));
+                self.disabled = true;
+                self.stop_session();
+            }
+        }
+    }
+
+    fn stop_session(&mut self) {
+        if let Some(session) = self.session.take() {
+            match session.stop() {
+                Ok((submitted, stats)) => log_information(&format!(
+                    "[AMBIENT_EDITOR] Lighting restored; submitted={submitted}, transmitted={}",
+                    stats.transmitted,
+                )),
+                Err(error) => log_warning(&format!(
+                    "[AMBIENT_EDITOR] Lighting restoration unverified: {error}",
+                )),
+            }
+        }
+    }
+
+    fn shutdown(&mut self) {
+        self.stop_session();
+        unsafe { self.sampler.destroy(); }
+    }
+}
+
+impl Drop for EditorAmbientLighting {
+    fn drop(&mut self) {
+        self.stop_session();
+        // GPU resources are explicitly destroyed by shutdown() while GL is current.
+    }
+}
+
+
 fn localized_edit_values(key: &str, values: &[String]) -> String {
     let parameter_names = ["value1", "value2", "value3", "value4"];
     let parameters = values
@@ -3291,6 +3386,10 @@ fn run_paths(
             None;
 
 
+            // Wallpaper pause acknowledgment precedes this acquisition. When the
+            // tray already owns the pause, OpenRGB's exclusive lock still guards it.
+            let mut editor_ambient = EditorAmbientLighting::start();
+
             let result =
             'preview: loop {
 
@@ -4313,6 +4412,13 @@ fn run_paths(
                                 .present_scene_with_bloom_diagnostic(
                                     bloom_diagnostic
                                 );
+
+                                if let Some(ambient) = editor_ambient.as_mut() {
+                                    let (sample_width, sample_height) =
+                                        postprocess.output_dimensions();
+                                    ambient.observe(sample_width, sample_height);
+                                }
+
 
 
                                 unsafe {
@@ -7803,6 +7909,10 @@ fn run_paths(
                                                                                         }
             };
 
+
+            if let Some(ambient) = editor_ambient.as_mut() {
+                ambient.shutdown();
+            }
 
             destroy_active_shader(
                 &mut active
