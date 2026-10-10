@@ -35,7 +35,7 @@ impl AmbientSamplingDiagnostic {
     fn new() -> Result<Self, String> {
         Ok(Self {
             sampler: crate::manage_ambient_lighting::FramebufferSampler::new(
-                22, 12, Duration::from_millis(100),
+                22, 12, Duration::from_millis(50),
             )?,
             captured: 0,
             total_us: 0,
@@ -273,7 +273,7 @@ impl FrameRenderer {
             engine.set_ambient_frame_hook(Some(Box::new(move |framebuffer, width, height| {
                 observer.borrow_mut().observe(framebuffer, width, height);
             })));
-            log_information("[AMBIENT_DIAGNOSTIC] Enabled: 22x12 RGB readback at <=10 Hz; hardware access only when explicitly enabled");
+            log_information("[AMBIENT_DIAGNOSTIC] Enabled: 22x12 RGB readback at <=20 Hz; hardware access only when explicitly enabled");
             Some(diagnostic)
         } else {
             None
