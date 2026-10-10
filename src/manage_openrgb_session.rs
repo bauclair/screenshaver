@@ -634,10 +634,30 @@ fn restore_mode_verified(
             payload.extend_from_slice(&record.original_mode_index.to_le_bytes());
             payload.extend_from_slice(original_bytes);
             transport.send_guarded_mode(controller_id, 1101, &payload)?;
-            thread::sleep(Duration::from_millis(500));
+            // Verify as soon as the controller reports the original mode.
+            // The former unconditional 500 ms sleep delayed every handoff,
+            // even when restoration had already completed. Keep the same
+            // 500 ms settling budget, but poll rather than always consuming it.
+            let deadline = Instant::now() + Duration::from_millis(500);
+            loop {
+                let after = transport.decoded_controller(controller_id)?;
+                matching_identity(&after, record)?;
+                if after.active == original {
+                    return Ok(());
+                }
+                if after.active != direct {
+                    return Err("Unexpected OpenRGB mode during restoration; recovery record retained".into());
+                }
+                if Instant::now() >= deadline {
+                    return Err("Original OpenRGB lighting mode not verified within 500ms; recovery record retained".into());
+                }
+                thread::sleep(Duration::from_millis(25).min(deadline.saturating_duration_since(Instant::now())));
+            }
         }
+        // The controller was already in the original mode; still verify
+        // identity and active mode with a fresh snapshot.
         let after = transport.decoded_controller(controller_id)?;
-        matching_identity(&after, &record)?;
+        matching_identity(&after, record)?;
         if after.active != original {
             return Err("Original OpenRGB lighting mode not verified; recovery record retained".into());
         }
