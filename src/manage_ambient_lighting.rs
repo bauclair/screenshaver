@@ -115,7 +115,7 @@ pub struct AmbientBrightness {
 
 impl Default for AmbientBrightness {
     fn default() -> Self {
-        Self { brightness_percent: 100, minimum_percent: 0 }
+        Self { brightness_percent: 100, minimum_percent: 2 }
     }
 }
 
@@ -155,12 +155,12 @@ mod ambient_brightness_tests {
     use super::*;
 
     #[test]
-    fn defaults_and_black_without_floor() {
+    fn defaults_with_neutral_two_percent_floor() {
         let mut colors = [[0, 0, 0, 0], [255, 255, 255, 0], [128, 64, 32, 7]];
         AmbientBrightness::default().apply(&mut colors).unwrap();
-        assert_eq!(colors[0], [0, 0, 0, 0]);
+        assert_eq!(colors[0], [5, 5, 5, 0]); // #050505: neutral dark gray
         assert_eq!(colors[1], [255, 255, 255, 0]);
-        assert_eq!(colors[2], [128, 64, 32, 7]);
+        assert_eq!(colors[2], [131, 68, 36, 7]);
     }
 
     #[test]
