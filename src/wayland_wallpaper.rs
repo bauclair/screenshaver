@@ -3702,6 +3702,11 @@ fn render_mirror_frames(
 
             if control.pause_requested() {
                 if !paused {
+                    crate::logger::warning(
+                        &crate::locate_paths::runtime_log_path(),
+                        "[AMBIENT_HANDOFF_DIAG] Wayland renderer detected pause request",
+                    );
+                    let release_started = Instant::now();
                     paused =
                         true;
 
@@ -3714,8 +3719,19 @@ fn render_mirror_frames(
 
                     let lighting_released = ambient.as_mut()
                         .map_or(true, |ambient| ambient.release());
+                    crate::logger::warning(
+                        &crate::locate_paths::runtime_log_path(),
+                        &format!(
+                            "[AMBIENT_HANDOFF_DIAG] Wayland lighting release completed in {}ms; verified={}",
+                            release_started.elapsed().as_millis(), lighting_released,
+                        ),
+                    );
                     if lighting_released {
                         control.acknowledge_paused();
+                        crate::logger::warning(
+                            &crate::locate_paths::runtime_log_path(),
+                            "[AMBIENT_HANDOFF_DIAG] Wayland renderer acknowledged pause",
+                        );
                     } else {
                         eprintln!("[AMBIENT_OPENRGB] Wayland wallpaper pause handoff blocked: restoration unverified");
                     }
@@ -4752,6 +4768,18 @@ fn render_mirror_frames(
 
                 let presentation_duration =
                     presentation_started.elapsed();
+
+                // Diagnostic only: report a compositor wait that overlapped a
+                // pause request. Do not change frame pacing or handoff behavior.
+                if control.pause_requested() {
+                    crate::logger::warning(
+                        &crate::locate_paths::runtime_log_path(),
+                        &format!(
+                            "[AMBIENT_HANDOFF_DIAG] eglSwapBuffers returned after {}ms while pause pending",
+                            presentation_duration.as_millis(),
+                        ),
+                    );
+                }
 
 
                 // A long compositor wait breaks continuous presentation.

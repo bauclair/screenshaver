@@ -101,6 +101,12 @@ impl WallpaperRuntimeControl {
             Ordering::SeqCst,
         );
 
+        let diagnostic_started = std::time::Instant::now();
+        crate::logger::warning(
+            &crate::locate_paths::runtime_log_path(),
+            "[AMBIENT_HANDOFF_DIAG] Screensaver requested wallpaper pause (500ms deadline)",
+        );
+
 
         let deadline =
             std::time::Instant::now()
@@ -117,8 +123,19 @@ impl WallpaperRuntimeControl {
             );
         }
 
-        !self.active.load(Ordering::SeqCst)
-            || self.pause_acknowledged.load(Ordering::SeqCst)
+        let still_active = self.active.load(Ordering::SeqCst);
+        let acknowledged = self.pause_acknowledged.load(Ordering::SeqCst);
+        crate::logger::warning(
+            &crate::locate_paths::runtime_log_path(),
+            &format!(
+                "[AMBIENT_HANDOFF_DIAG] Screensaver pause wait ended after {}ms: active={}, acknowledged={}, running={}",
+                diagnostic_started.elapsed().as_millis(),
+                still_active,
+                acknowledged,
+                running.load(Ordering::SeqCst),
+            ),
+        );
+        !still_active || acknowledged
     }
 
 
