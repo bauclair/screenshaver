@@ -891,6 +891,8 @@ impl ShaderLightingSession {
             &frame.rgb, frame.width, frame.height, &self.matrix,
             crate::manage_ambient_lighting::MappingMode::Spatial, &self.base,
         )?;
+        // Apply keyboard-only chroma enhancement before output brightness and smoothing.
+        crate::manage_ambient_lighting::boost_led_saturation(&mut colors, 1.5)?;
         crate::manage_ambient_lighting::AmbientBrightness::default().apply(&mut colors)?;
         if let Some(previous) = self.previous.as_mut() {
             crate::manage_ambient_lighting::smooth_colors(previous, &colors, 0.35)?;

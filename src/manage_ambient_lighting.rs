@@ -115,7 +115,7 @@ pub struct AmbientBrightness {
 
 impl Default for AmbientBrightness {
     fn default() -> Self {
-        Self { brightness_percent: 75, minimum_percent: 0 }
+        Self { brightness_percent: 100, minimum_percent: 0 }
     }
 }
 
@@ -159,8 +159,8 @@ mod ambient_brightness_tests {
         let mut colors = [[0, 0, 0, 0], [255, 255, 255, 0], [128, 64, 32, 7]];
         AmbientBrightness::default().apply(&mut colors).unwrap();
         assert_eq!(colors[0], [0, 0, 0, 0]);
-        assert_eq!(colors[1], [191, 191, 191, 0]);
-        assert_eq!(colors[2], [96, 48, 24, 7]);
+        assert_eq!(colors[1], [255, 255, 255, 0]);
+        assert_eq!(colors[2], [128, 64, 32, 7]);
     }
 
     #[test]
@@ -185,6 +185,42 @@ mod ambient_brightness_tests {
             assert!(settings.apply(&mut colors).is_err());
             assert_eq!(colors, original);
         }
+    }
+}
+
+/// Keyboard-only chroma enhancement. Preserve the HSV value (maximum channel)
+/// while expanding channel differences; neutral greys remain unchanged.
+/// This never modifies the rendered shader or framebuffer samples.
+pub fn boost_led_saturation(colors: &mut [LedColor], factor: f32) -> Result<(), String> {
+    if !factor.is_finite() || !(1.0..=2.0).contains(&factor) {
+        return Err("Ambient saturation factor must be between 1.0 and 2.0".into());
+    }
+    for color in colors {
+        let max = *color[..3].iter().max().unwrap() as f32;
+        for channel in &mut color[..3] {
+            *channel = (max - (max - *channel as f32) * factor)
+                .clamp(0.0, 255.0).round() as u8;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod ambient_saturation_tests {
+    use super::*;
+    #[test]
+    fn increases_chroma_preserves_value_and_alpha() {
+        let mut colors = [[180, 120, 90, 7], [100, 100, 100, 3], [255, 0, 0, 0]];
+        boost_led_saturation(&mut colors, 1.5).unwrap();
+        assert_eq!(colors[0], [180, 90, 45, 7]);
+        assert_eq!(colors[1], [100, 100, 100, 3]);
+        assert_eq!(colors[2], [255, 0, 0, 0]);
+    }
+    #[test]
+    fn rejects_invalid_factor() {
+        let mut colors = [[10, 20, 30, 0]];
+        assert!(boost_led_saturation(&mut colors, f32::NAN).is_err());
+        assert_eq!(colors[0], [10, 20, 30, 0]);
     }
 }
 
