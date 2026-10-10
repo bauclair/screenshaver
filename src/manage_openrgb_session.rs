@@ -838,3 +838,113 @@ mod mock_server_recovery_tests {
         assert!(result.is_err());
     }
 }
+
+
+// Explicit opt-in live shader-to-LED session. No automatic device selection.
+// This wrapper ensures that the update worker is joined before mode restoration.
+pub struct ShaderLightingSession {
+    guarded: Option<GuardedOpenRgbSession>,
+    worker: Option<crate::manage_ambient_lighting::LightingWorker>,
+    matrix: crate::manage_ambient_lighting::LedMatrix,
+    base: Vec<crate::manage_ambient_lighting::LedColor>,
+    previous: Option<Vec<crate::manage_ambient_lighting::LedColor>>,
+    started: Instant,
+    submitted: u64,
+}
+
+impl ShaderLightingSession {
+    pub fn start(endpoint: SocketAddr, controller_id: u32) -> Result<Self, String> {
+        let mut discovery = OpenRgbReadOnlyTransport::connect(endpoint)?;
+        let ids = discovery.controller_ids()?;
+        if !ids.contains(&controller_id) {
+            return Err(format!("OpenRGB controller {controller_id} is unavailable"));
+        }
+        let snapshot = discovery.decoded_controller(controller_id)?;
+        let descriptor = snapshot.descriptor(controller_id);
+        let selected = crate::select_ambient_device::select_ambient_device(&[descriptor], controller_id)?;
+        let matrix = selected.matrix.clone().ok_or("Selected controller has no matrix")?;
+        let base = snapshot.colors.clone();
+        // Acquisition registers durable recovery before switching modes.
+        let guarded = GuardedOpenRgbSession::acquire(endpoint, &selected)?;
+        let worker = match crate::manage_ambient_lighting::LightingWorker::start(
+            endpoint, controller_id, selected.led_count,
+        ) {
+            Ok(worker) => worker,
+            Err(error) => {
+                return match guarded.restore() {
+                    Ok(()) => Err(format!("OpenRGB worker failed; mode restored: {error}")),
+                    Err(restore_error) => Err(format!(
+                        "OpenRGB worker failed: {error}; restoration unverified: {restore_error}"
+                    )),
+                };
+            }
+        };
+        Ok(Self {
+            guarded: Some(guarded), worker: Some(worker), matrix, base,
+            previous: None, started: Instant::now(), submitted: 0,
+        })
+    }
+
+    pub fn expired(&self) -> bool {
+        self.started.elapsed() >= Duration::from_secs(30)
+    }
+
+    pub fn submit(&mut self, frame: &crate::manage_ambient_lighting::SampledFrame)
+        -> Result<bool, String>
+    {
+        if self.expired() { return Ok(false); }
+        let mut colors = crate::manage_ambient_lighting::map_pixels(
+            &frame.rgb, frame.width, frame.height, &self.matrix,
+            crate::manage_ambient_lighting::MappingMode::Spatial, &self.base,
+        )?;
+        crate::manage_ambient_lighting::AmbientBrightness::default().apply(&mut colors)?;
+        if let Some(previous) = self.previous.as_mut() {
+            crate::manage_ambient_lighting::smooth_colors(previous, &colors, 0.35)?;
+            colors = previous.clone();
+        } else {
+            self.previous = Some(colors.clone());
+        }
+        let accepted = self.worker.as_mut().ok_or("OpenRGB worker stopped")?
+            .try_submit(colors)?;
+        if accepted { self.submitted += 1; }
+        Ok(accepted)
+    }
+
+    fn finish(&mut self) -> Result<(u64, crate::manage_ambient_lighting::WorkerStats), String> {
+        // Never attempt restoration until the writer thread has terminated.
+        let worker_result = match self.worker.take() {
+            Some(worker) => worker.stop(),
+            None => Err("OpenRGB worker was already stopped".into()),
+        };
+        let restoration = match self.guarded.take() {
+            Some(guarded) => guarded.restore(),
+            None => Err("OpenRGB session was already restored".into()),
+        };
+        match (worker_result, restoration) {
+            (Ok(stats), Ok(())) => Ok((self.submitted, stats)),
+            (Err(worker_error), Ok(())) => Err(format!(
+                "OpenRGB worker error (original lighting restored): {worker_error}"
+            )),
+            (Ok(_), Err(error)) => Err(format!(
+                "OpenRGB restoration unverified; durable recovery retained: {error}"
+            )),
+            (Err(worker_error), Err(error)) => Err(format!(
+                "OpenRGB worker error: {worker_error}; restoration unverified: {error}"
+            )),
+        }
+    }
+
+    pub fn stop(mut self) -> Result<(u64, crate::manage_ambient_lighting::WorkerStats), String> {
+        self.finish()
+    }
+}
+
+impl Drop for ShaderLightingSession {
+    fn drop(&mut self) {
+        if self.guarded.is_some() || self.worker.is_some() {
+            if let Err(error) = self.finish() {
+                eprintln!("[AMBIENT_OPENRGB] {error}");
+            }
+        }
+    }
+}

@@ -29,6 +29,8 @@ struct AmbientSamplingDiagnostic {
     disabled: bool,
     hardware: Option<crate::manage_ambient_lighting::AmbientCynosaSession>,
     hardware_dropped: u64,
+    live_hardware: Option<crate::manage_openrgb_session::ShaderLightingSession>,
+    live_finished: bool,
 }
 
 impl AmbientSamplingDiagnostic {
@@ -44,7 +46,22 @@ impl AmbientSamplingDiagnostic {
             disabled: false,
             hardware: None,
             hardware_dropped: 0,
+            live_hardware: None,
+            live_finished: false,
         })
+    }
+
+    fn stop_live_hardware(&mut self) {
+        if let Some(session) = self.live_hardware.take() {
+            match session.stop() {
+                Ok((submitted, stats)) => log_information(&format!(
+                    "[AMBIENT_OPENRGB] Live session finished; submitted={submitted} transmitted={} original lighting restored",
+                    stats.transmitted,
+                )),
+                Err(error) => log_warning(&format!("[AMBIENT_OPENRGB] {error}")),
+            }
+        }
+        self.live_finished = true;
     }
 
     fn observe(&mut self, framebuffer: u32, width: u32, height: u32) {
@@ -75,6 +92,19 @@ impl AmbientSamplingDiagnostic {
                             if let Some(session) = self.hardware.take() {
                                 if let Err(e) = session.stop() { log_warning(&format!("[AMBIENT_OPENRGB] {e}")); }
                             }
+                        }
+                    }
+                }
+                if self.live_hardware.as_ref().is_some_and(|hardware| hardware.expired()) {
+                    self.stop_live_hardware();
+                }
+                if let Some(ref mut hardware) = self.live_hardware {
+                    match hardware.submit(&frame) {
+                        Ok(false) => self.hardware_dropped += 1,
+                        Ok(true) => {},
+                        Err(error) => {
+                            log_warning(&format!("[AMBIENT_OPENRGB] Live update failed: {error}"));
+                            self.stop_live_hardware();
                         }
                     }
                 }
@@ -246,7 +276,9 @@ impl FrameRenderer {
                 window_height,
             )?;
 
-        let ambient_diagnostic = if std::env::var_os("SCREENSHAVER_AMBIENT_SAMPLE_DIAGNOSTIC")
+        let live_opt_in = std::env::var("SCREENSHAVER_AMBIENT_LIVE_CONTROLLER")
+            .ok().and_then(|value| value.parse::<u32>().ok());
+        let ambient_diagnostic = if live_opt_in.is_some() || std::env::var_os("SCREENSHAVER_AMBIENT_SAMPLE_DIAGNOSTIC")
             .is_some_and(|value| value == "1") || std::env::var_os("SCREENSHAVER_AMBIENT_OPENRGB_CYNOSA")
             .is_some_and(|value| value == "I_ACCEPT_30_SECONDS")
         {
@@ -259,6 +291,22 @@ impl FrameRenderer {
                         log_information("[AMBIENT_OPENRGB] Cynosa Direct mode active; max 30 seconds of color updates");
                     }
                     Err(error) => log_warning(&format!("[AMBIENT_OPENRGB] Activation refused: {error}")),
+                }
+            }
+            if let Some(controller_id) = live_opt_in {
+                let endpoint = std::env::var("SCREENSHAVER_AMBIENT_LIVE_ENDPOINT")
+                    .unwrap_or_else(|_| "127.0.0.1:6742".to_string());
+                match endpoint.parse::<std::net::SocketAddr>() {
+                    Ok(address) => match crate::manage_openrgb_session::ShaderLightingSession::start(address, controller_id) {
+                        Ok(session) => {
+                            diagnostic.borrow_mut().live_hardware = Some(session);
+                            log_information(&format!(
+                                "[AMBIENT_OPENRGB] Guarded live shader mapping active for controller {controller_id}; 30-second limit"
+                            ));
+                        }
+                        Err(error) => log_warning(&format!("[AMBIENT_OPENRGB] Live acquisition refused: {error}")),
+                    },
+                    Err(error) => log_warning(&format!("[AMBIENT_OPENRGB] Invalid endpoint: {error}")),
                 }
             }
             let observer = Rc::clone(&diagnostic);
@@ -325,6 +373,10 @@ impl FrameRenderer {
         // Keep wallpaper rendering paused while the active screensaver is
         // handed to the policy editor. A replacement screensaver renderer
         // will retain that pause until the user finally disengages it.
+        // Restore the device before the wallpaper renderer can resume.
+        if let Some(diagnostic) = self.ambient_diagnostic.as_ref() {
+            diagnostic.borrow_mut().stop_live_hardware();
+        }
         if outcome == ScreensaverRunOutcome::Exit {
             wallpaper_control.resume_and_wait_for_frame(
                 running
@@ -508,6 +560,7 @@ impl Drop for FrameRenderer {
                 if diagnostic.captured == 0 { 0 } else { diagnostic.total_us / diagnostic.captured as u128 },
                 diagnostic.maximum_us,
             ));
+            diagnostic.stop_live_hardware();
             if let Some(session) = diagnostic.hardware.take() {
                 match session.stop() {
                     Ok((submitted, stats)) => log_information(&format!(
