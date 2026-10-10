@@ -27,10 +27,8 @@ struct AmbientSamplingDiagnostic {
     maximum_us: u128,
     last_report: Instant,
     disabled: bool,
-    hardware: Option<crate::manage_ambient_lighting::AmbientCynosaSession>,
-    hardware_dropped: u64,
+    live_dropped: u64,
     live_hardware: Option<crate::manage_openrgb_session::ShaderLightingSession>,
-    live_finished: bool,
 }
 
 impl AmbientSamplingDiagnostic {
@@ -44,10 +42,8 @@ impl AmbientSamplingDiagnostic {
             maximum_us: 0,
             last_report: Instant::now(),
             disabled: false,
-            hardware: None,
-            hardware_dropped: 0,
+            live_dropped: 0,
             live_hardware: None,
-            live_finished: false,
         })
     }
 
@@ -55,13 +51,13 @@ impl AmbientSamplingDiagnostic {
         if let Some(session) = self.live_hardware.take() {
             match session.stop() {
                 Ok((submitted, stats)) => log_information(&format!(
-                    "[AMBIENT_OPENRGB] Live session finished; submitted={submitted} transmitted={} original lighting restored",
+                    "[AMBIENT_OPENRGB] Live session finished; submitted={submitted} transmitted={} queue_dropped={} original lighting restored",
                     stats.transmitted,
+                    self.live_dropped,
                 )),
                 Err(error) => log_warning(&format!("[AMBIENT_OPENRGB] {error}")),
             }
         }
-        self.live_finished = true;
     }
 
     fn observe(&mut self, framebuffer: u32, width: u32, height: u32) {
@@ -73,34 +69,9 @@ impl AmbientSamplingDiagnostic {
             Ok(Some(frame)) => {
                 let elapsed = frame.readback_time.as_micros();
                 self.captured += 1;
-                if self.hardware.as_ref().is_some_and(|hardware| hardware.expired()) {
-                    if let Some(session) = self.hardware.take() {
-                        match session.stop() {
-                            Ok((submitted, stats)) => log_information(&format!(
-                                "[AMBIENT_OPENRGB] 30-second limit reached; submitted={submitted} transmitted={} original mode restored",
-                                stats.transmitted)),
-                            Err(error) => log_warning(&format!("[AMBIENT_OPENRGB] {error}")),
-                        }
-                    }
-                }
-                if let Some(ref mut hardware) = self.hardware {
-                    match hardware.submit(&frame) {
-                        Ok(false) => self.hardware_dropped += 1,
-                        Ok(true) => {},
-                        Err(error) => {
-                            log_warning(&format!("[AMBIENT_OPENRGB] Update failed: {error}"));
-                            if let Some(session) = self.hardware.take() {
-                                if let Err(e) = session.stop() { log_warning(&format!("[AMBIENT_OPENRGB] {e}")); }
-                            }
-                        }
-                    }
-                }
-                if self.live_hardware.as_ref().is_some_and(|hardware| hardware.expired()) {
-                    self.stop_live_hardware();
-                }
                 if let Some(ref mut hardware) = self.live_hardware {
                     match hardware.submit(&frame) {
-                        Ok(false) => self.hardware_dropped += 1,
+                        Ok(false) => self.live_dropped += 1,
                         Ok(true) => {},
                         Err(error) => {
                             log_warning(&format!("[AMBIENT_OPENRGB] Live update failed: {error}"));
@@ -279,20 +250,9 @@ impl FrameRenderer {
         let live_opt_in = std::env::var("SCREENSHAVER_AMBIENT_LIVE_CONTROLLER")
             .ok().and_then(|value| value.parse::<u32>().ok());
         let ambient_diagnostic = if live_opt_in.is_some() || std::env::var_os("SCREENSHAVER_AMBIENT_SAMPLE_DIAGNOSTIC")
-            .is_some_and(|value| value == "1") || std::env::var_os("SCREENSHAVER_AMBIENT_OPENRGB_CYNOSA")
-            .is_some_and(|value| value == "I_ACCEPT_30_SECONDS")
+            .is_some_and(|value| value == "1")
         {
             let diagnostic = Rc::new(RefCell::new(AmbientSamplingDiagnostic::new()?));
-            if std::env::var_os("SCREENSHAVER_AMBIENT_OPENRGB_CYNOSA")
-                .is_some_and(|value| value == "I_ACCEPT_30_SECONDS") {
-                match crate::manage_ambient_lighting::AmbientCynosaSession::start() {
-                    Ok(session) => {
-                        diagnostic.borrow_mut().hardware = Some(session);
-                        log_information("[AMBIENT_OPENRGB] Cynosa Direct mode active; max 30 seconds of color updates");
-                    }
-                    Err(error) => log_warning(&format!("[AMBIENT_OPENRGB] Activation refused: {error}")),
-                }
-            }
             if let Some(controller_id) = live_opt_in {
                 let endpoint = std::env::var("SCREENSHAVER_AMBIENT_LIVE_ENDPOINT")
                     .unwrap_or_else(|_| "127.0.0.1:6742".to_string());
@@ -301,7 +261,7 @@ impl FrameRenderer {
                         Ok(session) => {
                             diagnostic.borrow_mut().live_hardware = Some(session);
                             log_information(&format!(
-                                "[AMBIENT_OPENRGB] Guarded live shader mapping active for controller {controller_id}; 30-second limit"
+                                "[AMBIENT_OPENRGB] Guarded shader mapping active for controller {controller_id}; renderer-lifetime session"
                             ));
                         }
                         Err(error) => log_warning(&format!("[AMBIENT_OPENRGB] Live acquisition refused: {error}")),
@@ -313,7 +273,7 @@ impl FrameRenderer {
             engine.set_ambient_frame_hook(Some(Box::new(move |framebuffer, width, height| {
                 observer.borrow_mut().observe(framebuffer, width, height);
             })));
-            log_information("[AMBIENT_DIAGNOSTIC] Enabled: 22x12 RGB readback at <=10 Hz; no OpenRGB device access");
+            log_information("[AMBIENT_DIAGNOSTIC] Enabled: 22x12 RGB readback at <=10 Hz; hardware access only when explicitly enabled");
             Some(diagnostic)
         } else {
             None
@@ -561,14 +521,6 @@ impl Drop for FrameRenderer {
                 diagnostic.maximum_us,
             ));
             diagnostic.stop_live_hardware();
-            if let Some(session) = diagnostic.hardware.take() {
-                match session.stop() {
-                    Ok((submitted, stats)) => log_information(&format!(
-                        "[AMBIENT_OPENRGB] Stopped; submitted={submitted} transmitted={} worker_dropped={} queue_dropped={} original mode restored",
-                        stats.transmitted, stats.dropped, diagnostic.hardware_dropped)),
-                    Err(error) => log_warning(&format!("[AMBIENT_OPENRGB] {error}; check OpenRGB mode")),
-                }
-            }
             unsafe { diagnostic.sampler.destroy(); }
         }
     }

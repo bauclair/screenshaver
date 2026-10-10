@@ -848,7 +848,6 @@ pub struct ShaderLightingSession {
     matrix: crate::manage_ambient_lighting::LedMatrix,
     base: Vec<crate::manage_ambient_lighting::LedColor>,
     previous: Option<Vec<crate::manage_ambient_lighting::LedColor>>,
-    started: Instant,
     submitted: u64,
 }
 
@@ -881,18 +880,13 @@ impl ShaderLightingSession {
         };
         Ok(Self {
             guarded: Some(guarded), worker: Some(worker), matrix, base,
-            previous: None, started: Instant::now(), submitted: 0,
+            previous: None, submitted: 0,
         })
-    }
-
-    pub fn expired(&self) -> bool {
-        self.started.elapsed() >= Duration::from_secs(30)
     }
 
     pub fn submit(&mut self, frame: &crate::manage_ambient_lighting::SampledFrame)
         -> Result<bool, String>
     {
-        if self.expired() { return Ok(false); }
         let mut colors = crate::manage_ambient_lighting::map_pixels(
             &frame.rgb, frame.width, frame.height, &self.matrix,
             crate::manage_ambient_lighting::MappingMode::Spatial, &self.base,
