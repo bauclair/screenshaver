@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::{
     atomic::{
         AtomicBool,
+        AtomicU8,
         Ordering,
     },
     Arc,
@@ -53,6 +54,7 @@ pub struct WallpaperRuntimeControl {
     pause_requested: Arc<AtomicBool>,
     pause_acknowledged: Arc<AtomicBool>,
     pause_detected: Arc<AtomicBool>,
+    render_checkpoint: Arc<AtomicU8>,
     resume_frame_ready: Arc<AtomicBool>,
     pending_policy_reload:
         Arc<Mutex<Option<WallpaperPolicyReload>>>,
@@ -71,6 +73,7 @@ impl WallpaperRuntimeControl {
             pause_requested: Arc::new(AtomicBool::new(false)),
             pause_acknowledged: Arc::new(AtomicBool::new(false)),
             pause_detected: Arc::new(AtomicBool::new(false)),
+            render_checkpoint: Arc::new(AtomicU8::new(0)),
             resume_frame_ready: Arc::new(AtomicBool::new(true)),
             pending_policy_reload:
                 Arc::new(Mutex::new(None)),
@@ -128,6 +131,18 @@ impl WallpaperRuntimeControl {
             ),
         );
 
+        if !detected && !early_acknowledged {
+            let checkpoint = self.render_checkpoint.load(Ordering::SeqCst);
+            crate::logger::warning(
+                &crate::locate_paths::runtime_log_path(),
+                &format!(
+                    "[AMBIENT_HANDOFF_DIAG] Pause detection timeout: renderer checkpoint={} ({})",
+                    checkpoint,
+                    Self::checkpoint_description(checkpoint),
+                ),
+            );
+        }
+
         // Stage 2: only a renderer that detected the request may use the
         // remaining budget to stop its worker and verify hardware restoration.
         if detected || early_acknowledged {
@@ -155,6 +170,26 @@ impl WallpaperRuntimeControl {
         // cannot continue to own the device, but its durable recovery record
         // still guards any subsequent OpenRGB acquisition.
         !still_active || acknowledged
+    }
+
+    /// Diagnostic-only, lock-free render-loop checkpoint. Never changes ownership.
+    pub fn diagnostic_checkpoint(&self, checkpoint: u8) {
+        self.render_checkpoint.store(checkpoint, Ordering::SeqCst);
+    }
+
+    fn checkpoint_description(checkpoint: u8) -> &'static str {
+        match checkpoint {
+            0 => "not yet in instrumented render loop",
+            1 => "processing Wayland events",
+            2 => "handling output changes / policy reload",
+            3 => "pause checkpoint reached; no pause observed",
+            4 => "rendering or GPU sampling",
+            5 => "inside eglSwapBuffers",
+            6 => "post-presentation processing",
+            7 => "frame pacing sleep",
+            8 => "paused / releasing lighting",
+            _ => "unknown",
+        }
     }
 
     /// Called by the wallpaper render thread before releasing OpenRGB.

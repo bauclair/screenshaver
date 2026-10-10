@@ -3486,12 +3486,14 @@ fn render_mirror_frames(
     let result =
         'render_loop: loop {
 
+            control.diagnostic_checkpoint(1);
             process_wayland_events(
                 event_queue,
                 state,
             )?;
 
 
+            control.diagnostic_checkpoint(2);
             remove_disconnected_targets(
                 display,
                 context,
@@ -3700,12 +3702,14 @@ fn render_mirror_frames(
                 }
             }
 
+            control.diagnostic_checkpoint(3);
             if control.pause_requested() {
                 if !paused {
                     crate::logger::warning(
                         &crate::locate_paths::runtime_log_path(),
                         "[AMBIENT_HANDOFF_DIAG] Wayland renderer detected pause request",
                     );
+                    control.diagnostic_checkpoint(8);
                     control.acknowledge_pause_detected();
                     let release_started = Instant::now();
                     paused =
@@ -3787,6 +3791,7 @@ fn render_mirror_frames(
             // surface on a non-visible workspace can stop receiving them.
             // The render worker therefore remains in this event/control loop
             // instead of entering a compositor-throttled eglSwapBuffers().
+            control.diagnostic_checkpoint(4);
             let windowed_frame_ready =
                 if runtime.display_format
                     == crate::manage_configuration::WallpaperDisplayFormat::Windowed
@@ -4740,6 +4745,7 @@ fn render_mirror_frames(
                 }
 
 
+                control.diagnostic_checkpoint(5);
                 let presentation_started =
                     Instant::now();
 
@@ -4759,6 +4765,7 @@ fn render_mirror_frames(
                 }
 
 
+                control.diagnostic_checkpoint(6);
                 // Only acquire after the first frame has actually presented.
                 if !ambient_first_frame_presented {
                     ambient_first_frame_presented = true;
@@ -4927,6 +4934,7 @@ fn render_mirror_frames(
                 Instant::now();
 
 
+            control.diagnostic_checkpoint(7);
             if next_frame_deadline
                 > now
             {
