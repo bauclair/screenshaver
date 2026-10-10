@@ -1,9 +1,7 @@
-//! Stage 5A-5 checkpoint 3: guarded preflight and read-only OpenRGB SDK transport.
+//! Stage 5A-5 checkpoint 4: guarded preflight, read-only SDK transport and controller decoding.
 //!
-//! This module deliberately performs no OpenRGB network I/O and no lighting
-//! writes. It establishes the exclusive-owner and recovery-state prerequisites
-//! for a later worker-thread implementation. A successful preflight is NOT an
-//! acquired lighting session and must not be treated as one by renderers.
+//! Network I/O is read-only; this module cannot change lighting modes or LEDs.
+//! A successful preflight is NOT an acquired lighting session.
 
 use std::fs::{File, OpenOptions};
 use std::path::Path;
@@ -164,6 +162,11 @@ impl OpenRgbReadOnlyTransport {
         Ok(payload)
     }
 
+    /// Decode a complete controller snapshot without issuing any SDK writes.
+    pub fn decoded_controller(&mut self, controller_id: u32) -> Result<OpenRgbControllerSnapshot, String> {
+        parse_controller_snapshot(&self.controller_snapshot(controller_id)?)
+    }
+
     fn send_read_only(&mut self, id: u32, command: u32, data: &[u8]) -> Result<(), String> {
         if !matches!(command, 0 | 1 | 40) {
             return Err("Refusing non-read-only OpenRGB SDK command".into());
@@ -249,5 +252,200 @@ mod transport_tests {
         assert!(parse_controller_ids(&[]).is_err());
         assert!(parse_controller_ids(&1u32.to_le_bytes()).is_err());
         assert!(parse_controller_ids(&257u32.to_le_bytes()).is_err());
+    }
+}
+
+/// SDK v6 controller snapshot, including the exact raw mode records required
+/// for a future verified restoration transaction. No hardware writes occur.
+#[derive(Clone, Debug)]
+pub struct OpenRgbControllerSnapshot {
+    pub name: String,
+    pub serial: String,
+    pub active: usize,
+    pub modes: Vec<(String, Vec<u8>)>,
+    pub zone_counts: Vec<u32>,
+    pub led_names: Vec<String>,
+    pub colors: Vec<[u8; 4]>,
+    pub matrix: Vec<u32>,
+    pub width: usize,
+    pub height: usize,
+}
+
+impl OpenRgbControllerSnapshot {
+    /// Convert to the hardware-independent selection contract. Controllers
+    /// without a single usable matrix remain discoverable but unselectable.
+    pub fn descriptor(&self, controller_id: u32) -> crate::select_ambient_device::AmbientDeviceDescriptor {
+        let matrix = if self.width > 0 && self.height > 0 &&
+            self.width.checked_mul(self.height) == Some(self.matrix.len()) &&
+            self.zone_counts.len() == 1 {
+            Some(crate::manage_ambient_lighting::LedMatrix {
+                columns: self.width, rows: self.height, indices: self.matrix.clone(),
+                led_count: self.led_names.len(),
+            })
+        } else { None };
+        crate::select_ambient_device::AmbientDeviceDescriptor {
+            controller_id, display_name: self.name.clone(), serial: self.serial.clone(),
+            led_count: self.led_names.len(), matrix,
+            modes: self.modes.iter().map(|(name, _)| name.clone()).collect(),
+            active_mode: self.active,
+        }
+    }
+}
+
+struct ControllerReader<'a> { data: &'a [u8], at: usize }
+impl<'a> ControllerReader<'a> {
+    fn new(data: &'a [u8]) -> Self { Self { data, at: 0 } }
+    fn take(&mut self, n: usize) -> Result<&'a [u8], String> {
+        let end = self.at.checked_add(n).ok_or("Data offset overflow")?;
+        let slice = self.data.get(self.at..end).ok_or_else(|| format!("Truncated controller record at offset {}", self.at))?;
+        self.at = end;
+        Ok(slice)
+    }
+    fn u16(&mut self) -> Result<u16, String> { Ok(u16::from_le_bytes(self.take(2)?.try_into().unwrap())) }
+    fn u32(&mut self) -> Result<u32, String> { Ok(u32::from_le_bytes(self.take(4)?.try_into().unwrap())) }
+    fn i32(&mut self) -> Result<i32, String> { Ok(i32::from_le_bytes(self.take(4)?.try_into().unwrap())) }
+    fn string(&mut self) -> Result<String, String> {
+        let len = self.u16()? as usize;
+        if len > 1024 * 1024 { return Err("Implausible string length".into()); }
+        Ok(String::from_utf8_lossy(self.take(len)?).trim_end_matches('\0').to_string())
+    }
+    fn long_string(&mut self) -> Result<String, String> {
+        let len = self.u32()? as usize;
+        if len > 1024 * 1024 { return Err("Implausible long string length".into()); }
+        Ok(String::from_utf8_lossy(self.take(len)?).trim_end_matches('\0').to_string())
+    }
+    fn matrix(&mut self) -> Result<Option<(u32, u32, usize)>, String> {
+        let len = self.u16()? as usize;
+        if len == 0 { return Ok(None); }
+        if len < 8 || (len - 8) % 4 != 0 { return Err("Malformed LED matrix".into()); }
+        let bytes = self.take(len)?;
+        let mut r = ControllerReader::new(bytes);
+        let height = r.u32()?;
+        let width = r.u32()?;
+        if (height as u64) * (width as u64) != ((len - 8) / 4) as u64 { return Err("Matrix dimensions mismatch".into()); }
+        let mut mapped = 0;
+        for _ in 0..((len - 8) / 4) { if r.u32()? != u32::MAX { mapped += 1; } }
+        Ok(Some((width, height, mapped)))
+    }
+    fn mode(&mut self) -> Result<String, String> {
+        let name = self.string()?;
+        self.take(11 * 4)?;
+        let colors = self.u16()? as usize;
+        self.take(colors.checked_mul(4).ok_or("Color count overflow")?)?;
+        Ok(name)
+    }
+}
+
+fn parse_controller_snapshot(payload: &[u8]) -> Result<OpenRgbControllerSnapshot, String> {
+    let mut r = ControllerReader::new(payload);
+    if r.u32()? as usize != payload.len() { return Err("Controller record size mismatch".into()); }
+    r.i32()?;
+    let name = r.string()?;
+    r.string()?; r.string()?; r.string()?;
+    let serial = r.string()?;
+    r.string()?;
+    let count = r.u16()? as usize;
+    let active = r.i32()?;
+    if count > 512 || active < 0 { return Err("Invalid mode list".into()); }
+    let mut modes = Vec::new();
+    for _ in 0..count {
+        let start = r.at;
+        let mode_name = r.mode()?;
+        modes.push((mode_name, payload[start..r.at].to_vec()));
+    }
+    let zones = r.u16()? as usize;
+    if zones > 512 { return Err("Invalid zone count".into()); }
+    let mut zone_counts = Vec::new();
+    let mut matrix = Vec::new();
+    let (mut width, mut height) = (0usize, 0usize);
+    for _ in 0..zones {
+        r.string()?; r.i32()?; r.u32()?; r.u32()?;
+        zone_counts.push(r.u32()?);
+        let matrix_start = r.at;
+        if let Some((w, h, _)) = r.matrix()? {
+            if zones == 1 {
+                width = w as usize;
+                height = h as usize;
+                let mut mr = ControllerReader::new(&payload[matrix_start..r.at]);
+                let _len = mr.u16()?;
+                mr.u32()?; mr.u32()?;
+                for _ in 0..width * height { matrix.push(mr.u32()?); }
+            }
+        }
+        let segments = r.u16()? as usize;
+        if segments > 2048 { return Err("Invalid segment count".into()); }
+        for _ in 0..segments {
+            r.string()?; r.i32()?; r.u32()?; r.u32()?; r.matrix()?; r.u32()?;
+        }
+        r.u32()?; r.i32()?;
+        let zmodes = r.u16()? as usize;
+        if zmodes > 512 { return Err("Invalid zone mode count".into()); }
+        for _ in 0..zmodes { r.mode()?; }
+        r.string()?;
+    }
+    let led_count = r.u16()? as usize;
+    if led_count > 10000 { return Err("Invalid LED count".into()); }
+    let mut led_names = Vec::new();
+    for _ in 0..led_count { led_names.push(r.string()?); }
+    let color_count = r.u16()? as usize;
+    if color_count > 10000 { return Err("Invalid color count".into()); }
+    let mut colors = Vec::new();
+    for _ in 0..color_count { colors.push(r.take(4)?.try_into().unwrap()); }
+    let alt = r.u16()? as usize;
+    for _ in 0..alt { r.string()?; }
+    r.u32()?; r.string()?; r.long_string()?;
+    if r.at != payload.len() { return Err("Unparsed controller bytes".into()); }
+    if active as usize >= modes.len() { return Err("Active OpenRGB mode is out of range".into()); }
+    if led_names.len() != colors.len() { return Err("OpenRGB LED and color counts disagree".into()); }
+    Ok(OpenRgbControllerSnapshot { name, serial, active: active as usize, modes, zone_counts, led_names, colors, matrix, width, height })
+}
+
+
+#[cfg(test)]
+mod controller_snapshot_tests {
+    use super::*;
+
+    #[test]
+    fn rejects_truncated_and_inconsistent_records() {
+        assert!(parse_controller_snapshot(&[]).is_err());
+        assert!(parse_controller_snapshot(&[4, 0, 0, 0]).is_err());
+    }
+
+    fn short_string(out: &mut Vec<u8>, value: &str) {
+        out.extend_from_slice(&(value.len() as u16).to_le_bytes());
+        out.extend_from_slice(value.as_bytes());
+    }
+
+    #[test]
+    fn decodes_generic_controller_and_preserves_original_mode_bytes() {
+        let mut data = vec![0u8; 4];
+        data.extend_from_slice(&0i32.to_le_bytes());
+        for field in ["Generic LED Device", "vendor", "description", "version", "serial", "location"] {
+            short_string(&mut data, field);
+        }
+        data.extend_from_slice(&2u16.to_le_bytes());
+        data.extend_from_slice(&0i32.to_le_bytes());
+        let mut original = Vec::new();
+        short_string(&mut original, "Wave");
+        original.extend_from_slice(&[0u8; 44]);
+        original.extend_from_slice(&0u16.to_le_bytes());
+        data.extend_from_slice(&original);
+        short_string(&mut data, "Direct");
+        data.extend_from_slice(&[0u8; 44]);
+        data.extend_from_slice(&0u16.to_le_bytes());
+        data.extend_from_slice(&0u16.to_le_bytes()); // zones
+        data.extend_from_slice(&0u16.to_le_bytes()); // LEDs
+        data.extend_from_slice(&0u16.to_le_bytes()); // colors
+        data.extend_from_slice(&0u16.to_le_bytes()); // alternative names
+        data.extend_from_slice(&0u32.to_le_bytes());
+        short_string(&mut data, "");
+        data.extend_from_slice(&0u32.to_le_bytes());
+        let len = data.len() as u32;
+        data[..4].copy_from_slice(&len.to_le_bytes());
+        let snapshot = parse_controller_snapshot(&data).unwrap();
+        assert_eq!(snapshot.name, "Generic LED Device");
+        assert_eq!(snapshot.modes[0].1, original);
+        assert_eq!(snapshot.descriptor(5).controller_id, 5);
+        assert!(snapshot.descriptor(5).matrix.is_none());
     }
 }
