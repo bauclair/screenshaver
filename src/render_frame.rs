@@ -28,6 +28,10 @@ struct AmbientSamplingDiagnostic {
     last_report: Instant,
     disabled: bool,
     live_dropped: u64,
+    live_accepted: u64,
+    live_submit_errors: u64,
+    sampling_errors: u64,
+    rejected_frame_hooks: u64,
     live_hardware: Option<crate::manage_openrgb_session::ShaderLightingSession>,
 }
 
@@ -43,11 +47,25 @@ impl AmbientSamplingDiagnostic {
             last_report: Instant::now(),
             disabled: false,
             live_dropped: 0,
+            live_accepted: 0,
+            live_submit_errors: 0,
+            sampling_errors: 0,
+            rejected_frame_hooks: 0,
             live_hardware: None,
         })
     }
 
+    fn report_pipeline(&self, stage: &str) {
+        log_information(&format!(
+            "[AMBIENT_SCREENSAVER_DIAG] {stage}: captured={} accepted={} queue_dropped={} submit_errors={} sampling_errors={} rejected_hooks={} hardware_active={} sampling_disabled={}",
+            self.captured, self.live_accepted, self.live_dropped,
+            self.live_submit_errors, self.sampling_errors, self.rejected_frame_hooks,
+            self.live_hardware.is_some(), self.disabled,
+        ));
+    }
+
     fn stop_live_hardware(&mut self) {
+        self.report_pipeline("before_stop");
         if let Some(session) = self.live_hardware.take() {
             match session.stop() {
                 Ok((submitted, stats)) => log_information(&format!(
@@ -61,7 +79,10 @@ impl AmbientSamplingDiagnostic {
     }
 
     fn observe(&mut self, framebuffer: u32, width: u32, height: u32) {
-        if self.disabled || framebuffer != 0 || width == 0 || height == 0 { return; }
+        if self.disabled || framebuffer != 0 || width == 0 || height == 0 {
+            self.rejected_frame_hooks += 1;
+            return;
+        }
         let source = crate::manage_ambient_lighting::FrameSource {
             framebuffer, width, height,
         };
@@ -72,8 +93,9 @@ impl AmbientSamplingDiagnostic {
                 if let Some(ref mut hardware) = self.live_hardware {
                     match hardware.submit(&frame) {
                         Ok(false) => self.live_dropped += 1,
-                        Ok(true) => {},
+                        Ok(true) => self.live_accepted += 1,
                         Err(error) => {
+                            self.live_submit_errors += 1;
                             log_warning(&format!("[AMBIENT_OPENRGB] Live update failed: {error}"));
                             self.stop_live_hardware();
                         }
@@ -89,11 +111,13 @@ impl AmbientSamplingDiagnostic {
                         self.total_us / self.captured as u128,
                         self.maximum_us, rgb[0], rgb[1], rgb[2],
                     ));
+                    self.report_pipeline("periodic");
                     self.last_report = Instant::now();
                 }
             }
             Ok(None) => {}
             Err(error) => {
+                self.sampling_errors += 1;
                 self.disabled = true;
                 log_warning(&format!(
                     "[AMBIENT_DIAGNOSTIC] Sampling disabled after error: {error}"
@@ -353,6 +377,7 @@ impl FrameRenderer {
             Ok(address) => match crate::manage_openrgb_session::ShaderLightingSession::start(address, controller_id) {
                 Ok(session) => {
                     diagnostic.borrow_mut().live_hardware = Some(session);
+                    diagnostic.borrow().report_pipeline("after_acquisition");
                     log_information(&format!("[AMBIENT_OPENRGB] Screensaver acquired controller {controller_id} after wallpaper pause"));
                 }
                 Err(error) => log_warning(&format!("[AMBIENT_OPENRGB] Screensaver acquisition refused: {error}")),
@@ -531,6 +556,7 @@ impl Drop for FrameRenderer {
                 diagnostic.maximum_us,
             ));
             diagnostic.stop_live_hardware();
+            diagnostic.report_pipeline("final");
             unsafe { diagnostic.sampler.destroy(); }
         }
     }
