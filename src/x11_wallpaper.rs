@@ -564,6 +564,7 @@ struct WallpaperAmbient {
     sampler: crate::manage_ambient_lighting::FramebufferSampler,
     session: Option<crate::manage_openrgb_session::ShaderLightingSession>,
     disabled: bool,
+    restoration_verified: bool,
 }
 
 impl WallpaperAmbient {
@@ -573,6 +574,7 @@ impl WallpaperAmbient {
                 22, 12, Duration::from_millis(50))?,
             session: None,
             disabled: false,
+            restoration_verified: true,
         })
     }
 
@@ -587,18 +589,29 @@ impl WallpaperAmbient {
             Err(error) => { diagnostic(&format!("[AMBIENT_OPENRGB] Invalid endpoint: {error}")); self.disabled = true; return; }
         };
         match crate::manage_openrgb_session::ShaderLightingSession::start(address, controller_id) {
-            Ok(session) => { self.session = Some(session); diagnostic("[AMBIENT_OPENRGB] X11 wallpaper acquired keyboard"); }
+            Ok(session) => { self.session = Some(session); self.restoration_verified = false; diagnostic("[AMBIENT_OPENRGB] X11 wallpaper acquired keyboard"); }
             Err(error) => { diagnostic(&format!("[AMBIENT_OPENRGB] X11 wallpaper acquisition refused: {error}")); self.disabled = true; }
         }
     }
 
-    fn release(&mut self) {
+    // A pause acknowledgement must never claim successful lighting handoff
+    // after restoration failed. Guarded acquisition independently checks the
+    // durable recovery record before allowing another renderer to take over.
+    fn release(&mut self) -> bool {
         if let Some(session) = self.session.take() {
             match session.stop() {
-                Ok(_) => diagnostic("[AMBIENT_OPENRGB] X11 wallpaper restored keyboard"),
-                Err(error) => { diagnostic(&format!("[AMBIENT_OPENRGB] X11 wallpaper release unverified: {error}")); self.disabled = true; }
+                Ok(_) => {
+                    self.restoration_verified = true;
+                    diagnostic("[AMBIENT_OPENRGB] X11 wallpaper restored keyboard");
+                }
+                Err(error) => {
+                    diagnostic(&format!("[AMBIENT_OPENRGB] X11 wallpaper release unverified: {error}"));
+                    self.disabled = true;
+                    self.restoration_verified = false;
+                }
             }
         }
+        self.restoration_verified
     }
 
     fn observe(&mut self, framebuffer: u32, width: u32, height: u32) {
@@ -679,9 +692,14 @@ fn run_window_loop(
         if control.pause_requested() {
             if !paused {
                 paused = true;
-                if let Some(ref ambient) = ambient { ambient.borrow_mut().release(); }
-                control.acknowledge_paused();
-                diagnostic("X11 wallpaper rendering paused.");
+                let lighting_released = ambient.as_ref()
+                    .is_none_or(|ambient| ambient.borrow_mut().release());
+                if lighting_released {
+                    control.acknowledge_paused();
+                    diagnostic("X11 wallpaper rendering paused; ambient ownership released.");
+                } else {
+                    diagnostic("[AMBIENT_OPENRGB] X11 wallpaper paused, but restoration is unverified; withholding pause acknowledgement.");
+                }
             }
 
             thread::sleep(

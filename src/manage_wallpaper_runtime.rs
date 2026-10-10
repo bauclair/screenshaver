@@ -93,6 +93,8 @@ impl WallpaperRuntimeControl {
             Ordering::SeqCst,
         );
 
+        // A previous pause acknowledgement must not satisfy a new request.
+        self.pause_acknowledged.store(false, Ordering::SeqCst);
 
         self.pause_requested.store(
             true,
