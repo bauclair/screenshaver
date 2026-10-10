@@ -691,6 +691,7 @@ fn run_window_loop(
 
         if control.pause_requested() {
             if !paused {
+                control.acknowledge_pause_detected();
                 paused = true;
                 let lighting_released = ambient.as_ref()
                     .is_none_or(|ambient| ambient.borrow_mut().release());

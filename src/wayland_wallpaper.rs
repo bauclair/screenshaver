@@ -3706,6 +3706,7 @@ fn render_mirror_frames(
                         &crate::locate_paths::runtime_log_path(),
                         "[AMBIENT_HANDOFF_DIAG] Wayland renderer detected pause request",
                     );
+                    control.acknowledge_pause_detected();
                     let release_started = Instant::now();
                     paused =
                         true;

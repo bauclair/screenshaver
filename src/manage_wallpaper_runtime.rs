@@ -52,6 +52,7 @@ pub struct WallpaperRuntimeControl {
     active: Arc<AtomicBool>,
     pause_requested: Arc<AtomicBool>,
     pause_acknowledged: Arc<AtomicBool>,
+    pause_detected: Arc<AtomicBool>,
     resume_frame_ready: Arc<AtomicBool>,
     pending_policy_reload:
         Arc<Mutex<Option<WallpaperPolicyReload>>>,
@@ -69,6 +70,7 @@ impl WallpaperRuntimeControl {
             active: Arc::new(AtomicBool::new(false)),
             pause_requested: Arc::new(AtomicBool::new(false)),
             pause_acknowledged: Arc::new(AtomicBool::new(false)),
+            pause_detected: Arc::new(AtomicBool::new(false)),
             resume_frame_ready: Arc::new(AtomicBool::new(true)),
             pending_policy_reload:
                 Arc::new(Mutex::new(None)),
@@ -93,51 +95,72 @@ impl WallpaperRuntimeControl {
             Ordering::SeqCst,
         );
 
-        // A previous pause acknowledgement must not satisfy a new request.
+        // Reset both signals before publishing the new pause request.
         self.pause_acknowledged.store(false, Ordering::SeqCst);
+        self.pause_detected.store(false, Ordering::SeqCst);
+        self.pause_requested.store(true, Ordering::SeqCst);
 
-        self.pause_requested.store(
-            true,
-            Ordering::SeqCst,
-        );
-
-        let diagnostic_started = std::time::Instant::now();
+        let started = std::time::Instant::now();
+        let detection_deadline = started + Duration::from_millis(500);
+        let overall_deadline = started + Duration::from_secs(2);
         crate::logger::warning(
             &crate::locate_paths::runtime_log_path(),
-            "[AMBIENT_HANDOFF_DIAG] Screensaver requested wallpaper pause (500ms deadline)",
+            "[AMBIENT_HANDOFF_DIAG] Screensaver requested wallpaper pause (500ms detection, 2000ms overall deadline)",
         );
 
-
-        let deadline =
-            std::time::Instant::now()
-                + Duration::from_millis(500);
-
-
+        // Stage 1: confirm the wallpaper renderer has entered its pause path.
         while running.load(Ordering::SeqCst)
             && self.active.load(Ordering::SeqCst)
+            && !self.pause_detected.load(Ordering::SeqCst)
             && !self.pause_acknowledged.load(Ordering::SeqCst)
-            && std::time::Instant::now() < deadline
+            && std::time::Instant::now() < detection_deadline
         {
-            std::thread::sleep(
-                Duration::from_millis(1)
-            );
+            std::thread::sleep(Duration::from_millis(1));
+        }
+
+        let detected = self.pause_detected.load(Ordering::SeqCst);
+        let early_acknowledged = self.pause_acknowledged.load(Ordering::SeqCst);
+        crate::logger::warning(
+            &crate::locate_paths::runtime_log_path(),
+            &format!(
+                "[AMBIENT_HANDOFF_DIAG] Pause detection stage ended after {}ms: detected={}, acknowledged={}",
+                started.elapsed().as_millis(), detected, early_acknowledged,
+            ),
+        );
+
+        // Stage 2: only a renderer that detected the request may use the
+        // remaining budget to stop its worker and verify hardware restoration.
+        if detected || early_acknowledged {
+            while running.load(Ordering::SeqCst)
+                && self.active.load(Ordering::SeqCst)
+                && !self.pause_acknowledged.load(Ordering::SeqCst)
+                && std::time::Instant::now() < overall_deadline
+            {
+                std::thread::sleep(Duration::from_millis(1));
+            }
         }
 
         let still_active = self.active.load(Ordering::SeqCst);
         let acknowledged = self.pause_acknowledged.load(Ordering::SeqCst);
+        let still_running = running.load(Ordering::SeqCst);
         crate::logger::warning(
             &crate::locate_paths::runtime_log_path(),
             &format!(
-                "[AMBIENT_HANDOFF_DIAG] Screensaver pause wait ended after {}ms: active={}, acknowledged={}, running={}",
-                diagnostic_started.elapsed().as_millis(),
-                still_active,
-                acknowledged,
-                running.load(Ordering::SeqCst),
+                "[AMBIENT_HANDOFF_DIAG] Screensaver pause wait ended after {}ms: detected={}, active={}, acknowledged={}, running={}",
+                started.elapsed().as_millis(), detected, still_active,
+                acknowledged, still_running,
             ),
         );
+        // Acknowledgment is authoritative; a terminated wallpaper backend
+        // cannot continue to own the device, but its durable recovery record
+        // still guards any subsequent OpenRGB acquisition.
         !still_active || acknowledged
     }
 
+    /// Called by the wallpaper render thread before releasing OpenRGB.
+    pub fn acknowledge_pause_detected(&self) {
+        self.pause_detected.store(true, Ordering::SeqCst);
+    }
 
     pub fn resume_and_wait_for_frame(
         &self,
