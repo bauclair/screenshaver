@@ -603,6 +603,229 @@ fn openrgb_run_physical_test(endpoint: &str, controller_id: u32, pattern: OpenRg
     }
 }
 
+
+// UI-only perimeter editor. No database writes or OpenRGB hardware interaction.
+// Coordinates are normalized and independent of the editor's aspect ratio.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OpenRgbLayout { EntireDevice, MultiZonePerimeter }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OpenRgbEdge { Top, Right, Bottom, Left }
+impl OpenRgbEdge {
+    const ALL: [Self; 4] = [Self::Top, Self::Right, Self::Bottom, Self::Left];
+    fn name(self) -> &'static str {
+        match self { Self::Top => "Top", Self::Right => "Right",
+            Self::Bottom => "Bottom", Self::Left => "Left" }
+    }
+}
+#[derive(Clone, Debug)]
+struct OpenRgbSegment {
+    id: u64,
+    end: f32, // Clockwise normalized end position on its edge.
+    assignment: Option<String>,
+    reverse: bool,
+}
+#[derive(Clone, Debug)]
+struct OpenRgbMappingEditor {
+    layout: OpenRgbLayout,
+    aspect: usize,
+    edges: [Vec<OpenRgbSegment>; 4],
+    selected: (usize, u64),
+    next_id: u64,
+    pending_delete: Option<(usize, usize)>,
+}
+impl Default for OpenRgbMappingEditor {
+    fn default() -> Self {
+        let edges = std::array::from_fn(|index| vec![OpenRgbSegment {
+            id: index as u64 + 1, end: 1.0, assignment: None, reverse: false,
+        }]);
+        Self { layout: OpenRgbLayout::EntireDevice, aspect: 0, edges,
+            selected: (0, 1), next_id: 5, pending_delete: None }
+    }
+}
+fn openrgb_mapping_editor() -> &'static std::sync::Mutex<OpenRgbMappingEditor> {
+    static EDITOR: OnceLock<std::sync::Mutex<OpenRgbMappingEditor>> = OnceLock::new();
+    EDITOR.get_or_init(|| std::sync::Mutex::new(OpenRgbMappingEditor::default()))
+}
+fn openrgb_draw_mapping_editor(ui: &mut egui::Ui, state: &OpenRgbUiState) {
+    let mut editor = openrgb_mapping_editor().lock().unwrap_or_else(|e| e.into_inner());
+    ui.horizontal(|ui| {
+        ui.label("Mapping Layout:");
+        egui::ComboBox::from_id_source("openrgb_mapping_layout")
+            .selected_text(match editor.layout {
+                OpenRgbLayout::EntireDevice => "Entire Device",
+                OpenRgbLayout::MultiZonePerimeter => "Multi-Zone Perimeter",
+            })
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut editor.layout, OpenRgbLayout::EntireDevice, "Entire Device");
+                ui.selectable_value(&mut editor.layout, OpenRgbLayout::MultiZonePerimeter, "Multi-Zone Perimeter");
+            });
+    });
+    if editor.layout == OpenRgbLayout::EntireDevice {
+        ui.label("Full-frame spatial sampling. Used for windowshaders and partial-screen surfaces.");
+        ui.label("Device selection remains on the Devices subtab.");
+        return;
+    }
+    const ASPECTS: [(&str, f32); 7] = [
+        ("Auto (Current Display)", 16.0/9.0), ("16:9", 16.0/9.0),
+        ("21:9", 21.0/9.0), ("32:9", 32.0/9.0),
+        ("16:10", 16.0/10.0), ("4:3", 4.0/3.0), ("3:2", 3.0/2.0),
+    ];
+    ui.horizontal(|ui| {
+        ui.label("Editor aspect ratio:");
+        egui::ComboBox::from_id_source("openrgb_mapping_aspect")
+            .selected_text(ASPECTS[editor.aspect].0)
+            .show_ui(ui, |ui| {
+                for (i, (name, _)) in ASPECTS.iter().enumerate() {
+                    ui.selectable_value(&mut editor.aspect, i, *name);
+                }
+            });
+    });
+    let usable = ui.available_width().max(160.0);
+    let height = (usable - 40.0) / (32.0 / 9.0);
+    let height = height.min(190.0).max(65.0);
+    let width = height * ASPECTS[editor.aspect].1;
+    let (outer, _) = ui.allocate_exact_size(
+        egui::vec2(usable, height + 42.0), egui::Sense::hover());
+    let screen = egui::Rect::from_center_size(
+        egui::pos2(outer.center().x, outer.center().y),
+        egui::vec2(width, height));
+    let painter = ui.painter().clone();
+    painter.rect_filled(screen, 2.0, egui::Color32::from_rgb(30, 48, 70));
+    painter.rect_stroke(screen, 2.0, egui::Stroke::new(1.0, egui::Color32::GRAY), egui::StrokeKind::Inside);
+    let mut zone_number = 0usize;
+    for edge_index in 0..4 {
+        let edge = OpenRgbEdge::ALL[edge_index];
+        let len = editor.edges[edge_index].len();
+        let mut previous = 0.0f32;
+        for segment_index in 0..len {
+            zone_number += 1;
+            let segment = editor.edges[edge_index][segment_index].clone();
+            let start = previous;
+            let end = segment.end;
+            previous = end;
+            let point = |t: f32| match edge {
+                OpenRgbEdge::Top => egui::pos2(screen.left() + t * width, screen.top() - 9.0),
+                OpenRgbEdge::Right => egui::pos2(screen.right() + 9.0, screen.top() + t * height),
+                OpenRgbEdge::Bottom => egui::pos2(screen.right() - t * width, screen.bottom() + 9.0),
+                OpenRgbEdge::Left => egui::pos2(screen.left() - 9.0, screen.bottom() - t * height),
+            };
+            let a = point(start);
+            let b = point(end);
+            let selected = editor.selected == (edge_index, segment.id);
+            painter.line_segment([a,b], egui::Stroke::new(7.0,
+                if selected { egui::Color32::LIGHT_BLUE } else { egui::Color32::DARK_GRAY }));
+            let mid = point((start + end) / 2.0);
+            painter.text(mid, egui::Align2::CENTER_CENTER, zone_number.to_string(),
+                egui::FontId::proportional(10.0), egui::Color32::WHITE);
+            // Keep zone hit testing clear of the divider's larger drag target.
+            let axis_gap = 12.0_f32.min((if edge_index % 2 == 0 {
+                (b.x - a.x).abs()
+            } else {
+                (b.y - a.y).abs()
+            }) * 0.25);
+            let hit = if edge_index % 2 == 0 {
+                egui::Rect::from_min_max(
+                    egui::pos2(a.x.min(b.x) + axis_gap, a.y.min(b.y) - 7.0),
+                    egui::pos2(a.x.max(b.x) - axis_gap, a.y.max(b.y) + 7.0),
+                )
+            } else {
+                egui::Rect::from_min_max(
+                    egui::pos2(a.x.min(b.x) - 7.0, a.y.min(b.y) + axis_gap),
+                    egui::pos2(a.x.max(b.x) + 7.0, a.y.max(b.y) - axis_gap),
+                )
+            };
+            let response = ui.interact(hit, egui::Id::new(("openrgb_zone",edge_index,segment.id)),
+                egui::Sense::click());
+            if response.clicked() { editor.selected = (edge_index,segment.id); }
+            response.context_menu(|ui| {
+                if ui.button("Split zone").clicked() {
+                    // Preserve the old segment's assignment on its first half.
+                    let midpoint = (start + end) / 2.0;
+                    if (end-start) * (if edge_index%2==0 {width} else {height}) >= 44.0 {
+                        let new_id = editor.next_id;
+                        editor.next_id += 1;
+                        editor.edges[edge_index][segment_index].end = midpoint;
+                        editor.edges[edge_index].insert(segment_index+1, OpenRgbSegment {
+                            id:new_id,end,assignment:None,reverse:false
+                        });
+                    }
+                    ui.close_menu();
+                }
+                // The zone and divider hit regions can overlap in egui. Offer
+                // deletion here as well, so it is always accessible from the
+                // segment immediately before the divider.
+                if segment_index + 1 < len && ui.button("Delete divider after this zone").clicked() {
+                    editor.pending_delete = Some((edge_index, segment_index));
+                    ui.close_menu();
+                }
+            });
+            if segment_index+1 < len {
+                let handle_pos = point(end);
+                let handle_rect = egui::Rect::from_center_size(handle_pos,egui::vec2(16.0,16.0));
+                painter.rect_filled(handle_rect,2.0,egui::Color32::LIGHT_GRAY);
+                let handle = ui.interact(handle_rect.expand(3.0),
+                    egui::Id::new(("openrgb_handle",edge_index,segment.id)),
+                    egui::Sense::click_and_drag());
+                if handle.dragged() {
+                    if let Some(pointer) = handle.interact_pointer_pos() {
+                        let t = match edge {
+                            OpenRgbEdge::Top => (pointer.x-screen.left())/width,
+                            OpenRgbEdge::Right => (pointer.y-screen.top())/height,
+                            OpenRgbEdge::Bottom => (screen.right()-pointer.x)/width,
+                            OpenRgbEdge::Left => (screen.bottom()-pointer.y)/height,
+                        };
+                        let min_gap = 18.0 / if edge_index%2==0 {width} else {height};
+                        let lo = if segment_index==0 {0.0} else {editor.edges[edge_index][segment_index-1].end};
+                        let hi = editor.edges[edge_index][segment_index+1].end;
+                        if hi-lo >= 2.0*min_gap {
+                            editor.edges[edge_index][segment_index].end = t.clamp(lo+min_gap,hi-min_gap);
+                        }
+                    }
+                }
+                handle.context_menu(|ui| {
+                    if ui.button("Delete divider").clicked() {
+                        editor.pending_delete=Some((edge_index,segment_index));
+                        ui.close_menu();
+                    }
+                });
+            }
+        }
+    }
+    if let Some((edge,index)) = editor.pending_delete.take() {
+        if index+1 < editor.edges[edge].len() {
+            // Keep the clockwise-later segment's assignment when merging.
+            let removed_id=editor.edges[edge][index].id;
+            editor.edges[edge].remove(index);
+            if editor.selected==(edge,removed_id) {
+                editor.selected=(edge,editor.edges[edge][index].id);
+            }
+        }
+    }
+    let (edge,id)=editor.selected;
+    if let Some(index)=editor.edges[edge].iter().position(|s|s.id==id) {
+        let start=if index==0 {0.0} else {editor.edges[edge][index-1].end};
+        let end=editor.edges[edge][index].end;
+        let number:usize=editor.edges[..edge].iter().map(Vec::len).sum::<usize>()+index+1;
+        ui.label(format!("Zone {number} — {} — {:.0}% to {:.0}%",
+            OpenRgbEdge::ALL[edge].name(),start*100.0,end*100.0));
+        let segment=&mut editor.edges[edge][index];
+        let mut assignment=segment.assignment.clone();
+        egui::ComboBox::from_id_source("openrgb_zone_assignment")
+            .selected_text(assignment.as_deref().unwrap_or("Unassigned"))
+            .show_ui(ui,|ui| {
+                ui.selectable_value(&mut assignment,None,"Unassigned");
+                for device in &state.devices {
+                    if device.eligible {
+                        ui.selectable_value(&mut assignment,Some(device.identity.clone()),&device.name);
+                    }
+                }
+            });
+        segment.assignment=assignment;
+        ui.checkbox(&mut segment.reverse,"Reverse LED Direction");
+    }
+    ui.small("Editor prototype: assignments and dividers are temporary; no database or LED writes.");
+}
+
 pub fn draw_openrgb(ui: &mut egui::Ui) {
     let selected_id = egui::Id::new("screenshaver_openrgb_nested_tab");
     let mut selected = ui.ctx().data(|data| {
@@ -815,83 +1038,8 @@ pub fn draw_openrgb(ui: &mut egui::Ui) {
                 }
                 OpenRgbNestedTab::Mapping => {
                     ui.heading("Mapping");
-                    ui.add_space(8.0);
-                    ui.label("Configure an LED region preset. This is a saved, inactive mapping draft; no LEDs are controlled.");
-                    if let Some(identity) = state.selected_identity.as_deref() {
-                        let matches: Vec<_> = state.devices.iter()
-                            .filter(|d| d.identity == identity).collect();
-                        if matches.len() == 1 && matches[0].eligible {
-                            let device = matches[0];
-                            ui.label(format!("Selected device: {}", device.name));
-                            let mut region = openrgb_load_region(identity).unwrap_or_else(|_| "all".into());
-                            let previous = region.clone();
-                            egui::ComboBox::from_id_source("openrgb_led_region_preset")
-                                .selected_text(OPENRGB_MATRIX_REGIONS.iter().chain(OPENRGB_LINEAR_REGIONS.iter())
-                                    .find(|r| r.0 == region).map(|r| r.1).unwrap_or("Entire device"))
-                                .width(220.0)
-                                .show_ui(ui, |ui| {
-                                    ui.selectable_value(&mut region, "all".into(), "Entire device");
-                                    if device.matrix {
-                                        for &(key, label, _, _, _, _) in OPENRGB_MATRIX_REGIONS.iter().skip(1) {
-                                            ui.selectable_value(&mut region, key.into(), label);
-                                        }
-                                    }
-                                    // Linear halves use discovered LED order; they do not imply physical left/right.
-                                    if device.leds > 1 {
-                                        for &(key, label, _, _, _, _) in OPENRGB_LINEAR_REGIONS {
-                                            ui.selectable_value(&mut region, key.into(), label);
-                                        }
-                                    }
-                                });
-                            if region != previous {
-                                let result = openrgb_save_region(identity, &region);
-                                let mut shared = openrgb_ui_state().lock().unwrap_or_else(|e| e.into_inner());
-                                shared.selection_message = match result {
-                                    Ok(()) => format!("LED region '{}' saved as an inactive mapping draft.", region),
-                                    Err(e) => e,
-                                };
-                            }
-                            if !state.selection_message.is_empty() { ui.label(&state.selection_message); }
-                            ui.add_space(8.0);
-                            if let Some(matrix) = &device.topology {
-                                match crate::manage_ambient_lighting::resolve_led_region(matrix, &region) {
-                                    Ok(indices) => {
-                                        ui.label(format!("Validated LED coverage: {} / {} LEDs", indices.len(), device.leds));
-                                        // Read-only software preview: synthetic 2x2 RGB test pattern,
-                                        // sampled through the existing mapper. No OpenGL or SDK writes.
-                                        let rgb: [u8; 12] = [255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0];
-                                        let base = vec![[0u8; 4]; device.leds];
-                                        match crate::manage_ambient_lighting::map_pixels(
-                                            &rgb, 2, 2, matrix,
-                                            crate::manage_ambient_lighting::MappingMode::Spatial, &base,
-                                        ) {
-                                            Ok(colors) => {
-                                                ui.label("Software sampling preview (synthetic four-color pattern):");
-                                                let mut preview = String::new();
-                                                for index in indices.iter().take(16) {
-                                                    let color = colors[*index];
-                                                    if !preview.is_empty() { preview.push_str("  "); }
-                                                    preview.push_str(&format!("LED {}: #{:02X}{:02X}{:02X}", index, color[0], color[1], color[2]));
-                                                }
-                                                ui.label(preview);
-                                                if indices.len() > 16 { ui.label(format!("Showing first 16 of {} LEDs", indices.len())); }
-                                            }
-                                            Err(error) => { ui.colored_label(ui.visuals().error_fg_color, error); }
-                                        }
-                                    }
-                                    Err(error) => { ui.colored_label(ui.visuals().error_fg_color, error); }
-                                }
-                            }
-                            ui.label("Region membership is computed from reported LED indices; no output is transmitted.");
-                            ui.label("Device-reported zones will be offered after zone names and LED membership are decoded and verified.");
-                        } else {
-                            ui.label("Selected device is unavailable, ambiguous, or incompatible. Saved configuration is retained.");
-                        }
-                    } else {
-                        ui.label("Select a device under Devices first.");
-                    }
-                    ui.add_space(8.0);
-                    ui.label("No hardware acquisition, mode changes, or LED writes occur here.");
+                    ui.add_space(4.0);
+                    openrgb_draw_mapping_editor(ui, &state);
                 }
                 OpenRgbNestedTab::Settings => {
                     ui.heading("Settings");
