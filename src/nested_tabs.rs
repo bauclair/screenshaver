@@ -632,6 +632,7 @@ struct OpenRgbMappingEditor {
     selected: (usize, u64),
     next_id: u64,
     pending_delete: Option<(usize, usize)>,
+    pending_conflict: Option<(usize, u64)>,
 }
 impl Default for OpenRgbMappingEditor {
     fn default() -> Self {
@@ -639,13 +640,29 @@ impl Default for OpenRgbMappingEditor {
             id: index as u64 + 1, end: 1.0, assignment: None, reverse: false,
         }]);
         Self { layout: OpenRgbLayout::EntireDevice, aspect: 0, edges,
-            selected: (0, 1), next_id: 5, pending_delete: None }
+            selected: (0, 1), next_id: 5, pending_delete: None, pending_conflict: None }
     }
 }
 fn openrgb_mapping_editor() -> &'static std::sync::Mutex<OpenRgbMappingEditor> {
     static EDITOR: OnceLock<std::sync::Mutex<OpenRgbMappingEditor>> = OnceLock::new();
     EDITOR.get_or_init(|| std::sync::Mutex::new(OpenRgbMappingEditor::default()))
 }
+// Merge clockwise-adjacent zones without silently discarding a usable assignment.
+fn openrgb_merge_mapping_zones(editor: &mut OpenRgbMappingEditor, edge: usize, index: usize) {
+    if index + 1 >= editor.edges[edge].len() { return; }
+    let first = editor.edges[edge][index].clone();
+    let second = editor.edges[edge][index + 1].clone();
+    editor.edges[edge][index].end = second.end;
+    if first.assignment.is_none() {
+        editor.edges[edge][index].assignment = second.assignment;
+        editor.edges[edge][index].reverse = second.reverse;
+    }
+    editor.edges[edge].remove(index + 1);
+    if editor.selected == (edge, second.id) {
+        editor.selected = (edge, first.id);
+    }
+}
+
 fn openrgb_draw_mapping_editor(ui: &mut egui::Ui, state: &OpenRgbUiState) {
     let mut editor = openrgb_mapping_editor().lock().unwrap_or_else(|e| e.into_inner());
     ui.horizontal(|ui| {
@@ -681,9 +698,9 @@ fn openrgb_draw_mapping_editor(ui: &mut egui::Ui, state: &OpenRgbUiState) {
             });
     });
     let usable = ui.available_width().max(160.0);
-    let height = (usable - 40.0) / (32.0 / 9.0);
-    let height = height.min(190.0).max(65.0);
-    let width = height * ASPECTS[editor.aspect].1;
+    let height = (usable - 48.0) / (32.0 / 9.0);
+    let height = height.min(190.0).max(45.0);
+    let width = (height * ASPECTS[editor.aspect].1).min(usable - 24.0);
     let (outer, _) = ui.allocate_exact_size(
         egui::vec2(usable, height + 42.0), egui::Sense::hover());
     let screen = egui::Rect::from_center_size(
@@ -717,6 +734,34 @@ fn openrgb_draw_mapping_editor(ui: &mut egui::Ui, state: &OpenRgbUiState) {
             let mid = point((start + end) / 2.0);
             painter.text(mid, egui::Align2::CENTER_CENTER, zone_number.to_string(),
                 egui::FontId::proportional(10.0), egui::Color32::WHITE);
+            // Only show direction for a currently discovered, uniquely identified,
+            // spatially eligible assignment with more than one addressable LED.
+            let direction_capable = segment.assignment.as_ref().is_some_and(|identity| {
+                state.devices.iter().filter(|d| d.identity == *identity && d.eligible && d.leds > 1).count() == 1
+            });
+            if direction_capable {
+                let direction = if segment.reverse { -1.0 } else { 1.0 };
+                let axis = b - a;
+                let length = axis.length();
+                if length >= 32.0 {
+                    let unit = axis / length * direction;
+                    let center = point((start + end) * 0.5);
+                    // Offset the arrow away from the numbered track.
+                    let normal = match edge {
+                        OpenRgbEdge::Top => egui::vec2(0.0, -15.0),
+                        OpenRgbEdge::Right => egui::vec2(15.0, 0.0),
+                        OpenRgbEdge::Bottom => egui::vec2(0.0, 15.0),
+                        OpenRgbEdge::Left => egui::vec2(-15.0, 0.0),
+                    };
+                    let tip = center + normal + unit * 8.0;
+                    let tail = center + normal - unit * 8.0;
+                    let color = egui::Color32::from_rgb(96, 220, 210);
+                    painter.line_segment([tail, tip], egui::Stroke::new(1.8, color));
+                    let perpendicular = egui::vec2(-unit.y, unit.x);
+                    painter.line_segment([tip, tip - unit * 5.0 + perpendicular * 4.0], egui::Stroke::new(1.8, color));
+                    painter.line_segment([tip, tip - unit * 5.0 - perpendicular * 4.0], egui::Stroke::new(1.8, color));
+                }
+            }
             // Keep zone hit testing clear of the divider's larger drag target.
             let axis_gap = 12.0_f32.min((if edge_index % 2 == 0 {
                 (b.x - a.x).abs()
@@ -738,32 +783,35 @@ fn openrgb_draw_mapping_editor(ui: &mut egui::Ui, state: &OpenRgbUiState) {
                 egui::Sense::click());
             if response.clicked() { editor.selected = (edge_index,segment.id); }
             response.context_menu(|ui| {
-                if ui.button("Split zone").clicked() {
-                    // Preserve the old segment's assignment on its first half.
+                let edge_pixels = if edge_index % 2 == 0 { width } else { height };
+                let can_split = (end - start) * edge_pixels >= 40.0;
+                if ui.add_enabled(can_split, egui::Button::new("Split Zone")).clicked() {
                     let midpoint = (start + end) / 2.0;
-                    if (end-start) * (if edge_index%2==0 {width} else {height}) >= 44.0 {
-                        let new_id = editor.next_id;
-                        editor.next_id += 1;
-                        editor.edges[edge_index][segment_index].end = midpoint;
-                        editor.edges[edge_index].insert(segment_index+1, OpenRgbSegment {
-                            id:new_id,end,assignment:None,reverse:false
-                        });
-                    }
+                    let new_id = editor.next_id;
+                    editor.next_id += 1;
+                    editor.edges[edge_index][segment_index].end = midpoint;
+                    editor.edges[edge_index].insert(segment_index + 1, OpenRgbSegment {
+                        id: new_id, end, assignment: None, reverse: false,
+                    });
                     ui.close_menu();
                 }
-                // The zone and divider hit regions can overlap in egui. Offer
-                // deletion here as well, so it is always accessible from the
-                // segment immediately before the divider.
-                if segment_index + 1 < len && ui.button("Delete divider after this zone").clicked() {
+                if ui.add_enabled(segment_index + 1 < len, egui::Button::new("Delete Divider")).clicked() {
                     editor.pending_delete = Some((edge_index, segment_index));
+                    ui.close_menu();
+                }
+                let reversed = editor.edges[edge_index][segment_index].reverse;
+                if ui.add_enabled(direction_capable, egui::Button::new(
+                    format!("{} Reverse LED Direction", if reversed { "☑" } else { "☐" })
+                )).clicked() {
+                    editor.edges[edge_index][segment_index].reverse = !reversed;
                     ui.close_menu();
                 }
             });
             if segment_index+1 < len {
                 let handle_pos = point(end);
-                let handle_rect = egui::Rect::from_center_size(handle_pos,egui::vec2(16.0,16.0));
+                let handle_rect = egui::Rect::from_center_size(handle_pos,egui::vec2(11.0,11.0));
                 painter.rect_filled(handle_rect,2.0,egui::Color32::LIGHT_GRAY);
-                let handle = ui.interact(handle_rect.expand(3.0),
+                let handle = ui.interact(handle_rect.expand(5.0),
                     egui::Id::new(("openrgb_handle",edge_index,segment.id)),
                     egui::Sense::click_and_drag());
                 if handle.dragged() {
@@ -783,7 +831,7 @@ fn openrgb_draw_mapping_editor(ui: &mut egui::Ui, state: &OpenRgbUiState) {
                     }
                 }
                 handle.context_menu(|ui| {
-                    if ui.button("Delete divider").clicked() {
+                    if ui.button("Delete Divider").clicked() {
                         editor.pending_delete=Some((edge_index,segment_index));
                         ui.close_menu();
                     }
@@ -791,15 +839,35 @@ fn openrgb_draw_mapping_editor(ui: &mut egui::Ui, state: &OpenRgbUiState) {
             }
         }
     }
-    if let Some((edge,index)) = editor.pending_delete.take() {
-        if index+1 < editor.edges[edge].len() {
-            // Keep the clockwise-later segment's assignment when merging.
-            let removed_id=editor.edges[edge][index].id;
-            editor.edges[edge].remove(index);
-            if editor.selected==(edge,removed_id) {
-                editor.selected=(edge,editor.edges[edge][index].id);
+    if let Some((edge, index)) = editor.pending_delete.take() {
+        if index + 1 < editor.edges[edge].len() {
+            let first = &editor.edges[edge][index];
+            let second = &editor.edges[edge][index + 1];
+            if first.assignment.is_some() && second.assignment.is_some()
+                && first.assignment != second.assignment
+            {
+                editor.pending_conflict = Some((edge, first.id));
+            } else {
+                openrgb_merge_mapping_zones(&mut editor, edge, index);
             }
         }
+    }
+    if let Some((edge, first_id)) = editor.pending_conflict {
+        if let Some(index) = editor.edges[edge].iter().position(|s| s.id == first_id) {
+            if index + 1 < editor.edges[edge].len() {
+                ui.colored_label(ui.visuals().warn_fg_color,
+                    "Both zones have different assignments. Merging will keep the first zone's assignment.");
+                ui.horizontal(|ui| {
+                    if ui.button("Merge zones").clicked() {
+                        openrgb_merge_mapping_zones(&mut editor, edge, index);
+                        editor.pending_conflict = None;
+                    }
+                    if ui.button("Cancel merge").clicked() {
+                        editor.pending_conflict = None;
+                    }
+                });
+            } else { editor.pending_conflict = None; }
+        } else { editor.pending_conflict = None; }
     }
     let (edge,id)=editor.selected;
     if let Some(index)=editor.edges[edge].iter().position(|s|s.id==id) {
@@ -821,7 +889,9 @@ fn openrgb_draw_mapping_editor(ui: &mut egui::Ui, state: &OpenRgbUiState) {
                 }
             });
         segment.assignment=assignment;
-        ui.checkbox(&mut segment.reverse,"Reverse LED Direction");
+        if segment.assignment.is_some() {
+            ui.small("LED direction is configured from the zone's right-click menu.");
+        }
     }
     ui.small("Editor prototype: assignments and dividers are temporary; no database or LED writes.");
 }
