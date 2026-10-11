@@ -109,3 +109,65 @@ pub fn paint_bulk_edit_border(
         egui::StrokeKind::Outside,
     );
 }
+
+/// A consistent Qt-inspired vertical navigation tab for Control Center.
+/// The full-width clickable surface shares the parent tabs' egui widget
+/// palette, typography and selected/disabled semantics.
+pub fn vertical_tab(
+    ui: &mut egui::Ui,
+    label: &str,
+    selected: bool,
+    enabled: bool,
+    width: f32,
+) -> egui::Response {
+    // Paint the tab directly: egui 0.33 Button has no text-alignment API.
+    // A fixed rectangle also prevents long labels from increasing row height.
+    let height = 28.0;
+    let (rect, response) = ui.allocate_exact_size(
+        egui::vec2(width, height),
+        if enabled { egui::Sense::click() } else { egui::Sense::hover() },
+    );
+    if ui.is_rect_visible(rect) {
+        let widgets = &ui.visuals().widgets;
+        let visuals = if !enabled {
+            &widgets.noninteractive
+        } else if response.is_pointer_button_down_on() {
+            &widgets.active
+        } else if response.hovered() {
+            &widgets.hovered
+        } else if selected {
+            &widgets.active
+        } else {
+            &widgets.inactive
+        };
+        ui.painter().rect(
+            rect,
+            visuals.corner_radius,
+            visuals.bg_fill,
+            visuals.bg_stroke,
+            egui::StrokeKind::Inside,
+        );
+        let font = egui::TextStyle::Button.resolve(ui.style());
+        ui.painter().text(
+            egui::pos2(rect.left() + 10.0, rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            label,
+            font,
+            if enabled { visuals.text_color() } else { ui.visuals().weak_text_color() },
+        );
+    }
+    response
+}
+
+/// Measure the longest localized label in a vertical rail, then use the
+/// same width for every tab. Include generous text insets to prevent
+/// egui from wrapping text into a second line.
+pub fn vertical_tab_rail_width(ui: &egui::Ui, labels: &[String], minimum: f32) -> f32 {
+    let font = egui::TextStyle::Button.resolve(ui.style());
+    let longest = ui.fonts_mut(|fonts| {
+        labels.iter().map(|label| {
+            fonts.layout_no_wrap(label.clone(), font.clone(), egui::Color32::WHITE).size().x
+        }).fold(0.0_f32, f32::max)
+    });
+    (longest + 32.0 * ui.ctx().pixels_per_point().min(2.0)).max(minimum)
+}

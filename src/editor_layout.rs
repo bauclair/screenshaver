@@ -24,7 +24,7 @@ const EDIT_WINDOW_REFERENCE_WIDTH: f32 =
     645.0;
 
 pub(crate) const EDIT_WINDOW_REFERENCE_HEIGHT_PIXELS: f32 =
-    658.0;
+    692.0;
 
 pub(crate) const EDIT_WINDOW_REFERENCE_DISPLAY_HEIGHT: f32 =
     1080.0;
@@ -82,6 +82,7 @@ enum EditorTab {
     Rendering,
     Textures,
     PostProcessing,
+    OpenRgb,
     Config,
 }
 
@@ -3823,6 +3824,10 @@ impl EditWindowOverlay {
                                             );
                                         }
 
+                                        EditorTab::OpenRgb => {
+                                            crate::nested_tabs::draw_openrgb(ui);
+                                        }
+
                                         EditorTab::Config => {
                                             ui.add_enabled_ui(
                                                 !bulk_edit_mode,
@@ -3850,6 +3855,8 @@ impl EditWindowOverlay {
                                             != EditorTab::Playlists
                                         && active_tab
                                             != EditorTab::Config
+                                        && active_tab
+                                            != EditorTab::OpenRgb
                                         && hover_help_message.is_none()
                                     {
                                         hover_help_message =
@@ -5567,68 +5574,64 @@ fn draw_editor_tab_bar(
     active_tab: &mut EditorTab,
     bulk_edit_mode: bool,
 ) {
-    ui.horizontal(
-        |ui| {
-            for (
-                tab,
-                label,
-            ) in [
-                (
-                    EditorTab::Policies,
-                    crate::manage_localization::runtime_text("editor.tab.policies"),
-                ),
-                (
-                    EditorTab::Playlists,
-                    crate::manage_localization::runtime_text("editor.tab.playlists"),
-                ),
-                (
-                    EditorTab::Rendering,
-                    crate::manage_localization::runtime_text("editor.tab.rendering"),
-                ),
-                (
-                    EditorTab::Textures,
-                    crate::manage_localization::runtime_text("editor.tab.textures"),
-                ),
-                (
-                    EditorTab::PostProcessing,
-                    crate::manage_localization::runtime_text("editor.tab.post_processing"),
-                ),
-                (
-                    EditorTab::Config,
-                    crate::manage_localization::runtime_text("editor.tab.configuration"),
-                ),
-            ] {
-                let selected =
-                    *active_tab == tab;
+    // Both rails use identical sizing and typography. Tab widths are derived
+    // from localized label lengths rather than stretched to a common width.
+    const TOP_RAIL: [EditorTab; 5] = [
+        EditorTab::Policies,
+        EditorTab::Playlists,
+        EditorTab::Rendering,
+        EditorTab::Textures,
+        EditorTab::PostProcessing,
+    ];
+    const LOWER_RAIL: [EditorTab; 2] = [
+        EditorTab::OpenRgb,
+        EditorTab::Config,
+    ];
 
-                let tab_enabled =
-                    !bulk_edit_mode
-                        || tab != EditorTab::Config;
-
-
-                let response =
-                    ui.add_enabled(
-                        tab_enabled,
-                        egui::SelectableLabel::new(
-                            selected,
-                            egui::RichText::new(
-                                label
-                            )
-                            .strong(),
-                        ),
-                    );
-
-                if response.clicked() {
-                    *active_tab =
-                        tab;
+    for (rail_index, tabs) in [TOP_RAIL.as_slice(), LOWER_RAIL.as_slice()]
+        .into_iter()
+        .enumerate()
+    {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 3.0 * metrics.scale;
+            for &tab in tabs {
+                let label = match tab {
+                    EditorTab::Policies => crate::manage_localization::runtime_text("editor.tab.policies"),
+                    EditorTab::Playlists => crate::manage_localization::runtime_text("editor.tab.playlists"),
+                    EditorTab::Rendering => crate::manage_localization::runtime_text("editor.tab.rendering"),
+                    EditorTab::Textures => crate::manage_localization::runtime_text("editor.tab.textures"),
+                    EditorTab::PostProcessing => crate::manage_localization::runtime_text("editor.tab.post_processing"),
+                    EditorTab::OpenRgb => "OpenRGB".to_string(),
+                    EditorTab::Config => crate::manage_localization::runtime_text("editor.tab.configuration"),
+                };
+                let selected = *active_tab == tab;
+                let enabled = !bulk_edit_mode || tab != EditorTab::Config;
+                let visuals = &ui.visuals().widgets;
+                let fill = if selected {
+                    visuals.active.bg_fill
+                } else {
+                    visuals.inactive.bg_fill
+                };
+                let stroke = if selected {
+                    visuals.active.bg_stroke
+                } else {
+                    visuals.inactive.bg_stroke
+                };
+                let button = egui::Button::new(
+                    egui::RichText::new(label).strong()
+                )
+                .fill(fill)
+                .stroke(stroke)
+                .min_size(egui::vec2(0.0, 27.0 * metrics.scale));
+                if ui.add_enabled(enabled, button).clicked() {
+                    *active_tab = tab;
                 }
-
-                ui.add_space(
-                    3.0 * metrics.scale
-                );
             }
-        },
-    );
+        });
+        if rail_index == 0 {
+            ui.add_space(2.0 * metrics.scale);
+        }
+    }
 }
 
 

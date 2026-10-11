@@ -19,6 +19,101 @@ use crate::editor_layout::{
 };
 
 
+
+// OpenRGB navigation is intentionally independent of shader rendering and
+// hardware ownership. Until discovery/connection APIs are integrated, the
+// interface reports an unverified state rather than guessing availability.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OpenRgbNestedTab {
+    Status,
+    Devices,
+    Mapping,
+    Appearance,
+    Settings,
+}
+
+impl OpenRgbNestedTab {
+    const ALL: [Self; 5] = [
+        Self::Status, Self::Devices, Self::Mapping,
+        Self::Appearance, Self::Settings,
+    ];
+
+    fn label(self) -> String {
+        match self {
+            Self::Status => "Status",
+            Self::Devices => "Devices",
+            Self::Mapping => "Mapping",
+            Self::Appearance => "Appearance",
+            Self::Settings => "Settings",
+        }.to_string()
+    }
+}
+
+pub fn draw_openrgb(ui: &mut egui::Ui) {
+    let selected_id = egui::Id::new("screenshaver_openrgb_nested_tab");
+    let mut selected = ui.ctx().data(|data| {
+        data.get_temp::<OpenRgbNestedTab>(selected_id)
+            .unwrap_or(OpenRgbNestedTab::Status)
+    });
+
+    ui.horizontal(|ui| {
+        // Status and Settings are always reachable, including when the server
+        // is absent. Hardware-dependent pages will be enabled when live
+        // discovery is wired into this UI; no connection is probed per frame.
+        ui.vertical(|ui| {
+            let labels: Vec<String> = OpenRgbNestedTab::ALL.iter()
+                .map(|tab| tab.label()).collect();
+            let tab_width = crate::editor_theme::vertical_tab_rail_width(ui, &labels, 126.0);
+            ui.set_min_width(tab_width + 6.0);
+            for tab in OpenRgbNestedTab::ALL {
+                let enabled = matches!(tab, OpenRgbNestedTab::Status | OpenRgbNestedTab::Settings);
+                let response = crate::editor_theme::vertical_tab(
+                    ui, &tab.label(), selected == tab, enabled, tab_width,
+                );
+                if response.clicked() {
+                    selected = tab;
+                }
+                if !enabled {
+                    response.on_disabled_hover_text(
+                        "Requires a verified OpenRGB connection and compatible device. See Status."
+                    );
+                }
+                ui.add_space(4.0);
+            }
+        });
+        ui.separator();
+        ui.add_space(12.0);
+        ui.vertical(|ui| {
+            ui.set_width(ui.available_width());
+            match selected {
+                OpenRgbNestedTab::Status => {
+                    ui.heading("OpenRGB Status");
+                    ui.add_space(6.0);
+                    ui.label("Connection status: Not checked");
+                    ui.label("Device discovery: Not checked");
+                    ui.add_space(8.0);
+                    ui.label("OpenRGB is optional. To control lighting, install and start an OpenRGB server, or connect to an existing remote server.");
+                    ui.add_space(6.0);
+                    ui.label("On a local installation, enable the OpenRGB SDK server. For a remote server, ensure its address and port are reachable.");
+                    ui.add_space(6.0);
+                    ui.label("Automatic connection checks and device discovery will be added with the OpenRGB integration. No connection has been tested by this page.");
+                }
+                OpenRgbNestedTab::Settings => {
+                    ui.heading("Settings");
+                    ui.add_space(8.0);
+                    ui.label("Server address, port, update frequency, and diagnostics will be configured here.");
+                    ui.label("Connection settings are not yet editable in this initial layout.");
+                }
+                _ => {
+                    ui.heading(selected.label());
+                    ui.label("This page will become available after OpenRGB connection and device discovery are integrated.");
+                }
+            }
+        });
+    });
+    ui.ctx().data_mut(|data| data.insert_temp(selected_id, selected));
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ConfigurationNestedTab {
     Appearance,
@@ -457,56 +552,20 @@ fn draw_nested_tab_rail<T>(
 where
     T: Copy + PartialEq,
 {
-    ui.vertical(
-        |ui| {
-            ui.set_min_width(
-                200.0
+    ui.vertical(|ui| {
+        let labels: Vec<String> = tabs.iter().map(|&tab| label(tab)).collect();
+        let tab_width = crate::editor_theme::vertical_tab_rail_width(ui, &labels, 194.0);
+        ui.set_min_width(tab_width + 6.0);
+        for &tab in tabs {
+            let response = crate::editor_theme::vertical_tab(
+                ui, &label(tab), *selected == tab, true, tab_width,
             );
-
-            for &tab in tabs {
-                let mut clicked =
-                    false;
-
-                ui.allocate_ui_with_layout(
-                    egui::vec2(
-                        194.0,
-                        28.0,
-                    ),
-                    egui::Layout::left_to_right(
-                        egui::Align::Center
-                    ),
-                    |ui| {
-                        ui.add_space(
-                            8.0
-                        );
-
-                        let response =
-                            ui.selectable_label(
-                                *selected == tab,
-                                egui::RichText::new(
-                                    label(tab)
-                                )
-                                .strong(),
-                            );
-
-                        if response.clicked() {
-                            clicked =
-                                true;
-                        }
-                    },
-                );
-
-                if clicked {
-                    *selected =
-                        tab;
-                }
-
-                ui.add_space(
-                    4.0
-                );
+            if response.clicked() {
+                *selected = tab;
             }
-        },
-    );
+            ui.add_space(4.0);
+        }
+    });
 }
 
 
