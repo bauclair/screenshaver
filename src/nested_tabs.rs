@@ -604,6 +604,100 @@ fn openrgb_run_physical_test(endpoint: &str, controller_id: u32, pattern: OpenRg
 }
 
 
+// Single-controller perimeter direction verification. Shares the same exclusive
+// test slot and guarded restoration contract as Diagnostics.
+fn openrgb_start_mapping_test(endpoint: String, controller_id: u32, identity: String, zone_id: u64) {
+    openrgb_reap_test();
+    let mut slot = openrgb_physical_state().lock().unwrap_or_else(|e| e.into_inner());
+    if slot.is_some() { return; }
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let stop_thread = stop.clone();
+    openrgb_set_physical_message("Acquiring guarded OpenRGB session for mapping test...".into());
+    let handle = std::thread::spawn(move ||
+        openrgb_run_mapping_test(&endpoint, controller_id, &identity, zone_id, &stop_thread));
+    *slot = Some(OpenRgbPhysicalTest { stop, handle });
+}
+
+fn openrgb_run_mapping_test(endpoint: &str, controller_id: u32, identity: &str,
+    zone_id: u64, stop: &std::sync::atomic::AtomicBool) -> Result<String, String> {
+    use std::net::ToSocketAddrs;
+    use std::sync::atomic::Ordering;
+    use std::time::{Duration, Instant};
+
+    let address = endpoint.to_socket_addrs().map_err(|e| e.to_string())?
+        .next().ok_or("No OpenRGB endpoint address")?;
+    if stop.load(Ordering::Acquire) { return Ok("Mapping test cancelled.".into()); }
+    let mut transport = crate::manage_openrgb_session::OpenRgbReadOnlyTransport::connect(address)?;
+    if !transport.controller_ids()?.contains(&controller_id) {
+        return Err("Selected OpenRGB controller disappeared".into());
+    }
+    let snapshot = transport.decoded_controller(controller_id)?;
+    if openrgb_identity(&snapshot) != identity {
+        return Err("Controller identity changed since discovery; test refused".into());
+    }
+    let selected = crate::select_ambient_device::select_ambient_device(
+        &[snapshot.descriptor(controller_id)], controller_id)?;
+    let matrix = selected.matrix.as_ref().ok_or("No verified LED matrix")?;
+    // Row-major spatial order provides a recognizable left-to-right keyboard
+    // sweep. This is not a physical perimeter or controller LED-index order.
+    let mut order: Vec<usize> = Vec::new();
+    let mut seen = vec![false; selected.led_count];
+    for &index in &matrix.indices {
+        if index != u32::MAX {
+            let i = index as usize;
+            if i >= selected.led_count { return Err("Invalid LED matrix index".into()); }
+            if !seen[i] { seen[i] = true; order.push(i); }
+        }
+    }
+    if order.len() < 2 { return Err("At least two mapped LEDs are required".into()); }
+    if stop.load(Ordering::Acquire) { return Ok("Mapping test cancelled.".into()); }
+    let guarded = crate::manage_openrgb_session::GuardedOpenRgbSession::acquire(address, &selected)?;
+    let run = (|| -> Result<(), String> {
+        let mut worker = crate::manage_ambient_lighting::LightingWorker::start(
+            address, controller_id, selected.led_count)?;
+        let start = Instant::now();
+        let deadline = start + Duration::from_secs(30);
+        let mut failure = None;
+        while Instant::now() < deadline && !stop.load(Ordering::Acquire) {
+            let reversed = {
+                let editor = openrgb_mapping_editor().lock().unwrap_or_else(|e| e.into_inner());
+                editor.edges.iter().flat_map(|edge| edge.iter())
+                    .find(|zone| zone.id == zone_id && zone.assignment.as_deref() == Some(identity))
+                    .map(|zone| zone.reverse)
+            };
+            let Some(reversed) = reversed else {
+                failure = Some("Mapping assignment changed during test; stopping".to_string());
+                break;
+            };
+            let phase = (start.elapsed().as_secs_f32() / 2.0).fract();
+            let position = ((phase * order.len() as f32) as usize).min(order.len() - 1);
+            let position = if reversed { order.len() - 1 - position } else { position };
+            let mut colors = vec![[0u8; 4]; selected.led_count];
+            for offset in 0..3 {
+                let i = (position + order.len() - offset) % order.len();
+                colors[order[i]] = match offset {
+                    0 => [255, 95, 31, 0],
+                    1 => [120, 38, 12, 0],
+                    _ => [35, 10, 3, 0],
+                };
+            }
+            if let Err(error) = worker.try_submit(colors) { failure = Some(error); break; }
+            std::thread::sleep(Duration::from_millis(33));
+        }
+        // The writer must stop and join before restoring the original mode.
+        let joined = worker.stop();
+        if let Some(error) = failure { return Err(error); }
+        joined.map(|_| ())
+    })();
+    let restored = guarded.restore();
+    match (run, restored) {
+        (Ok(()), Ok(())) => Ok("Mapping test ended; original mode verified by SDK. Check physical lighting.".into()),
+        (Err(e), Ok(())) => Err(format!("{e}; original mode restored")),
+        (Ok(()), Err(e)) => Err(format!("Restoration unverified: {e}; recovery record retained")),
+        (Err(e), Err(r)) => Err(format!("{e}; restoration unverified: {r}; recovery record retained")),
+    }
+}
+
 // UI-only perimeter editor. No database writes or OpenRGB hardware interaction.
 // Coordinates are normalized and independent of the editor's aspect ratio.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -893,7 +987,42 @@ fn openrgb_draw_mapping_editor(ui: &mut egui::Ui, state: &OpenRgbUiState) {
             ui.small("LED direction is configured from the zone's right-click menu.");
         }
     }
-    ui.small("Editor prototype: assignments and dividers are temporary; no database or LED writes.");
+    // Stage 1: deliberately allow only one uniquely assigned physical device.
+    // This prevents overlapping LED ownership until hardware-zone masks exist.
+    let assignments: Vec<_> = editor.edges.iter().flat_map(|edge| edge.iter())
+        .filter_map(|zone| zone.assignment.as_ref().map(|id| (zone.id, id.clone())))
+        .collect();
+    let candidate = if assignments.len() == 1 {
+        let (zone_id, identity) = &assignments[0];
+        let matches: Vec<_> = state.devices.iter().filter(|device|
+            device.identity == *identity && device.eligible && device.leds > 1).collect();
+        if matches.len() == 1 { Some((*zone_id, matches[0].id, identity.clone())) }
+        else { None }
+    } else { None };
+    openrgb_reap_test();
+    let running = openrgb_test_running();
+    ui.horizontal(|ui| {
+        if ui.add_enabled(!running && candidate.is_some(),
+            egui::Button::new("Test All Zones")).clicked() {
+            if let Some((zone_id, controller_id, identity)) = &candidate {
+                openrgb_start_mapping_test(state.checked_endpoint.clone(),
+                    *controller_id, identity.clone(), *zone_id);
+            }
+        }
+        if ui.add_enabled(running, egui::Button::new("Stop Test")).clicked() {
+            openrgb_stop_test();
+        }
+    });
+    if assignments.len() > 1 {
+        ui.small("Stage 1 supports one assigned zone only. Unassign other zones to test this device.");
+    } else if candidate.is_none() {
+        ui.small("Assign one discovered, direction-capable OpenRGB device to enable the test.");
+    } else {
+        ui.small("30-second moving-key test. Right-click the assigned zone to reverse direction live.");
+    }
+    ui.small(openrgb_physical_message().lock().unwrap_or_else(|e| e.into_inner()).clone());
+    if running { ui.ctx().request_repaint_after(std::time::Duration::from_millis(100)); }
+    ui.small("Editor assignments and dividers are temporary; only an explicit test writes LEDs.");
 }
 
 pub fn draw_openrgb(ui: &mut egui::Ui) {
