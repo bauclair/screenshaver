@@ -50,6 +50,8 @@ struct OpenRgbDiscoveredDevice {
 #[derive(Clone, Debug)]
 struct OpenRgbUiState {
     endpoint: String,
+    saved_endpoint: String,
+    settings_error: String,
     checked_endpoint: String,
     checking: bool,
     checked: bool,
@@ -61,7 +63,8 @@ struct OpenRgbUiState {
 impl Default for OpenRgbUiState {
     fn default() -> Self {
         Self {
-            endpoint: "127.0.0.1:6742".into(), checked_endpoint: String::new(),
+            endpoint: "127.0.0.1:6742".into(), saved_endpoint: "127.0.0.1:6742".into(),
+            settings_error: String::new(), checked_endpoint: String::new(),
             checking: false, checked: false, connection_ok: false,
             message: String::new(), devices: Vec::new(),
         }
@@ -70,7 +73,54 @@ impl Default for OpenRgbUiState {
 
 fn openrgb_ui_state() -> &'static std::sync::Mutex<OpenRgbUiState> {
     static STATE: OnceLock<std::sync::Mutex<OpenRgbUiState>> = OnceLock::new();
-    STATE.get_or_init(|| std::sync::Mutex::new(OpenRgbUiState::default()))
+    STATE.get_or_init(|| {
+        let mut state = OpenRgbUiState::default();
+        match openrgb_load_server() {
+            Ok(Some(endpoint)) => { state.endpoint = endpoint.clone(); state.saved_endpoint = endpoint; }
+            Ok(None) => {}
+            Err(error) => state.settings_error = error,
+        }
+        std::sync::Mutex::new(state)
+    })
+}
+
+// Persist connection preferences in the existing schema-v003 server table.
+// No schema changes, SDK writes, controller acquisition, or device rescans.
+fn openrgb_load_server() -> Result<Option<String>, String> {
+    use rusqlite::OptionalExtension;
+    let connection = crate::open_database::open()?;
+    connection.query_row(
+        "SELECT host, port FROM openrgb_servers WHERE server_name = 'Default' COLLATE NOCASE LIMIT 1",
+        [],
+        |row| { let host: String = row.get(0)?; let port: u16 = row.get(1)?; Ok(if host.contains(':') { format!("[{host}]:{port}") } else { format!("{host}:{port}") }) },
+    ).optional().map_err(|error| format!("Cannot read OpenRGB server settings: {error}"))
+}
+
+fn openrgb_save_server(endpoint: &str) -> Result<(), String> {
+    // Validate syntax without requiring a running OpenRGB server or DNS success.
+    let (host, port_text) = endpoint.rsplit_once(':')
+        .ok_or("Specify an OpenRGB server as host:port")?;
+    let host = host.trim();
+    if host.is_empty() || host.chars().any(char::is_whitespace) {
+        return Err("OpenRGB server host must not be empty or contain spaces".into());
+    }
+    let port: u16 = port_text.parse().map_err(|_| "OpenRGB port must be between 1 and 65535")?;
+    if port == 0 { return Err("OpenRGB port must be between 1 and 65535".into()); }
+    // Bracketed IPv6 is accepted as [::1]:6742; strip brackets for storage.
+    let stored_host = if host.starts_with('[') && host.ends_with(']') {
+        &host[1..host.len()-1]
+    } else { host };
+    if stored_host.is_empty() || (stored_host.contains(':') && !host.starts_with('[')) {
+        return Err("IPv6 hosts must use [address]:port syntax".into());
+    }
+    let mut connection = crate::open_database::open()?;
+    let transaction = connection.transaction().map_err(|e| e.to_string())?;
+    transaction.execute(
+        "INSERT INTO openrgb_servers (server_name, host, port, enabled) VALUES ('Default', ?1, ?2, 0) \
+         ON CONFLICT(server_name) DO UPDATE SET host=excluded.host, port=excluded.port",
+        rusqlite::params![stored_host, i64::from(port)],
+    ).map_err(|e| format!("Cannot save OpenRGB server settings: {e}"))?;
+    transaction.commit().map_err(|e| format!("Cannot commit OpenRGB server settings: {e}"))
 }
 
 fn openrgb_probe(endpoint: &str) -> Result<Vec<OpenRgbDiscoveredDevice>, (bool, String)> {
@@ -224,7 +274,31 @@ pub fn draw_openrgb(ui: &mut egui::Ui) {
                         shared.endpoint = endpoint;
                     }
                     ui.label("Default: 127.0.0.1:6742. Remote servers are supported.");
-                    ui.label("Endpoint changes are session-only in this stage; persistent configuration will follow.");
+                    if !state.settings_error.is_empty() {
+                        ui.colored_label(ui.visuals().error_fg_color, &state.settings_error);
+                    }
+                    ui.horizontal(|ui| {
+                        if ui.add_enabled(state.endpoint != state.saved_endpoint, egui::Button::new("Save")).clicked() {
+                            let result = openrgb_save_server(state.endpoint.trim());
+                            let mut shared = openrgb_ui_state().lock().unwrap_or_else(|e| e.into_inner());
+                            match result {
+                                Ok(()) => {
+                                    shared.saved_endpoint = state.endpoint.trim().to_owned();
+                                    shared.endpoint = shared.saved_endpoint.clone();
+                                    shared.settings_error.clear();
+                                    shared.checked = false;
+                                    shared.connection_ok = false;
+                                    shared.devices.clear();
+                                }
+                                Err(error) => shared.settings_error = error,
+                            }
+                        }
+                        if ui.add_enabled(state.endpoint != state.saved_endpoint, egui::Button::new("Cancel")).clicked() {
+                            let mut shared = openrgb_ui_state().lock().unwrap_or_else(|e| e.into_inner());
+                            shared.endpoint = shared.saved_endpoint.clone();
+                            shared.settings_error.clear();
+                        }
+                    });
                     if ui.add_enabled(!state.checking, egui::Button::new("Test connection")).clicked() {
                         openrgb_start_probe(ui.ctx().clone());
                     }
