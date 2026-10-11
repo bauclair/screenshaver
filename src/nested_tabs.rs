@@ -23,14 +23,15 @@ use crate::editor_layout::{
 // OpenRGB Control Center diagnostics. Network work is performed on a worker
 // thread; UI rendering never waits for TCP, DNS or SDK replies.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum OpenRgbNestedTab { Status, Devices, Mapping, Appearance, Settings }
+enum OpenRgbNestedTab { Status, Devices, Mapping, Appearance, Diagnostics, Settings }
 
 impl OpenRgbNestedTab {
-    const ALL: [Self; 5] = [Self::Status, Self::Devices, Self::Mapping, Self::Appearance, Self::Settings];
+    const ALL: [Self; 6] = [Self::Status, Self::Devices, Self::Mapping, Self::Appearance, Self::Diagnostics, Self::Settings];
     fn label(self) -> &'static str {
         match self {
             Self::Status => "Status", Self::Devices => "Devices",
             Self::Mapping => "Mapping", Self::Appearance => "Appearance",
+            Self::Diagnostics => "Diagnostics",
             Self::Settings => "Settings",
         }
     }
@@ -46,6 +47,7 @@ struct OpenRgbDiscoveredDevice {
     modes: usize,
     matrix: bool,
     topology: Option<crate::manage_ambient_lighting::LedMatrix>,
+    topology_diagnostic: String,
     identity: String,
     eligible: bool,
     reason: String,
@@ -302,16 +304,59 @@ fn openrgb_probe(endpoint: &str) -> Result<Vec<OpenRgbDiscoveredDevice>, (bool, 
             }
             Ok(())
         })();
+        // Analyze the SDK snapshot as received. No device control or framebuffer access.
+        let topology_diagnostic = openrgb_topology_diagnostic(&snapshot);
         let identity = openrgb_identity(&snapshot);
         devices.push(OpenRgbDiscoveredDevice {
             id, name: snapshot.name, serial: snapshot.serial,
             leds: snapshot.led_names.len(), zones: snapshot.zone_counts.len(),
             modes: snapshot.modes.len(), matrix: descriptor.matrix.is_some(), topology: descriptor.matrix.clone(),
-            identity, eligible: configuration_eligibility.is_ok(),
+            topology_diagnostic, identity, eligible: configuration_eligibility.is_ok(),
             reason: configuration_eligibility.err().unwrap_or_default(),
         });
     }
     Ok(devices)
+}
+
+/// Read-only topology report. Distinguish unused matrix cells from LED indices
+/// that are present in the controller list but absent from the matrix.
+fn openrgb_topology_diagnostic(snapshot: &crate::manage_openrgb_session::OpenRgbControllerSnapshot) -> String {
+    use std::collections::BTreeSet;
+    let total = snapshot.led_names.len();
+    let cells = snapshot.matrix.len();
+    let empty = snapshot.matrix.iter().filter(|&&i| i == u32::MAX).count();
+    let mut unique = BTreeSet::new();
+    let mut duplicates = 0usize;
+    let mut invalid = BTreeSet::new();
+    for &index in &snapshot.matrix {
+        if index == u32::MAX { continue; }
+        if index as usize >= total { invalid.insert(index); continue; }
+        if !unique.insert(index as usize) { duplicates += 1; }
+    }
+    let missing: Vec<_> = (0..total).filter(|i| !unique.contains(i)).collect();
+    let mut lines = vec![
+        format!("Matrix: {} rows x {} columns ({} cells)", snapshot.height, snapshot.width, cells),
+        format!("Controller LED records: {total}"),
+        format!("Matrix entries: {} populated, {empty} empty (0xFFFFFFFF)", cells.saturating_sub(empty)),
+        format!("Distinct valid LED indices referenced: {}", unique.len()),
+        format!("Duplicate matrix references: {duplicates}"),
+        format!("Out-of-range matrix indices: {}", invalid.len()),
+        format!("Controller LED indices absent from matrix: {}", missing.len()),
+    ];
+    if !missing.is_empty() {
+        lines.push(format!("Unreferenced indices: {}", missing.iter().map(usize::to_string).collect::<Vec<_>>().join(", ")));
+        for &index in missing.iter().take(40) {
+            lines.push(format!("  LED {index}: {}", snapshot.led_names[index]));
+        }
+        if missing.len() > 40 { lines.push(format!("  ... {} more names", missing.len() - 40)); }
+    }
+    if !invalid.is_empty() {
+        lines.push(format!("Invalid matrix indices: {}", invalid.iter().map(u32::to_string).collect::<Vec<_>>().join(", ")));
+    }
+    if snapshot.width.checked_mul(snapshot.height) != Some(cells) {
+        lines.push("WARNING: Matrix dimensions do not match cell count".into());
+    }
+    lines.join("\n")
 }
 
 fn openrgb_start_probe(ctx: egui::Context) {
@@ -358,6 +403,49 @@ fn openrgb_start_probe(ctx: egui::Context) {
     });
 }
 
+// Use the desktop clipboard directly when egui's host integration does not
+// deliver copy requests (notably some embedded/full-screen Control Centers).
+// No shell invocation, extra crate, file chooser, or hardware interaction.
+fn openrgb_copy_report(report: &str) -> Result<String, String> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let wayland = std::env::var_os("WAYLAND_DISPLAY").is_some();
+    let x11 = std::env::var_os("DISPLAY").is_some();
+    let mut candidates: Vec<(&str, &[&str])> = Vec::new();
+    if wayland { candidates.push(("wl-copy", &["--type", "text/plain;charset=utf-8"])); }
+    if x11 {
+        candidates.push(("xclip", &["-selection", "clipboard"]));
+        candidates.push(("xsel", &["--clipboard", "--input"]));
+    }
+    if candidates.is_empty() {
+        return Err("No Wayland or X11 clipboard session detected".into());
+    }
+    let mut failures = Vec::new();
+    for (program, args) in candidates {
+        let mut child = match Command::new(program).args(args)
+            .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null()).spawn() {
+            Ok(child) => child,
+            Err(error) => { failures.push(format!("{program}: {error}")); continue; }
+        };
+        let write_result = child.stdin.take()
+            .ok_or_else(|| format!("{program}: clipboard stdin unavailable"))
+            .and_then(|mut stdin| stdin.write_all(report.as_bytes())
+                .map_err(|error| format!("{program}: {error}")));
+        if let Err(error) = write_result {
+            let _ = child.kill();
+            let _ = child.wait();
+            failures.push(error);
+            continue;
+        }
+        match child.wait() {
+            Ok(status) if status.success() => return Ok(format!("Copied using {program}")),
+            Ok(status) => failures.push(format!("{program}: exited with {status}")),
+            Err(error) => failures.push(format!("{program}: {error}")),
+        }
+    }
+    Err(format!("Clipboard unavailable: {}", failures.join("; ")))
+}
+
 pub fn draw_openrgb(ui: &mut egui::Ui) {
     let selected_id = egui::Id::new("screenshaver_openrgb_nested_tab");
     let mut selected = ui.ctx().data(|data| {
@@ -382,7 +470,7 @@ pub fn draw_openrgb(ui: &mut egui::Ui) {
             ui.set_min_width(tab_width + 6.0);
             for tab in OpenRgbNestedTab::ALL {
                 let enabled = match tab {
-                    OpenRgbNestedTab::Status | OpenRgbNestedTab::Settings | OpenRgbNestedTab::Mapping => true,
+                    OpenRgbNestedTab::Status | OpenRgbNestedTab::Settings | OpenRgbNestedTab::Mapping | OpenRgbNestedTab::Diagnostics => true,
                     OpenRgbNestedTab::Devices => state.selected_identity.is_some() || (state.connection_ok && !state.devices.is_empty()),
                     OpenRgbNestedTab::Appearance => false,
                 };
@@ -476,6 +564,72 @@ pub fn draw_openrgb(ui: &mut egui::Ui) {
                         ui.add_space(6.0);
                     }
                     ui.label("Configuration only. Hardware acquisition and LED writes remain disabled.");
+                }
+                OpenRgbNestedTab::Diagnostics => {
+                    ui.heading("OpenRGB Diagnostics");
+                    ui.add_space(8.0);
+                    ui.label("Read-only topology analysis and physical LED verification.");
+                    let matches: Vec<_> = state.devices.iter().filter(|d|
+                        state.selected_identity.as_deref() == Some(d.identity.as_str())).collect();
+                    if matches.len() != 1 {
+                        ui.label("Select and discover a unique device under Devices first.");
+                    } else {
+                        let device = matches[0];
+                        ui.label(format!("Device: {} (controller {})", device.name, device.id));
+                        egui::CollapsingHeader::new("LED topology")
+                            .default_open(true)
+                            .show(ui, |ui| {
+                                // Keep long per-LED diagnostics inside a bounded viewport;
+                                // never let the report expand the Control Center vertically.
+                                egui::ScrollArea::vertical()
+                                    .id_source(("openrgb_topology_report_scroll", device.id))
+                                    .max_height(210.0)
+                                    .auto_shrink([false, false])
+                                    .show(ui, |ui| {
+                                        ui.label(egui::RichText::new(&device.topology_diagnostic).monospace());
+                                    });
+                                let report = format!("OpenRGB device: {}\nController ID: {}\n{}",
+                                    device.name, device.id, device.topology_diagnostic);
+                                ui.horizontal(|ui| {
+                                    if ui.button("Copy report").clicked() {
+                                        let result = openrgb_copy_report(&report);
+                                        let message = match result {
+                                            Ok(message) => message,
+                                            Err(error) => error,
+                                        };
+                                        ui.ctx().data_mut(|data| data.insert_temp(
+                                            egui::Id::new("openrgb_clipboard_result"), message));
+                                    }
+                                    if ui.button("Write to runtime log").clicked() {
+                                        crate::logger::information(
+                                            &crate::locate_paths::runtime_log_path(),
+                                            &format!("[OPENRGB TOPOLOGY] {report}"));
+                                    }
+                                });
+                                if let Some(message) = ui.ctx().data(|data| data.get_temp::<String>(
+                                    egui::Id::new("openrgb_clipboard_result"))) {
+                                    ui.small(message);
+                                }
+                            });
+                        ui.add_space(10.0);
+                        egui::CollapsingHeader::new("Physical LED verification")
+                            .default_open(true)
+                            .show(ui, |ui| {
+                                ui.label("Physical visibility cannot be determined from OpenRGB metadata alone.");
+                                ui.label("Illumination tests require guarded acquisition, an LED writer, and verified restoration.");
+                                ui.horizontal(|ui| {
+                                    ui.add_enabled(false, egui::Button::new("Start physical LED test"))
+                                        .on_disabled_hover_text("Not yet wired to a guarded diagnostic session.");
+                                    ui.add_enabled(false, egui::Button::new("Stop test"));
+                                });
+                                ui.label("No hardware commands are sent from this page.");
+                            });
+                        egui::CollapsingHeader::new("Verification results")
+                            .show(ui, |ui| {
+                                ui.label("No physical LEDs have been visually verified yet.");
+                                ui.label("Topology validity does not establish physical visibility.");
+                            });
+                    }
                 }
                 OpenRgbNestedTab::Mapping => {
                     ui.heading("Mapping");
