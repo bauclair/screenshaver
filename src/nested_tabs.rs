@@ -45,6 +45,7 @@ struct OpenRgbDiscoveredDevice {
     zones: usize,
     modes: usize,
     matrix: bool,
+    topology: Option<crate::manage_ambient_lighting::LedMatrix>,
     identity: String,
     eligible: bool,
     reason: String,
@@ -305,7 +306,7 @@ fn openrgb_probe(endpoint: &str) -> Result<Vec<OpenRgbDiscoveredDevice>, (bool, 
         devices.push(OpenRgbDiscoveredDevice {
             id, name: snapshot.name, serial: snapshot.serial,
             leds: snapshot.led_names.len(), zones: snapshot.zone_counts.len(),
-            modes: snapshot.modes.len(), matrix: snapshot.width > 0 && snapshot.height > 0,
+            modes: snapshot.modes.len(), matrix: descriptor.matrix.is_some(), topology: descriptor.matrix.clone(),
             identity, eligible: configuration_eligibility.is_ok(),
             reason: configuration_eligibility.err().unwrap_or_default(),
         });
@@ -516,7 +517,36 @@ pub fn draw_openrgb(ui: &mut egui::Ui) {
                             }
                             if !state.selection_message.is_empty() { ui.label(&state.selection_message); }
                             ui.add_space(8.0);
-                            ui.label("Perimeter and Four corners require topology-aware LED masks at rendering time.");
+                            if let Some(matrix) = &device.topology {
+                                match crate::manage_ambient_lighting::resolve_led_region(matrix, &region) {
+                                    Ok(indices) => {
+                                        ui.label(format!("Validated LED coverage: {} / {} LEDs", indices.len(), device.leds));
+                                        // Read-only software preview: synthetic 2x2 RGB test pattern,
+                                        // sampled through the existing mapper. No OpenGL or SDK writes.
+                                        let rgb: [u8; 12] = [255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0];
+                                        let base = vec![[0u8; 4]; device.leds];
+                                        match crate::manage_ambient_lighting::map_pixels(
+                                            &rgb, 2, 2, matrix,
+                                            crate::manage_ambient_lighting::MappingMode::Spatial, &base,
+                                        ) {
+                                            Ok(colors) => {
+                                                ui.label("Software sampling preview (synthetic four-color pattern):");
+                                                let mut preview = String::new();
+                                                for index in indices.iter().take(16) {
+                                                    let color = colors[*index];
+                                                    if !preview.is_empty() { preview.push_str("  "); }
+                                                    preview.push_str(&format!("LED {}: #{:02X}{:02X}{:02X}", index, color[0], color[1], color[2]));
+                                                }
+                                                ui.label(preview);
+                                                if indices.len() > 16 { ui.label(format!("Showing first 16 of {} LEDs", indices.len())); }
+                                            }
+                                            Err(error) => { ui.colored_label(ui.visuals().error_fg_color, error); }
+                                        }
+                                    }
+                                    Err(error) => { ui.colored_label(ui.visuals().error_fg_color, error); }
+                                }
+                            }
+                            ui.label("Region membership is computed from reported LED indices; no output is transmitted.");
                             ui.label("Device-reported zones will be offered after zone names and LED membership are decoded and verified.");
                         } else {
                             ui.label("Selected device is unavailable, ambiguous, or incompatible. Saved configuration is retained.");

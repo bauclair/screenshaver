@@ -45,6 +45,69 @@ impl LedMatrix {
     }
 }
 
+/// Resolve a saved region preset against a verified, row-major OpenRGB matrix.
+/// Empty cells are ignored; repeated LED indices are counted once.
+/// This is pure topology analysis and never communicates with hardware.
+pub fn resolve_led_region(matrix: &LedMatrix, region: &str) -> Result<Vec<usize>, String> {
+    matrix.validate()?;
+    let mut chosen = vec![false; matrix.led_count];
+    let (w, h) = (matrix.columns, matrix.rows);
+    for row in 0..h {
+        for col in 0..w {
+            let index = matrix.indices[row * w + col];
+            if index == u32::MAX { continue; }
+            // Integer midpoint comparisons avoid floating-point boundary ambiguity.
+            let left = 2 * col < w;
+            let right = 2 * col >= w;
+            let top = 2 * row < h;
+            let bottom = 2 * row >= h;
+            let included = match region {
+                "all" => true,
+                "left" => left,
+                "right" => right,
+                "top" => top,
+                "bottom" => bottom,
+                "center" => 2 * (2 * col + 1) >= w && 2 * (2 * col + 1) < 3 * w &&
+                            2 * (2 * row + 1) >= h && 2 * (2 * row + 1) < 3 * h,
+                "perimeter" => row == 0 || col == 0 || row + 1 == h || col + 1 == w,
+                "corners" => (row == 0 || row + 1 == h) && (col == 0 || col + 1 == w),
+                "top_left" => top && left,
+                "top_right" => top && right,
+                "bottom_left" => bottom && left,
+                "bottom_right" => bottom && right,
+                "first_half" | "second_half" => false,
+                _ => return Err(format!("Unknown LED region preset: {region}")),
+            };
+            if included { chosen[index as usize] = true; }
+        }
+    }
+    if region == "first_half" || region == "second_half" {
+        // Linear presets operate on controller LED sequence, not matrix geometry.
+        let midpoint = (matrix.led_count + 1) / 2;
+        for (i, selected) in chosen.iter_mut().enumerate() {
+            *selected = if region == "first_half" { i < midpoint } else { i >= midpoint };
+        }
+    }
+    let indices: Vec<usize> = chosen.iter().enumerate()
+        .filter_map(|(i, selected)| selected.then_some(i)).collect();
+    if indices.is_empty() { return Err(format!("Region '{region}' contains no mapped LEDs")); }
+    Ok(indices)
+}
+
+#[cfg(test)]
+mod led_region_tests {
+    use super::*;
+    #[test]
+    fn holes_and_corners() {
+        let matrix = LedMatrix { columns: 3, rows: 3,
+            indices: vec![0, 1, 2, 3, u32::MAX, 4, 5, 6, 7], led_count: 8 };
+        assert_eq!(resolve_led_region(&matrix, "all").unwrap().len(), 8);
+        assert_eq!(resolve_led_region(&matrix, "corners").unwrap(), vec![0, 2, 5, 7]);
+        assert_eq!(resolve_led_region(&matrix, "perimeter").unwrap().len(), 8);
+        assert!(resolve_led_region(&matrix, "center").is_err());
+    }
+}
+
 /// Sampled pixels are RGB, row zero at the *bottom* (OpenGL readback order).
 /// The caller may provide an initial color for unmapped LEDs.
 pub fn map_pixels(
