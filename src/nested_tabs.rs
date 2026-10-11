@@ -133,6 +133,77 @@ fn openrgb_save_server(endpoint: &str) -> Result<(), String> {
     transaction.commit().map_err(|e| format!("Cannot commit OpenRGB server settings: {e}"))
 }
 
+// Region presets are stored as disabled mapping drafts. The schema's source
+// rectangles describe sampling geometry, not a verified LED membership mask.
+// A later guarded renderer must independently derive membership from topology.
+const OPENRGB_MATRIX_REGIONS: &[(&str, &str, f64, f64, f64, f64)] = &[
+    ("all", "Entire device", 0.0, 0.0, 1.0, 1.0),
+    ("left", "Left", 0.0, 0.0, 0.5, 1.0),
+    ("right", "Right", 0.5, 0.0, 0.5, 1.0),
+    ("top", "Top", 0.0, 0.0, 1.0, 0.5),
+    ("bottom", "Bottom", 0.0, 0.5, 1.0, 0.5),
+    ("center", "Center", 0.25, 0.25, 0.5, 0.5),
+    ("perimeter", "Perimeter", 0.0, 0.0, 1.0, 1.0),
+    ("corners", "Four corners", 0.0, 0.0, 1.0, 1.0),
+    ("top_left", "Top-left", 0.0, 0.0, 0.5, 0.5),
+    ("top_right", "Top-right", 0.5, 0.0, 0.5, 0.5),
+    ("bottom_left", "Bottom-left", 0.0, 0.5, 0.5, 0.5),
+    ("bottom_right", "Bottom-right", 0.5, 0.5, 0.5, 0.5),
+];
+const OPENRGB_LINEAR_REGIONS: &[(&str, &str, f64, f64, f64, f64)] = &[
+    ("first_half", "First half", 0.0, 0.0, 0.5, 1.0),
+    ("second_half", "Second half", 0.5, 0.0, 0.5, 1.0),
+];
+
+fn openrgb_load_region(identity: &str) -> Result<String, String> {
+    use rusqlite::OptionalExtension;
+    let connection = crate::open_database::open()?;
+    let region: Option<String> = connection.query_row(
+        "SELECT r.region_name FROM openrgb_mappings m \
+         JOIN openrgb_devices d ON d.device_id=m.device_id \
+         JOIN openrgb_servers s ON s.server_id=d.server_id \
+         JOIN openrgb_source_regions r ON r.region_id=m.region_id \
+         WHERE s.server_name='Default' COLLATE NOCASE AND d.stable_identity=?1 \
+           AND r.region_name LIKE 'screenshaver-led:%' \
+         ORDER BY m.mapping_id DESC LIMIT 1",
+        [identity], |row| row.get(0),
+    ).optional().map_err(|e| format!("Cannot load LED region: {e}"))?;
+    Ok(region.and_then(|v| v.strip_prefix("screenshaver-led:").map(str::to_owned))
+        .unwrap_or_else(|| "all".into()))
+}
+
+fn openrgb_save_region(identity: &str, key: &str) -> Result<(), String> {
+    let region = OPENRGB_MATRIX_REGIONS.iter().chain(OPENRGB_LINEAR_REGIONS.iter())
+        .find(|r| r.0 == key).ok_or("Unsupported LED region")?;
+    let mut connection = crate::open_database::open()?;
+    let tx = connection.transaction().map_err(|e| e.to_string())?;
+    let device_id: i64 = tx.query_row(
+        "SELECT d.device_id FROM openrgb_devices d JOIN openrgb_servers s ON s.server_id=d.server_id \
+         WHERE s.server_name='Default' COLLATE NOCASE AND d.stable_identity=?1 AND d.enabled=1",
+        [identity], |row| row.get(0),
+    ).map_err(|e| format!("Selected device is not saved: {e}"))?;
+    let region_name = format!("screenshaver-led:{key}");
+    tx.execute(
+        "INSERT INTO openrgb_source_regions (region_name,x,y,width,height) VALUES (?1,?2,?3,?4,?5) \
+         ON CONFLICT(region_name) DO NOTHING",
+        rusqlite::params![region_name, region.2, region.3, region.4, region.5],
+    ).map_err(|e| format!("Cannot store region preset: {e}"))?;
+    let region_id: i64 = tx.query_row(
+        "SELECT region_id FROM openrgb_source_regions WHERE region_name=?1", [&region_name], |row| row.get(0),
+    ).map_err(|e| e.to_string())?;
+    // Replace only our own disabled drafts. Never touch third-party mappings.
+    tx.execute(
+        "DELETE FROM openrgb_mappings WHERE device_id=?1 AND enabled=0 AND region_id IN \
+         (SELECT region_id FROM openrgb_source_regions WHERE region_name LIKE 'screenshaver-led:%')",
+        [device_id],
+    ).map_err(|e| e.to_string())?;
+    tx.execute(
+        "INSERT INTO openrgb_mappings (device_id,region_id,sampling_method,enabled) VALUES (?1,?2,'spatial',0)",
+        rusqlite::params![device_id, region_id],
+    ).map_err(|e| format!("Cannot save region: {e}"))?;
+    tx.commit().map_err(|e| format!("Cannot commit region: {e}"))
+}
+
 // Stable across controller re-enumeration. This is a conservative topology
 // fingerprint, not a globally unique manufacturer identifier. Duplicate matches
 // are deliberately refused rather than guessed.
@@ -212,14 +283,31 @@ fn openrgb_probe(endpoint: &str) -> Result<Vec<OpenRgbDiscoveredDevice>, (bool, 
             (true, format!("Controller {id} discovery failed: {error}"))
         })?;
         let descriptor = snapshot.descriptor(id);
-        let eligibility = crate::select_ambient_device::select_ambient_device(&[descriptor], id);
+        // Configuration eligibility is distinct from guarded hardware acquisition.
+        // An already-Direct device can be saved and mapped without taking ownership;
+        // the acquisition contract will still reject it until a safe baseline exists.
+        let configuration_eligibility = (|| -> Result<(), String> {
+            if descriptor.display_name.trim().is_empty() {
+                return Err("OpenRGB controller has no display name".into());
+            }
+            if descriptor.led_count == 0 || descriptor.led_count > u16::MAX as usize {
+                return Err("OpenRGB LED count is outside supported limits".into());
+            }
+            let matrix = descriptor.matrix.as_ref()
+                .ok_or("Selected device has no spatial LED matrix")?;
+            matrix.validate()?;
+            if matrix.led_count != descriptor.led_count {
+                return Err("OpenRGB LED count and matrix topology disagree".into());
+            }
+            Ok(())
+        })();
         let identity = openrgb_identity(&snapshot);
         devices.push(OpenRgbDiscoveredDevice {
             id, name: snapshot.name, serial: snapshot.serial,
             leds: snapshot.led_names.len(), zones: snapshot.zone_counts.len(),
             modes: snapshot.modes.len(), matrix: snapshot.width > 0 && snapshot.height > 0,
-            identity, eligible: eligibility.is_ok(),
-            reason: eligibility.err().unwrap_or_default(),
+            identity, eligible: configuration_eligibility.is_ok(),
+            reason: configuration_eligibility.err().unwrap_or_default(),
         });
     }
     Ok(devices)
@@ -274,6 +362,16 @@ pub fn draw_openrgb(ui: &mut egui::Ui) {
     let mut selected = ui.ctx().data(|data| {
         data.get_temp::<OpenRgbNestedTab>(selected_id).unwrap_or(OpenRgbNestedTab::Status)
     });
+    // A persisted selection is not the same as a live discovery snapshot.
+    // Revalidate it asynchronously once on Control Center startup; never
+    // discard the database selection when the OpenRGB server is offline.
+    let should_restore = {
+        let shared = openrgb_ui_state().lock().unwrap_or_else(|e| e.into_inner());
+        shared.selected_identity.is_some() && !shared.checked && !shared.checking
+    };
+    if should_restore {
+        openrgb_start_probe(ui.ctx().clone());
+    }
     let state = openrgb_ui_state().lock().unwrap_or_else(|e| e.into_inner()).clone();
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
@@ -283,9 +381,9 @@ pub fn draw_openrgb(ui: &mut egui::Ui) {
             ui.set_min_width(tab_width + 6.0);
             for tab in OpenRgbNestedTab::ALL {
                 let enabled = match tab {
-                    OpenRgbNestedTab::Status | OpenRgbNestedTab::Settings => true,
-                    OpenRgbNestedTab::Devices => state.connection_ok && !state.devices.is_empty(),
-                    OpenRgbNestedTab::Mapping | OpenRgbNestedTab::Appearance => false,
+                    OpenRgbNestedTab::Status | OpenRgbNestedTab::Settings | OpenRgbNestedTab::Mapping => true,
+                    OpenRgbNestedTab::Devices => state.selected_identity.is_some() || (state.connection_ok && !state.devices.is_empty()),
+                    OpenRgbNestedTab::Appearance => false,
                 };
                 let response = crate::editor_theme::vertical_tab(
                     ui, tab.label(), selected == tab, enabled, tab_width,
@@ -332,7 +430,17 @@ pub fn draw_openrgb(ui: &mut egui::Ui) {
                     ui.add_space(8.0);
                     ui.label("Choose one discovered device for future ambient lighting. Selection does not acquire or control hardware.");
                     ui.add_space(6.0);
+                    if let Some(identity) = state.selected_identity.as_deref() {
+                        if state.checking {
+                            ui.label("Restoring saved device selection: checking OpenRGB discovery...");
+                        } else if !state.devices.iter().any(|device| device.identity == identity) {
+                            ui.label("Saved device selection retained; device not currently discovered.");
+                        }
+                    }
                     if !state.selection_message.is_empty() { ui.label(&state.selection_message); }
+                    if ui.add_enabled(!state.checking, egui::Button::new("Refresh devices")).clicked() {
+                        openrgb_start_probe(ui.ctx().clone());
+                    }
                     if ui.button("Clear saved selection").clicked() {
                         let result = openrgb_save_selection(None);
                         let mut shared = openrgb_ui_state().lock().unwrap_or_else(|e| e.into_inner());
@@ -348,10 +456,10 @@ pub fn draw_openrgb(ui: &mut egui::Ui) {
                             ui.label(format!("Controller ID: {}  |  LEDs: {}  |  Zones: {}  |  Modes: {}", device.id, device.leds, device.zones, device.modes));
                             if !device.serial.is_empty() { ui.label(format!("Serial: {}", device.serial)); }
                             ui.label(if device.matrix { "Matrix layout: reported" } else { "Matrix layout: unavailable or unsupported" });
-                            if !device.eligible { ui.label(format!("Not eligible for spatial lighting: {}", device.reason)); }
+                            if !device.eligible { ui.label(format!("Not eligible for spatial mapping: {}", device.reason)); }
                             let matches = state.devices.iter().filter(|other| other.identity == device.identity).count();
                             let selected = state.selected_identity.as_deref() == Some(device.identity.as_str());
-                            if selected { ui.label("Saved selection"); }
+                            if selected { ui.label("Saved selection — device already selected"); }
                             if ui.add_enabled(device.eligible && matches == 1 && !selected,
                                 egui::Button::new("Select device")).clicked() {
                                 let result = openrgb_save_selection(Some(device));
@@ -367,6 +475,57 @@ pub fn draw_openrgb(ui: &mut egui::Ui) {
                         ui.add_space(6.0);
                     }
                     ui.label("Configuration only. Hardware acquisition and LED writes remain disabled.");
+                }
+                OpenRgbNestedTab::Mapping => {
+                    ui.heading("Mapping");
+                    ui.add_space(8.0);
+                    ui.label("Configure an LED region preset. This is a saved, inactive mapping draft; no LEDs are controlled.");
+                    if let Some(identity) = state.selected_identity.as_deref() {
+                        let matches: Vec<_> = state.devices.iter()
+                            .filter(|d| d.identity == identity).collect();
+                        if matches.len() == 1 && matches[0].eligible {
+                            let device = matches[0];
+                            ui.label(format!("Selected device: {}", device.name));
+                            let mut region = openrgb_load_region(identity).unwrap_or_else(|_| "all".into());
+                            let previous = region.clone();
+                            egui::ComboBox::from_id_source("openrgb_led_region_preset")
+                                .selected_text(OPENRGB_MATRIX_REGIONS.iter().chain(OPENRGB_LINEAR_REGIONS.iter())
+                                    .find(|r| r.0 == region).map(|r| r.1).unwrap_or("Entire device"))
+                                .width(220.0)
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(&mut region, "all".into(), "Entire device");
+                                    if device.matrix {
+                                        for &(key, label, _, _, _, _) in OPENRGB_MATRIX_REGIONS.iter().skip(1) {
+                                            ui.selectable_value(&mut region, key.into(), label);
+                                        }
+                                    }
+                                    // Linear halves use discovered LED order; they do not imply physical left/right.
+                                    if device.leds > 1 {
+                                        for &(key, label, _, _, _, _) in OPENRGB_LINEAR_REGIONS {
+                                            ui.selectable_value(&mut region, key.into(), label);
+                                        }
+                                    }
+                                });
+                            if region != previous {
+                                let result = openrgb_save_region(identity, &region);
+                                let mut shared = openrgb_ui_state().lock().unwrap_or_else(|e| e.into_inner());
+                                shared.selection_message = match result {
+                                    Ok(()) => format!("LED region '{}' saved as an inactive mapping draft.", region),
+                                    Err(e) => e,
+                                };
+                            }
+                            if !state.selection_message.is_empty() { ui.label(&state.selection_message); }
+                            ui.add_space(8.0);
+                            ui.label("Perimeter and Four corners require topology-aware LED masks at rendering time.");
+                            ui.label("Device-reported zones will be offered after zone names and LED membership are decoded and verified.");
+                        } else {
+                            ui.label("Selected device is unavailable, ambiguous, or incompatible. Saved configuration is retained.");
+                        }
+                    } else {
+                        ui.label("Select a device under Devices first.");
+                    }
+                    ui.add_space(8.0);
+                    ui.label("No hardware acquisition, mode changes, or LED writes occur here.");
                 }
                 OpenRgbNestedTab::Settings => {
                     ui.heading("Settings");
