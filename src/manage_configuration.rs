@@ -185,6 +185,7 @@ impl WallpaperDisplayFormat {
 
 #[derive(Debug, Clone)]
 pub struct AppDefaults {
+    pub control_center_rgb_enabled: bool,
     pub show_splash: bool,
     pub screensaver_subtitles: bool,
     pub subtitle_placement: String,
@@ -208,6 +209,7 @@ pub struct CuratedPaletteChoice {
 
 #[derive(Debug, Clone)]
 pub struct TargetDefaults {
+    pub rgb_enabled: bool,
     pub target: String,
     pub idle_timeout_value: Option<i64>,
     pub idle_timeout_unit: Option<String>,
@@ -236,6 +238,7 @@ pub fn load_app_defaults() -> Result<AppDefaults, String> {
         .query_row(
             "SELECT
                  show_splash,
+                 control_center_rgb_enabled,
                  screensaver_subtitles,
                  subtitle_placement,
                  wallpaper_notifications,
@@ -252,24 +255,26 @@ pub fn load_app_defaults() -> Result<AppDefaults, String> {
             |row| {
                 Ok(
                     AppDefaults {
-                        show_splash:
+                        control_center_rgb_enabled:
+                            row.get::<_, i64>(1)? != 0,
+                         show_splash:
                             row.get::<_, i64>(0)? != 0,
                         screensaver_subtitles:
-                            row.get::<_, i64>(1)? != 0,
+                             row.get::<_, i64>(2)? != 0,
                         subtitle_placement:
-                            row.get(2)?,
+                            row.get(3)?,
                         wallpaper_notifications:
-                            row.get::<_, i64>(3)? != 0,
-                        lyrics_enabled:
                             row.get::<_, i64>(4)? != 0,
+                        lyrics_enabled:
+                            row.get::<_, i64>(5)? != 0,
                         wallpaper_display_format:
                             WallpaperDisplayFormat::parse_database_value(
-                                &row.get::<_, String>(5)?
+                                &row.get::<_, String>(6)?
                             )
                             .map_err(
                                 |error| {
                                     rusqlite::Error::FromSqlConversionFailure(
-                                        5,
+                                        6,
                                         rusqlite::types::Type::Text,
                                         Box::new(
                                             std::io::Error::new(
@@ -281,15 +286,15 @@ pub fn load_app_defaults() -> Result<AppDefaults, String> {
                                 }
                             )?,
                         rendered_fps:
-                            row.get(6)?,
-                        anti_aliasing:
                             row.get(7)?,
-                        dithering:
+                        anti_aliasing:
                             row.get(8)?,
-                        color_precision:
+                        dithering:
                             row.get(9)?,
-                        render_scale:
+                        color_precision:
                             row.get(10)?,
+                        render_scale:
+                            row.get(11)?,
                     }
                 )
             },
@@ -519,6 +524,7 @@ pub fn load_target_defaults(
         .query_row(
             "SELECT
                  target,
+                 rgb_enabled,
                  idle_timeout_value,
                  idle_timeout_unit,
                  animation_speed,
@@ -533,24 +539,26 @@ pub fn load_target_defaults(
             |row| {
                 Ok(
                     TargetDefaults {
-                        target:
+                        rgb_enabled:
+                            row.get::<_, i64>(1)? != 0,
+                         target:
                             row.get(0)?,
                         idle_timeout_value:
-                            row.get(1)?,
-                        idle_timeout_unit:
                             row.get(2)?,
-                        animation_speed:
+                        idle_timeout_unit:
                             row.get(3)?,
-                        texture_mode:
+                        animation_speed:
                             row.get(4)?,
-                        texture_family:
+                        texture_mode:
                             row.get(5)?,
-                        texture_primitives:
+                        texture_family:
                             row.get(6)?,
-                        palette_mode:
+                        texture_primitives:
                             row.get(7)?,
-                        palette_color:
+                        palette_mode:
                             row.get(8)?,
+                        palette_color:
+                            row.get(9)?,
                     }
                 )
             },
@@ -586,19 +594,21 @@ pub fn save_app_defaults(
             .execute(
                 "UPDATE app_defaults
                  SET show_splash = ?1,
-                     screensaver_subtitles = ?2,
-                     subtitle_placement = ?3,
-                     wallpaper_notifications = ?4,
-                     lyrics_enabled = ?5,
-                     wallpaper_display_format = ?6,
-                     rendered_fps = ?7,
-                     anti_aliasing = ?8,
-                     dithering = ?9,
-                     color_precision = ?10,
-                     render_scale = ?11
+                     control_center_rgb_enabled = ?2,
+                     screensaver_subtitles = ?3,
+                     subtitle_placement = ?4,
+                     wallpaper_notifications = ?5,
+                     lyrics_enabled = ?6,
+                     wallpaper_display_format = ?7,
+                     rendered_fps = ?8,
+                     anti_aliasing = ?9,
+                     dithering = ?10,
+                     color_precision = ?11,
+                     render_scale = ?12
                  WHERE defaults_id = 1",
                 rusqlite::params![
                     defaults.show_splash,
+                    defaults.control_center_rgb_enabled,
                     defaults.screensaver_subtitles,
                     defaults.subtitle_placement,
                     defaults.wallpaper_notifications,
@@ -658,16 +668,18 @@ pub fn save_target_defaults(
                 "UPDATE target_defaults
                  SET idle_timeout_value = ?1,
                      idle_timeout_unit = ?2,
-                     animation_speed = ?3,
-                     texture_mode = ?4,
-                     texture_family = ?5,
-                     texture_primitives = ?6,
-                     palette_mode = ?7,
-                     palette_color = ?8
-                 WHERE target = ?9",
+                     rgb_enabled = ?3,
+                     animation_speed = ?4,
+                     texture_mode = ?5,
+                     texture_family = ?6,
+                     texture_primitives = ?7,
+                     palette_mode = ?8,
+                     palette_color = ?9
+                 WHERE target = ?10",
                 rusqlite::params![
                     defaults.idle_timeout_value,
                     defaults.idle_timeout_unit,
+                    defaults.rgb_enabled,
                     defaults.animation_speed,
                     defaults.texture_mode,
                     defaults.texture_family,

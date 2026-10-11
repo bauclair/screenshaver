@@ -10,7 +10,7 @@ use rusqlite::{
 
 const CURRENT_SCHEMA_SQL: &str =
     include_str!(
-        "../assets/database/schema_v002.sql"
+        "../assets/database/schema_v003.sql"
     );
 
 
@@ -173,6 +173,11 @@ fn initialize_contents(
         default_wallpaper_policy_id,
     )?;
 
+
+    connection.execute(
+        "INSERT INTO openrgb_settings (settings_id) VALUES (1)",
+        [],
+    ).map_err(|error| format!("Unable to initialize OpenRGB settings: {}", error))?;
 
     insert_schema_metadata(
         connection

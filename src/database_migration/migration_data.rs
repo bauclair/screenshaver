@@ -206,6 +206,7 @@ pub struct MigrationRuntimeConfiguration {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MigrationApplicationDefaults {
+    pub control_center_rgb_enabled: bool,
     pub show_splash: bool,
 
     pub screensaver_subtitles: bool,
@@ -270,6 +271,7 @@ pub enum MigrationDefaultPalette {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MigrationTargetDefault {
+    pub rgb_enabled: bool,
     pub idle_timeout: MigrationIdleTimeout,
 
     pub animation_speed: f64,

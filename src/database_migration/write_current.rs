@@ -40,14 +40,40 @@ use super::migration_data::{
 
 const CURRENT_SCHEMA_SQL: &str =
     include_str!(
-        "../../assets/database/schema_v002.sql"
+        "../../assets/database/schema_v003.sql"
     );
 
+
+// Preflight values before creating the disposable reconstruction database.
+// Never clamp historical user settings: a V2 value outside V3's signed
+// animation-speed range requires an explicit user decision.
+fn validate_animation_speeds(data: &MigrationData) -> Result<(), String> {
+    fn check(label: &str, speed: f64) -> Result<(), String> {
+        if !speed.is_finite() || !(-10.0..=10.0).contains(&speed) {
+            return Err(format!(
+                "Schema V3 migration cannot preserve {} animation speed {}x; allowed range is -10x through +10x. The original database has not been modified. Adjust this value in the existing installation before retrying migration.",
+                label, speed,
+            ));
+        }
+        Ok(())
+    }
+
+    check("screensaver default", data.target_defaults.screensaver.animation_speed)?;
+    check("wallpaper default", data.target_defaults.wallpaper.animation_speed)?;
+    for policy in &data.policies {
+        if let Some(speed) = policy.animation_speed {
+            check(&format!("policy '{}'", policy.policy_name), speed)?;
+        }
+    }
+    Ok(())
+}
 
 pub fn write(
     destination_path: &Path,
     data: &MigrationData,
 ) -> Result<Connection, String> {
+
+    validate_animation_speeds(data)?;
 
     if destination_path.exists() {
         return Err(
@@ -169,6 +195,13 @@ pub fn write(
                 &policy_ids,
                 &playlist_ids,
             )?;
+
+            transaction
+                .execute(
+                    "INSERT INTO openrgb_settings (settings_id) VALUES (1)",
+                    [],
+                )
+                .map_err(|error| format!("Unable to initialize OpenRGB settings: {}", error))?;
 
             write_schema_metadata(
                 &transaction
@@ -904,6 +937,7 @@ fn write_application_defaults(
             "INSERT INTO app_defaults (
                  defaults_id,
                  show_splash,
+                 control_center_rgb_enabled,
                  screensaver_subtitles,
                  subtitle_placement,
                  wallpaper_notifications,
@@ -920,13 +954,14 @@ fn write_application_defaults(
              )
              VALUES (
                  1,
-                 ?1, ?2, ?3, ?4, ?5, ?6,
-                 ?7, ?8, ?9, ?10, ?11,
-                 ?12, ?13,
-                 COALESCE(?14, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+                 ?1, ?2, ?3, ?4, ?5, ?6, ?7,
+                 ?8, ?9, ?10, ?11, ?12,
+                 ?13, ?14,
+                 COALESCE(?15, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
              )",
             params![
                 bool_integer(defaults.show_splash),
+                bool_integer(defaults.control_center_rgb_enabled),
                 bool_integer(defaults.screensaver_subtitles),
                 defaults.subtitle_placement,
                 bool_integer(defaults.wallpaper_notifications),
@@ -1062,6 +1097,7 @@ fn write_target_default(
                  target,
                  idle_timeout_value,
                  idle_timeout_unit,
+                 rgb_enabled,
                  animation_speed,
                  texture_mode,
                  texture_family,
@@ -1070,12 +1106,13 @@ fn write_target_default(
                  palette_color
              )
              VALUES (
-                 ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9
+                 ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10
              )",
             params![
                 target_name,
                 idle_timeout_value,
                 idle_timeout_unit,
+                bool_integer(defaults.rgb_enabled),
                 defaults.animation_speed,
                 texture_mode,
                 texture_family,

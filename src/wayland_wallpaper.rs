@@ -3869,12 +3869,16 @@ fn render_mirror_frames(
 
 
                     if let Some(ambient) = ambient.as_mut() {
+                        // When an OpenRGB session may exist, only its independent
+                        // coordinator can certify hardware release and acknowledge
+                        // the pause. Never acknowledge from the renderer here.
                         ambient.release();
+                    } else {
+                        // Without an OpenRGB coordinator there is no lighting
+                        // session to release. The renderer has reached its pause
+                        // checkpoint and can acknowledge suspension itself.
+                        control.acknowledge_paused();
                     }
-                    // Hardware release and pause acknowledgment are owned by
-                    // the independent coordinator. The renderer's release()
-                    // only invalidates pending sampled frames; it cannot
-                    // certify hardware restoration.
 
 
                     println!(

@@ -11138,6 +11138,7 @@ fn save_control_configuration(
     let app_defaults =
     crate::manage_configuration::AppDefaults {
         show_splash: control.show_splash,
+        control_center_rgb_enabled: control.control_center_rgb_enabled,
         screensaver_subtitles: control.subtitles,
         subtitle_placement: control.subtitle_placement.clone(),
         wallpaper_notifications: control.notifications,
@@ -11184,6 +11185,7 @@ fn save_control_configuration(
     let screensaver_defaults =
     crate::manage_configuration::TargetDefaults {
         target: "screensaver".to_string(),
+        rgb_enabled: control.screensaver_rgb_enabled,
         idle_timeout_value: Some(idle_timeout_value),
         idle_timeout_unit: Some(idle_timeout_unit.clone()),
         animation_speed: control.screensaver_animation_speed,
@@ -11197,6 +11199,7 @@ fn save_control_configuration(
     let wallpaper_defaults =
     crate::manage_configuration::TargetDefaults {
         target: "wallpaper".to_string(),
+        rgb_enabled: control.wallpaper_rgb_enabled,
         idle_timeout_value: None,
         idle_timeout_unit: None,
         animation_speed: control.wallpaper_animation_speed,

@@ -10,7 +10,7 @@ use std::time::{
 use rusqlite::{Connection, OpenFlags};
 
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 2;
+pub const CURRENT_SCHEMA_VERSION: i64 = 3;
 
 
 #[derive(Debug, Clone)]
@@ -386,6 +386,12 @@ fn read_historical_database(
 
         1 => {
             crate::database_migration::read_schema_v001::read(
+                connection
+            )
+        }
+
+        2 => {
+            crate::database_migration::read_schema_v002::read(
                 connection
             )
         }

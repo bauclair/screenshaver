@@ -309,6 +309,9 @@ pub struct ShaderInformation {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ControlConfiguration {
     pub show_splash: bool,
+    pub control_center_rgb_enabled: bool,
+    pub screensaver_rgb_enabled: bool,
+    pub wallpaper_rgb_enabled: bool,
     pub screensaver_enabled: bool,
     pub subtitles: bool,
     pub subtitle_placement: String,
@@ -405,6 +408,9 @@ impl ControlConfiguration {
 
         Self {
             show_splash: app_defaults.as_ref().map(|d| d.show_splash).unwrap_or(true),
+            control_center_rgb_enabled: app_defaults.as_ref().map(|d| d.control_center_rgb_enabled).unwrap_or(false),
+            screensaver_rgb_enabled: screensaver_defaults.as_ref().map(|d| d.rgb_enabled).unwrap_or(false),
+            wallpaper_rgb_enabled: wallpaper_defaults.as_ref().map(|d| d.rgb_enabled).unwrap_or(false),
             screensaver_enabled: config.screensaver_enabled,
             subtitles: app_defaults.as_ref().map(|d| d.screensaver_subtitles).unwrap_or(config.subtitles),
             subtitle_placement: app_defaults.as_ref().map(|d| d.subtitle_placement.clone()).unwrap_or_else(|| "bottom:center".to_string()),

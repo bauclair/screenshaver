@@ -1547,6 +1547,7 @@ fn draw_appearance(
     ui.add_space(8.0);
 
     ui.checkbox(&mut configuration.show_splash, crate::manage_localization::runtime_text("appearance.show_splash"));
+    ui.checkbox(&mut configuration.control_center_rgb_enabled, "Enable OpenRGB for Control Center shader preview");
     ui.checkbox(&mut configuration.subtitles, crate::manage_localization::runtime_text("appearance.screensaver_subtitles"));
     ui.add_space(5.0);
 
@@ -1613,6 +1614,7 @@ fn draw_target_page(
                 &mut configuration.screensaver_enabled,
                 crate::manage_localization::runtime_text("common.enabled"),
             );
+            ui.checkbox(&mut configuration.screensaver_rgb_enabled, "Enable OpenRGB for screensavers");
 
             ui.add_space(
                 5.0
@@ -1657,6 +1659,7 @@ fn draw_target_page(
                 &mut configuration.wallpaper_enabled,
                 crate::manage_localization::runtime_text("common.enabled"),
             );
+            ui.checkbox(&mut configuration.wallpaper_rgb_enabled, "Enable OpenRGB for wallpapers and windowshaders");
 
             ui.add_space(
                 5.0
@@ -2175,7 +2178,7 @@ fn draw_target_grid(
             ui.add(
                 egui::DragValue::new(animation_speed)
                     .speed(0.01)
-                    .clamp_range(0.001..=100.0)
+                    .clamp_range(-10.0..=10.0)
                     .suffix("x")
             );
 

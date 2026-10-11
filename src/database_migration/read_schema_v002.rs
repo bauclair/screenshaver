@@ -1537,6 +1537,7 @@ fn read_application_defaults(
 
                 Ok(
                     MigrationApplicationDefaults {
+                        control_center_rgb_enabled: false,
                         show_splash:
                             integer_bool(
                                 show_splash,
@@ -1876,6 +1877,7 @@ fn read_target_default(
 
     Ok(
         MigrationTargetDefault {
+            rgb_enabled: false,
             idle_timeout,
             animation_speed,
             texture,
