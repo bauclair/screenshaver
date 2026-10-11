@@ -20,63 +20,155 @@ use crate::editor_layout::{
 
 
 
-// OpenRGB navigation is intentionally independent of shader rendering and
-// hardware ownership. Until discovery/connection APIs are integrated, the
-// interface reports an unverified state rather than guessing availability.
+// OpenRGB Control Center diagnostics. Network work is performed on a worker
+// thread; UI rendering never waits for TCP, DNS or SDK replies.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum OpenRgbNestedTab {
-    Status,
-    Devices,
-    Mapping,
-    Appearance,
-    Settings,
-}
+enum OpenRgbNestedTab { Status, Devices, Mapping, Appearance, Settings }
 
 impl OpenRgbNestedTab {
-    const ALL: [Self; 5] = [
-        Self::Status, Self::Devices, Self::Mapping,
-        Self::Appearance, Self::Settings,
-    ];
-
-    fn label(self) -> String {
+    const ALL: [Self; 5] = [Self::Status, Self::Devices, Self::Mapping, Self::Appearance, Self::Settings];
+    fn label(self) -> &'static str {
         match self {
-            Self::Status => "Status",
-            Self::Devices => "Devices",
-            Self::Mapping => "Mapping",
-            Self::Appearance => "Appearance",
+            Self::Status => "Status", Self::Devices => "Devices",
+            Self::Mapping => "Mapping", Self::Appearance => "Appearance",
             Self::Settings => "Settings",
-        }.to_string()
+        }
     }
+}
+
+#[derive(Clone, Debug)]
+struct OpenRgbDiscoveredDevice {
+    id: u32,
+    name: String,
+    serial: String,
+    leds: usize,
+    zones: usize,
+    modes: usize,
+    matrix: bool,
+}
+
+#[derive(Clone, Debug)]
+struct OpenRgbUiState {
+    endpoint: String,
+    checked_endpoint: String,
+    checking: bool,
+    checked: bool,
+    connection_ok: bool,
+    message: String,
+    devices: Vec<OpenRgbDiscoveredDevice>,
+}
+
+impl Default for OpenRgbUiState {
+    fn default() -> Self {
+        Self {
+            endpoint: "127.0.0.1:6742".into(), checked_endpoint: String::new(),
+            checking: false, checked: false, connection_ok: false,
+            message: String::new(), devices: Vec::new(),
+        }
+    }
+}
+
+fn openrgb_ui_state() -> &'static std::sync::Mutex<OpenRgbUiState> {
+    static STATE: OnceLock<std::sync::Mutex<OpenRgbUiState>> = OnceLock::new();
+    STATE.get_or_init(|| std::sync::Mutex::new(OpenRgbUiState::default()))
+}
+
+fn openrgb_probe(endpoint: &str) -> Result<Vec<OpenRgbDiscoveredDevice>, (bool, String)> {
+    use std::net::ToSocketAddrs;
+    let addresses: Vec<_> = endpoint.to_socket_addrs()
+        .map_err(|error| (false, format!("Invalid or unresolved endpoint: {error}")))?
+        .collect();
+    if addresses.is_empty() {
+        return Err((false, "Endpoint resolved to no addresses".into()));
+    }
+    let mut transport = None;
+    let mut last_error = String::new();
+    for address in addresses {
+        match crate::manage_openrgb_session::OpenRgbReadOnlyTransport::connect(address) {
+            Ok(connection) => { transport = Some(connection); break; }
+            Err(error) => last_error = error,
+        }
+    }
+    let mut transport = transport.ok_or((false, last_error))?;
+    let ids = transport.controller_ids().map_err(|error| (true, error))?;
+    let mut devices = Vec::with_capacity(ids.len());
+    for id in ids {
+        let snapshot = transport.decoded_controller(id).map_err(|error| {
+            (true, format!("Controller {id} discovery failed: {error}"))
+        })?;
+        let descriptor = snapshot.descriptor(id);
+        devices.push(OpenRgbDiscoveredDevice {
+            id, name: snapshot.name, serial: snapshot.serial,
+            leds: snapshot.led_names.len(), zones: snapshot.zone_counts.len(),
+            modes: snapshot.modes.len(), matrix: descriptor.matrix.is_some(),
+        });
+    }
+    Ok(devices)
+}
+
+fn openrgb_start_probe(ctx: egui::Context) {
+    let endpoint = {
+        let mut state = openrgb_ui_state().lock().unwrap_or_else(|e| e.into_inner());
+        if state.checking { return; }
+        state.checking = true;
+        state.checked = false;
+        state.connection_ok = false;
+        state.devices.clear();
+        state.message.clear();
+        state.checked_endpoint = state.endpoint.trim().to_string();
+        state.checked_endpoint.clone()
+    };
+    std::thread::spawn(move || {
+        let result = openrgb_probe(&endpoint);
+        let mut state = openrgb_ui_state().lock().unwrap_or_else(|e| e.into_inner());
+        state.checking = false;
+        state.checked = true;
+        match result {
+            Ok(devices) => {
+                state.connection_ok = true;
+                state.message = if devices.is_empty() {
+                    "Connected; the server reports no controllers".into()
+                } else { format!("Connected; {} controller(s) discovered", devices.len()) };
+                state.devices = devices;
+            }
+            Err((connected, message)) => {
+                state.connection_ok = connected;
+                state.message = message;
+                state.devices.clear();
+            }
+        }
+        drop(state);
+        ctx.request_repaint();
+    });
 }
 
 pub fn draw_openrgb(ui: &mut egui::Ui) {
     let selected_id = egui::Id::new("screenshaver_openrgb_nested_tab");
     let mut selected = ui.ctx().data(|data| {
-        data.get_temp::<OpenRgbNestedTab>(selected_id)
-            .unwrap_or(OpenRgbNestedTab::Status)
+        data.get_temp::<OpenRgbNestedTab>(selected_id).unwrap_or(OpenRgbNestedTab::Status)
     });
-
+    let state = openrgb_ui_state().lock().unwrap_or_else(|e| e.into_inner()).clone();
     ui.horizontal(|ui| {
-        // Status and Settings are always reachable, including when the server
-        // is absent. Hardware-dependent pages will be enabled when live
-        // discovery is wired into this UI; no connection is probed per frame.
         ui.vertical(|ui| {
             let labels: Vec<String> = OpenRgbNestedTab::ALL.iter()
-                .map(|tab| tab.label()).collect();
+                .map(|tab| tab.label().to_string()).collect();
             let tab_width = crate::editor_theme::vertical_tab_rail_width(ui, &labels, 126.0);
             ui.set_min_width(tab_width + 6.0);
             for tab in OpenRgbNestedTab::ALL {
-                let enabled = matches!(tab, OpenRgbNestedTab::Status | OpenRgbNestedTab::Settings);
+                let enabled = match tab {
+                    OpenRgbNestedTab::Status | OpenRgbNestedTab::Settings => true,
+                    OpenRgbNestedTab::Devices => state.connection_ok && !state.devices.is_empty(),
+                    OpenRgbNestedTab::Mapping | OpenRgbNestedTab::Appearance => false,
+                };
                 let response = crate::editor_theme::vertical_tab(
-                    ui, &tab.label(), selected == tab, enabled, tab_width,
+                    ui, tab.label(), selected == tab, enabled, tab_width,
                 );
-                if response.clicked() {
-                    selected = tab;
-                }
+                if response.clicked() { selected = tab; }
                 if !enabled {
-                    response.on_disabled_hover_text(
-                        "Requires a verified OpenRGB connection and compatible device. See Status."
-                    );
+                    response.on_disabled_hover_text(match tab {
+                        OpenRgbNestedTab::Devices => "Discover a device on the Status page first.",
+                        _ => "Device mapping and lighting controls are not enabled in the read-only integration.",
+                    });
                 }
                 ui.add_space(4.0);
             }
@@ -89,24 +181,57 @@ pub fn draw_openrgb(ui: &mut egui::Ui) {
                 OpenRgbNestedTab::Status => {
                     ui.heading("OpenRGB Status");
                     ui.add_space(6.0);
-                    ui.label("Connection status: Not checked");
-                    ui.label("Device discovery: Not checked");
+                    ui.label(format!("Server: {}", state.checked_endpoint.as_str().is_empty().then_some("Not checked").unwrap_or(&state.checked_endpoint)));
+                    let connection = if state.checking { "Checking..." }
+                        else if !state.checked { "Not checked" }
+                        else if state.connection_ok { "Connected" } else { "Unavailable" };
+                    ui.label(format!("Connection: {connection}"));
+                    if state.checked && !state.message.is_empty() {
+                        ui.label(&state.message);
+                    }
+                    if state.connection_ok {
+                        ui.label(format!("Discovered devices: {}", state.devices.len()));
+                    }
+                    ui.add_space(10.0);
+                    if ui.add_enabled(!state.checking, egui::Button::new("Refresh connection and devices")).clicked() {
+                        openrgb_start_probe(ui.ctx().clone());
+                    }
+                    ui.add_space(10.0);
+                    ui.label("Read-only SDK discovery. No lighting modes or LED colors are changed.");
+                    ui.label("OpenRGB must be running with its SDK server enabled. Configure the endpoint in Settings.");
+                }
+                OpenRgbNestedTab::Devices => {
+                    ui.heading("Devices");
                     ui.add_space(8.0);
-                    ui.label("OpenRGB is optional. To control lighting, install and start an OpenRGB server, or connect to an existing remote server.");
-                    ui.add_space(6.0);
-                    ui.label("On a local installation, enable the OpenRGB SDK server. For a remote server, ensure its address and port are reachable.");
-                    ui.add_space(6.0);
-                    ui.label("Automatic connection checks and device discovery will be added with the OpenRGB integration. No connection has been tested by this page.");
+                    for device in &state.devices {
+                        ui.group(|ui| {
+                            ui.label(egui::RichText::new(&device.name).strong());
+                            ui.label(format!("Controller ID: {}  |  LEDs: {}  |  Zones: {}  |  Modes: {}", device.id, device.leds, device.zones, device.modes));
+                            if !device.serial.is_empty() { ui.label(format!("Serial: {}", device.serial)); }
+                            ui.label(if device.matrix { "Matrix layout: available" } else { "Matrix layout: unavailable or unsupported" });
+                        });
+                        ui.add_space(6.0);
+                    }
+                    ui.label("Inventory only. Device selection and hardware ownership are not yet enabled.");
                 }
                 OpenRgbNestedTab::Settings => {
                     ui.heading("Settings");
                     ui.add_space(8.0);
-                    ui.label("Server address, port, update frequency, and diagnostics will be configured here.");
-                    ui.label("Connection settings are not yet editable in this initial layout.");
+                    ui.label("OpenRGB SDK server endpoint (host:port):");
+                    let mut endpoint = state.endpoint.clone();
+                    if ui.text_edit_singleline(&mut endpoint).changed() {
+                        let mut shared = openrgb_ui_state().lock().unwrap_or_else(|e| e.into_inner());
+                        shared.endpoint = endpoint;
+                    }
+                    ui.label("Default: 127.0.0.1:6742. Remote servers are supported.");
+                    ui.label("Endpoint changes are session-only in this stage; persistent configuration will follow.");
+                    if ui.add_enabled(!state.checking, egui::Button::new("Test connection")).clicked() {
+                        openrgb_start_probe(ui.ctx().clone());
+                    }
                 }
                 _ => {
                     ui.heading(selected.label());
-                    ui.label("This page will become available after OpenRGB connection and device discovery are integrated.");
+                    ui.label("This page is reserved for a later, guarded OpenRGB implementation.");
                 }
             }
         });
