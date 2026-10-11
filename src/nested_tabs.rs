@@ -45,6 +45,9 @@ struct OpenRgbDiscoveredDevice {
     zones: usize,
     modes: usize,
     matrix: bool,
+    identity: String,
+    eligible: bool,
+    reason: String,
 }
 
 #[derive(Clone, Debug)]
@@ -58,6 +61,8 @@ struct OpenRgbUiState {
     connection_ok: bool,
     message: String,
     devices: Vec<OpenRgbDiscoveredDevice>,
+    selected_identity: Option<String>,
+    selection_message: String,
 }
 
 impl Default for OpenRgbUiState {
@@ -67,6 +72,7 @@ impl Default for OpenRgbUiState {
             settings_error: String::new(), checked_endpoint: String::new(),
             checking: false, checked: false, connection_ok: false,
             message: String::new(), devices: Vec::new(),
+            selected_identity: None, selection_message: String::new(),
         }
     }
 }
@@ -79,6 +85,10 @@ fn openrgb_ui_state() -> &'static std::sync::Mutex<OpenRgbUiState> {
             Ok(Some(endpoint)) => { state.endpoint = endpoint.clone(); state.saved_endpoint = endpoint; }
             Ok(None) => {}
             Err(error) => state.settings_error = error,
+        }
+        match openrgb_load_selection() {
+            Ok(identity) => state.selected_identity = identity,
+            Err(error) => state.selection_message = error,
         }
         std::sync::Mutex::new(state)
     })
@@ -123,6 +133,61 @@ fn openrgb_save_server(endpoint: &str) -> Result<(), String> {
     transaction.commit().map_err(|e| format!("Cannot commit OpenRGB server settings: {e}"))
 }
 
+// Stable across controller re-enumeration. This is a conservative topology
+// fingerprint, not a globally unique manufacturer identifier. Duplicate matches
+// are deliberately refused rather than guessed.
+fn openrgb_identity(snapshot: &crate::manage_openrgb_session::OpenRgbControllerSnapshot) -> String {
+    let mut bytes = Vec::new();
+    for value in [&snapshot.name, &snapshot.serial] {
+        bytes.extend_from_slice(&(value.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(value.as_bytes());
+    }
+    for value in [snapshot.led_names.len() as u64, snapshot.width as u64, snapshot.height as u64] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    for name in &snapshot.led_names {
+        bytes.extend_from_slice(&(name.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(name.as_bytes());
+    }
+    for count in &snapshot.zone_counts { bytes.extend_from_slice(&count.to_le_bytes()); }
+    for index in &snapshot.matrix { bytes.extend_from_slice(&index.to_le_bytes()); }
+    let hash = bytes.iter().fold(0xcbf29ce484222325u64, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
+    });
+    format!("screenshaver-topology-v1:{hash:016x}")
+}
+
+fn openrgb_load_selection() -> Result<Option<String>, String> {
+    use rusqlite::OptionalExtension;
+    let connection = crate::open_database::open()?;
+    connection.query_row(
+        "SELECT d.stable_identity FROM openrgb_devices d JOIN openrgb_servers s ON s.server_id=d.server_id \
+         WHERE s.server_name='Default' COLLATE NOCASE AND d.enabled=1 LIMIT 1",
+        [], |row| row.get(0),
+    ).optional().map_err(|e| format!("Cannot load OpenRGB device selection: {e}"))
+}
+
+fn openrgb_save_selection(device: Option<&OpenRgbDiscoveredDevice>) -> Result<(), String> {
+    let mut connection = crate::open_database::open()?;
+    let transaction = connection.transaction().map_err(|e| e.to_string())?;
+    let server_id: i64 = transaction.query_row(
+        "SELECT server_id FROM openrgb_servers WHERE server_name='Default' COLLATE NOCASE",
+        [], |row| row.get(0),
+    ).map_err(|e| format!("Save an OpenRGB server first: {e}"))?;
+    transaction.execute("UPDATE openrgb_devices SET enabled=0 WHERE server_id=?1", [server_id])
+        .map_err(|e| format!("Cannot clear prior device selection: {e}"))?;
+    if let Some(device) = device {
+        transaction.execute(
+            "INSERT INTO openrgb_devices (server_id, device_name, stable_identity, controller_id_hint, enabled) \
+             VALUES (?1, ?2, ?3, ?4, 1) \
+             ON CONFLICT(server_id, stable_identity) DO UPDATE SET \
+             device_name=excluded.device_name, controller_id_hint=excluded.controller_id_hint, enabled=1",
+            rusqlite::params![server_id, device.name, device.identity, i64::from(device.id)],
+        ).map_err(|e| format!("Cannot save OpenRGB device selection: {e}"))?;
+    }
+    transaction.commit().map_err(|e| format!("Cannot commit OpenRGB device selection: {e}"))
+}
+
 fn openrgb_probe(endpoint: &str) -> Result<Vec<OpenRgbDiscoveredDevice>, (bool, String)> {
     use std::net::ToSocketAddrs;
     let addresses: Vec<_> = endpoint.to_socket_addrs()
@@ -147,10 +212,14 @@ fn openrgb_probe(endpoint: &str) -> Result<Vec<OpenRgbDiscoveredDevice>, (bool, 
             (true, format!("Controller {id} discovery failed: {error}"))
         })?;
         let descriptor = snapshot.descriptor(id);
+        let eligibility = crate::select_ambient_device::select_ambient_device(&[descriptor], id);
+        let identity = openrgb_identity(&snapshot);
         devices.push(OpenRgbDiscoveredDevice {
             id, name: snapshot.name, serial: snapshot.serial,
             leds: snapshot.led_names.len(), zones: snapshot.zone_counts.len(),
-            modes: snapshot.modes.len(), matrix: descriptor.matrix.is_some(),
+            modes: snapshot.modes.len(), matrix: snapshot.width > 0 && snapshot.height > 0,
+            identity, eligible: eligibility.is_ok(),
+            reason: eligibility.err().unwrap_or_default(),
         });
     }
     Ok(devices)
@@ -179,6 +248,14 @@ fn openrgb_start_probe(ctx: egui::Context) {
                 state.message = if devices.is_empty() {
                     "Connected; the server reports no controllers".into()
                 } else { format!("Connected; {} controller(s) discovered", devices.len()) };
+                if let Some(identity) = &state.selected_identity {
+                    let matches = devices.iter().filter(|d| &d.identity == identity).count();
+                    state.selection_message = match matches {
+                        0 => "Saved device is unavailable or its topology has changed; selection retained.".into(),
+                        1 => "Saved device found; lighting control remains disabled.".into(),
+                        _ => "Ambiguous device identity: multiple controllers match; no hardware selection is trusted.".into(),
+                    };
+                }
                 state.devices = devices;
             }
             Err((connected, message)) => {
@@ -253,16 +330,43 @@ pub fn draw_openrgb(ui: &mut egui::Ui) {
                 OpenRgbNestedTab::Devices => {
                     ui.heading("Devices");
                     ui.add_space(8.0);
+                    ui.label("Choose one discovered device for future ambient lighting. Selection does not acquire or control hardware.");
+                    ui.add_space(6.0);
+                    if !state.selection_message.is_empty() { ui.label(&state.selection_message); }
+                    if ui.button("Clear saved selection").clicked() {
+                        let result = openrgb_save_selection(None);
+                        let mut shared = openrgb_ui_state().lock().unwrap_or_else(|e| e.into_inner());
+                        match result {
+                            Ok(()) => { shared.selected_identity = None; shared.selection_message = "Device selection cleared.".into(); }
+                            Err(e) => shared.selection_message = e,
+                        }
+                    }
+                    ui.add_space(6.0);
                     for device in &state.devices {
                         ui.group(|ui| {
                             ui.label(egui::RichText::new(&device.name).strong());
                             ui.label(format!("Controller ID: {}  |  LEDs: {}  |  Zones: {}  |  Modes: {}", device.id, device.leds, device.zones, device.modes));
                             if !device.serial.is_empty() { ui.label(format!("Serial: {}", device.serial)); }
-                            ui.label(if device.matrix { "Matrix layout: available" } else { "Matrix layout: unavailable or unsupported" });
+                            ui.label(if device.matrix { "Matrix layout: reported" } else { "Matrix layout: unavailable or unsupported" });
+                            if !device.eligible { ui.label(format!("Not eligible for spatial lighting: {}", device.reason)); }
+                            let matches = state.devices.iter().filter(|other| other.identity == device.identity).count();
+                            let selected = state.selected_identity.as_deref() == Some(device.identity.as_str());
+                            if selected { ui.label("Saved selection"); }
+                            if ui.add_enabled(device.eligible && matches == 1 && !selected,
+                                egui::Button::new("Select device")).clicked() {
+                                let result = openrgb_save_selection(Some(device));
+                                let mut shared = openrgb_ui_state().lock().unwrap_or_else(|e| e.into_inner());
+                                match result {
+                                    Ok(()) => { shared.selected_identity = Some(device.identity.clone());
+                                        shared.selection_message = "Device selection saved. No lighting commands sent.".into(); }
+                                    Err(e) => shared.selection_message = e,
+                                }
+                            }
+                            if matches != 1 { ui.label("Ambiguous identity: selection disabled"); }
                         });
                         ui.add_space(6.0);
                     }
-                    ui.label("Inventory only. Device selection and hardware ownership are not yet enabled.");
+                    ui.label("Configuration only. Hardware acquisition and LED writes remain disabled.");
                 }
                 OpenRgbNestedTab::Settings => {
                     ui.heading("Settings");
@@ -289,6 +393,8 @@ pub fn draw_openrgb(ui: &mut egui::Ui) {
                                     shared.checked = false;
                                     shared.connection_ok = false;
                                     shared.devices.clear();
+                                    shared.selected_identity = None;
+                                    shared.selection_message.clear();
                                 }
                                 Err(error) => shared.settings_error = error,
                             }
