@@ -4214,6 +4214,8 @@ impl EditWindowOverlay {
         }
 
 
+        if !window_open { crate::nested_tabs::openrgb_shutdown_physical_test(); }
+
         self.window_open =
             window_open;
 
@@ -5530,6 +5532,7 @@ impl EditWindowOverlay {
     pub fn destroy(
         &mut self,
     ) {
+        crate::nested_tabs::openrgb_shutdown_physical_test();
         self.painter.destroy();
     }
 }

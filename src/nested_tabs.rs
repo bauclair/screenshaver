@@ -446,6 +446,163 @@ fn openrgb_copy_report(report: &str) -> Result<String, String> {
     Err(format!("Clipboard unavailable: {}", failures.join("; ")))
 }
 
+// Explicit, bounded hardware verification. Never start from discovery or tab navigation.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum OpenRgbTestPattern { All, Row(usize), Led(usize), Unreferenced }
+
+struct OpenRgbPhysicalTest {
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    handle: std::thread::JoinHandle<Result<String, String>>,
+}
+
+fn openrgb_physical_state() -> &'static std::sync::Mutex<Option<OpenRgbPhysicalTest>> {
+    static TEST: OnceLock<std::sync::Mutex<Option<OpenRgbPhysicalTest>>> = OnceLock::new();
+    TEST.get_or_init(|| std::sync::Mutex::new(None))
+}
+fn openrgb_physical_message() -> &'static std::sync::Mutex<String> {
+    static MESSAGE: OnceLock<std::sync::Mutex<String>> = OnceLock::new();
+    MESSAGE.get_or_init(|| std::sync::Mutex::new("No physical LED test has run.".into()))
+}
+fn openrgb_set_physical_message(message: String) {
+    *openrgb_physical_message().lock().unwrap_or_else(|e| e.into_inner()) = message;
+}
+fn openrgb_test_running() -> bool {
+    openrgb_physical_state().lock().unwrap_or_else(|e| e.into_inner()).is_some()
+}
+fn openrgb_reap_test() {
+    let finished = {
+        let mut slot = openrgb_physical_state().lock().unwrap_or_else(|e| e.into_inner());
+        if slot.as_ref().is_some_and(|test| test.handle.is_finished()) { slot.take() } else { None }
+    };
+    if let Some(test) = finished {
+        let result = test.handle.join().unwrap_or_else(|_| Err("LED diagnostic thread panicked; check durable recovery state".into()));
+        openrgb_set_physical_message(match result { Ok(msg) => msg, Err(err) => format!("LED test error: {err}") });
+    }
+}
+fn openrgb_stop_test() {
+    if let Some(test) = openrgb_physical_state().lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+        test.stop.store(true, std::sync::atomic::Ordering::Release);
+    }
+}
+/// Called on confirmed Control Center exit and before GL painter destruction.
+/// Blocks until all hardware writes have stopped and mode restoration has been attempted.
+pub fn openrgb_shutdown_physical_test() {
+    let test = {
+        let mut slot = openrgb_physical_state().lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(test) = slot.as_ref() { test.stop.store(true, std::sync::atomic::Ordering::Release); }
+        slot.take()
+    };
+    if let Some(test) = test {
+        let result = test.handle.join().unwrap_or_else(|_| Err("LED diagnostic thread panicked; durable recovery may be pending".into()));
+        openrgb_set_physical_message(match result { Ok(msg) => msg, Err(err) => format!("LED test error: {err}") });
+    }
+}
+fn openrgb_start_physical_test(endpoint: String, controller_id: u32, pattern: OpenRgbTestPattern) {
+    openrgb_reap_test();
+    let mut slot = openrgb_physical_state().lock().unwrap_or_else(|e| e.into_inner());
+    if slot.is_some() { return; }
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let stop_thread = stop.clone();
+    openrgb_set_physical_message("Acquiring guarded OpenRGB session...".into());
+    let handle = std::thread::spawn(move || openrgb_run_physical_test(&endpoint, controller_id, pattern, &stop_thread));
+    *slot = Some(OpenRgbPhysicalTest { stop, handle });
+}
+fn openrgb_run_physical_test(endpoint: &str, controller_id: u32, pattern: OpenRgbTestPattern,
+    stop: &std::sync::atomic::AtomicBool) -> Result<String, String> {
+    use std::sync::atomic::Ordering;
+    use std::time::{Duration, Instant};
+    use std::net::ToSocketAddrs;
+    let address = endpoint.to_socket_addrs().map_err(|e| e.to_string())?.next().ok_or("No OpenRGB endpoint address")?;
+    if stop.load(Ordering::Acquire) { return Ok("LED test cancelled before acquisition.".into()); }
+    let mut transport = crate::manage_openrgb_session::OpenRgbReadOnlyTransport::connect(address)?;
+    let ids = transport.controller_ids()?;
+    if !ids.contains(&controller_id) { return Err("Selected OpenRGB controller disappeared".into()); }
+    let snapshot = transport.decoded_controller(controller_id)?;
+    let selected = crate::select_ambient_device::select_ambient_device(&[snapshot.descriptor(controller_id)], controller_id)?;
+    let matrix = selected.matrix.as_ref().ok_or("No verified LED matrix")?;
+    let mut selected_leds = vec![false; selected.led_count];
+    match pattern {
+        OpenRgbTestPattern::All => for &index in &matrix.indices { if index != u32::MAX { selected_leds[index as usize] = true; } },
+        OpenRgbTestPattern::Row(row) => {
+            if row >= matrix.rows { return Err("Selected LED row no longer exists".into()); }
+            for &index in &matrix.indices[row*matrix.columns..(row+1)*matrix.columns] {
+                if index != u32::MAX { selected_leds[index as usize] = true; }
+            }
+        },
+        OpenRgbTestPattern::Led(index) => {
+            if index >= selected.led_count { return Err("LED index no longer exists".into()); }
+            selected_leds[index] = true;
+        },
+        OpenRgbTestPattern::Unreferenced => {
+            selected_leds.fill(true);
+            for &index in &matrix.indices { if index != u32::MAX { selected_leds[index as usize] = false; } }
+        },
+    }
+    if !selected_leds.iter().any(|&v| v) { return Err("Test pattern has no LEDs".into()); }
+    if stop.load(Ordering::Acquire) { return Ok("LED test cancelled before acquisition.".into()); }
+    let guarded = crate::manage_openrgb_session::GuardedOpenRgbSession::acquire(address, &selected)?;
+    // Restoration is mandatory even when writer creation or transmission fails.
+    let run = (|| -> Result<(), String> {
+        let mut worker = crate::manage_ambient_lighting::LightingWorker::start(address, controller_id, selected.led_count)?;
+        let deadline = Instant::now() + Duration::from_secs(15);
+        let start = Instant::now();
+        let mut error = None;
+        while Instant::now() < deadline && !stop.load(Ordering::Acquire) {
+            let phase = start.elapsed().as_secs_f64().fract();
+            let amplitude = (1.0 - (std::f64::consts::TAU * phase).cos()) * 0.5;
+            let rgb = [(255.0 * amplitude).round() as u8, (95.0 * amplitude).round() as u8,
+                       (31.0 * amplitude).round() as u8, 0];
+            let colors = selected_leds.iter().map(|&on| if on { rgb } else { [0,0,0,0] }).collect();
+            if let Err(e) = worker.try_submit(colors) { error = Some(e); break; }
+            std::thread::sleep(Duration::from_millis(33));
+        }
+        // Do not enqueue a final black frame: it can race with restoration and
+        // leave physical LEDs dark even when the SDK reports the restored mode.
+        // Dropping the sender and joining the writer must precede restoration.
+        let interrupted = stop.load(Ordering::Acquire);
+        crate::logger::information(
+            &crate::locate_paths::runtime_log_path(),
+            &format!("[OPENRGB LED TEST] {}: stopping LED writer before restoration",
+                if interrupted { "manual cancellation" } else { "timeout or completion" }),
+        );
+        let joined = worker.stop();
+        match &joined {
+            Ok(stats) => crate::logger::information(
+                &crate::locate_paths::runtime_log_path(),
+                &format!("[OPENRGB LED TEST] LED writer joined; transmitted={}, dropped={}",
+                    stats.transmitted, stats.dropped),
+            ),
+            Err(e) => crate::logger::warning(
+                &crate::locate_paths::runtime_log_path(),
+                &format!("[OPENRGB LED TEST] LED writer shutdown failed: {e}"),
+            ),
+        }
+        if let Some(e) = error { return Err(e); }
+        joined.map(|_| ())
+    })();
+    crate::logger::information(
+        &crate::locate_paths::runtime_log_path(),
+        "[OPENRGB LED TEST] Attempting original-mode restoration and SDK verification",
+    );
+    let restored = guarded.restore();
+    match &restored {
+        Ok(()) => crate::logger::information(
+            &crate::locate_paths::runtime_log_path(),
+            "[OPENRGB LED TEST] Original mode verified by SDK; physical lighting not verified",
+        ),
+        Err(e) => crate::logger::warning(
+            &crate::locate_paths::runtime_log_path(),
+            &format!("[OPENRGB LED TEST] Restoration unverified: {e}; recovery record retained"),
+        ),
+    }
+    match (run, restored) {
+        (Ok(()), Ok(())) => Ok("LED test stopped; original OpenRGB mode verified by SDK. Confirm physical lighting by observation.".into()),
+        (Err(e), Ok(())) => Err(format!("{e}; original mode restored")),
+        (Ok(()), Err(e)) => Err(format!("Restoration unverified: {e}; recovery record retained")),
+        (Err(e), Err(r)) => Err(format!("{e}; restoration unverified: {r}; recovery record retained")),
+    }
+}
+
 pub fn draw_openrgb(ui: &mut egui::Ui) {
     let selected_id = egui::Id::new("screenshaver_openrgb_nested_tab");
     let mut selected = ui.ctx().data(|data| {
@@ -615,14 +772,39 @@ pub fn draw_openrgb(ui: &mut egui::Ui) {
                         egui::CollapsingHeader::new("Physical LED verification")
                             .default_open(true)
                             .show(ui, |ui| {
-                                ui.label("Physical visibility cannot be determined from OpenRGB metadata alone.");
-                                ui.label("Illumination tests require guarded acquisition, an LED writer, and verified restoration.");
+                                openrgb_reap_test();
+                                ui.label("Neon Orange (#FF5F1F), smooth 1 Hz pulse, 15-second maximum. Only explicitly selected LEDs illuminate.");
+                                let pattern_id = egui::Id::new("openrgb_physical_pattern");
+                                let mut pattern = ui.ctx().data(|d| d.get_temp::<usize>(pattern_id).unwrap_or(0));
+                                let rows = device.topology.as_ref().map_or(0, |m| m.rows);
+                                let total = device.leds;
+                                let options = 2 + rows + total;
+                                if pattern >= options { pattern = 0; }
+                                egui::ComboBox::from_id_source("openrgb_physical_pattern_selector")
+                                    .selected_text(if pattern == 0 { "Entire mapped device".into() }
+                                        else if pattern == 1 { "Unreferenced controller LEDs".into() }
+                                        else if pattern < 2 + rows { format!("Matrix row {}", pattern - 1) }
+                                        else { format!("Controller LED {}", pattern - 2 - rows) })
+                                    .show_ui(ui, |ui| {
+                                        ui.selectable_value(&mut pattern, 0, "Entire mapped device");
+                                        ui.selectable_value(&mut pattern, 1, "Unreferenced controller LEDs");
+                                        for row in 0..rows { ui.selectable_value(&mut pattern, row + 2, format!("Matrix row {}", row + 1)); }
+                                        for led in 0..total { ui.selectable_value(&mut pattern, led + 2 + rows, format!("Controller LED {led}")); }
+                                    });
+                                ui.ctx().data_mut(|d| d.insert_temp(pattern_id, pattern));
+                                let running = openrgb_test_running();
                                 ui.horizontal(|ui| {
-                                    ui.add_enabled(false, egui::Button::new("Start physical LED test"))
-                                        .on_disabled_hover_text("Not yet wired to a guarded diagnostic session.");
-                                    ui.add_enabled(false, egui::Button::new("Stop test"));
+                                    if ui.add_enabled(!running && device.eligible, egui::Button::new("Start physical LED test")).clicked() {
+                                        let mode = if pattern == 0 { OpenRgbTestPattern::All }
+                                            else if pattern == 1 { OpenRgbTestPattern::Unreferenced }
+                                            else if pattern < 2 + rows { OpenRgbTestPattern::Row(pattern - 2) }
+                                            else { OpenRgbTestPattern::Led(pattern - 2 - rows) };
+                                        openrgb_start_physical_test(state.checked_endpoint.clone(), device.id, mode);
+                                    }
+                                    if ui.add_enabled(running, egui::Button::new("Stop test")).clicked() { openrgb_stop_test(); }
                                 });
-                                ui.label("No hardware commands are sent from this page.");
+                                ui.small(openrgb_physical_message().lock().unwrap_or_else(|e| e.into_inner()).clone());
+                                if running { ui.ctx().request_repaint_after(std::time::Duration::from_millis(100)); }
                             });
                         egui::CollapsingHeader::new("Verification results")
                             .show(ui, |ui| {
