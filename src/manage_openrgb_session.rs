@@ -123,6 +123,7 @@ const SDK_TIMEOUT: Duration = Duration::from_secs(5);
 /// No server startup, device rescan, or mode/LED write is performed.
 pub struct OpenRgbReadOnlyTransport {
     stream: TcpStream,
+    failed: bool,
 }
 
 impl OpenRgbReadOnlyTransport {
@@ -131,7 +132,7 @@ impl OpenRgbReadOnlyTransport {
             .map_err(|e| format!("OpenRGB SDK connection to {endpoint} failed: {e}"))?;
         stream.set_read_timeout(Some(SDK_TIMEOUT)).map_err(|e| e.to_string())?;
         stream.set_write_timeout(Some(SDK_TIMEOUT)).map_err(|e| e.to_string())?;
-        let mut transport = Self { stream };
+        let mut transport = Self { stream, failed: false };
         transport.send_read_only(0, 40, &SDK_PROTOCOL.to_le_bytes())?;
         let (_, response) = transport.receive(40)?;
         if response.len() != 4 {
@@ -168,6 +169,7 @@ impl OpenRgbReadOnlyTransport {
     }
 
     fn send_read_only(&mut self, id: u32, command: u32, data: &[u8]) -> Result<(), String> {
+        if self.failed { return Err("OpenRGB SDK transport unusable after prior failure".into()); }
         if !matches!(command, 0 | 1 | 40) {
             return Err("Refusing non-read-only OpenRGB SDK command".into());
         }
@@ -181,15 +183,64 @@ impl OpenRgbReadOnlyTransport {
             .map_err(|e| format!("OpenRGB SDK request failed: {e}"))
     }
 
+    /// Read exactly one packet component within the shared reply deadline.
+    /// A short read is retained in `offset` rather than discarded by read_exact.
+    /// Any failure poisons this transport: callers must not issue another request.
+    fn read_reply_part(
+        &mut self, buffer: &mut [u8], deadline: Instant, part: &str,
+    ) -> Result<(), String> {
+        let mut offset = 0usize;
+        while offset < buffer.len() {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err(format!(
+                    "OpenRGB SDK reply {part} deadline exceeded ({offset}/{} bytes received)",
+                    buffer.len()
+                ));
+            }
+            self.stream.set_read_timeout(Some(remaining))
+                .map_err(|e| format!("OpenRGB SDK reply {part} timeout configuration failed: {e}"))?;
+            match self.stream.read(&mut buffer[offset..]) {
+                Ok(0) => return Err(format!(
+                    "OpenRGB SDK reply {part} connection closed ({offset}/{} bytes received)",
+                    buffer.len()
+                )),
+                Ok(n) => offset += n,
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(e) if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => {
+                    if Instant::now() >= deadline {
+                        return Err(format!(
+                            "OpenRGB SDK reply {part} timed out ({offset}/{} bytes received): {e}",
+                            buffer.len()
+                        ));
+                    }
+                    // Some platforms report EAGAIN before the configured timeout.
+                    // Continue waiting only within the same absolute deadline.
+                }
+                Err(e) => return Err(format!(
+                    "OpenRGB SDK reply {part} failed ({offset}/{} bytes received): {e}",
+                    buffer.len()
+                )),
+            }
+        }
+        Ok(())
+    }
+
     fn receive(&mut self, expected: u32) -> Result<(u32, Vec<u8>), String> {
+        if self.failed { return Err("OpenRGB SDK transport unusable after prior failure".into()); }
+        let result = self.receive_inner(expected);
+        if result.is_err() {
+            self.failed = true;
+            let _ = self.stream.shutdown(std::net::Shutdown::Both);
+        }
+        result
+    }
+
+    fn receive_inner(&mut self, expected: u32) -> Result<(u32, Vec<u8>), String> {
         let deadline = Instant::now() + SDK_TIMEOUT;
         loop {
-            if Instant::now() >= deadline {
-                return Err(format!("OpenRGB SDK reply {expected} timed out"));
-            }
             let mut header = [0u8; 16];
-            self.stream.read_exact(&mut header)
-                .map_err(|e| format!("OpenRGB SDK reply header failed: {e}"))?;
+            self.read_reply_part(&mut header, deadline, "header")?;
             if &header[..4] != b"ORGB" {
                 return Err("Invalid OpenRGB SDK packet signature".into());
             }
@@ -200,8 +251,7 @@ impl OpenRgbReadOnlyTransport {
                 return Err("OpenRGB SDK reply exceeds packet limit".into());
             }
             let mut payload = vec![0u8; size];
-            self.stream.read_exact(&mut payload)
-                .map_err(|e| format!("OpenRGB SDK reply payload failed: {e}"))?;
+            self.read_reply_part(&mut payload, deadline, "payload")?;
             if command == expected {
                 return Ok((id, payload));
             }
@@ -513,6 +563,7 @@ impl OpenRgbReadOnlyTransport {
     /// Only this private function may send a mode-changing SDK command.
     /// The public transport API remains read-only.
     fn send_guarded_mode(&mut self, id: u32, command: u32, data: &[u8]) -> Result<(), String> {
+        if self.failed { return Err("OpenRGB SDK transport unusable after prior failure".into()); }
         if !matches!(command, 1100 | 1101) {
             return Err("Refusing unsupported OpenRGB mode command".into());
         }
@@ -1051,14 +1102,23 @@ impl ShaderLightingSession {
 
     fn finish(&mut self) -> Result<(u64, crate::manage_ambient_lighting::WorkerStats), String> {
         // Never attempt restoration until the writer thread has terminated.
+        let finish_started = Instant::now();
         let worker_result = match self.worker.take() {
             Some(worker) => worker.stop(),
             None => Err("OpenRGB worker was already stopped".into()),
         };
+        let worker_elapsed = finish_started.elapsed();
+        let restore_started = Instant::now();
         let restoration = match self.guarded.take() {
             Some(guarded) => guarded.restore(),
             None => Err("OpenRGB session was already restored".into()),
         };
+        let restore_elapsed = restore_started.elapsed();
+        eprintln!(
+            "[AMBIENT_OPENRGB_TIMING] worker_stop_ms={} restoration_ms={} total_ms={} restoration_verified={}",
+            worker_elapsed.as_millis(), restore_elapsed.as_millis(),
+            finish_started.elapsed().as_millis(), restoration.is_ok()
+        );
         match (worker_result, restoration) {
             (Ok(stats), Ok(())) => Ok((self.submitted, stats)),
             (Err(worker_error), Ok(())) => Err(format!(
@@ -1153,4 +1213,55 @@ pub fn saved_topology_identity(snapshot: &OpenRgbControllerSnapshot) -> String {
         (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
     });
     format!("screenshaver-topology-v1:{hash:016x}")
+}
+
+#[cfg(test)]
+mod sdk_deadline_tests {
+    use super::*;
+    use std::net::TcpListener;
+
+    #[test]
+    fn fragmented_header_and_payload_are_reassembled() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            let mut packet = Vec::new();
+            packet.extend_from_slice(b"ORGB");
+            packet.extend_from_slice(&0u32.to_le_bytes());
+            packet.extend_from_slice(&40u32.to_le_bytes());
+            packet.extend_from_slice(&4u32.to_le_bytes());
+            packet.extend_from_slice(&6u32.to_le_bytes());
+            for chunk in packet.chunks(3) {
+                socket.write_all(chunk).unwrap();
+                thread::sleep(Duration::from_millis(2));
+            }
+        });
+        let stream = TcpStream::connect(address).unwrap();
+        let mut transport = OpenRgbReadOnlyTransport { stream, failed: false };
+        let (_, payload) = transport.receive(40).unwrap();
+        assert_eq!(payload, 6u32.to_le_bytes());
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn incomplete_payload_fails_and_disables_connection() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            socket.write_all(b"ORGB").unwrap();
+            socket.write_all(&0u32.to_le_bytes()).unwrap();
+            socket.write_all(&1u32.to_le_bytes()).unwrap();
+            socket.write_all(&8u32.to_le_bytes()).unwrap();
+            socket.write_all(&[1u8, 2u8]).unwrap();
+        });
+        let stream = TcpStream::connect(address).unwrap();
+        let mut transport = OpenRgbReadOnlyTransport { stream, failed: false };
+        let error = transport.receive(1).unwrap_err();
+        assert!(error.contains("payload") && error.contains("2/8"), "{error}");
+        assert!(transport.failed);
+        assert!(transport.receive(1).unwrap_err().contains("unusable"));
+        server.join().unwrap();
+    }
 }
