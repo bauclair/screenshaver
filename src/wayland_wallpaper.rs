@@ -3625,6 +3625,12 @@ fn render_mirror_frames(
     let mut windowed_inactive_started: Option<Instant> =
         None;
 
+    // Diagnostics only: preserve compositor-driven pacing. In particular,
+    // never synthesize a wl_surface.frame completion after a screensaver pause.
+    let mut callback_wait_reported = false;
+    let mut resume_presentation_pending = false;
+    let mut resume_wait_reported = false;
+
 
     let result =
         'render_loop: loop {
@@ -3853,7 +3859,21 @@ fn render_mirror_frames(
                         "[AMBIENT_HANDOFF_DIAG] Wayland renderer detected pause request",
                     );
                     control.acknowledge_pause_detected();
+                    resume_presentation_pending = true;
+                    resume_wait_reported = false;
                     control.diagnostic_checkpoint(8);
+                    if runtime.display_format
+                        == crate::manage_configuration::WallpaperDisplayFormat::Windowed
+                    {
+                        let outstanding = native_targets.iter()
+                            .filter(|target| !state.frame_ready.get(&target.info.registry_name)
+                                .copied().unwrap_or(true))
+                            .count();
+                        crate::logger::warning(
+                            &crate::locate_paths::runtime_log_path(),
+                            &format!("[WINDOWSHADER_RESUME_DIAG] Pause entered; outstanding_frame_callbacks={outstanding}"),
+                        );
+                    }
                     paused =
                         true;
 
@@ -3914,6 +3934,12 @@ fn render_mirror_frames(
 
 
                 frame_times.clear();
+                if resume_presentation_pending {
+                    crate::logger::warning(
+                        &crate::locate_paths::runtime_log_path(),
+                        "[WINDOWSHADER_RESUME_DIAG] Pause released; awaiting compositor-paced presentation",
+                    );
+                }
             }
 
 
@@ -3958,14 +3984,37 @@ fn render_mirror_frames(
                 }
 
 
-                thread::sleep(
-                    Duration::from_millis(10)
-                );
-
-
+                if windowed_inactive_started.is_some_and(|since| since.elapsed() >= Duration::from_millis(1500))
+                    && !callback_wait_reported
+                {
+                    callback_wait_reported = true;
+                    let outstanding: Vec<u32> = native_targets.iter()
+                        .filter(|target| !state.frame_ready.get(&target.info.registry_name)
+                            .copied().unwrap_or(true))
+                        .map(|target| target.info.registry_name).collect();
+                    crate::logger::warning(
+                        &crate::locate_paths::runtime_log_path(),
+                        &format!("[WINDOWSHADER_RESUME_DIAG] Frame callback outstanding >1500ms; targets={outstanding:?}, post_pause={resume_presentation_pending}"),
+                    );
+                }
+                if resume_presentation_pending && !resume_wait_reported {
+                    resume_wait_reported = true;
+                    crate::logger::warning(
+                        &crate::locate_paths::runtime_log_path(),
+                        "[WINDOWSHADER_RESUME_DIAG] Post-pause presentation blocked by outstanding frame callback",
+                    );
+                }
+                thread::sleep(Duration::from_millis(10));
                 continue 'render_loop;
             }
 
+            if callback_wait_reported {
+                crate::logger::warning(
+                    &crate::locate_paths::runtime_log_path(),
+                    "[WINDOWSHADER_RESUME_DIAG] Outstanding frame callback delivered; presentation eligible",
+                );
+                callback_wait_reported = false;
+            }
 
             if let Some(inactive_at) =
                 windowed_inactive_started.take()
@@ -4945,12 +4994,18 @@ fn render_mirror_frames(
             }
 
 
-            if paused {
-                paused =
-                    false;
+            if paused || resume_presentation_pending {
+                paused = false;
+                resume_presentation_pending = false;
 
-                // Lighting was rearmed by the successful presentation above.
+                // Acknowledge only after a successful EGL presentation. This
+                // also covers pauses observed by the independent lighting
+                // coordinator while EGL was blocked.
                 control.acknowledge_resumed_frame();
+                crate::logger::warning(
+                    &crate::locate_paths::runtime_log_path(),
+                    "[WINDOWSHADER_RESUME_DIAG] Successful post-pause EGL presentation acknowledged",
+                );
 
 
                 println!(

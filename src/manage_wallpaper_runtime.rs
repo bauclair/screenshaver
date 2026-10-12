@@ -248,6 +248,16 @@ impl WallpaperRuntimeControl {
                 Duration::from_millis(1)
             );
         }
+
+        if running.load(Ordering::SeqCst)
+            && self.active.load(Ordering::SeqCst)
+            && !self.resume_frame_ready.load(Ordering::SeqCst)
+        {
+            crate::logger::warning(
+                &crate::locate_paths::runtime_log_path(),
+                "[WINDOWSHADER_RESUME_DIAG] Wallpaper resume wait expired without a confirmed presented frame (500ms)",
+            );
+        }
     }
 
 
