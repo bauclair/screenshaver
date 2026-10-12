@@ -39,18 +39,26 @@ struct EditorAmbientLighting {
 
 impl EditorAmbientLighting {
     fn start() -> Option<Self> {
-        let controller_id = std::env::var("SCREENSHAVER_AMBIENT_LIVE_CONTROLLER")
-            .ok()?.parse::<u32>().ok()?;
-        let endpoint = std::env::var("SCREENSHAVER_AMBIENT_LIVE_ENDPOINT")
-            .unwrap_or_else(|_| "127.0.0.1:6742".to_string());
-        let address = match endpoint.parse::<std::net::SocketAddr>() {
-            Ok(address) => address,
+        let enabled = match crate::manage_configuration::load_app_defaults() {
+            Ok(defaults) => defaults.control_center_rgb_enabled,
             Err(error) => {
-                log_warning(&format!("[AMBIENT_EDITOR] Invalid OpenRGB endpoint: {error}"));
+                log_warning(&format!("[AMBIENT_EDITOR] Cannot read RGB preference: {error}"));
                 return None;
             }
         };
-        let sampler = match crate::manage_ambient_lighting::FramebufferSampler::new(
+        if !enabled { return None; }
+        let (address, controller_id) = match crate::nested_tabs::openrgb_resolve_preview_controller() {
+            Ok(Some(selected)) => selected,
+            Ok(None) => {
+                log_information("[AMBIENT_EDITOR] No enabled OpenRGB controller selected");
+                return None;
+            }
+            Err(error) => {
+                log_warning(&format!("[AMBIENT_EDITOR] OpenRGB selection unavailable: {error}"));
+                return None;
+            }
+        };
+        let mut sampler = match crate::manage_ambient_lighting::FramebufferSampler::new(
             22, 12, Duration::from_millis(50),
         ) {
             Ok(sampler) => sampler,
@@ -65,6 +73,7 @@ impl EditorAmbientLighting {
             Ok(session) => session,
             Err(error) => {
                 log_warning(&format!("[AMBIENT_EDITOR] OpenRGB acquisition refused: {error}"));
+                unsafe { sampler.destroy(); }
                 return None;
             }
         };
@@ -4872,6 +4881,13 @@ fn run_paths(
                                                                     );
 
                                                                     edit_window.accept_control_configuration();
+
+                                                                    // Apply only successfully persisted preferences.
+                                                                    // Release the prior controller before reacquisition.
+                                                                    if let Some(ambient) = editor_ambient.as_mut() {
+                                                                        ambient.shutdown();
+                                                                    }
+                                                                    editor_ambient = EditorAmbientLighting::start();
 
                                                                     edit_window.set_status_message(
                                                                         localized_edit!("edit.configuration_saved")

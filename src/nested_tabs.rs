@@ -403,6 +403,31 @@ fn openrgb_start_probe(ctx: egui::Context) {
     });
 }
 
+/// Resolve the saved OpenRGB selection against a fresh, read-only discovery.
+/// Controller IDs are transient; a missing or duplicate topology fingerprint
+/// must never silently redirect live lighting to another device.
+pub(crate) fn openrgb_resolve_preview_controller() -> Result<Option<(std::net::SocketAddr, u32)>, String> {
+    use std::net::ToSocketAddrs;
+    let Some(identity) = openrgb_load_selection()? else { return Ok(None); };
+    let endpoint = openrgb_load_server()?.ok_or("No saved OpenRGB server")?;
+    let devices = openrgb_probe(&endpoint).map_err(|(_, error)| error)?;
+    let mut matches = devices.iter().filter(|device| device.identity == identity);
+    let selected = matches.next().ok_or("Saved OpenRGB device is unavailable")?;
+    if matches.next().is_some() {
+        return Err("Multiple OpenRGB controllers match the saved device identity".into());
+    }
+    if !selected.eligible { return Err("Saved OpenRGB device is ineligible".into()); }
+    // Use a reachable endpoint; do not trust a persisted controller-ID hint.
+    let addresses = endpoint.to_socket_addrs()
+        .map_err(|error| format!("Cannot resolve OpenRGB endpoint: {error}"))?;
+    for address in addresses {
+        if crate::manage_openrgb_session::OpenRgbReadOnlyTransport::connect(address).is_ok() {
+            return Ok(Some((address, selected.id)));
+        }
+    }
+    Err("No reachable OpenRGB endpoint".into())
+}
+
 // Use the desktop clipboard directly when egui's host integration does not
 // deliver copy requests (notably some embedded/full-screen Control Centers).
 // No shell invocation, extra crate, file chooser, or hardware interaction.
