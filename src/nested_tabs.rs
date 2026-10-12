@@ -604,97 +604,125 @@ fn openrgb_run_physical_test(endpoint: &str, controller_id: u32, pattern: OpenRg
 }
 
 
-// Single-controller perimeter direction verification. Shares the same exclusive
-// test slot and guarded restoration contract as Diagnostics.
-fn openrgb_start_mapping_test(endpoint: String, controller_id: u32, identity: String, zone_id: u64) {
+// Coordinated mapping test: one guarded owner, one clock, and a joined LED
+// writer per controller. Physical OpenRGB zones are not independently claimed.
+#[derive(Clone)]
+struct OpenRgbMappingTarget { zone_id: u64, controller_id: u32, identity: String }
+
+fn openrgb_start_mapping_test(endpoint: String, targets: Vec<OpenRgbMappingTarget>) {
     openrgb_reap_test();
     let mut slot = openrgb_physical_state().lock().unwrap_or_else(|e| e.into_inner());
-    if slot.is_some() { return; }
+    if slot.is_some() || targets.is_empty() { return; }
     let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let stop_thread = stop.clone();
-    openrgb_set_physical_message("Acquiring guarded OpenRGB session for mapping test...".into());
-    let handle = std::thread::spawn(move ||
-        openrgb_run_mapping_test(&endpoint, controller_id, &identity, zone_id, &stop_thread));
+    openrgb_set_physical_message("Acquiring guarded OpenRGB multi-controller session...".into());
+    let handle = std::thread::spawn(move || openrgb_run_mapping_test(&endpoint, &targets, &stop_thread));
     *slot = Some(OpenRgbPhysicalTest { stop, handle });
 }
 
-fn openrgb_run_mapping_test(endpoint: &str, controller_id: u32, identity: &str,
-    zone_id: u64, stop: &std::sync::atomic::AtomicBool) -> Result<String, String> {
+fn openrgb_run_mapping_test(endpoint: &str, targets: &[OpenRgbMappingTarget],
+    stop: &std::sync::atomic::AtomicBool) -> Result<String, String> {
+    use std::collections::HashSet;
     use std::net::ToSocketAddrs;
     use std::sync::atomic::Ordering;
     use std::time::{Duration, Instant};
-
+    if targets.is_empty() { return Err("No assigned mapping zones".into()); }
+    let mut seen_ids = HashSet::new();
+    let mut seen_identity = HashSet::new();
+    for target in targets {
+        if !seen_ids.insert(target.controller_id) || !seen_identity.insert(&target.identity) {
+            return Err("Duplicate controller or device assignment; refusing overlapping LED ownership".into());
+        }
+    }
     let address = endpoint.to_socket_addrs().map_err(|e| e.to_string())?
         .next().ok_or("No OpenRGB endpoint address")?;
     if stop.load(Ordering::Acquire) { return Ok("Mapping test cancelled.".into()); }
     let mut transport = crate::manage_openrgb_session::OpenRgbReadOnlyTransport::connect(address)?;
-    if !transport.controller_ids()?.contains(&controller_id) {
-        return Err("Selected OpenRGB controller disappeared".into());
+    let ids = transport.controller_ids()?;
+    let mut selections = Vec::new();
+    let mut orders = Vec::new();
+    for target in targets {
+        if !ids.contains(&target.controller_id) { return Err("Assigned OpenRGB controller disappeared".into()); }
+        let snapshot = transport.decoded_controller(target.controller_id)?;
+        if openrgb_identity(&snapshot) != target.identity {
+            return Err("Controller identity changed since discovery; test refused".into());
+        }
+        let selected = crate::select_ambient_device::select_ambient_device(
+            &[snapshot.descriptor(target.controller_id)], target.controller_id)?;
+        let matrix = selected.matrix.as_ref().ok_or("No verified LED matrix")?;
+        let mut seen = vec![false; selected.led_count];
+        let mut order = Vec::new();
+        for &index in &matrix.indices {
+            if index != u32::MAX {
+                let i = index as usize;
+                if i >= selected.led_count { return Err("Invalid LED matrix index".into()); }
+                if !seen[i] { seen[i] = true; order.push(i); }
+            }
+        }
+        if order.len() < 2 { return Err("At least two mapped LEDs are required per controller".into()); }
+        orders.push(order);
+        selections.push(selected);
     }
-    let snapshot = transport.decoded_controller(controller_id)?;
-    if openrgb_identity(&snapshot) != identity {
-        return Err("Controller identity changed since discovery; test refused".into());
-    }
-    let selected = crate::select_ambient_device::select_ambient_device(
-        &[snapshot.descriptor(controller_id)], controller_id)?;
-    let matrix = selected.matrix.as_ref().ok_or("No verified LED matrix")?;
-    // Row-major spatial order provides a recognizable left-to-right keyboard
-    // sweep. This is not a physical perimeter or controller LED-index order.
-    let mut order: Vec<usize> = Vec::new();
-    let mut seen = vec![false; selected.led_count];
-    for &index in &matrix.indices {
-        if index != u32::MAX {
-            let i = index as usize;
-            if i >= selected.led_count { return Err("Invalid LED matrix index".into()); }
-            if !seen[i] { seen[i] = true; order.push(i); }
+    if stop.load(Ordering::Acquire) { return Ok("Mapping test cancelled.".into()); }
+    let guarded = crate::manage_openrgb_session::GuardedOpenRgbMultiSession::acquire(address, &selections)?;
+    // Keep all writer handles until they have stopped, even if one fails to start.
+    let mut workers = Vec::new();
+    let mut failure = None;
+    for selected in &selections {
+        match crate::manage_ambient_lighting::LightingWorker::start(
+            address, selected.controller_id, selected.led_count) {
+            Ok(worker) => workers.push(worker),
+            Err(error) => { failure = Some(error); break; }
         }
     }
-    if order.len() < 2 { return Err("At least two mapped LEDs are required".into()); }
-    if stop.load(Ordering::Acquire) { return Ok("Mapping test cancelled.".into()); }
-    let guarded = crate::manage_openrgb_session::GuardedOpenRgbSession::acquire(address, &selected)?;
-    let run = (|| -> Result<(), String> {
-        let mut worker = crate::manage_ambient_lighting::LightingWorker::start(
-            address, controller_id, selected.led_count)?;
+    if failure.is_none() {
         let start = Instant::now();
         let deadline = start + Duration::from_secs(30);
-        let mut failure = None;
         while Instant::now() < deadline && !stop.load(Ordering::Acquire) {
-            let reversed = {
+            // Snapshot directions together; never hold the UI mutex during I/O.
+            let directions = {
                 let editor = openrgb_mapping_editor().lock().unwrap_or_else(|e| e.into_inner());
-                editor.edges.iter().flat_map(|edge| edge.iter())
-                    .find(|zone| zone.id == zone_id && zone.assignment.as_deref() == Some(identity))
-                    .map(|zone| zone.reverse)
+                targets.iter().map(|target| {
+                    editor.edges.iter().flat_map(|edge| edge.iter())
+                        .find(|zone| zone.id == target.zone_id &&
+                            zone.assignment.as_deref() == Some(target.identity.as_str()))
+                        .map(|zone| zone.reverse)
+                }).collect::<Vec<_>>()
             };
-            let Some(reversed) = reversed else {
-                failure = Some("Mapping assignment changed during test; stopping".to_string());
+            if directions.iter().any(Option::is_none) {
+                failure = Some("Mapping assignment changed during test; stopping".into());
                 break;
-            };
-            let phase = (start.elapsed().as_secs_f32() / 2.0).fract();
-            let position = ((phase * order.len() as f32) as usize).min(order.len() - 1);
-            let position = if reversed { order.len() - 1 - position } else { position };
-            let mut colors = vec![[0u8; 4]; selected.led_count];
-            for offset in 0..3 {
-                let i = (position + order.len() - offset) % order.len();
-                colors[order[i]] = match offset {
-                    0 => [255, 95, 31, 0],
-                    1 => [120, 38, 12, 0],
-                    _ => [35, 10, 3, 0],
-                };
             }
-            if let Err(error) = worker.try_submit(colors) { failure = Some(error); break; }
+            let phase = (start.elapsed().as_secs_f32() / 2.0).fract();
+            for (i, worker) in workers.iter_mut().enumerate() {
+                let order = &orders[i];
+                let position = ((phase * order.len() as f32) as usize).min(order.len() - 1);
+                let position = if directions[i] == Some(true) { order.len() - 1 - position } else { position };
+                let mut colors = vec![[0u8; 4]; selections[i].led_count];
+                for offset in 0..3 {
+                    let key = (position + order.len() - offset) % order.len();
+                    colors[order[key]] = match offset {
+                        0 => [255, 95, 31, 0], 1 => [120, 38, 12, 0], _ => [35, 10, 3, 0],
+                    };
+                }
+                if let Err(error) = worker.try_submit(colors) { failure = Some(error); break; }
+            }
+            if failure.is_some() { break; }
             std::thread::sleep(Duration::from_millis(33));
         }
-        // The writer must stop and join before restoring the original mode.
-        let joined = worker.stop();
-        if let Some(error) = failure { return Err(error); }
-        joined.map(|_| ())
-    })();
+    }
+    // Joining every writer is mandatory before restoring any controller.
+    for worker in workers {
+        if let Err(error) = worker.stop() {
+            if failure.is_none() { failure = Some(error); }
+        }
+    }
     let restored = guarded.restore();
-    match (run, restored) {
-        (Ok(()), Ok(())) => Ok("Mapping test ended; original mode verified by SDK. Check physical lighting.".into()),
-        (Err(e), Ok(())) => Err(format!("{e}; original mode restored")),
-        (Ok(()), Err(e)) => Err(format!("Restoration unverified: {e}; recovery record retained")),
-        (Err(e), Err(r)) => Err(format!("{e}; restoration unverified: {r}; recovery record retained")),
+    match (failure, restored) {
+        (None, Ok(())) => Ok(format!("Mapping test ended; {} controller(s) restored by SDK. Check physical lighting.", targets.len())),
+        (Some(e), Ok(())) => Err(format!("{e}; all controller modes restored")),
+        (None, Err(e)) => Err(format!("Restoration unverified: {e}; recovery records retained where necessary")),
+        (Some(e), Err(r)) => Err(format!("{e}; restoration unverified: {r}; recovery records retained where necessary")),
     }
 }
 
@@ -987,38 +1015,40 @@ fn openrgb_draw_mapping_editor(ui: &mut egui::Ui, state: &OpenRgbUiState) {
             ui.small("LED direction is configured from the zone's right-click menu.");
         }
     }
-    // Stage 1: deliberately allow only one uniquely assigned physical device.
-    // This prevents overlapping LED ownership until hardware-zone masks exist.
+    // A graphical zone owns an entire controller in this milestone. Reject
+    // duplicate identities even when they appear on different perimeter edges.
     let assignments: Vec<_> = editor.edges.iter().flat_map(|edge| edge.iter())
         .filter_map(|zone| zone.assignment.as_ref().map(|id| (zone.id, id.clone())))
         .collect();
-    let candidate = if assignments.len() == 1 {
-        let (zone_id, identity) = &assignments[0];
+    let mut targets = Vec::new();
+    let mut used = std::collections::HashSet::new();
+    let mut valid = !assignments.is_empty() && state.connection_ok;
+    for (zone_id, identity) in &assignments {
         let matches: Vec<_> = state.devices.iter().filter(|device|
             device.identity == *identity && device.eligible && device.leds > 1).collect();
-        if matches.len() == 1 { Some((*zone_id, matches[0].id, identity.clone())) }
-        else { None }
-    } else { None };
+        if matches.len() != 1 || !used.insert(identity.clone()) {
+            valid = false;
+            break;
+        }
+        targets.push(OpenRgbMappingTarget {
+            zone_id: *zone_id, controller_id: matches[0].id, identity: identity.clone(),
+        });
+    }
     openrgb_reap_test();
     let running = openrgb_test_running();
     ui.horizontal(|ui| {
-        if ui.add_enabled(!running && candidate.is_some(),
+        if ui.add_enabled(!running && valid,
             egui::Button::new("Test All Zones")).clicked() {
-            if let Some((zone_id, controller_id, identity)) = &candidate {
-                openrgb_start_mapping_test(state.checked_endpoint.clone(),
-                    *controller_id, identity.clone(), *zone_id);
-            }
+            openrgb_start_mapping_test(state.checked_endpoint.clone(), targets.clone());
         }
         if ui.add_enabled(running, egui::Button::new("Stop Test")).clicked() {
             openrgb_stop_test();
         }
     });
-    if assignments.len() > 1 {
-        ui.small("Stage 1 supports one assigned zone only. Unassign other zones to test this device.");
-    } else if candidate.is_none() {
-        ui.small("Assign one discovered, direction-capable OpenRGB device to enable the test.");
+    if !valid {
+        ui.small("Assign distinct, discovered, matrix-capable controllers to enable the test; duplicates are refused.");
     } else {
-        ui.small("30-second moving-key test. Right-click the assigned zone to reverse direction live.");
+        ui.small(format!("30-second synchronized test across {} assigned controller(s). Reverse directions live using each zone's menu.", targets.len()));
     }
     ui.small(openrgb_physical_message().lock().unwrap_or_else(|e| e.into_inner()).clone());
     if running { ui.ctx().request_repaint_after(std::time::Duration::from_millis(100)); }
