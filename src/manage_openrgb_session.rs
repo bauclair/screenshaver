@@ -610,6 +610,129 @@ impl GuardedOpenRgbSession {
     }
 }
 
+/// A single exclusive owner for a set of OpenRGB controllers. This is separate
+/// from the established single-controller API so existing callers are unchanged.
+/// Every controller has its own durable recovery record. LED writers must be
+/// stopped and joined before `restore` is called.
+pub struct GuardedOpenRgbMultiSession {
+    _owner: AmbientSessionPreflight,
+    transport: OpenRgbReadOnlyTransport,
+    controllers: Vec<(u32, AmbientRecoveryRecord)>,
+}
+
+impl GuardedOpenRgbMultiSession {
+    /// Acquire all requested controllers under one ownership lock. A failure
+    /// triggers best-effort restoration of every controller already registered.
+    /// Unverified controllers retain their durable recovery records.
+    pub fn acquire(endpoint: SocketAddr,
+        selections: &[crate::select_ambient_device::AmbientDeviceSelection],
+    ) -> Result<Self, String> {
+        use std::collections::HashSet;
+        if selections.is_empty() { return Err("No OpenRGB controllers selected".into()); }
+        let mut ids_seen = HashSet::new();
+        for selection in selections {
+            if !ids_seen.insert(selection.controller_id) {
+                return Err("Duplicate OpenRGB controller assignment".into());
+            }
+        }
+        let owner = AmbientSessionPreflight::begin()?;
+        let mut transport = OpenRgbReadOnlyTransport::connect(endpoint)?;
+        let all_ids = transport.controller_ids()?;
+        let mut snapshots = Vec::with_capacity(all_ids.len());
+        for id in &all_ids {
+            snapshots.push((*id, transport.decoded_controller(*id)?));
+        }
+        // Reject indistinguishable controllers, including unselected ones: a
+        // recovery record cannot safely choose between them after re-enumeration.
+        let mut identities = HashSet::new();
+        for (_, snapshot) in &snapshots {
+            let identity = (snapshot.name.clone(), snapshot.serial.clone(), snapshot_fingerprint(snapshot));
+            if !identities.insert(identity) {
+                return Err("Ambiguous identical OpenRGB controllers; refusing multi-device acquisition".into());
+            }
+        }
+        let mut prepared = Vec::with_capacity(selections.len());
+        for selected in selections {
+            let snapshot = snapshots.iter().find(|(id, _)| *id == selected.controller_id)
+                .map(|(_, snapshot)| snapshot)
+                .ok_or("Selected OpenRGB controller disappeared")?;
+            verify_pre_acquisition_device(selected, &snapshot.descriptor(selected.controller_id))?;
+            let direct = direct_mode_index(snapshot)?;
+            if snapshot.active == direct { return Err("OpenRGB controller already in Direct mode".into()); }
+            let (name, bytes) = snapshot.modes.get(snapshot.active).ok_or("Original OpenRGB mode missing")?;
+            let record = AmbientRecoveryRecord {
+                endpoint: endpoint.to_string(), device_name: snapshot.name.clone(),
+                serial: snapshot.serial.clone(), topology_fingerprint: snapshot_fingerprint(snapshot),
+                ownership_token: new_ownership_token()?,
+                original_mode_index: u32::try_from(snapshot.active).map_err(|e| e.to_string())?,
+                original_mode_name: name.clone(), original_mode_hex: mode_hex(bytes),
+            };
+            prepared.push((selected.controller_id, record, snapshot.active, direct));
+        }
+        // All devices are checked before the first write. Recheck immediately
+        // before registration so a changed baseline never becomes a restore target.
+        for (id, record, active, direct) in &prepared {
+            let fresh = transport.decoded_controller(*id)?;
+            matching_identity(&fresh, record)?;
+            if fresh.active != *active || direct_mode_index(&fresh)? != *direct {
+                return Err("OpenRGB controller mode changed during multi-device preflight".into());
+            }
+        }
+        let mut session = Self { _owner: owner, transport, controllers: Vec::new() };
+        for (id, record, _, _) in prepared {
+            // Register before the first possible mode write. If registration
+            // fails, restore previously acquired controllers before returning.
+            if let Err(error) = manage_runtime_state::register_ambient_recovery(&record) {
+                return Err(session.rollback_error(error));
+            }
+            session.controllers.push((id, record));
+            let switched = (|| -> Result<(), String> {
+                session.transport.send_guarded_mode(id, 1100, &[])?;
+                thread::sleep(Duration::from_millis(300));
+                let after = session.transport.decoded_controller(id)?;
+                matching_identity(&after, &session.controllers.last().unwrap().1)?;
+                if after.active != direct_mode_index(&after)? {
+                    return Err("OpenRGB Direct mode not verified".into());
+                }
+                Ok(())
+            })();
+            if let Err(error) = switched { return Err(session.rollback_error(error)); }
+        }
+        Ok(session)
+    }
+
+    pub fn controller_ids(&self) -> Vec<u32> {
+        self.controllers.iter().map(|(id, _)| *id).collect()
+    }
+
+    fn restore_all(&mut self) -> Vec<String> {
+        let mut errors = Vec::new();
+        // Restore in reverse acquisition order. Never stop after one failure.
+        for (id, record) in self.controllers.iter().rev() {
+            let result = restore_mode_verified(&mut self.transport, *id, record)
+                .and_then(|()| manage_runtime_state::complete_ambient_recovery(
+                    &record.device_identity(), &record.ownership_token));
+            if let Err(error) = result {
+                errors.push(format!("Controller {id}: {error}; recovery record retained if not cleared"));
+            }
+        }
+        errors
+    }
+
+    fn rollback_error(mut self, cause: String) -> String {
+        let errors = self.restore_all();
+        if errors.is_empty() { format!("{cause}; all registered controllers restored") }
+        else { format!("{cause}; restoration failures: {}", errors.join(" | ")) }
+    }
+
+    /// Call only after all LED writer threads have stopped and joined.
+    /// Each record is cleared independently only after verified restoration.
+    pub fn restore(mut self) -> Result<(), String> {
+        let errors = self.restore_all();
+        if errors.is_empty() { Ok(()) } else { Err(errors.join(" | ")) }
+    }
+}
+
 /// Restore and verify the original mode without modifying durable recovery state.
 /// Separating this operation permits realistic mock-server failure testing.
 /// The caller alone may clear the record, and only after this returns `Ok`.
