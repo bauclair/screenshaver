@@ -3630,6 +3630,8 @@ fn render_mirror_frames(
     let mut callback_wait_reported = false;
     let mut resume_presentation_pending = false;
     let mut resume_wait_reported = false;
+    let mut last_successful_swap = Instant::now();
+    let mut last_callback_stall_report: Option<Instant> = None;
 
 
     let result =
@@ -3934,6 +3936,10 @@ fn render_mirror_frames(
 
 
                 frame_times.clear();
+                // The pause has ended even if the compositor has not yet
+                // allowed another presentation. Keep the separate pending
+                // flag until a successful EGL swap acknowledges resumption.
+                paused = false;
                 if resume_presentation_pending {
                     crate::logger::warning(
                         &crate::locate_paths::runtime_log_path(),
@@ -3997,6 +4003,23 @@ fn render_mirror_frames(
                         &format!("[WINDOWSHADER_RESUME_DIAG] Frame callback outstanding >1500ms; targets={outstanding:?}, post_pause={resume_presentation_pending}"),
                     );
                 }
+                // A one-shot warning is useful at 1500ms; thereafter emit
+                // a bounded heartbeat every 10s so a persistent stall can be
+                // distinguished from a recovered callback without log spam.
+                if windowed_inactive_started.is_some_and(|since| since.elapsed() >= Duration::from_secs(10))
+                    && last_callback_stall_report.is_none_or(|last| last.elapsed() >= Duration::from_secs(10))
+                {
+                    last_callback_stall_report = Some(Instant::now());
+                    let outstanding: Vec<u32> = native_targets.iter()
+                        .filter(|target| !state.frame_ready.get(&target.info.registry_name)
+                            .copied().unwrap_or(true))
+                        .map(|target| target.info.registry_name).collect();
+                    let wait_ms = windowed_inactive_started.map_or(0, |since| since.elapsed().as_millis());
+                    crate::logger::warning(
+                        &crate::locate_paths::runtime_log_path(),
+                        &format!("[WINDOWSHADER_RESUME_DIAG] Callback stall persists: targets={outstanding:?}, wait_ms={wait_ms}, last_swap_age_ms={}, post_pause={resume_presentation_pending}; preserving compositor pacing", last_successful_swap.elapsed().as_millis()),
+                    );
+                }
                 if resume_presentation_pending && !resume_wait_reported {
                     resume_wait_reported = true;
                     crate::logger::warning(
@@ -4015,6 +4038,7 @@ fn render_mirror_frames(
                 );
                 callback_wait_reported = false;
             }
+            last_callback_stall_report = None;
 
             if let Some(inactive_at) =
                 windowed_inactive_started.take()
@@ -4950,6 +4974,7 @@ fn render_mirror_frames(
 
 
                 control.diagnostic_checkpoint(6);
+                last_successful_swap = Instant::now();
                 // Reassert the lighting request after every successful presentation.
                 // The independent coordinator can observe and release a brief
                 // pause that the EGL renderer never sees at its own checkpoint.
