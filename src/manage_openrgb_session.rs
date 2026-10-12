@@ -118,6 +118,8 @@ use std::time::{Duration, Instant};
 const SDK_PROTOCOL: u32 = 6;
 const MAX_SDK_PACKET: usize = 16 * 1024 * 1024;
 const SDK_TIMEOUT: Duration = Duration::from_secs(5);
+// Keep interactive screensaver restoration responsive if the SDK server stalls.
+const RESTORE_SNAPSHOT_TIMEOUT: Duration = Duration::from_millis(900);
 
 /// Read-only connection to an already running OpenRGB SDK server.
 /// No server startup, device rescan, or mode/LED write is performed.
@@ -155,8 +157,12 @@ impl OpenRgbReadOnlyTransport {
     /// Return the unmodified SDK v6 controller data for a specific ID.
     /// The guarded session must parse and validate this before any write.
     pub fn controller_snapshot(&mut self, controller_id: u32) -> Result<Vec<u8>, String> {
+        self.controller_snapshot_with_timeout(controller_id, SDK_TIMEOUT)
+    }
+
+    fn controller_snapshot_with_timeout(&mut self, controller_id: u32, timeout: Duration) -> Result<Vec<u8>, String> {
         self.send_read_only(controller_id, 1, &SDK_PROTOCOL.to_le_bytes())?;
-        let (returned_id, payload) = self.receive(1)?;
+        let (returned_id, payload) = self.receive_with_timeout(1, timeout)?;
         if returned_id != controller_id {
             return Err("OpenRGB controller ID changed during read-only discovery".into());
         }
@@ -166,6 +172,10 @@ impl OpenRgbReadOnlyTransport {
     /// Decode a complete controller snapshot without issuing any SDK writes.
     pub fn decoded_controller(&mut self, controller_id: u32) -> Result<OpenRgbControllerSnapshot, String> {
         parse_controller_snapshot(&self.controller_snapshot(controller_id)?)
+    }
+
+    fn decoded_controller_with_timeout(&mut self, controller_id: u32, timeout: Duration) -> Result<OpenRgbControllerSnapshot, String> {
+        parse_controller_snapshot(&self.controller_snapshot_with_timeout(controller_id, timeout)?)
     }
 
     fn send_read_only(&mut self, id: u32, command: u32, data: &[u8]) -> Result<(), String> {
@@ -228,7 +238,12 @@ impl OpenRgbReadOnlyTransport {
 
     fn receive(&mut self, expected: u32) -> Result<(u32, Vec<u8>), String> {
         if self.failed { return Err("OpenRGB SDK transport unusable after prior failure".into()); }
-        let result = self.receive_inner(expected);
+        self.receive_with_timeout(expected, SDK_TIMEOUT)
+    }
+
+    fn receive_with_timeout(&mut self, expected: u32, timeout: Duration) -> Result<(u32, Vec<u8>), String> {
+        if self.failed { return Err("OpenRGB SDK transport unusable after prior failure".into()); }
+        let result = self.receive_inner(expected, timeout);
         if result.is_err() {
             self.failed = true;
             let _ = self.stream.shutdown(std::net::Shutdown::Both);
@@ -236,8 +251,8 @@ impl OpenRgbReadOnlyTransport {
         result
     }
 
-    fn receive_inner(&mut self, expected: u32) -> Result<(u32, Vec<u8>), String> {
-        let deadline = Instant::now() + SDK_TIMEOUT;
+    fn receive_inner(&mut self, expected: u32, timeout: Duration) -> Result<(u32, Vec<u8>), String> {
+        let deadline = Instant::now() + timeout;
         loop {
             let mut header = [0u8; 16];
             self.read_reply_part(&mut header, deadline, "header")?;
@@ -792,7 +807,10 @@ fn restore_mode_verified(
     controller_id: u32,
     record: &AmbientRecoveryRecord,
 ) -> Result<(), String> {
-        let before = transport.decoded_controller(controller_id)?;
+        let snapshot_started = Instant::now();
+        let before = transport.decoded_controller_with_timeout(controller_id, RESTORE_SNAPSHOT_TIMEOUT);
+        eprintln!("[AMBIENT_OPENRGB_TIMING] restore_initial_snapshot_ms={} success={}", snapshot_started.elapsed().as_millis(), before.is_ok());
+        let before = before?;
         matching_identity(&before, &record)?;
         let direct = direct_mode_index(&before)?;
         let original = record.original_mode_index as usize;
@@ -807,14 +825,20 @@ fn restore_mode_verified(
             payload.extend_from_slice(&size.to_le_bytes());
             payload.extend_from_slice(&record.original_mode_index.to_le_bytes());
             payload.extend_from_slice(original_bytes);
-            transport.send_guarded_mode(controller_id, 1101, &payload)?;
+            let command_started = Instant::now();
+            let command_result = transport.send_guarded_mode(controller_id, 1101, &payload);
+            eprintln!("[AMBIENT_OPENRGB_TIMING] restore_mode_command_ms={} success={}", command_started.elapsed().as_millis(), command_result.is_ok());
+            command_result?;
             // Verify as soon as the controller reports the original mode.
             // The former unconditional 500 ms sleep delayed every handoff,
             // even when restoration had already completed. Keep the same
             // 500 ms settling budget, but poll rather than always consuming it.
             let deadline = Instant::now() + Duration::from_millis(500);
             loop {
-                let after = transport.decoded_controller(controller_id)?;
+                let verify_started = Instant::now();
+                let after = transport.decoded_controller_with_timeout(controller_id, RESTORE_SNAPSHOT_TIMEOUT);
+                eprintln!("[AMBIENT_OPENRGB_TIMING] restore_verify_snapshot_ms={} success={}", verify_started.elapsed().as_millis(), after.is_ok());
+                let after = after?;
                 matching_identity(&after, record)?;
                 if after.active == original {
                     return Ok(());
@@ -830,7 +854,10 @@ fn restore_mode_verified(
         }
         // The controller was already in the original mode; still verify
         // identity and active mode with a fresh snapshot.
-        let after = transport.decoded_controller(controller_id)?;
+        let verify_started = Instant::now();
+        let after = transport.decoded_controller_with_timeout(controller_id, RESTORE_SNAPSHOT_TIMEOUT);
+        eprintln!("[AMBIENT_OPENRGB_TIMING] restore_verify_snapshot_ms={} success={}", verify_started.elapsed().as_millis(), after.is_ok());
+        let after = after?;
         matching_identity(&after, record)?;
         if after.active != original {
             return Err("Original OpenRGB lighting mode not verified; recovery record retained".into());
@@ -1241,6 +1268,32 @@ mod sdk_deadline_tests {
         let mut transport = OpenRgbReadOnlyTransport { stream, failed: false };
         let (_, payload) = transport.receive(40).unwrap();
         assert_eq!(payload, 6u32.to_le_bytes());
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn stalled_controller_payload_obeys_restoration_deadline() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            let mut request = [0u8; 20];
+            socket.read_exact(&mut request).unwrap();
+            assert_eq!(&request[..4], b"ORGB");
+            assert_eq!(u32::from_le_bytes(request[8..12].try_into().unwrap()), 1);
+            socket.write_all(b"ORGB").unwrap();
+            socket.write_all(&0u32.to_le_bytes()).unwrap();
+            socket.write_all(&1u32.to_le_bytes()).unwrap();
+            socket.write_all(&538u32.to_le_bytes()).unwrap();
+            thread::sleep(Duration::from_millis(1200));
+        });
+        let stream = TcpStream::connect(address).unwrap();
+        let mut transport = OpenRgbReadOnlyTransport { stream, failed: false };
+        let started = Instant::now();
+        let result = transport.controller_snapshot_with_timeout(0, RESTORE_SNAPSHOT_TIMEOUT);
+        assert!(result.is_err());
+        assert!(started.elapsed() < Duration::from_millis(1150));
+        assert!(transport.failed);
         server.join().unwrap();
     }
 
