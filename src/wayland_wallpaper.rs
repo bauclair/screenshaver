@@ -165,6 +165,15 @@ struct LayerSurfaceDispatchData {
 #[derive(Debug, Clone)]
 struct FrameCallbackDispatchData {
     registry_name: u32,
+    sequence: u64,
+}
+
+#[derive(Debug)]
+struct WindowshaderCallbackDiagnostic {
+    sequence: u64,
+    requested_at: Instant,
+    swap_completed: bool,
+    flushed: bool,
 }
 
 
@@ -273,6 +282,8 @@ struct WaylandState {
     windowed_activation_established: bool,
     windowed_activated: bool,
     frame_ready: HashMap<u32, bool>,
+    windowshader_next_callback_sequence: u64,
+    windowshader_pending_callbacks: HashMap<u32, WindowshaderCallbackDiagnostic>,
 }
 
 
@@ -707,10 +718,11 @@ impl Dispatch<XdgToplevel, ()>
                 // non-empty state set, track Activated as the Windowshader's
                 // presentation-visibility signal.
                 if !states.is_empty() {
-                    state.windowed_activation_established =
-                        true;
+                    let activation_was_established = state.windowed_activation_established;
+                    state.windowed_activation_established = true;
 
 
+                    let previous_activation = state.windowed_activated;
                     state.windowed_activated =
                         states
                             .chunks_exact(
@@ -740,6 +752,12 @@ impl Dispatch<XdgToplevel, ()>
                                     )
                                 }
                             );
+                    if !activation_was_established || previous_activation != state.windowed_activated {
+                        crate::logger::warning(
+                            &crate::locate_paths::runtime_log_path(),
+                            &format!("[WINDOWSHADER_CALLBACK_DIAG] Activation transition: activated={} (focus signal, not visibility)", state.windowed_activated),
+                        );
+                    }
                 }
 
 
@@ -806,6 +824,22 @@ impl Dispatch<wl_callback::WlCallback, FrameCallbackDispatchData>
             event,
             wl_callback::Event::Done { .. }
         ) {
+            let pending = state.windowshader_pending_callbacks.remove(&data.registry_name);
+            if let Some(pending) = pending {
+                if pending.requested_at.elapsed() >= Duration::from_millis(250) || pending.sequence != data.sequence {
+                crate::logger::warning(
+                    &crate::locate_paths::runtime_log_path(),
+                    &format!("[WINDOWSHADER_CALLBACK_DIAG] Callback acknowledged: target={} seq={} age_ms={} swap_completed={} flushed={} matching_sequence={}",
+                        data.registry_name, data.sequence, pending.requested_at.elapsed().as_millis(),
+                        pending.swap_completed, pending.flushed, pending.sequence == data.sequence),
+                );
+                }
+            } else if data.sequence != 0 {
+                crate::logger::warning(
+                    &crate::locate_paths::runtime_log_path(),
+                    &format!("[WINDOWSHADER_CALLBACK_DIAG] Callback without pending record: target={} seq={}", data.registry_name, data.sequence),
+                );
+            }
             state.frame_ready.insert(
                 data.registry_name,
                 true,
@@ -3867,6 +3901,13 @@ fn render_mirror_frames(
                     if runtime.display_format
                         == crate::manage_configuration::WallpaperDisplayFormat::Windowed
                     {
+                        if let Some(pending) = state.windowshader_pending_callbacks.get(&0) {
+                            crate::logger::warning(
+                                &crate::locate_paths::runtime_log_path(),
+                                &format!("[WINDOWSHADER_CALLBACK_DIAG] Pause entered: seq={} age_ms={} swap_completed={} flushed={}",
+                                    pending.sequence, pending.requested_at.elapsed().as_millis(), pending.swap_completed, pending.flushed),
+                            );
+                        }
                         let outstanding = native_targets.iter()
                             .filter(|target| !state.frame_ready.get(&target.info.registry_name)
                                 .copied().unwrap_or(true))
@@ -3941,6 +3982,13 @@ fn render_mirror_frames(
                 // flag until a successful EGL swap acknowledges resumption.
                 paused = false;
                 if resume_presentation_pending {
+                    if let Some(pending) = state.windowshader_pending_callbacks.get(&0) {
+                        crate::logger::warning(
+                            &crate::locate_paths::runtime_log_path(),
+                            &format!("[WINDOWSHADER_CALLBACK_DIAG] Pause released: seq={} age_ms={} swap_completed={} flushed={}",
+                                pending.sequence, pending.requested_at.elapsed().as_millis(), pending.swap_completed, pending.flushed),
+                        );
+                    }
                     crate::logger::warning(
                         &crate::locate_paths::runtime_log_path(),
                         "[WINDOWSHADER_RESUME_DIAG] Pause released; awaiting compositor-paced presentation",
@@ -4925,13 +4973,22 @@ fn render_mirror_frames(
                 if runtime.display_format
                     == crate::manage_configuration::WallpaperDisplayFormat::Windowed
                 {
+                    state.windowshader_next_callback_sequence += 1;
+                    let sequence = state.windowshader_next_callback_sequence;
+                    let registry_name = native_target.info.registry_name;
                     native_target.surface.frame(
                         &frame_queue_handle,
                         FrameCallbackDispatchData {
-                            registry_name:
-                                native_target.info.registry_name,
+                            registry_name,
+                            sequence,
                         },
                     );
+                    state.windowshader_pending_callbacks.insert(registry_name, WindowshaderCallbackDiagnostic {
+                        sequence,
+                        requested_at: Instant::now(),
+                        swap_completed: false,
+                        flushed: false,
+                    });
 
                     state.frame_ready.insert(
                         native_target.info.registry_name,
@@ -4974,6 +5031,11 @@ fn render_mirror_frames(
 
 
                 control.diagnostic_checkpoint(6);
+                if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed {
+                    if let Some(pending) = state.windowshader_pending_callbacks.get_mut(&native_target.info.registry_name) {
+                        pending.swap_completed = true;
+                    }
+                }
                 last_successful_swap = Instant::now();
                 // Reassert the lighting request after every successful presentation.
                 // The independent coordinator can observe and release a brief
@@ -5715,6 +5777,21 @@ fn process_wayland_events(
             }
         )?;
 
+
+    for (target, pending) in state.windowshader_pending_callbacks.iter_mut() {
+        if !pending.flushed {
+            pending.flushed = true;
+            // A successful flush submits queued requests to the connection;
+            // it does not prove compositor processing or presentation.
+            if pending.requested_at.elapsed() >= Duration::from_millis(250) {
+            crate::logger::warning(
+                &crate::locate_paths::runtime_log_path(),
+                &format!("[WINDOWSHADER_CALLBACK_DIAG] Wayland flush succeeded: target={} seq={} age_ms={} swap_completed={}",
+                    target, pending.sequence, pending.requested_at.elapsed().as_millis(), pending.swap_completed),
+            );
+            }
+        }
+    }
 
     event_queue
         .dispatch_pending(
