@@ -3666,6 +3666,13 @@ fn render_mirror_frames(
     let mut resume_wait_reported = false;
     let mut last_successful_swap = Instant::now();
     let mut last_callback_stall_report: Option<Instant> = None;
+    // Diagnostic-only windowshader presentation watchdog. It never changes
+    // pacing, requests callbacks, or touches the EGL/Wayland surface.
+    let mut presentation_watchdog_last_report: Option<Instant> = None;
+    let mut presentation_watchdog_loop_ticks: u64 = 0;
+    let mut presentation_watchdog_last_ticks: u64 = 0;
+    let mut presentation_watchdog_swaps: u64 = 0;
+    let mut presentation_watchdog_last_swaps: u64 = 0;
 
 
     let result =
@@ -3679,6 +3686,57 @@ fn render_mirror_frames(
 
 
             control.diagnostic_checkpoint(2);
+            if runtime.display_format
+                == crate::manage_configuration::WallpaperDisplayFormat::Windowed
+            {
+                presentation_watchdog_loop_ticks = presentation_watchdog_loop_ticks.wrapping_add(1);
+                let swap_age = last_successful_swap.elapsed();
+                if swap_age >= Duration::from_millis(1500)
+                    && presentation_watchdog_last_report.is_none_or(
+                        |last| last.elapsed() >= Duration::from_secs(10)
+                    )
+                {
+                    presentation_watchdog_last_report = Some(Instant::now());
+                    let ready = native_targets.iter().all(|target| {
+                        state.frame_ready.get(&target.info.registry_name)
+                            .copied().unwrap_or(true)
+                    });
+                    let pending = state.windowshader_pending_callbacks.get(&0);
+                    let pending_description = pending.map_or_else(
+                        || "none".to_string(),
+                        |record| format!(
+                            "seq={} age_ms={} swap_completed={} flushed={}",
+                            record.sequence,
+                            record.requested_at.elapsed().as_millis(),
+                            record.swap_completed,
+                            record.flushed,
+                        ),
+                    );
+                    let configure_pending = state.surface_states.iter().any(|surface| {
+                        surface.registry_name == 0 && surface.configured.is_some()
+                    });
+                    crate::logger::warning(
+                        &crate::locate_paths::runtime_log_path(),
+                        &format!(
+                            "[WINDOWSHADER_PRESENTATION_DIAG] no_swap_ms={} frame_ready={} pending_callback=[{}] paused={} pause_requested={} post_pause={} activated={} activation_established={} configure_pending={} loop_ticks_delta={} swaps_delta={} next_deadline_in_ms={}",
+                            swap_age.as_millis(),
+                            ready,
+                            pending_description,
+                            paused,
+                            control.pause_requested(),
+                            resume_presentation_pending,
+                            state.windowed_activated,
+                            state.windowed_activation_established,
+                            configure_pending,
+                            presentation_watchdog_loop_ticks.wrapping_sub(presentation_watchdog_last_ticks),
+                            presentation_watchdog_swaps.wrapping_sub(presentation_watchdog_last_swaps),
+                            next_frame_deadline.saturating_duration_since(Instant::now()).as_millis(),
+                        ),
+                    );
+                    presentation_watchdog_last_ticks = presentation_watchdog_loop_ticks;
+                    presentation_watchdog_last_swaps = presentation_watchdog_swaps;
+                }
+            }
             remove_disconnected_targets(
                 display,
                 context,
@@ -5037,6 +5095,12 @@ fn render_mirror_frames(
                     }
                 }
                 last_successful_swap = Instant::now();
+                if runtime.display_format
+                    == crate::manage_configuration::WallpaperDisplayFormat::Windowed
+                {
+                    presentation_watchdog_swaps = presentation_watchdog_swaps.wrapping_add(1);
+                    presentation_watchdog_last_report = None;
+                }
                 // Reassert the lighting request after every successful presentation.
                 // The independent coordinator can observe and release a brief
                 // pause that the EGL renderer never sees at its own checkpoint.
