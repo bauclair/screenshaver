@@ -284,6 +284,9 @@ struct WaylandState {
     frame_ready: HashMap<u32, bool>,
     windowshader_next_callback_sequence: u64,
     windowshader_pending_callbacks: HashMap<u32, WindowshaderCallbackDiagnostic>,
+    // Diagnostic only: capture the first configure of each kind after a pause.
+    windowshader_trace_surface_configure: bool,
+    windowshader_trace_toplevel_configure: bool,
 }
 
 
@@ -638,6 +641,18 @@ impl Dispatch<XdgSurface, ()>
             serial,
         } = event
         {
+            if state.windowshader_trace_surface_configure {
+                state.windowshader_trace_surface_configure = false;
+                let pending = state.windowshader_pending_callbacks.get(&0);
+                crate::logger::warning(
+                    &crate::locate_paths::runtime_log_path(),
+                    &format!("[WINDOWSHADER_CONFIGURE_DIAG] First xdg_surface.configure after pause: serial={} pending_callback_seq={:?} pending_callback_age_ms={:?} frame_ready={} activated={} activation_established={}",
+                        serial, pending.map(|p| p.sequence),
+                        pending.map(|p| p.requested_at.elapsed().as_millis()),
+                        state.frame_ready.get(&0).copied().unwrap_or(true),
+                        state.windowed_activated, state.windowed_activation_established),
+                );
+            }
             xdg_surface.ack_configure(
                 serial
             );
@@ -711,6 +726,17 @@ impl Dispatch<XdgToplevel, ()>
                 height,
                 states,
             } => {
+                if state.windowshader_trace_toplevel_configure {
+                    state.windowshader_trace_toplevel_configure = false;
+                    let pending = state.windowshader_pending_callbacks.get(&0);
+                    crate::logger::warning(
+                        &crate::locate_paths::runtime_log_path(),
+                        &format!("[WINDOWSHADER_CONFIGURE_DIAG] First xdg_toplevel.configure after pause: width={} height={} state_bytes={} pending_callback_seq={:?} pending_callback_age_ms={:?} frame_ready={} previous_activated={}",
+                            width, height, states.len(), pending.map(|p| p.sequence),
+                            pending.map(|p| p.requested_at.elapsed().as_millis()),
+                            state.frame_ready.get(&0).copied().unwrap_or(true), state.windowed_activated),
+                    );
+                }
 
                 // The first xdg_toplevel configure may legitimately contain
                 // no states.  Do not treat that initial, unestablished state
@@ -3955,6 +3981,12 @@ fn render_mirror_frames(
                     control.acknowledge_pause_detected();
                     resume_presentation_pending = true;
                     resume_wait_reported = false;
+                    if runtime.display_format
+                        == crate::manage_configuration::WallpaperDisplayFormat::Windowed
+                    {
+                        state.windowshader_trace_surface_configure = true;
+                        state.windowshader_trace_toplevel_configure = true;
+                    }
                     control.diagnostic_checkpoint(8);
                     if runtime.display_format
                         == crate::manage_configuration::WallpaperDisplayFormat::Windowed
