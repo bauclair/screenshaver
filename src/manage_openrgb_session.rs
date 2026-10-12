@@ -1087,3 +1087,70 @@ impl Drop for ShaderLightingSession {
         }
     }
 }
+
+
+/// Resolve the saved, enabled device without taking OpenRGB ownership.
+/// Never trust persisted controller ID hints: topology must match exactly once.
+pub fn resolve_saved_controller() -> Result<Option<(std::net::SocketAddr, u32)>, String> {
+    use rusqlite::OptionalExtension;
+    use std::net::ToSocketAddrs;
+    let connection = crate::open_database::open()?;
+    let saved: Option<(String, i64, String)> = connection.query_row(
+        "SELECT s.host, s.port, d.stable_identity FROM openrgb_devices d          JOIN openrgb_servers s ON s.server_id=d.server_id          WHERE s.server_name='Default' COLLATE NOCASE AND d.enabled=1 LIMIT 1",
+        [], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    ).optional().map_err(|e| format!("Cannot read saved OpenRGB device: {e}"))?;
+    let Some((host, port, identity)) = saved else { return Ok(None); };
+    let port = u16::try_from(port).map_err(|_| "Invalid saved OpenRGB port")?;
+    let endpoint = if host.contains(':') { format!("[{host}]:{port}") } else { format!("{host}:{port}") };
+    let addresses = endpoint.to_socket_addrs().map_err(|e| format!("Cannot resolve OpenRGB server: {e}"))?;
+    let mut last_error = "No reachable OpenRGB server".to_string();
+    for address in addresses {
+        let mut transport = match OpenRgbReadOnlyTransport::connect(address) {
+            Ok(transport) => transport,
+            Err(error) => { last_error = error; continue; }
+        };
+        let mut match_id = None;
+        for id in transport.controller_ids()? {
+            let snapshot = transport.decoded_controller(id)?;
+            if saved_topology_identity(&snapshot) == identity {
+                let descriptor = snapshot.descriptor(id);
+                let matrix = descriptor.matrix.as_ref().ok_or("Saved OpenRGB device has no usable LED matrix")?;
+                matrix.validate()?;
+                if descriptor.display_name.trim().is_empty() || descriptor.led_count == 0 ||
+                    descriptor.led_count > u16::MAX as usize || matrix.led_count != descriptor.led_count {
+                    return Err("Saved OpenRGB device is not eligible for spatial lighting".into());
+                }
+                if match_id.replace(id).is_some() {
+                    return Err("Multiple controllers match saved OpenRGB device identity".into());
+                }
+            }
+        }
+        return match match_id {
+            Some(id) => Ok(Some((address, id))),
+            None => Err("Saved OpenRGB device is unavailable or its topology changed".into()),
+        };
+    }
+    Err(last_error)
+}
+
+/// Keep this fingerprint identical to the persisted Control Center format.
+pub fn saved_topology_identity(snapshot: &OpenRgbControllerSnapshot) -> String {
+    let mut bytes = Vec::new();
+    for value in [&snapshot.name, &snapshot.serial] {
+        bytes.extend_from_slice(&(value.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(value.as_bytes());
+    }
+    for value in [snapshot.led_names.len() as u64, snapshot.width as u64, snapshot.height as u64] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    for name in &snapshot.led_names {
+        bytes.extend_from_slice(&(name.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(name.as_bytes());
+    }
+    for count in &snapshot.zone_counts { bytes.extend_from_slice(&count.to_le_bytes()); }
+    for index in &snapshot.matrix { bytes.extend_from_slice(&index.to_le_bytes()); }
+    let hash = bytes.iter().fold(0xcbf29ce484222325u64, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
+    });
+    format!("screenshaver-topology-v1:{hash:016x}")
+}

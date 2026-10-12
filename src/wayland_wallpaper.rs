@@ -2735,13 +2735,8 @@ impl WaylandWallpaperAmbient {
                 // completes; do not acknowledge release until stop() succeeds.
                 state.released_verified.store(false, SeqCst);
                 let result = (|| -> Result<_, String> {
-                    let controller = std::env::var("SCREENSHAVER_AMBIENT_LIVE_CONTROLLER")
-                        .map_err(|error| error.to_string())?;
-                    let endpoint = std::env::var("SCREENSHAVER_AMBIENT_LIVE_ENDPOINT")
-                        .unwrap_or_else(|_| "127.0.0.1:6742".into());
-                    let id = controller.parse::<u32>().map_err(|error| error.to_string())?;
-                    let address = endpoint.parse::<std::net::SocketAddr>()
-                        .map_err(|error| error.to_string())?;
+                    let (address, id) = crate::manage_openrgb_session::resolve_saved_controller()?
+                        .ok_or("No enabled OpenRGB device selected")?;
                     crate::manage_openrgb_session::ShaderLightingSession::start(address, id)
                 })();
                 match result {
@@ -3605,7 +3600,8 @@ fn render_mirror_frames(
     // it does not alter Mango's existing frame-callback rendering behavior.
     let ambient_windowed = runtime.display_format
         == crate::manage_configuration::WallpaperDisplayFormat::Windowed;
-    let mut ambient = if std::env::var_os("SCREENSHAVER_AMBIENT_LIVE_CONTROLLER").is_none() {
+    let mut ambient = if !crate::manage_configuration::load_target_defaults("wallpaper")
+        .is_ok_and(|defaults| defaults.rgb_enabled) {
         None
     } else {
         match WaylandWallpaperAmbient::new(control.clone(), ambient_windowed) {

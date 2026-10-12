@@ -271,24 +271,21 @@ impl FrameRenderer {
                 window_height,
             )?;
 
-        let live_opt_in = std::env::var("SCREENSHAVER_AMBIENT_LIVE_CONTROLLER")
-            .ok().and_then(|value| value.parse::<u32>().ok());
-        let ambient_diagnostic = if live_opt_in.is_some() || std::env::var_os("SCREENSHAVER_AMBIENT_SAMPLE_DIAGNOSTIC")
-            .is_some_and(|value| value == "1")
-        {
+        let lighting_enabled = match crate::manage_configuration::load_target_defaults("screensaver") {
+            Ok(defaults) => defaults.rgb_enabled,
+            Err(error) => { log_warning(&format!("[AMBIENT_OPENRGB] Screensaver setting unavailable: {error}")); false }
+        };
+        let diagnostic_enabled = std::env::var_os("SCREENSHAVER_AMBIENT_SAMPLE_DIAGNOSTIC")
+            .is_some_and(|value| value == "1");
+        let ambient_diagnostic = if lighting_enabled || diagnostic_enabled {
             let diagnostic = Rc::new(RefCell::new(AmbientSamplingDiagnostic::new()?));
-            // Hardware acquisition is deferred until wallpaper has acknowledged
-            // its pause. The first screensaver frame remains presentation-only.
-            let _ = live_opt_in;
             let observer = Rc::clone(&diagnostic);
             engine.set_ambient_frame_hook(Some(Box::new(move |framebuffer, width, height| {
                 observer.borrow_mut().observe(framebuffer, width, height);
             })));
-            log_information("[AMBIENT_DIAGNOSTIC] Enabled: 22x12 RGB readback at <=20 Hz; hardware access only when explicitly enabled");
+            log_information("[AMBIENT_OPENRGB] Screensaver framebuffer sampling enabled at <=20 Hz");
             Some(diagnostic)
-        } else {
-            None
-        };
+        } else { None };
 
         Ok(
             Self {
@@ -369,20 +366,21 @@ impl FrameRenderer {
 
     fn start_live_hardware_after_wallpaper_pause(&mut self) {
         let Some(diagnostic) = self.ambient_diagnostic.as_ref() else { return; };
-        let Some(controller_id) = std::env::var("SCREENSHAVER_AMBIENT_LIVE_CONTROLLER")
-            .ok().and_then(|value| value.parse::<u32>().ok()) else { return; };
-        let endpoint = std::env::var("SCREENSHAVER_AMBIENT_LIVE_ENDPOINT")
-            .unwrap_or_else(|_| "127.0.0.1:6742".to_string());
-        match endpoint.parse::<std::net::SocketAddr>() {
-            Ok(address) => match crate::manage_openrgb_session::ShaderLightingSession::start(address, controller_id) {
-                Ok(session) => {
-                    diagnostic.borrow_mut().live_hardware = Some(session);
-                    diagnostic.borrow().report_pipeline("after_acquisition");
-                    log_information(&format!("[AMBIENT_OPENRGB] Screensaver acquired controller {controller_id} after wallpaper pause"));
+        if !crate::manage_configuration::load_target_defaults("screensaver")
+            .is_ok_and(|defaults| defaults.rgb_enabled) { return; }
+        match crate::manage_openrgb_session::resolve_saved_controller() {
+            Ok(Some((address, controller_id))) => {
+                match crate::manage_openrgb_session::ShaderLightingSession::start(address, controller_id) {
+                    Ok(session) => {
+                        diagnostic.borrow_mut().live_hardware = Some(session);
+                        diagnostic.borrow().report_pipeline("after_acquisition");
+                        log_information(&format!("[AMBIENT_OPENRGB] Screensaver acquired controller {controller_id} after wallpaper pause"));
+                    }
+                    Err(error) => log_warning(&format!("[AMBIENT_OPENRGB] Screensaver acquisition refused: {error}")),
                 }
-                Err(error) => log_warning(&format!("[AMBIENT_OPENRGB] Screensaver acquisition refused: {error}")),
-            },
-            Err(error) => log_warning(&format!("[AMBIENT_OPENRGB] Invalid endpoint: {error}")),
+            }
+            Ok(None) => log_warning("[AMBIENT_OPENRGB] No enabled OpenRGB device selected"),
+            Err(error) => log_warning(&format!("[AMBIENT_OPENRGB] Device resolution failed: {error}")),
         }
     }
 

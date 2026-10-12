@@ -211,24 +211,7 @@ fn openrgb_save_region(identity: &str, key: &str) -> Result<(), String> {
 // fingerprint, not a globally unique manufacturer identifier. Duplicate matches
 // are deliberately refused rather than guessed.
 fn openrgb_identity(snapshot: &crate::manage_openrgb_session::OpenRgbControllerSnapshot) -> String {
-    let mut bytes = Vec::new();
-    for value in [&snapshot.name, &snapshot.serial] {
-        bytes.extend_from_slice(&(value.len() as u64).to_le_bytes());
-        bytes.extend_from_slice(value.as_bytes());
-    }
-    for value in [snapshot.led_names.len() as u64, snapshot.width as u64, snapshot.height as u64] {
-        bytes.extend_from_slice(&value.to_le_bytes());
-    }
-    for name in &snapshot.led_names {
-        bytes.extend_from_slice(&(name.len() as u64).to_le_bytes());
-        bytes.extend_from_slice(name.as_bytes());
-    }
-    for count in &snapshot.zone_counts { bytes.extend_from_slice(&count.to_le_bytes()); }
-    for index in &snapshot.matrix { bytes.extend_from_slice(&index.to_le_bytes()); }
-    let hash = bytes.iter().fold(0xcbf29ce484222325u64, |hash, byte| {
-        (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
-    });
-    format!("screenshaver-topology-v1:{hash:016x}")
+    crate::manage_openrgb_session::saved_topology_identity(snapshot)
 }
 
 fn openrgb_load_selection() -> Result<Option<String>, String> {
@@ -407,25 +390,7 @@ fn openrgb_start_probe(ctx: egui::Context) {
 /// Controller IDs are transient; a missing or duplicate topology fingerprint
 /// must never silently redirect live lighting to another device.
 pub(crate) fn openrgb_resolve_preview_controller() -> Result<Option<(std::net::SocketAddr, u32)>, String> {
-    use std::net::ToSocketAddrs;
-    let Some(identity) = openrgb_load_selection()? else { return Ok(None); };
-    let endpoint = openrgb_load_server()?.ok_or("No saved OpenRGB server")?;
-    let devices = openrgb_probe(&endpoint).map_err(|(_, error)| error)?;
-    let mut matches = devices.iter().filter(|device| device.identity == identity);
-    let selected = matches.next().ok_or("Saved OpenRGB device is unavailable")?;
-    if matches.next().is_some() {
-        return Err("Multiple OpenRGB controllers match the saved device identity".into());
-    }
-    if !selected.eligible { return Err("Saved OpenRGB device is ineligible".into()); }
-    // Use a reachable endpoint; do not trust a persisted controller-ID hint.
-    let addresses = endpoint.to_socket_addrs()
-        .map_err(|error| format!("Cannot resolve OpenRGB endpoint: {error}"))?;
-    for address in addresses {
-        if crate::manage_openrgb_session::OpenRgbReadOnlyTransport::connect(address).is_ok() {
-            return Ok(Some((address, selected.id)));
-        }
-    }
-    Err("No reachable OpenRGB endpoint".into())
+    crate::manage_openrgb_session::resolve_saved_controller()
 }
 
 // Use the desktop clipboard directly when egui's host integration does not

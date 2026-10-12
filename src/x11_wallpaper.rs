@@ -580,20 +580,16 @@ impl WallpaperAmbient {
 
     fn acquire(&mut self) {
         if self.disabled || self.session.is_some() { return; }
-        let Some(controller_id) = std::env::var("SCREENSHAVER_AMBIENT_LIVE_CONTROLLER")
-            .ok().and_then(|value| value.parse::<u32>().ok()) else { return; };
-        let endpoint = std::env::var("SCREENSHAVER_AMBIENT_LIVE_ENDPOINT")
-            .unwrap_or_else(|_| "127.0.0.1:6742".to_string());
-        let address = match endpoint.parse::<std::net::SocketAddr>() {
-            Ok(address) => address,
-            Err(error) => { diagnostic(&format!("[AMBIENT_OPENRGB] Invalid endpoint: {error}")); self.disabled = true; return; }
+        let (address, controller_id) = match crate::manage_openrgb_session::resolve_saved_controller() {
+            Ok(Some(selection)) => selection,
+            Ok(None) => { self.disabled = true; diagnostic("[AMBIENT_OPENRGB] No enabled device selected"); return; }
+            Err(error) => { self.disabled = true; diagnostic(&format!("[AMBIENT_OPENRGB] Device resolution failed: {error}")); return; }
         };
         match crate::manage_openrgb_session::ShaderLightingSession::start(address, controller_id) {
             Ok(session) => { self.session = Some(session); self.restoration_verified = false; diagnostic("[AMBIENT_OPENRGB] X11 wallpaper acquired keyboard"); }
             Err(error) => { diagnostic(&format!("[AMBIENT_OPENRGB] X11 wallpaper acquisition refused: {error}")); self.disabled = true; }
         }
     }
-
     // A pause acknowledgement must never claim successful lighting handoff
     // after restoration failed. Guarded acquisition independently checks the
     // durable recovery record before allowing another renderer to take over.
@@ -648,7 +644,8 @@ fn run_window_loop(
 
     let mut paused = false;
     let mut first_frame_presented = false;
-    let ambient = if std::env::var_os("SCREENSHAVER_AMBIENT_LIVE_CONTROLLER").is_some() {
+    let ambient = if crate::manage_configuration::load_target_defaults("wallpaper")
+        .is_ok_and(|defaults| defaults.rgb_enabled) {
         match WallpaperAmbient::new() {
             Ok(ambient) => Some(Rc::new(RefCell::new(ambient))),
             Err(error) => { diagnostic(&format!("[AMBIENT_OPENRGB] X11 wallpaper sampler unavailable: {error}")); None }
