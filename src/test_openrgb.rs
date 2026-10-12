@@ -219,7 +219,15 @@ pub fn inspect_ambient_recovery() -> Result<(), String> {
                 .map(|(name, raw)| name == &record.original_mode_name && hex_encode(raw) == record.original_mode_hex)
                 .unwrap_or(false);
             let active = info.modes.get(info.active).map(|m| m.0.as_str()).unwrap_or("<invalid>");
-            println!("  SDK controller ID: {id}; active mode: {active:?}; original mode record matches: {mode_matches}");
+            println!("  SDK controller ID: {id}; device-level active mode: {active:?} (index {}); original mode record matches: {mode_matches}", info.active);
+            println!("  Pending record original mode: {:?} (index {})", record.original_mode_name, record.original_mode_index);
+            match read_zone_mode_diagnostics(&mut socket, id) {
+                Ok(zones) => {
+                    if zones.is_empty() { println!("  SDK reports no zones."); }
+                    for zone in zones { println!("{zone}"); }
+                }
+                Err(error) => println!("  Zone mode diagnostic unavailable: {error}"),
+            }
             if mode_matches {
                 println!("  READ-ONLY MATCH: device topology and original mode match. Ownership remains unknown; NO recovery attempted.");
             } else {
@@ -431,6 +439,55 @@ fn read_target(socket: &mut TcpStream, id: u32) -> Result<Target, String> {
     let (returned, data) = receive(socket, 1)?;
     if returned != id { return Err("Controller ID changed".into()); }
     parse_target(&data)
+}
+
+/// Read-only SDK v6 zone-mode diagnostic. This deliberately does not change the
+/// Target parser, topology fingerprint, or any guarded restoration decisions.
+fn read_zone_mode_diagnostics(socket: &mut TcpStream, id: u32) -> Result<Vec<String>, String> {
+    send(socket, id, 1, &PROTOCOL.to_le_bytes())?;
+    let (returned, payload) = receive(socket, 1)?;
+    if returned != id { return Err("Controller ID changed during zone diagnostic".into()); }
+    let mut r = Reader::new(&payload);
+    if r.u32()? as usize != payload.len() { return Err("Controller record size mismatch".into()); }
+    r.i32()?;
+    for _ in 0..6 { r.string()?; }
+    let count = r.u16()? as usize;
+    r.i32()?;
+    if count > 512 { return Err("Invalid controller mode count".into()); }
+    for _ in 0..count { r.mode()?; }
+    let zones = r.u16()? as usize;
+    if zones > 512 { return Err("Invalid zone count".into()); }
+    let mut output = Vec::with_capacity(zones);
+    for index in 0..zones {
+        let name = r.string()?;
+        r.i32()?; r.u32()?; r.u32()?; r.u32()?;
+        r.matrix()?;
+        let segments = r.u16()? as usize;
+        if segments > 2048 { return Err("Invalid segment count".into()); }
+        for _ in 0..segments {
+            r.string()?; r.i32()?; r.u32()?; r.u32()?; r.matrix()?; r.u32()?;
+        }
+        let flags = r.u32()?;
+        let active = r.i32()?;
+        let count = r.u16()? as usize;
+        if count > 512 { return Err("Invalid zone mode count".into()); }
+        let mut modes = Vec::with_capacity(count);
+        for _ in 0..count { modes.push(r.mode()?); }
+        let display_name = r.string()?;
+        let label = if display_name.is_empty() { &name } else { &display_name };
+        let status = if active == -1 {
+            "inherits device-level mode".to_owned()
+        } else if active < -1 {
+            format!("invalid negative active mode index {active}")
+        } else {
+            match modes.get(active as usize) {
+                Some(mode) => format!("active mode={mode:?} (index {active})"),
+                None => format!("active mode index {active} outside {} zone modes", modes.len()),
+            }
+        };
+        output.push(format!("  Zone {index}: {label:?} (name={name:?}, flags=0x{flags:08x}); {status}; available zone modes={}", modes.len()));
+    }
+    Ok(output)
 }
 
 // No mode-changing SDK command is permitted unless the post-consent snapshot
