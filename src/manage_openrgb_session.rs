@@ -119,7 +119,7 @@ const SDK_PROTOCOL: u32 = 6;
 const MAX_SDK_PACKET: usize = 16 * 1024 * 1024;
 const SDK_TIMEOUT: Duration = Duration::from_secs(5);
 // Keep interactive screensaver restoration responsive if the SDK server stalls.
-const RESTORE_SNAPSHOT_TIMEOUT: Duration = Duration::from_millis(900);
+const RESTORE_SNAPSHOT_TIMEOUT: Duration = Duration::from_millis(3000);
 
 /// Read-only connection to an already running OpenRGB SDK server.
 /// No server startup, device rescan, or mode/LED write is performed.
@@ -141,6 +141,8 @@ impl OpenRgbReadOnlyTransport {
             return Err("Invalid OpenRGB SDK protocol response".into());
         }
         let version = u32::from_le_bytes(response[..4].try_into().unwrap());
+        eprintln!("[AMBIENT_OPENRGB_DIAG] SDK protocol negotiation: requested={} server_reported={} supported={}",
+            SDK_PROTOCOL, version, version >= SDK_PROTOCOL);
         if version < SDK_PROTOCOL {
             return Err(format!("OpenRGB SDK v{SDK_PROTOCOL} or newer required; server reports v{version}"));
         }
@@ -1297,14 +1299,14 @@ mod sdk_deadline_tests {
             socket.write_all(&0u32.to_le_bytes()).unwrap();
             socket.write_all(&1u32.to_le_bytes()).unwrap();
             socket.write_all(&538u32.to_le_bytes()).unwrap();
-            thread::sleep(Duration::from_millis(1200));
+            thread::sleep(RESTORE_SNAPSHOT_TIMEOUT + Duration::from_millis(300));
         });
         let stream = TcpStream::connect(address).unwrap();
         let mut transport = OpenRgbReadOnlyTransport { stream, failed: false };
         let started = Instant::now();
         let result = transport.controller_snapshot_with_timeout(0, RESTORE_SNAPSHOT_TIMEOUT);
         assert!(result.is_err());
-        assert!(started.elapsed() < Duration::from_millis(1150));
+        assert!(started.elapsed() < RESTORE_SNAPSHOT_TIMEOUT + Duration::from_millis(250));
         assert!(transport.failed);
         server.join().unwrap();
     }
