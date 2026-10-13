@@ -4169,6 +4169,20 @@ fn render_mirror_frames(
                             .copied().unwrap_or(true))
                         .map(|target| target.info.registry_name).collect();
                     let wait_ms = windowed_inactive_started.map_or(0, |since| since.elapsed().as_millis());
+                    let callback_details: Vec<String> = outstanding.iter().map(|target| {
+                        match state.windowshader_pending_callbacks.get(target) {
+                            Some(pending) => format!(
+                                "target={} seq={} age_ms={} swap_completed={} flushed={}",
+                                target, pending.sequence, pending.requested_at.elapsed().as_millis(),
+                                pending.swap_completed, pending.flushed,
+                            ),
+                            None => format!("target={} missing_pending_record", target),
+                        }
+                    }).collect();
+                    crate::logger::warning(
+                        &crate::locate_paths::runtime_log_path(),
+                        &format!("[WINDOWSHADER_CALLBACK_DIAG] Outstanding callback details: {}", callback_details.join("; ")),
+                    );
                     crate::logger::warning(
                         &crate::locate_paths::runtime_log_path(),
                         &format!("[WINDOWSHADER_RESUME_DIAG] Callback stall persists: targets={outstanding:?}, wait_ms={wait_ms}, last_swap_age_ms={}, post_pause={resume_presentation_pending}; preserving compositor pacing", last_successful_swap.elapsed().as_millis()),

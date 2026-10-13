@@ -810,6 +810,10 @@ fn restore_mode_verified(
         let snapshot_started = Instant::now();
         let before = transport.decoded_controller_with_timeout(controller_id, RESTORE_SNAPSHOT_TIMEOUT);
         eprintln!("[AMBIENT_OPENRGB_TIMING] restore_initial_snapshot_ms={} success={}", snapshot_started.elapsed().as_millis(), before.is_ok());
+        if let Err(error) = &before {
+            eprintln!("[AMBIENT_OPENRGB_DIAG] restore stage=initial_snapshot controller={} timeout_ms={} error={}",
+                controller_id, RESTORE_SNAPSHOT_TIMEOUT.as_millis(), error);
+        }
         let before = before?;
         matching_identity(&before, &record)?;
         let direct = direct_mode_index(&before)?;
@@ -838,6 +842,10 @@ fn restore_mode_verified(
                 let verify_started = Instant::now();
                 let after = transport.decoded_controller_with_timeout(controller_id, RESTORE_SNAPSHOT_TIMEOUT);
                 eprintln!("[AMBIENT_OPENRGB_TIMING] restore_verify_snapshot_ms={} success={}", verify_started.elapsed().as_millis(), after.is_ok());
+                if let Err(error) = &after {
+                    eprintln!("[AMBIENT_OPENRGB_DIAG] restore stage=post_command_verification controller={} timeout_ms={} error={}",
+                        controller_id, RESTORE_SNAPSHOT_TIMEOUT.as_millis(), error);
+                }
                 let after = after?;
                 matching_identity(&after, record)?;
                 if after.active == original {
@@ -857,6 +865,10 @@ fn restore_mode_verified(
         let verify_started = Instant::now();
         let after = transport.decoded_controller_with_timeout(controller_id, RESTORE_SNAPSHOT_TIMEOUT);
         eprintln!("[AMBIENT_OPENRGB_TIMING] restore_verify_snapshot_ms={} success={}", verify_started.elapsed().as_millis(), after.is_ok());
+        if let Err(error) = &after {
+            eprintln!("[AMBIENT_OPENRGB_DIAG] restore stage=already_original_verification controller={} timeout_ms={} error={}",
+                controller_id, RESTORE_SNAPSHOT_TIMEOUT.as_millis(), error);
+        }
         let after = after?;
         matching_identity(&after, record)?;
         if after.active != original {
