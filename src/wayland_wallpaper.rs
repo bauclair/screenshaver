@@ -287,6 +287,7 @@ struct WaylandState {
     // Diagnostic only: capture the first configure of each kind after a pause.
     windowshader_trace_surface_configure: bool,
     windowshader_trace_toplevel_configure: bool,
+    windowshader_configure_count: u64,
 }
 
 
@@ -653,6 +654,7 @@ impl Dispatch<XdgSurface, ()>
                         state.windowed_activated, state.windowed_activation_established),
                 );
             }
+            state.windowshader_configure_count = state.windowshader_configure_count.wrapping_add(1);
             xdg_surface.ack_configure(
                 serial
             );
@@ -3715,6 +3717,13 @@ fn render_mirror_frames(
     let mut presentation_watchdog_last_ticks: u64 = 0;
     let mut presentation_watchdog_swaps: u64 = 0;
     let mut presentation_watchdog_last_swaps: u64 = 0;
+    // Windowed-only, bounded diagnostics; no changes to rendering decisions.
+    let mut windowshader_summary_at = Instant::now();
+    let mut windowshader_rotation_attempts: u64 = 0;
+    let mut windowshader_rotation_successes: u64 = 0;
+    let mut windowshader_rotation_failures: u64 = 0;
+    let mut windowshader_rotation_block_reported = false;
+    let mut windowshader_last_configure_count = state.windowshader_configure_count;
 
 
     let result =
@@ -3778,6 +3787,29 @@ fn render_mirror_frames(
                     presentation_watchdog_last_ticks = presentation_watchdog_loop_ticks;
                     presentation_watchdog_last_swaps = presentation_watchdog_swaps;
                 }
+            }
+            if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed
+                && windowshader_summary_at.elapsed() >= Duration::from_secs(10)
+            {
+                let ready = state.frame_ready.get(&0).copied().unwrap_or(true);
+                let pending = state.windowshader_pending_callbacks.get(&0);
+                let rotation_due = shader_interval.is_some_and(|interval| last_shader_switch.elapsed() >= interval);
+                crate::logger::warning(
+                    &crate::locate_paths::runtime_log_path(),
+                    &format!("[WINDOWSHADER_LIFECYCLE_DIAG] shader='{}' policy_id={} program={} frame={} swaps_total={} swap_age_ms={} frame_ready={} callback_seq={:?} callback_age_ms={:?} paused={} pause_requested={} activated={} rotation_due={} rotation_elapsed_ms={} rotation_interval_ms={:?} rotation_attempts={} rotation_successes={} rotation_failures={} configure_delta={} loop_ticks={}",
+                        current_shader.shader_name, current_shader.policy_id, program, frame,
+                        presentation_watchdog_swaps, last_successful_swap.elapsed().as_millis(),
+                        ready, pending.map(|p| p.sequence), pending.map(|p| p.requested_at.elapsed().as_millis()),
+                        paused, control.pause_requested(), state.windowed_activated,
+                        rotation_due, last_shader_switch.elapsed().as_millis(),
+                        shader_interval.map(|interval| interval.as_millis()),
+                        windowshader_rotation_attempts, windowshader_rotation_successes,
+                        windowshader_rotation_failures,
+                        state.windowshader_configure_count.wrapping_sub(windowshader_last_configure_count),
+                        presentation_watchdog_loop_ticks),
+                );
+                windowshader_last_configure_count = state.windowshader_configure_count;
+                windowshader_summary_at = Instant::now();
             }
             remove_disconnected_targets(
                 display,
@@ -4136,6 +4168,14 @@ fn render_mirror_frames(
 
 
             if !windowed_frame_ready {
+                if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed
+                    && !windowshader_rotation_block_reported
+                    && shader_interval.is_some_and(|interval| last_shader_switch.elapsed() >= interval)
+                {
+                    windowshader_rotation_block_reported = true;
+                    crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+                        "[WINDOWSHADER_ROTATION_DIAG] Rotation deadline reached while awaiting compositor frame callback; no rotation attempted");
+                }
                 if windowed_inactive_started.is_none() {
                     windowed_inactive_started =
                         Some(
@@ -4199,6 +4239,7 @@ fn render_mirror_frames(
                 continue 'render_loop;
             }
 
+            windowshader_rotation_block_reported = false;
             if callback_wait_reported {
                 crate::logger::warning(
                     &crate::locate_paths::runtime_log_path(),
@@ -4256,6 +4297,14 @@ fn render_mirror_frames(
                         false
                     )
             {
+                if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed {
+                    windowshader_rotation_attempts = windowshader_rotation_attempts.wrapping_add(1);
+                    crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+                        &format!("[WINDOWSHADER_ROTATION_DIAG] Rotation attempt={} previous_shader='{}' policy_id={} elapsed_ms={} interval_ms={:?} frame_ready={} program={}",
+                            windowshader_rotation_attempts, current_shader.shader_name,
+                            current_shader.policy_id, last_shader_switch.elapsed().as_millis(),
+                            shader_interval.map(|interval| interval.as_millis()), windowed_frame_ready, program));
+                }
                 last_shader_switch =
                     Instant::now();
 
@@ -4477,6 +4526,12 @@ fn render_mirror_frames(
 
                                 current_shader =
                                     next_shader.clone();
+                                if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed {
+                                    windowshader_rotation_successes = windowshader_rotation_successes.wrapping_add(1);
+                                    crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+                                        &format!("[WINDOWSHADER_ROTATION_DIAG] Rotation succeeded shader='{}' policy_id={} program={} successes={}",
+                                            current_shader.shader_name, current_shader.policy_id, program, windowshader_rotation_successes));
+                                }
 
 
                                 let postprocess_profile =
@@ -4611,6 +4666,11 @@ fn render_mirror_frames(
                             Err(
                                 error
                             ) => {
+                                if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed {
+                                    windowshader_rotation_failures = windowshader_rotation_failures.wrapping_add(1);
+                                    crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+                                        &format!("[WINDOWSHADER_ROTATION_DIAG] Compilation failed shader='{}' error={}", next_shader.shader_name, error));
+                                }
                                 println!(
                                     "Wallpaper shader compilation failed; keeping the current shader:"
                                 );
@@ -4642,6 +4702,11 @@ fn render_mirror_frames(
                     Err(
                         error
                     ) => {
+                        if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed {
+                            windowshader_rotation_failures = windowshader_rotation_failures.wrapping_add(1);
+                            crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+                                &format!("[WINDOWSHADER_ROTATION_DIAG] Selection failed: {}", error));
+                        }
                         println!(
                             "Wallpaper shader selection failed; keeping the current shader:"
                         );
