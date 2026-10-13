@@ -17,6 +17,8 @@ pub enum Command {
         exclude_local_config: bool,
     },
 
+    TestWallpaperProtocol,
+
     TestPlaylists,
 
     TestLyrics,
@@ -171,6 +173,11 @@ pub fn parse() -> Result<Command, String> {
             )
         }
 
+
+        "--test-wallpaper-protocol" => {
+            require_no_extra_arguments(&args, "--test-wallpaper-protocol")?;
+            Ok(Command::TestWallpaperProtocol)
+        }
 
         "--test-playlists" => {
 
@@ -978,6 +985,9 @@ pub fn print_help() {
                  Render one shader at exactly -1.0x animation speed for 60 seconds.\n\
                  Press Esc to stop the test and return to the command line.\n\
                  Test load failures do not change shader validation/rejection state.\n\
+         \n\
+             --test-wallpaper-protocol\n\
+                  Run isolated wallpaper pause/resume protocol checks and exit.\n\
          \n\
              --test-playlists\n\
                  Run developer Playlist database-management tests and exit.\n\

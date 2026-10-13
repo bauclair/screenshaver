@@ -324,6 +324,14 @@ fn main() {
         }
 
 
+        crate::parse_arguments::Command::TestWallpaperProtocol => {
+            if let Err(error) = crate::control_wallpaper::run_protocol_tests() {
+                eprintln!("[WALLPAPER PROTOCOL TEST] FAILED: {error}");
+                std::process::exit(1);
+            }
+            return;
+        }
+
         crate::parse_arguments::Command::TestSchemaReader {
             database_path,
         } => {
@@ -718,6 +726,7 @@ fn main() {
         crate::parse_arguments::Command::Run
         | crate::parse_arguments::Command::Start
         | crate::parse_arguments::Command::Control { .. }
+        | crate::parse_arguments::Command::TestWallpaperProtocol
         | crate::parse_arguments::Command::TestPlaylists
         | crate::parse_arguments::Command::TestLocalization
         | crate::parse_arguments::Command::BenchmarkRender { .. }
@@ -1524,6 +1533,7 @@ fn main() {
         | crate::parse_arguments::Command::Help
         | crate::parse_arguments::Command::CompareDatabases { .. }
         | crate::parse_arguments::Command::Version
+        | crate::parse_arguments::Command::TestWallpaperProtocol
         | crate::parse_arguments::Command::TestPlaylists
         | crate::parse_arguments::Command::TestLyrics
         | crate::parse_arguments::Command::AmbientLightingTest { .. }

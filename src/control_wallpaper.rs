@@ -19,6 +19,8 @@ const RESUME_ACK_FILE: &str = "screenshaver-wallpaper.resumed";
 const RESUME_TOKEN_FILE: &str = "screenshaver-wallpaper.resume-token";
 const TRANSACTION_LOCK_FILE: &str = "screenshaver-wallpaper.transaction.lock";
 static NEXT_TOKEN: AtomicU64 = AtomicU64::new(0);
+// Set only by the early-exit developer diagnostic, before any runtime starts.
+static TEST_RUNTIME_DIRECTORY: OnceLock<PathBuf> = OnceLock::new();
 
 pub struct WallpaperPauseGuard {
     token: Option<String>,
@@ -230,6 +232,9 @@ fn control_path(
 
 
 fn runtime_directory() -> Result<PathBuf, String> {
+    if let Some(path) = TEST_RUNTIME_DIRECTORY.get() {
+        return Ok(path.clone());
+    }
 
     static RUNTIME_DIRECTORY:
         OnceLock<Result<PathBuf, String>> =
@@ -343,3 +348,158 @@ fn log_warning(
     );
 }
 
+
+// This developer diagnostic runs in a separate Screenshaver invocation. Its
+// OnceLock override is set before any production runtime initialization; no
+// environment variables, real runtime markers, or OpenRGB devices are touched.
+pub(crate) fn run_protocol_tests() -> Result<(), String> {
+    use std::sync::atomic::AtomicBool;
+    use std::sync::Arc;
+
+    struct TempDirectory(PathBuf);
+    impl Drop for TempDirectory {
+        fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); }
+    }
+    let root = std::env::temp_dir().join(format!(
+        "screenshaver-protocol-test-{}-{}", std::process::id(), new_token()
+    ));
+    fs::create_dir(&root).map_err(|e| format!("Cannot create isolated test directory: {e}"))?;
+    let _cleanup = TempDirectory(root.clone());
+    TEST_RUNTIME_DIRECTORY.set(root.clone())
+        .map_err(|_| "Protocol test directory already initialized".to_string())?;
+    println!("[WALLPAPER PROTOCOL TEST] Isolated directory: {}", root.display());
+
+    fn check(label: &str, result: Result<(), String>, failures: &mut Vec<String>) {
+        match result {
+            Ok(()) => println!("[PASS] {label}"),
+            Err(e) => { println!("[FAIL] {label}: {e}"); failures.push(format!("{label}: {e}")); }
+        }
+    }
+    fn ensure(condition: bool, reason: &str) -> Result<(), String> {
+        if condition { Ok(()) } else { Err(reason.to_string()) }
+    }
+    fn reset() -> Result<(), String> {
+        for name in [ACTIVE_FILE, PAUSE_REQUEST_FILE, PAUSE_ACK_FILE,
+                     RESUME_ACK_FILE, RESUME_TOKEN_FILE] { remove_marker(name)?; }
+        Ok(())
+    }
+    // Worker imitates the wallpaper renderer's token capture, verified pause
+    // acknowledgment, and frame-present acknowledgment. It never renders.
+    fn worker(stop: Arc<AtomicBool>) -> std::thread::JoinHandle<()> {
+        std::thread::spawn(move || {
+            let mut held: Option<String> = None;
+            while !stop.load(Ordering::Relaxed) {
+                match detected_pause_token() {
+                    Ok(Some(token)) => {
+                        if held.is_none() {
+                            held = Some(token.clone());
+                            acknowledge_paused_for(&token);
+                        }
+                    }
+                    Ok(None) => {
+                        if let Some(token) = held.take() {
+                            acknowledge_resumed_frame_for(&token);
+                        }
+                    }
+                    Err(_) => break,
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        })
+    }
+    let mut failures = Vec::new();
+
+    check("No active wallpaper: no pause requested", (|| {
+        reset()?;
+        let guard = WallpaperPauseGuard::acquire()?;
+        ensure(guard.token.is_none(), "Unexpected pause token")?;
+        drop(guard);
+        ensure(read_marker(PAUSE_REQUEST_FILE)?.is_none(), "Unexpected pause marker")
+    })(), &mut failures);
+
+    check("Stale pause ACK rejected", (|| {
+        reset()?;
+        write_marker(ACTIVE_FILE, "test-runtime")?;
+        let stale = "old-transaction";
+        write_marker(PAUSE_REQUEST_FILE, "current-transaction")?;
+        acknowledge_paused_for(stale);
+        ensure(read_marker(PAUSE_ACK_FILE)?.is_none(), "Stale ACK was accepted")?;
+        reset()
+    })(), &mut failures);
+
+    check("Timeout refuses renderer and withdraws own marker", (|| {
+        reset()?;
+        write_marker(ACTIVE_FILE, "test-runtime")?;
+        write_marker(PAUSE_ACK_FILE, "stale-ack")?;
+        let result = WallpaperPauseGuard::acquire();
+        ensure(result.is_err(), "Missing pause ACK incorrectly granted permission")?;
+        ensure(read_marker(PAUSE_REQUEST_FILE)?.is_none(), "Timed-out pause marker remains")?;
+        reset()
+    })(), &mut failures);
+
+    check("Successful transaction and concurrent lock exclusion", (|| {
+        reset()?;
+        write_marker(ACTIVE_FILE, "test-runtime")?;
+        let stop = Arc::new(AtomicBool::new(false));
+        let handle = worker(Arc::clone(&stop));
+        let result = (|| {
+            let guard = WallpaperPauseGuard::acquire()?;
+            ensure(guard.token.is_some(), "No acknowledged transaction")?;
+            ensure(WallpaperPauseGuard::acquire().is_err(), "Concurrent requester acquired lock")?;
+            drop(guard);
+            ensure(read_marker(PAUSE_REQUEST_FILE)?.is_none(), "Pause marker remains after guard drop")
+        })();
+        stop.store(true, Ordering::Relaxed);
+        handle.join().map_err(|_| "Worker panicked".to_string())?;
+        reset()?;
+        result
+    })(), &mut failures);
+
+    check("Abandoned requester lock and marker", (|| {
+        reset()?;
+        write_marker(ACTIVE_FILE, "test-runtime")?;
+        let lock = OpenOptions::new().read(true).write(true).create(true)
+            .open(required_path(TRANSACTION_LOCK_FILE)?).map_err(|e| e.to_string())?;
+        lock.try_lock_exclusive().map_err(|e| e.to_string())?;
+        write_marker(PAUSE_REQUEST_FILE, "abandoned-token")?;
+        drop(lock); // Simulate requester process exit: kernel releases its lock.
+        ensure(read_marker(PAUSE_REQUEST_FILE)?.as_deref() == Some("abandoned-token"),
+               "Abandoned marker unexpectedly disappeared")?;
+        // A new requester may replace the abandoned request, but that does not
+        // establish that the wallpaper has actually resumed rendering.
+        let result = WallpaperPauseGuard::acquire();
+        ensure(result.is_err(), "Unacknowledged replacement was incorrectly accepted")?;
+        ensure(read_marker(PAUSE_REQUEST_FILE)?.is_none(), "Replacement marker not withdrawn")?;
+        reset()
+    })(), &mut failures);
+
+    check("Repeated transactions with fresh identities", (|| {
+        reset()?;
+        write_marker(ACTIVE_FILE, "test-runtime")?;
+        let stop = Arc::new(AtomicBool::new(false));
+        let handle = worker(Arc::clone(&stop));
+        let result = (|| {
+            let first = WallpaperPauseGuard::acquire()?;
+            let first_token = first.token.clone().ok_or("Missing first token")?;
+            drop(first);
+            // Wait for the worker to observe the resumed state before the
+            // next request, avoiding a fabricated compositor race.
+            std::thread::sleep(Duration::from_millis(10));
+            let second = WallpaperPauseGuard::acquire()?;
+            ensure(second.token.as_deref() != Some(&first_token), "Token reused")?;
+            drop(second);
+            Ok(())
+        })();
+        stop.store(true, Ordering::Relaxed);
+        handle.join().map_err(|_| "Worker panicked".to_string())?;
+        reset()?;
+        result
+    })(), &mut failures);
+
+    if failures.is_empty() {
+        println!("[WALLPAPER PROTOCOL TEST] All 6 tests passed.");
+        Ok(())
+    } else {
+        Err(format!("{} of 6 tests failed: {}", failures.len(), failures.join("; ")))
+    }
+}
