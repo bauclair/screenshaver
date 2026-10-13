@@ -3703,6 +3703,10 @@ fn render_mirror_frames(
     let mut windowed_inactive_started: Option<Instant> =
         None;
 
+    // Track the most recent pause interval so an outstanding compositor
+    // callback cannot charge the same inactive time to both clocks twice.
+    let mut last_windowed_pause_interval: Option<(Instant, Instant)> = None;
+
     // Diagnostics only: preserve compositor-driven pacing. In particular,
     // never synthesize a wl_surface.frame completion after a screensaver pause.
     let mut callback_wait_reported = false;
@@ -4112,8 +4116,11 @@ fn render_mirror_frames(
                 if let Some(paused_at) =
                     pause_started.take()
                 {
-                    let paused_duration =
-                        paused_at.elapsed();
+                    let pause_ended_at = Instant::now();
+                    let paused_duration = pause_ended_at.duration_since(paused_at);
+                    if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed {
+                        last_windowed_pause_interval = Some((paused_at, pause_ended_at));
+                    }
 
 
                     start_time +=
@@ -4277,9 +4284,24 @@ fn render_mirror_frames(
             if let Some(inactive_at) =
                 windowed_inactive_started.take()
             {
-                let callback_wait =
-                    inactive_at.elapsed();
-
+                let callback_ended_at = Instant::now();
+                let callback_wait = callback_ended_at.duration_since(inactive_at);
+                // A callback may have been outstanding before the screensaver
+                // paused and remain outstanding after it resumed. The pause
+                // duration was already excluded above; exclude only the
+                // non-overlapping part of this callback wait.
+                let pause_overlap = last_windowed_pause_interval
+                    .map(|(pause_start, pause_end)| {
+                        let overlap_start = inactive_at.max(pause_start);
+                        let overlap_end = callback_ended_at.min(pause_end);
+                        overlap_end.saturating_duration_since(overlap_start)
+                    })
+                    .unwrap_or_default();
+                let effective_callback_wait = callback_wait.saturating_sub(pause_overlap);
+                // Keep the clock anchor at or before now, even if an earlier
+                // adjustment has already consumed part of the interval.
+                let rotation_shift = effective_callback_wait.min(last_shader_switch.elapsed());
+                let animation_shift = effective_callback_wait.min(start_time.elapsed());
 
                 // Ordinary frame-callback pacing is only a frame or two and
                 // must remain part of shader animation time.  A long callback
@@ -4290,30 +4312,32 @@ fn render_mirror_frames(
                     >= Duration::from_millis(250)
                 {
                     start_time +=
-                        callback_wait;
+                        animation_shift;
 
 
                     if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed {
                         let before_ms = last_shader_switch.elapsed().as_millis();
                         rotation_clock_callback_shifts = rotation_clock_callback_shifts.wrapping_add(1);
-                        rotation_clock_callback_shift_ms += callback_wait.as_millis();
+                        rotation_clock_callback_shift_ms += rotation_shift.as_millis();
                         if callback_wait < Duration::from_secs(2) {
                             rotation_clock_callback_short_shifts = rotation_clock_callback_short_shifts.wrapping_add(1);
                         }
                         rotation_clock_last_shift_reason = "callback_wait";
-                        rotation_clock_last_shift_ms = callback_wait.as_millis();
+                        rotation_clock_last_shift_ms = rotation_shift.as_millis();
                         // First few occurrences and periodic aggregates avoid per-frame log spam.
                         if rotation_clock_callback_shifts <= 5 || rotation_clock_callback_shifts % 100 == 0 || callback_wait >= Duration::from_secs(2) {
                             crate::logger::warning(&crate::locate_paths::runtime_log_path(),
-                                &format!("[WINDOWSHADER_CLOCK_DIAG] reason=callback_wait shift_ms={} elapsed_before_ms={} elapsed_after_expected_ms={} callback_shifts={} short_under_2s={} cumulative_shift_ms={} frame_ready={} paused={} activated={}",
-                                    callback_wait.as_millis(), before_ms,
-                                    before_ms.saturating_sub(callback_wait.as_millis()),
+                                &format!("[WINDOWSHADER_CLOCK_DIAG] reason=callback_wait raw_ms={} pause_overlap_ms={} shift_ms={} elapsed_before_ms={} elapsed_after_expected_ms={} callback_shifts={} short_under_2s={} cumulative_shift_ms={} frame_ready={} paused={} activated={}",
+                                    callback_wait.as_millis(), pause_overlap.as_millis(), rotation_shift.as_millis(), before_ms,
+                                    before_ms.saturating_sub(rotation_shift.as_millis()),
                                     rotation_clock_callback_shifts, rotation_clock_callback_short_shifts,
                                     rotation_clock_callback_shift_ms, windowed_frame_ready, paused, state.windowed_activated));
                         }
                     }
                     last_shader_switch +=
-                        callback_wait;
+                        rotation_shift;
+                    // The overlapping pause interval has been accounted for.
+                    last_windowed_pause_interval = None;
 
 
                     next_frame_deadline =
