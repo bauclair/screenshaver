@@ -2808,6 +2808,22 @@ impl WaylandWallpaperAmbient {
                         );
                     }
                     Err(error) => {
+                        // The Direct-mode preflight refusal occurs before any
+                        // guarded session is acquired or hardware write is made.
+                        // In that specific case there is nothing for this
+                        // coordinator to restore. Do not leave the release
+                        // acknowledgment permanently blocked by the provisional
+                        // `released_verified = false` set above.
+                        //
+                        // Other failures may occur after a mode-changing write;
+                        // preserve the conservative unverified state for them.
+                        if error.starts_with("OpenRGB device is already in Direct mode;") {
+                            state.released_verified.store(true, SeqCst);
+                            crate::logger::warning(
+                                &crate::locate_paths::runtime_log_path(),
+                                "[AMBIENT_HANDOFF_DIAG] Direct-mode preflight refused acquisition; no coordinator-owned session to release",
+                            );
+                        }
                         state.disabled.store(true, SeqCst);
                         crate::logger::warning(
                             &crate::locate_paths::runtime_log_path(),

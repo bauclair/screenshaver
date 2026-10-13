@@ -59,6 +59,7 @@ pub struct WallpaperRuntimeControl {
     checkpoint_clock: Arc<Instant>,
     checkpoint_millis: Arc<AtomicU64>,
     resume_frame_ready: Arc<AtomicBool>,
+    external_pause_token: Arc<Mutex<Option<String>>>,
     pending_policy_reload:
         Arc<Mutex<Option<WallpaperPolicyReload>>>,
 }
@@ -80,6 +81,7 @@ impl WallpaperRuntimeControl {
             checkpoint_clock: Arc::new(Instant::now()),
             checkpoint_millis: Arc::new(AtomicU64::new(0)),
             resume_frame_ready: Arc::new(AtomicBool::new(true)),
+            external_pause_token: Arc::new(Mutex::new(None)),
             pending_policy_reload:
                 Arc::new(Mutex::new(None)),
         }
@@ -207,6 +209,19 @@ impl WallpaperRuntimeControl {
 
     /// Called by the wallpaper render thread before releasing OpenRGB.
     pub fn acknowledge_pause_detected(&self) {
+        // Bind an external request once per pause cycle. Never refresh the
+        // identity while the renderer/coordinator is still handling a pause.
+        let mut token = self.external_pause_token.lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if token.is_none() {
+            match crate::control_wallpaper::detected_pause_token() {
+                Ok(observed) => *token = observed,
+                Err(error) => crate::logger::warning(
+                    &crate::locate_paths::runtime_log_path(),
+                    &format!("[WALLPAPER_CONTROL] Cannot capture pause identity: {error}"),
+                ),
+            }
+        }
         self.pause_detected.store(true, Ordering::SeqCst);
     }
 
@@ -308,7 +323,11 @@ impl WallpaperRuntimeControl {
         );
 
 
-        crate::control_wallpaper::acknowledge_paused();
+        let token = self.external_pause_token.lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()).clone();
+        if let Some(token) = token {
+            crate::control_wallpaper::acknowledge_paused_for(&token);
+        }
     }
 
 
@@ -328,7 +347,11 @@ impl WallpaperRuntimeControl {
         );
 
 
-        crate::control_wallpaper::acknowledge_resumed_frame();
+        let token = self.external_pause_token.lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()).take();
+        if let Some(token) = token {
+            crate::control_wallpaper::acknowledge_resumed_frame_for(&token);
+        }
     }
 }
 
