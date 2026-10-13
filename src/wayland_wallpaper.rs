@@ -3724,6 +3724,14 @@ fn render_mirror_frames(
     let mut windowshader_rotation_failures: u64 = 0;
     let mut windowshader_rotation_block_reported = false;
     let mut windowshader_last_configure_count = state.windowshader_configure_count;
+    // Diagnostic accounting only: distinguish legitimate pause exclusions from
+    // repeated callback-wait exclusions that may prevent rotation progress.
+    let mut rotation_clock_pause_shifts: u64 = 0;
+    let mut rotation_clock_callback_shifts: u64 = 0;
+    let mut rotation_clock_callback_shift_ms: u128 = 0;
+    let mut rotation_clock_callback_short_shifts: u64 = 0;
+    let mut rotation_clock_last_shift_reason: &'static str = "none";
+    let mut rotation_clock_last_shift_ms: u128 = 0;
 
 
     let result =
@@ -3808,6 +3816,13 @@ fn render_mirror_frames(
                         state.windowshader_configure_count.wrapping_sub(windowshader_last_configure_count),
                         presentation_watchdog_loop_ticks),
                 );
+                crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+                    &format!("[WINDOWSHADER_CLOCK_DIAG] summary elapsed_ms={} interval_ms={:?} due={} pause_shifts={} callback_shifts={} callback_shifts_under_2s={} callback_shift_total_ms={} last_reason={} last_shift_ms={} paused={} frame_ready={} activated={} swaps_total={}",
+                        last_shader_switch.elapsed().as_millis(), shader_interval.map(|v| v.as_millis()),
+                        rotation_due, rotation_clock_pause_shifts, rotation_clock_callback_shifts,
+                        rotation_clock_callback_short_shifts, rotation_clock_callback_shift_ms,
+                        rotation_clock_last_shift_reason, rotation_clock_last_shift_ms,
+                        paused, ready, state.windowed_activated, presentation_watchdog_swaps));
                 windowshader_last_configure_count = state.windowshader_configure_count;
                 windowshader_summary_at = Instant::now();
             }
@@ -4105,6 +4120,16 @@ fn render_mirror_frames(
                         paused_duration;
 
 
+                    if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed {
+                        let before_ms = last_shader_switch.elapsed().as_millis();
+                        rotation_clock_pause_shifts = rotation_clock_pause_shifts.wrapping_add(1);
+                        rotation_clock_last_shift_reason = "screensaver_pause";
+                        rotation_clock_last_shift_ms = paused_duration.as_millis();
+                        crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+                            &format!("[WINDOWSHADER_CLOCK_DIAG] reason=screensaver_pause shift_ms={} elapsed_before_ms={} elapsed_after_expected_ms={} pause_shift_count={}",
+                                paused_duration.as_millis(), before_ms,
+                                before_ms.saturating_sub(paused_duration.as_millis()), rotation_clock_pause_shifts));
+                    }
                     last_shader_switch +=
                         paused_duration;
                 }
@@ -4268,6 +4293,25 @@ fn render_mirror_frames(
                         callback_wait;
 
 
+                    if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed {
+                        let before_ms = last_shader_switch.elapsed().as_millis();
+                        rotation_clock_callback_shifts = rotation_clock_callback_shifts.wrapping_add(1);
+                        rotation_clock_callback_shift_ms += callback_wait.as_millis();
+                        if callback_wait < Duration::from_secs(2) {
+                            rotation_clock_callback_short_shifts = rotation_clock_callback_short_shifts.wrapping_add(1);
+                        }
+                        rotation_clock_last_shift_reason = "callback_wait";
+                        rotation_clock_last_shift_ms = callback_wait.as_millis();
+                        // First few occurrences and periodic aggregates avoid per-frame log spam.
+                        if rotation_clock_callback_shifts <= 5 || rotation_clock_callback_shifts % 100 == 0 || callback_wait >= Duration::from_secs(2) {
+                            crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+                                &format!("[WINDOWSHADER_CLOCK_DIAG] reason=callback_wait shift_ms={} elapsed_before_ms={} elapsed_after_expected_ms={} callback_shifts={} short_under_2s={} cumulative_shift_ms={} frame_ready={} paused={} activated={}",
+                                    callback_wait.as_millis(), before_ms,
+                                    before_ms.saturating_sub(callback_wait.as_millis()),
+                                    rotation_clock_callback_shifts, rotation_clock_callback_short_shifts,
+                                    rotation_clock_callback_shift_ms, windowed_frame_ready, paused, state.windowed_activated));
+                        }
+                    }
                     last_shader_switch +=
                         callback_wait;
 
@@ -4304,6 +4348,13 @@ fn render_mirror_frames(
                             windowshader_rotation_attempts, current_shader.shader_name,
                             current_shader.policy_id, last_shader_switch.elapsed().as_millis(),
                             shader_interval.map(|interval| interval.as_millis()), windowed_frame_ready, program));
+                }
+                if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed {
+                    rotation_clock_last_shift_reason = "rotation_attempt_reset";
+                    rotation_clock_last_shift_ms = last_shader_switch.elapsed().as_millis();
+                    crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+                        &format!("[WINDOWSHADER_CLOCK_DIAG] reason=rotation_attempt_reset elapsed_before_ms={} interval_ms={:?} attempts={}",
+                            rotation_clock_last_shift_ms, shader_interval.map(|v| v.as_millis()), windowshader_rotation_attempts));
                 }
                 last_shader_switch =
                     Instant::now();
