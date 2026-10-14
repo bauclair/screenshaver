@@ -1088,23 +1088,46 @@ pub struct ShaderLightingSession {
 
 impl ShaderLightingSession {
     pub fn start(endpoint: SocketAddr, controller_id: u32) -> Result<Self, String> {
-        let mut discovery = OpenRgbReadOnlyTransport::connect(endpoint)?;
-        let ids = discovery.controller_ids()?;
+        // Diagnostic-only checkpoints. No acquisition/recovery behavior changes.
+        let diagnostic_started = Instant::now();
+        let trace = |stage: &str| {
+            crate::logger::warning(
+                &crate::locate_paths::runtime_log_path(),
+                &format!("[AMBIENT_ACQUIRE_DIAG] stage={stage} elapsed_ms={}", diagnostic_started.elapsed().as_millis()),
+            );
+        };
+        trace("discovery_connect_begin_read_only");
+        let mut discovery = OpenRgbReadOnlyTransport::connect(endpoint)
+            .map_err(|error| { trace("discovery_connect_failed_read_only"); error })?;
+        trace("controller_list_begin_read_only");
+        let ids = discovery.controller_ids()
+            .map_err(|error| { trace("controller_list_failed_read_only"); error })?;
         if !ids.contains(&controller_id) {
+            trace("controller_missing_read_only");
             return Err(format!("OpenRGB controller {controller_id} is unavailable"));
         }
-        let snapshot = discovery.decoded_controller(controller_id)?;
+        trace("controller_snapshot_begin_read_only");
+        let snapshot = discovery.decoded_controller(controller_id)
+            .map_err(|error| { trace("controller_snapshot_failed_read_only"); error })?;
+        trace("device_selection_begin_read_only");
         let descriptor = snapshot.descriptor(controller_id);
-        let selected = crate::select_ambient_device::select_ambient_device(&[descriptor], controller_id)?;
+        let selected = crate::select_ambient_device::select_ambient_device(&[descriptor], controller_id)
+            .map_err(|error| { trace("device_selection_failed_read_only"); error })?;
         let matrix = selected.matrix.clone().ok_or("Selected controller has no matrix")?;
         let base = snapshot.colors.clone();
-        // Acquisition registers durable recovery before switching modes.
-        let guarded = GuardedOpenRgbSession::acquire(endpoint, &selected)?;
+        // The guarded transaction can register recovery and change the device mode.
+        // Do not classify its errors as pre-acquisition failures.
+        trace("guarded_acquisition_begin_may_write");
+        let guarded = GuardedOpenRgbSession::acquire(endpoint, &selected)
+            .map_err(|error| { trace("guarded_acquisition_failed_ownership_unknown"); error })?;
+        trace("guarded_acquisition_succeeded");
+        trace("lighting_worker_begin");
         let worker = match crate::manage_ambient_lighting::LightingWorker::start(
             endpoint, controller_id, selected.led_count,
         ) {
-            Ok(worker) => worker,
+            Ok(worker) => { trace("lighting_worker_started"); worker },
             Err(error) => {
+                trace("lighting_worker_failed_restoration_attempt");
                 return match guarded.restore() {
                     Ok(()) => Err(format!("OpenRGB worker failed; mode restored: {error}")),
                     Err(restore_error) => Err(format!(

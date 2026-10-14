@@ -2796,6 +2796,11 @@ impl WaylandWallpaperAmbient {
                 // Acquisition may take time. Recheck pause immediately after it
                 // completes; do not acknowledge release until stop() succeeds.
                 state.released_verified.store(false, SeqCst);
+                let acquisition_started = Instant::now();
+                crate::logger::warning(
+                    &crate::locate_paths::runtime_log_path(),
+                    "[AMBIENT_WALLPAPER_DIAG] Coordinator acquisition attempt started",
+                );
                 let result = (|| -> Result<_, String> {
                     let (address, id) = crate::manage_openrgb_session::resolve_saved_controller()?
                         .ok_or("No enabled OpenRGB device selected")?;
@@ -2806,7 +2811,7 @@ impl WaylandWallpaperAmbient {
                         session = Some(acquired);
                         crate::logger::warning(
                             &crate::locate_paths::runtime_log_path(),
-                            "[AMBIENT_WALLPAPER_DIAG] Acquisition succeeded; wallpaper session active (coordinator)",
+                            &format!("[AMBIENT_WALLPAPER_DIAG] Acquisition succeeded; wallpaper session active (coordinator); elapsed_ms={}", acquisition_started.elapsed().as_millis()),
                         );
                     }
                     Err(error) => {
@@ -2829,7 +2834,8 @@ impl WaylandWallpaperAmbient {
                         state.disabled.store(true, SeqCst);
                         crate::logger::warning(
                             &crate::locate_paths::runtime_log_path(),
-                            &format!("[AMBIENT_WALLPAPER_DIAG] Coordinator acquisition failed; disabled: {error}"),
+                            &format!("[AMBIENT_WALLPAPER_DIAG] Coordinator acquisition failed; disabled; elapsed_ms={} released_verified={} (guarded-stage failure may have changed hardware): {error}",
+                                acquisition_started.elapsed().as_millis(), state.released_verified.load(SeqCst)),
                         );
                     }
                 }
