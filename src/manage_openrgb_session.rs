@@ -809,12 +809,14 @@ fn restore_mode_verified(
     controller_id: u32,
     record: &AmbientRecoveryRecord,
 ) -> Result<(), String> {
+        crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+            &format!("[AMBIENT_OPENRGB_DIAG] restore stage=initial_snapshot_begin controller={} command=1 write_attempted=false", controller_id));
         let snapshot_started = Instant::now();
         let before = transport.decoded_controller_with_timeout(controller_id, RESTORE_SNAPSHOT_TIMEOUT);
-        eprintln!("[AMBIENT_OPENRGB_TIMING] restore_initial_snapshot_ms={} success={}", snapshot_started.elapsed().as_millis(), before.is_ok());
+        crate::logger::warning(&crate::locate_paths::runtime_log_path(), &format!("[AMBIENT_OPENRGB_TIMING] restore_initial_snapshot_ms={} success={}", snapshot_started.elapsed().as_millis(), before.is_ok()));
         if let Err(error) = &before {
-            eprintln!("[AMBIENT_OPENRGB_DIAG] restore stage=initial_snapshot controller={} timeout_ms={} error={}",
-                controller_id, RESTORE_SNAPSHOT_TIMEOUT.as_millis(), error);
+            crate::logger::warning(&crate::locate_paths::runtime_log_path(), &format!("[AMBIENT_OPENRGB_DIAG] restore stage=initial_snapshot controller={} timeout_ms={} error={}",
+                controller_id, RESTORE_SNAPSHOT_TIMEOUT.as_millis(), error));
         }
         let before = before?;
         matching_identity(&before, &record)?;
@@ -831,22 +833,28 @@ fn restore_mode_verified(
             payload.extend_from_slice(&size.to_le_bytes());
             payload.extend_from_slice(&record.original_mode_index.to_le_bytes());
             payload.extend_from_slice(original_bytes);
+            crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+                &format!("[AMBIENT_OPENRGB_DIAG] restore stage=mode_write_begin controller={} command=1101 payload_bytes={} write_attempted=true", controller_id, payload.len()));
             let command_started = Instant::now();
             let command_result = transport.send_guarded_mode(controller_id, 1101, &payload);
-            eprintln!("[AMBIENT_OPENRGB_TIMING] restore_mode_command_ms={} success={}", command_started.elapsed().as_millis(), command_result.is_ok());
+            crate::logger::warning(&crate::locate_paths::runtime_log_path(), &format!("[AMBIENT_OPENRGB_TIMING] restore_mode_command_ms={} success={}", command_started.elapsed().as_millis(), command_result.is_ok()));
             command_result?;
+            crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+                &format!("[AMBIENT_OPENRGB_DIAG] restore stage=mode_write_sent controller={} command=1101 verification_pending=true", controller_id));
             // Verify as soon as the controller reports the original mode.
             // The former unconditional 500 ms sleep delayed every handoff,
             // even when restoration had already completed. Keep the same
             // 500 ms settling budget, but poll rather than always consuming it.
             let deadline = Instant::now() + Duration::from_millis(500);
             loop {
+                crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+                    &format!("[AMBIENT_OPENRGB_DIAG] restore stage=post_command_snapshot_begin controller={} command=1 write_attempted=true", controller_id));
                 let verify_started = Instant::now();
                 let after = transport.decoded_controller_with_timeout(controller_id, RESTORE_SNAPSHOT_TIMEOUT);
-                eprintln!("[AMBIENT_OPENRGB_TIMING] restore_verify_snapshot_ms={} success={}", verify_started.elapsed().as_millis(), after.is_ok());
+                crate::logger::warning(&crate::locate_paths::runtime_log_path(), &format!("[AMBIENT_OPENRGB_TIMING] restore_verify_snapshot_ms={} success={}", verify_started.elapsed().as_millis(), after.is_ok()));
                 if let Err(error) = &after {
-                    eprintln!("[AMBIENT_OPENRGB_DIAG] restore stage=post_command_verification controller={} timeout_ms={} error={}",
-                        controller_id, RESTORE_SNAPSHOT_TIMEOUT.as_millis(), error);
+                    crate::logger::warning(&crate::locate_paths::runtime_log_path(), &format!("[AMBIENT_OPENRGB_DIAG] restore stage=post_command_verification controller={} timeout_ms={} error={}",
+                        controller_id, RESTORE_SNAPSHOT_TIMEOUT.as_millis(), error));
                 }
                 let after = after?;
                 matching_identity(&after, record)?;
@@ -862,14 +870,16 @@ fn restore_mode_verified(
                 thread::sleep(Duration::from_millis(25).min(deadline.saturating_duration_since(Instant::now())));
             }
         }
+        crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+            &format!("[AMBIENT_OPENRGB_DIAG] restore stage=already_original_snapshot_begin controller={} command=1 write_attempted=false", controller_id));
         // The controller was already in the original mode; still verify
         // identity and active mode with a fresh snapshot.
         let verify_started = Instant::now();
         let after = transport.decoded_controller_with_timeout(controller_id, RESTORE_SNAPSHOT_TIMEOUT);
-        eprintln!("[AMBIENT_OPENRGB_TIMING] restore_verify_snapshot_ms={} success={}", verify_started.elapsed().as_millis(), after.is_ok());
+        crate::logger::warning(&crate::locate_paths::runtime_log_path(), &format!("[AMBIENT_OPENRGB_TIMING] restore_verify_snapshot_ms={} success={}", verify_started.elapsed().as_millis(), after.is_ok()));
         if let Err(error) = &after {
-            eprintln!("[AMBIENT_OPENRGB_DIAG] restore stage=already_original_verification controller={} timeout_ms={} error={}",
-                controller_id, RESTORE_SNAPSHOT_TIMEOUT.as_millis(), error);
+            crate::logger::warning(&crate::locate_paths::runtime_log_path(), &format!("[AMBIENT_OPENRGB_DIAG] restore stage=already_original_verification controller={} timeout_ms={} error={}",
+                controller_id, RESTORE_SNAPSHOT_TIMEOUT.as_millis(), error));
         }
         let after = after?;
         matching_identity(&after, record)?;
