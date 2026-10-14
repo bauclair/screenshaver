@@ -394,16 +394,75 @@ impl LightingWorker {
     }
 }
 
+// Diagnostic-only counters. No changes to LED command frequency or wire format.
+fn log_worker_diagnostic(message: &str) {
+    crate::logger::warning(&crate::locate_paths::runtime_log_path(), message);
+}
+
 fn run_worker(mut socket: TcpStream, id: u32, count: usize,
               rx: Receiver<Vec<LedColor>>) -> Result<usize, String> {
-    let mut transmitted = 0;
+    let started = Instant::now();
+    let mut interval_started = started;
+    let mut transmitted = 0usize;
+    let mut interval_transmitted = 0usize;
+    let mut interval_write_ns = 0u128;
+    let mut interval_max_write_ns = 0u128;
+    let mut total_write_ns = 0u128;
+    let mut max_write_ns = 0u128;
+    let mut write_errors = 0usize;
+    let mut result: Result<(), String> = Ok(());
+
     while let Ok(colors) = rx.recv() {
-        if colors.len() != count { return Err("OpenRGB frame LED count changed".into()); }
-        let payload = led_update_payload(&colors)?;
-        send_packet(&mut socket, id, SDK_UPDATE_LEDS, &payload)?;
+        if colors.len() != count {
+            result = Err("OpenRGB frame LED count changed".into());
+            break;
+        }
+        let payload = match led_update_payload(&colors) {
+            Ok(payload) => payload,
+            Err(error) => { result = Err(error); break; }
+        };
+        let write_started = Instant::now();
+        let write_result = send_packet(&mut socket, id, SDK_UPDATE_LEDS, &payload);
+        let write_ns = write_started.elapsed().as_nanos();
+        total_write_ns += write_ns;
+        max_write_ns = max_write_ns.max(write_ns);
+        interval_write_ns += write_ns;
+        interval_max_write_ns = interval_max_write_ns.max(write_ns);
+        if let Err(error) = write_result {
+            write_errors += 1;
+            log_worker_diagnostic(&format!(
+                "[AMBIENT_OPENRGB_WORKER_DIAG] event=write_failed controller={} elapsed_s={:.1} transmitted={} write_ms={:.3} error={}",
+                id, started.elapsed().as_secs_f64(), transmitted, write_ns as f64 / 1_000_000.0, error
+            ));
+            result = Err(error);
+            break;
+        }
         transmitted += 1;
+        interval_transmitted += 1;
+        if interval_started.elapsed() >= Duration::from_secs(60) {
+            let seconds = interval_started.elapsed().as_secs_f64();
+            log_worker_diagnostic(&format!(
+                "[AMBIENT_OPENRGB_WORKER_DIAG] event=interval controller={} elapsed_s={:.1} transmitted={} interval_transmitted={} interval_fps={:.2} interval_avg_write_ms={:.3} interval_max_write_ms={:.3}",
+                id, started.elapsed().as_secs_f64(), transmitted, interval_transmitted,
+                interval_transmitted as f64 / seconds,
+                interval_write_ns as f64 / interval_transmitted as f64 / 1_000_000.0,
+                interval_max_write_ns as f64 / 1_000_000.0
+            ));
+            interval_started = Instant::now();
+            interval_transmitted = 0;
+            interval_write_ns = 0;
+            interval_max_write_ns = 0;
+        }
     }
-    Ok(transmitted)
+    let elapsed_s = started.elapsed().as_secs_f64();
+    log_worker_diagnostic(&format!(
+        "[AMBIENT_OPENRGB_WORKER_DIAG] event=final controller={} elapsed_s={:.1} transmitted={} avg_fps={:.2} avg_write_ms={:.3} max_write_ms={:.3} write_errors={} result={}",
+        id, elapsed_s, transmitted, transmitted as f64 / elapsed_s.max(0.000001),
+        total_write_ns as f64 / (transmitted + write_errors).max(1) as f64 / 1_000_000.0,
+        max_write_ns as f64 / 1_000_000.0, write_errors,
+        if result.is_ok() { "ok" } else { "error" }
+    ));
+    result.map(|()| transmitted)
 }
 
 #[cfg(test)]

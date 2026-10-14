@@ -1210,10 +1210,13 @@ impl ShaderLightingSession {
             None => Err("OpenRGB session was already restored".into()),
         };
         let restore_elapsed = restore_started.elapsed();
-        eprintln!(
+        crate::logger::warning(
+            &crate::locate_paths::runtime_log_path(),
+            &format!(
             "[AMBIENT_OPENRGB_TIMING] worker_stop_ms={} restoration_ms={} total_ms={} restoration_verified={}",
             worker_elapsed.as_millis(), restore_elapsed.as_millis(),
             finish_started.elapsed().as_millis(), restoration.is_ok()
+            ),
         );
         match (worker_result, restoration) {
             (Ok(stats), Ok(())) => Ok((self.submitted, stats)),
