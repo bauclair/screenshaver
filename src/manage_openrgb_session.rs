@@ -671,8 +671,30 @@ impl GuardedOpenRgbSession {
 
     /// Must be called after any future LED-update worker has stopped and joined.
     /// Recovery record is deleted only after a fresh read confirms restoration.
-    pub fn restore(mut self) -> Result<(), String> {
-        restore_mode_verified(&mut self.transport, self.controller_id, &self.record)?;
+    pub fn restore(self) -> Result<(), String> {
+        // The LED writer has already been stopped and joined by the caller.
+        // Keep `self` alive to retain the exclusive owner lock and the durable
+        // recovery record while using a fresh SDK connection for restoration.
+        // A long-lived connection can stall during its controller snapshot read.
+        let endpoint: SocketAddr = self.record.endpoint.parse()
+            .map_err(|error| format!("Invalid recorded OpenRGB restoration endpoint: {error}"))?;
+        crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+            &format!("[AMBIENT_OPENRGB_DIAG] restore stage=fresh_connection_begin controller={} endpoint={} write_attempted=false",
+                self.controller_id, endpoint));
+        let started = Instant::now();
+        let mut fresh = OpenRgbReadOnlyTransport::connect(endpoint).map_err(|error| {
+            crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+                &format!("[AMBIENT_OPENRGB_DIAG] restore stage=fresh_connection_failed controller={} elapsed_ms={} error={}",
+                    self.controller_id, started.elapsed().as_millis(), error));
+            error
+        })?;
+        crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+            &format!("[AMBIENT_OPENRGB_DIAG] restore stage=fresh_connection_ready controller={} elapsed_ms={} write_attempted=false",
+                self.controller_id, started.elapsed().as_millis()));
+        // The existing guarded transaction validates identity, topology and
+        // original mode bytes before sending command 1101, then verifies the
+        // resulting mode. Never clear the recovery record on an error.
+        restore_mode_verified(&mut fresh, self.controller_id, &self.record)?;
         manage_runtime_state::complete_ambient_recovery(
             &self.record.device_identity(), &self.record.ownership_token)
     }
