@@ -7,12 +7,14 @@
 
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
-use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender, TrySendError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 const MAX_PACKET: usize = 16 * 1024 * 1024;
 const SDK_UPDATE_LEDS: u32 = 1050;
+// Diagnostic rate cap: at most ten LED updates per second per worker.
+const OPENRGB_LED_MIN_INTERVAL: Duration = Duration::from_millis(100);
 pub const DEFAULT_INTERVAL: Duration = Duration::from_millis(100);
 
 /// OpenRGB uses BGRA-like four-byte RGBColor records in SDK LED updates.
@@ -411,8 +413,25 @@ fn run_worker(mut socket: TcpStream, id: u32, count: usize,
     let mut max_write_ns = 0u128;
     let mut write_errors = 0usize;
     let mut result: Result<(), String> = Ok(());
+    let mut last_write_started: Option<Instant> = None;
 
-    while let Ok(colors) = rx.recv() {
+    // Keep only the newest pending colors while waiting for the next send slot.
+    // This caps SDK traffic without slowing the renderer or queuing stale frames.
+    'worker: while let Ok(mut colors) = rx.recv() {
+        if let Some(previous) = last_write_started {
+            let deadline = previous + OPENRGB_LED_MIN_INTERVAL;
+            loop {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() { break; }
+                match rx.recv_timeout(remaining) {
+                    Ok(newest) => colors = newest,
+                    Err(RecvTimeoutError::Timeout) => break,
+                    // Stop promptly when the owner closes the sender; never
+                    // delay restoration to send a pending obsolete frame.
+                    Err(RecvTimeoutError::Disconnected) => break 'worker,
+                }
+            }
+        }
         if colors.len() != count {
             result = Err("OpenRGB frame LED count changed".into());
             break;
@@ -422,6 +441,7 @@ fn run_worker(mut socket: TcpStream, id: u32, count: usize,
             Err(error) => { result = Err(error); break; }
         };
         let write_started = Instant::now();
+        last_write_started = Some(write_started);
         let write_result = send_packet(&mut socket, id, SDK_UPDATE_LEDS, &payload);
         let write_ns = write_started.elapsed().as_nanos();
         total_write_ns += write_ns;
