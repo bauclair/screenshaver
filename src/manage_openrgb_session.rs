@@ -1107,11 +1107,69 @@ mod mock_server_recovery_tests {
 }
 
 
+// Temporary diagnostic: independent, read-only SDK probes during live lighting.
+// No mode writes, device rescan, or LED updates are performed by this monitor.
+struct AmbientSdkMonitor {
+    stop_tx: std::sync::mpsc::Sender<()>,
+    handle: Option<std::thread::JoinHandle<()>>,
+}
+
+impl AmbientSdkMonitor {
+    fn start(endpoint: SocketAddr, controller_id: u32) -> Self {
+        let (stop_tx, stop_rx) = std::sync::mpsc::channel();
+        let handle = thread::spawn(move || {
+            let started = Instant::now();
+            let mut checks = 0u64;
+            let mut failures = 0u64;
+            loop {
+                match stop_rx.recv_timeout(Duration::from_secs(10)) {
+                    Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                }
+                let began = Instant::now();
+                // A fresh connection tests whether the SDK server can still
+                // negotiate and answer a controller query while LEDs are updating.
+                let result = (|| -> Result<(), String> {
+                    let mut connection = OpenRgbReadOnlyTransport::connect(endpoint)?;
+                    connection.controller_snapshot(controller_id)?;
+                    Ok(())
+                })();
+                checks += 1;
+                if result.is_err() { failures += 1; }
+                let message = match result {
+                    Ok(()) => format!(
+                        "[AMBIENT_OPENRGB_HEALTH_DIAG] event=probe elapsed_s={:.1} probe_ms={} checks={} failures={} result=ok",
+                        started.elapsed().as_secs_f64(), began.elapsed().as_millis(), checks, failures),
+                    Err(error) => format!(
+                        "[AMBIENT_OPENRGB_HEALTH_DIAG] event=probe elapsed_s={:.1} probe_ms={} checks={} failures={} result=error detail={}",
+                        started.elapsed().as_secs_f64(), began.elapsed().as_millis(), checks, failures, error),
+                };
+                crate::logger::warning(&crate::locate_paths::runtime_log_path(), &message);
+            }
+            crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+                &format!("[AMBIENT_OPENRGB_HEALTH_DIAG] event=final elapsed_s={:.1} checks={} failures={}",
+                    started.elapsed().as_secs_f64(), checks, failures));
+        });
+        Self { stop_tx, handle: Some(handle) }
+    }
+
+    fn stop(mut self) {
+        let _ = self.stop_tx.send(());
+        if let Some(handle) = self.handle.take() {
+            if handle.join().is_err() {
+                crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+                    "[AMBIENT_OPENRGB_HEALTH_DIAG] event=monitor_panicked");
+            }
+        }
+    }
+}
+
 // Explicit opt-in live shader-to-LED session. No automatic device selection.
 // This wrapper ensures that the update worker is joined before mode restoration.
 pub struct ShaderLightingSession {
     guarded: Option<GuardedOpenRgbSession>,
     worker: Option<crate::manage_ambient_lighting::LightingWorker>,
+    health_monitor: Option<AmbientSdkMonitor>,
     matrix: crate::manage_ambient_lighting::LedMatrix,
     base: Vec<crate::manage_ambient_lighting::LedColor>,
     previous: Option<Vec<crate::manage_ambient_lighting::LedColor>>,
@@ -1168,8 +1226,10 @@ impl ShaderLightingSession {
                 };
             }
         };
+        let health_monitor = AmbientSdkMonitor::start(endpoint, controller_id);
+        trace("sdk_health_monitor_started");
         Ok(Self {
-            guarded: Some(guarded), worker: Some(worker), matrix, base,
+            guarded: Some(guarded), worker: Some(worker), health_monitor: Some(health_monitor), matrix, base,
             previous: None, submitted: 0,
         })
     }
@@ -1199,17 +1259,35 @@ impl ShaderLightingSession {
     fn finish(&mut self) -> Result<(u64, crate::manage_ambient_lighting::WorkerStats), String> {
         // Never attempt restoration until the writer thread has terminated.
         let finish_started = Instant::now();
+        crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+            "[AMBIENT_OPENRGB_SHUTDOWN_DIAG] event=worker_stop_begin");
         let worker_result = match self.worker.take() {
             Some(worker) => worker.stop(),
             None => Err("OpenRGB worker was already stopped".into()),
         };
         let worker_elapsed = finish_started.elapsed();
+        crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+            &format!("[AMBIENT_OPENRGB_SHUTDOWN_DIAG] event=worker_stop_end elapsed_ms={} success={}",
+                worker_elapsed.as_millis(), worker_result.is_ok()));
+        if let Some(monitor) = self.health_monitor.take() {
+            crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+                "[AMBIENT_OPENRGB_SHUTDOWN_DIAG] event=health_monitor_stop_begin");
+            monitor.stop();
+            crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+                &format!("[AMBIENT_OPENRGB_SHUTDOWN_DIAG] event=health_monitor_stop_end elapsed_ms={}",
+                    finish_started.elapsed().as_millis()));
+        }
         let restore_started = Instant::now();
+        crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+            "[AMBIENT_OPENRGB_SHUTDOWN_DIAG] event=restore_begin");
         let restoration = match self.guarded.take() {
             Some(guarded) => guarded.restore(),
             None => Err("OpenRGB session was already restored".into()),
         };
         let restore_elapsed = restore_started.elapsed();
+        crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+            &format!("[AMBIENT_OPENRGB_SHUTDOWN_DIAG] event=restore_end elapsed_ms={} success={}",
+                restore_elapsed.as_millis(), restoration.is_ok()));
         crate::logger::warning(
             &crate::locate_paths::runtime_log_path(),
             &format!(
