@@ -60,10 +60,15 @@ pub fn select_ambient_device(
         .ok_or("OpenRGB active mode index is invalid")?;
     let direct_mode = device.modes.iter().find(|mode| mode.eq_ignore_ascii_case("direct"))
         .ok_or("Selected OpenRGB controller does not support Direct mode")?;
-    // A device already in Direct mode has no trustworthy pre-acquisition
-    // lighting baseline. Do not take ownership or invent a restore target.
+    // The Cynosa may be reported as Direct while physically running its
+    // hardware Spectrum Cycle animation. Only its guarded session may
+    // establish Spectrum Cycle as an explicit new restoration baseline.
     if original_mode.eq_ignore_ascii_case("direct") {
-        return Err("OpenRGB device is already in Direct mode; select a normal lighting mode before enabling ambient lighting".into());
+        if device.display_name != "Razer Cynosa Chroma"
+            || device.modes.iter().filter(|name| name.eq_ignore_ascii_case("Spectrum Cycle")).count() != 1
+        {
+            return Err("OpenRGB device is already in Direct mode; select a normal lighting mode before enabling ambient lighting".into());
+        }
     }
     Ok(AmbientDeviceSelection {
         controller_id: device.controller_id,
@@ -155,6 +160,17 @@ mod tests {
         d.modes.pop();
         assert!(select_ambient_device(&[d], 7).is_err());
     }
+    #[test]
+    fn allows_cynosa_direct_with_spectrum_cycle() {
+        let mut d = device();
+        d.display_name = "Razer Cynosa Chroma".into();
+        d.modes.push("Spectrum Cycle".into());
+        d.active_mode = 1;
+        let selected = select_ambient_device(&[d.clone()], 7).unwrap();
+        assert_eq!(selected.original_mode, "Direct");
+        verify_ambient_device_identity(&selected, &d).unwrap();
+    }
+
     #[test]
     fn rejects_device_already_in_direct_mode() {
         let mut d = device();

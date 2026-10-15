@@ -620,17 +620,31 @@ impl GuardedOpenRgbSession {
         let snapshot = transport.decoded_controller(selected.controller_id)?;
         verify_pre_acquisition_device(selected, &snapshot.descriptor(selected.controller_id))?;
         let direct = direct_mode_index(&snapshot)?;
-        if snapshot.active == direct {
-            return Err("Cannot acquire a controller already in Direct mode".into());
-        }
-        let (original_name, original_bytes) = snapshot.modes.get(snapshot.active)
+        let needs_normalization = snapshot.active == direct;
+        // This is a deliberate baseline, not a claim about the hardware's
+        // previously active mode. Other devices remain fail-closed.
+        let baseline_index = if needs_normalization {
+            if snapshot.name != "Razer Cynosa Chroma" {
+                return Err("Cannot normalize an already-Direct non-Cynosa controller".into());
+            }
+            let candidates: Vec<usize> = snapshot.modes.iter().enumerate()
+                .filter(|(_, (name, _))| name.eq_ignore_ascii_case("Spectrum Cycle"))
+                .map(|(index, _)| index).collect();
+            if candidates.len() != 1 {
+                return Err("Cynosa requires exactly one Spectrum Cycle mode for Direct normalization".into());
+            }
+            candidates[0]
+        } else {
+            snapshot.active
+        };
+        let (original_name, original_bytes) = snapshot.modes.get(baseline_index)
             .ok_or("OpenRGB original mode is missing")?;
         let record = AmbientRecoveryRecord {
             endpoint: endpoint.to_string(), device_name: snapshot.name.clone(),
             serial: snapshot.serial.clone(),
             topology_fingerprint: snapshot_fingerprint(&snapshot),
             ownership_token: new_ownership_token()?,
-            original_mode_index: u32::try_from(snapshot.active).map_err(|e| e.to_string())?,
+            original_mode_index: u32::try_from(baseline_index).map_err(|e| e.to_string())?,
             original_mode_name: original_name.clone(),
             original_mode_hex: mode_hex(original_bytes),
         };
@@ -651,6 +665,27 @@ impl GuardedOpenRgbSession {
         manage_runtime_state::register_ambient_recovery(&record)?;
         let mut session = Self { _owner: owner, transport, controller_id: selected.controller_id, record };
         let switched = (|| -> Result<(), String> {
+            if needs_normalization {
+                // Durable Spectrum Cycle recovery record is already registered.
+                // Use the same verified mode-write format as restoration.
+                let bytes = &session.record.original_mode_hex;
+                let mode_bytes = &fresh.modes[baseline_index].1;
+                debug_assert_eq!(mode_hex(mode_bytes), *bytes);
+                let size = u32::try_from(8usize + mode_bytes.len()).map_err(|e| e.to_string())?;
+                let mut payload = Vec::with_capacity(size as usize);
+                payload.extend_from_slice(&size.to_le_bytes());
+                payload.extend_from_slice(&session.record.original_mode_index.to_le_bytes());
+                payload.extend_from_slice(mode_bytes);
+                session.transport.send_guarded_mode(session.controller_id, 1101, &payload)?;
+                thread::sleep(Duration::from_millis(300));
+                let normalized = session.transport.decoded_controller(session.controller_id)?;
+                matching_identity(&normalized, &session.record)?;
+                if normalized.active != baseline_index {
+                    return Err("Spectrum Cycle normalization was not verified".into());
+                }
+                crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+                    "[AMBIENT_OPENRGB_DIAG] stage=cynosa_spectrum_baseline_verified");
+            }
             session.transport.send_guarded_mode(session.controller_id, 1100, &[])?;
             thread::sleep(Duration::from_millis(300));
             let after = session.transport.decoded_controller(session.controller_id)?;
@@ -1121,6 +1156,7 @@ impl AmbientSdkMonitor {
             let started = Instant::now();
             let mut checks = 0u64;
             let mut failures = 0u64;
+            let mut previous_mode: Option<(usize, String)> = None;
             loop {
                 match stop_rx.recv_timeout(Duration::from_secs(10)) {
                     Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
@@ -1129,17 +1165,25 @@ impl AmbientSdkMonitor {
                 let began = Instant::now();
                 // A fresh connection tests whether the SDK server can still
                 // negotiate and answer a controller query while LEDs are updating.
-                let result = (|| -> Result<(), String> {
+                let result = (|| -> Result<(usize, String, bool), String> {
                     let mut connection = OpenRgbReadOnlyTransport::connect(endpoint)?;
-                    connection.controller_snapshot(controller_id)?;
-                    Ok(())
+                    let snapshot = connection.decoded_controller(controller_id)?;
+                    let direct = direct_mode_index(&snapshot)?;
+                    let name = snapshot.modes[snapshot.active].0.clone();
+                    Ok((snapshot.active, name, snapshot.active == direct))
                 })();
                 checks += 1;
                 if result.is_err() { failures += 1; }
                 let message = match result {
-                    Ok(()) => format!(
-                        "[AMBIENT_OPENRGB_HEALTH_DIAG] event=probe elapsed_s={:.1} probe_ms={} checks={} failures={} result=ok",
-                        started.elapsed().as_secs_f64(), began.elapsed().as_millis(), checks, failures),
+                    Ok((mode_index, mode_name, is_direct)) => {
+                        let changed = previous_mode.as_ref().is_some_and(|(index, name)|
+                            *index != mode_index || name != &mode_name);
+                        previous_mode = Some((mode_index, mode_name.clone()));
+                        format!(
+                            "[AMBIENT_OPENRGB_HEALTH_DIAG] event=probe elapsed_s={:.1} probe_ms={} checks={} failures={} result=ok controller={} mode_index={} mode_name={:?} is_direct={} mode_changed={}",
+                            started.elapsed().as_secs_f64(), began.elapsed().as_millis(),
+                            checks, failures, controller_id, mode_index, mode_name, is_direct, changed)
+                    }
                     Err(error) => format!(
                         "[AMBIENT_OPENRGB_HEALTH_DIAG] event=probe elapsed_s={:.1} probe_ms={} checks={} failures={} result=error detail={}",
                         started.elapsed().as_secs_f64(), began.elapsed().as_millis(), checks, failures, error),
