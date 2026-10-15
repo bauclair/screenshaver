@@ -2728,6 +2728,7 @@ impl WaylandWallpaperAmbient {
         use std::sync::atomic::Ordering::SeqCst;
         let mut session: Option<crate::manage_openrgb_session::ShaderLightingSession> = None;
         let mut observed_generation = state.generation.load(SeqCst);
+        let mut next_recovery_check = Instant::now();
         loop {
             let shutting_down = state.shutting_down.load(SeqCst);
             let pause = control.pause_requested();
@@ -2793,6 +2794,29 @@ impl WaylandWallpaperAmbient {
                 continue;
             }
             if session.is_none() {
+                // A prior owner may have left a durable recovery record. Do not
+                // attempt acquisition while it exists. Periodically recheck so
+                // externally verified recovery can permit a fresh handoff.
+                if Instant::now() < next_recovery_check {
+                    std::thread::sleep(Duration::from_millis(20));
+                    continue;
+                }
+                next_recovery_check = Instant::now() + Duration::from_secs(2);
+                let pending_before_acquire = match crate::manage_runtime_state::pending_ambient_recoveries() {
+                    Ok(records) => !records.is_empty(),
+                    Err(error) => {
+                        // Unknown recovery state is never permission to acquire.
+                        crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+                            &format!("[AMBIENT_WALLPAPER_DIAG] Cannot inspect recovery state; acquisition deferred: {error}"));
+                        continue;
+                    }
+                };
+                if pending_before_acquire {
+                    // No session is held by this coordinator. This acknowledges
+                    // release, NOT restoration of the preceding owner's record.
+                    state.released_verified.store(true, SeqCst);
+                    continue;
+                }
                 // Acquisition may take time. Recheck pause immediately after it
                 // completes; do not acknowledge release until stop() succeeds.
                 state.released_verified.store(false, SeqCst);
@@ -2815,6 +2839,15 @@ impl WaylandWallpaperAmbient {
                         );
                     }
                     Err(error) => {
+                        // This exact preflight refusal occurs before ownership or
+                        // hardware writes. A previous owner's recovery record
+                        // must be resolved first; retry acquisition later.
+                        if error.contains("unresolved OpenRGB recovery record(s); refusing ambient acquisition") {
+                            state.released_verified.store(true, SeqCst);
+                            crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+                                "[AMBIENT_WALLPAPER_DIAG] Recovery pending; acquisition deferred without hardware writes");
+                            continue;
+                        }
                         // The Direct-mode preflight refusal occurs before any
                         // guarded session is acquired or hardware write is made.
                         // In that specific case there is nothing for this

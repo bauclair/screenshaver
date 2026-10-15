@@ -1270,10 +1270,13 @@ impl ShaderLightingSession {
                 };
             }
         };
-        let health_monitor = AmbientSdkMonitor::start(endpoint, controller_id);
-        trace("sdk_health_monitor_started");
+        // TEMPORARY ISOLATION TEST: do not open periodic read-only SDK probe
+        // connections. The LED worker, guarded acquisition, and verified
+        // restoration remain unchanged. Revert after the comparison run.
+        let health_monitor: Option<AmbientSdkMonitor> = None;
+        trace("sdk_health_monitor_disabled_isolation_test");
         Ok(Self {
-            guarded: Some(guarded), worker: Some(worker), health_monitor: Some(health_monitor), matrix, base,
+            guarded: Some(guarded), worker: Some(worker), health_monitor, matrix, base,
             previous: None, submitted: 0,
         })
     }
