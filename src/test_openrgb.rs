@@ -243,6 +243,168 @@ pub fn inspect_ambient_recovery() -> Result<(), String> {
     Ok(())
 }
 
+/// Read-only SDK lifecycle test. No controller enumeration, lighting writes,
+/// mode changes, owner lock, or recovery-record access.
+pub fn test_connections() -> Result<(), String> {
+    const CYCLES: usize = 100;
+    const PAUSE: Duration = Duration::from_millis(100);
+    let address = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 6742);
+    let mut succeeded = 0usize;
+    let mut failed = 0usize;
+    let mut tcp_total = Duration::ZERO;
+    let mut tcp_connected = 0usize;
+    let mut negotiation_total = Duration::ZERO;
+    let mut tcp_max = Duration::ZERO;
+    let mut negotiation_max = Duration::ZERO;
+    println!("[OPENRGB CONNECTIONS] Read-only SDK v{PROTOCOL} lifecycle test: {CYCLES} cycles, endpoint {address}");
+    for cycle in 1..=CYCLES {
+        let started = Instant::now();
+        let mut socket = match TcpStream::connect_timeout(&address.into(), Duration::from_secs(3)) {
+            Ok(socket) => socket,
+            Err(error) => {
+                failed += 1;
+                eprintln!("[OPENRGB CONNECTIONS] {cycle}/{CYCLES} TCP connect FAILED after {:?}: {error}", started.elapsed());
+                thread::sleep(PAUSE);
+                continue;
+            }
+        };
+        let tcp_time = started.elapsed();
+        tcp_total += tcp_time;
+        tcp_connected += 1;
+        tcp_max = tcp_max.max(tcp_time);
+        let negotiation_start = Instant::now();
+        let result = (|| -> Result<(), String> {
+            socket.set_read_timeout(Some(Duration::from_secs(5))).map_err(|e| format!("read timeout setup: {e}"))?;
+            socket.set_write_timeout(Some(Duration::from_secs(5))).map_err(|e| format!("write timeout setup: {e}"))?;
+            send(&mut socket, 0, 40, &PROTOCOL.to_le_bytes())
+                .map_err(|e| format!("send protocol request: {e}"))?;
+            let (_, version) = receive(&mut socket, 40)
+                .map_err(|e| format!("receive protocol response: {e}"))?;
+            if version.len() != 4 { return Err(format!("invalid protocol response length: {}", version.len())); }
+            let server_version = u32::from_le_bytes(version[..4].try_into().unwrap());
+            if server_version < PROTOCOL { return Err(format!("server protocol v{server_version}, need v{PROTOCOL}")); }
+            Ok(())
+        })();
+        let negotiation_time = negotiation_start.elapsed();
+        drop(socket);
+        match result {
+            Ok(()) => {
+                succeeded += 1;
+                negotiation_total += negotiation_time;
+                negotiation_max = negotiation_max.max(negotiation_time);
+                println!("[OPENRGB CONNECTIONS] {cycle}/{CYCLES} OK tcp={tcp_time:?} negotiation={negotiation_time:?}");
+            }
+            Err(error) => {
+                failed += 1;
+                eprintln!("[OPENRGB CONNECTIONS] {cycle}/{CYCLES} FAILED tcp={tcp_time:?} negotiation={negotiation_time:?}: {error}");
+            }
+        }
+        thread::sleep(PAUSE);
+    }
+    println!("[OPENRGB CONNECTIONS] SUMMARY cycles={CYCLES} success={succeeded} failed={failed}");
+    if succeeded > 0 {
+        println!("[OPENRGB CONNECTIONS] Successful negotiations: mean={:?}, max={negotiation_max:?}; TCP connected: mean={:?}, max={tcp_max:?} (TCP mean includes all established connections)", negotiation_total / succeeded as u32, tcp_total / tcp_connected as u32);
+    }
+    if failed > 0 { Err(format!("{failed} of {CYCLES} SDK connection cycles failed")) } else { Ok(()) }
+}
+
+/// Accelerated, hardware-writing endurance diagnostic. This uses production
+/// guarded acquisition and its fresh-SDK-connection verified restoration.
+/// No production worker timing or mode-restoration implementation is changed.
+pub fn test_stress() -> Result<(), String> {
+    const UPDATES: usize = 109_000;
+    const INTERVAL: Duration = Duration::from_millis(10); // 100 Hz target
+    let endpoint = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 6742);
+    let endpoint_socket: std::net::SocketAddr = endpoint.into();
+    println!("[OPENRGB STRESS] Hardware-writing test: {UPDATES} SDK command-1050 updates, target 100 Hz (~18.2 min).");
+    println!("[OPENRGB STRESS] Do not run while Screenshaver or another program owns keyboard lighting.");
+    println!("[OPENRGB STRESS] Interrupting the process may leave Direct mode active; durable recovery should remain available.");
+
+    // All discovery and selection occur before any mode change.
+    let mut discovery = crate::manage_openrgb_session::OpenRgbReadOnlyTransport::connect(endpoint_socket)?;
+    let ids = discovery.controller_ids()?;
+    let mut matches = Vec::new();
+    for id in ids {
+        let snapshot = discovery.decoded_controller(id)?;
+        if snapshot.descriptor(id).display_name == "Razer Cynosa Chroma" {
+            matches.push((id, snapshot));
+        }
+    }
+    if matches.len() != 1 {
+        return Err(format!("Expected exactly one Razer Cynosa Chroma; found {}", matches.len()));
+    }
+    let (id, snapshot) = matches.remove(0);
+    let descriptor = snapshot.descriptor(id);
+    if descriptor.led_count != 132 || descriptor.modes.get(descriptor.active_mode).map(String::as_str) != Some("Spectrum Cycle") {
+        return Err("Stress test requires the 132-LED Cynosa in Spectrum Cycle mode; no lighting writes performed".into());
+    }
+    let selected = crate::select_ambient_device::select_ambient_device(&[descriptor], id)?;
+    println!("[OPENRGB STRESS] Verified Cynosa controller={id}, 132 LEDs, Spectrum Cycle baseline.");
+    println!("[OPENRGB STRESS] Type STRESS CYNOSA to acquire the keyboard and begin, or anything else to cancel:");
+    let mut answer = String::new();
+    io::stdin().lock().read_line(&mut answer).map_err(|e| e.to_string())?;
+    if answer.trim() != "STRESS CYNOSA" {
+        println!("[OPENRGB STRESS] Cancelled without lighting writes.");
+        return Ok(());
+    }
+    drop(discovery);
+
+    // Production guarded session owns the exclusive lock and durable recovery
+    // record, verifies the mode transition, and restores via a NEW SDK socket.
+    let guarded = crate::manage_openrgb_session::GuardedOpenRgbSession::acquire(endpoint_socket, &selected)?;
+    let started = Instant::now();
+    let mut attempted = 0usize;
+    let mut transmitted = 0usize;
+    let mut longest_write = Duration::ZERO;
+    let mut total_write = Duration::ZERO;
+    let streaming = (|| -> Result<(), String> {
+        let mut socket = TcpStream::connect_timeout(&endpoint_socket, Duration::from_secs(3))
+            .map_err(|e| format!("Streaming socket connect failed: {e}"))?;
+        socket.set_write_timeout(Some(Duration::from_secs(2))).map_err(|e| e.to_string())?;
+        // Production format: u32 payload size, u16 LED count, 4 bytes/LED.
+        // Deterministic, changing colors; no renderer or database involvement.
+        let mut colors = vec![[0u8; 4]; selected.led_count];
+        let mut next = Instant::now();
+        for frame in 0..UPDATES {
+            for (index, color) in colors.iter_mut().enumerate() {
+                let phase = (frame as u32).wrapping_add(index as u32);
+                *color = [phase as u8, phase.wrapping_mul(3) as u8, phase.wrapping_mul(7) as u8, 0];
+            }
+            let payload = crate::manage_ambient_lighting::led_update_payload(&colors)?;
+            attempted += 1;
+            let write_started = Instant::now();
+            send(&mut socket, id, 1050, &payload)
+                .map_err(|e| format!("Command 1050 write {attempted}/{UPDATES} failed: {e}"))?;
+            let write_time = write_started.elapsed();
+            longest_write = longest_write.max(write_time);
+            total_write += write_time;
+            transmitted += 1;
+            if transmitted % 5_000 == 0 {
+                println!("[OPENRGB STRESS] transmitted={transmitted}/{UPDATES} elapsed={:.1}s max_write={longest_write:?}", started.elapsed().as_secs_f64());
+            }
+            next += INTERVAL;
+            let remaining = next.saturating_duration_since(Instant::now());
+            if !remaining.is_zero() { thread::sleep(remaining); }
+        }
+        // Close streaming connection before fresh-connection restoration.
+        drop(socket);
+        Ok(())
+    })();
+    println!("[OPENRGB STRESS] Streaming ended: attempted={attempted} TCP_writes_ok={transmitted} elapsed={:.2}s mean_write={:?} max_write={longest_write:?}",
+        started.elapsed().as_secs_f64(), if transmitted > 0 { total_write / transmitted as u32 } else { Duration::ZERO });
+    println!("[OPENRGB STRESS] TCP write success does NOT prove OpenRGB processed every update.");
+    println!("[OPENRGB STRESS] Attempting guarded restoration over a fresh SDK connection...");
+    let restore_started = Instant::now();
+    let restoration = guarded.restore();
+    println!("[OPENRGB STRESS] Restoration finished in {:?}; verified={}", restore_started.elapsed(), restoration.is_ok());
+    match (streaming, restoration) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(stream), Ok(())) => Err(format!("Streaming failed, original lighting restored: {stream}")),
+        (Ok(()), Err(restore)) => Err(format!("Restoration unverified; durable recovery retained: {restore}")),
+        (Err(stream), Err(restore)) => Err(format!("Streaming failed: {stream}; restoration unverified; durable recovery retained: {restore}")),
+    }
+}
+
 pub fn run(apply: bool, animate: bool) -> Result<(), String> {
     let address = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 6742);
     println!("[OPENRGB TEST] Connecting to {address}; no device rescans");

@@ -491,8 +491,15 @@ fn main() {
         }
 
 
-        crate::parse_arguments::Command::TestOpenrgb { apply, animate } => {
-            if let Err(error) = crate::test_openrgb::run(*apply, *animate) {
+        crate::parse_arguments::Command::TestOpenrgb { apply, animate, connections, stress } => {
+            let result = if *connections {
+                crate::test_openrgb::test_connections()
+            } else if *stress {
+                crate::test_openrgb::test_stress()
+            } else {
+                crate::test_openrgb::run(*apply, *animate)
+            };
+            if let Err(error) = result {
                 eprintln!("[OPENRGB TEST] FAILED: {error}");
                 std::process::exit(1);
             }

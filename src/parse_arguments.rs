@@ -27,7 +27,7 @@ pub enum Command {
 
     AmbientRecovery { apply: bool },
 
-    TestOpenrgb { apply: bool, animate: bool },
+    TestOpenrgb { apply: bool, animate: bool, connections: bool, stress: bool },
 
     AmbientLightingTest {
         openrgb_host: Option<std::net::Ipv4Addr>,
@@ -209,11 +209,13 @@ pub fn parse() -> Result<Command, String> {
 
         "--test-openrgb" => {
             match args.as_slice() {
-                [_] => Ok(Command::TestOpenrgb { apply: false, animate: false }),
-                [_, flag] if flag == "--apply" => Ok(Command::TestOpenrgb { apply: true, animate: false }),
-                [_, flag] if flag == "--animate" => Ok(Command::TestOpenrgb { apply: false, animate: true }),
-                [_, first, second] if (first == "--animate" && second == "--apply") || (first == "--apply" && second == "--animate") => Ok(Command::TestOpenrgb { apply: true, animate: true }),
-                _ => Err("Usage: --test-openrgb [--animate] [--apply]".into()),
+                [_] => Ok(Command::TestOpenrgb { apply: false, animate: false, connections: false, stress: false }),
+                [_, flag] if flag == "--connections" => Ok(Command::TestOpenrgb { apply: false, animate: false, connections: true, stress: false }),
+                [_, flag] if flag == "--apply" => Ok(Command::TestOpenrgb { apply: true, animate: false, connections: false, stress: false }),
+                [_, flag] if flag == "--animate" => Ok(Command::TestOpenrgb { apply: false, animate: true, connections: false, stress: false }),
+                [_, first, second] if (first == "--animate" && second == "--apply") || (first == "--apply" && second == "--animate") => Ok(Command::TestOpenrgb { apply: true, animate: true, connections: false, stress: false }),
+                [_, first, second] if (first == "--stress" && second == "--apply") || (first == "--apply" && second == "--stress") => Ok(Command::TestOpenrgb { apply: true, animate: false, connections: false, stress: true }),
+                _ => Err("Usage: --test-openrgb [--animate] [--apply] | --test-openrgb --connections | --test-openrgb --stress --apply".into()),
             }
         }
 
@@ -997,6 +999,13 @@ pub fn print_help() {
          \n\
              --test-openrgb [--animate] [--apply]\n\
                  Guarded Cynosa lighting test (dry run by default).\n\
+         \n\
+             --test-openrgb --connections\n\
+                  Read-only repeated SDK negotiation diagnostic.\n\
+         \n\
+             --test-openrgb --stress --apply\n\
+                  Guarded accelerated 109,000-command Cynosa endurance test at 100 Hz.\n\
+                  Changes keyboard lighting; requires explicit typed consent.\n\
          \n\
              --ambient-recovery [--apply]\n\
                  Inspect pending records (default); --apply requests guarded manual restoration.\n\
