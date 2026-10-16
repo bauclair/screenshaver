@@ -551,40 +551,98 @@ fn run_openrgb2_worker(
                 let _ = ready.send(Err(error.clone())); return Err(error);
             }
         };
+        // Bridge the existing synchronous, capacity-one renderer mailbox into
+        // Tokio without blocking this current-thread executor. The bridge is
+        // deliberately separate from SDK operations and never touches hardware.
+        let (async_tx, mut async_rx) = tokio::sync::mpsc::channel::<Vec<LedColor>>(1);
+        thread::spawn(move || {
+            while let Ok(colors) = rx.recv() {
+                if async_tx.blocking_send(colors).is_err() { break; }
+            }
+        });
+
         let started = Instant::now();
         let mut transmitted = 0usize;
         let mut last_write: Option<Instant> = None;
-        'worker2: while let Ok(mut colors) = rx.recv() {
+        let mut interval_started = started;
+        let mut interval_count = 0usize;
+        let mut interval_latency_ns = 0u128;
+        let mut interval_max_latency_ns = 0u128;
+        let mut total_latency_ns = 0u128;
+        let mut max_latency_ns = 0u128;
+        let mut result: Result<(), String> = Ok(());
+
+        'worker2: while let Some(mut colors) = async_rx.recv().await {
             if let Some(previous) = last_write {
-                let deadline = previous + OPENRGB2_LED_MIN_INTERVAL;
+                let deadline = tokio::time::Instant::from_std(previous + OPENRGB2_LED_MIN_INTERVAL);
                 loop {
-                    let remaining = deadline.saturating_duration_since(Instant::now());
-                    if remaining.is_zero() { break; }
-                    match rx.recv_timeout(remaining) {
-                        Ok(newest) => colors = newest,
-                        Err(RecvTimeoutError::Timeout) => break,
-                        Err(RecvTimeoutError::Disconnected) => break 'worker2,
+                    tokio::select! {
+                        biased;
+                        next = async_rx.recv() => match next {
+                            Some(newest) => colors = newest,
+                            None => break 'worker2,
+                        },
+                        _ = tokio::time::sleep_until(deadline) => break,
                     }
                 }
             }
-            if colors.len() != count { return Err("OpenRGB frame LED count changed".into()); }
+            if colors.len() != count {
+                result = Err("OpenRGB frame LED count changed".into());
+                break;
+            }
             let rgb: Vec<openrgb2::Color> = colors.iter()
                 .map(|c| openrgb2::Color::new(c[0], c[1], c[2])).collect();
-            last_write = Some(Instant::now());
-            tokio::time::timeout(Duration::from_secs(5), controller.set_leds(rgb))
-                .await.map_err(|_| "openrgb2 LED write timed out".to_string())?
-                .map_err(|e| format!("openrgb2 LED write: {e}"))?;
-            transmitted += 1;
-            if transmitted % 1500 == 0 {
+            let write_started = Instant::now();
+            last_write = Some(write_started);
+            let write_result = tokio::time::timeout(
+                Duration::from_secs(5), controller.set_leds(rgb)
+            ).await;
+            let latency_ns = write_started.elapsed().as_nanos();
+            if let Err(error) = match write_result {
+                Ok(Ok(())) => Ok(()),
+                Ok(Err(error)) => Err(format!("openrgb2 LED write: {error}")),
+                Err(_) => Err("openrgb2 LED write timed out".to_string()),
+            } {
                 log_worker_diagnostic(&format!(
-                    "[AMBIENT_OPENRGB2_WORKER] elapsed_s={:.1} transmitted={}",
-                    started.elapsed().as_secs_f64(), transmitted));
+                    "[AMBIENT_OPENRGB2_WORKER] event=write_failed controller={} elapsed_s={:.1} transmitted={} write_ms={:.3} error={}",
+                    id, started.elapsed().as_secs_f64(), transmitted,
+                    latency_ns as f64 / 1_000_000.0, error
+                ));
+                result = Err(error);
+                break;
+            }
+            transmitted += 1;
+            interval_count += 1;
+            interval_latency_ns += latency_ns;
+            interval_max_latency_ns = interval_max_latency_ns.max(latency_ns);
+            total_latency_ns += latency_ns;
+            max_latency_ns = max_latency_ns.max(latency_ns);
+            if interval_started.elapsed() >= Duration::from_secs(60) {
+                let elapsed = interval_started.elapsed().as_secs_f64();
+                log_worker_diagnostic(&format!(
+                    "[AMBIENT_OPENRGB2_WORKER] event=interval controller={} elapsed_s={:.1} transmitted={} interval_transmitted={} interval_fps={:.2} interval_avg_write_ms={:.3} interval_max_write_ms={:.3}",
+                    id, started.elapsed().as_secs_f64(), transmitted, interval_count,
+                    interval_count as f64 / elapsed.max(0.000001),
+                    interval_latency_ns as f64 / interval_count.max(1) as f64 / 1_000_000.0,
+                    interval_max_latency_ns as f64 / 1_000_000.0
+                ));
+                interval_started = Instant::now();
+                interval_count = 0;
+                interval_latency_ns = 0;
+                interval_max_latency_ns = 0;
             }
         }
+        // Close the asynchronous receiver before Tokio runtime shutdown so the
+        // bridge's blocking_send cannot prevent its blocking task from exiting.
+        drop(async_rx);
         log_worker_diagnostic(&format!(
-            "[AMBIENT_OPENRGB2_WORKER] final elapsed_s={:.1} transmitted={}",
-            started.elapsed().as_secs_f64(), transmitted));
-        Ok(transmitted)
+            "[AMBIENT_OPENRGB2_WORKER] event=final controller={} elapsed_s={:.1} transmitted={} avg_write_ms={:.3} max_write_ms={:.3} result={}",
+            id, started.elapsed().as_secs_f64(), transmitted,
+            total_latency_ns as f64 / transmitted.max(1) as f64 / 1_000_000.0,
+            max_latency_ns as f64 / 1_000_000.0,
+            if result.is_ok() { "ok" } else { "error" }
+        ));
+        result.map(|()| transmitted)
     })
 }
 
