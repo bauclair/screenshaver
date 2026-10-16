@@ -27,7 +27,7 @@ pub enum Command {
 
     AmbientRecovery { apply: bool },
 
-    TestOpenrgb { apply: bool, animate: bool, connections: bool, stress: bool, rotate_every: usize },
+    TestOpenrgb { apply: bool, animate: bool, connections: bool, stress: bool, rotate_every: usize, rate: u32, updates: usize },
 
     AmbientLightingTest {
         openrgb_host: Option<std::net::Ipv4Addr>,
@@ -212,17 +212,21 @@ pub fn parse() -> Result<Command, String> {
             // Other diagnostic modes retain their original combinations.
             let flags = &args[1..];
             let has = |flag: &str| flags.iter().any(|s| s == flag);
-            let usage = "Usage: --test-openrgb [--animate] [--apply] | --test-openrgb --connections | --test-openrgb --stress --apply [--rotate-every N]";
+            let usage = "Usage: --test-openrgb [--animate] [--apply] | --test-openrgb --connections | --test-openrgb --stress --apply [--rotate-every N] [--rate HZ] [--updates N]";
             let invalid = || Err(usage.to_string());
             if has("--stress") {
                 if !has("--apply") || has("--animate") || has("--connections") {
                     return invalid();
                 }
                 let mut rotate_every = 10_000usize;
+                let mut rate = 100u32;
+                let mut updates = 109_000usize;
                 let mut index = 0usize;
                 let mut seen_stress = false;
                 let mut seen_apply = false;
                 let mut seen_rotate = false;
+                let mut seen_rate = false;
+                let mut seen_updates = false;
                 while index < flags.len() {
                     match flags[index].as_str() {
                         "--stress" if !seen_stress => seen_stress = true,
@@ -232,15 +236,29 @@ pub fn parse() -> Result<Command, String> {
                             index += 1;
                             let value = flags.get(index).ok_or_else(|| usage.to_string())?;
                             rotate_every = value.parse::<usize>().map_err(|_| "--rotate-every requires a positive integer".to_string())?;
-                            if !(1..=109_000).contains(&rotate_every) {
-                                return Err("--rotate-every must be between 1 and 109000".into());
+                            if rotate_every > 1_000_000 {
+                                return Err("--rotate-every must be between 0 and 1000000 (0 disables rotation)".into());
                             }
+                        }
+                        "--rate" if !seen_rate => {
+                            seen_rate = true;
+                            index += 1;
+                            let value = flags.get(index).ok_or_else(|| usage.to_string())?;
+                            rate = value.parse::<u32>().map_err(|_| "--rate requires a positive integer".to_string())?;
+                            if !(1..=500).contains(&rate) { return Err("--rate must be between 1 and 500 Hz".into()); }
+                        }
+                        "--updates" if !seen_updates => {
+                            seen_updates = true;
+                            index += 1;
+                            let value = flags.get(index).ok_or_else(|| usage.to_string())?;
+                            updates = value.parse::<usize>().map_err(|_| "--updates requires a positive integer".to_string())?;
+                            if !(1..=1_000_000).contains(&updates) { return Err("--updates must be between 1 and 1000000".into()); }
                         }
                         _ => return invalid(),
                     }
                     index += 1;
                 }
-                Ok(Command::TestOpenrgb { apply: true, animate: false, connections: false, stress: true, rotate_every })
+                Ok(Command::TestOpenrgb { apply: true, animate: false, connections: false, stress: true, rotate_every, rate, updates })
             } else {
                 let (apply, animate, connections) = match flags {
                     [] => (false, false, false),
@@ -250,7 +268,7 @@ pub fn parse() -> Result<Command, String> {
                     [first, second] if (first == "--animate" && second == "--apply") || (first == "--apply" && second == "--animate") => (true, true, false),
                     _ => return invalid(),
                 };
-                Ok(Command::TestOpenrgb { apply, animate, connections, stress: false, rotate_every: 10_000 })
+                Ok(Command::TestOpenrgb { apply, animate, connections, stress: false, rotate_every: 10_000, rate: 100, updates: 109_000 })
             }
         }
 
@@ -1038,11 +1056,11 @@ pub fn print_help() {
              --test-openrgb --connections\n\
                   Read-only repeated SDK negotiation diagnostic.\n\
          \n\
-             --test-openrgb --stress --apply [--rotate-every N]\n\
-                  Guarded accelerated 109,000-command Cynosa endurance test at 100 Hz.\n\
+             --test-openrgb --stress --apply [--rotate-every N] [--rate HZ] [--updates N]\n\
+                  Guarded configurable Cynosa LED-update endurance test (default 109000 at 100 Hz).\n\
                   Changes keyboard lighting; requires explicit typed consent.\n\
 \
-                 N sets the connection rotation interval (default 10000).\n\
+                 Rotation defaults to 10000 updates; --rotate-every 0 disables rotation.\n\
          \n\
              --ambient-recovery [--apply]\n\
                  Inspect pending records (default); --apply requests guarded manual restoration.\n\

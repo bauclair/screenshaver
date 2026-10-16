@@ -339,16 +339,17 @@ fn verified_stress_socket(endpoint: std::net::SocketAddr, expected_id: u32) -> R
     Ok(socket)
 }
 
-pub fn test_stress(rotate_every: usize) -> Result<(), String> {
-    if !(1..=109_000).contains(&rotate_every) {
-        return Err("Rotation interval must be between 1 and 109000".into());
-    }
-    const UPDATES: usize = 109_000;
-    const INTERVAL: Duration = Duration::from_millis(10); // 100 Hz target
+pub fn test_stress(rotate_every: usize, rate: u32, updates: usize) -> Result<(), String> {
+    if rotate_every > 1_000_000 { return Err("Rotation interval exceeds maximum".into()); }
+    if !(1..=500).contains(&rate) { return Err("Rate must be between 1 and 500 Hz".into()); }
+    if !(1..=1_000_000).contains(&updates) { return Err("Updates must be between 1 and 1000000".into()); }
+    let interval = Duration::from_secs_f64(1.0 / f64::from(rate));
     const ROTATION_SETTLE: Duration = Duration::from_secs(1);
     let endpoint = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 6742);
     let endpoint_socket: std::net::SocketAddr = endpoint.into();
-    println!("[OPENRGB STRESS] Hardware-writing test: {UPDATES} SDK command-1050 updates, target 100 Hz (~18.2 min), close-first rotation every {rotate_every} updates (1s settling interval).");
+    println!("[OPENRGB STRESS] Hardware-writing test: {updates} SDK command-1050 updates, target {rate} Hz (~{:.1} min), close-first rotation {} (1s settling interval).",
+        updates as f64 / f64::from(rate) / 60.0,
+        if rotate_every == 0 { "disabled".to_string() } else { format!("every {rotate_every} updates") });
     println!("[OPENRGB STRESS] Do not run while Screenshaver or another program owns keyboard lighting.");
     println!("[OPENRGB STRESS] Interrupting the process may leave Direct mode active; durable recovery should remain available.");
 
@@ -398,11 +399,11 @@ pub fn test_stress(rotate_every: usize) -> Result<(), String> {
         // Deterministic, changing colors; no renderer or database involvement.
         let mut colors = vec![[0u8; 4]; selected.led_count];
         let mut next = Instant::now();
-        for frame in 0..UPDATES {
+        for frame in 0..updates {
             // Break-before-make diagnostic: close the original stream before
             // negotiating the replacement. No lighting writes are performed
             // during the settling interval or verification.
-            if frame > 0 && frame % rotate_every == 0 {
+            if rotate_every != 0 && frame > 0 && frame % rotate_every == 0 {
                 let rotation_started = Instant::now();
                 println!("[OPENRGB STRESS] ROTATE after {frame} updates: closing old streaming socket...");
                 drop(socket);
@@ -425,15 +426,15 @@ pub fn test_stress(rotate_every: usize) -> Result<(), String> {
             attempted += 1;
             let write_started = Instant::now();
             send(&mut socket, id, 1050, &payload)
-                .map_err(|e| format!("Command 1050 write {attempted}/{UPDATES} failed: {e}"))?;
+                .map_err(|e| format!("Command 1050 write {attempted}/{updates} failed: {e}"))?;
             let write_time = write_started.elapsed();
             longest_write = longest_write.max(write_time);
             total_write += write_time;
             transmitted += 1;
             if transmitted % 5_000 == 0 {
-                println!("[OPENRGB STRESS] transmitted={transmitted}/{UPDATES} elapsed={:.1}s max_write={longest_write:?}", started.elapsed().as_secs_f64());
+                println!("[OPENRGB STRESS] transmitted={transmitted}/{updates} elapsed={:.1}s max_write={longest_write:?}", started.elapsed().as_secs_f64());
             }
-            next += INTERVAL;
+            next += interval;
             let remaining = next.saturating_duration_since(Instant::now());
             if !remaining.is_zero() { thread::sleep(remaining); }
         }
