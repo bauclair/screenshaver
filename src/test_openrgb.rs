@@ -311,12 +311,41 @@ pub fn test_connections() -> Result<(), String> {
 /// Accelerated, hardware-writing endurance diagnostic. This uses production
 /// guarded acquisition and its fresh-SDK-connection verified restoration.
 /// No production worker timing or mode-restoration implementation is changed.
+/// A replacement streaming connection is verified before taking over from
+/// the current socket. Only read-only SDK requests are issued here.
+fn verified_stress_socket(endpoint: std::net::SocketAddr, expected_id: u32) -> Result<TcpStream, String> {
+    let mut socket = TcpStream::connect_timeout(&endpoint, Duration::from_secs(3))
+        .map_err(|e| format!("Rotation TCP connect failed: {e}"))?;
+    socket.set_read_timeout(Some(Duration::from_secs(5))).map_err(|e| e.to_string())?;
+    socket.set_write_timeout(Some(Duration::from_secs(5))).map_err(|e| e.to_string())?;
+    send(&mut socket, 0, 40, &PROTOCOL.to_le_bytes())
+        .map_err(|e| format!("Rotation protocol request failed: {e}"))?;
+    let (_, version) = receive(&mut socket, 40)
+        .map_err(|e| format!("Rotation protocol response failed: {e}"))?;
+    if version.len() != 4 || u32::from_le_bytes(version[..4].try_into().unwrap()) < PROTOCOL {
+        return Err("Rotation rejected: server does not support SDK protocol v6".into());
+    }
+    send(&mut socket, 0, 0, &[])
+        .map_err(|e| format!("Rotation controller-list request failed: {e}"))?;
+    let (_, payload) = receive(&mut socket, 0)
+        .map_err(|e| format!("Rotation controller-list response failed: {e}"))?;
+    if payload.len() < 4 { return Err("Rotation controller list truncated".into()); }
+    let count = u32::from_le_bytes(payload[..4].try_into().unwrap()) as usize;
+    if count > 256 || payload.len() != 4 + 4 * count {
+        return Err("Rotation controller list malformed".into());
+    }
+    let found = payload[4..].chunks_exact(4).any(|bytes| u32::from_le_bytes(bytes.try_into().unwrap()) == expected_id);
+    if !found { return Err(format!("Rotation rejected: controller ID {expected_id} is missing")); }
+    Ok(socket)
+}
+
 pub fn test_stress() -> Result<(), String> {
     const UPDATES: usize = 109_000;
     const INTERVAL: Duration = Duration::from_millis(10); // 100 Hz target
+    const ROTATE_EVERY: usize = 10_000;
     let endpoint = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 6742);
     let endpoint_socket: std::net::SocketAddr = endpoint.into();
-    println!("[OPENRGB STRESS] Hardware-writing test: {UPDATES} SDK command-1050 updates, target 100 Hz (~18.2 min).");
+    println!("[OPENRGB STRESS] Hardware-writing test: {UPDATES} SDK command-1050 updates, target 100 Hz (~18.2 min), rotating connection every {ROTATE_EVERY} updates.");
     println!("[OPENRGB STRESS] Do not run while Screenshaver or another program owns keyboard lighting.");
     println!("[OPENRGB STRESS] Interrupting the process may leave Direct mode active; durable recovery should remain available.");
 
@@ -361,11 +390,27 @@ pub fn test_stress() -> Result<(), String> {
         let mut socket = TcpStream::connect_timeout(&endpoint_socket, Duration::from_secs(3))
             .map_err(|e| format!("Streaming socket connect failed: {e}"))?;
         socket.set_write_timeout(Some(Duration::from_secs(2))).map_err(|e| e.to_string())?;
+        let mut rotations = 0usize;
         // Production format: u32 payload size, u16 LED count, 4 bytes/LED.
         // Deterministic, changing colors; no renderer or database involvement.
         let mut colors = vec![[0u8; 4]; selected.led_count];
         let mut next = Instant::now();
         for frame in 0..UPDATES {
+            // Make-before-break rotation: the old streaming socket remains
+            // available until the new socket has passed protocol and identity
+            // checks. No lighting/mode writes are sent by the verification.
+            if frame > 0 && frame % ROTATE_EVERY == 0 {
+                let rotation_started = Instant::now();
+                println!("[OPENRGB STRESS] ROTATE after {frame} updates: opening and verifying replacement SDK connection...");
+                let replacement = verified_stress_socket(endpoint_socket, id)?;
+                let previous = std::mem::replace(&mut socket, replacement);
+                drop(previous);
+                rotations += 1;
+                println!("[OPENRGB STRESS] ROTATE {rotations} OK after {frame} updates: elapsed={:?}", rotation_started.elapsed());
+                // A rotation can consume time; resume the 100 Hz schedule
+                // from now instead of sending a catch-up burst.
+                next = Instant::now();
+            }
             for (index, color) in colors.iter_mut().enumerate() {
                 let phase = (frame as u32).wrapping_add(index as u32);
                 *color = [phase as u8, phase.wrapping_mul(3) as u8, phase.wrapping_mul(7) as u8, 0];
@@ -386,6 +431,7 @@ pub fn test_stress() -> Result<(), String> {
             let remaining = next.saturating_duration_since(Instant::now());
             if !remaining.is_zero() { thread::sleep(remaining); }
         }
+        println!("[OPENRGB STRESS] Completed {rotations} verified streaming connection rotations.");
         // Close streaming connection before fresh-connection restoration.
         drop(socket);
         Ok(())
