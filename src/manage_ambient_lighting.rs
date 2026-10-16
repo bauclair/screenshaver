@@ -15,6 +15,7 @@ const MAX_PACKET: usize = 16 * 1024 * 1024;
 const SDK_UPDATE_LEDS: u32 = 1050;
 // Diagnostic rate cap: at most ten LED updates per second per worker.
 const OPENRGB_LED_MIN_INTERVAL: Duration = Duration::from_millis(100);
+const OPENRGB2_LED_MIN_INTERVAL: Duration = Duration::from_millis(40);
 pub const DEFAULT_INTERVAL: Duration = Duration::from_millis(100);
 
 /// OpenRGB uses BGRA-like four-byte RGBColor records in SDK LED updates.
@@ -368,6 +369,31 @@ impl LightingWorker {
         if led_count == 0 || led_count > u16::MAX as usize {
             return Err("Invalid OpenRGB LED count".into());
         }
+        // Explicit, temporary integration checkpoint. Default remains the original
+        // transport; only an exact opt-in enables openrgb2. The caller has already
+        // acquired the device under the guarded recovery transaction.
+        if std::env::var("SCREENSHAVER_OPENRGB2_WORKER").ok().as_deref() == Some("1") {
+            let (tx, rx) = mpsc::sync_channel(1);
+            let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+            let handle = thread::spawn(move || {
+                run_openrgb2_worker(address, controller_id, led_count, rx, ready_tx)
+            });
+            match ready_rx.recv_timeout(Duration::from_secs(12)) {
+                Ok(Ok(())) => return Ok(Self { sender: Some(tx), handle: Some(handle), dropped: 0 }),
+                Ok(Err(error)) => {
+                    drop(tx);
+                    let _ = handle.join();
+                    return Err(format!("openrgb2 worker initialization: {error}"));
+                }
+                Err(error) => {
+                    drop(tx);
+                    // The worker may still be blocked in a timed SDK call. Do not
+                    // detach it: joining prevents restoration racing a live writer.
+                    let _ = handle.join();
+                    return Err(format!("openrgb2 worker startup did not complete: {error}"));
+                }
+            }
+        }
         // Establish connection before starting worker; no implicit discovery or mode writes.
         let socket = TcpStream::connect_timeout(&address, Duration::from_secs(3))
             .map_err(|e| format!("OpenRGB worker connection failed: {e}"))?;
@@ -483,6 +509,83 @@ fn run_worker(mut socket: TcpStream, id: u32, count: usize,
         if result.is_ok() { "ok" } else { "error" }
     ));
     result.map(|()| transmitted)
+}
+
+
+// Opt-in production-path experiment: attach to the already-acquired Direct
+// controller. No init(), mode change, rescan, or reconnect is performed.
+fn run_openrgb2_worker(
+    address: SocketAddr,
+    id: u32,
+    count: usize,
+    rx: Receiver<Vec<LedColor>>,
+    ready: SyncSender<Result<(), String>>,
+) -> Result<usize, String> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all().build().map_err(|e| format!("Tokio runtime: {e}"))?;
+    runtime.block_on(async move {
+        let initialize = async {
+            let mut client = openrgb2::OpenRgbClient::connect_to(address, 6)
+                .await.map_err(|e| format!("SDK connect: {e}"))?;
+            if client.get_protocol_version() != 6 {
+                return Err("Unexpected openrgb2 SDK protocol".to_string());
+            }
+            let controllers = client.get_all_controllers().await
+                .map_err(|e| format!("SDK enumeration: {e}"))?;
+            let controller_id = usize::try_from(id)
+                .map_err(|_| "Selected controller ID cannot be represented as usize")?;
+            let mut matches = controllers.into_iter().filter(|c| c.id() == controller_id);
+            let controller = matches.next().ok_or("Selected controller missing from openrgb2 enumeration")?;
+            if matches.next().is_some() { return Err("Duplicate OpenRGB controller ID".into()); }
+            if controller.num_leds() != count { return Err("OpenRGB LED topology count changed".into()); }
+            if !controller.active_mode().name().eq_ignore_ascii_case("Direct") {
+                return Err(format!("Controller is not in Direct mode: {}", controller.active_mode().name()));
+            }
+            Ok(controller)
+        };
+        let controller = match tokio::time::timeout(Duration::from_secs(5), initialize).await {
+            Ok(Ok(controller)) => { let _ = ready.send(Ok(())); controller }
+            Ok(Err(error)) => { let _ = ready.send(Err(error.clone())); return Err(error); }
+            Err(_) => {
+                let error = "openrgb2 initial negotiation timed out".to_string();
+                let _ = ready.send(Err(error.clone())); return Err(error);
+            }
+        };
+        let started = Instant::now();
+        let mut transmitted = 0usize;
+        let mut last_write: Option<Instant> = None;
+        'worker2: while let Ok(mut colors) = rx.recv() {
+            if let Some(previous) = last_write {
+                let deadline = previous + OPENRGB2_LED_MIN_INTERVAL;
+                loop {
+                    let remaining = deadline.saturating_duration_since(Instant::now());
+                    if remaining.is_zero() { break; }
+                    match rx.recv_timeout(remaining) {
+                        Ok(newest) => colors = newest,
+                        Err(RecvTimeoutError::Timeout) => break,
+                        Err(RecvTimeoutError::Disconnected) => break 'worker2,
+                    }
+                }
+            }
+            if colors.len() != count { return Err("OpenRGB frame LED count changed".into()); }
+            let rgb: Vec<openrgb2::Color> = colors.iter()
+                .map(|c| openrgb2::Color::new(c[0], c[1], c[2])).collect();
+            last_write = Some(Instant::now());
+            tokio::time::timeout(Duration::from_secs(5), controller.set_leds(rgb))
+                .await.map_err(|_| "openrgb2 LED write timed out".to_string())?
+                .map_err(|e| format!("openrgb2 LED write: {e}"))?;
+            transmitted += 1;
+            if transmitted % 1500 == 0 {
+                log_worker_diagnostic(&format!(
+                    "[AMBIENT_OPENRGB2_WORKER] elapsed_s={:.1} transmitted={}",
+                    started.elapsed().as_secs_f64(), transmitted));
+            }
+        }
+        log_worker_diagnostic(&format!(
+            "[AMBIENT_OPENRGB2_WORKER] final elapsed_s={:.1} transmitted={}",
+            started.elapsed().as_secs_f64(), transmitted));
+        Ok(transmitted)
+    })
 }
 
 #[cfg(test)]
