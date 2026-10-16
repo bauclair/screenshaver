@@ -311,8 +311,8 @@ pub fn test_connections() -> Result<(), String> {
 /// Accelerated, hardware-writing endurance diagnostic. This uses production
 /// guarded acquisition and its fresh-SDK-connection verified restoration.
 /// No production worker timing or mode-restoration implementation is changed.
-/// A replacement streaming connection is verified before taking over from
-/// the current socket. Only read-only SDK requests are issued here.
+/// Rotation closes the old streaming socket, waits for a measured settling
+/// interval, then verifies a fresh SDK socket before resuming LED writes.
 fn verified_stress_socket(endpoint: std::net::SocketAddr, expected_id: u32) -> Result<TcpStream, String> {
     let mut socket = TcpStream::connect_timeout(&endpoint, Duration::from_secs(3))
         .map_err(|e| format!("Rotation TCP connect failed: {e}"))?;
@@ -343,9 +343,10 @@ pub fn test_stress() -> Result<(), String> {
     const UPDATES: usize = 109_000;
     const INTERVAL: Duration = Duration::from_millis(10); // 100 Hz target
     const ROTATE_EVERY: usize = 10_000;
+    const ROTATION_SETTLE: Duration = Duration::from_secs(1);
     let endpoint = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 6742);
     let endpoint_socket: std::net::SocketAddr = endpoint.into();
-    println!("[OPENRGB STRESS] Hardware-writing test: {UPDATES} SDK command-1050 updates, target 100 Hz (~18.2 min), rotating connection every {ROTATE_EVERY} updates.");
+    println!("[OPENRGB STRESS] Hardware-writing test: {UPDATES} SDK command-1050 updates, target 100 Hz (~18.2 min), close-first rotation every {ROTATE_EVERY} updates (1s settling interval).");
     println!("[OPENRGB STRESS] Do not run while Screenshaver or another program owns keyboard lighting.");
     println!("[OPENRGB STRESS] Interrupting the process may leave Direct mode active; durable recovery should remain available.");
 
@@ -396,19 +397,22 @@ pub fn test_stress() -> Result<(), String> {
         let mut colors = vec![[0u8; 4]; selected.led_count];
         let mut next = Instant::now();
         for frame in 0..UPDATES {
-            // Make-before-break rotation: the old streaming socket remains
-            // available until the new socket has passed protocol and identity
-            // checks. No lighting/mode writes are sent by the verification.
+            // Break-before-make diagnostic: close the original stream before
+            // negotiating the replacement. No lighting writes are performed
+            // during the settling interval or verification.
             if frame > 0 && frame % ROTATE_EVERY == 0 {
                 let rotation_started = Instant::now();
-                println!("[OPENRGB STRESS] ROTATE after {frame} updates: opening and verifying replacement SDK connection...");
-                let replacement = verified_stress_socket(endpoint_socket, id)?;
-                let previous = std::mem::replace(&mut socket, replacement);
-                drop(previous);
+                println!("[OPENRGB STRESS] ROTATE after {frame} updates: closing old streaming socket...");
+                drop(socket);
+                let closed_at = Instant::now();
+                thread::sleep(ROTATION_SETTLE);
+                println!("[OPENRGB STRESS] ROTATE after {frame} updates: settling={:?}; negotiating replacement SDK connection...", closed_at.elapsed());
+                let negotiation_started = Instant::now();
+                socket = verified_stress_socket(endpoint_socket, id)
+                    .map_err(|error| format!("Rotation after {frame} updates failed: {error}; time_since_close={:?}; negotiation_elapsed={:?}", closed_at.elapsed(), negotiation_started.elapsed()))?;
                 rotations += 1;
-                println!("[OPENRGB STRESS] ROTATE {rotations} OK after {frame} updates: elapsed={:?}", rotation_started.elapsed());
-                // A rotation can consume time; resume the 100 Hz schedule
-                // from now instead of sending a catch-up burst.
+                println!("[OPENRGB STRESS] ROTATE {rotations} OK after {frame} updates: negotiation_and_verification={:?} time_since_close={:?} total_rotation={:?}", negotiation_started.elapsed(), closed_at.elapsed(), rotation_started.elapsed());
+                // Restart the pacing clock; do not catch up with a burst.
                 next = Instant::now();
             }
             for (index, color) in colors.iter_mut().enumerate() {
