@@ -27,7 +27,7 @@ pub enum Command {
 
     AmbientRecovery { apply: bool },
 
-    TestOpenrgb { apply: bool, animate: bool, connections: bool, stress: bool },
+    TestOpenrgb { apply: bool, animate: bool, connections: bool, stress: bool, rotate_every: usize },
 
     AmbientLightingTest {
         openrgb_host: Option<std::net::Ipv4Addr>,
@@ -208,14 +208,49 @@ pub fn parse() -> Result<Command, String> {
 
 
         "--test-openrgb" => {
-            match args.as_slice() {
-                [_] => Ok(Command::TestOpenrgb { apply: false, animate: false, connections: false, stress: false }),
-                [_, flag] if flag == "--connections" => Ok(Command::TestOpenrgb { apply: false, animate: false, connections: true, stress: false }),
-                [_, flag] if flag == "--apply" => Ok(Command::TestOpenrgb { apply: true, animate: false, connections: false, stress: false }),
-                [_, flag] if flag == "--animate" => Ok(Command::TestOpenrgb { apply: false, animate: true, connections: false, stress: false }),
-                [_, first, second] if (first == "--animate" && second == "--apply") || (first == "--apply" && second == "--animate") => Ok(Command::TestOpenrgb { apply: true, animate: true, connections: false, stress: false }),
-                [_, first, second] if (first == "--stress" && second == "--apply") || (first == "--apply" && second == "--stress") => Ok(Command::TestOpenrgb { apply: true, animate: false, connections: false, stress: true }),
-                _ => Err("Usage: --test-openrgb [--animate] [--apply] | --test-openrgb --connections | --test-openrgb --stress --apply".into()),
+            // Parse stress rotation as an option-value pair, in any order.
+            // Other diagnostic modes retain their original combinations.
+            let flags = &args[1..];
+            let has = |flag: &str| flags.iter().any(|s| s == flag);
+            let usage = "Usage: --test-openrgb [--animate] [--apply] | --test-openrgb --connections | --test-openrgb --stress --apply [--rotate-every N]";
+            let invalid = || Err(usage.to_string());
+            if has("--stress") {
+                if !has("--apply") || has("--animate") || has("--connections") {
+                    return invalid();
+                }
+                let mut rotate_every = 10_000usize;
+                let mut index = 0usize;
+                let mut seen_stress = false;
+                let mut seen_apply = false;
+                let mut seen_rotate = false;
+                while index < flags.len() {
+                    match flags[index].as_str() {
+                        "--stress" if !seen_stress => seen_stress = true,
+                        "--apply" if !seen_apply => seen_apply = true,
+                        "--rotate-every" if !seen_rotate => {
+                            seen_rotate = true;
+                            index += 1;
+                            let value = flags.get(index).ok_or_else(|| usage.to_string())?;
+                            rotate_every = value.parse::<usize>().map_err(|_| "--rotate-every requires a positive integer".to_string())?;
+                            if !(1..=109_000).contains(&rotate_every) {
+                                return Err("--rotate-every must be between 1 and 109000".into());
+                            }
+                        }
+                        _ => return invalid(),
+                    }
+                    index += 1;
+                }
+                Ok(Command::TestOpenrgb { apply: true, animate: false, connections: false, stress: true, rotate_every })
+            } else {
+                let (apply, animate, connections) = match flags {
+                    [] => (false, false, false),
+                    [flag] if flag == "--connections" => (false, false, true),
+                    [flag] if flag == "--apply" => (true, false, false),
+                    [flag] if flag == "--animate" => (false, true, false),
+                    [first, second] if (first == "--animate" && second == "--apply") || (first == "--apply" && second == "--animate") => (true, true, false),
+                    _ => return invalid(),
+                };
+                Ok(Command::TestOpenrgb { apply, animate, connections, stress: false, rotate_every: 10_000 })
             }
         }
 
@@ -1003,9 +1038,11 @@ pub fn print_help() {
              --test-openrgb --connections\n\
                   Read-only repeated SDK negotiation diagnostic.\n\
          \n\
-             --test-openrgb --stress --apply\n\
+             --test-openrgb --stress --apply [--rotate-every N]\n\
                   Guarded accelerated 109,000-command Cynosa endurance test at 100 Hz.\n\
                   Changes keyboard lighting; requires explicit typed consent.\n\
+\
+                 N sets the connection rotation interval (default 10000).\n\
          \n\
              --ambient-recovery [--apply]\n\
                  Inspect pending records (default); --apply requests guarded manual restoration.\n\

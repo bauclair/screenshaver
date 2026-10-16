@@ -491,11 +491,11 @@ fn main() {
         }
 
 
-        crate::parse_arguments::Command::TestOpenrgb { apply, animate, connections, stress } => {
+        crate::parse_arguments::Command::TestOpenrgb { apply, animate, connections, stress, rotate_every } => {
             let result = if *connections {
                 crate::test_openrgb::test_connections()
             } else if *stress {
-                crate::test_openrgb::test_stress()
+                crate::test_openrgb::test_stress(*rotate_every)
             } else {
                 crate::test_openrgb::run(*apply, *animate)
             };

@@ -339,14 +339,16 @@ fn verified_stress_socket(endpoint: std::net::SocketAddr, expected_id: u32) -> R
     Ok(socket)
 }
 
-pub fn test_stress() -> Result<(), String> {
+pub fn test_stress(rotate_every: usize) -> Result<(), String> {
+    if !(1..=109_000).contains(&rotate_every) {
+        return Err("Rotation interval must be between 1 and 109000".into());
+    }
     const UPDATES: usize = 109_000;
     const INTERVAL: Duration = Duration::from_millis(10); // 100 Hz target
-    const ROTATE_EVERY: usize = 10_000;
     const ROTATION_SETTLE: Duration = Duration::from_secs(1);
     let endpoint = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 6742);
     let endpoint_socket: std::net::SocketAddr = endpoint.into();
-    println!("[OPENRGB STRESS] Hardware-writing test: {UPDATES} SDK command-1050 updates, target 100 Hz (~18.2 min), close-first rotation every {ROTATE_EVERY} updates (1s settling interval).");
+    println!("[OPENRGB STRESS] Hardware-writing test: {UPDATES} SDK command-1050 updates, target 100 Hz (~18.2 min), close-first rotation every {rotate_every} updates (1s settling interval).");
     println!("[OPENRGB STRESS] Do not run while Screenshaver or another program owns keyboard lighting.");
     println!("[OPENRGB STRESS] Interrupting the process may leave Direct mode active; durable recovery should remain available.");
 
@@ -400,7 +402,7 @@ pub fn test_stress() -> Result<(), String> {
             // Break-before-make diagnostic: close the original stream before
             // negotiating the replacement. No lighting writes are performed
             // during the settling interval or verification.
-            if frame > 0 && frame % ROTATE_EVERY == 0 {
+            if frame > 0 && frame % rotate_every == 0 {
                 let rotation_started = Instant::now();
                 println!("[OPENRGB STRESS] ROTATE after {frame} updates: closing old streaming socket...");
                 drop(socket);
