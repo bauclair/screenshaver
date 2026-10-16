@@ -25,6 +25,8 @@ pub enum Command {
 
     DiscoverOpenRgb,
 
+    TestOpenrgb2 { apply: bool, stress: bool, rate: u32, updates: usize },
+
     AmbientRecovery { apply: bool },
 
     TestOpenrgb { apply: bool, animate: bool, connections: bool, stress: bool, rotate_every: usize, rate: u32, updates: usize },
@@ -206,6 +208,44 @@ pub fn parse() -> Result<Command, String> {
             )
         }
 
+
+        "--test-openrgb2" => {
+            let usage = "Usage: --test-openrgb2 [--apply] | --test-openrgb2 --stress --apply [--rate HZ] [--updates N]";
+            let flags = &args[1..];
+            if flags.is_empty() {
+                Ok(Command::TestOpenrgb2 { apply: false, stress: false, rate: 25, updates: 10_000 })
+            } else if flags == ["--apply"] {
+                Ok(Command::TestOpenrgb2 { apply: true, stress: false, rate: 25, updates: 10_000 })
+            } else {
+                let (mut stress, mut apply, mut rate, mut updates) = (false, false, 25u32, 10_000usize);
+                let (mut seen_rate, mut seen_updates) = (false, false);
+                let mut index = 0;
+                while index < flags.len() {
+                    match flags[index].as_str() {
+                        "--stress" if !stress => stress = true,
+                        "--apply" if !apply => apply = true,
+                        "--rate" if !seen_rate => {
+                            seen_rate = true;
+                            index += 1;
+                            rate = flags.get(index).ok_or(usage)?.parse::<u32>()
+                                .map_err(|_| "--rate requires an integer".to_string())?;
+                            if !(1..=100).contains(&rate) { return Err("--rate must be 1..=100 Hz".into()); }
+                        }
+                        "--updates" if !seen_updates => {
+                            seen_updates = true;
+                            index += 1;
+                            updates = flags.get(index).ok_or(usage)?.parse::<usize>()
+                                .map_err(|_| "--updates requires an integer".to_string())?;
+                            if !(1..=1_000_000).contains(&updates) { return Err("--updates must be 1..=1000000".into()); }
+                        }
+                        _ => return Err(usage.into()),
+                    }
+                    index += 1;
+                }
+                if !stress || !apply { return Err(usage.into()); }
+                Ok(Command::TestOpenrgb2 { apply, stress, rate, updates })
+            }
+        }
 
         "--test-openrgb" => {
             // Parse stress rotation as an option-value pair, in any order.
@@ -1053,6 +1093,8 @@ pub fn print_help() {
              --test-openrgb [--animate] [--apply]\n\
                  Guarded Cynosa lighting test (dry run by default).\n\
          \n\
+             --test-openrgb2 [--apply]\n\
+                 Read-only probe by default; --apply runs guarded rainbow init and mode restoration.\n\
              --test-openrgb --connections\n\
                   Read-only repeated SDK negotiation diagnostic.\n\
          \n\

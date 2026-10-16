@@ -21,7 +21,7 @@ wayland-egl = "0.32"
 khronos-egl = { version = "6.0", features = ["static"] }
 wayland-protocols = { version = "0.32", features = ["staging", "client"] }
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time"] }
 x11 = { version = "2.21", features = ["xlib", "xss"] }
 fs2 = "0.4"
 image = { version = "0.25", default-features = false, features = ["png"] }
@@ -43,6 +43,7 @@ pam_unix = "0.3.1"
 zeroize = "1.8"
 mpris = "2.1"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+openrgb2 = "=0.4.1"
 
 [features]
 default = []

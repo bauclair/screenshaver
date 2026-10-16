@@ -130,6 +130,7 @@ mod test_lyrics;
 mod test_ambient_lighting;
 mod discover_openrgb;
 mod test_openrgb;
+mod test_openrgb2;
 mod test_localization;
 mod manage_localization;
 mod audit_translation;
@@ -490,6 +491,19 @@ fn main() {
             return;
         }
 
+
+        crate::parse_arguments::Command::TestOpenrgb2 { apply, stress, rate, updates } => {
+            let result = if *stress {
+                crate::test_openrgb2::run_stress(*rate, *updates)
+            } else {
+                crate::test_openrgb2::run(*apply)
+            };
+            if let Err(error) = result {
+                eprintln!("[OPENRGB2 TEST] FAILED: {error}");
+                std::process::exit(1);
+            }
+            return;
+        }
 
         crate::parse_arguments::Command::TestOpenrgb { apply, animate, connections, stress, rotate_every, rate, updates } => {
             let result = if *connections {
@@ -1547,6 +1561,7 @@ fn main() {
         | crate::parse_arguments::Command::AmbientRecovery { .. }
         | crate::parse_arguments::Command::DiscoverOpenRgb
         | crate::parse_arguments::Command::TestOpenrgb { .. }
+        | crate::parse_arguments::Command::TestOpenrgb2 { .. }
         | crate::parse_arguments::Command::TestLocalization
         | crate::parse_arguments::Command::TestReverseAnimation { .. }
         | crate::parse_arguments::Command::AuditTranslation { .. }
