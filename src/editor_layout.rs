@@ -36,7 +36,7 @@ pub(crate) const EDIT_WINDOW_SCALE_MAX: f32 =
     1.80;
 
 const EDIT_TABBED_CONTENT_HEIGHT: f32 =
-    338.0;
+    367.0;
 
 pub const STARTING_OFFSET_MIN: f32 =
     0.0;
@@ -5562,62 +5562,52 @@ fn draw_editor_tab_bar(
     active_tab: &mut EditorTab,
     bulk_edit_mode: bool,
 ) {
-    // Both rails use identical sizing and typography. Tab widths are derived
-    // from localized label lengths rather than stretched to a common width.
-    const TOP_RAIL: [EditorTab; 5] = [
+    // One horizontal parent-tab rail. The space previously occupied by the
+    // second rail is returned to the tab content panel.
+    const TABS: [EditorTab; 6] = [
         EditorTab::Policies,
         EditorTab::Playlists,
         EditorTab::Rendering,
         EditorTab::Textures,
         EditorTab::PostProcessing,
-    ];
-    const LOWER_RAIL: [EditorTab; 1] = [
         EditorTab::Config,
     ];
 
-    for (rail_index, tabs) in [TOP_RAIL.as_slice(), LOWER_RAIL.as_slice()]
-        .into_iter()
-        .enumerate()
-    {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 3.0 * metrics.scale;
-            for &tab in tabs {
-                let label = match tab {
-                    EditorTab::Policies => crate::manage_localization::runtime_text("editor.tab.policies"),
-                    EditorTab::Playlists => crate::manage_localization::runtime_text("editor.tab.playlists"),
-                    EditorTab::Rendering => crate::manage_localization::runtime_text("editor.tab.rendering"),
-                    EditorTab::Textures => crate::manage_localization::runtime_text("editor.tab.textures"),
-                    EditorTab::PostProcessing => crate::manage_localization::runtime_text("editor.tab.post_processing"),
-                    EditorTab::Config => crate::manage_localization::runtime_text("editor.tab.configuration"),
-                };
-                let selected = *active_tab == tab;
-                let enabled = !bulk_edit_mode || tab != EditorTab::Config;
-                let visuals = &ui.visuals().widgets;
-                let fill = if selected {
-                    visuals.active.bg_fill
-                } else {
-                    visuals.inactive.bg_fill
-                };
-                let stroke = if selected {
-                    visuals.active.bg_stroke
-                } else {
-                    visuals.inactive.bg_stroke
-                };
-                let button = egui::Button::new(
-                    egui::RichText::new(label).strong()
-                )
-                .fill(fill)
-                .stroke(stroke)
-                .min_size(egui::vec2(0.0, 27.0 * metrics.scale));
-                if ui.add_enabled(enabled, button).clicked() {
-                    *active_tab = tab;
-                }
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 3.0 * metrics.scale;
+        for &tab in &TABS {
+            let label = match tab {
+                EditorTab::Policies => crate::manage_localization::runtime_text("editor.tab.policies"),
+                EditorTab::Playlists => crate::manage_localization::runtime_text("editor.tab.playlists"),
+                EditorTab::Rendering => crate::manage_localization::runtime_text("editor.tab.rendering"),
+                EditorTab::Textures => crate::manage_localization::runtime_text("editor.tab.textures"),
+                EditorTab::PostProcessing => crate::manage_localization::runtime_text("editor.tab.post_processing"),
+                EditorTab::Config => crate::manage_localization::runtime_text("editor.tab.configuration"),
+            };
+            let selected = *active_tab == tab;
+            let enabled = !bulk_edit_mode || tab != EditorTab::Config;
+            let visuals = &ui.visuals().widgets;
+            let fill = if selected {
+                visuals.active.bg_fill
+            } else {
+                visuals.inactive.bg_fill
+            };
+            let stroke = if selected {
+                visuals.active.bg_stroke
+            } else {
+                visuals.inactive.bg_stroke
+            };
+            let button = egui::Button::new(
+                egui::RichText::new(label).strong()
+            )
+            .fill(fill)
+            .stroke(stroke)
+            .min_size(egui::vec2(0.0, 27.0 * metrics.scale));
+            if ui.add_enabled(enabled, button).clicked() {
+                *active_tab = tab;
             }
-        });
-        if rail_index == 0 {
-            ui.add_space(2.0 * metrics.scale);
         }
-    }
+    });
 }
 
 

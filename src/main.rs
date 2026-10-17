@@ -127,10 +127,6 @@ mod authenticate_user;
 mod manage_playlists;
 mod test_playlists;
 mod test_lyrics;
-mod test_ambient_lighting;
-mod discover_openrgb;
-mod test_openrgb;
-mod test_openrgb2;
 mod test_localization;
 mod manage_localization;
 mod audit_translation;
@@ -144,10 +140,6 @@ mod compare_databases;
 
 mod runtime_source_version;
 
-mod manage_ambient_lighting;
-mod determine_ambient_source;
-mod select_ambient_device;
-mod manage_openrgb_session;
 
 use std::sync::Arc;
 use std::sync::atomic::{
@@ -478,80 +470,6 @@ fn main() {
 
                     eprintln!(
                         "[LYRICS TEST] FAILED: {}",
-                        error
-                    );
-
-                    std::process::exit(
-                        1
-                    );
-                }
-            }
-
-
-            return;
-        }
-
-
-        crate::parse_arguments::Command::TestOpenrgb2 { apply, stress, rate, updates } => {
-            let result = if *stress {
-                crate::test_openrgb2::run_stress(*rate, *updates)
-            } else {
-                crate::test_openrgb2::run(*apply)
-            };
-            if let Err(error) = result {
-                eprintln!("[OPENRGB2 TEST] FAILED: {error}");
-                std::process::exit(1);
-            }
-            return;
-        }
-
-        crate::parse_arguments::Command::TestOpenrgb { apply, animate, connections, stress, rotate_every, rate, updates } => {
-            let result = if *connections {
-                crate::test_openrgb::test_connections()
-            } else if *stress {
-                crate::test_openrgb::test_stress(*rotate_every, *rate, *updates)
-            } else {
-                crate::test_openrgb::run(*apply, *animate)
-            };
-            if let Err(error) = result {
-                eprintln!("[OPENRGB TEST] FAILED: {error}");
-                std::process::exit(1);
-            }
-            return;
-        }
-
-        crate::parse_arguments::Command::AmbientRecovery { apply } => {
-            let result = if *apply {
-                crate::test_openrgb::restore_ambient_recovery()
-            } else {
-                crate::test_openrgb::inspect_ambient_recovery()
-            };
-            if let Err(error) = result {
-                eprintln!("[AMBIENT RECOVERY] INSPECTION FAILED: {error}");
-                std::process::exit(1);
-            }
-            return;
-        }
-
-        crate::parse_arguments::Command::DiscoverOpenRgb => {
-            if let Err(error) = crate::discover_openrgb::run() {
-                eprintln!("[OPENRGB DISCOVERY] FAILED: {}", error);
-                std::process::exit(1);
-            }
-            return;
-        }
-
-
-        crate::parse_arguments::Command::AmbientLightingTest { openrgb_host } => {
-
-            match crate::test_ambient_lighting::run(*openrgb_host) {
-
-                Ok(()) => {}
-
-                Err(error) => {
-
-                    eprintln!(
-                        "[AMBIENT LIGHTING TEST] FAILED: {}",
                         error
                     );
 
@@ -1557,11 +1475,6 @@ fn main() {
         | crate::parse_arguments::Command::TestWallpaperProtocol
         | crate::parse_arguments::Command::TestPlaylists
         | crate::parse_arguments::Command::TestLyrics
-        | crate::parse_arguments::Command::AmbientLightingTest { .. }
-        | crate::parse_arguments::Command::AmbientRecovery { .. }
-        | crate::parse_arguments::Command::DiscoverOpenRgb
-        | crate::parse_arguments::Command::TestOpenrgb { .. }
-        | crate::parse_arguments::Command::TestOpenrgb2 { .. }
         | crate::parse_arguments::Command::TestLocalization
         | crate::parse_arguments::Command::TestReverseAnimation { .. }
         | crate::parse_arguments::Command::AuditTranslation { .. }

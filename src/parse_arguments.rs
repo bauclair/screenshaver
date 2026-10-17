@@ -23,18 +23,6 @@ pub enum Command {
 
     TestLyrics,
 
-    DiscoverOpenRgb,
-
-    TestOpenrgb2 { apply: bool, stress: bool, rate: u32, updates: usize },
-
-    AmbientRecovery { apply: bool },
-
-    TestOpenrgb { apply: bool, animate: bool, connections: bool, stress: bool, rotate_every: usize, rate: u32, updates: usize },
-
-    AmbientLightingTest {
-        openrgb_host: Option<std::net::Ipv4Addr>,
-    },
-
     TestLocalization,
 
     AuditTranslation {
@@ -206,136 +194,6 @@ pub fn parse() -> Result<Command, String> {
             Ok(
                 Command::TestLyrics
             )
-        }
-
-
-        "--test-openrgb2" => {
-            let usage = "Usage: --test-openrgb2 [--apply] | --test-openrgb2 --stress --apply [--rate HZ] [--updates N]";
-            let flags = &args[1..];
-            if flags.is_empty() {
-                Ok(Command::TestOpenrgb2 { apply: false, stress: false, rate: 25, updates: 10_000 })
-            } else if flags == ["--apply"] {
-                Ok(Command::TestOpenrgb2 { apply: true, stress: false, rate: 25, updates: 10_000 })
-            } else {
-                let (mut stress, mut apply, mut rate, mut updates) = (false, false, 25u32, 10_000usize);
-                let (mut seen_rate, mut seen_updates) = (false, false);
-                let mut index = 0;
-                while index < flags.len() {
-                    match flags[index].as_str() {
-                        "--stress" if !stress => stress = true,
-                        "--apply" if !apply => apply = true,
-                        "--rate" if !seen_rate => {
-                            seen_rate = true;
-                            index += 1;
-                            rate = flags.get(index).ok_or(usage)?.parse::<u32>()
-                                .map_err(|_| "--rate requires an integer".to_string())?;
-                            if !(1..=100).contains(&rate) { return Err("--rate must be 1..=100 Hz".into()); }
-                        }
-                        "--updates" if !seen_updates => {
-                            seen_updates = true;
-                            index += 1;
-                            updates = flags.get(index).ok_or(usage)?.parse::<usize>()
-                                .map_err(|_| "--updates requires an integer".to_string())?;
-                            if !(1..=1_000_000).contains(&updates) { return Err("--updates must be 1..=1000000".into()); }
-                        }
-                        _ => return Err(usage.into()),
-                    }
-                    index += 1;
-                }
-                if !stress || !apply { return Err(usage.into()); }
-                Ok(Command::TestOpenrgb2 { apply, stress, rate, updates })
-            }
-        }
-
-        "--test-openrgb" => {
-            // Parse stress rotation as an option-value pair, in any order.
-            // Other diagnostic modes retain their original combinations.
-            let flags = &args[1..];
-            let has = |flag: &str| flags.iter().any(|s| s == flag);
-            let usage = "Usage: --test-openrgb [--animate] [--apply] | --test-openrgb --connections | --test-openrgb --stress --apply [--rotate-every N] [--rate HZ] [--updates N]";
-            let invalid = || Err(usage.to_string());
-            if has("--stress") {
-                if !has("--apply") || has("--animate") || has("--connections") {
-                    return invalid();
-                }
-                let mut rotate_every = 10_000usize;
-                let mut rate = 100u32;
-                let mut updates = 109_000usize;
-                let mut index = 0usize;
-                let mut seen_stress = false;
-                let mut seen_apply = false;
-                let mut seen_rotate = false;
-                let mut seen_rate = false;
-                let mut seen_updates = false;
-                while index < flags.len() {
-                    match flags[index].as_str() {
-                        "--stress" if !seen_stress => seen_stress = true,
-                        "--apply" if !seen_apply => seen_apply = true,
-                        "--rotate-every" if !seen_rotate => {
-                            seen_rotate = true;
-                            index += 1;
-                            let value = flags.get(index).ok_or_else(|| usage.to_string())?;
-                            rotate_every = value.parse::<usize>().map_err(|_| "--rotate-every requires a positive integer".to_string())?;
-                            if rotate_every > 1_000_000 {
-                                return Err("--rotate-every must be between 0 and 1000000 (0 disables rotation)".into());
-                            }
-                        }
-                        "--rate" if !seen_rate => {
-                            seen_rate = true;
-                            index += 1;
-                            let value = flags.get(index).ok_or_else(|| usage.to_string())?;
-                            rate = value.parse::<u32>().map_err(|_| "--rate requires a positive integer".to_string())?;
-                            if !(1..=500).contains(&rate) { return Err("--rate must be between 1 and 500 Hz".into()); }
-                        }
-                        "--updates" if !seen_updates => {
-                            seen_updates = true;
-                            index += 1;
-                            let value = flags.get(index).ok_or_else(|| usage.to_string())?;
-                            updates = value.parse::<usize>().map_err(|_| "--updates requires a positive integer".to_string())?;
-                            if !(1..=1_000_000).contains(&updates) { return Err("--updates must be between 1 and 1000000".into()); }
-                        }
-                        _ => return invalid(),
-                    }
-                    index += 1;
-                }
-                Ok(Command::TestOpenrgb { apply: true, animate: false, connections: false, stress: true, rotate_every, rate, updates })
-            } else {
-                let (apply, animate, connections) = match flags {
-                    [] => (false, false, false),
-                    [flag] if flag == "--connections" => (false, false, true),
-                    [flag] if flag == "--apply" => (true, false, false),
-                    [flag] if flag == "--animate" => (false, true, false),
-                    [first, second] if (first == "--animate" && second == "--apply") || (first == "--apply" && second == "--animate") => (true, true, false),
-                    _ => return invalid(),
-                };
-                Ok(Command::TestOpenrgb { apply, animate, connections, stress: false, rotate_every: 10_000, rate: 100, updates: 109_000 })
-            }
-        }
-
-        "--ambient-recovery" => {
-            match args.as_slice() {
-                [_] => Ok(Command::AmbientRecovery { apply: false }),
-                [_, flag] if flag == "--apply" => Ok(Command::AmbientRecovery { apply: true }),
-                _ => Err("Usage: --ambient-recovery [--apply]".into()),
-            }
-        }
-
-        "--discover-openrgb" => {
-            require_no_extra_arguments(&args, "--discover-openrgb")?;
-            Ok(Command::DiscoverOpenRgb)
-        }
-
-
-        "--ambient-lighting-test" => {
-            let openrgb_host = match args.as_slice() {
-                [_] => None,
-                [_, flag, value] if flag == "--openrgb-host" => {
-                    Some(value.parse::<std::net::Ipv4Addr>()
-                        .map_err(|_| "--openrgb-host requires a valid IPv4 address".to_string())?)
-                }
-                _ => return Err("Usage: --ambient-lighting-test [--openrgb-host VM_IPV4_ADDRESS]".into()),
-            };
-            Ok(Command::AmbientLightingTest { openrgb_host })
         }
 
 
@@ -1089,30 +947,6 @@ pub fn print_help() {
          \n\
              --test-lyrics\n\
                  Run the synchronized-lyrics development test and exit.\n\
-         \n\
-             --test-openrgb [--animate] [--apply]\n\
-                 Guarded Cynosa lighting test (dry run by default).\n\
-         \n\
-             --test-openrgb2 [--apply]\n\
-                 Read-only probe by default; --apply runs guarded rainbow init and mode restoration.\n\
-             --test-openrgb --connections\n\
-                  Read-only repeated SDK negotiation diagnostic.\n\
-         \n\
-             --test-openrgb --stress --apply [--rotate-every N] [--rate HZ] [--updates N]\n\
-                  Guarded configurable Cynosa LED-update endurance test (default 109000 at 100 Hz).\n\
-                  Changes keyboard lighting; requires explicit typed consent.\n\
-\
-                 Rotation defaults to 10000 updates; --rotate-every 0 disables rotation.\n\
-         \n\
-             --ambient-recovery [--apply]\n\
-                 Inspect pending records (default); --apply requests guarded manual restoration.\n\
-         \n\
-             --discover-openrgb\n\
-                 Read-only inventory of devices recognized by the local OpenRGB SDK server.\n\
-         \n\
-             --ambient-lighting-test [--openrgb-host VM_IPV4_ADDRESS]\n\
-                 Run the software-only ambient-lighting test.\n\
-                 --openrgb-host connects to an explicitly specified OpenRGB VM on TCP port 16743.\n\
          \n\
              --test-localization\n\
                  Test locale selection, translation lookup, and English fallback.\n\
