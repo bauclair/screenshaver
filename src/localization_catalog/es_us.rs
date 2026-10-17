@@ -5442,6 +5442,11 @@ pub(crate) const TRANSLATIONS: &[FactoryTranslation] = &[
     },
     FactoryTranslation {
         locale: "es-US",
+        key: "qbe.field.starting_offset",
+        translated_text: "Desplazamiento inicial",
+    },
+    FactoryTranslation {
+        locale: "es-US",
         key: "qbe.field.render_scale",
         translated_text: "Escala de renderizado",
     },

@@ -132,6 +132,7 @@ pub(crate) struct FrameRenderEngine {
     audio_bands:
         Option<crate::audio_backend::SharedAudioBands>,
     audio_required: bool,
+    audio_demand: crate::audio_backend::AudioDemandHandle,
     audio_motion_effect: crate::render_audio_motion::AudioMotionEffect,
     audio_motion_state: crate::render_audio_motion::AudioMotionState,
     audio_motion_lyrics_manager: Option<crate::manage_lyrics::LyricsManager>,
@@ -455,6 +456,7 @@ impl FrameRenderEngine {
                 postprocess_policy,
                 audio_bands,
                 audio_required,
+                audio_demand: crate::audio_backend::register_audio_demand(),
                 audio_motion_effect: postprocess_profile.audio_motion,
                 audio_motion_state: crate::render_audio_motion::AudioMotionState::default(),
                 audio_motion_lyrics_manager,
@@ -929,7 +931,7 @@ impl FrameRenderEngine {
         // Reasserting once per frame is cheap (unchanged values are a no-op)
         // and lets a paused wallpaper restart Audio Bloom immediately when it
         // resumes after a screensaver or editor temporarily owned presentation.
-        crate::audio_backend::set_audio_required(
+        self.audio_demand.set_required(
             self.audio_required
         );
 

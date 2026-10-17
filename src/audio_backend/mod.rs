@@ -5,6 +5,7 @@ use std::sync::{
     Arc,
     OnceLock,
     RwLock,
+    Mutex,
 };
 use std::sync::atomic::{
     AtomicBool,
@@ -100,9 +101,31 @@ impl std::error::Error for AudioError {}
 /// lifetime of the process.  Renderers therefore retain one stable Arc while
 /// capture may start and stop behind it.  When capture is not required, the
 /// bands are zero and Audio Bloom contributes nothing.
+#[derive(Default)]
+struct AudioDemands {
+    legacy: bool,
+    next_id: u64,
+    owners: std::collections::HashMap<u64, bool>,
+}
+
+/// A renderer-owned demand registration, automatically released on drop.
+pub struct AudioDemandHandle { id: u64 }
+impl AudioDemandHandle {
+    pub fn set_required(&self, required: bool) {
+        audio_runtime().set_owner_required(self.id, required);
+    }
+}
+impl Drop for AudioDemandHandle {
+    fn drop(&mut self) { audio_runtime().unregister(self.id); }
+}
+pub fn register_audio_demand() -> AudioDemandHandle {
+    audio_runtime().register()
+}
+
 struct AudioRuntime {
     shared_bands: SharedAudioBands,
     required: Arc<AtomicBool>,
+    demands: Mutex<AudioDemands>,
     wake_sender: mpsc::Sender<()>,
 }
 
@@ -183,6 +206,7 @@ impl AudioRuntime {
         Self {
             shared_bands,
             required,
+            demands: Mutex::new(AudioDemands::default()),
             wake_sender,
         }
     }
@@ -197,29 +221,39 @@ impl AudioRuntime {
     }
 
 
-    fn set_required(
-        &self,
-        required: bool,
-    ) {
-        let previous =
-            self.required.swap(
-                required,
-                Ordering::SeqCst,
-            );
-
-        if previous == required {
-            return;
+    fn update_demand(&self, update: impl FnOnce(&mut AudioDemands)) {
+        let mut demands = self.demands.lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        update(&mut demands);
+        let effective = demands.legacy || demands.owners.values().any(|v| *v);
+        let previous = self.required.swap(effective, Ordering::SeqCst);
+        drop(demands);
+        if previous != effective {
+            if !effective { zero_shared_bands(&self.shared_bands); }
+            let _ = self.wake_sender.send(());
         }
-
-        if !required {
-            zero_shared_bands(
-                &self.shared_bands
-            );
-        }
-
-        let _ =
-            self.wake_sender.send(());
     }
+    fn set_required(&self, required: bool) {
+        self.update_demand(|d| d.legacy = required);
+    }
+    fn register(&self) -> AudioDemandHandle {
+        let mut id = 0;
+        self.update_demand(|d| {
+            id = d.next_id;
+            d.next_id = d.next_id.checked_add(1).expect("audio demand IDs exhausted");
+            d.owners.insert(id, false);
+        });
+        AudioDemandHandle { id }
+    }
+    fn set_owner_required(&self, id: u64, required: bool) {
+        self.update_demand(|d| {
+            if let Some(value) = d.owners.get_mut(&id) { *value = required; }
+        });
+    }
+    fn unregister(&self, id: u64) {
+        self.update_demand(|d| { d.owners.remove(&id); });
+    }
+
 }
 
 

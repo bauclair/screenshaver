@@ -5472,6 +5472,11 @@ pub(crate) const TRANSLATION_KEYS: &[FactoryTranslationKey] = &[
         translator_context: "QBE field selector label for animation speed.",
     },
     FactoryTranslationKey {
+        key: "qbe.field.starting_offset",
+        english_text: "Starting Offset",
+        translator_context: "QBE field selector label for the policy starting offset in seconds, displayed to three decimal places (n.nnn).",
+    },
+    FactoryTranslationKey {
         key: "qbe.field.render_scale",
         english_text: "Render Scale",
         translator_context: "QBE field selector label for render scale.",

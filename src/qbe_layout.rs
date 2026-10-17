@@ -221,13 +221,25 @@ fn draw_field_combo(
             .show_ui(
                 ui,
                 |ui| {
-                    for field in
+                    // Sort by the current locale's visible labels, not by
+                    // enum declaration order. Keep the enum as the stable ID.
+                    let mut fields: Vec<_> =
                         crate::parse_qbe::QbeField::ALL
-                    {
+                            .iter()
+                            .map(|field| (*field, field.label()))
+                            .collect();
+
+                    fields.sort_by(|a, b| {
+                        a.1.to_lowercase()
+                            .cmp(&b.1.to_lowercase())
+                            .then_with(|| a.1.cmp(&b.1))
+                    });
+
+                    for (field, label) in fields {
                         ui.selectable_value(
                             &mut clause.field,
-                            Some(*field),
-                            field.label(),
+                            Some(field),
+                            label,
                         );
                     }
                 },

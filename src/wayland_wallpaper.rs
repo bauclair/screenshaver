@@ -3326,6 +3326,8 @@ fn render_mirror_frames(
             );
 
 
+    let audio_demand = crate::audio_backend::register_audio_demand();
+
     let mut audio_required =
         matches!(
             initial_postprocess_profile.bloom.name(),
@@ -4523,7 +4525,7 @@ fn render_mirror_frames(
             }
 
 
-            crate::audio_backend::set_audio_required(
+            audio_demand.set_required(
                 audio_required
             );
 

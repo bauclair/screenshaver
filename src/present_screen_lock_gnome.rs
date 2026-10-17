@@ -107,6 +107,7 @@ struct GnomeShaderSourceProducer {
     active_shader_name: String,
     active_policy_id: i64,
     active_audio_required: bool,
+    audio_demand: crate::audio_backend::AudioDemandHandle,
     ordered_position_recorded: bool,
 }
 
@@ -291,6 +292,7 @@ impl GnomeShaderSourceProducer {
             active_shader_name: selected.entry.name,
             active_policy_id: selected.entry.policy_id,
             active_audio_required,
+            audio_demand: crate::audio_backend::register_audio_demand(),
             ordered_position_recorded: false,
         })
     }
@@ -305,7 +307,7 @@ impl GnomeShaderSourceProducer {
         );
 
         while !lock_finished() {
-            crate::audio_backend::set_audio_required(
+            self.audio_demand.set_required(
                 self.active_audio_required
             );
 
@@ -586,7 +588,7 @@ impl GnomeShaderSourceProducer {
     }
 
     fn cleanup(&mut self) {
-        crate::audio_backend::set_audio_required(
+        self.audio_demand.set_required(
             false
         );
 
