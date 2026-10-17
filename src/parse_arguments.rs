@@ -2,6 +2,8 @@
 pub enum Command {
     Run,
 
+    ShowRendererStatus,
+
     Start,
 
     Stop,
@@ -97,6 +99,11 @@ pub fn parse() -> Result<Command, String> {
 
 
     match args[0].as_str() {
+
+        "--show-renderer-status" => {
+            require_no_extra_arguments(&args, "--show-renderer-status")?;
+            Ok(Command::ShowRendererStatus)
+        }
 
         "--start" => {
 
@@ -912,6 +919,9 @@ pub fn print_help() {
              --control [PATH]\n\
                  Open the Screenshaver Control Center.\n\
                  If PATH is supplied, preload that shader for policy editing.\n\
+         \n\
+             --show-renderer-status\n\
+                  Toggle the temporary four-pipeline renderer-status diagnostic.\n\
          \n\
              --reset-idle-timeout <DURATION>\n\
                  Reset the database-backed screensaver idle timeout and exit.\n\

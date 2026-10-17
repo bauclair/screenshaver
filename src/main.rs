@@ -7,6 +7,7 @@ mod parse_mode;
 mod parse_interval;
 mod parse_duration;
 mod parse_arguments;
+mod renderer_status;
 mod parse_subtitle_placement;
 mod parse_texture_specification;
 
@@ -192,6 +193,20 @@ fn main() {
     // Commands that do not require Screenshaver's user environment or
     // database are handled before any configuration/database initialization.
     match &command {
+
+        crate::parse_arguments::Command::ShowRendererStatus => {
+            match crate::renderer_status::enable() {
+                Ok(path) => println!(
+                    "Renderer-status diagnostic enabled ({}). Restart running Screenshaver processes after installing presentation hooks.",
+                    path.display()
+                ),
+                Err(error) => {
+                    eprintln!("Unable to enable renderer-status diagnostic: {error}");
+                    std::process::exit(1);
+                }
+            }
+            return;
+        }
 
         crate::parse_arguments::Command::Stop => {
 
@@ -1470,7 +1485,8 @@ fn main() {
         | crate::parse_arguments::Command::Start => {}
 
 
-        crate::parse_arguments::Command::Stop
+        crate::parse_arguments::Command::ShowRendererStatus
+        | crate::parse_arguments::Command::Stop
         | crate::parse_arguments::Command::Help
         | crate::parse_arguments::Command::CompareDatabases { .. }
         | crate::parse_arguments::Command::Version
