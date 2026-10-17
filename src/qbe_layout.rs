@@ -537,12 +537,14 @@ fn draw_value_control(
 
 
         crate::parse_qbe::QbeValueKind::TextureName => {
+            let mut choices = vec!["random".to_string()];
+            choices.extend(lookup_values.texture_names.iter().filter(|name| !name.eq_ignore_ascii_case("random")).cloned());
             draw_string_value_combo(
                 ui,
                 id,
                 width,
                 &mut clause.value,
-                &lookup_values.texture_names,
+                &choices,
             );
         }
 

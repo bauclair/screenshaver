@@ -851,7 +851,11 @@ fn policy_select_sql(
 
              FROM shader_policies AS p
              JOIN shaders AS s
-               ON s.shader_id = p.shader_id"
+               ON s.shader_id = p.shader_id
+             LEFT JOIN app_defaults AS ad_qbe
+               ON ad_qbe.defaults_id = 1
+             LEFT JOIN target_defaults AS td_qbe
+               ON td_qbe.target = p.policy_target"
         );
 
 

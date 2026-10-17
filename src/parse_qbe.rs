@@ -579,6 +579,16 @@ pub const fn value_kind_for(
         field,
         operator,
     ) {
+        // Pattern searches accept arbitrary text rather than a catalog selection.
+        (
+            QbeField::PlaylistName
+            | QbeField::Texture
+            | QbeField::Palette,
+            QbeOperator::Like | QbeOperator::NotLike,
+        ) => {
+            QbeValueKind::Text
+        }
+
         (
             QbeField::Texture
             | QbeField::Palette,
@@ -1209,7 +1219,7 @@ fn build_clause_sql(
 
         QbeField::RenderedFps => {
             build_integer_column_clause(
-                "p.rendered_fps",
+                "COALESCE(p.rendered_fps, ad_qbe.rendered_fps)",
                 operator,
                 value,
             )
@@ -1218,7 +1228,7 @@ fn build_clause_sql(
 
         QbeField::AnimationSpeed => {
             build_real_column_clause(
-                "p.animation_speed",
+                "COALESCE(p.animation_speed, td_qbe.animation_speed)",
                 operator,
                 value,
             )
@@ -1227,7 +1237,7 @@ fn build_clause_sql(
 
         QbeField::RenderScale => {
             build_real_column_clause(
-                "p.render_scale",
+                "COALESCE(p.render_scale, ad_qbe.render_scale)",
                 operator,
                 value,
             )
@@ -1241,7 +1251,7 @@ fn build_clause_sql(
                 )?;
 
             build_enum_column_clause(
-                "p.anti_aliasing",
+                "COALESCE(p.anti_aliasing, ad_qbe.anti_aliasing)",
                 operator,
                 canonical,
             )
@@ -1255,7 +1265,7 @@ fn build_clause_sql(
                 )?;
 
             build_enum_column_clause(
-                "p.dithering",
+                "COALESCE(p.dithering, ad_qbe.dithering)",
                 operator,
                 canonical,
             )
@@ -1269,7 +1279,7 @@ fn build_clause_sql(
                 )?;
 
             build_enum_column_clause(
-                "p.color_precision",
+                "COALESCE(p.color_precision, ad_qbe.color_precision)",
                 operator,
                 canonical,
             )
@@ -1497,7 +1507,7 @@ fn build_real_column_clause(
         ClauseSql {
             sql:
                 format!(
-                    "{} {} ?",
+                    "ROUND({}, 2) {} ROUND(?, 2)",
                     column,
                     numeric_sql_operator(
                         operator
@@ -1736,8 +1746,20 @@ fn build_texture_clause(
     }
 
 
+    // Resolve the configured mode first. A random mode must take precedence
+    // over any stale family value, and an inherited mode uses target_defaults.
+    // Unassigned policies have no target defaults and remain unresolved.
     build_text_column_clause(
-        "COALESCE(p.texture_family, '')",
+        "CASE
+             WHEN COALESCE(p.texture_mode, td_qbe.texture_mode) = 'random'
+               THEN 'random'
+             WHEN COALESCE(p.texture_mode, td_qbe.texture_mode) = 'specific'
+               THEN COALESCE(
+                    CASE WHEN p.texture_mode IS NOT NULL THEN p.texture_family END,
+                    td_qbe.texture_family
+               )
+             ELSE NULL
+         END",
         operator,
         value,
     )
@@ -1774,11 +1796,17 @@ fn build_palette_clause(
     }
 
 
-    // A policy can store either a specific #rrggbb palette or the symbolic
-    // mode "random".  Coalescing the two makes both values queryable through
-    // one user-facing Palette field.
+    // The mode is authoritative: a stale color cannot override Random.
+    // Inherited policies resolve against the matching target default.
     build_text_column_clause(
-        "COALESCE(p.palette_color, p.palette_mode, '')",
+        "CASE
+             WHEN COALESCE(p.palette_mode, td_qbe.palette_mode) = 'random'
+               THEN 'random'
+             WHEN COALESCE(p.palette_mode, td_qbe.palette_mode) = 'specific'
+               THEN CASE WHEN p.palette_mode IS NOT NULL
+                         THEN p.palette_color ELSE td_qbe.palette_color END
+             ELSE NULL
+         END",
         operator,
         value,
     )
