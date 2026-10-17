@@ -30,6 +30,7 @@ pub enum QbeField {
     Palette,
     RenderedFps,
     AnimationSpeed,
+    StartingOffset,
     RenderScale,
     AntiAliasing,
     Dithering,
@@ -57,6 +58,7 @@ impl QbeField {
         Self::Palette,
         Self::RenderedFps,
         Self::AnimationSpeed,
+        Self::StartingOffset,
         Self::RenderScale,
         Self::AntiAliasing,
         Self::Dithering,
@@ -115,6 +117,9 @@ impl QbeField {
 
             Self::AnimationSpeed =>
                 crate::manage_localization::runtime_text("qbe.field.animation_speed"),
+
+            Self::StartingOffset =>
+                crate::manage_localization::runtime_text("qbe.field.starting_offset"),
 
             Self::RenderScale =>
                 crate::manage_localization::runtime_text("qbe.field.render_scale"),
@@ -529,6 +534,7 @@ pub const fn operators_for(
 
         QbeField::RenderedFps
         | QbeField::AnimationSpeed
+        | QbeField::StartingOffset
         | QbeField::RenderScale
         | QbeField::ShaderAddedDate
         | QbeField::PolicyCreatedDate
@@ -660,6 +666,7 @@ pub const fn value_kind_for(
 
         (
             QbeField::AnimationSpeed
+            | QbeField::StartingOffset
             | QbeField::RenderScale,
             _,
         ) => {
@@ -1231,6 +1238,17 @@ fn build_clause_sql(
                 "COALESCE(p.animation_speed, td_qbe.animation_speed)",
                 operator,
                 value,
+                2,
+            )
+        }
+
+
+        QbeField::StartingOffset => {
+            build_real_column_clause(
+                "COALESCE(p.starting_offset, 0.0)",
+                operator,
+                value,
+                3,
             )
         }
 
@@ -1240,6 +1258,7 @@ fn build_clause_sql(
                 "COALESCE(p.render_scale, ad_qbe.render_scale)",
                 operator,
                 value,
+                2,
             )
         }
 
@@ -1481,6 +1500,7 @@ fn build_real_column_clause(
     column: &str,
     operator: QbeOperator,
     value: &str,
+    decimal_places: u32,
 ) -> Result<ClauseSql, QbeParseError> {
 
     let parsed =
@@ -1507,11 +1527,13 @@ fn build_real_column_clause(
         ClauseSql {
             sql:
                 format!(
-                    "ROUND({}, 2) {} ROUND(?, 2)",
+                    "ROUND({}, {}) {} ROUND(?, {})",
                     column,
+                    decimal_places,
                     numeric_sql_operator(
                         operator
                     )?,
+                    decimal_places,
                 ),
 
             parameters:
