@@ -351,7 +351,7 @@ fn log_warning(
 
 // This developer diagnostic runs in a separate Screenshaver invocation. Its
 // OnceLock override is set before any production runtime initialization; no
-// environment variables, real runtime markers, or OpenRGB devices are touched.
+// environment variables or real runtime markers are touched.
 pub(crate) fn run_protocol_tests() -> Result<(), String> {
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;

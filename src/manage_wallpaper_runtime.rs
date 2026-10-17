@@ -115,7 +115,7 @@ impl WallpaperRuntimeControl {
         let overall_deadline = started + Duration::from_secs(2);
         crate::logger::warning(
             &crate::locate_paths::runtime_log_path(),
-            "[AMBIENT_HANDOFF_DIAG] Screensaver requested wallpaper pause (500ms detection, 2000ms overall deadline)",
+            "[WALLPAPER_HANDOFF_DIAG] Screensaver requested wallpaper pause (500ms detection, 2000ms overall deadline)",
         );
 
         // Stage 1: confirm the wallpaper renderer has entered its pause path.
@@ -133,7 +133,7 @@ impl WallpaperRuntimeControl {
         crate::logger::warning(
             &crate::locate_paths::runtime_log_path(),
             &format!(
-                "[AMBIENT_HANDOFF_DIAG] Pause detection stage ended after {}ms: detected={}, acknowledged={}",
+                "[WALLPAPER_HANDOFF_DIAG] Pause detection stage ended after {}ms: detected={}, acknowledged={}",
                 started.elapsed().as_millis(), detected, early_acknowledged,
             ),
         );
@@ -146,7 +146,7 @@ impl WallpaperRuntimeControl {
             crate::logger::warning(
                 &crate::locate_paths::runtime_log_path(),
                 &format!(
-                    "[AMBIENT_HANDOFF_DIAG] Pause detection timeout: renderer checkpoint={} ({}), checkpoint_age_ms={}",
+                    "[WALLPAPER_HANDOFF_DIAG] Pause detection timeout: renderer checkpoint={} ({}), checkpoint_age_ms={}",
                     checkpoint,
                     Self::checkpoint_description(checkpoint),
                     checkpoint_age_ms,
@@ -154,8 +154,8 @@ impl WallpaperRuntimeControl {
             );
         }
 
-        // Stage 2: only a renderer that detected the request may use the
-        // remaining budget to stop its worker and verify hardware restoration.
+        // Stage 2: a renderer that detected the request may use the
+        // remaining budget to acknowledge that it has paused.
         if detected || early_acknowledged {
             while running.load(Ordering::SeqCst)
                 && self.active.load(Ordering::SeqCst)
@@ -172,14 +172,13 @@ impl WallpaperRuntimeControl {
         crate::logger::warning(
             &crate::locate_paths::runtime_log_path(),
             &format!(
-                "[AMBIENT_HANDOFF_DIAG] Screensaver pause wait ended after {}ms: detected={}, active={}, acknowledged={}, running={}",
+                "[WALLPAPER_HANDOFF_DIAG] Screensaver pause wait ended after {}ms: detected={}, active={}, acknowledged={}, running={}",
                 started.elapsed().as_millis(), detected, still_active,
                 acknowledged, still_running,
             ),
         );
-        // Acknowledgment is authoritative; a terminated wallpaper backend
-        // cannot continue to own the device, but its durable recovery record
-        // still guards any subsequent OpenRGB acquisition.
+        // Acknowledgment is authoritative; an inactive wallpaper backend
+        // cannot continue presenting frames.
         !still_active || acknowledged
     }
 
@@ -202,12 +201,12 @@ impl WallpaperRuntimeControl {
             5 => "inside eglSwapBuffers",
             6 => "post-presentation processing",
             7 => "frame pacing sleep",
-            8 => "paused / releasing lighting",
+            8 => "paused",
             _ => "unknown",
         }
     }
 
-    /// Called by the wallpaper render thread before releasing OpenRGB.
+    /// Called by the wallpaper render thread upon detecting a pause request.
     pub fn acknowledge_pause_detected(&self) {
         // Bind an external request once per pause cycle. Never refresh the
         // identity while the renderer/coordinator is still handling a pause.
