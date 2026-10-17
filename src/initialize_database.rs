@@ -173,12 +173,6 @@ fn initialize_contents(
         default_wallpaper_policy_id,
     )?;
 
-
-    connection.execute(
-        "INSERT INTO openrgb_settings (settings_id) VALUES (1)",
-        [],
-    ).map_err(|error| format!("Unable to initialize OpenRGB settings: {}", error))?;
-
     insert_schema_metadata(
         connection
     )?;

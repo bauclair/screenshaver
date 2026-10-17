@@ -645,8 +645,6 @@ CREATE TABLE app_defaults (
                             DEFAULT 1
                             CHECK (show_splash IN (0, 1)),
 
-    control_center_rgb_enabled INTEGER NOT NULL DEFAULT 0
-                            CHECK (control_center_rgb_enabled IN (0, 1)),
 
     screensaver_subtitles   INTEGER NOT NULL
                             DEFAULT 1
@@ -781,8 +779,6 @@ CREATE TABLE target_defaults (
                                 )
                             ),
 
-    rgb_enabled             INTEGER NOT NULL DEFAULT 0
-                            CHECK (rgb_enabled IN (0, 1)),
 
     animation_speed         REAL NOT NULL
                             CHECK (
@@ -988,93 +984,6 @@ COMMIT;
 --
 -- After the transaction above succeeds, initialization code should:
 --
-
--- ---------------------------------------------------------------------------
--- OpenRGB: optional companion hardware and user-authored mappings.
--- Never initiate OpenRGB SDK communication during SQL initialization/migration.
--- Hardware inventory is retained when devices/servers are offline.
--- ---------------------------------------------------------------------------
-CREATE TABLE openrgb_servers (
-    server_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    server_name TEXT NOT NULL COLLATE NOCASE UNIQUE,
-    host TEXT NOT NULL CHECK (length(trim(host)) > 0),
-    port INTEGER NOT NULL DEFAULT 6742 CHECK (port BETWEEN 1 AND 65535),
-    enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0,1)),
-    connection_timeout_ms INTEGER NOT NULL DEFAULT 2000 CHECK (connection_timeout_ms BETWEEN 100 AND 60000)
-);
-
-CREATE TABLE openrgb_devices (
-    device_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    server_id INTEGER NOT NULL REFERENCES openrgb_servers(server_id) ON DELETE RESTRICT,
-    device_name TEXT NOT NULL,
-    device_type TEXT NOT NULL DEFAULT 'unknown',
-    stable_identity TEXT,
-    controller_id_hint INTEGER CHECK (controller_id_hint IS NULL OR controller_id_hint >= 0),
-    enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0,1)),
-    lighting_mode TEXT NOT NULL DEFAULT 'spatial' CHECK (lighting_mode IN ('spatial','average','dominant','edge')),
-    brightness REAL NOT NULL DEFAULT 1.0 CHECK (brightness BETWEEN 0.0 AND 1.0),
-    saturation REAL NOT NULL DEFAULT 1.0 CHECK (saturation BETWEEN 0.0 AND 2.0),
-    smoothing REAL NOT NULL DEFAULT 0.0 CHECK (smoothing BETWEEN 0.0 AND 1.0),
-    last_seen TEXT,
-    UNIQUE (server_id, stable_identity)
-);
-CREATE INDEX idx_openrgb_devices_server ON openrgb_devices(server_id);
-
-CREATE TABLE openrgb_zones (
-    zone_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    device_id INTEGER NOT NULL REFERENCES openrgb_devices(device_id) ON DELETE RESTRICT,
-    zone_name TEXT NOT NULL,
-    zone_type TEXT NOT NULL DEFAULT 'unknown',
-    zone_index_hint INTEGER NOT NULL CHECK (zone_index_hint >= 0),
-    led_count INTEGER NOT NULL DEFAULT 0 CHECK (led_count >= 0),
-    enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0,1)),
-    UNIQUE(device_id, zone_index_hint),
-    UNIQUE(zone_id, device_id)
-);
-
-CREATE TABLE openrgb_led_layout (
-    led_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    zone_id INTEGER NOT NULL REFERENCES openrgb_zones(zone_id) ON DELETE CASCADE,
-    led_index INTEGER NOT NULL CHECK (led_index >= 0),
-    position_x REAL CHECK (position_x IS NULL OR position_x BETWEEN 0.0 AND 1.0),
-    position_y REAL CHECK (position_y IS NULL OR position_y BETWEEN 0.0 AND 1.0),
-    UNIQUE(zone_id, led_index)
-);
-
-CREATE TABLE openrgb_source_regions (
-    region_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    region_name TEXT NOT NULL COLLATE NOCASE UNIQUE,
-    x REAL NOT NULL CHECK (x BETWEEN 0.0 AND 1.0),
-    y REAL NOT NULL CHECK (y BETWEEN 0.0 AND 1.0),
-    width REAL NOT NULL CHECK (width > 0.0 AND width <= 1.0),
-    height REAL NOT NULL CHECK (height > 0.0 AND height <= 1.0),
-    rotation_degrees INTEGER NOT NULL DEFAULT 0 CHECK (rotation_degrees IN (0,90,180,270)),
-    mirror_horizontal INTEGER NOT NULL DEFAULT 0 CHECK (mirror_horizontal IN (0,1)),
-    mirror_vertical INTEGER NOT NULL DEFAULT 0 CHECK (mirror_vertical IN (0,1)),
-    CHECK (x + width <= 1.0 AND y + height <= 1.0)
-);
-
-CREATE TABLE openrgb_mappings (
-    mapping_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    device_id INTEGER NOT NULL REFERENCES openrgb_devices(device_id) ON DELETE RESTRICT,
-    zone_id INTEGER,
-    region_id INTEGER NOT NULL REFERENCES openrgb_source_regions(region_id) ON DELETE RESTRICT,
-    sampling_method TEXT NOT NULL DEFAULT 'spatial' CHECK (sampling_method IN ('spatial','average','dominant','edge')),
-    enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0,1)),
-    priority INTEGER NOT NULL DEFAULT 0,
-    weight REAL NOT NULL DEFAULT 1.0 CHECK (weight > 0.0),
-    FOREIGN KEY(zone_id, device_id) REFERENCES openrgb_zones(zone_id, device_id) ON DELETE RESTRICT
-);
-CREATE INDEX idx_openrgb_mappings_device ON openrgb_mappings(device_id);
-CREATE INDEX idx_openrgb_mappings_region ON openrgb_mappings(region_id);
-
-CREATE TABLE openrgb_settings (
-    settings_id INTEGER PRIMARY KEY CHECK (settings_id = 1),
-    update_interval_ms INTEGER NOT NULL DEFAULT 50 CHECK (update_interval_ms BETWEEN 50 AND 1000),
-    auto_reconnect INTEGER NOT NULL DEFAULT 1 CHECK (auto_reconnect IN (0,1)),
-    reconnect_interval_ms INTEGER NOT NULL DEFAULT 5000 CHECK (reconnect_interval_ms BETWEEN 1000 AND 300000),
-    settings_version INTEGER NOT NULL DEFAULT 1 CHECK (settings_version >= 1)
-);
 
 --   1. Seed textures from crate::generate_textures::TextureFamily::ALL.
 --

@@ -65,7 +65,6 @@ pub fn validate_startup(
         connection
     )?;
 
-    validate_openrgb_settings(connection)?;
 
 
     validate_foreign_key_enforcement(
@@ -157,7 +156,6 @@ pub fn validate_initialization(
         connection
     )?;
 
-    validate_openrgb_settings(connection)?;
 
 
     let default_shader_id =
@@ -307,7 +305,7 @@ fn validate_required_tables(
     connection: &Connection,
 ) -> Result<(), String> {
 
-    const REQUIRED_TABLES: [&str; 20] = [
+    const REQUIRED_TABLES: [&str; 13] = [
         "schema_metadata",
         "shaders",
         "shader_policies",
@@ -321,13 +319,6 @@ fn validate_required_tables(
         "languages",
         "translation_keys",
         "translations",
-        "openrgb_servers",
-        "openrgb_devices",
-        "openrgb_zones",
-        "openrgb_led_layout",
-        "openrgb_source_regions",
-        "openrgb_mappings",
-        "openrgb_settings",
     ];
 
 
@@ -1505,19 +1496,3 @@ fn is_lowercase_sha256(
 }
 
 
-fn validate_openrgb_settings(connection: &Connection) -> Result<(), String> {
-    let count: i64 = connection.query_row(
-        "SELECT COUNT(*) FROM openrgb_settings WHERE settings_id = 1",
-        [],
-        |row| row.get(0),
-    ).map_err(|error| format!("Unable to validate OpenRGB settings: {}", error))?;
-    let total: i64 = connection.query_row(
-        "SELECT COUNT(*) FROM openrgb_settings",
-        [],
-        |row| row.get(0),
-    ).map_err(|error| format!("Unable to count OpenRGB settings: {}", error))?;
-    if count != 1 || total != 1 {
-        return Err(format!("Expected exactly one OpenRGB settings row with settings_id=1; found {} total and {} matching", total, count));
-    }
-    Ok(())
-}

@@ -196,13 +196,6 @@ pub fn write(
                 &playlist_ids,
             )?;
 
-            transaction
-                .execute(
-                    "INSERT INTO openrgb_settings (settings_id) VALUES (1)",
-                    [],
-                )
-                .map_err(|error| format!("Unable to initialize OpenRGB settings: {}", error))?;
-
             write_schema_metadata(
                 &transaction
             )?;
@@ -937,7 +930,6 @@ fn write_application_defaults(
             "INSERT INTO app_defaults (
                  defaults_id,
                  show_splash,
-                 control_center_rgb_enabled,
                  screensaver_subtitles,
                  subtitle_placement,
                  wallpaper_notifications,
@@ -954,14 +946,13 @@ fn write_application_defaults(
              )
              VALUES (
                  1,
-                 ?1, ?2, ?3, ?4, ?5, ?6, ?7,
-                 ?8, ?9, ?10, ?11, ?12,
-                 ?13, ?14,
-                 COALESCE(?15, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+                 ?1, ?2, ?3, ?4, ?5, ?6,
+                 ?7, ?8, ?9, ?10, ?11,
+                 ?12, ?13,
+                 COALESCE(?14, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
              )",
             params![
                 bool_integer(defaults.show_splash),
-                bool_integer(defaults.control_center_rgb_enabled),
                 bool_integer(defaults.screensaver_subtitles),
                 defaults.subtitle_placement,
                 bool_integer(defaults.wallpaper_notifications),
@@ -1097,7 +1088,6 @@ fn write_target_default(
                  target,
                  idle_timeout_value,
                  idle_timeout_unit,
-                 rgb_enabled,
                  animation_speed,
                  texture_mode,
                  texture_family,
@@ -1106,13 +1096,12 @@ fn write_target_default(
                  palette_color
              )
              VALUES (
-                 ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10
+                 ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9
              )",
             params![
                 target_name,
                 idle_timeout_value,
                 idle_timeout_unit,
-                bool_integer(defaults.rgb_enabled),
                 defaults.animation_speed,
                 texture_mode,
                 texture_family,
