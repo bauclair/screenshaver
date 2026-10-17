@@ -913,6 +913,24 @@ pub fn run_screensaver_only(
     )
 }
 
+// Hold both presentation transactions for the entire competing-renderer
+// session. Fixed acquisition order avoids cross-requester lock inversion.
+// Each protocol independently checks whether its renderer is active and
+// requires a matching pause acknowledgment when it is.
+struct PresentationPauseGuards {
+    _wallpaper: crate::control_wallpaper::WallpaperPauseGuard,
+    _windowshader: crate::control_windowshader::WindowshaderPauseGuard,
+}
+
+impl PresentationPauseGuards {
+    fn acquire() -> Result<Self, String> {
+        let wallpaper = crate::control_wallpaper::WallpaperPauseGuard::acquire()?;
+        // If this fails, wallpaper is dropped and its pause is withdrawn.
+        let windowshader = crate::control_windowshader::WindowshaderPauseGuard::acquire()?;
+        Ok(Self { _wallpaper: wallpaper, _windowshader: windowshader })
+    }
+}
+
 fn run_empty_session(
     audio_bands:
     Option<crate::audio_backend::SharedAudioBands>,
@@ -924,8 +942,8 @@ fn run_empty_session(
         false
     );
 
-    let wallpaper_pause_guard =
-    crate::control_wallpaper::WallpaperPauseGuard::acquire()?;
+    let presentation_pause_guards =
+    PresentationPauseGuards::acquire()?;
 
     let config_result =
     crate::load_config::load_config(
@@ -2307,7 +2325,7 @@ fn run_empty_session(
 
 
     drop(
-        wallpaper_pause_guard
+        presentation_pause_guards
     );
 
 
@@ -2889,13 +2907,13 @@ fn run_paths(
             );
 
 
-            let _wallpaper_pause_guard =
+            let _presentation_pause_guards =
             if acquire_wallpaper_pause
                 && target_restriction
                 == EditorTargetRestriction::Unrestricted
                 {
                     Some(
-                        crate::control_wallpaper::WallpaperPauseGuard::acquire()?
+                        PresentationPauseGuards::acquire()?
                     )
                 } else {
                     None
