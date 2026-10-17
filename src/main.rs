@@ -80,9 +80,11 @@ mod define_operation;
 mod define_wallpaper;
 mod configure_wallpaper;
 mod control_wallpaper;
+mod control_windowshader;
 mod locate_wallpaper;
 mod manage_wallpaper;
 mod manage_wallpaper_runtime;
+mod manage_windowshader_runtime;
 mod manage_lyrics;
 mod notify_wallpaper;
 mod render_wallpaper;
@@ -2424,20 +2426,22 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
         };
 
 
-    let mut wallpaper_manager =
-        crate::manage_wallpaper_runtime::WallpaperRuntimeManager::start(
-            wallpaper_enabled_this_launch,
-            cfg.wallpaper_mode.clone(),
-            wallpaper_runtime,
-            logfile.clone(),
-            Arc::clone(
-                &running
-            ),
-        );
-
-
-    let wallpaper_control =
-        wallpaper_manager.control();
+    // Stage 1: exclusive configured modes, independently named supervisors.
+    let mut wallpaper_manager = if windowshader_enabled { None } else {
+        Some(crate::manage_wallpaper_runtime::WallpaperRuntimeManager::start(
+            wallpaper_enabled_this_launch, cfg.wallpaper_mode.clone(),
+            wallpaper_runtime.clone(), logfile.clone(), Arc::clone(&running)))
+    };
+    let mut windowshader_manager = if windowshader_enabled {
+        Some(crate::manage_windowshader_runtime::WindowshaderRuntimeManager::start(
+            wallpaper_enabled_this_launch, cfg.wallpaper_mode.clone(),
+            wallpaper_runtime, logfile.clone(), Arc::clone(&running)))
+    } else { None };
+    let wallpaper_control = match (&wallpaper_manager, &windowshader_manager) {
+        (Some(manager), None) => manager.control(),
+        (None, Some(manager)) => manager.control(),
+        _ => unreachable!("Exactly one presentation supervisor must be selected"),
+    };
 
 
     if cfg.debug_log {
@@ -3268,7 +3272,8 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
     }
 
 
-    wallpaper_manager.stop_and_join();
+    if let Some(manager) = windowshader_manager.as_mut() { manager.stop_and_join(); }
+    if let Some(manager) = wallpaper_manager.as_mut() { manager.stop_and_join(); }
 
 
     if let Some(mut integration) =

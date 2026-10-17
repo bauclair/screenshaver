@@ -286,58 +286,11 @@ impl WallpaperBackend for WaylandWallpaperBackend {
                 );
 
 
-                let fallback_shader_manager =
-                    shader_manager.clone();
+                crate::wayland_wallpaper::run_egl_windowed_surface(
+                    shader_manager, wallpaper_directory, shader_interval,
+                    runtime, running, control,
+                )?;
 
-
-                let fallback_control =
-                    control.clone();
-
-
-                let fallback_running =
-                    running.clone();
-
-
-                if let Err(error) =
-                    crate::wayland_wallpaper::run_egl_windowed_surface(
-                        shader_manager,
-                        wallpaper_directory,
-                        shader_interval,
-                        runtime,
-                        running,
-                        control,
-                    )
-                {
-                    println!(
-                        "Unable to create the Windowed Wayland wallpaper presentation:"
-                    );
-
-
-                    println!(
-                        "    {}",
-                        error
-                    );
-
-
-                    println!(
-                        "Falling back to Full-screen wallpaper presentation for this run."
-                    );
-
-
-                    println!(
-                        "The persisted Wallpaper Display Format remains Windowed."
-                    );
-
-
-                    crate::wayland_wallpaper::run_egl_background_surface(
-                        fallback_shader_manager,
-                        wallpaper_directory,
-                        shader_interval,
-                        runtime,
-                        fallback_running,
-                        fallback_control,
-                    )?;
-                }
             }
         }
 

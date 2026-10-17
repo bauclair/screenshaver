@@ -51,6 +51,7 @@ impl WallpaperPolicyReload {
 #[derive(Clone)]
 pub struct WallpaperRuntimeControl {
     enabled: bool,
+    windowshader: bool,
     active: Arc<AtomicBool>,
     pause_requested: Arc<AtomicBool>,
     pause_acknowledged: Arc<AtomicBool>,
@@ -69,10 +70,12 @@ impl WallpaperRuntimeControl {
 
     fn new(
         enabled: bool,
+        windowshader: bool,
     ) -> Self {
 
         Self {
             enabled,
+            windowshader,
             active: Arc::new(AtomicBool::new(false)),
             pause_requested: Arc::new(AtomicBool::new(false)),
             pause_acknowledged: Arc::new(AtomicBool::new(false)),
@@ -213,7 +216,7 @@ impl WallpaperRuntimeControl {
         let mut token = self.external_pause_token.lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         if token.is_none() {
-            match crate::control_wallpaper::detected_pause_token() {
+            match if self.windowshader { crate::control_windowshader::detected_pause_token() } else { crate::control_wallpaper::detected_pause_token() } {
                 Ok(observed) => *token = observed,
                 Err(error) => crate::logger::warning(
                     &crate::locate_paths::runtime_log_path(),
@@ -308,7 +311,7 @@ impl WallpaperRuntimeControl {
         self.pause_requested.load(
             Ordering::SeqCst
         )
-            || crate::control_wallpaper::external_pause_requested()
+            || if self.windowshader { crate::control_windowshader::external_pause_requested() } else { crate::control_wallpaper::external_pause_requested() }
     }
 
 
@@ -325,7 +328,7 @@ impl WallpaperRuntimeControl {
         let token = self.external_pause_token.lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner()).clone();
         if let Some(token) = token {
-            crate::control_wallpaper::acknowledge_paused_for(&token);
+            if self.windowshader { crate::control_windowshader::acknowledge_paused_for(&token); } else { crate::control_wallpaper::acknowledge_paused_for(&token); }
         }
     }
 
@@ -349,7 +352,7 @@ impl WallpaperRuntimeControl {
         let token = self.external_pause_token.lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner()).take();
         if let Some(token) = token {
-            crate::control_wallpaper::acknowledge_resumed_frame_for(&token);
+            if self.windowshader { crate::control_windowshader::acknowledge_resumed_frame_for(&token); } else { crate::control_wallpaper::acknowledge_resumed_frame_for(&token); }
         }
     }
 }
@@ -371,10 +374,22 @@ impl WallpaperRuntimeManager {
         logfile: PathBuf,
         running: Arc<AtomicBool>,
     ) -> Self {
+        Self::start_for_kind(enabled, false, configured_mode, runtime, logfile, running)
+    }
+
+    pub(crate) fn start_for_kind(
+        enabled: bool,
+        windowshader: bool,
+        configured_mode: String,
+        runtime: crate::define_wallpaper::WallpaperRuntime,
+        logfile: PathBuf,
+        running: Arc<AtomicBool>,
+    ) -> Self {
 
         let control =
             WallpaperRuntimeControl::new(
-                enabled
+                enabled,
+                windowshader,
             );
 
 
@@ -417,7 +432,7 @@ impl WallpaperRuntimeManager {
         let thread =
             std::thread::Builder::new()
                 .name(
-                    "screenshaver-wallpaper".to_string()
+                    if windowshader { "screenshaver-windowshader".to_string() } else { "screenshaver-wallpaper".to_string() }
                 )
                 .spawn(
                     move || {
@@ -432,9 +447,7 @@ impl WallpaperRuntimeManager {
                         );
 
 
-                        crate::control_wallpaper::set_runtime_active(
-                            true
-                        );
+                        if windowshader { crate::control_windowshader::set_runtime_active(true); } else { crate::control_wallpaper::set_runtime_active(true); }
 
 
                         for attempt in
@@ -484,9 +497,7 @@ impl WallpaperRuntimeManager {
                                     );
 
 
-                                    crate::control_wallpaper::set_runtime_active(
-                                        false
-                                    );
+                                    if windowshader { crate::control_windowshader::set_runtime_active(false); } else { crate::control_wallpaper::set_runtime_active(false); }
 
 
                                     return;
@@ -560,9 +571,7 @@ impl WallpaperRuntimeManager {
                         );
 
 
-                        crate::control_wallpaper::set_runtime_active(
-                            false
-                        );
+                        if windowshader { crate::control_windowshader::set_runtime_active(false); } else { crate::control_wallpaper::set_runtime_active(false); }
                     }
                 )
                 .map_err(
@@ -631,9 +640,7 @@ impl WallpaperRuntimeManager {
         }
 
 
-        crate::control_wallpaper::set_runtime_active(
-            false
-        );
+        if self.control.windowshader { crate::control_windowshader::set_runtime_active(false); } else { crate::control_wallpaper::set_runtime_active(false); }
     }
 }
 
