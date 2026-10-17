@@ -1,6 +1,4 @@
 use std::path::PathBuf;
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
@@ -17,115 +15,6 @@ pub(crate) use render_frame_engine::{
     FrameRenderEvents,
     FrameRenderMetadata,
 };
-
-// Explicit opt-in: SCREENSHAVER_AMBIENT_SAMPLE_DIAGNOSTIC=1 screenshaver
-// This test never opens an OpenRGB connection or changes device lighting.
-struct AmbientSamplingDiagnostic {
-    sampler: crate::manage_ambient_lighting::FramebufferSampler,
-    captured: u64,
-    total_us: u128,
-    maximum_us: u128,
-    last_report: Instant,
-    disabled: bool,
-    live_dropped: u64,
-    live_accepted: u64,
-    live_submit_errors: u64,
-    sampling_errors: u64,
-    rejected_frame_hooks: u64,
-    live_hardware: Option<crate::manage_openrgb_session::ShaderLightingSession>,
-}
-
-impl AmbientSamplingDiagnostic {
-    fn new() -> Result<Self, String> {
-        Ok(Self {
-            sampler: crate::manage_ambient_lighting::FramebufferSampler::new(
-                22, 12, Duration::from_millis(50),
-            )?,
-            captured: 0,
-            total_us: 0,
-            maximum_us: 0,
-            last_report: Instant::now(),
-            disabled: false,
-            live_dropped: 0,
-            live_accepted: 0,
-            live_submit_errors: 0,
-            sampling_errors: 0,
-            rejected_frame_hooks: 0,
-            live_hardware: None,
-        })
-    }
-
-    fn report_pipeline(&self, stage: &str) {
-        log_information(&format!(
-            "[AMBIENT_SCREENSAVER_DIAG] {stage}: captured={} accepted={} queue_dropped={} submit_errors={} sampling_errors={} rejected_hooks={} hardware_active={} sampling_disabled={}",
-            self.captured, self.live_accepted, self.live_dropped,
-            self.live_submit_errors, self.sampling_errors, self.rejected_frame_hooks,
-            self.live_hardware.is_some(), self.disabled,
-        ));
-    }
-
-    fn stop_live_hardware(&mut self) {
-        self.report_pipeline("before_stop");
-        if let Some(session) = self.live_hardware.take() {
-            match session.stop() {
-                Ok((submitted, stats)) => log_information(&format!(
-                    "[AMBIENT_OPENRGB] Live session finished; submitted={submitted} transmitted={} queue_dropped={} original lighting restored",
-                    stats.transmitted,
-                    self.live_dropped,
-                )),
-                Err(error) => log_warning(&format!("[AMBIENT_OPENRGB] {error}")),
-            }
-        }
-    }
-
-    fn observe(&mut self, framebuffer: u32, width: u32, height: u32) {
-        if self.disabled || framebuffer != 0 || width == 0 || height == 0 {
-            self.rejected_frame_hooks += 1;
-            return;
-        }
-        let source = crate::manage_ambient_lighting::FrameSource {
-            framebuffer, width, height,
-        };
-        match self.sampler.sample(source) {
-            Ok(Some(frame)) => {
-                let elapsed = frame.readback_time.as_micros();
-                self.captured += 1;
-                if let Some(ref mut hardware) = self.live_hardware {
-                    match hardware.submit(&frame) {
-                        Ok(false) => self.live_dropped += 1,
-                        Ok(true) => self.live_accepted += 1,
-                        Err(error) => {
-                            self.live_submit_errors += 1;
-                            log_warning(&format!("[AMBIENT_OPENRGB] Live update failed: {error}"));
-                            self.stop_live_hardware();
-                        }
-                    }
-                }
-                self.total_us += elapsed;
-                self.maximum_us = self.maximum_us.max(elapsed);
-                if self.last_report.elapsed() >= Duration::from_secs(5) {
-                    let rgb = crate::manage_ambient_lighting::representative_color(&frame.rgb);
-                    log_information(&format!(
-                        "[AMBIENT_DIAGNOSTIC] samples={} grid={}x{} avg_readback_us={} max_readback_us={} representative_rgb=#{:02X}{:02X}{:02X}",
-                        self.captured, frame.width, frame.height,
-                        self.total_us / self.captured as u128,
-                        self.maximum_us, rgb[0], rgb[1], rgb[2],
-                    ));
-                    self.report_pipeline("periodic");
-                    self.last_report = Instant::now();
-                }
-            }
-            Ok(None) => {}
-            Err(error) => {
-                self.sampling_errors += 1;
-                self.disabled = true;
-                log_warning(&format!(
-                    "[AMBIENT_DIAGNOSTIC] Sampling disabled after error: {error}"
-                ));
-            }
-        }
-    }
-}
 
 const INPUT_STARTUP_GRACE: Duration = Duration::from_millis(750);
 const MOUSE_MOTION_EXIT_THRESHOLD: i32 = 4;
@@ -144,7 +33,6 @@ pub struct FrameRenderer {
     // Keep the engine first so its OpenGL resources are released before the
     // context and window are destroyed.
     engine: FrameRenderEngine,
-    ambient_diagnostic: Option<Rc<RefCell<AmbientSamplingDiagnostic>>>,
     event_pump: sdl2::EventPump,
     renderer_started: Instant,
     _gl_context: GLContext,
@@ -271,26 +159,9 @@ impl FrameRenderer {
                 window_height,
             )?;
 
-        let lighting_enabled = match crate::manage_configuration::load_target_defaults("screensaver") {
-            Ok(defaults) => defaults.rgb_enabled,
-            Err(error) => { log_warning(&format!("[AMBIENT_OPENRGB] Screensaver setting unavailable: {error}")); false }
-        };
-        let diagnostic_enabled = std::env::var_os("SCREENSHAVER_AMBIENT_SAMPLE_DIAGNOSTIC")
-            .is_some_and(|value| value == "1");
-        let ambient_diagnostic = if lighting_enabled || diagnostic_enabled {
-            let diagnostic = Rc::new(RefCell::new(AmbientSamplingDiagnostic::new()?));
-            let observer = Rc::clone(&diagnostic);
-            engine.set_ambient_frame_hook(Some(Box::new(move |framebuffer, width, height| {
-                observer.borrow_mut().observe(framebuffer, width, height);
-            })));
-            log_information("[AMBIENT_OPENRGB] Screensaver framebuffer sampling enabled at <=20 Hz");
-            Some(diagnostic)
-        } else { None };
-
         Ok(
             Self {
                 engine,
-                ambient_diagnostic,
                 event_pump,
                 renderer_started:
                     Instant::now(),
@@ -332,24 +203,15 @@ impl FrameRenderer {
                 first_frame_presented =
                     true;
 
-                let wallpaper_paused = wallpaper_control.request_pause_after_first_frame(
+                wallpaper_control.request_pause_after_first_frame(
                     running
                 );
-                if wallpaper_paused {
-                    self.start_live_hardware_after_wallpaper_pause();
-                } else {
-                    log_warning("[AMBIENT_OPENRGB] Wallpaper pause not acknowledged; screensaver lighting acquisition skipped");
-                }
             }
         };
 
         // Keep wallpaper rendering paused while the active screensaver is
         // handed to the policy editor. A replacement screensaver renderer
         // will retain that pause until the user finally disengages it.
-        // Restore the device before the wallpaper renderer can resume.
-        if let Some(diagnostic) = self.ambient_diagnostic.as_ref() {
-            diagnostic.borrow_mut().stop_live_hardware();
-        }
         if outcome == ScreensaverRunOutcome::Exit {
             wallpaper_control.resume_and_wait_for_frame(
                 running
@@ -363,26 +225,6 @@ impl FrameRenderer {
         outcome
     }
 
-
-    fn start_live_hardware_after_wallpaper_pause(&mut self) {
-        let Some(diagnostic) = self.ambient_diagnostic.as_ref() else { return; };
-        if !crate::manage_configuration::load_target_defaults("screensaver")
-            .is_ok_and(|defaults| defaults.rgb_enabled) { return; }
-        match crate::manage_openrgb_session::resolve_saved_controller() {
-            Ok(Some((address, controller_id))) => {
-                match crate::manage_openrgb_session::ShaderLightingSession::start(address, controller_id) {
-                    Ok(session) => {
-                        diagnostic.borrow_mut().live_hardware = Some(session);
-                        diagnostic.borrow().report_pipeline("after_acquisition");
-                        log_information(&format!("[AMBIENT_OPENRGB] Screensaver acquired controller {controller_id} after wallpaper pause"));
-                    }
-                    Err(error) => log_warning(&format!("[AMBIENT_OPENRGB] Screensaver acquisition refused: {error}")),
-                }
-            }
-            Ok(None) => log_warning("[AMBIENT_OPENRGB] No enabled OpenRGB device selected"),
-            Err(error) => log_warning(&format!("[AMBIENT_OPENRGB] Device resolution failed: {error}")),
-        }
-    }
 
     pub fn render_frame(
         &mut self,
@@ -539,26 +381,6 @@ impl FrameRenderer {
 
 }
 
-
-// Drop runs while the SDL GL context and window fields are still alive.
-// The callback is detached first so the sampler has a single owner during cleanup.
-impl Drop for FrameRenderer {
-    fn drop(&mut self) {
-        self.engine.set_ambient_frame_hook(None);
-        if let Some(diagnostic) = self.ambient_diagnostic.take() {
-            let mut diagnostic = diagnostic.borrow_mut();
-            log_information(&format!(
-                "[AMBIENT_DIAGNOSTIC] Final samples={} avg_readback_us={} max_readback_us={}",
-                diagnostic.captured,
-                if diagnostic.captured == 0 { 0 } else { diagnostic.total_us / diagnostic.captured as u128 },
-                diagnostic.maximum_us,
-            ));
-            diagnostic.stop_live_hardware();
-            diagnostic.report_pipeline("final");
-            unsafe { diagnostic.sampler.destroy(); }
-        }
-    }
-}
 
 fn edit_shortcut_modifiers_allowed(
     keymod: Mod,

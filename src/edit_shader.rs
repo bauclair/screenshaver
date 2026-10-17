@@ -29,110 +29,6 @@ use crate::editor_layout::EditWindowOverlay;
 
 
 
-// The editor samples only its completed shader image, before egui overlays.
-// OpenRGB ownership remains exclusive and is restored before the GL context exits.
-struct EditorAmbientLighting {
-    sampler: crate::manage_ambient_lighting::FramebufferSampler,
-    session: Option<crate::manage_openrgb_session::ShaderLightingSession>,
-    disabled: bool,
-}
-
-impl EditorAmbientLighting {
-    fn start() -> Option<Self> {
-        let enabled = match crate::manage_configuration::load_app_defaults() {
-            Ok(defaults) => defaults.control_center_rgb_enabled,
-            Err(error) => {
-                log_warning(&format!("[AMBIENT_EDITOR] Cannot read RGB preference: {error}"));
-                return None;
-            }
-        };
-        if !enabled { return None; }
-        let (address, controller_id) = match crate::nested_tabs::openrgb_resolve_preview_controller() {
-            Ok(Some(selected)) => selected,
-            Ok(None) => {
-                log_information("[AMBIENT_EDITOR] No enabled OpenRGB controller selected");
-                return None;
-            }
-            Err(error) => {
-                log_warning(&format!("[AMBIENT_EDITOR] OpenRGB selection unavailable: {error}"));
-                return None;
-            }
-        };
-        let mut sampler = match crate::manage_ambient_lighting::FramebufferSampler::new(
-            22, 12, Duration::from_millis(50),
-        ) {
-            Ok(sampler) => sampler,
-            Err(error) => {
-                log_warning(&format!("[AMBIENT_EDITOR] Sampler unavailable: {error}"));
-                return None;
-            }
-        };
-        let session = match crate::manage_openrgb_session::ShaderLightingSession::start(
-            address, controller_id,
-        ) {
-            Ok(session) => session,
-            Err(error) => {
-                log_warning(&format!("[AMBIENT_EDITOR] OpenRGB acquisition refused: {error}"));
-                unsafe { sampler.destroy(); }
-                return None;
-            }
-        };
-        log_information(&format!("[AMBIENT_EDITOR] Acquired OpenRGB controller {controller_id}"));
-        Some(Self { sampler, session: Some(session), disabled: false })
-    }
-
-    fn observe(&mut self, width: u32, height: u32) {
-        if self.disabled || width == 0 || height == 0 { return; }
-        let source = crate::manage_ambient_lighting::FrameSource {
-            framebuffer: 0, width, height,
-        };
-        match self.sampler.sample(source) {
-            Ok(Some(frame)) => {
-                if let Some(session) = self.session.as_mut() {
-                    if let Err(error) = session.submit(&frame) {
-                        log_warning(&format!("[AMBIENT_EDITOR] OpenRGB update failed: {error}"));
-                        self.disabled = true;
-                        self.stop_session();
-                    }
-                }
-            }
-            Ok(None) => {}
-            Err(error) => {
-                log_warning(&format!("[AMBIENT_EDITOR] Sampling disabled: {error}"));
-                self.disabled = true;
-                self.stop_session();
-            }
-        }
-    }
-
-    fn stop_session(&mut self) {
-        if let Some(session) = self.session.take() {
-            match session.stop() {
-                Ok((submitted, stats)) => log_information(&format!(
-                    "[AMBIENT_EDITOR] Lighting restored; submitted={submitted}, transmitted={}",
-                    stats.transmitted,
-                )),
-                Err(error) => log_warning(&format!(
-                    "[AMBIENT_EDITOR] Lighting restoration unverified: {error}",
-                )),
-            }
-        }
-    }
-
-    fn shutdown(&mut self) {
-        self.stop_session();
-        unsafe { self.sampler.destroy(); }
-    }
-}
-
-impl Drop for EditorAmbientLighting {
-    fn drop(&mut self) {
-        self.stop_session();
-        // GPU resources are explicitly destroyed by shutdown() while GL is current.
-    }
-}
-
-
 fn localized_edit_values(key: &str, values: &[String]) -> String {
     let parameter_names = ["value1", "value2", "value3", "value4"];
     let parameters = values
@@ -3395,9 +3291,6 @@ fn run_paths(
             None;
 
 
-            // Wallpaper pause acknowledgment precedes this acquisition. When the
-            // tray already owns the pause, OpenRGB's exclusive lock still guards it.
-            let mut editor_ambient = EditorAmbientLighting::start();
 
             let result =
             'preview: loop {
@@ -4422,12 +4315,6 @@ fn run_paths(
                                     bloom_diagnostic
                                 );
 
-                                if let Some(ambient) = editor_ambient.as_mut() {
-                                    let (sample_width, sample_height) =
-                                        postprocess.output_dimensions();
-                                    ambient.observe(sample_width, sample_height);
-                                }
-
 
 
                                 unsafe {
@@ -4881,13 +4768,6 @@ fn run_paths(
                                                                     );
 
                                                                     edit_window.accept_control_configuration();
-
-                                                                    // Apply only successfully persisted preferences.
-                                                                    // Release the prior controller before reacquisition.
-                                                                    if let Some(ambient) = editor_ambient.as_mut() {
-                                                                        ambient.shutdown();
-                                                                    }
-                                                                    editor_ambient = EditorAmbientLighting::start();
 
                                                                     edit_window.set_status_message(
                                                                         localized_edit!("edit.configuration_saved")
@@ -7924,11 +7804,6 @@ fn run_paths(
                                                                                             );
                                                                                         }
             };
-
-
-            if let Some(ambient) = editor_ambient.as_mut() {
-                ambient.shutdown();
-            }
 
             destroy_active_shader(
                 &mut active
@@ -11154,7 +11029,6 @@ fn save_control_configuration(
     let app_defaults =
     crate::manage_configuration::AppDefaults {
         show_splash: control.show_splash,
-        control_center_rgb_enabled: control.control_center_rgb_enabled,
         screensaver_subtitles: control.subtitles,
         subtitle_placement: control.subtitle_placement.clone(),
         wallpaper_notifications: control.notifications,
@@ -11201,7 +11075,6 @@ fn save_control_configuration(
     let screensaver_defaults =
     crate::manage_configuration::TargetDefaults {
         target: "screensaver".to_string(),
-        rgb_enabled: control.screensaver_rgb_enabled,
         idle_timeout_value: Some(idle_timeout_value),
         idle_timeout_unit: Some(idle_timeout_unit.clone()),
         animation_speed: control.screensaver_animation_speed,
@@ -11215,7 +11088,6 @@ fn save_control_configuration(
     let wallpaper_defaults =
     crate::manage_configuration::TargetDefaults {
         target: "wallpaper".to_string(),
-        rgb_enabled: control.wallpaper_rgb_enabled,
         idle_timeout_value: None,
         idle_timeout_unit: None,
         animation_speed: control.wallpaper_animation_speed,

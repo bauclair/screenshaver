@@ -2673,302 +2673,6 @@ unsafe extern "C" {
 
 
 
-// The Wayland renderer owns GL sampling; this coordinator owns OpenRGB. In
-// particular, its pause path is independent of a blocked eglSwapBuffers().
-struct WaylandWallpaperAmbient {
-    sampler: crate::manage_ambient_lighting::FramebufferSampler,
-    frames: std::sync::mpsc::SyncSender<crate::manage_ambient_lighting::SampledFrame>,
-    state: std::sync::Arc<WallpaperLightingState>,
-    worker: Option<std::thread::JoinHandle<()>>,
-}
-
-struct WallpaperLightingState {
-    want_active: std::sync::atomic::AtomicBool,
-    shutting_down: std::sync::atomic::AtomicBool,
-    released_verified: std::sync::atomic::AtomicBool,
-    disabled: std::sync::atomic::AtomicBool,
-    // Increment on each release request to invalidate already sampled frames.
-    generation: std::sync::atomic::AtomicU64,
-    // Windowed surfaces may stop receiving Wayland frame callbacks when hidden.
-    // This clock is updated only after a successful EGL presentation.
-    last_presented_ms: std::sync::atomic::AtomicU64,
-    presentation_clock: Instant,
-    windowed: bool,
-}
-
-impl WaylandWallpaperAmbient {
-    fn new(control: crate::manage_wallpaper_runtime::WallpaperRuntimeControl, windowed: bool) -> Result<Self, String> {
-        let sampler = crate::manage_ambient_lighting::FramebufferSampler::new(
-            22, 12, Duration::from_millis(50),
-        )?;
-        let (frames, receiver) = std::sync::mpsc::sync_channel(1);
-        let state = std::sync::Arc::new(WallpaperLightingState {
-            want_active: std::sync::atomic::AtomicBool::new(false),
-            shutting_down: std::sync::atomic::AtomicBool::new(false),
-            released_verified: std::sync::atomic::AtomicBool::new(true),
-            disabled: std::sync::atomic::AtomicBool::new(false),
-            generation: std::sync::atomic::AtomicU64::new(0),
-            last_presented_ms: std::sync::atomic::AtomicU64::new(0),
-            presentation_clock: Instant::now(),
-            windowed,
-        });
-        let worker_state = state.clone();
-        let worker = std::thread::Builder::new()
-            .name("screenshaver-wallpaper-lighting".into())
-            .spawn(move || Self::lighting_loop(control, worker_state, receiver))
-            .map_err(|error| format!("Cannot start wallpaper lighting coordinator: {error}"))?;
-        Ok(Self { sampler, frames, state, worker: Some(worker) })
-    }
-
-    fn lighting_loop(
-        control: crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
-        state: std::sync::Arc<WallpaperLightingState>,
-        receiver: std::sync::mpsc::Receiver<crate::manage_ambient_lighting::SampledFrame>,
-    ) {
-        use std::sync::atomic::Ordering::SeqCst;
-        let mut session: Option<crate::manage_openrgb_session::ShaderLightingSession> = None;
-        let mut observed_generation = state.generation.load(SeqCst);
-        let mut next_recovery_check = Instant::now();
-        loop {
-            let shutting_down = state.shutting_down.load(SeqCst);
-            let pause = control.pause_requested();
-            let wants = state.want_active.load(SeqCst);
-            // The compositor can withhold callbacks for an off-workspace
-            // windowshader. Never render extra frames to service OpenRGB.
-            // Instead release the session after a sustained lack of presented
-            // frames. The next successful presentation re-enables lighting.
-            if state.windowed && wants && !pause && !shutting_down {
-                let last = state.last_presented_ms.load(SeqCst);
-                let elapsed = state.presentation_clock.elapsed().as_millis() as u64;
-                if elapsed.saturating_sub(last) >= 1500 {
-                    state.want_active.store(false, SeqCst);
-                    state.generation.fetch_add(1, SeqCst);
-                    crate::logger::information(
-                        &crate::locate_paths::runtime_log_path(),
-                        "[AMBIENT_WINDOWSHADER] No presented frame for 1500ms; releasing OpenRGB until presentation resumes",
-                    );
-                }
-            }
-            if pause {
-                // Detection is independent of the EGL renderer's progress.
-                control.acknowledge_pause_detected();
-            }
-            if pause || shutting_down || !wants || state.disabled.load(SeqCst) {
-                if pause || shutting_down {
-                    state.want_active.store(false, SeqCst);
-                }
-                if let Some(old) = session.take() {
-                    state.released_verified.store(false, SeqCst);
-                    let started = Instant::now();
-                    match old.stop() {
-                        Ok(_) => {
-                            state.released_verified.store(true, SeqCst);
-                            crate::logger::warning(
-                                &crate::locate_paths::runtime_log_path(),
-                                "[AMBIENT_WALLPAPER_DIAG] Active session stopped; restoration verified (coordinator)",
-                            );
-                        }
-                        Err(error) => {
-                            state.disabled.store(true, SeqCst);
-                            crate::logger::warning(
-                                &crate::locate_paths::runtime_log_path(),
-                                &format!("[AMBIENT_WALLPAPER_DIAG] Coordinator stop failed; handoff refused: {error}"),
-                            );
-                        }
-                    }
-                    crate::logger::warning(
-                        &crate::locate_paths::runtime_log_path(),
-                        &format!("[AMBIENT_HANDOFF_DIAG] Coordinator release elapsed={}ms verified={}",
-                            started.elapsed().as_millis(), state.released_verified.load(SeqCst)),
-                    );
-                }
-                // Drop frames sampled before the release. The producer is
-                // nonblocking and never owns the guarded device session.
-                while receiver.try_recv().is_ok() {}
-                observed_generation = state.generation.load(SeqCst);
-                if pause && state.released_verified.load(SeqCst) {
-                    control.acknowledge_paused();
-                }
-                if shutting_down { break; }
-                std::thread::sleep(Duration::from_millis(2));
-                continue;
-            }
-            if session.is_none() {
-                // A prior owner may have left a durable recovery record. Do not
-                // attempt acquisition while it exists. Periodically recheck so
-                // externally verified recovery can permit a fresh handoff.
-                if Instant::now() < next_recovery_check {
-                    std::thread::sleep(Duration::from_millis(20));
-                    continue;
-                }
-                next_recovery_check = Instant::now() + Duration::from_secs(2);
-                let pending_before_acquire = match crate::manage_runtime_state::pending_ambient_recoveries() {
-                    Ok(records) => !records.is_empty(),
-                    Err(error) => {
-                        // Unknown recovery state is never permission to acquire.
-                        crate::logger::warning(&crate::locate_paths::runtime_log_path(),
-                            &format!("[AMBIENT_WALLPAPER_DIAG] Cannot inspect recovery state; acquisition deferred: {error}"));
-                        continue;
-                    }
-                };
-                if pending_before_acquire {
-                    // No session is held by this coordinator. This acknowledges
-                    // release, NOT restoration of the preceding owner's record.
-                    state.released_verified.store(true, SeqCst);
-                    continue;
-                }
-                // Acquisition may take time. Recheck pause immediately after it
-                // completes; do not acknowledge release until stop() succeeds.
-                state.released_verified.store(false, SeqCst);
-                let acquisition_started = Instant::now();
-                crate::logger::warning(
-                    &crate::locate_paths::runtime_log_path(),
-                    "[AMBIENT_WALLPAPER_DIAG] Coordinator acquisition attempt started",
-                );
-                let result = (|| -> Result<_, String> {
-                    let (address, id) = crate::manage_openrgb_session::resolve_saved_controller()?
-                        .ok_or("No enabled OpenRGB device selected")?;
-                    crate::manage_openrgb_session::ShaderLightingSession::start(address, id)
-                })();
-                match result {
-                    Ok(acquired) => {
-                        session = Some(acquired);
-                        crate::logger::warning(
-                            &crate::locate_paths::runtime_log_path(),
-                            &format!("[AMBIENT_WALLPAPER_DIAG] Acquisition succeeded; wallpaper session active (coordinator); elapsed_ms={}", acquisition_started.elapsed().as_millis()),
-                        );
-                    }
-                    Err(error) => {
-                        // This exact preflight refusal occurs before ownership or
-                        // hardware writes. A previous owner's recovery record
-                        // must be resolved first; retry acquisition later.
-                        if error.contains("unresolved OpenRGB recovery record(s); refusing ambient acquisition") {
-                            state.released_verified.store(true, SeqCst);
-                            crate::logger::warning(&crate::locate_paths::runtime_log_path(),
-                                "[AMBIENT_WALLPAPER_DIAG] Recovery pending; acquisition deferred without hardware writes");
-                            continue;
-                        }
-                        // The Direct-mode preflight refusal occurs before any
-                        // guarded session is acquired or hardware write is made.
-                        // In that specific case there is nothing for this
-                        // coordinator to restore. Do not leave the release
-                        // acknowledgment permanently blocked by the provisional
-                        // `released_verified = false` set above.
-                        //
-                        // Other failures may occur after a mode-changing write;
-                        // preserve the conservative unverified state for them.
-                        if error.starts_with("OpenRGB device is already in Direct mode;") {
-                            state.released_verified.store(true, SeqCst);
-                            crate::logger::warning(
-                                &crate::locate_paths::runtime_log_path(),
-                                "[AMBIENT_HANDOFF_DIAG] Direct-mode preflight refused acquisition; no coordinator-owned session to release",
-                            );
-                        }
-                        state.disabled.store(true, SeqCst);
-                        crate::logger::warning(
-                            &crate::locate_paths::runtime_log_path(),
-                            &format!("[AMBIENT_WALLPAPER_DIAG] Coordinator acquisition failed; disabled; elapsed_ms={} released_verified={} (guarded-stage failure may have changed hardware): {error}",
-                                acquisition_started.elapsed().as_millis(), state.released_verified.load(SeqCst)),
-                        );
-                    }
-                }
-                continue;
-            }
-            // A release request invalidates all previously sampled frames.
-            let generation = state.generation.load(SeqCst);
-            if generation != observed_generation {
-                while receiver.try_recv().is_ok() {}
-                observed_generation = generation;
-            }
-            match receiver.recv_timeout(Duration::from_millis(2)) {
-                Ok(frame) => {
-                    if control.pause_requested() || !state.want_active.load(SeqCst)
-                        || generation != state.generation.load(SeqCst) {
-                        continue;
-                    }
-                    if let Some(active) = session.as_mut() {
-                        if let Err(error) = active.submit(&frame) {
-                            state.disabled.store(true, SeqCst);
-                            crate::logger::warning(
-                                &crate::locate_paths::runtime_log_path(),
-                                &format!("[AMBIENT_WALLPAPER_DIAG] Coordinator LED submission failed: {error}"),
-                            );
-                        }
-                    }
-                }
-                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
-                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
-            }
-        }
-        if let Some(old) = session.take() {
-            if let Err(error) = old.stop() {
-                state.released_verified.store(false, SeqCst);
-                crate::logger::warning(&crate::locate_paths::runtime_log_path(),
-                    &format!("[AMBIENT_WALLPAPER_DIAG] Coordinator shutdown restoration unverified: {error}"));
-            } else {
-                state.released_verified.store(true, SeqCst);
-            }
-        }
-    }
-
-    fn acquire(&mut self) {
-        use std::sync::atomic::Ordering::SeqCst;
-        if !self.state.disabled.load(SeqCst) {
-            self.state.last_presented_ms.store(
-                self.state.presentation_clock.elapsed().as_millis() as u64,
-                SeqCst,
-            );
-            self.state.want_active.store(true, SeqCst);
-        }
-    }
-
-    fn release(&mut self) -> bool {
-        use std::sync::atomic::Ordering::SeqCst;
-        self.state.want_active.store(false, SeqCst);
-        self.state.generation.fetch_add(1, SeqCst);
-        // A renderer-side release is only advisory. The coordinator is the
-        // authoritative pause acknowledger, even when EGL is blocked.
-        self.state.released_verified.load(SeqCst)
-    }
-
-    fn observe(&mut self, width: u32, height: u32) {
-        use std::sync::atomic::Ordering::SeqCst;
-        if width == 0 || height == 0 || !self.state.want_active.load(SeqCst)
-            || self.state.disabled.load(SeqCst) {
-            return;
-        }
-        let source = crate::manage_ambient_lighting::FrameSource {
-            framebuffer: 0, width, height,
-        };
-        match self.sampler.sample(source) {
-            Ok(Some(frame)) => {
-                // A full queue contains an obsolete frame; never block EGL.
-                let _ = self.frames.try_send(frame);
-            }
-            Ok(None) => {}
-            Err(error) => {
-                self.state.disabled.store(true, SeqCst);
-                crate::logger::warning(&crate::locate_paths::runtime_log_path(),
-                    &format!("[AMBIENT_WALLPAPER_DIAG] Framebuffer sampling failed; disabled: {error}"));
-            }
-        }
-    }
-}
-
-impl Drop for WaylandWallpaperAmbient {
-    fn drop(&mut self) {
-        use std::sync::atomic::Ordering::SeqCst;
-        self.state.shutting_down.store(true, SeqCst);
-        self.state.want_active.store(false, SeqCst);
-        if let Some(worker) = self.worker.take() {
-            if worker.join().is_err() {
-                crate::logger::warning(&crate::locate_paths::runtime_log_path(),
-                    "[AMBIENT_WALLPAPER_DIAG] Coordinator thread panicked; restoration unverified");
-            }
-        }
-    }
-}
-
 fn render_egl_wallpapers(
     connection: &Connection,
     event_queue: &mut wayland_client::EventQueue<WaylandState>,
@@ -3712,25 +3416,6 @@ fn render_mirror_frames(
         crate::fps_monitor::FpsWarningState::Normal;
 
 
-    // Full-screen wallpaper and windowshader share the same independent
-    // OpenRGB coordinator. Windowed presentation uses an inactivity lease;
-    // it does not alter Mango's existing frame-callback rendering behavior.
-    let ambient_windowed = runtime.display_format
-        == crate::manage_configuration::WallpaperDisplayFormat::Windowed;
-    let mut ambient = if !crate::manage_configuration::load_target_defaults("wallpaper")
-        .is_ok_and(|defaults| defaults.rgb_enabled) {
-        None
-    } else {
-        match WaylandWallpaperAmbient::new(control.clone(), ambient_windowed) {
-            Ok(ambient) => Some(ambient),
-            Err(error) => {
-                eprintln!("[AMBIENT_OPENRGB] Wayland wallpaper sampler unavailable: {error}");
-                None
-            }
-        }
-    };
-    let mut ambient_first_frame_presented = false;
-
     let mut paused =
         false;
 
@@ -4121,19 +3806,7 @@ fn render_mirror_frames(
                         Some(
                             Instant::now()
                         );
-
-
-                    if let Some(ambient) = ambient.as_mut() {
-                        // When an OpenRGB session may exist, only its independent
-                        // coordinator can certify hardware release and acknowledge
-                        // the pause. Never acknowledge from the renderer here.
-                        ambient.release();
-                    } else {
-                        // Without an OpenRGB coordinator there is no lighting
-                        // session to release. The renderer has reached its pause
-                        // checkpoint and can acknowledge suspension itself.
-                        control.acknowledge_paused();
-                    }
+                    control.acknowledge_paused();
 
 
                     println!(
@@ -5152,18 +4825,6 @@ fn render_mirror_frames(
 
                 postprocess.present_scene();
 
-                // Capture the final postprocessed image before lyrics/overlays.
-                // Mirror-mode wallpaper uses the first target as its lighting
-                // source; avoid combining different monitors' frames.
-                if ambient_first_frame_presented
-                    && native_target.info.registry_name == native_targets[0].info.registry_name
-                {
-                    if let Some(ambient) = ambient.as_mut() {
-                        ambient.observe(target_width, target_height);
-                    }
-                }
-
-
                 if runtime.display_format
                     == crate::manage_configuration::WallpaperDisplayFormat::Windowed
                 {
@@ -5342,20 +5003,6 @@ fn render_mirror_frames(
                     presentation_watchdog_swaps = presentation_watchdog_swaps.wrapping_add(1);
                     presentation_watchdog_last_report = None;
                 }
-                // Reassert the lighting request after every successful presentation.
-                // The independent coordinator can observe and release a brief
-                // pause that the EGL renderer never sees at its own checkpoint.
-                // In that case its want_active flag is cleared even though the
-                // renderer's local `paused` flag never changes. Reasserting here
-                // recovers lighting without requiring another screensaver cycle.
-                // This remains idempotent and never acquires before presentation.
-                ambient_first_frame_presented = true;
-                if !control.pause_requested() {
-                    if let Some(ambient) = ambient.as_mut() {
-                        ambient.acquire();
-                    }
-                }
-
                 let presentation_duration =
                     presentation_started.elapsed();
 
@@ -5533,11 +5180,6 @@ fn render_mirror_frames(
             }
         };
 
-
-    // Release OpenRGB before EGL and shader resources are destroyed.
-    if let Some(ambient) = ambient.as_mut() {
-        ambient.release();
-    }
 
     drop(
         postprocess_pipelines

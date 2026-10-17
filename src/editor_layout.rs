@@ -82,7 +82,6 @@ enum EditorTab {
     Rendering,
     Textures,
     PostProcessing,
-    OpenRgb,
     Config,
 }
 
@@ -310,9 +309,6 @@ pub struct ShaderInformation {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ControlConfiguration {
     pub show_splash: bool,
-    pub control_center_rgb_enabled: bool,
-    pub screensaver_rgb_enabled: bool,
-    pub wallpaper_rgb_enabled: bool,
     pub screensaver_enabled: bool,
     pub subtitles: bool,
     pub subtitle_placement: String,
@@ -409,9 +405,6 @@ impl ControlConfiguration {
 
         Self {
             show_splash: app_defaults.as_ref().map(|d| d.show_splash).unwrap_or(true),
-            control_center_rgb_enabled: app_defaults.as_ref().map(|d| d.control_center_rgb_enabled).unwrap_or(false),
-            screensaver_rgb_enabled: screensaver_defaults.as_ref().map(|d| d.rgb_enabled).unwrap_or(false),
-            wallpaper_rgb_enabled: wallpaper_defaults.as_ref().map(|d| d.rgb_enabled).unwrap_or(false),
             screensaver_enabled: config.screensaver_enabled,
             subtitles: app_defaults.as_ref().map(|d| d.screensaver_subtitles).unwrap_or(config.subtitles),
             subtitle_placement: app_defaults.as_ref().map(|d| d.subtitle_placement.clone()).unwrap_or_else(|| "bottom:center".to_string()),
@@ -3824,10 +3817,6 @@ impl EditWindowOverlay {
                                             );
                                         }
 
-                                        EditorTab::OpenRgb => {
-                                            crate::nested_tabs::draw_openrgb(ui);
-                                        }
-
                                         EditorTab::Config => {
                                             ui.add_enabled_ui(
                                                 !bulk_edit_mode,
@@ -3855,8 +3844,6 @@ impl EditWindowOverlay {
                                             != EditorTab::Playlists
                                         && active_tab
                                             != EditorTab::Config
-                                        && active_tab
-                                            != EditorTab::OpenRgb
                                         && hover_help_message.is_none()
                                     {
                                         hover_help_message =
@@ -4214,7 +4201,6 @@ impl EditWindowOverlay {
         }
 
 
-        if !window_open { crate::nested_tabs::openrgb_shutdown_physical_test(); }
 
         self.window_open =
             window_open;
@@ -5532,7 +5518,6 @@ impl EditWindowOverlay {
     pub fn destroy(
         &mut self,
     ) {
-        crate::nested_tabs::openrgb_shutdown_physical_test();
         self.painter.destroy();
     }
 }
@@ -5586,8 +5571,7 @@ fn draw_editor_tab_bar(
         EditorTab::Textures,
         EditorTab::PostProcessing,
     ];
-    const LOWER_RAIL: [EditorTab; 2] = [
-        EditorTab::OpenRgb,
+    const LOWER_RAIL: [EditorTab; 1] = [
         EditorTab::Config,
     ];
 
@@ -5604,7 +5588,6 @@ fn draw_editor_tab_bar(
                     EditorTab::Rendering => crate::manage_localization::runtime_text("editor.tab.rendering"),
                     EditorTab::Textures => crate::manage_localization::runtime_text("editor.tab.textures"),
                     EditorTab::PostProcessing => crate::manage_localization::runtime_text("editor.tab.post_processing"),
-                    EditorTab::OpenRgb => "OpenRGB".to_string(),
                     EditorTab::Config => crate::manage_localization::runtime_text("editor.tab.configuration"),
                 };
                 let selected = *active_tab == tab;

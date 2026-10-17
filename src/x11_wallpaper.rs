@@ -29,8 +29,6 @@ use std::sync::{
     Arc,
 };
 use std::thread;
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::time::Duration;
 
 use x11::{
@@ -558,77 +556,6 @@ fn drain_x11_events(display: *mut xlib::Display, window: &mut X11WallpaperWindow
     }
 }
 
-// The GL callback never performs OpenRGB network I/O; it submits to the
-// existing bounded worker. All ownership changes occur in the render loop.
-struct WallpaperAmbient {
-    sampler: crate::manage_ambient_lighting::FramebufferSampler,
-    session: Option<crate::manage_openrgb_session::ShaderLightingSession>,
-    disabled: bool,
-    restoration_verified: bool,
-}
-
-impl WallpaperAmbient {
-    fn new() -> Result<Self, String> {
-        Ok(Self {
-            sampler: crate::manage_ambient_lighting::FramebufferSampler::new(
-                22, 12, Duration::from_millis(50))?,
-            session: None,
-            disabled: false,
-            restoration_verified: true,
-        })
-    }
-
-    fn acquire(&mut self) {
-        if self.disabled || self.session.is_some() { return; }
-        let (address, controller_id) = match crate::manage_openrgb_session::resolve_saved_controller() {
-            Ok(Some(selection)) => selection,
-            Ok(None) => { self.disabled = true; diagnostic("[AMBIENT_OPENRGB] No enabled device selected"); return; }
-            Err(error) => { self.disabled = true; diagnostic(&format!("[AMBIENT_OPENRGB] Device resolution failed: {error}")); return; }
-        };
-        match crate::manage_openrgb_session::ShaderLightingSession::start(address, controller_id) {
-            Ok(session) => { self.session = Some(session); self.restoration_verified = false; diagnostic("[AMBIENT_OPENRGB] X11 wallpaper acquired keyboard"); }
-            Err(error) => { diagnostic(&format!("[AMBIENT_OPENRGB] X11 wallpaper acquisition refused: {error}")); self.disabled = true; }
-        }
-    }
-    // A pause acknowledgement must never claim successful lighting handoff
-    // after restoration failed. Guarded acquisition independently checks the
-    // durable recovery record before allowing another renderer to take over.
-    fn release(&mut self) -> bool {
-        if let Some(session) = self.session.take() {
-            match session.stop() {
-                Ok(_) => {
-                    self.restoration_verified = true;
-                    diagnostic("[AMBIENT_OPENRGB] X11 wallpaper restored keyboard");
-                }
-                Err(error) => {
-                    diagnostic(&format!("[AMBIENT_OPENRGB] X11 wallpaper release unverified: {error}"));
-                    self.disabled = true;
-                    self.restoration_verified = false;
-                }
-            }
-        }
-        self.restoration_verified
-    }
-
-    fn observe(&mut self, framebuffer: u32, width: u32, height: u32) {
-        if self.disabled || framebuffer != 0 || width == 0 || height == 0 { return; }
-        let source = crate::manage_ambient_lighting::FrameSource { framebuffer, width, height };
-        match self.sampler.sample(source) {
-            Ok(Some(frame)) => {
-                if let Some(session) = self.session.as_mut() {
-                    if let Err(error) = session.submit(&frame) {
-                        diagnostic(&format!("[AMBIENT_OPENRGB] X11 wallpaper update failed: {error}"));
-                        self.disabled = true;
-                        self.release();
-                    }
-                }
-            }
-            Ok(None) => {}
-            Err(error) => { diagnostic(&format!("[AMBIENT_OPENRGB] X11 wallpaper sampling disabled: {error}")); self.disabled = true; self.release(); }
-        }
-    }
-}
-
 fn run_window_loop(
     display: *mut xlib::Display,
     wallpaper_window: &mut X11WallpaperWindow,
@@ -644,20 +571,6 @@ fn run_window_loop(
 
     let mut paused = false;
     let mut first_frame_presented = false;
-    let ambient = if crate::manage_configuration::load_target_defaults("wallpaper")
-        .is_ok_and(|defaults| defaults.rgb_enabled) {
-        match WallpaperAmbient::new() {
-            Ok(ambient) => Some(Rc::new(RefCell::new(ambient))),
-            Err(error) => { diagnostic(&format!("[AMBIENT_OPENRGB] X11 wallpaper sampler unavailable: {error}")); None }
-        }
-    } else { None };
-    if let Some(ref ambient) = ambient {
-        let observer = Rc::clone(ambient);
-        engine.set_ambient_frame_hook(Some(Box::new(move |fb, w, h| {
-            observer.borrow_mut().observe(fb, w, h);
-        })));
-    }
-
     while running.load(Ordering::SeqCst) {
         drain_x11_events(display, wallpaper_window, running);
         if !running.load(Ordering::SeqCst) { break; }
@@ -690,14 +603,8 @@ fn run_window_loop(
             if !paused {
                 control.acknowledge_pause_detected();
                 paused = true;
-                let lighting_released = ambient.as_ref()
-                    .is_none_or(|ambient| ambient.borrow_mut().release());
-                if lighting_released {
-                    control.acknowledge_paused();
-                    diagnostic("X11 wallpaper rendering paused; ambient ownership released.");
-                } else {
-                    diagnostic("[AMBIENT_OPENRGB] X11 wallpaper paused, but restoration is unverified; withholding pause acknowledgement.");
-                }
+                control.acknowledge_paused();
+                diagnostic("X11 wallpaper rendering paused.");
             }
 
             thread::sleep(
@@ -710,7 +617,6 @@ fn run_window_loop(
         if paused {
             engine.reset_after_pause();
         }
-        if let Some(ref ambient) = ambient { ambient.borrow_mut().acquire(); }
 
         let status =
             render_shared_engine_frame(
@@ -738,12 +644,6 @@ fn run_window_loop(
         }
     }
 
-    engine.set_ambient_frame_hook(None);
-    if let Some(ref ambient) = ambient {
-        let mut ambient = ambient.borrow_mut();
-        ambient.release();
-        unsafe { ambient.sampler.destroy(); }
-    }
     diagnostic("Leaving continuous X11 wallpaper render loop...");
 }
 
