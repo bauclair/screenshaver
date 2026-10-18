@@ -96,6 +96,7 @@ mod wallpaper_backend;
 mod windowshader_backend;
 mod x11_connection;
 mod x11_wallpaper;
+mod x11_windowshader;
 mod glx_context;
 mod fps_monitor;
 mod monitor_lock_presentation;

@@ -52,7 +52,7 @@ pub(crate) fn create_backend() -> Result<Box<dyn WallpaperBackend>, String> {
         }
         Err(wayland_error) => {
             println!("Native Wayland Windowshader backend unavailable: {wayland_error}");
-            match crate::x11_wallpaper::X11WallpaperBackend::new() {
+            match crate::x11_windowshader::X11WindowshaderBackend::new() {
                 Ok(backend) => {
                     println!("Selected native [X11] Windowshader backend");
                     Ok(Box::new(backend))

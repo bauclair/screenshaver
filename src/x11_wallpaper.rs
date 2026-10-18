@@ -712,6 +712,9 @@ impl WallpaperBackend for X11WallpaperBackend {
         running: Arc<AtomicBool>,
         control: WallpaperRuntimeControl,
     ) -> Result<(), String> {
+        if runtime.display_format != crate::manage_configuration::WallpaperDisplayFormat::FullScreen {
+            return Err("X11 Wallpaper backend requires FullScreen display format".to_string());
+        }
         runtime.tray_status
             .set_starting();
 

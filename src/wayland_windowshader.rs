@@ -103,7 +103,7 @@ pub fn run_egl_windowed_surface(
         mut event_queue,
         mut state,
     ) =
-        connect_and_bind_windowed()?;
+        connect_and_bind_windowshader_dispatch()?;
 
 
     state.windowshader.windowed_normal_width = saved_geometry.width;
@@ -940,4 +940,386 @@ pub(crate) fn connect_and_bind_windowed(
             state,
         )
     )
+}
+
+
+// Stage 2B-4B2C: independent Windowshader Wayland dispatch ownership.
+// This is additive until the renderer interface accepts this queue type.
+#[derive(Debug, Default)]
+pub(crate) struct WindowshaderDispatchState {
+    pub(crate) compositor: Option<wayland_client::protocol::wl_compositor::WlCompositor>,
+    pub(crate) xdg_wm_base: Option<XdgWmBase>,
+    pub(crate) decoration_manager: Option<wayland_protocols::xdg::decoration::zv1::client::zxdg_decoration_manager_v1::ZxdgDecorationManagerV1>,
+    pub(crate) compositor_version: Option<u32>,
+    pub(crate) xdg_wm_base_version: Option<u32>,
+    pub(crate) output_count: usize,
+    pub(crate) surface_states: Vec<WallpaperSurfaceState>,
+    pub(crate) removed_output_names: Vec<u32>,
+    pub(crate) windowshader: WindowshaderWaylandState,
+}
+
+impl crate::wayland_wallpaper::RenderWaylandDispatch for WindowshaderDispatchState {
+    fn surfaces(&mut self) -> &mut Vec<WallpaperSurfaceState> { &mut self.surface_states }
+    fn windowshader_state(&mut self) -> &mut WindowshaderWaylandState { &mut self.windowshader }
+    fn removed_outputs(&mut self) -> &mut Vec<u32> { &mut self.removed_output_names }
+    fn pump_events(queue: &mut wayland_client::EventQueue<Self>, state: &mut Self) -> Result<(), String> {
+        crate::wayland_wallpaper::process_wayland_events_shared(queue, state, |state| {
+            for (target, pending) in state.windowshader.windowshader_pending_callbacks.iter_mut() {
+                if !pending.flushed {
+                    pending.flushed = true;
+                    if pending.requested_at.elapsed() >= Duration::from_millis(250) {
+                        crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+                            &format!("[WINDOWSHADER_CALLBACK_DIAG] Wayland flush succeeded: target={} seq={} age_ms={} swap_completed={}",
+                                target, pending.sequence, pending.requested_at.elapsed().as_millis(), pending.swap_completed));
+                    }
+                }
+            }
+        })
+    }
+}
+
+impl Dispatch<wayland_client::protocol::wl_registry::WlRegistry, ()> for WindowshaderDispatchState {
+    fn event(
+        state: &mut Self,
+        registry: &wayland_client::protocol::wl_registry::WlRegistry,
+        event: wayland_client::protocol::wl_registry::Event,
+        _: &(), _: &Connection, queue: &QueueHandle<Self>,
+    ) {
+        use wayland_client::protocol::{wl_compositor, wl_registry};
+        if let wl_registry::Event::Global { name, interface, version } = event {
+            match interface.as_str() {
+                "wl_compositor" => {
+                    state.compositor_version = Some(version);
+                    if state.compositor.is_none() {
+                        state.compositor = Some(registry.bind::<wl_compositor::WlCompositor, _, _>(
+                            name, version.min(6), queue, (),
+                        ));
+                    }
+                }
+                "xdg_wm_base" => {
+                    state.xdg_wm_base_version = Some(version);
+                    if state.xdg_wm_base.is_none() {
+                        state.xdg_wm_base = Some(registry.bind::<XdgWmBase, _, _>(
+                            name, version.min(6), queue, (),
+                        ));
+                    }
+                }
+                "zxdg_decoration_manager_v1" => {
+                    if state.decoration_manager.is_none() {
+                        state.decoration_manager = Some(registry.bind::<
+                            wayland_protocols::xdg::decoration::zv1::client::zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, _, _
+                        >(name, version.min(1), queue, ()));
+                    }
+                }
+                "wl_output" => { state.output_count += 1; }
+                _ => {}
+            }
+        }
+    }
+}
+
+wayland_client::delegate_noop!(WindowshaderDispatchState: ignore wayland_client::protocol::wl_compositor::WlCompositor);
+wayland_client::delegate_noop!(WindowshaderDispatchState: ignore wayland_client::protocol::wl_surface::WlSurface);
+wayland_client::delegate_noop!(WindowshaderDispatchState: ignore wayland_protocols::xdg::decoration::zv1::client::zxdg_decoration_manager_v1::ZxdgDecorationManagerV1);
+
+impl Dispatch<wayland_protocols::xdg::decoration::zv1::client::zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1, ()> for WindowshaderDispatchState {
+    fn event(_: &mut Self, _: &wayland_protocols::xdg::decoration::zv1::client::zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1,
+        _: zxdg_toplevel_decoration_v1::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {}
+}
+
+impl Dispatch<XdgWmBase, ()>
+    for WindowshaderDispatchState
+{
+    fn event(
+        _state: &mut Self,
+        xdg_wm_base: &XdgWmBase,
+        event: xdg_wm_base::Event,
+        _data: &(),
+        _connection: &Connection,
+        _queue_handle: &QueueHandle<Self>,
+    ) {
+
+        if let xdg_wm_base::Event::Ping {
+            serial,
+        } = event
+        {
+            xdg_wm_base.pong(
+                serial
+            );
+        }
+    }
+}
+
+
+impl Dispatch<XdgSurface, ()>
+    for WindowshaderDispatchState
+{
+    fn event(
+        state: &mut Self,
+        xdg_surface: &XdgSurface,
+        event: xdg_surface::Event,
+        _data: &(),
+        _connection: &Connection,
+        _queue_handle: &QueueHandle<Self>,
+    ) {
+
+        if let xdg_surface::Event::Configure {
+            serial,
+        } = event
+        {
+            if state.windowshader.windowshader_trace_surface_configure {
+                state.windowshader.windowshader_trace_surface_configure = false;
+                let pending = state.windowshader.windowshader_pending_callbacks.get(&0);
+                crate::logger::warning(
+                    &crate::locate_paths::runtime_log_path(),
+                    &format!("[WINDOWSHADER_CONFIGURE_DIAG] First xdg_surface.configure after pause: serial={} pending_callback_seq={:?} pending_callback_age_ms={:?} frame_ready={} activated={} activation_established={}",
+                        serial, pending.map(|p| p.sequence),
+                        pending.map(|p| p.requested_at.elapsed().as_millis()),
+                        state.windowshader.frame_ready.get(&0).copied().unwrap_or(true),
+                        state.windowshader.windowed_activated, state.windowshader.windowed_activation_established),
+                );
+            }
+            state.windowshader.windowshader_configure_count = state.windowshader.windowshader_configure_count.wrapping_add(1);
+            xdg_surface.ack_configure(
+                serial
+            );
+
+
+            let configured_width =
+                u32::try_from(
+                    state.windowshader.windowed_pending_width
+                )
+                .unwrap_or(
+                    0
+                );
+
+
+            let configured_height =
+                u32::try_from(
+                    state.windowshader.windowed_pending_height
+                )
+                .unwrap_or(
+                    0
+                );
+
+
+            if let Some(
+                surface_state
+            ) =
+                state
+                    .surface_states
+                    .iter_mut()
+                    .find(
+                        |surface_state| {
+                            surface_state.registry_name
+                                == 0
+                        }
+                    )
+            {
+                surface_state.configured =
+                    Some(
+                        WallpaperSurfaceConfiguration {
+                            width:
+                                configured_width,
+
+                            height:
+                                configured_height,
+
+                            serial,
+                        }
+                    );
+            }
+        }
+    }
+}
+
+
+impl Dispatch<XdgToplevel, ()>
+    for WindowshaderDispatchState
+{
+    fn event(
+        state: &mut Self,
+        _xdg_toplevel: &XdgToplevel,
+        event: xdg_toplevel::Event,
+        _data: &(),
+        _connection: &Connection,
+        _queue_handle: &QueueHandle<Self>,
+    ) {
+
+        match event {
+
+            xdg_toplevel::Event::Configure {
+                width,
+                height,
+                states,
+            } => {
+                if state.windowshader.windowshader_trace_toplevel_configure {
+                    state.windowshader.windowshader_trace_toplevel_configure = false;
+                    let pending = state.windowshader.windowshader_pending_callbacks.get(&0);
+                    crate::logger::warning(
+                        &crate::locate_paths::runtime_log_path(),
+                        &format!("[WINDOWSHADER_CONFIGURE_DIAG] First xdg_toplevel.configure after pause: width={} height={} state_bytes={} pending_callback_seq={:?} pending_callback_age_ms={:?} frame_ready={} previous_activated={}",
+                            width, height, states.len(), pending.map(|p| p.sequence),
+                            pending.map(|p| p.requested_at.elapsed().as_millis()),
+                            state.windowshader.frame_ready.get(&0).copied().unwrap_or(true), state.windowshader.windowed_activated),
+                    );
+                }
+
+                // The first xdg_toplevel configure may legitimately contain
+                // no states.  Do not treat that initial, unestablished state
+                // as an inactive workspace.  Once the compositor supplies a
+                // non-empty state set, track Activated as the Windowshader's
+                // presentation-visibility signal.
+                if !states.is_empty() {
+                    let activation_was_established = state.windowshader.windowed_activation_established;
+                    state.windowshader.windowed_activation_established = true;
+
+
+                    let previous_activation = state.windowshader.windowed_activated;
+                    state.windowshader.windowed_activated =
+                        states
+                            .chunks_exact(
+                                std::mem::size_of::<u32>()
+                            )
+                            .map(
+                                |bytes| {
+                                    u32::from_ne_bytes(
+                                        [
+                                            bytes[0],
+                                            bytes[1],
+                                            bytes[2],
+                                            bytes[3],
+                                        ]
+                                    )
+                                }
+                            )
+                            .any(
+                                |raw_state| {
+                                    matches!(
+                                        xdg_toplevel::State::try_from(
+                                            raw_state
+                                        ),
+                                        Ok(
+                                            xdg_toplevel::State::Activated
+                                        )
+                                    )
+                                }
+                            );
+                    if !activation_was_established || previous_activation != state.windowshader.windowed_activated {
+                        crate::logger::warning(
+                            &crate::locate_paths::runtime_log_path(),
+                            &format!("[WINDOWSHADER_CALLBACK_DIAG] Activation transition: activated={} (focus signal, not visibility)", state.windowshader.windowed_activated),
+                        );
+                    }
+                }
+
+
+                let maximized = states.chunks_exact(4)
+                    .map(|bytes| u32::from_ne_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+                    .any(|raw| matches!(
+                        xdg_toplevel::State::try_from(raw),
+                        Ok(xdg_toplevel::State::Maximized)
+                    ));
+                state.windowshader.windowed_maximized = maximized;
+                if !maximized {
+                    if width > 0 { state.windowshader.windowed_normal_width = width; }
+                    if height > 0 { state.windowshader.windowed_normal_height = height; }
+                }
+
+                state.windowshader.windowed_pending_width =
+                    width;
+
+
+                state.windowshader.windowed_pending_height =
+                    height;
+            }
+
+
+            xdg_toplevel::Event::Close => {
+
+                if let Some(
+                    surface_state
+                ) =
+                    state
+                        .surface_states
+                        .iter_mut()
+                        .find(
+                            |surface_state| {
+                                surface_state.registry_name
+                                    == 0
+                            }
+                        )
+                {
+                    surface_state.closed =
+                        true;
+                }
+            }
+
+
+            _ => {}
+        }
+    }
+}
+
+
+impl Dispatch<wl_callback::WlCallback, FrameCallbackDispatchData>
+    for WindowshaderDispatchState
+{
+    fn event(
+        state: &mut Self,
+        _callback: &wl_callback::WlCallback,
+        event: wl_callback::Event,
+        data: &FrameCallbackDispatchData,
+        _connection: &Connection,
+        _queue_handle: &QueueHandle<Self>,
+    ) {
+        if matches!(
+            event,
+            wl_callback::Event::Done { .. }
+        ) {
+            let pending = state.windowshader.windowshader_pending_callbacks.remove(&data.registry_name);
+            if let Some(pending) = pending {
+                if pending.requested_at.elapsed() >= Duration::from_millis(250) || pending.sequence != data.sequence {
+                crate::logger::warning(
+                    &crate::locate_paths::runtime_log_path(),
+                    &format!("[WINDOWSHADER_CALLBACK_DIAG] Callback acknowledged: target={} seq={} age_ms={} swap_completed={} flushed={} matching_sequence={}",
+                        data.registry_name, data.sequence, pending.requested_at.elapsed().as_millis(),
+                        pending.swap_completed, pending.flushed, pending.sequence == data.sequence),
+                );
+                }
+            } else if data.sequence != 0 {
+                crate::logger::warning(
+                    &crate::locate_paths::runtime_log_path(),
+                    &format!("[WINDOWSHADER_CALLBACK_DIAG] Callback without pending record: target={} seq={}", data.registry_name, data.sequence),
+                );
+            }
+            state.windowshader.frame_ready.insert(
+                data.registry_name,
+                true,
+            );
+        }
+    }
+}
+
+
+
+
+
+
+/// New dispatch queue for the Windowshader backend. The existing connector
+/// remains active until the shared renderer accepts this state type.
+pub(crate) fn connect_and_bind_windowshader_dispatch()
+    -> Result<(Connection, wayland_client::EventQueue<WindowshaderDispatchState>, WindowshaderDispatchState), String>
+{
+    let connection = Connection::connect_to_env()
+        .map_err(|e| format!("Unable to connect Windowshader to Wayland compositor: {e}"))?;
+    let mut queue = connection.new_event_queue::<WindowshaderDispatchState>();
+    let handle = queue.handle();
+    let _registry = connection.display().get_registry(&handle, ());
+    let mut state = WindowshaderDispatchState::default();
+    queue.roundtrip(&mut state)
+        .map_err(|e| format!("Unable to read Windowshader Wayland capabilities: {e}"))?;
+    if state.compositor.is_none() { return Err("Missing wl_compositor".into()); }
+    if state.xdg_wm_base.is_none() { return Err("Missing xdg_wm_base".into()); }
+    Ok((connection, queue, state))
 }
