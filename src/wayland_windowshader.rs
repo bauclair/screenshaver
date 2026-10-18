@@ -1364,3 +1364,18 @@ pub(crate) fn request_next_frame<S>(
     );
     state.frame_ready.insert(registry_name, false);
 }
+
+
+// Stage 2D-2A Step 3: Windowshader-owned frame-deadline scheduling.
+// Called only after a frame is presented; compositor callback readiness is
+// checked separately before rendering. This deliberately preserves the
+// previous shared-loop timing algorithm, including its overrun behavior.
+pub(crate) fn pace_next_frame(deadline: &mut Instant, frame_duration: Duration) {
+    *deadline += frame_duration;
+    let now = Instant::now();
+    if *deadline > now {
+        std::thread::sleep(*deadline - now);
+    } else {
+        *deadline = now;
+    }
+}

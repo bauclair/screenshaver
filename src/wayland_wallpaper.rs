@@ -4332,25 +4332,25 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                 );
 
 
-            next_frame_deadline +=
-                frame_duration;
-
-
-            let now =
-                Instant::now();
-
-
             control.diagnostic_checkpoint(7);
-            if next_frame_deadline
-                > now
+            if runtime.display_format
+                == crate::manage_configuration::WallpaperDisplayFormat::Windowed
             {
-                thread::sleep(
-                    next_frame_deadline
-                        - now
+                // Windowshader owns its frame-deadline progression. Compositor
+                // callbacks still gate whether the shared renderer may draw.
+                crate::wayland_windowshader::pace_next_frame(
+                    &mut next_frame_deadline,
+                    frame_duration,
                 );
             } else {
-                next_frame_deadline =
-                    now;
+                // Preserve the wallpaper's existing pacing path unchanged.
+                next_frame_deadline += frame_duration;
+                let now = Instant::now();
+                if next_frame_deadline > now {
+                    thread::sleep(next_frame_deadline - now);
+                } else {
+                    next_frame_deadline = now;
+                }
             }
         };
 
