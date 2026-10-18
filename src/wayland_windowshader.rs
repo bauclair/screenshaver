@@ -1446,6 +1446,12 @@ pub(crate) fn request_next_frame<S>(
 // Called only after a frame is presented; compositor callback readiness is
 // checked separately before rendering. This deliberately preserves the
 // previous shared-loop timing algorithm, including its overrun behavior.
+// Stage 2D-2C Step 3: Windowshader owns deadline resets after shader changes,
+// screensaver pauses, and compositor callback suppression.
+pub(crate) fn reset_frame_deadline(deadline: &mut Instant) {
+    *deadline = Instant::now();
+}
+
 pub(crate) fn pace_next_frame(deadline: &mut Instant, frame_duration: Duration) {
     *deadline += frame_duration;
     let now = Instant::now();
