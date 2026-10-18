@@ -52,7 +52,7 @@ use crate::wayland_wallpaper::{
     WallpaperSurfaceState, WallpaperTargetInfo, NativeWallpaperTarget,
     WindowshaderCallbackDiagnostic,
     select_safe_wallpaper_shader, print_active_wallpaper_shader,
-    connect_and_bind_windowed, configured_dimension, render_egl_wallpapers,
+    configured_dimension, render_egl_wallpapers,
 };
 
 pub fn run_egl_windowed_surface(
@@ -798,3 +798,97 @@ impl Dispatch<wl_callback::WlCallback, FrameCallbackDispatchData>
 }
 
 
+
+
+// Windowshader owns creation and capability negotiation of its Wayland connection
+// and event queue. The queue state type remains shared until the render-loop
+// interface and registry dispatch can be separated safely.
+pub(crate) fn connect_and_bind_windowed(
+) -> Result<
+    (
+        Connection,
+        wayland_client::EventQueue<WaylandState>,
+        WaylandState,
+    ),
+    String,
+> {
+
+    let connection =
+        Connection::connect_to_env()
+            .map_err(
+                |error| {
+                    format!(
+                        "Unable to connect to the Wayland compositor: {}",
+                        error,
+                    )
+                }
+            )?;
+
+
+    let display =
+        connection.display();
+
+
+    let mut event_queue =
+        connection.new_event_queue();
+
+
+    let queue_handle =
+        event_queue.handle();
+
+
+    let _registry =
+        display.get_registry(
+            &queue_handle,
+            (),
+        );
+
+
+    let mut state =
+        WaylandState::default();
+
+
+    event_queue
+        .roundtrip(
+            &mut state
+        )
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to read Wayland compositor capabilities for Windowed wallpaper: {}",
+                    error,
+                )
+            }
+        )?;
+
+
+    if state
+        .compositor
+        .is_none()
+    {
+        return Err(
+            "The Wayland compositor did not advertise wl_compositor"
+                .to_string()
+        );
+    }
+
+
+    if state
+        .xdg_wm_base
+        .is_none()
+    {
+        return Err(
+            "The Wayland compositor did not advertise xdg_wm_base"
+                .to_string()
+        );
+    }
+
+
+    Ok(
+        (
+            connection,
+            event_queue,
+            state,
+        )
+    )
+}

@@ -798,7 +798,7 @@ pub fn probe_capabilities(
 /// Windowshader requires xdg_wm_base, not the layer-shell protocol used by wallpapers.
 /// This probe uses the same compositor requirements as the windowed rendering path.
 pub(crate) fn probe_windowshader_capabilities() -> Result<WallpaperWaylandCapabilities, String> {
-    let (_connection, _event_queue, state) = connect_and_bind_windowed()?;
+    let (_connection, _event_queue, state) = crate::wayland_windowshader::connect_and_bind_windowed()?;
     Ok(WallpaperWaylandCapabilities {
         compositor_version: state.compositor_version,
         layer_shell_version: state.layer_shell_version,
@@ -1704,96 +1704,6 @@ fn connect_and_bind(
     {
         return Err(
             "The Wayland compositor did not provide any wallpaper targets"
-                .to_string()
-        );
-    }
-
-
-    Ok(
-        (
-            connection,
-            event_queue,
-            state,
-        )
-    )
-}
-
-pub(crate) fn connect_and_bind_windowed(
-) -> Result<
-    (
-        Connection,
-        wayland_client::EventQueue<WaylandState>,
-        WaylandState,
-    ),
-    String,
-> {
-
-    let connection =
-        Connection::connect_to_env()
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to connect to the Wayland compositor: {}",
-                        error,
-                    )
-                }
-            )?;
-
-
-    let display =
-        connection.display();
-
-
-    let mut event_queue =
-        connection.new_event_queue();
-
-
-    let queue_handle =
-        event_queue.handle();
-
-
-    let _registry =
-        display.get_registry(
-            &queue_handle,
-            (),
-        );
-
-
-    let mut state =
-        WaylandState::default();
-
-
-    event_queue
-        .roundtrip(
-            &mut state
-        )
-        .map_err(
-            |error| {
-                format!(
-                    "Unable to read Wayland compositor capabilities for Windowed wallpaper: {}",
-                    error,
-                )
-            }
-        )?;
-
-
-    if state
-        .compositor
-        .is_none()
-    {
-        return Err(
-            "The Wayland compositor did not advertise wl_compositor"
-                .to_string()
-        );
-    }
-
-
-    if state
-        .xdg_wm_base
-        .is_none()
-    {
-        return Err(
-            "The Wayland compositor did not advertise xdg_wm_base"
                 .to_string()
         );
     }
