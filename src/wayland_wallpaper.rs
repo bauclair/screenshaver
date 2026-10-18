@@ -162,21 +162,6 @@ struct LayerSurfaceDispatchData {
 }
 
 
-#[derive(Debug, Clone)]
-pub(crate) struct FrameCallbackDispatchData {
-    pub(crate) registry_name: u32,
-    pub(crate) sequence: u64,
-}
-
-#[derive(Debug)]
-pub(crate) struct WindowshaderCallbackDiagnostic {
-    pub(crate) sequence: u64,
-    pub(crate) requested_at: Instant,
-    pub(crate) swap_completed: bool,
-    pub(crate) flushed: bool,
-}
-
-
 #[derive(Debug, Clone, Default)]
 pub(crate) struct WallpaperSurfaceState {
     pub(crate) registry_name: u32,
@@ -235,7 +220,6 @@ pub(crate) struct WaylandState {
     pub(crate) targets: Vec<WallpaperTarget>,
     pub(crate) surface_states: Vec<WallpaperSurfaceState>,
     pub(crate) removed_output_names: Vec<u32>,
-    pub(crate) frame_ready: HashMap<u32, bool>,
     pub(crate) windowshader: crate::wayland_windowshader::WindowshaderWaylandState,
 }
 
@@ -2673,7 +2657,7 @@ fn render_mirror_frames(
                 {
                     presentation_watchdog_last_report = Some(Instant::now());
                     let ready = native_targets.iter().all(|target| {
-                        state.frame_ready.get(&target.info.registry_name)
+                        state.windowshader.frame_ready.get(&target.info.registry_name)
                             .copied().unwrap_or(true)
                     });
                     let pending = state.windowshader.windowshader_pending_callbacks.get(&0);
@@ -2715,7 +2699,7 @@ fn render_mirror_frames(
             if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed
                 && windowshader_summary_at.elapsed() >= Duration::from_secs(10)
             {
-                let ready = state.frame_ready.get(&0).copied().unwrap_or(true);
+                let ready = state.windowshader.frame_ready.get(&0).copied().unwrap_or(true);
                 let pending = state.windowshader.windowshader_pending_callbacks.get(&0);
                 let rotation_due = shader_interval.is_some_and(|interval| last_shader_switch.elapsed() >= interval);
                 crate::logger::warning(
@@ -2978,7 +2962,7 @@ fn render_mirror_frames(
                             );
                         }
                         let outstanding = native_targets.iter()
-                            .filter(|target| !state.frame_ready.get(&target.info.registry_name)
+                            .filter(|target| !state.windowshader.frame_ready.get(&target.info.registry_name)
                                 .copied().unwrap_or(true))
                             .count();
                         crate::logger::warning(
@@ -3089,7 +3073,7 @@ fn render_mirror_frames(
                         .all(
                             |target| {
                                 state
-                                    .frame_ready
+                                    .windowshader.frame_ready
                                     .get(
                                         &target.info.registry_name
                                     )
@@ -3124,7 +3108,7 @@ fn render_mirror_frames(
                 {
                     callback_wait_reported = true;
                     let outstanding: Vec<u32> = native_targets.iter()
-                        .filter(|target| !state.frame_ready.get(&target.info.registry_name)
+                        .filter(|target| !state.windowshader.frame_ready.get(&target.info.registry_name)
                             .copied().unwrap_or(true))
                         .map(|target| target.info.registry_name).collect();
                     crate::logger::warning(
@@ -3140,7 +3124,7 @@ fn render_mirror_frames(
                 {
                     last_callback_stall_report = Some(Instant::now());
                     let outstanding: Vec<u32> = native_targets.iter()
-                        .filter(|target| !state.frame_ready.get(&target.info.registry_name)
+                        .filter(|target| !state.windowshader.frame_ready.get(&target.info.registry_name)
                             .copied().unwrap_or(true))
                         .map(|target| target.info.registry_name).collect();
                     let wait_ms = windowed_inactive_started.map_or(0, |since| since.elapsed().as_millis());
@@ -4137,19 +4121,19 @@ fn render_mirror_frames(
                     let registry_name = native_target.info.registry_name;
                     native_target.surface.frame(
                         &frame_queue_handle,
-                        FrameCallbackDispatchData {
+                        crate::wayland_windowshader::FrameCallbackDispatchData {
                             registry_name,
                             sequence,
                         },
                     );
-                    state.windowshader.windowshader_pending_callbacks.insert(registry_name, WindowshaderCallbackDiagnostic {
+                    state.windowshader.windowshader_pending_callbacks.insert(registry_name, crate::wayland_windowshader::WindowshaderCallbackDiagnostic {
                         sequence,
                         requested_at: Instant::now(),
                         swap_completed: false,
                         flushed: false,
                     });
 
-                    state.frame_ready.insert(
+                    state.windowshader.frame_ready.insert(
                         native_target.info.registry_name,
                         false,
                     );

@@ -1,5 +1,5 @@
 //! Windowshader-owned Wayland geometry and presentation-state persistence.
-//! The native XDG/EGL loop remains in wayland_wallpaper during incremental extraction.
+//! XDG presentation is owned here; EGL frame processing remains shared.
 
 #[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub(crate) struct WindowshaderGeometry {
@@ -50,7 +50,6 @@ use wayland_client::Proxy;
 use wayland_protocols::xdg::decoration::zv1::client::zxdg_toplevel_decoration_v1;
 use crate::wayland_wallpaper::{
     WallpaperSurfaceState, WallpaperTargetInfo, NativeWallpaperTarget,
-    WindowshaderCallbackDiagnostic,
     select_safe_wallpaper_shader, print_active_wallpaper_shader,
     configured_dimension, render_egl_wallpapers,
 };
@@ -497,8 +496,24 @@ pub fn run_egl_windowed_surface(
 
 
 // XDG and frame-callback event dispatch belongs to Windowshader.
+#[derive(Debug, Clone)]
+pub(crate) struct FrameCallbackDispatchData {
+    pub(crate) registry_name: u32,
+    pub(crate) sequence: u64,
+}
+
+#[derive(Debug)]
+pub(crate) struct WindowshaderCallbackDiagnostic {
+    pub(crate) sequence: u64,
+    pub(crate) requested_at: Instant,
+    pub(crate) swap_completed: bool,
+    pub(crate) flushed: bool,
+}
+
+
+
 // Windowshader-only XDG geometry, activation, and callback bookkeeping.
-// The shared frame_ready map remains on WaylandState for both render modes.
+// Frame readiness and callback diagnostics are Windowshader-owned.
 #[derive(Debug, Default)]
 pub(crate) struct WindowshaderWaylandState {
     pub(crate) windowed_pending_width: i32,
@@ -509,6 +524,7 @@ pub(crate) struct WindowshaderWaylandState {
     pub(crate) windowed_activation_established: bool,
     pub(crate) windowed_activated: bool,
     pub(crate) windowshader_next_callback_sequence: u64,
+    pub(crate) frame_ready: HashMap<u32, bool>,
     pub(crate) windowshader_pending_callbacks: HashMap<u32, WindowshaderCallbackDiagnostic>,
     // Diagnostic only: capture the first configure of each kind after a pause.
     pub(crate) windowshader_trace_surface_configure: bool,
@@ -521,7 +537,7 @@ use std::time::Instant;
 use wayland_client::{Connection, Dispatch, QueueHandle};
 use wayland_client::protocol::{wl_callback};
 use wayland_protocols::xdg::shell::client::{xdg_wm_base::{self, XdgWmBase}, xdg_surface::{self, XdgSurface}, xdg_toplevel::{self, XdgToplevel}};
-use crate::wayland_wallpaper::{WaylandState, WallpaperSurfaceConfiguration, FrameCallbackDispatchData};
+use crate::wayland_wallpaper::{WaylandState, WallpaperSurfaceConfiguration};
 
 impl Dispatch<XdgWmBase, ()>
     for WaylandState
@@ -571,7 +587,7 @@ impl Dispatch<XdgSurface, ()>
                     &format!("[WINDOWSHADER_CONFIGURE_DIAG] First xdg_surface.configure after pause: serial={} pending_callback_seq={:?} pending_callback_age_ms={:?} frame_ready={} activated={} activation_established={}",
                         serial, pending.map(|p| p.sequence),
                         pending.map(|p| p.requested_at.elapsed().as_millis()),
-                        state.frame_ready.get(&0).copied().unwrap_or(true),
+                        state.windowshader.frame_ready.get(&0).copied().unwrap_or(true),
                         state.windowshader.windowed_activated, state.windowshader.windowed_activation_established),
                 );
             }
@@ -657,7 +673,7 @@ impl Dispatch<XdgToplevel, ()>
                         &format!("[WINDOWSHADER_CONFIGURE_DIAG] First xdg_toplevel.configure after pause: width={} height={} state_bytes={} pending_callback_seq={:?} pending_callback_age_ms={:?} frame_ready={} previous_activated={}",
                             width, height, states.len(), pending.map(|p| p.sequence),
                             pending.map(|p| p.requested_at.elapsed().as_millis()),
-                            state.frame_ready.get(&0).copied().unwrap_or(true), state.windowshader.windowed_activated),
+                            state.windowshader.frame_ready.get(&0).copied().unwrap_or(true), state.windowshader.windowed_activated),
                     );
                 }
 
@@ -789,7 +805,7 @@ impl Dispatch<wl_callback::WlCallback, FrameCallbackDispatchData>
                     &format!("[WINDOWSHADER_CALLBACK_DIAG] Callback without pending record: target={} seq={}", data.registry_name, data.sequence),
                 );
             }
-            state.frame_ready.insert(
+            state.windowshader.frame_ready.insert(
                 data.registry_name,
                 true,
             );
