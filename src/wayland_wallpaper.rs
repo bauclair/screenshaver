@@ -184,7 +184,7 @@ pub(crate) struct NativeWallpaperTarget {
 }
 
 
-struct EglWallpaperTarget {
+pub(crate) struct EglWallpaperTarget {
     registry_name: u32,
     surface: EglSurface,
 }
@@ -1668,10 +1668,10 @@ fn connect_and_bind(
 type EglBoolean = u32;
 type EglEnum = u32;
 type EglInt = i32;
-type EglDisplay = *mut c_void;
+pub(crate) type EglDisplay = *mut c_void;
 type EglConfig = *mut c_void;
-type EglContext = *mut c_void;
-type EglSurface = *mut c_void;
+pub(crate) type EglContext = *mut c_void;
+pub(crate) type EglSurface = *mut c_void;
 type EglNativeDisplay = *mut c_void;
 type EglNativeWindow = *mut c_void;
 
@@ -1781,7 +1781,7 @@ unsafe extern "C" {
     ) -> EglInt;
 
 
-    fn eglGetProcAddress(
+    pub(crate) fn eglGetProcAddress(
         name: *const c_char,
     ) -> *const c_void;
 }
@@ -1862,11 +1862,11 @@ impl RenderWaylandDispatch for WaylandState {
 // The session owns the EGL display, context, and surfaces; GL shader resources
 // continue to be released by the existing frame-processing implementation.
 pub(crate) struct EglRenderSession {
-    display: EglDisplay,
-    context: EglContext,
-    targets: Vec<EglWallpaperTarget>,
-    major: i32,
-    minor: i32,
+    pub(crate) display: EglDisplay,
+    pub(crate) context: EglContext,
+    pub(crate) targets: Vec<EglWallpaperTarget>,
+    pub(crate) major: i32,
+    pub(crate) minor: i32,
 }
 
 impl EglRenderSession {
@@ -2241,32 +2241,12 @@ pub(crate) fn render_with_egl_session<S: RenderWaylandDispatch + 'static>(
     )
 }
 
-// Common GL entry-point loading; called by each pipeline before frame execution.
+// Compatibility wrappers for existing callers. The shared GL dispatch and EGL
+// execution entry points are now housed in wayland_render_core.
 pub(crate) fn prepare_egl_frame_processing() {
-    gl::load_with(
-        |name| {
-            let Ok(
-                symbol
-            ) =
-                CString::new(
-                    name
-                )
-            else {
-                return ptr::null();
-            };
-
-
-            unsafe {
-                eglGetProcAddress(
-                    symbol.as_ptr()
-                )
-            }
-        }
-    );
-
+    crate::wayland_render_core::prepare_egl_frame_processing();
 }
 
-// Shared frame implementation. The owning pipeline decides when to invoke it.
 pub(crate) fn execute_shared_egl_frame_processing<S: RenderWaylandDispatch + 'static>(
     egl_session: &mut EglRenderSession,
     event_queue: &mut wayland_client::EventQueue<S>,
@@ -2281,85 +2261,12 @@ pub(crate) fn execute_shared_egl_frame_processing<S: RenderWaylandDispatch + 'st
     control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
     initial_timing: FrameLoopInitialTiming,
 ) -> Result<(), String> {
-
-
-    let render_result =
-        render_mirror_frames(
-            egl_session.display,
-            egl_session.context,
-            &mut egl_session.targets,
-            event_queue,
-            state,
-            native_targets,
-            active_shader,
-            shader_manager,
-            wallpaper_directory,
-            shader_interval,
-            runtime,
-            running,
-            control,
-            initial_timing,
-        );
-
-
-    // The caller owns EGL session teardown, including error paths.
-    // The session remains alive while GL frame resources are released.
-    let egl_major = egl_session.major;
-    let egl_minor = egl_session.minor;
-
-    render_result?;
-
-
-    println!(
-        "Native EGL mirror wallpaper renderer stopped:"
-    );
-
-
-    println!(
-        "    EGL version: {}.{}",
-        egl_major,
-        egl_minor
-    );
-
-
-    println!(
-        "    OpenGL context: 3.3 core"
-    );
-
-
-    println!(
-        "    Rendered targets: {}",
-        native_targets.len()
-    );
-
-
-    println!(
-        "    Shutdown reason: {}",
-        if state
-            .surfaces()
-            .iter()
-            .any(
-                |surface_state| {
-                    surface_state.closed
-                }
-            )
-        {
-            "compositor closed a layer surface"
-        } else if native_targets
-            .is_empty()
-        {
-            "all wallpaper outputs disconnected"
-        } else {
-            "Screenshaver shutdown requested"
-        }
-    );
-
-
-    Ok(
-        ()
+    crate::wayland_render_core::execute_shared_egl_frame_processing(
+        egl_session, event_queue, state, native_targets, active_shader,
+        shader_manager, wallpaper_directory, shader_interval, runtime,
+        running, control, initial_timing,
     )
 }
-
 
 fn destroy_egl_targets(
     display: EglDisplay,
@@ -2378,7 +2285,7 @@ fn destroy_egl_targets(
 }
 
 
-fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
+pub(crate) fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
     display: EglDisplay,
     context: EglContext,
     egl_targets: &mut Vec<EglWallpaperTarget>,
