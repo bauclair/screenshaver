@@ -1411,6 +1411,7 @@ pub(crate) fn callback_clock_adjustments(
 // owns the live shader-switch Instant until the loop is separated.
 #[derive(Debug)]
 pub(crate) struct WindowshaderRotationClockState {
+    pub(crate) last_shader_switch: Instant,
     pub(crate) last_windowed_pause_interval: Option<(Instant, Instant)>,
     pub(crate) rotation_clock_pause_shifts: u64,
     pub(crate) rotation_clock_callback_shifts: u64,
@@ -1427,6 +1428,7 @@ pub(crate) struct WindowshaderRotationClockState {
 impl Default for WindowshaderRotationClockState {
     fn default() -> Self {
         Self {
+            last_shader_switch: Instant::now(),
             last_windowed_pause_interval: None,
             rotation_clock_pause_shifts: 0,
             rotation_clock_callback_shifts: 0,
@@ -1440,4 +1442,20 @@ impl Default for WindowshaderRotationClockState {
             windowshader_rotation_block_reported: false,
         }
     }
+}
+
+impl WindowshaderRotationClockState {
+    pub(crate) fn new(initial_switch: Instant) -> Self {
+        Self { last_shader_switch: initial_switch, ..Self::default() }
+    }
+}
+
+// Stage 2D-2A Step 4C: the Windowshader owns its live rotation timestamp.
+// The Wallpaper timestamp remains independent in the shared rendering loop.
+pub(crate) fn active_rotation_timestamp(
+    windowed: bool,
+    windowshader_clock: &WindowshaderRotationClockState,
+    wallpaper_timestamp: Instant,
+) -> Instant {
+    if windowed { windowshader_clock.last_shader_switch } else { wallpaper_timestamp }
 }

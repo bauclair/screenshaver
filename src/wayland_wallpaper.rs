@@ -2607,7 +2607,10 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
     // repeated callback-wait exclusions that may prevent rotation progress.
 
 
-    let mut windowshader_clock = crate::wayland_windowshader::WindowshaderRotationClockState::default();
+    let mut windowshader_clock = crate::wayland_windowshader::WindowshaderRotationClockState::new(last_shader_switch);
+    let windowed_rotation = runtime.display_format
+        == crate::manage_configuration::WallpaperDisplayFormat::Windowed;
+
 
     let status_pipeline = if runtime.display_format
         == crate::manage_configuration::WallpaperDisplayFormat::Windowed
@@ -2699,7 +2702,7 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                         ws.windowshader_configure_count.wrapping_sub(windowshader_last_configure_count),
                     )
                 };
-                let rotation_due = shader_interval.is_some_and(|interval| last_shader_switch.elapsed() >= interval);
+                let rotation_due = shader_interval.is_some_and(|interval| crate::wayland_windowshader::active_rotation_timestamp(windowed_rotation, &windowshader_clock, last_shader_switch).elapsed() >= interval);
                 crate::logger::warning(
                     &crate::locate_paths::runtime_log_path(),
                     &format!("[WINDOWSHADER_LIFECYCLE_DIAG] shader='{}' policy_id={} program={} frame={} swaps_total={} swap_age_ms={} frame_ready={} callback_seq={:?} callback_age_ms={:?} paused={} pause_requested={} activated={} rotation_due={} rotation_elapsed_ms={} rotation_interval_ms={:?} rotation_attempts={} rotation_successes={} rotation_failures={} configure_delta={} loop_ticks={}",
@@ -2707,7 +2710,7 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                         presentation_watchdog_swaps, last_successful_swap.elapsed().as_millis(),
                         ready, pending_sequence, pending_age_ms,
                         paused, control.pause_requested(), activated,
-                        rotation_due, last_shader_switch.elapsed().as_millis(),
+                        rotation_due, crate::wayland_windowshader::active_rotation_timestamp(windowed_rotation, &windowshader_clock, last_shader_switch).elapsed().as_millis(),
                         shader_interval.map(|interval| interval.as_millis()),
                         windowshader_clock.windowshader_rotation_attempts, windowshader_clock.windowshader_rotation_successes,
                         windowshader_clock.windowshader_rotation_failures,
@@ -2716,7 +2719,7 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                 );
                 crate::logger::warning(&crate::locate_paths::runtime_log_path(),
                     &format!("[WINDOWSHADER_CLOCK_DIAG] summary elapsed_ms={} interval_ms={:?} due={} pause_shifts={} callback_shifts={} callback_shifts_under_2s={} callback_shift_total_ms={} last_reason={} last_shift_ms={} paused={} frame_ready={} activated={} swaps_total={}",
-                        last_shader_switch.elapsed().as_millis(), shader_interval.map(|v| v.as_millis()),
+                        crate::wayland_windowshader::active_rotation_timestamp(windowed_rotation, &windowshader_clock, last_shader_switch).elapsed().as_millis(), shader_interval.map(|v| v.as_millis()),
                         rotation_due, windowshader_clock.rotation_clock_pause_shifts, windowshader_clock.rotation_clock_callback_shifts,
                         windowshader_clock.rotation_clock_callback_short_shifts, windowshader_clock.rotation_clock_callback_shift_ms,
                         windowshader_clock.rotation_clock_last_shift_reason, windowshader_clock.rotation_clock_last_shift_ms,
@@ -3014,7 +3017,7 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
 
 
                     if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed {
-                        let before_ms = last_shader_switch.elapsed().as_millis();
+                        let before_ms = crate::wayland_windowshader::active_rotation_timestamp(windowed_rotation, &windowshader_clock, last_shader_switch).elapsed().as_millis();
                         windowshader_clock.rotation_clock_pause_shifts = windowshader_clock.rotation_clock_pause_shifts.wrapping_add(1);
                         windowshader_clock.rotation_clock_last_shift_reason = "screensaver_pause";
                         windowshader_clock.rotation_clock_last_shift_ms = paused_duration.as_millis();
@@ -3023,8 +3026,11 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                                 paused_duration.as_millis(), before_ms,
                                 before_ms.saturating_sub(paused_duration.as_millis()), windowshader_clock.rotation_clock_pause_shifts));
                     }
-                    last_shader_switch +=
-                        paused_duration;
+                    if windowed_rotation {
+                        windowshader_clock.last_shader_switch += paused_duration;
+                    } else {
+                        last_shader_switch += paused_duration;
+                    }
                 }
 
 
@@ -3079,7 +3085,7 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
             if !windowed_frame_ready {
                 if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed
                     && !windowshader_clock.windowshader_rotation_block_reported
-                    && shader_interval.is_some_and(|interval| last_shader_switch.elapsed() >= interval)
+                    && shader_interval.is_some_and(|interval| crate::wayland_windowshader::active_rotation_timestamp(windowed_rotation, &windowshader_clock, last_shader_switch).elapsed() >= interval)
                 {
                     windowshader_clock.windowshader_rotation_block_reported = true;
                     crate::logger::warning(&crate::locate_paths::runtime_log_path(),
@@ -3172,7 +3178,7 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                         inactive_at,
                         callback_ended_at,
                         windowshader_clock.last_windowed_pause_interval,
-                        last_shader_switch,
+                        crate::wayland_windowshader::active_rotation_timestamp(windowed_rotation, &windowshader_clock, last_shader_switch),
                         start_time,
                     );
 
@@ -3189,7 +3195,7 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
 
 
                     if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed {
-                        let before_ms = last_shader_switch.elapsed().as_millis();
+                        let before_ms = crate::wayland_windowshader::active_rotation_timestamp(windowed_rotation, &windowshader_clock, last_shader_switch).elapsed().as_millis();
                         windowshader_clock.rotation_clock_callback_shifts = windowshader_clock.rotation_clock_callback_shifts.wrapping_add(1);
                         windowshader_clock.rotation_clock_callback_shift_ms += rotation_shift.as_millis();
                         if callback_wait < Duration::from_secs(2) {
@@ -3207,8 +3213,11 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                                     windowshader_clock.rotation_clock_callback_shift_ms, windowed_frame_ready, paused, state.windowshader_state().windowed_activated));
                         }
                     }
-                    last_shader_switch +=
-                        rotation_shift;
+                    if windowed_rotation {
+                        windowshader_clock.last_shader_switch += rotation_shift;
+                    } else {
+                        last_shader_switch += rotation_shift;
+                    }
                     // The overlapping pause interval has been accounted for.
                     windowshader_clock.last_windowed_pause_interval = None;
 
@@ -3230,7 +3239,7 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                 && shader_interval
                     .map(
                         |interval| {
-                            last_shader_switch.elapsed()
+                            crate::wayland_windowshader::active_rotation_timestamp(windowed_rotation, &windowshader_clock, last_shader_switch).elapsed()
                                 >= interval
                         }
                     )
@@ -3243,18 +3252,21 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                     crate::logger::warning(&crate::locate_paths::runtime_log_path(),
                         &format!("[WINDOWSHADER_ROTATION_DIAG] Rotation attempt={} previous_shader='{}' policy_id={} elapsed_ms={} interval_ms={:?} frame_ready={} program={}",
                             windowshader_clock.windowshader_rotation_attempts, current_shader.shader_name,
-                            current_shader.policy_id, last_shader_switch.elapsed().as_millis(),
+                            current_shader.policy_id, crate::wayland_windowshader::active_rotation_timestamp(windowed_rotation, &windowshader_clock, last_shader_switch).elapsed().as_millis(),
                             shader_interval.map(|interval| interval.as_millis()), windowed_frame_ready, program));
                 }
                 if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed {
                     windowshader_clock.rotation_clock_last_shift_reason = "rotation_attempt_reset";
-                    windowshader_clock.rotation_clock_last_shift_ms = last_shader_switch.elapsed().as_millis();
+                    windowshader_clock.rotation_clock_last_shift_ms = crate::wayland_windowshader::active_rotation_timestamp(windowed_rotation, &windowshader_clock, last_shader_switch).elapsed().as_millis();
                     crate::logger::warning(&crate::locate_paths::runtime_log_path(),
                         &format!("[WINDOWSHADER_CLOCK_DIAG] reason=rotation_attempt_reset elapsed_before_ms={} interval_ms={:?} attempts={}",
                             windowshader_clock.rotation_clock_last_shift_ms, shader_interval.map(|v| v.as_millis()), windowshader_clock.windowshader_rotation_attempts));
                 }
-                last_shader_switch =
-                    Instant::now();
+                if windowed_rotation {
+                    windowshader_clock.last_shader_switch = Instant::now();
+                } else {
+                    last_shader_switch = Instant::now();
+                }
 
 
                 if let Some(
