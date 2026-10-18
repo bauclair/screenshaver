@@ -1809,6 +1809,9 @@ pub(crate) trait RenderWaylandDispatch:
     fn on_frame_swap_completed(&mut self, registry_name: u32);
     // Stage 2D-2C Step 10: frame readiness is decided by the presentation pipeline.
     fn frames_ready_for_presentation(&mut self, native_targets: &[NativeWallpaperTarget]) -> bool;
+    // Stage 2D-2C Step 13: pipeline-owned outstanding callback diagnostics.
+    fn outstanding_frame_callbacks(&mut self, native_targets: &[NativeWallpaperTarget]) -> Vec<u32>;
+    fn log_outstanding_callback_details(&mut self, outstanding: &[u32]);
     // Stage 2D-2C Step 11: pipeline-owned compositor frame registration.
     fn request_next_presentation_frame(
         &mut self, surface: &wl_surface::WlSurface, registry_name: u32,
@@ -1832,6 +1835,8 @@ impl RenderWaylandDispatch for WaylandState {
     fn on_resumed_frame_presented(&mut self) {}
     fn on_frame_swap_completed(&mut self, _registry_name: u32) {}
     fn frames_ready_for_presentation(&mut self, _native_targets: &[NativeWallpaperTarget]) -> bool { true }
+    fn outstanding_frame_callbacks(&mut self, _native_targets: &[NativeWallpaperTarget]) -> Vec<u32> { Vec::new() }
+    fn log_outstanding_callback_details(&mut self, _outstanding: &[u32]) {}
     fn request_next_presentation_frame(
         &mut self, _surface: &wl_surface::WlSurface, _registry_name: u32,
         _queue: &QueueHandle<Self>,
@@ -3175,10 +3180,7 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                     && !callback_wait_reported
                 {
                     callback_wait_reported = true;
-                    let outstanding: Vec<u32> = native_targets.iter()
-                        .filter(|target| !state.windowshader_state().frame_ready.get(&target.info.registry_name)
-                            .copied().unwrap_or(true))
-                        .map(|target| target.info.registry_name).collect();
+                    let outstanding = state.outstanding_frame_callbacks(native_targets);
                     crate::logger::warning(
                         &crate::locate_paths::runtime_log_path(),
                         &format!("[WINDOWSHADER_RESUME_DIAG] Frame callback outstanding >1500ms; targets={outstanding:?}, post_pause={resume_presentation_pending}"),
@@ -3191,25 +3193,9 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                     && last_callback_stall_report.is_none_or(|last| last.elapsed() >= Duration::from_secs(10))
                 {
                     last_callback_stall_report = Some(Instant::now());
-                    let outstanding: Vec<u32> = native_targets.iter()
-                        .filter(|target| !state.windowshader_state().frame_ready.get(&target.info.registry_name)
-                            .copied().unwrap_or(true))
-                        .map(|target| target.info.registry_name).collect();
+                    let outstanding = state.outstanding_frame_callbacks(native_targets);
                     let wait_ms = windowed_inactive_started.map_or(0, |since| since.elapsed().as_millis());
-                    let callback_details: Vec<String> = outstanding.iter().map(|target| {
-                        match state.windowshader_state().windowshader_pending_callbacks.get(target) {
-                            Some(pending) => format!(
-                                "target={} seq={} age_ms={} swap_completed={} flushed={}",
-                                target, pending.sequence, pending.requested_at.elapsed().as_millis(),
-                                pending.swap_completed, pending.flushed,
-                            ),
-                            None => format!("target={} missing_pending_record", target),
-                        }
-                    }).collect();
-                    crate::logger::warning(
-                        &crate::locate_paths::runtime_log_path(),
-                        &format!("[WINDOWSHADER_CALLBACK_DIAG] Outstanding callback details: {}", callback_details.join("; ")),
-                    );
+                    state.log_outstanding_callback_details(&outstanding);
                     crate::logger::warning(
                         &crate::locate_paths::runtime_log_path(),
                         &format!("[WINDOWSHADER_RESUME_DIAG] Callback stall persists: targets={outstanding:?}, wait_ms={wait_ms}, last_swap_age_ms={}, post_pause={resume_presentation_pending}; preserving compositor pacing", last_successful_swap.elapsed().as_millis()),

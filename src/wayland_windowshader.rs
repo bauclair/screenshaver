@@ -1105,6 +1105,28 @@ impl crate::wayland_wallpaper::RenderWaylandDispatch for WindowshaderDispatchSta
     fn frames_ready_for_presentation(&mut self, native_targets: &[NativeWallpaperTarget]) -> bool {
         all_frames_ready(&self.windowshader, native_targets)
     }
+    fn outstanding_frame_callbacks(&mut self, native_targets: &[NativeWallpaperTarget]) -> Vec<u32> {
+        native_targets.iter()
+            .filter(|target| !self.windowshader.frame_ready.get(&target.info.registry_name)
+                .copied().unwrap_or(true))
+            .map(|target| target.info.registry_name).collect()
+    }
+    fn log_outstanding_callback_details(&mut self, outstanding: &[u32]) {
+        let callback_details: Vec<String> = outstanding.iter().map(|target| {
+            match self.windowshader.windowshader_pending_callbacks.get(target) {
+                Some(pending) => format!(
+                    "target={} seq={} age_ms={} swap_completed={} flushed={}",
+                    target, pending.sequence, pending.requested_at.elapsed().as_millis(),
+                    pending.swap_completed, pending.flushed,
+                ),
+                None => format!("target={} missing_pending_record", target),
+            }
+        }).collect();
+        crate::logger::warning(
+            &crate::locate_paths::runtime_log_path(),
+            &format!("[WINDOWSHADER_CALLBACK_DIAG] Outstanding callback details: {}", callback_details.join("; ")),
+        );
+    }
     fn request_next_presentation_frame(
         &mut self, surface: &wayland_client::protocol::wl_surface::WlSurface,
         registry_name: u32, queue: &QueueHandle<Self>,
