@@ -1039,6 +1039,28 @@ impl crate::wayland_wallpaper::RenderWaylandDispatch for WindowshaderDispatchSta
     fn windowshader_state(&mut self) -> &mut WindowshaderWaylandState { &mut self.windowshader }
     fn removed_outputs(&mut self) -> &mut Vec<u32> { &mut self.removed_output_names }
     fn compositor_close_requests_shutdown() -> bool { true }
+    fn on_pause_entering(&mut self) {
+        self.windowshader.windowshader_trace_surface_configure = true;
+        self.windowshader.windowshader_trace_toplevel_configure = true;
+    }
+    fn on_pause_entered(&mut self, native_targets: &[NativeWallpaperTarget]) {
+        if let Some(pending) = self.windowshader.windowshader_pending_callbacks.get(&0) {
+            crate::logger::warning(
+                &crate::locate_paths::runtime_log_path(),
+                &format!("[WINDOWSHADER_CALLBACK_DIAG] Pause entered: seq={} age_ms={} swap_completed={} flushed={}",
+                    pending.sequence, pending.requested_at.elapsed().as_millis(), pending.swap_completed, pending.flushed),
+            );
+        }
+        let outstanding = native_targets.iter()
+            .filter(|target| !self.windowshader.frame_ready.get(&target.info.registry_name)
+                .copied().unwrap_or(true))
+            .count();
+        crate::logger::warning(
+            &crate::locate_paths::runtime_log_path(),
+            &format!("[WINDOWSHADER_RESUME_DIAG] Pause entered; outstanding_frame_callbacks={outstanding}"),
+        );
+    }
+
     fn pace_frame(deadline: &mut Instant, frame_duration: Duration) {
         pace_next_frame(deadline, frame_duration);
     }

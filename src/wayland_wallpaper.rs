@@ -1799,6 +1799,9 @@ pub(crate) trait RenderWaylandDispatch:
     // Stage 2D-2C Step 5: each presentation pipeline decides whether a
     // compositor close request also terminates its runtime supervisor.
     fn compositor_close_requests_shutdown() -> bool;
+    // Stage 2D-2C Step 6: pipeline-owned pause-entry compositor bookkeeping.
+    fn on_pause_entering(&mut self);
+    fn on_pause_entered(&mut self, native_targets: &[NativeWallpaperTarget]);
     fn pace_frame(deadline: &mut Instant, frame_duration: Duration);
     fn pump_events(queue: &mut wayland_client::EventQueue<Self>, state: &mut Self) -> Result<(), String>
     where Self: Sized;
@@ -1809,6 +1812,8 @@ impl RenderWaylandDispatch for WaylandState {
     fn windowshader_state(&mut self) -> &mut crate::wayland_windowshader::WindowshaderWaylandState { &mut self.windowshader }
     fn removed_outputs(&mut self) -> &mut Vec<u32> { &mut self.removed_output_names }
     fn compositor_close_requests_shutdown() -> bool { false }
+    fn on_pause_entering(&mut self) {}
+    fn on_pause_entered(&mut self, _native_targets: &[NativeWallpaperTarget]) {}
     fn pace_frame(deadline: &mut Instant, frame_duration: Duration) {
         *deadline += frame_duration;
         let now = Instant::now();
@@ -3048,32 +3053,9 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                     control.acknowledge_pause_detected();
                     resume_presentation_pending = true;
                     resume_wait_reported = false;
-                    if runtime.display_format
-                        == crate::manage_configuration::WallpaperDisplayFormat::Windowed
-                    {
-                        state.windowshader_state().windowshader_trace_surface_configure = true;
-                        state.windowshader_state().windowshader_trace_toplevel_configure = true;
-                    }
+                    state.on_pause_entering();
                     control.diagnostic_checkpoint(8);
-                    if runtime.display_format
-                        == crate::manage_configuration::WallpaperDisplayFormat::Windowed
-                    {
-                        if let Some(pending) = state.windowshader_state().windowshader_pending_callbacks.get(&0) {
-                            crate::logger::warning(
-                                &crate::locate_paths::runtime_log_path(),
-                                &format!("[WINDOWSHADER_CALLBACK_DIAG] Pause entered: seq={} age_ms={} swap_completed={} flushed={}",
-                                    pending.sequence, pending.requested_at.elapsed().as_millis(), pending.swap_completed, pending.flushed),
-                            );
-                        }
-                        let outstanding = native_targets.iter()
-                            .filter(|target| !state.windowshader_state().frame_ready.get(&target.info.registry_name)
-                                .copied().unwrap_or(true))
-                            .count();
-                        crate::logger::warning(
-                            &crate::locate_paths::runtime_log_path(),
-                            &format!("[WINDOWSHADER_RESUME_DIAG] Pause entered; outstanding_frame_callbacks={outstanding}"),
-                        );
-                    }
+                    state.on_pause_entered(native_targets);
                     paused =
                         true;
 
