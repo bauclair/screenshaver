@@ -3176,18 +3176,14 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                 // paused and remain outstanding after it resumed. The pause
                 // duration was already excluded above; exclude only the
                 // non-overlapping part of this callback wait.
-                let pause_overlap = last_windowed_pause_interval
-                    .map(|(pause_start, pause_end)| {
-                        let overlap_start = inactive_at.max(pause_start);
-                        let overlap_end = callback_ended_at.min(pause_end);
-                        overlap_end.saturating_duration_since(overlap_start)
-                    })
-                    .unwrap_or_default();
-                let effective_callback_wait = callback_wait.saturating_sub(pause_overlap);
-                // Keep the clock anchor at or before now, even if an earlier
-                // adjustment has already consumed part of the interval.
-                let rotation_shift = effective_callback_wait.min(last_shader_switch.elapsed());
-                let animation_shift = effective_callback_wait.min(start_time.elapsed());
+                let (pause_overlap, rotation_shift, animation_shift) =
+                    crate::wayland_windowshader::callback_clock_adjustments(
+                        inactive_at,
+                        callback_ended_at,
+                        last_windowed_pause_interval,
+                        last_shader_switch,
+                        start_time,
+                    );
 
                 // Ordinary frame-callback pacing is only a frame or two and
                 // must remain part of shader animation time.  A long callback

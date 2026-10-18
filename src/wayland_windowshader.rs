@@ -1379,3 +1379,27 @@ pub(crate) fn pace_next_frame(deadline: &mut Instant, frame_duration: Duration) 
         *deadline = now;
     }
 }
+
+
+// Stage 2D-2A Step 4: Windowshader owns the accounting boundaries
+// between screensaver pauses and compositor-suppressed frame callbacks.
+// Keep these helpers free of sleeps, global state, and timer creation.
+pub(crate) fn callback_clock_adjustments(
+    callback_started: Instant,
+    callback_ended: Instant,
+    last_pause: Option<(Instant, Instant)>,
+    shader_anchor: Instant,
+    animation_anchor: Instant,
+) -> (Duration, Duration, Duration) {
+    let callback_wait = callback_ended.duration_since(callback_started);
+    let pause_overlap = last_pause.map(|(pause_start, pause_end)| {
+        let overlap_start = callback_started.max(pause_start);
+        let overlap_end = callback_ended.min(pause_end);
+        overlap_end.saturating_duration_since(overlap_start)
+    }).unwrap_or_default();
+    let effective_wait = callback_wait.saturating_sub(pause_overlap);
+    // Never advance an anchor beyond the present instant.
+    let rotation_shift = effective_wait.min(shader_anchor.elapsed());
+    let animation_shift = effective_wait.min(animation_anchor.elapsed());
+    (pause_overlap, rotation_shift, animation_shift)
+}
