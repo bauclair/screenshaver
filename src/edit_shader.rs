@@ -3047,6 +3047,11 @@ fn run_paths(
             );
 
 
+            // Diagnostic overlays are owned by this Control Center GL context.
+            // Empty sessions and bulk-edit's black frame do not claim Rendering.
+            let mut renderer_status_panel =
+                crate::display_overlay::RendererStatusPanel::new();
+
             let mut edit_window =
             EditWindowOverlay::new(
                 &video
@@ -7815,6 +7820,20 @@ fn run_paths(
                                                                                         );
                                                                                     }
 
+
+                                                                                    // Present the diagnostic only over an active shader preview.
+                                                                                    // Draw after the shader and editor UI, before buffer swap.
+                                                                                    let (panel_width, panel_height) = window.drawable_size();
+                                                                                    let renderer_status_text = if crate::renderer_status::enabled() {
+                                                                                        Some(crate::renderer_status::panel_text())
+                                                                                    } else {
+                                                                                        None
+                                                                                    };
+                                                                                    renderer_status_panel.draw(
+                                                                                        panel_width,
+                                                                                        panel_height,
+                                                                                        renderer_status_text.as_deref(),
+                                                                                    );
 
                                                                                     window.gl_swap_window();
                                                                                     // Only the active shader preview constitutes Rendering.

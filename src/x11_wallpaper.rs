@@ -429,12 +429,21 @@ fn render_shared_engine_frame(
     display: *mut xlib::Display,
     wallpaper_window: &X11WallpaperWindow,
     engine: &mut FrameRenderEngine,
+    status_panel: &mut crate::display_overlay::RendererStatusPanel,
 ) -> FrameRenderEvents {
     let status =
         engine.render_frame(
             wallpaper_window.width as u32,
             wallpaper_window.height as u32,
         );
+
+    let status_text = crate::renderer_status::enabled()
+        .then(crate::renderer_status::panel_text);
+    status_panel.draw(
+        wallpaper_window.width.max(0) as u32,
+        wallpaper_window.height.max(0) as u32,
+        status_text.as_deref(),
+    );
 
     unsafe {
         glx::glXSwapBuffers(
@@ -580,6 +589,7 @@ fn run_window_loop(
         crate::renderer_status::publish(status_pipeline, crate::renderer_status::State::Starting);
     }
     let mut status_heartbeat = Instant::now() - Duration::from_secs(2);
+    let mut status_panel = crate::display_overlay::RendererStatusPanel::new();
 
 
     let mut paused = false;
@@ -639,6 +649,7 @@ fn run_window_loop(
                 display,
                 wallpaper_window,
                 engine,
+                &mut status_panel,
             );
 
         if status_enabled && (paused || status_heartbeat.elapsed() >= Duration::from_secs(1)) {

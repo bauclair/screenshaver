@@ -194,20 +194,6 @@ fn main() {
     // database are handled before any configuration/database initialization.
     match &command {
 
-        crate::parse_arguments::Command::ShowRendererStatus => {
-            match crate::renderer_status::enable() {
-                Ok(path) => println!(
-                    "Renderer-status diagnostic enabled ({}). Restart running Screenshaver processes after installing presentation hooks.",
-                    path.display()
-                ),
-                Err(error) => {
-                    eprintln!("Unable to enable renderer-status diagnostic: {error}");
-                    std::process::exit(1);
-                }
-            }
-            return;
-        }
-
         crate::parse_arguments::Command::Stop => {
 
             match crate::singleton::stop() {
@@ -680,6 +666,7 @@ fn main() {
 
 
         crate::parse_arguments::Command::Run
+        | crate::parse_arguments::Command::RunRendererStatus
         | crate::parse_arguments::Command::Start
         | crate::parse_arguments::Command::Control { .. }
         | crate::parse_arguments::Command::TestWallpaperProtocol
@@ -1438,12 +1425,17 @@ fn main() {
             shader_name,
             show_renderer_status,
         } => {
-            if show_renderer_status {
-                if let Err(error) = crate::renderer_status::enable() {
-                    eprintln!("[CONTROL CENTER] Unable to enable renderer diagnostic: {error}");
-                    std::process::exit(1);
+            let _diagnostic_session = if show_renderer_status {
+                match crate::renderer_status::begin_session(false) {
+                    Ok(session) => Some(session),
+                    Err(error) => {
+                        eprintln!("[CONTROL CENTER] Unable to enable renderer diagnostic: {error}");
+                        return;
+                    }
                 }
-            }
+            } else {
+                None
+            };
 
             // The Control Center receives the process-local band handle, but
             // this alone does not open PulseAudio.  Audio capture starts only
@@ -1489,11 +1481,11 @@ fn main() {
 
 
         crate::parse_arguments::Command::Run
+        | crate::parse_arguments::Command::RunRendererStatus
         | crate::parse_arguments::Command::Start => {}
 
 
-        crate::parse_arguments::Command::ShowRendererStatus
-        | crate::parse_arguments::Command::Stop
+        crate::parse_arguments::Command::Stop
         | crate::parse_arguments::Command::Help
         | crate::parse_arguments::Command::CompareDatabases { .. }
         | crate::parse_arguments::Command::Version
@@ -1683,6 +1675,22 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
             }
         };
 
+
+    // The singleton is now owned by this process: a rejected duplicate launch
+    // cannot alter diagnostic state. The guard lives through resident shutdown.
+    let _renderer_diagnostic_session =
+        if matches!(&command, crate::parse_arguments::Command::RunRendererStatus) {
+            match crate::renderer_status::begin_session(true) {
+                Ok(session) => Some(session),
+                Err(error) => {
+                    eprintln!("[MAIN] Unable to enable renderer diagnostic: {error}");
+                    return;
+                }
+            }
+        } else {
+            crate::renderer_status::disable_for_new_runtime();
+            None
+        };
 
     // Xfce may launch the trusted Screenshaver saver executable independently
     // of the resident application.  Establish an explicit runtime-ownership

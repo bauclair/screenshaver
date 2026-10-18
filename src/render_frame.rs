@@ -37,6 +37,7 @@ pub struct FrameRenderer {
     renderer_started: Instant,
     // Diagnostic heartbeat only; never participates in handoff decisions.
     status_last_heartbeat: Option<Instant>,
+    status_panel: crate::display_overlay::RendererStatusPanel,
     _gl_context: GLContext,
     window: Window,
 }
@@ -168,6 +169,7 @@ impl FrameRenderer {
                 renderer_started:
                     Instant::now(),
                 status_last_heartbeat: None,
+                status_panel: crate::display_overlay::RendererStatusPanel::new(),
                 _gl_context:
                     gl_context,
                 window,
@@ -257,6 +259,9 @@ impl FrameRenderer {
             height,
         );
 
+        let status_text = crate::renderer_status::enabled()
+            .then(crate::renderer_status::panel_text);
+        self.status_panel.draw(width, height, status_text.as_deref());
         self.window.gl_swap_window();
 
         // Heartbeat is deliberately throttled to avoid per-frame filesystem I/O.

@@ -1180,3 +1180,54 @@ unsafe fn set_int(
     }
 }
 
+
+
+/// Temporary, non-locking diagnostic panel. Create and drop while its owning
+/// OpenGL context is current. It is never installed in shared rendering code.
+pub struct RendererStatusPanel {
+    rows: Vec<OpenGlOverlay>,
+    last_text: String,
+    last_check: Option<std::time::Instant>,
+    size: (u32, u32),
+}
+
+impl RendererStatusPanel {
+    pub fn new() -> Self {
+        Self { rows: Vec::new(), last_text: String::new(), last_check: None, size: (0, 0) }
+    }
+
+    pub fn draw(&mut self, width: u32, height: u32, status_text: Option<&str>) {
+        if status_text.is_none() || width == 0 || height == 0 {
+            self.rows.clear();
+            self.last_text.clear();
+            return;
+        }
+        let due = self.last_check.map_or(true, |t| t.elapsed() >= std::time::Duration::from_secs(1));
+        if due || self.size != (width, height) {
+            self.last_check = Some(std::time::Instant::now());
+            let text = status_text.unwrap_or_default().to_owned();
+            if text != self.last_text || self.size != (width, height) {
+                let mut replacement = Vec::new();
+                for line in text.lines() {
+                    match OpenGlOverlay::new_message(line, crate::parse_subtitle_placement::SubtitlePlacement {
+                        horizontal: crate::parse_subtitle_placement::SubtitleHorizontalPosition::Center,
+                        vertical: crate::parse_subtitle_placement::SubtitleVerticalPosition::Top,
+                    }, width, height) {
+                        Ok(row) => replacement.push(row),
+                        Err(_) => return,
+                    }
+                }
+                self.rows = replacement;
+                self.last_text = text;
+                self.size = (width, height);
+            }
+        }
+        // Four individual capsules are vertically grouped around the center.
+        // No frame presentation or GL state changes outside the overlay draw.
+        let spacing = (height as f32 * 0.042).max(28.0);
+        let top_center = height as f32 * 0.5 - spacing * (self.rows.len().saturating_sub(1) as f32) * 0.5;
+        for (index, row) in self.rows.iter().enumerate() {
+            row.display_at_center(width, height, top_center + spacing * index as f32);
+        }
+    }
+}

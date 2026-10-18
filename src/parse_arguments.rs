@@ -2,7 +2,7 @@
 pub enum Command {
     Run,
 
-    ShowRendererStatus,
+    RunRendererStatus,
 
     Start,
 
@@ -103,7 +103,7 @@ pub fn parse() -> Result<Command, String> {
 
         "--show-renderer-status" => {
             require_no_extra_arguments(&args, "--show-renderer-status")?;
-            Ok(Command::ShowRendererStatus)
+            Ok(Command::RunRendererStatus)
         }
 
         "--start" => {
@@ -929,7 +929,7 @@ pub fn print_help() {
                  Combine --control with --show-renderer-status to enable the diagnostic.\n\
          \n\
              --show-renderer-status\n\
-                  Toggle the temporary four-pipeline renderer-status diagnostic.\n\
+                  Start Screenshaver with the temporary four-pipeline renderer-status diagnostic.\n\
          \n\
              --reset-idle-timeout <DURATION>\n\
                  Reset the database-backed screensaver idle timeout and exit.\n\

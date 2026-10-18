@@ -28,14 +28,71 @@ fn base_dir() -> PathBuf {
     let home = std::env::var_os("HOME").unwrap_or_default();
     PathBuf::from(home).join(".config/screenshaver/.renderer-status")
 }
-pub fn enable() -> io::Result<PathBuf> {
+/// The marker is owned by one live process, not by a persistent preference.
+/// The Linux process start tick protects against PID reuse after a crash.
+fn process_start_tick(pid: u32) -> Option<String> {
+    let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let after_comm = stat.rsplit_once(") ")?.1;
+    // /proc/PID/stat field 22; `after_comm` begins at field 3.
+    after_comm.split_whitespace().nth(19).map(str::to_owned)
+}
+
+fn owner_token() -> Option<String> {
+    let pid = std::process::id();
+    Some(format!("{pid} {}", process_start_tick(pid)?))
+}
+
+fn active_owner() -> Option<String> {
+    let marker = fs::read_to_string(base_dir().join("enabled")).ok()?;
+    let mut fields = marker.split_whitespace();
+    let pid = fields.next()?.parse::<u32>().ok()?;
+    let start = fields.next()?;
+    if process_start_tick(pid).as_deref() == Some(start) {
+        Some(format!("{pid} {start}"))
+    } else {
+        None
+    }
+}
+
+pub struct DiagnosticSession {
+    owner: Option<String>,
+}
+
+impl Drop for DiagnosticSession {
+    fn drop(&mut self) {
+        if let Some(owner) = self.owner.as_deref() {
+            if active_owner().as_deref() == Some(owner) {
+                let _ = fs::remove_file(base_dir().join("enabled"));
+            }
+        }
+    }
+}
+
+/// Start a diagnostic session. `replace` is true only after resident singleton
+/// acquisition, so a rejected second instance cannot change the live session.
+pub fn begin_session(replace: bool) -> io::Result<DiagnosticSession> {
     let dir = base_dir();
     fs::create_dir_all(&dir)?;
-    let flag = dir.join("enabled");
-    fs::write(&flag, b"1\n")?;
-    Ok(flag)
+    if !replace && active_owner().is_some() {
+        return Ok(DiagnosticSession { owner: None });
+    }
+    let token = owner_token().ok_or_else(|| io::Error::new(
+        io::ErrorKind::Other, "Unable to identify diagnostic owner process"
+    ))?;
+    let temp = dir.join(format!("enabled.{}.tmp", std::process::id()));
+    fs::write(&temp, format!("{token}\n"))?;
+    fs::rename(&temp, dir.join("enabled"))?;
+    Ok(DiagnosticSession { owner: Some(token) })
 }
-pub fn enabled() -> bool { base_dir().join("enabled").is_file() }
+
+/// Called by a newly acquired resident singleton without the diagnostic flag.
+/// It also discards legacy persistent markers containing just `1`.
+pub fn disable_for_new_runtime() {
+    let _ = fs::remove_file(base_dir().join("enabled"));
+}
+
+pub fn enabled() -> bool { active_owner().is_some() }
+
 fn millis() -> u128 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis()
 }

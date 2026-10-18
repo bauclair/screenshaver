@@ -3306,6 +3306,10 @@ fn render_mirror_frames(
     }
 
 
+    // Per-output diagnostic overlays; resources are owned by the active EGL context.
+    let mut renderer_status_panels:
+        HashMap<u32, crate::display_overlay::RendererStatusPanel> = HashMap::new();
+
     let mut lyrics_overlays:
         HashMap<u32, crate::display_overlay::OpenGlOverlay> =
             HashMap::new();
@@ -4842,6 +4846,14 @@ fn render_mirror_frames(
 
 
                 postprocess.present_scene();
+
+                // Diagnostic only: compose after post-processing, before EGL presentation.
+                let status_text = crate::renderer_status::enabled()
+                    .then(crate::renderer_status::panel_text);
+                renderer_status_panels
+                    .entry(native_target.info.registry_name)
+                    .or_insert_with(crate::display_overlay::RendererStatusPanel::new)
+                    .draw(target_width, target_height, status_text.as_deref());
 
                 if runtime.display_format
                     == crate::manage_configuration::WallpaperDisplayFormat::Windowed
