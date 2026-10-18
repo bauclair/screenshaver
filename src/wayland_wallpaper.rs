@@ -2123,6 +2123,32 @@ fn initialize_egl_targets(
 }
 
 
+// Stage 2D-2C Step 2: each pipeline owns its initial frame-pacing state.
+// The shared GL implementation consumes this state; later pacing updates remain
+// inside that implementation until their extraction is independently tested.
+pub(crate) struct FrameLoopInitialTiming {
+    rendered_fps: u32,
+    frame_duration: Duration,
+    next_frame_deadline: Instant,
+}
+
+impl FrameLoopInitialTiming {
+    pub(crate) fn for_shader(
+        runtime: &crate::define_wallpaper::WallpaperRuntime,
+        shader: &ActiveWallpaperShader,
+    ) -> Self {
+        let rendered_fps = runtime.fps_policy.rendered_fps_for_policy(
+            shader.policy_id, &shader.shader_name,
+            Some(shader.source_path.as_path()), None,
+        );
+        Self {
+            frame_duration: frame_duration_for_fps(rendered_fps),
+            rendered_fps,
+            next_frame_deadline: Instant::now(),
+        }
+    }
+}
+
 pub(crate) fn render_egl_wallpapers<S: RenderWaylandDispatch + 'static>(
     connection: &Connection,
     event_queue: &mut wayland_client::EventQueue<S>,
@@ -2157,10 +2183,12 @@ pub(crate) fn render_with_egl_session<S: RenderWaylandDispatch + 'static>(
     running: &Arc<AtomicBool>,
     control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
 ) -> Result<(), String> {
+    let initial_timing = FrameLoopInitialTiming::for_shader(runtime, active_shader);
     prepare_egl_frame_processing();
     execute_shared_egl_frame_processing(
         egl_session, event_queue, state, native_targets, active_shader,
         shader_manager, wallpaper_directory, shader_interval, runtime, running, control,
+        initial_timing,
     )
 }
 
@@ -2202,6 +2230,7 @@ pub(crate) fn execute_shared_egl_frame_processing<S: RenderWaylandDispatch + 'st
     runtime: &crate::define_wallpaper::WallpaperRuntime,
     running: &Arc<AtomicBool>,
     control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+    initial_timing: FrameLoopInitialTiming,
 ) -> Result<(), String> {
 
 
@@ -2220,6 +2249,7 @@ pub(crate) fn execute_shared_egl_frame_processing<S: RenderWaylandDispatch + 'st
             runtime,
             running,
             control,
+            initial_timing,
         );
 
 
@@ -2313,6 +2343,7 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
     runtime: &crate::define_wallpaper::WallpaperRuntime,
     running: &Arc<AtomicBool>,
     control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+    initial_timing: FrameLoopInitialTiming,
 ) -> Result<(), String> {
 
     let mut program =
@@ -2372,25 +2403,11 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
             );
 
 
-    let mut rendered_fps =
-        runtime.fps_policy.rendered_fps_for_policy(
-            active_shader.policy_id,
-            &active_shader.shader_name,
-            Some(
-                active_shader.source_path.as_path()
-            ),
-            None,
-        );
-
-
-    let mut frame_duration =
-        frame_duration_for_fps(
-            rendered_fps
-        );
-
-
-    let mut next_frame_deadline =
-        Instant::now();
+    let FrameLoopInitialTiming {
+        mut rendered_fps,
+        mut frame_duration,
+        mut next_frame_deadline,
+    } = initial_timing;
 
 
     let mut notification_state =

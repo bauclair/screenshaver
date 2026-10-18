@@ -100,11 +100,14 @@ fn run_windowshader_frame_loop(
     running: &Arc<AtomicBool>,
     control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
 ) -> Result<(), String> {
+    let initial_timing = crate::wayland_wallpaper::FrameLoopInitialTiming::for_shader(
+        runtime, active_shader,
+    );
     crate::wayland_wallpaper::prepare_egl_frame_processing();
     crate::wayland_wallpaper::execute_shared_egl_frame_processing(
         egl_session, event_queue, state, native_targets, active_shader,
         shader_manager, wallpaper_directory, shader_interval, runtime,
-        running, control,
+        running, control, initial_timing,
     )
 }
 
