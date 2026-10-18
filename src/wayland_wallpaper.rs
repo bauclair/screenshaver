@@ -2157,6 +2157,15 @@ pub(crate) fn render_with_egl_session<S: RenderWaylandDispatch + 'static>(
     running: &Arc<AtomicBool>,
     control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
 ) -> Result<(), String> {
+    prepare_egl_frame_processing();
+    execute_shared_egl_frame_processing(
+        egl_session, event_queue, state, native_targets, active_shader,
+        shader_manager, wallpaper_directory, shader_interval, runtime, running, control,
+    )
+}
+
+// Common GL entry-point loading; called by each pipeline before frame execution.
+pub(crate) fn prepare_egl_frame_processing() {
     gl::load_with(
         |name| {
             let Ok(
@@ -2177,6 +2186,23 @@ pub(crate) fn render_with_egl_session<S: RenderWaylandDispatch + 'static>(
             }
         }
     );
+
+}
+
+// Shared frame implementation. The owning pipeline decides when to invoke it.
+pub(crate) fn execute_shared_egl_frame_processing<S: RenderWaylandDispatch + 'static>(
+    egl_session: &mut EglRenderSession,
+    event_queue: &mut wayland_client::EventQueue<S>,
+    state: &mut S,
+    native_targets: &mut Vec<NativeWallpaperTarget>,
+    active_shader: &ActiveWallpaperShader,
+    shader_manager: &mut crate::manage_shader::ShaderManager,
+    wallpaper_directory: &Path,
+    shader_interval: Option<Duration>,
+    runtime: &crate::define_wallpaper::WallpaperRuntime,
+    running: &Arc<AtomicBool>,
+    control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+) -> Result<(), String> {
 
 
     let render_result =

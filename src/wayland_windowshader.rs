@@ -77,8 +77,32 @@ fn render_windowshader_frames(
     let mut egl_session = crate::wayland_wallpaper::EglRenderSession::initialize(
         connection, native_targets,
     )?;
-    crate::wayland_wallpaper::render_with_egl_session(
+    run_windowshader_frame_loop(
         &mut egl_session, event_queue, state, native_targets, active_shader,
+        shader_manager, wallpaper_directory, shader_interval, runtime,
+        running, control,
+    )
+}
+
+// Stage 2D-2C Step 1: Windowshader owns frame execution sequencing.
+// OpenGL entry-point preparation and frame processing remain common utilities.
+// This boundary will allow Windowshader-specific loop state to move here later.
+fn run_windowshader_frame_loop(
+    egl_session: &mut crate::wayland_wallpaper::EglRenderSession,
+    event_queue: &mut wayland_client::EventQueue<WindowshaderDispatchState>,
+    state: &mut WindowshaderDispatchState,
+    native_targets: &mut Vec<NativeWallpaperTarget>,
+    active_shader: &crate::wayland_wallpaper::ActiveWallpaperShader,
+    shader_manager: &mut crate::manage_shader::ShaderManager,
+    wallpaper_directory: &Path,
+    shader_interval: Option<Duration>,
+    runtime: &crate::define_wallpaper::WallpaperRuntime,
+    running: &Arc<AtomicBool>,
+    control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+) -> Result<(), String> {
+    crate::wayland_wallpaper::prepare_egl_frame_processing();
+    crate::wayland_wallpaper::execute_shared_egl_frame_processing(
+        egl_session, event_queue, state, native_targets, active_shader,
         shader_manager, wallpaper_directory, shader_interval, runtime,
         running, control,
     )
