@@ -1676,6 +1676,17 @@ impl WindowshaderRotationClockState {
         self.windowshader_rotation_block_reported = false;
     }
 
+    // Step 16C-1: Windowshader owns the presentation-eligibility transition
+    // for rotation reporting. The compositor callback remains authoritative;
+    // neither method grants frame readiness or changes rotation timestamps.
+    pub(crate) fn on_presentation_blocked(&mut self, interval: Option<Duration>) {
+        self.report_blocked_rotation_if_due(interval);
+    }
+
+    pub(crate) fn on_presentation_eligible(&mut self) {
+        self.clear_blocked_rotation_report();
+    }
+
     // Stage 2D-2C Step 14: pause-clock accounting belongs to Windowshader.
     pub(crate) fn record_pause_shift(&mut self, duration: Duration, wallpaper_switch: Instant, windowed: bool) {
         let before_ms = active_rotation_timestamp(windowed, self, wallpaper_switch).elapsed().as_millis();

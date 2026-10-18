@@ -919,7 +919,7 @@ pub(crate) fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
 
             if !windowed_frame_ready {
                 if windowed_rotation {
-                    windowshader_clock.report_blocked_rotation_if_due(shader_interval);
+                    windowshader_clock.on_presentation_blocked(shader_interval);
                 }
                 if windowed_inactive_started.is_none() {
                     windowed_inactive_started =
@@ -961,7 +961,9 @@ pub(crate) fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                 continue 'render_loop;
             }
 
-            windowshader_clock.clear_blocked_rotation_report();
+            if windowed_rotation {
+                windowshader_clock.on_presentation_eligible();
+            }
             if callback_stall_clock.recovered() {
                 crate::logger::warning(
                     &crate::locate_paths::runtime_log_path(),
