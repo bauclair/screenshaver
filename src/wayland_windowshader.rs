@@ -79,6 +79,86 @@ fn render_windowshader_frames(
     )
 }
 
+// Stage 2D-2B Step 2: Windowshader owns its post-render surface lifecycle.
+// Preserve geometry persistence, XDG destruction, and compositor flush order.
+fn finish_windowshader_surface(
+    native_targets: Vec<NativeWallpaperTarget>,
+    state: &mut WindowshaderDispatchState,
+    saved_geometry: WindowshaderGeometry,
+    last_position: Option<(i32, i32)>,
+    xdg_wm_base: &wayland_protocols::xdg::shell::client::xdg_wm_base::XdgWmBase,
+    connection: &wayland_client::Connection,
+) -> Result<(), String> {
+    if let Some(target) = native_targets.first() {
+        let position = last_position
+            .or(saved_geometry.x.zip(saved_geometry.y));
+        let geometry = crate::wayland_windowshader::WindowshaderGeometry {
+            x: position.map(|(x, _)| x),
+            y: position.map(|(_, y)| y),
+            width: if state.windowshader.windowed_maximized {
+                state.windowshader.windowed_normal_width
+            } else { target.width },
+            height: if state.windowshader.windowed_maximized {
+                state.windowshader.windowed_normal_height
+            } else { target.height },
+            maximized: state.windowshader.windowed_maximized,
+        };
+        if let Err(error) = crate::wayland_windowshader::save_windowshader_geometry(geometry) {
+            eprintln!("[WINDOWSHADER] Unable to save window geometry: {}", error);
+        }
+    }
+
+    for target in native_targets {
+
+        drop(
+            target.egl_window
+        );
+
+
+        if let Some(decoration) = target.toplevel_decoration {
+            decoration.destroy();
+        }
+
+        if let Some(xdg_toplevel) =
+            target.xdg_toplevel
+        {
+            xdg_toplevel.destroy();
+        }
+
+
+        if let Some(xdg_surface) =
+            target.xdg_surface
+        {
+            xdg_surface.destroy();
+        }
+
+
+        target.surface.destroy();
+    }
+
+
+    if let Some(manager) = state.decoration_manager.take() {
+        manager.destroy();
+    }
+
+    xdg_wm_base.destroy();
+
+
+    connection
+        .flush()
+        .map_err(
+            |error| {
+                format!(
+                    "Unable to send Windowed wallpaper cleanup requests: {}",
+                    error,
+                )
+            }
+        )?;
+
+
+    Ok(())
+}
+
 pub fn run_egl_windowed_surface(
     mut shader_manager: crate::manage_shader::ShaderManager,
     wallpaper_directory: &Path,
@@ -449,72 +529,11 @@ pub fn run_egl_windowed_surface(
         );
 
 
-    if let Some(target) = native_targets.first() {
-        let position = _kwin_guard.as_ref().and_then(|guard| guard.last_position())
-            .or(saved_geometry.x.zip(saved_geometry.y));
-        let geometry = crate::wayland_windowshader::WindowshaderGeometry {
-            x: position.map(|(x, _)| x),
-            y: position.map(|(_, y)| y),
-            width: if state.windowshader.windowed_maximized {
-                state.windowshader.windowed_normal_width
-            } else { target.width },
-            height: if state.windowshader.windowed_maximized {
-                state.windowshader.windowed_normal_height
-            } else { target.height },
-            maximized: state.windowshader.windowed_maximized,
-        };
-        if let Err(error) = crate::wayland_windowshader::save_windowshader_geometry(geometry) {
-            eprintln!("[WINDOWSHADER] Unable to save window geometry: {}", error);
-        }
-    }
-
-    for target in native_targets {
-
-        drop(
-            target.egl_window
-        );
-
-
-        if let Some(decoration) = target.toplevel_decoration {
-            decoration.destroy();
-        }
-
-        if let Some(xdg_toplevel) =
-            target.xdg_toplevel
-        {
-            xdg_toplevel.destroy();
-        }
-
-
-        if let Some(xdg_surface) =
-            target.xdg_surface
-        {
-            xdg_surface.destroy();
-        }
-
-
-        target.surface.destroy();
-    }
-
-
-    if let Some(manager) = state.decoration_manager.take() {
-        manager.destroy();
-    }
-
-    xdg_wm_base.destroy();
-
-
-    connection
-        .flush()
-        .map_err(
-            |error| {
-                format!(
-                    "Unable to send Windowed wallpaper cleanup requests: {}",
-                    error,
-                )
-            }
-        )?;
-
+    let last_position = _kwin_guard.as_ref().and_then(|guard| guard.last_position());
+    finish_windowshader_surface(
+        native_targets, &mut state, saved_geometry, last_position,
+        &xdg_wm_base, &connection,
+    )?;
 
     render_result
 }
