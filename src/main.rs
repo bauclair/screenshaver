@@ -91,6 +91,7 @@ mod manage_lyrics;
 mod notify_wallpaper;
 mod render_wallpaper;
 mod wayland_wallpaper;
+mod wayland_windowshader;
 mod wallpaper_backend;
 mod windowshader_backend;
 mod x11_connection;

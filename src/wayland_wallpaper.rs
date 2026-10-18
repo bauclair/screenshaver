@@ -222,45 +222,6 @@ pub struct WallpaperSurfaceConfiguration {
 }
 
 
-#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
-struct WindowshaderGeometry {
-    #[serde(default)]
-    x: Option<i32>,
-    #[serde(default)]
-    y: Option<i32>,
-    width: i32,
-    height: i32,
-    #[serde(default)]
-    maximized: bool,
-}
-
-impl Default for WindowshaderGeometry {
-    fn default() -> Self {
-        Self { x: None, y: None, width: 960, height: 540, maximized: false }
-    }
-}
-
-fn load_windowshader_geometry() -> WindowshaderGeometry {
-    let default = WindowshaderGeometry::default();
-    let geometry = crate::manage_runtime_state::read_state().ok()
-        .and_then(|root| root.get("windowshader").cloned())
-        .and_then(|value| serde_json::from_value::<WindowshaderGeometry>(value).ok());
-    match geometry {
-        Some(geometry) if (64..=16384).contains(&geometry.width)
-            && (64..=16384).contains(&geometry.height) => geometry,
-        _ => default,
-    }
-}
-
-fn save_windowshader_geometry(geometry: WindowshaderGeometry) -> Result<(), String> {
-    let value = serde_json::to_value(geometry).map_err(|error| error.to_string())?;
-    crate::manage_runtime_state::update_state(move |root| {
-        root.as_object_mut().ok_or("Runtime state root is not an object")?
-            .insert("windowshader".to_string(), value);
-        Ok(())
-    })
-}
-
 #[derive(Debug, Default)]
 struct WaylandState {
     compositor: Option<wl_compositor::WlCompositor>,
@@ -1121,6 +1082,18 @@ pub fn probe_capabilities(
 }
 
 
+/// Windowshader requires xdg_wm_base, not the layer-shell protocol used by wallpapers.
+/// This probe uses the same compositor requirements as the windowed rendering path.
+pub(crate) fn probe_windowshader_capabilities() -> Result<WallpaperWaylandCapabilities, String> {
+    let (_connection, _event_queue, state) = connect_and_bind_windowed()?;
+    Ok(WallpaperWaylandCapabilities {
+        compositor_version: state.compositor_version,
+        layer_shell_version: state.layer_shell_version,
+        output_count: state.output_count,
+        targets: state.targets.into_iter().map(|target| target.info).collect(),
+    })
+}
+
 #[derive(Debug, Clone)]
 struct ActiveWallpaperShader {
     manager_name: String,
@@ -1872,7 +1845,7 @@ pub fn run_egl_windowed_surface(
 ) -> Result<(), String> {
 
     const WINDOWED_TARGET_ID: u32 = 0;
-    let saved_geometry = load_windowshader_geometry();
+    let saved_geometry = crate::wayland_windowshader::load_windowshader_geometry();
     // A failed KDE integration must never prevent Windowshader rendering.
     let _kwin_guard = match crate::manage_windowshader_kde::WindowshaderKwinGuard::start(saved_geometry.x.zip(saved_geometry.y)) {
         Ok(guard) => guard,
@@ -2235,7 +2208,7 @@ pub fn run_egl_windowed_surface(
     if let Some(target) = native_targets.first() {
         let position = _kwin_guard.as_ref().and_then(|guard| guard.last_position())
             .or(saved_geometry.x.zip(saved_geometry.y));
-        let geometry = WindowshaderGeometry {
+        let geometry = crate::wayland_windowshader::WindowshaderGeometry {
             x: position.map(|(x, _)| x),
             y: position.map(|(_, y)| y),
             width: if state.windowed_maximized {
@@ -2246,7 +2219,7 @@ pub fn run_egl_windowed_surface(
             } else { target.height },
             maximized: state.windowed_maximized,
         };
-        if let Err(error) = save_windowshader_geometry(geometry) {
+        if let Err(error) = crate::wayland_windowshader::save_windowshader_geometry(geometry) {
             eprintln!("[WINDOWSHADER] Unable to save window geometry: {}", error);
         }
     }
