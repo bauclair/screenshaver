@@ -1038,6 +1038,9 @@ impl crate::wayland_wallpaper::RenderWaylandDispatch for WindowshaderDispatchSta
     fn surfaces(&mut self) -> &mut Vec<WallpaperSurfaceState> { &mut self.surface_states }
     fn windowshader_state(&mut self) -> &mut WindowshaderWaylandState { &mut self.windowshader }
     fn removed_outputs(&mut self) -> &mut Vec<u32> { &mut self.removed_output_names }
+    fn pace_frame(deadline: &mut Instant, frame_duration: Duration) {
+        pace_next_frame(deadline, frame_duration);
+    }
     fn pump_events(queue: &mut wayland_client::EventQueue<Self>, state: &mut Self) -> Result<(), String> {
         crate::wayland_wallpaper::process_wayland_events_shared(queue, state, |state| {
             for (target, pending) in state.windowshader.windowshader_pending_callbacks.iter_mut() {

@@ -1796,6 +1796,7 @@ pub(crate) trait RenderWaylandDispatch:
     fn surfaces(&mut self) -> &mut Vec<WallpaperSurfaceState>;
     fn windowshader_state(&mut self) -> &mut crate::wayland_windowshader::WindowshaderWaylandState;
     fn removed_outputs(&mut self) -> &mut Vec<u32>;
+    fn pace_frame(deadline: &mut Instant, frame_duration: Duration);
     fn pump_events(queue: &mut wayland_client::EventQueue<Self>, state: &mut Self) -> Result<(), String>
     where Self: Sized;
 }
@@ -1804,6 +1805,15 @@ impl RenderWaylandDispatch for WaylandState {
     fn surfaces(&mut self) -> &mut Vec<WallpaperSurfaceState> { &mut self.surface_states }
     fn windowshader_state(&mut self) -> &mut crate::wayland_windowshader::WindowshaderWaylandState { &mut self.windowshader }
     fn removed_outputs(&mut self) -> &mut Vec<u32> { &mut self.removed_output_names }
+    fn pace_frame(deadline: &mut Instant, frame_duration: Duration) {
+        *deadline += frame_duration;
+        let now = Instant::now();
+        if *deadline > now {
+            thread::sleep(*deadline - now);
+        } else {
+            *deadline = now;
+        }
+    }
     fn pump_events(queue: &mut wayland_client::EventQueue<Self>, state: &mut Self) -> Result<(), String> {
         process_wayland_events(queue, state)
     }
@@ -4444,25 +4454,8 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
 
 
             control.diagnostic_checkpoint(7);
-            if runtime.display_format
-                == crate::manage_configuration::WallpaperDisplayFormat::Windowed
-            {
-                // Windowshader owns its frame-deadline progression. Compositor
-                // callbacks still gate whether the shared renderer may draw.
-                crate::wayland_windowshader::pace_next_frame(
-                    &mut next_frame_deadline,
-                    frame_duration,
-                );
-            } else {
-                // Preserve the wallpaper's existing pacing path unchanged.
-                next_frame_deadline += frame_duration;
-                let now = Instant::now();
-                if next_frame_deadline > now {
-                    thread::sleep(next_frame_deadline - now);
-                } else {
-                    next_frame_deadline = now;
-                }
-            }
+            // Dispatch pacing to the owning rendering pipeline.
+            S::pace_frame(&mut next_frame_deadline, frame_duration);
         };
 
 
