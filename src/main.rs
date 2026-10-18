@@ -92,6 +92,7 @@ mod notify_wallpaper;
 mod render_wallpaper;
 mod wayland_wallpaper;
 mod wallpaper_backend;
+mod windowshader_backend;
 mod x11_connection;
 mod x11_wallpaper;
 mod glx_context;

@@ -211,6 +211,19 @@ pub fn run(
     running: std::sync::Arc<std::sync::atomic::AtomicBool>,
     control: crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
 ) -> Result<(), String> {
+    run_with_backend(configured_mode, runtime, running, control,
+        crate::wallpaper_backend::create_backend)
+}
+
+/// Common shader preparation and policy behavior, with renderer-specific backend ownership.
+/// The factory is invoked only after shader eligibility has been established.
+pub(crate) fn run_with_backend(
+    configured_mode: &str,
+    runtime: &WallpaperRuntime,
+    running: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    control: crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+    backend_factory: fn() -> Result<Box<dyn crate::wallpaper_backend::WallpaperBackend>, String>,
+) -> Result<(), String> {
 
     let parsed_mode =
         crate::parse_mode::parse_mode(
@@ -569,7 +582,7 @@ pub fn run(
 
 
     let backend =
-        crate::wallpaper_backend::create_backend()?;
+        backend_factory()?;
 
 
     backend.report_capabilities();

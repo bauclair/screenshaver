@@ -18,5 +18,8 @@ pub fn run(
     if runtime.display_format != crate::manage_configuration::WallpaperDisplayFormat::Windowed {
         return Err("Windowshader dispatcher requires Windowed display format".to_string());
     }
-    crate::manage_wallpaper::run(configured_mode, runtime, running, control)
+    crate::manage_wallpaper::run_with_backend(
+        configured_mode, runtime, running, control,
+        crate::windowshader_backend::create_backend,
+    )
 }

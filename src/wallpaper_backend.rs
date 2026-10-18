@@ -96,12 +96,12 @@ fn announce_backend(
     println!();
 }
 
-struct WaylandWallpaperBackend {
+pub(crate) struct WaylandWallpaperBackend {
     capabilities: crate::wayland_wallpaper::WallpaperWaylandCapabilities,
 }
 
 impl WaylandWallpaperBackend {
-    fn new(
+    pub(crate) fn new(
     ) -> Result<Self, String> {
         println!(
             "Probing native Wayland wallpaper capabilities..."
