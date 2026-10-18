@@ -35,6 +35,8 @@ pub struct FrameRenderer {
     engine: FrameRenderEngine,
     event_pump: sdl2::EventPump,
     renderer_started: Instant,
+    // Diagnostic heartbeat only; never participates in handoff decisions.
+    status_last_heartbeat: Option<Instant>,
     _gl_context: GLContext,
     window: Window,
 }
@@ -165,6 +167,7 @@ impl FrameRenderer {
                 event_pump,
                 renderer_started:
                     Instant::now(),
+                status_last_heartbeat: None,
                 _gl_context:
                     gl_context,
                 window,
@@ -184,6 +187,11 @@ impl FrameRenderer {
 
         let mut first_frame_presented =
             false;
+
+        crate::renderer_status::publish(
+            crate::renderer_status::Pipeline::Screensaver,
+            crate::renderer_status::State::Starting,
+        );
 
         let outcome = loop {
             if !running.load(Ordering::SeqCst) {
@@ -209,6 +217,11 @@ impl FrameRenderer {
             }
         };
 
+        crate::renderer_status::publish(
+            crate::renderer_status::Pipeline::Screensaver,
+            crate::renderer_status::State::Stopping,
+        );
+
         // Keep wallpaper rendering paused while the active screensaver is
         // handed to the policy editor. A replacement screensaver renderer
         // will retain that pause until the user finally disengages it.
@@ -217,6 +230,10 @@ impl FrameRenderer {
                 running
             );
         }
+
+        crate::renderer_status::clear(
+            crate::renderer_status::Pipeline::Screensaver,
+        );
 
         log_information(
             "[RENDER] Leaving renderer-owned event loop"
@@ -235,12 +252,24 @@ impl FrameRenderer {
         ) =
             self.window.drawable_size();
 
-        let _ = self.engine.render_frame(
+        let _events = self.engine.render_frame(
             width,
             height,
         );
 
         self.window.gl_swap_window();
+
+        // Heartbeat is deliberately throttled to avoid per-frame filesystem I/O.
+        // Publish after the engine returns and the SDL presentation call completes.
+        if self.status_last_heartbeat.map_or(
+            true, |last| last.elapsed() >= Duration::from_secs(1),
+        ) {
+            crate::renderer_status::publish(
+                crate::renderer_status::Pipeline::Screensaver,
+                crate::renderer_status::State::Rendering,
+            );
+            self.status_last_heartbeat = Some(Instant::now());
+        }
         self.engine.limit_fps();
     }
 

@@ -29,6 +29,7 @@ use std::sync::{
     Arc,
 };
 use std::thread;
+use std::time::Instant;
 use std::time::Duration;
 
 use x11::{
@@ -569,6 +570,18 @@ fn run_window_loop(
 ) {
     diagnostic("Entering continuous X11 wallpaper render loop...");
 
+    let status_pipeline = if wallpaper_window.windowed {
+        crate::renderer_status::Pipeline::Windowshader
+    } else {
+        crate::renderer_status::Pipeline::Wallpaper
+    };
+    let status_enabled = crate::renderer_status::enabled();
+    if status_enabled {
+        crate::renderer_status::publish(status_pipeline, crate::renderer_status::State::Starting);
+    }
+    let mut status_heartbeat = Instant::now() - Duration::from_secs(2);
+
+
     let mut paused = false;
     let mut first_frame_presented = false;
     while running.load(Ordering::SeqCst) {
@@ -604,6 +617,9 @@ fn run_window_loop(
                 control.acknowledge_pause_detected();
                 paused = true;
                 control.acknowledge_paused();
+                if status_enabled {
+                    crate::renderer_status::publish(status_pipeline, crate::renderer_status::State::Paused);
+                }
                 diagnostic("X11 wallpaper rendering paused.");
             }
 
@@ -625,6 +641,11 @@ fn run_window_loop(
                 engine,
             );
 
+        if status_enabled && (paused || status_heartbeat.elapsed() >= Duration::from_secs(1)) {
+            crate::renderer_status::publish(status_pipeline, crate::renderer_status::State::Rendering);
+            status_heartbeat = Instant::now();
+        }
+
         notify_wallpaper_events(
             notifications_enabled,
             status,
@@ -642,6 +663,11 @@ fn run_window_loop(
             first_frame_presented = true;
             diagnostic("Presented first continuous X11 wallpaper frame.");
         }
+    }
+
+    if status_enabled {
+        crate::renderer_status::publish(status_pipeline, crate::renderer_status::State::Stopping);
+        crate::renderer_status::clear(status_pipeline);
     }
 
     diagnostic("Leaving continuous X11 wallpaper render loop...");

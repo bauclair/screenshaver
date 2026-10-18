@@ -68,6 +68,7 @@ pub enum Command {
 
     Control {
         shader_name: Option<String>,
+        show_renderer_status: bool,
     },
 
     ConstructLockScreenKde,
@@ -793,6 +794,11 @@ fn parse_control(
     args: &[String],
 ) -> Result<Command, String> {
 
+    let show_renderer_status = args.iter().any(|arg| arg == "--show-renderer-status");
+    if args.iter().filter(|arg| arg.as_str() == "--show-renderer-status").count() > 1 {
+        return Err("--show-renderer-status may appear only once".to_string());
+    }
+    let args = args.iter().filter(|arg| arg.as_str() != "--show-renderer-status").cloned().collect::<Vec<_>>();
     if args.len() > 1 {
 
         return Err(
@@ -837,6 +843,7 @@ fn parse_control(
     Ok(
         Command::Control {
             shader_name,
+            show_renderer_status,
         }
     )
 }
@@ -919,6 +926,7 @@ pub fn print_help() {
              --control [PATH]\n\
                  Open the Screenshaver Control Center.\n\
                  If PATH is supplied, preload that shader for policy editing.\n\
+                 Combine --control with --show-renderer-status to enable the diagnostic.\n\
          \n\
              --show-renderer-status\n\
                   Toggle the temporary four-pipeline renderer-status diagnostic.\n\

@@ -1436,7 +1436,14 @@ fn main() {
 
         crate::parse_arguments::Command::Control {
             shader_name,
+            show_renderer_status,
         } => {
+            if show_renderer_status {
+                if let Err(error) = crate::renderer_status::enable() {
+                    eprintln!("[CONTROL CENTER] Unable to enable renderer diagnostic: {error}");
+                    std::process::exit(1);
+                }
+            }
 
             // The Control Center receives the process-local band handle, but
             // this alone does not open PulseAudio.  Audio capture starts only

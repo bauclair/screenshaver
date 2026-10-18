@@ -931,10 +931,29 @@ impl PresentationPauseGuards {
     }
 }
 
+// Diagnostic ownership is scoped to the actual Control Center session, not
+// to the tray or to the command that opened it.
+struct ControlCenterStatusGuard;
+impl ControlCenterStatusGuard {
+    fn begin() -> Self {
+        crate::renderer_status::publish(
+            crate::renderer_status::Pipeline::ControlCenter,
+            crate::renderer_status::State::Starting,
+        );
+        Self
+    }
+}
+impl Drop for ControlCenterStatusGuard {
+    fn drop(&mut self) {
+        crate::renderer_status::clear(crate::renderer_status::Pipeline::ControlCenter);
+    }
+}
+
 fn run_empty_session(
     audio_bands:
     Option<crate::audio_backend::SharedAudioBands>,
 ) -> Result<(), String> {
+    let _renderer_status_guard = ControlCenterStatusGuard::begin();
 
     // An empty Control Center session renders no shader, so it must never keep
     // playback-monitor capture active while the wallpaper is paused beneath it.
@@ -2572,6 +2591,7 @@ fn run_paths(
     Option<crate::audio_backend::SharedAudioBands>,
     acquire_wallpaper_pause: bool,
 ) -> Result<(), String> {
+    let _renderer_status_guard = ControlCenterStatusGuard::begin();
 
     if shader_paths.is_empty() {
         return Err(
@@ -7797,6 +7817,18 @@ fn run_paths(
 
 
                                                                                     window.gl_swap_window();
+                                                                                    // Only the active shader preview constitutes Rendering.
+                                                                                    // Status I/O is throttled independently of frame pacing.
+                                                                                    {
+                                                                                        static LAST_REPORT: std::sync::OnceLock<std::sync::Mutex<std::time::Instant>> = std::sync::OnceLock::new();
+                                                                                        let gate = LAST_REPORT.get_or_init(|| std::sync::Mutex::new(std::time::Instant::now() - std::time::Duration::from_secs(2)));
+                                                                                        if let Ok(mut last) = gate.try_lock() {
+                                                                                            if last.elapsed() >= std::time::Duration::from_secs(1) {
+                                                                                                crate::renderer_status::publish(crate::renderer_status::Pipeline::ControlCenter, crate::renderer_status::State::Rendering);
+                                                                                                *last = std::time::Instant::now();
+                                                                                            }
+                                                                                        }
+                                                                                    }
 
 
                                                                                     active.frame =

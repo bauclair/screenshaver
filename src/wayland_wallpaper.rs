@@ -3464,6 +3464,19 @@ fn render_mirror_frames(
     let mut rotation_clock_last_shift_ms: u128 = 0;
 
 
+    let status_pipeline = if runtime.display_format
+        == crate::manage_configuration::WallpaperDisplayFormat::Windowed
+    {
+        crate::renderer_status::Pipeline::Windowshader
+    } else {
+        crate::renderer_status::Pipeline::Wallpaper
+    };
+    let status_enabled = crate::renderer_status::enabled();
+    if status_enabled {
+        crate::renderer_status::publish(status_pipeline, crate::renderer_status::State::Starting);
+    }
+    let mut status_heartbeat = Instant::now() - Duration::from_secs(2);
+
     let result =
         'render_loop: loop {
 
@@ -3809,6 +3822,9 @@ fn render_mirror_frames(
                             Instant::now()
                         );
                     control.acknowledge_paused();
+                    if status_enabled {
+                        crate::renderer_status::publish(status_pipeline, crate::renderer_status::State::Paused);
+                    }
 
 
                     println!(
@@ -4999,6 +5015,13 @@ fn render_mirror_frames(
                     }
                 }
                 last_successful_swap = Instant::now();
+                if status_enabled && (paused || resume_presentation_pending
+                    || status_heartbeat.elapsed() >= Duration::from_secs(1))
+                {
+                    crate::renderer_status::publish(status_pipeline, crate::renderer_status::State::Rendering);
+                    status_heartbeat = Instant::now();
+                }
+
                 if runtime.display_format
                     == crate::manage_configuration::WallpaperDisplayFormat::Windowed
                 {
@@ -5216,6 +5239,10 @@ fn render_mirror_frames(
     }
 
 
+    if status_enabled {
+        crate::renderer_status::publish(status_pipeline, crate::renderer_status::State::Stopping);
+        crate::renderer_status::clear(status_pipeline);
+    }
     result
 }
 

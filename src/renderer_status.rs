@@ -66,10 +66,20 @@ pub fn snapshot(pipeline: Pipeline) -> &'static str {
         Ok(s) => s, Err(_) => return "Inactive"
     };
     let mut fields = s.split_whitespace();
-    let _pid = fields.next();
+    let pid = fields.next().and_then(|x| x.parse::<u32>().ok()).unwrap_or(0);
     let timestamp = fields.next().and_then(|x| x.parse::<u128>().ok()).unwrap_or(0);
     let state = fields.next().unwrap_or("Error");
-    if millis().saturating_sub(timestamp) > Duration::from_secs(5).as_millis() { return "Inactive"; }
+    // A deliberately paused renderer has no frame heartbeat.  Preserve its
+    // state while the owning process exists, rather than mislabeling it as
+    // Inactive after five seconds.  Rendering still requires a fresh heartbeat.
+    let age = millis().saturating_sub(timestamp);
+    if state == "Paused" && age > Duration::from_secs(5).as_millis() {
+        if pid == 0 || !PathBuf::from(format!("/proc/{pid}")).exists() {
+            return "Inactive";
+        }
+    } else if age > Duration::from_secs(5).as_millis() {
+        return "Inactive";
+    }
     match state {
         "Starting" => "Starting", "Rendering" => "Rendering", "Paused" => "Paused",
         "Stopping" => "Stopping", "Error" => "Error", _ => "Error"
