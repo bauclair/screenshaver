@@ -1403,3 +1403,41 @@ pub(crate) fn callback_clock_adjustments(
     let animation_shift = effective_wait.min(animation_anchor.elapsed());
     (pause_overlap, rotation_shift, animation_shift)
 }
+
+
+// Stage 2D-2A Step 4B: Windowshader-only rotation accounting and diagnostics.
+// This state belongs to the Windowshader rendering invocation, not the
+// Wallpaper renderer or a global/static clock. The shared render loop still
+// owns the live shader-switch Instant until the loop is separated.
+#[derive(Debug)]
+pub(crate) struct WindowshaderRotationClockState {
+    pub(crate) last_windowed_pause_interval: Option<(Instant, Instant)>,
+    pub(crate) rotation_clock_pause_shifts: u64,
+    pub(crate) rotation_clock_callback_shifts: u64,
+    pub(crate) rotation_clock_callback_shift_ms: u128,
+    pub(crate) rotation_clock_callback_short_shifts: u64,
+    pub(crate) rotation_clock_last_shift_reason: &'static str,
+    pub(crate) rotation_clock_last_shift_ms: u128,
+    pub(crate) windowshader_rotation_attempts: u64,
+    pub(crate) windowshader_rotation_successes: u64,
+    pub(crate) windowshader_rotation_failures: u64,
+    pub(crate) windowshader_rotation_block_reported: bool,
+}
+
+impl Default for WindowshaderRotationClockState {
+    fn default() -> Self {
+        Self {
+            last_windowed_pause_interval: None,
+            rotation_clock_pause_shifts: 0,
+            rotation_clock_callback_shifts: 0,
+            rotation_clock_callback_shift_ms: 0,
+            rotation_clock_callback_short_shifts: 0,
+            rotation_clock_last_shift_reason: "none",
+            rotation_clock_last_shift_ms: 0,
+            windowshader_rotation_attempts: 0,
+            windowshader_rotation_successes: 0,
+            windowshader_rotation_failures: 0,
+            windowshader_rotation_block_reported: false,
+        }
+    }
+}
