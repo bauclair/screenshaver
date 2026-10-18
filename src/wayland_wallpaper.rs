@@ -1809,10 +1809,10 @@ impl RenderWaylandDispatch for WaylandState {
     }
 }
 
-// Stage 2D-2B Step 3A: EGL resources are scoped to one rendering session.
+// Stage 2D-2B Steps 3A/3B: EGL resources are scoped to a caller-owned session.
 // The session owns the EGL display, context, and surfaces; GL shader resources
 // continue to be released by the existing frame-processing implementation.
-struct EglRenderSession {
+pub(crate) struct EglRenderSession {
     display: EglDisplay,
     context: EglContext,
     targets: Vec<EglWallpaperTarget>,
@@ -1821,7 +1821,7 @@ struct EglRenderSession {
 }
 
 impl EglRenderSession {
-    fn initialize(
+    pub(crate) fn initialize(
         connection: &Connection,
         native_targets: &[NativeWallpaperTarget],
     ) -> Result<Self, String> {
@@ -2138,8 +2138,25 @@ pub(crate) fn render_egl_wallpapers<S: RenderWaylandDispatch + 'static>(
 ) -> Result<(), String> {
 
     let mut egl_session = EglRenderSession::initialize(connection, native_targets)?;
+    render_with_egl_session(
+        &mut egl_session, event_queue, state, native_targets, active_shader,
+        shader_manager, wallpaper_directory, shader_interval, runtime, running, control,
+    )
+}
 
-
+pub(crate) fn render_with_egl_session<S: RenderWaylandDispatch + 'static>(
+    egl_session: &mut EglRenderSession,
+    event_queue: &mut wayland_client::EventQueue<S>,
+    state: &mut S,
+    native_targets: &mut Vec<NativeWallpaperTarget>,
+    active_shader: &ActiveWallpaperShader,
+    shader_manager: &mut crate::manage_shader::ShaderManager,
+    wallpaper_directory: &Path,
+    shader_interval: Option<Duration>,
+    runtime: &crate::define_wallpaper::WallpaperRuntime,
+    running: &Arc<AtomicBool>,
+    control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+) -> Result<(), String> {
     gl::load_with(
         |name| {
             let Ok(
@@ -2180,11 +2197,10 @@ pub(crate) fn render_egl_wallpapers<S: RenderWaylandDispatch + 'static>(
         );
 
 
-    // Release EGL before reporting the renderer result, matching the previous
-    // shutdown order for both success and frame-processing errors.
+    // The caller owns EGL session teardown, including error paths.
+    // The session remains alive while GL frame resources are released.
     let egl_major = egl_session.major;
     let egl_minor = egl_session.minor;
-    drop(egl_session);
 
     render_result?;
 

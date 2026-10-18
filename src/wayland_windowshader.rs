@@ -55,8 +55,8 @@ use crate::wayland_wallpaper::{
 };
 
 // Stage 2D-2B Step 1: Windowshader owns the frame-loop entry point.
-// The EGL setup, frame processing and teardown are deliberately delegated to
-// the unchanged shared implementation until lifecycle extraction is tested.
+// Windowshader owns EGL session acquisition and release; GL frame processing
+// remains shared until the separate rendering loop is extracted.
 // Keeping this boundary here makes the future Windowshader loop replacement
 // local to this module without changing XDG surface ownership or callbacks.
 fn render_windowshader_frames(
@@ -72,8 +72,13 @@ fn render_windowshader_frames(
     running: &Arc<AtomicBool>,
     control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
 ) -> Result<(), String> {
-    crate::wayland_wallpaper::render_egl_wallpapers(
-        connection, event_queue, state, native_targets, active_shader,
+    // Windowshader explicitly acquires and owns its EGL session.
+    // Dropping this local session releases EGL on success or failure.
+    let mut egl_session = crate::wayland_wallpaper::EglRenderSession::initialize(
+        connection, native_targets,
+    )?;
+    crate::wayland_wallpaper::render_with_egl_session(
+        &mut egl_session, event_queue, state, native_targets, active_shader,
         shader_manager, wallpaper_directory, shader_interval, runtime,
         running, control,
     )
