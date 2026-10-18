@@ -1080,6 +1080,14 @@ impl crate::wayland_wallpaper::RenderWaylandDispatch for WindowshaderDispatchSta
             "[WINDOWSHADER_RESUME_DIAG] Successful post-pause EGL presentation acknowledged",
         );
     }
+    fn on_frame_swap_completed(&mut self, registry_name: u32) {
+        if let Some(pending) = self.windowshader.windowshader_pending_callbacks.get_mut(&registry_name) {
+            pending.swap_completed = true;
+        }
+    }
+    fn frames_ready_for_presentation(&mut self, native_targets: &[NativeWallpaperTarget]) -> bool {
+        all_frames_ready(&self.windowshader, native_targets)
+    }
     fn reset_frame_deadline(deadline: &mut Instant) {
         crate::wayland_windowshader::reset_frame_deadline(deadline);
     }

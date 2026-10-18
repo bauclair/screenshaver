@@ -1805,6 +1805,10 @@ pub(crate) trait RenderWaylandDispatch:
     // Stage 2D-2C Step 7: pipeline-specific resume lifecycle diagnostics.
     fn on_pause_released(&mut self);
     fn on_resumed_frame_presented(&mut self);
+    // Stage 2D-2C Step 9: compositor callback swap bookkeeping belongs to its pipeline.
+    fn on_frame_swap_completed(&mut self, registry_name: u32);
+    // Stage 2D-2C Step 10: frame readiness is decided by the presentation pipeline.
+    fn frames_ready_for_presentation(&mut self, native_targets: &[NativeWallpaperTarget]) -> bool;
     // Stage 2D-2C Step 8: pipeline-owned frame-deadline reset.
     fn reset_frame_deadline(deadline: &mut Instant);
     fn pace_frame(deadline: &mut Instant, frame_duration: Duration);
@@ -1821,6 +1825,8 @@ impl RenderWaylandDispatch for WaylandState {
     fn on_pause_entered(&mut self, _native_targets: &[NativeWallpaperTarget]) {}
     fn on_pause_released(&mut self) {}
     fn on_resumed_frame_presented(&mut self) {}
+    fn on_frame_swap_completed(&mut self, _registry_name: u32) {}
+    fn frames_ready_for_presentation(&mut self, _native_targets: &[NativeWallpaperTarget]) -> bool { true }
     fn reset_frame_deadline(deadline: &mut Instant) {
         *deadline = Instant::now();
     }
@@ -3136,17 +3142,7 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
             // surface on a non-visible workspace can stop receiving them.
             // The render worker therefore remains in this event/control loop
             // instead of entering a compositor-throttled eglSwapBuffers().
-            let windowed_frame_ready =
-                if runtime.display_format
-                    == crate::manage_configuration::WallpaperDisplayFormat::Windowed
-                {
-                    crate::wayland_windowshader::all_frames_ready(
-                        state.windowshader_state(),
-                        native_targets,
-                    )
-                } else {
-                    true
-                };
+            let windowed_frame_ready = state.frames_ready_for_presentation(native_targets);
 
 
             if !windowed_frame_ready {
@@ -4222,11 +4218,7 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
 
 
                 control.diagnostic_checkpoint(6);
-                if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed {
-                    if let Some(pending) = state.windowshader_state().windowshader_pending_callbacks.get_mut(&native_target.info.registry_name) {
-                        pending.swap_completed = true;
-                    }
-                }
+                state.on_frame_swap_completed(native_target.info.registry_name);
                 last_successful_swap = Instant::now();
                 if status_enabled && (paused || resume_presentation_pending
                     || status_heartbeat.elapsed() >= Duration::from_secs(1))
