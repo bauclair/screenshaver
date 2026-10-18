@@ -1697,3 +1697,33 @@ pub(crate) fn active_rotation_timestamp(
 ) -> Instant {
     if windowed { windowshader_clock.last_shader_switch } else { wallpaper_timestamp }
 }
+
+// Stage 2D-2C Step 16A: Windowshader-owned presentation diagnostics.
+// This state is observational only. Never use it to synthesize callbacks,
+// advance a frame deadline, or decide whether a frame may be presented.
+pub(crate) struct WindowshaderPresentationDiagnostics {
+    pub(crate) last_successful_swap: Instant,
+    pub(crate) presentation_watchdog_last_report: Option<Instant>,
+    pub(crate) presentation_watchdog_loop_ticks: u64,
+    pub(crate) presentation_watchdog_last_ticks: u64,
+    pub(crate) presentation_watchdog_swaps: u64,
+    pub(crate) presentation_watchdog_last_swaps: u64,
+    pub(crate) windowshader_summary_at: Instant,
+    pub(crate) windowshader_last_configure_count: u64,
+}
+
+impl WindowshaderPresentationDiagnostics {
+    pub(crate) fn new(initial_configure_count: u64) -> Self {
+        let now = Instant::now();
+        Self {
+            last_successful_swap: now,
+            presentation_watchdog_last_report: None,
+            presentation_watchdog_loop_ticks: 0,
+            presentation_watchdog_last_ticks: 0,
+            presentation_watchdog_swaps: 0,
+            presentation_watchdog_last_swaps: 0,
+            windowshader_summary_at: now,
+            windowshader_last_configure_count: initial_configure_count,
+        }
+    }
+}
