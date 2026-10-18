@@ -123,7 +123,7 @@ impl WallpaperLayerStrategy {
 
 
 #[derive(Debug, Clone, Default)]
-pub struct WallpaperTargetInfo {
+pub(crate) struct WallpaperTargetInfo {
     pub registry_name: u32,
     pub connector_name: Option<String>,
     pub description: Option<String>,
@@ -178,24 +178,24 @@ struct WindowshaderCallbackDiagnostic {
 
 
 #[derive(Debug, Clone, Default)]
-struct WallpaperSurfaceState {
-    registry_name: u32,
-    configured: Option<WallpaperSurfaceConfiguration>,
-    closed: bool,
+pub(crate) struct WallpaperSurfaceState {
+    pub(crate) registry_name: u32,
+    pub(crate) configured: Option<WallpaperSurfaceConfiguration>,
+    pub(crate) closed: bool,
 }
 
 
-struct NativeWallpaperTarget {
-    info: WallpaperTargetInfo,
-    surface: wl_surface::WlSurface,
-    layer_surface: Option<ZwlrLayerSurfaceV1>,
-    input_region: Option<wl_region::WlRegion>,
-    xdg_surface: Option<XdgSurface>,
-    xdg_toplevel: Option<XdgToplevel>,
-    toplevel_decoration: Option<ZxdgToplevelDecorationV1>,
-    egl_window: wayland_egl::WlEglSurface,
-    width: i32,
-    height: i32,
+pub(crate) struct NativeWallpaperTarget {
+    pub(crate) info: WallpaperTargetInfo,
+    pub(crate) surface: wl_surface::WlSurface,
+    pub(crate) layer_surface: Option<ZwlrLayerSurfaceV1>,
+    pub(crate) input_region: Option<wl_region::WlRegion>,
+    pub(crate) xdg_surface: Option<XdgSurface>,
+    pub(crate) xdg_toplevel: Option<XdgToplevel>,
+    pub(crate) toplevel_decoration: Option<ZxdgToplevelDecorationV1>,
+    pub(crate) egl_window: wayland_egl::WlEglSurface,
+    pub(crate) width: i32,
+    pub(crate) height: i32,
 }
 
 
@@ -215,7 +215,7 @@ pub struct WallpaperWaylandCapabilities {
 
 
 #[derive(Debug, Clone)]
-pub struct WallpaperSurfaceConfiguration {
+pub(crate) struct WallpaperSurfaceConfiguration {
     pub width: u32,
     pub height: u32,
     pub serial: u32,
@@ -223,32 +223,32 @@ pub struct WallpaperSurfaceConfiguration {
 
 
 #[derive(Debug, Default)]
-struct WaylandState {
-    compositor: Option<wl_compositor::WlCompositor>,
-    layer_shell: Option<ZwlrLayerShellV1>,
-    xdg_wm_base: Option<XdgWmBase>,
-    decoration_manager: Option<ZxdgDecorationManagerV1>,
-    compositor_version: Option<u32>,
-    layer_shell_version: Option<u32>,
-    xdg_wm_base_version: Option<u32>,
-    output_count: usize,
-    targets: Vec<WallpaperTarget>,
-    surface_states: Vec<WallpaperSurfaceState>,
-    removed_output_names: Vec<u32>,
-    windowed_pending_width: i32,
-    windowed_pending_height: i32,
-    windowed_maximized: bool,
-    windowed_normal_width: i32,
-    windowed_normal_height: i32,
-    windowed_activation_established: bool,
-    windowed_activated: bool,
-    frame_ready: HashMap<u32, bool>,
-    windowshader_next_callback_sequence: u64,
-    windowshader_pending_callbacks: HashMap<u32, WindowshaderCallbackDiagnostic>,
+pub(crate) struct WaylandState {
+    pub(crate) compositor: Option<wl_compositor::WlCompositor>,
+    pub(crate) layer_shell: Option<ZwlrLayerShellV1>,
+    pub(crate) xdg_wm_base: Option<XdgWmBase>,
+    pub(crate) decoration_manager: Option<ZxdgDecorationManagerV1>,
+    pub(crate) compositor_version: Option<u32>,
+    pub(crate) layer_shell_version: Option<u32>,
+    pub(crate) xdg_wm_base_version: Option<u32>,
+    pub(crate) output_count: usize,
+    pub(crate) targets: Vec<WallpaperTarget>,
+    pub(crate) surface_states: Vec<WallpaperSurfaceState>,
+    pub(crate) removed_output_names: Vec<u32>,
+    pub(crate) windowed_pending_width: i32,
+    pub(crate) windowed_pending_height: i32,
+    pub(crate) windowed_maximized: bool,
+    pub(crate) windowed_normal_width: i32,
+    pub(crate) windowed_normal_height: i32,
+    pub(crate) windowed_activation_established: bool,
+    pub(crate) windowed_activated: bool,
+    pub(crate) frame_ready: HashMap<u32, bool>,
+    pub(crate) windowshader_next_callback_sequence: u64,
+    pub(crate) windowshader_pending_callbacks: HashMap<u32, WindowshaderCallbackDiagnostic>,
     // Diagnostic only: capture the first configure of each kind after a pause.
-    windowshader_trace_surface_configure: bool,
-    windowshader_trace_toplevel_configure: bool,
-    windowshader_configure_count: u64,
+    pub(crate) windowshader_trace_surface_configure: bool,
+    pub(crate) windowshader_trace_toplevel_configure: bool,
+    pub(crate) windowshader_configure_count: u64,
 }
 
 
@@ -1095,22 +1095,22 @@ pub(crate) fn probe_windowshader_capabilities() -> Result<WallpaperWaylandCapabi
 }
 
 #[derive(Debug, Clone)]
-struct ActiveWallpaperShader {
-    manager_name: String,
-    policy_id: i64,
-    policy_name: String,
-    source_path: PathBuf,
-    source: String,
-    shader_name: String,
-    channel_usage:
+pub(crate) struct ActiveWallpaperShader {
+    pub(crate) manager_name: String,
+    pub(crate) policy_id: i64,
+    pub(crate) policy_name: String,
+    pub(crate) source_path: PathBuf,
+    pub(crate) source: String,
+    pub(crate) shader_name: String,
+    pub(crate) channel_usage:
         crate::preprocess_shader::ShaderChannelUsage,
-    shader_inputs:
+    pub(crate) shader_inputs:
         Vec<crate::isf_types::ShaderInput>,
-    built_in_default: bool,
+    pub(crate) built_in_default: bool,
 }
 
 
-fn select_safe_wallpaper_shader(
+pub(crate) fn select_safe_wallpaper_shader(
     shader_manager: &mut crate::manage_shader::ShaderManager,
     wallpaper_directory: &Path,
 ) -> Result<ActiveWallpaperShader, String> {
@@ -1340,7 +1340,7 @@ fn paths_refer_to_same_file(
 }
 
 
-fn print_active_wallpaper_shader(
+pub(crate) fn print_active_wallpaper_shader(
     shader: &ActiveWallpaperShader,
 ) {
 
@@ -1835,448 +1835,21 @@ pub fn run_egl_background_surface(
 }
 
 
+
 pub fn run_egl_windowed_surface(
-    mut shader_manager: crate::manage_shader::ShaderManager,
+    shader_manager: crate::manage_shader::ShaderManager,
     wallpaper_directory: &Path,
     shader_interval: Option<Duration>,
     runtime: &crate::define_wallpaper::WallpaperRuntime,
     running: Arc<AtomicBool>,
     control: crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
 ) -> Result<(), String> {
-
-    const WINDOWED_TARGET_ID: u32 = 0;
-    let saved_geometry = crate::wayland_windowshader::load_windowshader_geometry();
-    // A failed KDE integration must never prevent Windowshader rendering.
-    let _kwin_guard = match crate::manage_windowshader_kde::WindowshaderKwinGuard::start(saved_geometry.x.zip(saved_geometry.y)) {
-        Ok(guard) => guard,
-        Err(error) => {
-            eprintln!("[WINDOWSHADER] KDE window integration unavailable: {}", error);
-            None
-        }
-    };
-
-
-    runtime.tray_status
-        .set_starting();
-
-
-    let active_shader =
-        select_safe_wallpaper_shader(
-            &mut shader_manager,
-            wallpaper_directory,
-        )?;
-
-
-    print_active_wallpaper_shader(
-        &active_shader
-    );
-
-
-    runtime.tray_status.set_active(
-        active_shader.policy_id,
-        active_shader.shader_name.clone(),
-        active_shader.source_path.clone(),
-    );
-
-
-    let (
-        connection,
-        mut event_queue,
-        mut state,
-    ) =
-        connect_and_bind_windowed()?;
-
-
-    state.windowed_normal_width = saved_geometry.width;
-    state.windowed_normal_height = saved_geometry.height;
-
-    let queue_handle =
-        event_queue.handle();
-
-
-    let compositor =
-        state
-            .compositor
-            .clone()
-            .ok_or_else(
-                || {
-                    "The Wayland compositor did not advertise wl_compositor"
-                        .to_string()
-                }
-            )?;
-
-
-    let xdg_wm_base =
-        state
-            .xdg_wm_base
-            .clone()
-            .ok_or_else(
-                || {
-                    "The Wayland compositor did not advertise xdg_wm_base"
-                        .to_string()
-                }
-            )?;
-
-
-    state.surface_states.push(
-        WallpaperSurfaceState {
-            registry_name:
-                WINDOWED_TARGET_ID,
-
-            configured:
-                None,
-
-            closed:
-                false,
-        }
-    );
-
-
-    let surface =
-        compositor.create_surface(
-            &queue_handle,
-            (),
-        );
-
-
-    let xdg_surface =
-        xdg_wm_base.get_xdg_surface(
-            &surface,
-            &queue_handle,
-            (),
-        );
-
-
-    let xdg_toplevel =
-        xdg_surface.get_toplevel(
-            &queue_handle,
-            (),
-        );
-
-
-    let toplevel_decoration =
-        state.decoration_manager.as_ref().map(|manager| {
-            let decoration = manager.get_toplevel_decoration(
-                &xdg_toplevel,
-                &queue_handle,
-                (),
-            );
-            decoration.set_mode(zxdg_toplevel_decoration_v1::Mode::ServerSide);
-            decoration
-        });
-
-    xdg_toplevel.set_title(
-        "Screenshaver Windowshader"
-            .to_string()
-    );
-
-
-    xdg_toplevel.set_app_id(
-        "screenshaver"
-            .to_string()
-    );
-
-    xdg_toplevel.set_min_size(64, 64);
-    xdg_toplevel.set_max_size(0, 0);
-    // Let xdg_surface derive its window geometry from the resized wl_surface.
-    // A fixed startup geometry would constrain the KWin frame after EGL grows.
-    if saved_geometry.maximized {
-        xdg_toplevel.set_maximized();
-    }
-
-
-    surface.commit();
-
-
-    connection
-        .flush()
-        .map_err(
-            |error| {
-                format!(
-                    "Unable to send Windowed wallpaper surface requests: {}",
-                    error,
-                )
-            }
-        )?;
-
-
-    while state
-        .surface_states
-        .iter()
-        .any(
-            |surface_state| {
-                surface_state.registry_name
-                    == WINDOWED_TARGET_ID
-                    && surface_state.configured.is_none()
-                    && !surface_state.closed
-            }
-        )
-    {
-        event_queue
-            .blocking_dispatch(
-                &mut state
-            )
-            .map_err(
-                |error| {
-                    format!(
-                        "Unable to receive Windowed wallpaper configure events: {}",
-                        error,
-                    )
-                }
-            )?;
-    }
-
-
-    let surface_state =
-        state
-            .surface_states
-            .iter_mut()
-            .find(
-                |surface_state| {
-                    surface_state.registry_name
-                        == WINDOWED_TARGET_ID
-                }
-            )
-            .ok_or_else(
-                || {
-                    "Windowed wallpaper surface state was not created"
-                        .to_string()
-                }
-            )?;
-
-
-    if surface_state.closed
-        && surface_state.configured.is_none()
-    {
-        // A compositor Close request for Windowshader is an application quit.
-        running.store(false, Ordering::SeqCst);
-        return Err(
-            "The compositor closed the Windowed wallpaper before configuring it"
-                .to_string()
-        );
-    }
-
-
-    let configuration =
-        surface_state
-            .configured
-            .take()
-            .ok_or_else(
-                || {
-                    "The compositor did not configure the Windowed wallpaper"
-                        .to_string()
-                }
-            )?;
-
-
-    let width =
-        configured_dimension(
-            configuration.width,
-            saved_geometry.width,
-            "width",
-        )?;
-
-
-    let height =
-        configured_dimension(
-            configuration.height,
-            saved_geometry.height,
-            "height",
-        )?;
-
-
-    println!(
-        "Wayland Windowed wallpaper configured successfully:"
-    );
-
-
-    println!(
-        "    Width: {}",
-        width
-    );
-
-
-    println!(
-        "    Height: {}",
-        height
-    );
-
-
-    println!(
-        "    Configure serial: {}",
-        configuration.serial
-    );
-
-
-    println!(
-        "    Window role: xdg_toplevel"
-    );
-
-
-    println!(
-        "    Placement: compositor-managed"
-    );
-
-
-    println!();
-
-
-    let egl_window =
-        wayland_egl::WlEglSurface::new(
-            surface.id(),
-            width,
-            height,
-        )
-        .map_err(
-            |error| {
-                format!(
-                    "Unable to create wl_egl_window for Windowed wallpaper: {}",
-                    error,
-                )
-            }
-        )?;
-
-
-    let info =
-        WallpaperTargetInfo {
-            registry_name:
-                WINDOWED_TARGET_ID,
-
-            description:
-                Some(
-                    "Windowed wallpaper"
-                        .to_string()
-                ),
-
-            mode_width:
-                width,
-
-            mode_height:
-                height,
-
-            scale:
-                1,
-
-            complete:
-                true,
-
-            ..WallpaperTargetInfo::default()
-        };
-
-
-    let mut native_targets =
-        vec![
-            NativeWallpaperTarget {
-                info,
-                surface,
-                layer_surface:
-                    None,
-                input_region:
-                    None,
-                xdg_surface:
-                    Some(
-                        xdg_surface
-                    ),
-                xdg_toplevel:
-                    Some(
-                        xdg_toplevel
-                    ),
-                toplevel_decoration,
-                egl_window,
-                width,
-                height,
-            }
-        ];
-
-
-    let render_result =
-        render_egl_wallpapers(
-            &connection,
-            &mut event_queue,
-            &mut state,
-            &mut native_targets,
-            &active_shader,
-            &mut shader_manager,
-            wallpaper_directory,
-            shader_interval,
-            runtime,
-            &running,
-            &control,
-        );
-
-
-    if let Some(target) = native_targets.first() {
-        let position = _kwin_guard.as_ref().and_then(|guard| guard.last_position())
-            .or(saved_geometry.x.zip(saved_geometry.y));
-        let geometry = crate::wayland_windowshader::WindowshaderGeometry {
-            x: position.map(|(x, _)| x),
-            y: position.map(|(_, y)| y),
-            width: if state.windowed_maximized {
-                state.windowed_normal_width
-            } else { target.width },
-            height: if state.windowed_maximized {
-                state.windowed_normal_height
-            } else { target.height },
-            maximized: state.windowed_maximized,
-        };
-        if let Err(error) = crate::wayland_windowshader::save_windowshader_geometry(geometry) {
-            eprintln!("[WINDOWSHADER] Unable to save window geometry: {}", error);
-        }
-    }
-
-    for target in native_targets {
-
-        drop(
-            target.egl_window
-        );
-
-
-        if let Some(decoration) = target.toplevel_decoration {
-            decoration.destroy();
-        }
-
-        if let Some(xdg_toplevel) =
-            target.xdg_toplevel
-        {
-            xdg_toplevel.destroy();
-        }
-
-
-        if let Some(xdg_surface) =
-            target.xdg_surface
-        {
-            xdg_surface.destroy();
-        }
-
-
-        target.surface.destroy();
-    }
-
-
-    if let Some(manager) = state.decoration_manager.take() {
-        manager.destroy();
-    }
-
-    xdg_wm_base.destroy();
-
-
-    connection
-        .flush()
-        .map_err(
-            |error| {
-                format!(
-                    "Unable to send Windowed wallpaper cleanup requests: {}",
-                    error,
-                )
-            }
-        )?;
-
-
-    render_result
+    crate::wayland_windowshader::run_egl_windowed_surface(
+        shader_manager, wallpaper_directory, shader_interval, runtime, running, control
+    )
 }
 
-
-fn configured_dimension(
+pub(crate) fn configured_dimension(
     configured: u32,
     fallback: i32,
     dimension_name: &str,
@@ -2432,7 +2005,7 @@ fn connect_and_bind(
     )
 }
 
-fn connect_and_bind_windowed(
+pub(crate) fn connect_and_bind_windowed(
 ) -> Result<
     (
         Connection,
@@ -2646,7 +2219,7 @@ unsafe extern "C" {
 
 
 
-fn render_egl_wallpapers(
+pub(crate) fn render_egl_wallpapers(
     connection: &Connection,
     event_queue: &mut wayland_client::EventQueue<WaylandState>,
     state: &mut WaylandState,
