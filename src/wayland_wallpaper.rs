@@ -1802,6 +1802,9 @@ pub(crate) trait RenderWaylandDispatch:
     // Stage 2D-2C Step 6: pipeline-owned pause-entry compositor bookkeeping.
     fn on_pause_entering(&mut self);
     fn on_pause_entered(&mut self, native_targets: &[NativeWallpaperTarget]);
+    // Stage 2D-2C Step 7: pipeline-specific resume lifecycle diagnostics.
+    fn on_pause_released(&mut self);
+    fn on_resumed_frame_presented(&mut self);
     fn pace_frame(deadline: &mut Instant, frame_duration: Duration);
     fn pump_events(queue: &mut wayland_client::EventQueue<Self>, state: &mut Self) -> Result<(), String>
     where Self: Sized;
@@ -1814,6 +1817,8 @@ impl RenderWaylandDispatch for WaylandState {
     fn compositor_close_requests_shutdown() -> bool { false }
     fn on_pause_entering(&mut self) {}
     fn on_pause_entered(&mut self, _native_targets: &[NativeWallpaperTarget]) {}
+    fn on_pause_released(&mut self) {}
+    fn on_resumed_frame_presented(&mut self) {}
     fn pace_frame(deadline: &mut Instant, frame_duration: Duration) {
         *deadline += frame_duration;
         let now = Instant::now();
@@ -3136,17 +3141,7 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                 // flag until a successful EGL swap acknowledges resumption.
                 paused = false;
                 if resume_presentation_pending {
-                    if let Some(pending) = state.windowshader_state().windowshader_pending_callbacks.get(&0) {
-                        crate::logger::warning(
-                            &crate::locate_paths::runtime_log_path(),
-                            &format!("[WINDOWSHADER_CALLBACK_DIAG] Pause released: seq={} age_ms={} swap_completed={} flushed={}",
-                                pending.sequence, pending.requested_at.elapsed().as_millis(), pending.swap_completed, pending.flushed),
-                        );
-                    }
-                    crate::logger::warning(
-                        &crate::locate_paths::runtime_log_path(),
-                        "[WINDOWSHADER_RESUME_DIAG] Pause released; awaiting compositor-paced presentation",
-                    );
+                    state.on_pause_released();
                 }
             }
 
@@ -4322,10 +4317,7 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                 // also covers pauses observed by the independent lighting
                 // coordinator while EGL was blocked.
                 control.acknowledge_resumed_frame();
-                crate::logger::warning(
-                    &crate::locate_paths::runtime_log_path(),
-                    "[WINDOWSHADER_RESUME_DIAG] Successful post-pause EGL presentation acknowledged",
-                );
+                state.on_resumed_frame_presented();
 
 
                 println!(

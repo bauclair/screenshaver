@@ -1061,6 +1061,25 @@ impl crate::wayland_wallpaper::RenderWaylandDispatch for WindowshaderDispatchSta
         );
     }
 
+    fn on_pause_released(&mut self) {
+        if let Some(pending) = self.windowshader.windowshader_pending_callbacks.get(&0) {
+            crate::logger::warning(
+                &crate::locate_paths::runtime_log_path(),
+                &format!("[WINDOWSHADER_CALLBACK_DIAG] Pause released: seq={} age_ms={} swap_completed={} flushed={}",
+                    pending.sequence, pending.requested_at.elapsed().as_millis(), pending.swap_completed, pending.flushed),
+            );
+        }
+        crate::logger::warning(
+            &crate::locate_paths::runtime_log_path(),
+            "[WINDOWSHADER_RESUME_DIAG] Pause released; awaiting compositor-paced presentation",
+        );
+    }
+    fn on_resumed_frame_presented(&mut self) {
+        crate::logger::warning(
+            &crate::locate_paths::runtime_log_path(),
+            "[WINDOWSHADER_RESUME_DIAG] Successful post-pause EGL presentation acknowledged",
+        );
+    }
     fn pace_frame(deadline: &mut Instant, frame_duration: Duration) {
         pace_next_frame(deadline, frame_duration);
     }
