@@ -1579,6 +1579,37 @@ pub(crate) fn callback_clock_adjustments(
 }
 
 
+
+// Stage 2D-2C Step 14: bounded callback-stall reporting clock.
+#[derive(Debug, Default)]
+pub(crate) struct WindowshaderCallbackStallClock {
+    pub(crate) warned: bool,
+    pub(crate) last_report: Option<Instant>,
+}
+impl WindowshaderCallbackStallClock {
+    pub(crate) fn initial_warning_due(&mut self, since: Option<Instant>) -> bool {
+        if !self.warned && since.is_some_and(|at| at.elapsed() >= Duration::from_millis(1500)) {
+            self.warned = true;
+            return true;
+        }
+        false
+    }
+    pub(crate) fn recurring_report_due(&mut self, since: Option<Instant>) -> bool {
+        if since.is_some_and(|at| at.elapsed() >= Duration::from_secs(10))
+            && self.last_report.is_none_or(|at| at.elapsed() >= Duration::from_secs(10)) {
+            self.last_report = Some(Instant::now());
+            return true;
+        }
+        false
+    }
+    pub(crate) fn recovered(&mut self) -> bool {
+        let warned = self.warned;
+        self.warned = false;
+        self.last_report = None;
+        warned
+    }
+}
+
 // Stage 2D-2A Step 4B: Windowshader-only rotation accounting and diagnostics.
 // This state belongs to the Windowshader rendering invocation, not the
 // Wallpaper renderer or a global/static clock. The shared render loop still
@@ -1621,6 +1652,39 @@ impl Default for WindowshaderRotationClockState {
 impl WindowshaderRotationClockState {
     pub(crate) fn new(initial_switch: Instant) -> Self {
         Self { last_shader_switch: initial_switch, ..Self::default() }
+    }
+
+    // Stage 2D-2C Step 14: pause-clock accounting belongs to Windowshader.
+    pub(crate) fn record_pause_shift(&mut self, duration: Duration, wallpaper_switch: Instant, windowed: bool) {
+        let before_ms = active_rotation_timestamp(windowed, self, wallpaper_switch).elapsed().as_millis();
+        self.rotation_clock_pause_shifts = self.rotation_clock_pause_shifts.wrapping_add(1);
+        self.rotation_clock_last_shift_reason = "screensaver_pause";
+        self.rotation_clock_last_shift_ms = duration.as_millis();
+        crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+            &format!("[WINDOWSHADER_CLOCK_DIAG] reason=screensaver_pause shift_ms={} elapsed_before_ms={} elapsed_after_expected_ms={} pause_shift_count={}",
+                duration.as_millis(), before_ms, before_ms.saturating_sub(duration.as_millis()), self.rotation_clock_pause_shifts));
+    }
+
+    // Record callback exclusion using the same thresholds and diagnostics as before.
+    pub(crate) fn record_callback_shift(&mut self, callback_wait: Duration, pause_overlap: Duration,
+        rotation_shift: Duration, wallpaper_switch: Instant, windowed: bool,
+        frame_ready: bool, paused: bool, activated: bool) {
+        let before_ms = active_rotation_timestamp(windowed, self, wallpaper_switch).elapsed().as_millis();
+        self.rotation_clock_callback_shifts = self.rotation_clock_callback_shifts.wrapping_add(1);
+        self.rotation_clock_callback_shift_ms += rotation_shift.as_millis();
+        if callback_wait < Duration::from_secs(2) {
+            self.rotation_clock_callback_short_shifts = self.rotation_clock_callback_short_shifts.wrapping_add(1);
+        }
+        self.rotation_clock_last_shift_reason = "callback_wait";
+        self.rotation_clock_last_shift_ms = rotation_shift.as_millis();
+        if self.rotation_clock_callback_shifts <= 5 || self.rotation_clock_callback_shifts % 100 == 0 || callback_wait >= Duration::from_secs(2) {
+            crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+                &format!("[WINDOWSHADER_CLOCK_DIAG] reason=callback_wait raw_ms={} pause_overlap_ms={} shift_ms={} elapsed_before_ms={} elapsed_after_expected_ms={} callback_shifts={} short_under_2s={} cumulative_shift_ms={} frame_ready={} paused={} activated={}",
+                    callback_wait.as_millis(), pause_overlap.as_millis(), rotation_shift.as_millis(), before_ms,
+                    before_ms.saturating_sub(rotation_shift.as_millis()), self.rotation_clock_callback_shifts,
+                    self.rotation_clock_callback_short_shifts, self.rotation_clock_callback_shift_ms,
+                    frame_ready, paused, activated));
+        }
     }
 }
 

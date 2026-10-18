@@ -2710,11 +2710,10 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
 
     // Diagnostics only: preserve compositor-driven pacing. In particular,
     // never synthesize a wl_surface.frame completion after a screensaver pause.
-    let mut callback_wait_reported = false;
+    let mut callback_stall_clock = crate::wayland_windowshader::WindowshaderCallbackStallClock::default();
     let mut resume_presentation_pending = false;
     let mut resume_wait_reported = false;
     let mut last_successful_swap = Instant::now();
-    let mut last_callback_stall_report: Option<Instant> = None;
     // Diagnostic-only windowshader presentation watchdog. It never changes
     // pacing, requests callbacks, or touches the EGL/Wayland surface.
     let mut presentation_watchdog_last_report: Option<Instant> = None;
@@ -3115,14 +3114,7 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
 
 
                     if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed {
-                        let before_ms = crate::wayland_windowshader::active_rotation_timestamp(windowed_rotation, &windowshader_clock, last_shader_switch).elapsed().as_millis();
-                        windowshader_clock.rotation_clock_pause_shifts = windowshader_clock.rotation_clock_pause_shifts.wrapping_add(1);
-                        windowshader_clock.rotation_clock_last_shift_reason = "screensaver_pause";
-                        windowshader_clock.rotation_clock_last_shift_ms = paused_duration.as_millis();
-                        crate::logger::warning(&crate::locate_paths::runtime_log_path(),
-                            &format!("[WINDOWSHADER_CLOCK_DIAG] reason=screensaver_pause shift_ms={} elapsed_before_ms={} elapsed_after_expected_ms={} pause_shift_count={}",
-                                paused_duration.as_millis(), before_ms,
-                                before_ms.saturating_sub(paused_duration.as_millis()), windowshader_clock.rotation_clock_pause_shifts));
+                        windowshader_clock.record_pause_shift(paused_duration, last_shader_switch, windowed_rotation);
                     }
                     if windowed_rotation {
                         windowshader_clock.last_shader_switch += paused_duration;
@@ -3176,10 +3168,8 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                 }
 
 
-                if windowed_inactive_started.is_some_and(|since| since.elapsed() >= Duration::from_millis(1500))
-                    && !callback_wait_reported
+                if callback_stall_clock.initial_warning_due(windowed_inactive_started)
                 {
-                    callback_wait_reported = true;
                     let outstanding = state.outstanding_frame_callbacks(native_targets);
                     crate::logger::warning(
                         &crate::locate_paths::runtime_log_path(),
@@ -3189,10 +3179,8 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                 // A one-shot warning is useful at 1500ms; thereafter emit
                 // a bounded heartbeat every 10s so a persistent stall can be
                 // distinguished from a recovered callback without log spam.
-                if windowed_inactive_started.is_some_and(|since| since.elapsed() >= Duration::from_secs(10))
-                    && last_callback_stall_report.is_none_or(|last| last.elapsed() >= Duration::from_secs(10))
+                if callback_stall_clock.recurring_report_due(windowed_inactive_started)
                 {
-                    last_callback_stall_report = Some(Instant::now());
                     let outstanding = state.outstanding_frame_callbacks(native_targets);
                     let wait_ms = windowed_inactive_started.map_or(0, |since| since.elapsed().as_millis());
                     state.log_outstanding_callback_details(&outstanding);
@@ -3213,14 +3201,12 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
             }
 
             windowshader_clock.windowshader_rotation_block_reported = false;
-            if callback_wait_reported {
+            if callback_stall_clock.recovered() {
                 crate::logger::warning(
                     &crate::locate_paths::runtime_log_path(),
                     "[WINDOWSHADER_RESUME_DIAG] Outstanding frame callback delivered; presentation eligible",
                 );
-                callback_wait_reported = false;
             }
-            last_callback_stall_report = None;
 
             if let Some(inactive_at) =
                 windowed_inactive_started.take()
@@ -3253,23 +3239,9 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
 
 
                     if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed {
-                        let before_ms = crate::wayland_windowshader::active_rotation_timestamp(windowed_rotation, &windowshader_clock, last_shader_switch).elapsed().as_millis();
-                        windowshader_clock.rotation_clock_callback_shifts = windowshader_clock.rotation_clock_callback_shifts.wrapping_add(1);
-                        windowshader_clock.rotation_clock_callback_shift_ms += rotation_shift.as_millis();
-                        if callback_wait < Duration::from_secs(2) {
-                            windowshader_clock.rotation_clock_callback_short_shifts = windowshader_clock.rotation_clock_callback_short_shifts.wrapping_add(1);
-                        }
-                        windowshader_clock.rotation_clock_last_shift_reason = "callback_wait";
-                        windowshader_clock.rotation_clock_last_shift_ms = rotation_shift.as_millis();
-                        // First few occurrences and periodic aggregates avoid per-frame log spam.
-                        if windowshader_clock.rotation_clock_callback_shifts <= 5 || windowshader_clock.rotation_clock_callback_shifts % 100 == 0 || callback_wait >= Duration::from_secs(2) {
-                            crate::logger::warning(&crate::locate_paths::runtime_log_path(),
-                                &format!("[WINDOWSHADER_CLOCK_DIAG] reason=callback_wait raw_ms={} pause_overlap_ms={} shift_ms={} elapsed_before_ms={} elapsed_after_expected_ms={} callback_shifts={} short_under_2s={} cumulative_shift_ms={} frame_ready={} paused={} activated={}",
-                                    callback_wait.as_millis(), pause_overlap.as_millis(), rotation_shift.as_millis(), before_ms,
-                                    before_ms.saturating_sub(rotation_shift.as_millis()),
-                                    windowshader_clock.rotation_clock_callback_shifts, windowshader_clock.rotation_clock_callback_short_shifts,
-                                    windowshader_clock.rotation_clock_callback_shift_ms, windowed_frame_ready, paused, state.windowshader_state().windowed_activated));
-                        }
+                        let activated = state.windowshader_state().windowed_activated;
+                        windowshader_clock.record_callback_shift(callback_wait, pause_overlap, rotation_shift,
+                            last_shader_switch, windowed_rotation, windowed_frame_ready, paused, activated);
                     }
                     if windowed_rotation {
                         windowshader_clock.last_shader_switch += rotation_shift;
