@@ -1809,20 +1809,12 @@ impl RenderWaylandDispatch for WaylandState {
     }
 }
 
-pub(crate) fn render_egl_wallpapers<S: RenderWaylandDispatch + 'static>(
+// Stage 2D-2A step 1: EGL acquisition is separate from frame-loop ownership.
+// The caller still owns GL dispatch loading, frame processing, and teardown.
+fn initialize_egl_targets(
     connection: &Connection,
-    event_queue: &mut wayland_client::EventQueue<S>,
-    state: &mut S,
-    native_targets: &mut Vec<NativeWallpaperTarget>,
-    active_shader: &ActiveWallpaperShader,
-    shader_manager: &mut crate::manage_shader::ShaderManager,
-    wallpaper_directory: &Path,
-    shader_interval: Option<Duration>,
-    runtime: &crate::define_wallpaper::WallpaperRuntime,
-    running: &Arc<AtomicBool>,
-    control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
-) -> Result<(), String> {
-
+    native_targets: &[NativeWallpaperTarget],
+) -> Result<(EglDisplay, EglContext, Vec<EglWallpaperTarget>, i32, i32), String> {
     let native_display =
         connection
             .backend()
@@ -2088,6 +2080,28 @@ pub(crate) fn render_egl_wallpapers<S: RenderWaylandDispatch + 'static>(
             )
         );
     }
+
+
+    Ok((display, context, egl_targets, egl_major, egl_minor))
+}
+
+
+pub(crate) fn render_egl_wallpapers<S: RenderWaylandDispatch + 'static>(
+    connection: &Connection,
+    event_queue: &mut wayland_client::EventQueue<S>,
+    state: &mut S,
+    native_targets: &mut Vec<NativeWallpaperTarget>,
+    active_shader: &ActiveWallpaperShader,
+    shader_manager: &mut crate::manage_shader::ShaderManager,
+    wallpaper_directory: &Path,
+    shader_interval: Option<Duration>,
+    runtime: &crate::define_wallpaper::WallpaperRuntime,
+    running: &Arc<AtomicBool>,
+    control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+) -> Result<(), String> {
+
+    let (display, context, mut egl_targets, egl_major, egl_minor) =
+        initialize_egl_targets(connection, native_targets)?;
 
 
     gl::load_with(
