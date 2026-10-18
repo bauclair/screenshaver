@@ -470,12 +470,21 @@ impl WallpaperRuntimeManager {
                                 std::panic::catch_unwind(
                                     std::panic::AssertUnwindSafe(
                                         || {
-                                            crate::manage_wallpaper::run(
-                                                &configured_mode,
-                                                &runtime,
-                                                attempt_running,
-                                                thread_control.clone(),
-                                            )
+                                            if windowshader {
+                                                crate::manage_windowshader::run(
+                                                    &configured_mode,
+                                                    &runtime,
+                                                    attempt_running,
+                                                    thread_control.clone(),
+                                                )
+                                            } else {
+                                                crate::manage_wallpaper::run(
+                                                    &configured_mode,
+                                                    &runtime,
+                                                    attempt_running,
+                                                    thread_control.clone(),
+                                                )
+                                            }
                                         }
                                     )
                                 );

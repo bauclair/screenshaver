@@ -84,6 +84,7 @@ mod control_wallpaper;
 mod control_windowshader;
 mod locate_wallpaper;
 mod manage_wallpaper;
+mod manage_windowshader;
 mod manage_wallpaper_runtime;
 mod manage_windowshader_runtime;
 mod manage_lyrics;
