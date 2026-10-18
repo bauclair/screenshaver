@@ -4945,20 +4945,8 @@ fn process_wayland_events(
     event_queue: &mut wayland_client::EventQueue<WaylandState>,
     state: &mut WaylandState,
 ) -> Result<(), String> {
-    process_wayland_events_shared(event_queue, state, |state| {
-        for (target, pending) in state.windowshader.windowshader_pending_callbacks.iter_mut() {
-            if !pending.flushed {
-                pending.flushed = true;
-                if pending.requested_at.elapsed() >= Duration::from_millis(250) {
-                    crate::logger::warning(
-                        &crate::locate_paths::runtime_log_path(),
-                        &format!("[WINDOWSHADER_CALLBACK_DIAG] Wayland flush succeeded: target={} seq={} age_ms={} swap_completed={}",
-                            target, pending.sequence, pending.requested_at.elapsed().as_millis(), pending.swap_completed),
-                    );
-                }
-            }
-        }
-    })
+    // Stage 2D-2C Step 12: Wallpaper has no Windowshader callback records.
+    process_wayland_events_shared(event_queue, state, |_| {})
 }
 
 /// Dispatch-state-neutral event pump.  The callback runs only after a

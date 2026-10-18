@@ -1034,6 +1034,23 @@ pub(crate) struct WindowshaderDispatchState {
     pub(crate) windowshader: WindowshaderWaylandState,
 }
 
+// Stage 2D-2C Step 12: Windowshader owns callback diagnostics following a
+// successful Wayland flush. The shared pump invokes this only after flush().
+impl WindowshaderDispatchState {
+    fn on_successful_wayland_flush(&mut self) {
+        for (target, pending) in self.windowshader.windowshader_pending_callbacks.iter_mut() {
+            if !pending.flushed {
+                pending.flushed = true;
+                if pending.requested_at.elapsed() >= Duration::from_millis(250) {
+                    crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+                        &format!("[WINDOWSHADER_CALLBACK_DIAG] Wayland flush succeeded: target={} seq={} age_ms={} swap_completed={}",
+                            target, pending.sequence, pending.requested_at.elapsed().as_millis(), pending.swap_completed));
+                }
+            }
+        }
+    }
+}
+
 impl crate::wayland_wallpaper::RenderWaylandDispatch for WindowshaderDispatchState {
     fn surfaces(&mut self) -> &mut Vec<WallpaperSurfaceState> { &mut self.surface_states }
     fn windowshader_state(&mut self) -> &mut WindowshaderWaylandState { &mut self.windowshader }
@@ -1102,16 +1119,7 @@ impl crate::wayland_wallpaper::RenderWaylandDispatch for WindowshaderDispatchSta
     }
     fn pump_events(queue: &mut wayland_client::EventQueue<Self>, state: &mut Self) -> Result<(), String> {
         crate::wayland_wallpaper::process_wayland_events_shared(queue, state, |state| {
-            for (target, pending) in state.windowshader.windowshader_pending_callbacks.iter_mut() {
-                if !pending.flushed {
-                    pending.flushed = true;
-                    if pending.requested_at.elapsed() >= Duration::from_millis(250) {
-                        crate::logger::warning(&crate::locate_paths::runtime_log_path(),
-                            &format!("[WINDOWSHADER_CALLBACK_DIAG] Wayland flush succeeded: target={} seq={} age_ms={} swap_completed={}",
-                                target, pending.sequence, pending.requested_at.elapsed().as_millis(), pending.swap_completed));
-                    }
-                }
-            }
+            state.on_successful_wayland_flush();
         })
     }
 }
