@@ -51,8 +51,33 @@ use wayland_protocols::xdg::decoration::zv1::client::zxdg_toplevel_decoration_v1
 use crate::wayland_wallpaper::{
     WallpaperSurfaceState, WallpaperTargetInfo, NativeWallpaperTarget,
     select_safe_wallpaper_shader, print_active_wallpaper_shader,
-    configured_dimension, render_egl_wallpapers,
+    configured_dimension,
 };
+
+// Stage 2D-2B Step 1: Windowshader owns the frame-loop entry point.
+// The EGL setup, frame processing and teardown are deliberately delegated to
+// the unchanged shared implementation until lifecycle extraction is tested.
+// Keeping this boundary here makes the future Windowshader loop replacement
+// local to this module without changing XDG surface ownership or callbacks.
+fn render_windowshader_frames(
+    connection: &wayland_client::Connection,
+    event_queue: &mut wayland_client::EventQueue<WindowshaderDispatchState>,
+    state: &mut WindowshaderDispatchState,
+    native_targets: &mut Vec<NativeWallpaperTarget>,
+    active_shader: &crate::wayland_wallpaper::ActiveWallpaperShader,
+    shader_manager: &mut crate::manage_shader::ShaderManager,
+    wallpaper_directory: &Path,
+    shader_interval: Option<Duration>,
+    runtime: &crate::define_wallpaper::WallpaperRuntime,
+    running: &Arc<AtomicBool>,
+    control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+) -> Result<(), String> {
+    crate::wayland_wallpaper::render_egl_wallpapers(
+        connection, event_queue, state, native_targets, active_shader,
+        shader_manager, wallpaper_directory, shader_interval, runtime,
+        running, control,
+    )
+}
 
 pub fn run_egl_windowed_surface(
     mut shader_manager: crate::manage_shader::ShaderManager,
@@ -409,7 +434,7 @@ pub fn run_egl_windowed_surface(
 
 
     let render_result =
-        render_egl_wallpapers(
+        render_windowshader_frames(
             &connection,
             &mut event_queue,
             &mut state,
