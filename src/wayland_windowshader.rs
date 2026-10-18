@@ -1080,6 +1080,9 @@ impl crate::wayland_wallpaper::RenderWaylandDispatch for WindowshaderDispatchSta
             "[WINDOWSHADER_RESUME_DIAG] Successful post-pause EGL presentation acknowledged",
         );
     }
+    fn reset_frame_deadline(deadline: &mut Instant) {
+        crate::wayland_windowshader::reset_frame_deadline(deadline);
+    }
     fn pace_frame(deadline: &mut Instant, frame_duration: Duration) {
         pace_next_frame(deadline, frame_duration);
     }

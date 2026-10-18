@@ -1805,6 +1805,8 @@ pub(crate) trait RenderWaylandDispatch:
     // Stage 2D-2C Step 7: pipeline-specific resume lifecycle diagnostics.
     fn on_pause_released(&mut self);
     fn on_resumed_frame_presented(&mut self);
+    // Stage 2D-2C Step 8: pipeline-owned frame-deadline reset.
+    fn reset_frame_deadline(deadline: &mut Instant);
     fn pace_frame(deadline: &mut Instant, frame_duration: Duration);
     fn pump_events(queue: &mut wayland_client::EventQueue<Self>, state: &mut Self) -> Result<(), String>
     where Self: Sized;
@@ -1819,6 +1821,9 @@ impl RenderWaylandDispatch for WaylandState {
     fn on_pause_entered(&mut self, _native_targets: &[NativeWallpaperTarget]) {}
     fn on_pause_released(&mut self) {}
     fn on_resumed_frame_presented(&mut self) {}
+    fn reset_frame_deadline(deadline: &mut Instant) {
+        *deadline = Instant::now();
+    }
     fn pace_frame(deadline: &mut Instant, frame_duration: Duration) {
         *deadline += frame_duration;
         let now = Instant::now();
@@ -2170,16 +2175,6 @@ impl FrameLoopInitialTiming {
             rendered_fps,
             next_frame_deadline: Instant::now(),
         }
-    }
-}
-
-// Stage 2D-2C Step 3: dispatch deadline resets to the owning pipeline.
-// Preserve the same Instant::now() behavior for wallpaper and Windowshader.
-fn reset_pipeline_frame_deadline(windowshader: bool, deadline: &mut Instant) {
-    if windowshader {
-        crate::wayland_windowshader::reset_frame_deadline(deadline);
-    } else {
-        *deadline = Instant::now();
     }
 }
 
@@ -3010,13 +3005,7 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                                     rendered_fps
                                 );
 
-                            reset_pipeline_frame_deadline(
-
-                                runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed,
-
-                                &mut next_frame_deadline,
-
-                            );
+                            S::reset_frame_deadline(&mut next_frame_deadline);
 
                             frame_times.clear();
                             fps_warning_state =
@@ -3123,16 +3112,7 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                 }
 
 
-                reset_pipeline_frame_deadline(
-
-
-                    runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed,
-
-
-                    &mut next_frame_deadline,
-
-
-                );
+                S::reset_frame_deadline(&mut next_frame_deadline);
 
 
                 frame_times.clear();
@@ -3309,16 +3289,7 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                     windowshader_clock.last_windowed_pause_interval = None;
 
 
-                    reset_pipeline_frame_deadline(
-
-
-                        runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed,
-
-
-                        &mut next_frame_deadline,
-
-
-                    );
+                    S::reset_frame_deadline(&mut next_frame_deadline);
 
 
                     frame_times.clear();
@@ -3575,16 +3546,7 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                                     );
 
 
-                                reset_pipeline_frame_deadline(
-
-
-                                    runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed,
-
-
-                                    &mut next_frame_deadline,
-
-
-                                );
+                                S::reset_frame_deadline(&mut next_frame_deadline);
 
 
                                 current_shader =
