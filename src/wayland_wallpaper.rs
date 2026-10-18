@@ -1796,6 +1796,9 @@ pub(crate) trait RenderWaylandDispatch:
     fn surfaces(&mut self) -> &mut Vec<WallpaperSurfaceState>;
     fn windowshader_state(&mut self) -> &mut crate::wayland_windowshader::WindowshaderWaylandState;
     fn removed_outputs(&mut self) -> &mut Vec<u32>;
+    // Stage 2D-2C Step 5: each presentation pipeline decides whether a
+    // compositor close request also terminates its runtime supervisor.
+    fn compositor_close_requests_shutdown() -> bool;
     fn pace_frame(deadline: &mut Instant, frame_duration: Duration);
     fn pump_events(queue: &mut wayland_client::EventQueue<Self>, state: &mut Self) -> Result<(), String>
     where Self: Sized;
@@ -1805,6 +1808,7 @@ impl RenderWaylandDispatch for WaylandState {
     fn surfaces(&mut self) -> &mut Vec<WallpaperSurfaceState> { &mut self.surface_states }
     fn windowshader_state(&mut self) -> &mut crate::wayland_windowshader::WindowshaderWaylandState { &mut self.windowshader }
     fn removed_outputs(&mut self) -> &mut Vec<u32> { &mut self.removed_output_names }
+    fn compositor_close_requests_shutdown() -> bool { false }
     fn pace_frame(deadline: &mut Instant, frame_duration: Duration) {
         *deadline += frame_duration;
         let now = Instant::now();
@@ -2855,9 +2859,9 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                 .any(|surface_state| surface_state.closed);
 
             if compositor_closed {
-                // Only Windowshader's xdg_toplevel Close means Quit.
-                // A wallpaper layer closing must not terminate Screenshaver.
-                if native_targets.iter().any(|target| target.xdg_toplevel.is_some()) {
+                // Windowshader's XDG close quits its supervisor; Wallpaper's
+                // layer-surface close only ends this presentation loop.
+                if S::compositor_close_requests_shutdown() {
                     running.store(false, Ordering::SeqCst);
                 }
                 break Ok(());

@@ -1038,6 +1038,7 @@ impl crate::wayland_wallpaper::RenderWaylandDispatch for WindowshaderDispatchSta
     fn surfaces(&mut self) -> &mut Vec<WallpaperSurfaceState> { &mut self.surface_states }
     fn windowshader_state(&mut self) -> &mut WindowshaderWaylandState { &mut self.windowshader }
     fn removed_outputs(&mut self) -> &mut Vec<u32> { &mut self.removed_output_names }
+    fn compositor_close_requests_shutdown() -> bool { true }
     fn pace_frame(deadline: &mut Instant, frame_duration: Duration) {
         pace_next_frame(deadline, frame_duration);
     }
