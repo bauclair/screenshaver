@@ -1323,3 +1323,44 @@ pub(crate) fn connect_and_bind_windowshader_dispatch()
     if state.xdg_wm_base.is_none() { return Err("Missing xdg_wm_base".into()); }
     Ok((connection, queue, state))
 }
+
+
+// Stage 2D-2A Step 2: Windowshader owns compositor callback pacing.
+// A missing callback record means that the surface has not yet requested a
+// frame; preserve the existing first-frame-ready default.
+pub(crate) fn all_frames_ready(
+    state: &WindowshaderWaylandState,
+    targets: &[NativeWallpaperTarget],
+) -> bool {
+    targets.iter().all(|target| {
+        state.frame_ready
+            .get(&target.info.registry_name)
+            .copied()
+            .unwrap_or(true)
+    })
+}
+
+// Must be called on the owning Wayland event-queue thread before committing
+// the surface. The matching callback is acknowledged by Windowshader dispatch.
+pub(crate) fn request_next_frame<S>(
+    state: &mut WindowshaderWaylandState,
+    surface: &wayland_client::protocol::wl_surface::WlSurface,
+    registry_name: u32,
+    queue: &QueueHandle<S>,
+) where
+    S: Dispatch<wl_callback::WlCallback, FrameCallbackDispatchData> + 'static,
+{
+    state.windowshader_next_callback_sequence += 1;
+    let sequence = state.windowshader_next_callback_sequence;
+    surface.frame(queue, FrameCallbackDispatchData { registry_name, sequence });
+    state.windowshader_pending_callbacks.insert(
+        registry_name,
+        WindowshaderCallbackDiagnostic {
+            sequence,
+            requested_at: Instant::now(),
+            swap_completed: false,
+            flushed: false,
+        },
+    );
+    state.frame_ready.insert(registry_name, false);
+}

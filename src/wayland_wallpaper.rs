@@ -3076,19 +3076,10 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                 if runtime.display_format
                     == crate::manage_configuration::WallpaperDisplayFormat::Windowed
                 {
-                    native_targets
-                        .iter()
-                        .all(
-                            |target| {
-                                state
-                                    .windowshader_state().frame_ready
-                                    .get(
-                                        &target.info.registry_name
-                                    )
-                                    .copied()
-                                    .unwrap_or(true)
-                            }
-                        )
+                    crate::wayland_windowshader::all_frames_ready(
+                        state.windowshader_state(),
+                        native_targets,
+                    )
                 } else {
                     true
                 };
@@ -4124,26 +4115,11 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                 if runtime.display_format
                     == crate::manage_configuration::WallpaperDisplayFormat::Windowed
                 {
-                    state.windowshader_state().windowshader_next_callback_sequence += 1;
-                    let sequence = state.windowshader_state().windowshader_next_callback_sequence;
-                    let registry_name = native_target.info.registry_name;
-                    native_target.surface.frame(
-                        &frame_queue_handle,
-                        crate::wayland_windowshader::FrameCallbackDispatchData {
-                            registry_name,
-                            sequence,
-                        },
-                    );
-                    state.windowshader_state().windowshader_pending_callbacks.insert(registry_name, crate::wayland_windowshader::WindowshaderCallbackDiagnostic {
-                        sequence,
-                        requested_at: Instant::now(),
-                        swap_completed: false,
-                        flushed: false,
-                    });
-
-                    state.windowshader_state().frame_ready.insert(
+                    crate::wayland_windowshader::request_next_frame(
+                        state.windowshader_state(),
+                        &native_target.surface,
                         native_target.info.registry_name,
-                        false,
+                        &frame_queue_handle,
                     );
                 }
 
