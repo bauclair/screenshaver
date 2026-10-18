@@ -104,11 +104,25 @@ fn run_windowshader_frame_loop(
         runtime, active_shader,
     );
     crate::wayland_render_core::prepare_egl_frame_processing();
-    crate::wayland_render_core::execute_shared_egl_frame_processing(
+    crate::wayland_render_core::execute_egl_frame_processing_with_driver(
         egl_session, event_queue, state, native_targets, active_shader,
         shader_manager, wallpaper_directory, shader_interval, runtime,
-        running, control, initial_timing,
+        running, control, initial_timing, drive_windowshader_frame_loop,
     )
+}
+
+// Windowshader owns the iteration boundary and the termination decision.
+// Render Core owns the reusable GL/frame step and resource cleanup. Never
+// fabricate compositor callbacks to advance this loop.
+fn drive_windowshader_frame_loop(
+    step: &mut crate::wayland_render_core::FrameStep<'_>,
+) -> Result<(), String> {
+    loop {
+        match step()? {
+            crate::wayland_render_core::FrameLoopAction::Continue => {},
+            crate::wayland_render_core::FrameLoopAction::Stop => return Ok(()),
+        }
+    }
 }
 
 // Stage 2D-2B Step 2: Windowshader owns its post-render surface lifecycle.

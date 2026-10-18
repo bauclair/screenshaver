@@ -49,8 +49,29 @@ pub(crate) fn prepare_egl_frame_processing() {
 
 }
 
+// Stage 2D-2C Step 16 (consolidated): execution-loop drivers are owned by
+// the presentation pipeline. Render Core provides one reusable frame step.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FrameLoopAction {
+    Continue,
+    Stop,
+}
+
+pub(crate) type FrameStep<'a> = dyn FnMut() -> Result<FrameLoopAction, String> + 'a;
+pub(crate) type FrameLoopDriver = for<'a> fn(&mut FrameStep<'a>) -> Result<(), String>;
+
+pub(crate) fn run_wallpaper_frame_loop(step: &mut FrameStep<'_>) -> Result<(), String> {
+    loop {
+        match step()? {
+            FrameLoopAction::Continue => {},
+            FrameLoopAction::Stop => return Ok(()),
+        }
+    }
+}
+
 // Shared frame implementation. The owning pipeline decides when to invoke it.
 pub(crate) fn execute_shared_egl_frame_processing<S: RenderWaylandDispatch + 'static>(
+
     egl_session: &mut EglRenderSession,
     event_queue: &mut wayland_client::EventQueue<S>,
     state: &mut S,
@@ -64,10 +85,32 @@ pub(crate) fn execute_shared_egl_frame_processing<S: RenderWaylandDispatch + 'st
     control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
     initial_timing: FrameLoopInitialTiming,
 ) -> Result<(), String> {
+    execute_egl_frame_processing_with_driver(
+        egl_session, event_queue, state, native_targets, active_shader,
+        shader_manager, wallpaper_directory, shader_interval, runtime,
+        running, control, initial_timing, run_wallpaper_frame_loop,
+    )
+}
+
+pub(crate) fn execute_egl_frame_processing_with_driver<S: RenderWaylandDispatch + 'static>(
+    egl_session: &mut EglRenderSession,
+    event_queue: &mut wayland_client::EventQueue<S>,
+    state: &mut S,
+    native_targets: &mut Vec<NativeWallpaperTarget>,
+    active_shader: &ActiveWallpaperShader,
+    shader_manager: &mut crate::manage_shader::ShaderManager,
+    wallpaper_directory: &Path,
+    shader_interval: Option<Duration>,
+    runtime: &crate::define_wallpaper::WallpaperRuntime,
+    running: &Arc<AtomicBool>,
+    control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+    initial_timing: FrameLoopInitialTiming,
+    loop_driver: FrameLoopDriver,
+) -> Result<(), String> {
 
 
     let render_result =
-        render_mirror_frames(
+        render_mirror_frames_with_driver(
             egl_session.display,
             egl_session.context,
             &mut egl_session.targets,
@@ -82,6 +125,7 @@ pub(crate) fn execute_shared_egl_frame_processing<S: RenderWaylandDispatch + 'st
             running,
             control,
             initial_timing,
+            loop_driver,
         );
 
 
@@ -146,7 +190,7 @@ pub(crate) fn execute_shared_egl_frame_processing<S: RenderWaylandDispatch + 'st
 
 // Stage 2D-2C Step 15B: shared GL frame execution and its associated
 // resource/rotation helpers live in the neutral rendering core.
-pub(crate) fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
+pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'static>(
     display: EglDisplay,
     context: EglContext,
     egl_targets: &mut Vec<EglWallpaperTarget>,
@@ -161,6 +205,7 @@ pub(crate) fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
     running: &Arc<AtomicBool>,
     control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
     initial_timing: FrameLoopInitialTiming,
+    loop_driver: FrameLoopDriver,
 ) -> Result<(), String> {
 
     let mut program =
@@ -508,8 +553,7 @@ pub(crate) fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
     }
     let mut status_heartbeat = Instant::now() - Duration::from_secs(2);
 
-    let result =
-        'render_loop: loop {
+    let result = loop_driver(&mut || -> Result<FrameLoopAction, String> {
 
             control.diagnostic_checkpoint(1);
             S::pump_events(event_queue, state)?;
@@ -633,7 +677,7 @@ pub(crate) fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                 );
 
 
-                break Ok(());
+                return Ok(FrameLoopAction::Stop);
             }
 
 
@@ -654,10 +698,10 @@ pub(crate) fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                 if S::compositor_close_requests_shutdown() {
                     running.store(false, Ordering::SeqCst);
                 }
-                break Ok(());
+                return Ok(FrameLoopAction::Stop);
             }
             if !running.load(Ordering::SeqCst) {
-                break Ok(());
+                return Ok(FrameLoopAction::Stop);
             }
 
 
@@ -860,7 +904,7 @@ pub(crate) fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                 );
 
 
-                continue 'render_loop;
+                return Ok(FrameLoopAction::Continue);
             }
 
 
@@ -958,7 +1002,7 @@ pub(crate) fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                     );
                 }
                 thread::sleep(Duration::from_millis(10));
-                continue 'render_loop;
+                return Ok(FrameLoopAction::Continue);
             }
 
             if windowed_rotation {
@@ -1077,7 +1121,7 @@ pub(crate) fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                         )
                     } == EGL_FALSE
                     {
-                        break 'render_loop Err(
+                        return Err(
                             egl_failure(
                                 "eglMakeCurrent before switching wallpaper shaders"
                             )
@@ -1150,7 +1194,7 @@ pub(crate) fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                                     );
 
 
-                                    continue 'render_loop;
+                                    return Ok(FrameLoopAction::Continue);
                                 }
 
 
@@ -1619,7 +1663,7 @@ pub(crate) fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                     )
                 } == EGL_FALSE
                 {
-                    break 'render_loop Err(
+                    return Err(
                         egl_failure(
                             "eglMakeCurrent"
                         )
@@ -1937,7 +1981,7 @@ pub(crate) fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                     )
                 } == EGL_FALSE
                 {
-                    break 'render_loop Err(
+                    return Err(
                         egl_failure(
                             "eglSwapBuffers"
                         )
@@ -2116,7 +2160,8 @@ pub(crate) fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
             control.diagnostic_checkpoint(7);
             // Dispatch pacing to the owning rendering pipeline.
             S::pace_frame(&mut next_frame_deadline, frame_duration);
-        };
+            Ok(FrameLoopAction::Continue)
+        });
 
 
     drop(
