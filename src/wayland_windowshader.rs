@@ -1654,6 +1654,28 @@ impl WindowshaderRotationClockState {
         Self { last_shader_switch: initial_switch, ..Self::default() }
     }
 
+    // Step 16B: Windowshader owns the decision whether its rotation clock is due.
+    // No compositor callback is synthesized and no clock is advanced here.
+    pub(crate) fn rotation_due(&self, interval: Option<Duration>) -> bool {
+        interval.is_some_and(|interval| self.last_shader_switch.elapsed() >= interval)
+    }
+
+    // A blocked rotation is reported once until the compositor allows another frame.
+    // This is diagnostic only; the compositor callback remains authoritative.
+    pub(crate) fn report_blocked_rotation_if_due(&mut self, interval: Option<Duration>) {
+        if !self.windowshader_rotation_block_reported && self.rotation_due(interval) {
+            self.windowshader_rotation_block_reported = true;
+            crate::logger::warning(
+                &crate::locate_paths::runtime_log_path(),
+                "[WINDOWSHADER_ROTATION_DIAG] Rotation deadline reached while awaiting compositor frame callback; no rotation attempted",
+            );
+        }
+    }
+
+    pub(crate) fn clear_blocked_rotation_report(&mut self) {
+        self.windowshader_rotation_block_reported = false;
+    }
+
     // Stage 2D-2C Step 14: pause-clock accounting belongs to Windowshader.
     pub(crate) fn record_pause_shift(&mut self, duration: Duration, wallpaper_switch: Instant, windowed: bool) {
         let before_ms = active_rotation_timestamp(windowed, self, wallpaper_switch).elapsed().as_millis();

@@ -585,7 +585,11 @@ pub(crate) fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                         ws.windowshader_configure_count.wrapping_sub(presentation.windowshader_last_configure_count),
                     )
                 };
-                let rotation_due = shader_interval.is_some_and(|interval| crate::wayland_windowshader::active_rotation_timestamp(windowed_rotation, &windowshader_clock, last_shader_switch).elapsed() >= interval);
+                let rotation_due = if windowed_rotation {
+                    windowshader_clock.rotation_due(shader_interval)
+                } else {
+                    shader_interval.is_some_and(|interval| last_shader_switch.elapsed() >= interval)
+                };
                 crate::logger::warning(
                     &crate::locate_paths::runtime_log_path(),
                     &format!("[WINDOWSHADER_LIFECYCLE_DIAG] shader='{}' policy_id={} program={} frame={} swaps_total={} swap_age_ms={} frame_ready={} callback_seq={:?} callback_age_ms={:?} paused={} pause_requested={} activated={} rotation_due={} rotation_elapsed_ms={} rotation_interval_ms={:?} rotation_attempts={} rotation_successes={} rotation_failures={} configure_delta={} loop_ticks={}",
@@ -914,13 +918,8 @@ pub(crate) fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
 
 
             if !windowed_frame_ready {
-                if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed
-                    && !windowshader_clock.windowshader_rotation_block_reported
-                    && shader_interval.is_some_and(|interval| crate::wayland_windowshader::active_rotation_timestamp(windowed_rotation, &windowshader_clock, last_shader_switch).elapsed() >= interval)
-                {
-                    windowshader_clock.windowshader_rotation_block_reported = true;
-                    crate::logger::warning(&crate::locate_paths::runtime_log_path(),
-                        "[WINDOWSHADER_ROTATION_DIAG] Rotation deadline reached while awaiting compositor frame callback; no rotation attempted");
+                if windowed_rotation {
+                    windowshader_clock.report_blocked_rotation_if_due(shader_interval);
                 }
                 if windowed_inactive_started.is_none() {
                     windowed_inactive_started =
@@ -962,7 +961,7 @@ pub(crate) fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                 continue 'render_loop;
             }
 
-            windowshader_clock.windowshader_rotation_block_reported = false;
+            windowshader_clock.clear_blocked_rotation_report();
             if callback_stall_clock.recovered() {
                 crate::logger::warning(
                     &crate::locate_paths::runtime_log_path(),
@@ -1030,8 +1029,11 @@ pub(crate) fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                 && shader_interval
                     .map(
                         |interval| {
-                            crate::wayland_windowshader::active_rotation_timestamp(windowed_rotation, &windowshader_clock, last_shader_switch).elapsed()
-                                >= interval
+                            if windowed_rotation {
+                                windowshader_clock.rotation_due(Some(interval))
+                            } else {
+                                last_shader_switch.elapsed() >= interval
+                            }
                         }
                     )
                     .unwrap_or(
