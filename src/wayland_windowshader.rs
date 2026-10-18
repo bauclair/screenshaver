@@ -816,6 +816,39 @@ impl Dispatch<wl_callback::WlCallback, FrameCallbackDispatchData>
 
 
 
+
+// Stage 2B-4B2B: Windowshader owns registration of its XDG globals.
+// The shared dispatch-state and event queue are intentionally retained here;
+// switching their type requires a separate renderer-interface change.
+pub(crate) fn bind_windowshader_registry_global(
+    state: &mut WaylandState,
+    registry: &wayland_client::protocol::wl_registry::WlRegistry,
+    name: u32,
+    interface: &str,
+    version: u32,
+    queue_handle: &QueueHandle<WaylandState>,
+) {
+    match interface {
+        "xdg_wm_base" => {
+            state.xdg_wm_base_version = Some(version);
+            if state.xdg_wm_base.is_none() {
+                state.xdg_wm_base = Some(registry.bind::<XdgWmBase, _, _>(
+                    name, version.min(6), queue_handle, (),
+                ));
+            }
+        }
+        "zxdg_decoration_manager_v1" => {
+            if state.decoration_manager.is_none() {
+                state.decoration_manager = Some(registry.bind::<
+                    wayland_protocols::xdg::decoration::zv1::client::zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
+                    _, _,
+                >(name, version.min(1), queue_handle, ()));
+            }
+        }
+        _ => {}
+    }
+}
+
 // Windowshader owns creation and capability negotiation of its Wayland connection
 // and event queue. The queue state type remains shared until the render-loop
 // interface and registry dispatch can be separated safely.

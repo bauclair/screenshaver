@@ -308,48 +308,10 @@ impl Dispatch<wl_registry::WlRegistry, ()>
                     }
 
 
-                    "xdg_wm_base" => {
-
-                        state.xdg_wm_base_version =
-                            Some(
-                                version
-                            );
-
-
-                        if state
-                            .xdg_wm_base
-                            .is_none()
-                        {
-                            state.xdg_wm_base =
-                                Some(
-                                    registry.bind::<
-                                        XdgWmBase,
-                                        _,
-                                        _
-                                    >(
-                                        name,
-                                        version.min(
-                                            6
-                                        ),
-                                        queue_handle,
-                                        (),
-                                    )
-                                );
-                        }
-                    }
-
-
-                    "zxdg_decoration_manager_v1" => {
-                        if state.decoration_manager.is_none() {
-                            state.decoration_manager = Some(
-                                registry.bind::<ZxdgDecorationManagerV1, _, _>(
-                                    name,
-                                    version.min(1),
-                                    queue_handle,
-                                    (),
-                                )
-                            );
-                        }
+                    "xdg_wm_base" | "zxdg_decoration_manager_v1" => {
+                        crate::wayland_windowshader::bind_windowshader_registry_global(
+                            state, registry, name, interface.as_str(), version, queue_handle,
+                        );
                     }
 
                     "wl_output" => {
