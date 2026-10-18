@@ -1088,6 +1088,12 @@ impl crate::wayland_wallpaper::RenderWaylandDispatch for WindowshaderDispatchSta
     fn frames_ready_for_presentation(&mut self, native_targets: &[NativeWallpaperTarget]) -> bool {
         all_frames_ready(&self.windowshader, native_targets)
     }
+    fn request_next_presentation_frame(
+        &mut self, surface: &wayland_client::protocol::wl_surface::WlSurface,
+        registry_name: u32, queue: &QueueHandle<Self>,
+    ) {
+        request_next_frame(&mut self.windowshader, surface, registry_name, queue);
+    }
     fn reset_frame_deadline(deadline: &mut Instant) {
         crate::wayland_windowshader::reset_frame_deadline(deadline);
     }

@@ -1809,6 +1809,11 @@ pub(crate) trait RenderWaylandDispatch:
     fn on_frame_swap_completed(&mut self, registry_name: u32);
     // Stage 2D-2C Step 10: frame readiness is decided by the presentation pipeline.
     fn frames_ready_for_presentation(&mut self, native_targets: &[NativeWallpaperTarget]) -> bool;
+    // Stage 2D-2C Step 11: pipeline-owned compositor frame registration.
+    fn request_next_presentation_frame(
+        &mut self, surface: &wl_surface::WlSurface, registry_name: u32,
+        queue: &QueueHandle<Self>,
+    ) where Self: Sized;
     // Stage 2D-2C Step 8: pipeline-owned frame-deadline reset.
     fn reset_frame_deadline(deadline: &mut Instant);
     fn pace_frame(deadline: &mut Instant, frame_duration: Duration);
@@ -1827,6 +1832,10 @@ impl RenderWaylandDispatch for WaylandState {
     fn on_resumed_frame_presented(&mut self) {}
     fn on_frame_swap_completed(&mut self, _registry_name: u32) {}
     fn frames_ready_for_presentation(&mut self, _native_targets: &[NativeWallpaperTarget]) -> bool { true }
+    fn request_next_presentation_frame(
+        &mut self, _surface: &wl_surface::WlSurface, _registry_name: u32,
+        _queue: &QueueHandle<Self>,
+    ) {}
     fn reset_frame_deadline(deadline: &mut Instant) {
         *deadline = Instant::now();
     }
@@ -4172,16 +4181,11 @@ fn render_mirror_frames<S: RenderWaylandDispatch + 'static>(
                 }
 
 
-                if runtime.display_format
-                    == crate::manage_configuration::WallpaperDisplayFormat::Windowed
-                {
-                    crate::wayland_windowshader::request_next_frame(
-                        state.windowshader_state(),
-                        &native_target.surface,
-                        native_target.info.registry_name,
-                        &frame_queue_handle,
-                    );
-                }
+                state.request_next_presentation_frame(
+                    &native_target.surface,
+                    native_target.info.registry_name,
+                    &frame_queue_handle,
+                );
 
 
                 // Finish measuring Screenshaver's GPU work before handing
