@@ -42,6 +42,7 @@ pub(crate) fn save_windowshader_geometry(geometry: WindowshaderGeometry) -> Resu
 
 
 // The XDG toplevel lifecycle is owned here; EGL/frame processing remains shared.
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::time::Duration;
@@ -49,6 +50,7 @@ use wayland_client::Proxy;
 use wayland_protocols::xdg::decoration::zv1::client::zxdg_toplevel_decoration_v1;
 use crate::wayland_wallpaper::{
     WallpaperSurfaceState, WallpaperTargetInfo, NativeWallpaperTarget,
+    WindowshaderCallbackDiagnostic,
     select_safe_wallpaper_shader, print_active_wallpaper_shader,
     connect_and_bind_windowed, configured_dimension, render_egl_wallpapers,
 };
@@ -105,8 +107,8 @@ pub fn run_egl_windowed_surface(
         connect_and_bind_windowed()?;
 
 
-    state.windowed_normal_width = saved_geometry.width;
-    state.windowed_normal_height = saved_geometry.height;
+    state.windowshader.windowed_normal_width = saved_geometry.width;
+    state.windowshader.windowed_normal_height = saved_geometry.height;
 
     let queue_handle =
         event_queue.handle();
@@ -429,13 +431,13 @@ pub fn run_egl_windowed_surface(
         let geometry = crate::wayland_windowshader::WindowshaderGeometry {
             x: position.map(|(x, _)| x),
             y: position.map(|(_, y)| y),
-            width: if state.windowed_maximized {
-                state.windowed_normal_width
+            width: if state.windowshader.windowed_maximized {
+                state.windowshader.windowed_normal_width
             } else { target.width },
-            height: if state.windowed_maximized {
-                state.windowed_normal_height
+            height: if state.windowshader.windowed_maximized {
+                state.windowshader.windowed_normal_height
             } else { target.height },
-            maximized: state.windowed_maximized,
+            maximized: state.windowshader.windowed_maximized,
         };
         if let Err(error) = crate::wayland_windowshader::save_windowshader_geometry(geometry) {
             eprintln!("[WINDOWSHADER] Unable to save window geometry: {}", error);
@@ -495,6 +497,26 @@ pub fn run_egl_windowed_surface(
 
 
 // XDG and frame-callback event dispatch belongs to Windowshader.
+// Windowshader-only XDG geometry, activation, and callback bookkeeping.
+// The shared frame_ready map remains on WaylandState for both render modes.
+#[derive(Debug, Default)]
+pub(crate) struct WindowshaderWaylandState {
+    pub(crate) windowed_pending_width: i32,
+    pub(crate) windowed_pending_height: i32,
+    pub(crate) windowed_maximized: bool,
+    pub(crate) windowed_normal_width: i32,
+    pub(crate) windowed_normal_height: i32,
+    pub(crate) windowed_activation_established: bool,
+    pub(crate) windowed_activated: bool,
+    pub(crate) windowshader_next_callback_sequence: u64,
+    pub(crate) windowshader_pending_callbacks: HashMap<u32, WindowshaderCallbackDiagnostic>,
+    // Diagnostic only: capture the first configure of each kind after a pause.
+    pub(crate) windowshader_trace_surface_configure: bool,
+    pub(crate) windowshader_trace_toplevel_configure: bool,
+    pub(crate) windowshader_configure_count: u64,
+}
+
+
 use std::time::Instant;
 use wayland_client::{Connection, Dispatch, QueueHandle};
 use wayland_client::protocol::{wl_callback};
@@ -541,19 +563,19 @@ impl Dispatch<XdgSurface, ()>
             serial,
         } = event
         {
-            if state.windowshader_trace_surface_configure {
-                state.windowshader_trace_surface_configure = false;
-                let pending = state.windowshader_pending_callbacks.get(&0);
+            if state.windowshader.windowshader_trace_surface_configure {
+                state.windowshader.windowshader_trace_surface_configure = false;
+                let pending = state.windowshader.windowshader_pending_callbacks.get(&0);
                 crate::logger::warning(
                     &crate::locate_paths::runtime_log_path(),
                     &format!("[WINDOWSHADER_CONFIGURE_DIAG] First xdg_surface.configure after pause: serial={} pending_callback_seq={:?} pending_callback_age_ms={:?} frame_ready={} activated={} activation_established={}",
                         serial, pending.map(|p| p.sequence),
                         pending.map(|p| p.requested_at.elapsed().as_millis()),
                         state.frame_ready.get(&0).copied().unwrap_or(true),
-                        state.windowed_activated, state.windowed_activation_established),
+                        state.windowshader.windowed_activated, state.windowshader.windowed_activation_established),
                 );
             }
-            state.windowshader_configure_count = state.windowshader_configure_count.wrapping_add(1);
+            state.windowshader.windowshader_configure_count = state.windowshader.windowshader_configure_count.wrapping_add(1);
             xdg_surface.ack_configure(
                 serial
             );
@@ -561,7 +583,7 @@ impl Dispatch<XdgSurface, ()>
 
             let configured_width =
                 u32::try_from(
-                    state.windowed_pending_width
+                    state.windowshader.windowed_pending_width
                 )
                 .unwrap_or(
                     0
@@ -570,7 +592,7 @@ impl Dispatch<XdgSurface, ()>
 
             let configured_height =
                 u32::try_from(
-                    state.windowed_pending_height
+                    state.windowshader.windowed_pending_height
                 )
                 .unwrap_or(
                     0
@@ -627,15 +649,15 @@ impl Dispatch<XdgToplevel, ()>
                 height,
                 states,
             } => {
-                if state.windowshader_trace_toplevel_configure {
-                    state.windowshader_trace_toplevel_configure = false;
-                    let pending = state.windowshader_pending_callbacks.get(&0);
+                if state.windowshader.windowshader_trace_toplevel_configure {
+                    state.windowshader.windowshader_trace_toplevel_configure = false;
+                    let pending = state.windowshader.windowshader_pending_callbacks.get(&0);
                     crate::logger::warning(
                         &crate::locate_paths::runtime_log_path(),
                         &format!("[WINDOWSHADER_CONFIGURE_DIAG] First xdg_toplevel.configure after pause: width={} height={} state_bytes={} pending_callback_seq={:?} pending_callback_age_ms={:?} frame_ready={} previous_activated={}",
                             width, height, states.len(), pending.map(|p| p.sequence),
                             pending.map(|p| p.requested_at.elapsed().as_millis()),
-                            state.frame_ready.get(&0).copied().unwrap_or(true), state.windowed_activated),
+                            state.frame_ready.get(&0).copied().unwrap_or(true), state.windowshader.windowed_activated),
                     );
                 }
 
@@ -645,12 +667,12 @@ impl Dispatch<XdgToplevel, ()>
                 // non-empty state set, track Activated as the Windowshader's
                 // presentation-visibility signal.
                 if !states.is_empty() {
-                    let activation_was_established = state.windowed_activation_established;
-                    state.windowed_activation_established = true;
+                    let activation_was_established = state.windowshader.windowed_activation_established;
+                    state.windowshader.windowed_activation_established = true;
 
 
-                    let previous_activation = state.windowed_activated;
-                    state.windowed_activated =
+                    let previous_activation = state.windowshader.windowed_activated;
+                    state.windowshader.windowed_activated =
                         states
                             .chunks_exact(
                                 std::mem::size_of::<u32>()
@@ -679,10 +701,10 @@ impl Dispatch<XdgToplevel, ()>
                                     )
                                 }
                             );
-                    if !activation_was_established || previous_activation != state.windowed_activated {
+                    if !activation_was_established || previous_activation != state.windowshader.windowed_activated {
                         crate::logger::warning(
                             &crate::locate_paths::runtime_log_path(),
-                            &format!("[WINDOWSHADER_CALLBACK_DIAG] Activation transition: activated={} (focus signal, not visibility)", state.windowed_activated),
+                            &format!("[WINDOWSHADER_CALLBACK_DIAG] Activation transition: activated={} (focus signal, not visibility)", state.windowshader.windowed_activated),
                         );
                     }
                 }
@@ -694,17 +716,17 @@ impl Dispatch<XdgToplevel, ()>
                         xdg_toplevel::State::try_from(raw),
                         Ok(xdg_toplevel::State::Maximized)
                     ));
-                state.windowed_maximized = maximized;
+                state.windowshader.windowed_maximized = maximized;
                 if !maximized {
-                    if width > 0 { state.windowed_normal_width = width; }
-                    if height > 0 { state.windowed_normal_height = height; }
+                    if width > 0 { state.windowshader.windowed_normal_width = width; }
+                    if height > 0 { state.windowshader.windowed_normal_height = height; }
                 }
 
-                state.windowed_pending_width =
+                state.windowshader.windowed_pending_width =
                     width;
 
 
-                state.windowed_pending_height =
+                state.windowshader.windowed_pending_height =
                     height;
             }
 
@@ -751,7 +773,7 @@ impl Dispatch<wl_callback::WlCallback, FrameCallbackDispatchData>
             event,
             wl_callback::Event::Done { .. }
         ) {
-            let pending = state.windowshader_pending_callbacks.remove(&data.registry_name);
+            let pending = state.windowshader.windowshader_pending_callbacks.remove(&data.registry_name);
             if let Some(pending) = pending {
                 if pending.requested_at.elapsed() >= Duration::from_millis(250) || pending.sequence != data.sequence {
                 crate::logger::warning(

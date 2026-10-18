@@ -235,20 +235,8 @@ pub(crate) struct WaylandState {
     pub(crate) targets: Vec<WallpaperTarget>,
     pub(crate) surface_states: Vec<WallpaperSurfaceState>,
     pub(crate) removed_output_names: Vec<u32>,
-    pub(crate) windowed_pending_width: i32,
-    pub(crate) windowed_pending_height: i32,
-    pub(crate) windowed_maximized: bool,
-    pub(crate) windowed_normal_width: i32,
-    pub(crate) windowed_normal_height: i32,
-    pub(crate) windowed_activation_established: bool,
-    pub(crate) windowed_activated: bool,
     pub(crate) frame_ready: HashMap<u32, bool>,
-    pub(crate) windowshader_next_callback_sequence: u64,
-    pub(crate) windowshader_pending_callbacks: HashMap<u32, WindowshaderCallbackDiagnostic>,
-    // Diagnostic only: capture the first configure of each kind after a pause.
-    pub(crate) windowshader_trace_surface_configure: bool,
-    pub(crate) windowshader_trace_toplevel_configure: bool,
-    pub(crate) windowshader_configure_count: u64,
+    pub(crate) windowshader: crate::wayland_windowshader::WindowshaderWaylandState,
 }
 
 
@@ -2728,7 +2716,7 @@ fn render_mirror_frames(
     let mut windowshader_rotation_successes: u64 = 0;
     let mut windowshader_rotation_failures: u64 = 0;
     let mut windowshader_rotation_block_reported = false;
-    let mut windowshader_last_configure_count = state.windowshader_configure_count;
+    let mut windowshader_last_configure_count = state.windowshader.windowshader_configure_count;
     // Diagnostic accounting only: distinguish legitimate pause exclusions from
     // repeated callback-wait exclusions that may prevent rotation progress.
     let mut rotation_clock_pause_shifts: u64 = 0;
@@ -2778,7 +2766,7 @@ fn render_mirror_frames(
                         state.frame_ready.get(&target.info.registry_name)
                             .copied().unwrap_or(true)
                     });
-                    let pending = state.windowshader_pending_callbacks.get(&0);
+                    let pending = state.windowshader.windowshader_pending_callbacks.get(&0);
                     let pending_description = pending.map_or_else(
                         || "none".to_string(),
                         |record| format!(
@@ -2802,8 +2790,8 @@ fn render_mirror_frames(
                             paused,
                             control.pause_requested(),
                             resume_presentation_pending,
-                            state.windowed_activated,
-                            state.windowed_activation_established,
+                            state.windowshader.windowed_activated,
+                            state.windowshader.windowed_activation_established,
                             configure_pending,
                             presentation_watchdog_loop_ticks.wrapping_sub(presentation_watchdog_last_ticks),
                             presentation_watchdog_swaps.wrapping_sub(presentation_watchdog_last_swaps),
@@ -2818,7 +2806,7 @@ fn render_mirror_frames(
                 && windowshader_summary_at.elapsed() >= Duration::from_secs(10)
             {
                 let ready = state.frame_ready.get(&0).copied().unwrap_or(true);
-                let pending = state.windowshader_pending_callbacks.get(&0);
+                let pending = state.windowshader.windowshader_pending_callbacks.get(&0);
                 let rotation_due = shader_interval.is_some_and(|interval| last_shader_switch.elapsed() >= interval);
                 crate::logger::warning(
                     &crate::locate_paths::runtime_log_path(),
@@ -2826,12 +2814,12 @@ fn render_mirror_frames(
                         current_shader.shader_name, current_shader.policy_id, program, frame,
                         presentation_watchdog_swaps, last_successful_swap.elapsed().as_millis(),
                         ready, pending.map(|p| p.sequence), pending.map(|p| p.requested_at.elapsed().as_millis()),
-                        paused, control.pause_requested(), state.windowed_activated,
+                        paused, control.pause_requested(), state.windowshader.windowed_activated,
                         rotation_due, last_shader_switch.elapsed().as_millis(),
                         shader_interval.map(|interval| interval.as_millis()),
                         windowshader_rotation_attempts, windowshader_rotation_successes,
                         windowshader_rotation_failures,
-                        state.windowshader_configure_count.wrapping_sub(windowshader_last_configure_count),
+                        state.windowshader.windowshader_configure_count.wrapping_sub(windowshader_last_configure_count),
                         presentation_watchdog_loop_ticks),
                 );
                 crate::logger::warning(&crate::locate_paths::runtime_log_path(),
@@ -2840,8 +2828,8 @@ fn render_mirror_frames(
                         rotation_due, rotation_clock_pause_shifts, rotation_clock_callback_shifts,
                         rotation_clock_callback_short_shifts, rotation_clock_callback_shift_ms,
                         rotation_clock_last_shift_reason, rotation_clock_last_shift_ms,
-                        paused, ready, state.windowed_activated, presentation_watchdog_swaps));
-                windowshader_last_configure_count = state.windowshader_configure_count;
+                        paused, ready, state.windowshader.windowed_activated, presentation_watchdog_swaps));
+                windowshader_last_configure_count = state.windowshader.windowshader_configure_count;
                 windowshader_summary_at = Instant::now();
             }
             remove_disconnected_targets(
@@ -3065,14 +3053,14 @@ fn render_mirror_frames(
                     if runtime.display_format
                         == crate::manage_configuration::WallpaperDisplayFormat::Windowed
                     {
-                        state.windowshader_trace_surface_configure = true;
-                        state.windowshader_trace_toplevel_configure = true;
+                        state.windowshader.windowshader_trace_surface_configure = true;
+                        state.windowshader.windowshader_trace_toplevel_configure = true;
                     }
                     control.diagnostic_checkpoint(8);
                     if runtime.display_format
                         == crate::manage_configuration::WallpaperDisplayFormat::Windowed
                     {
-                        if let Some(pending) = state.windowshader_pending_callbacks.get(&0) {
+                        if let Some(pending) = state.windowshader.windowshader_pending_callbacks.get(&0) {
                             crate::logger::warning(
                                 &crate::locate_paths::runtime_log_path(),
                                 &format!("[WINDOWSHADER_CALLBACK_DIAG] Pause entered: seq={} age_ms={} swap_completed={} flushed={}",
@@ -3157,7 +3145,7 @@ fn render_mirror_frames(
                 // flag until a successful EGL swap acknowledges resumption.
                 paused = false;
                 if resume_presentation_pending {
-                    if let Some(pending) = state.windowshader_pending_callbacks.get(&0) {
+                    if let Some(pending) = state.windowshader.windowshader_pending_callbacks.get(&0) {
                         crate::logger::warning(
                             &crate::locate_paths::runtime_log_path(),
                             &format!("[WINDOWSHADER_CALLBACK_DIAG] Pause released: seq={} age_ms={} swap_completed={} flushed={}",
@@ -3247,7 +3235,7 @@ fn render_mirror_frames(
                         .map(|target| target.info.registry_name).collect();
                     let wait_ms = windowed_inactive_started.map_or(0, |since| since.elapsed().as_millis());
                     let callback_details: Vec<String> = outstanding.iter().map(|target| {
-                        match state.windowshader_pending_callbacks.get(target) {
+                        match state.windowshader.windowshader_pending_callbacks.get(target) {
                             Some(pending) => format!(
                                 "target={} seq={} age_ms={} swap_completed={} flushed={}",
                                 target, pending.sequence, pending.requested_at.elapsed().as_millis(),
@@ -3336,7 +3324,7 @@ fn render_mirror_frames(
                                     callback_wait.as_millis(), pause_overlap.as_millis(), rotation_shift.as_millis(), before_ms,
                                     before_ms.saturating_sub(rotation_shift.as_millis()),
                                     rotation_clock_callback_shifts, rotation_clock_callback_short_shifts,
-                                    rotation_clock_callback_shift_ms, windowed_frame_ready, paused, state.windowed_activated));
+                                    rotation_clock_callback_shift_ms, windowed_frame_ready, paused, state.windowshader.windowed_activated));
                         }
                     }
                     last_shader_switch +=
@@ -4234,8 +4222,8 @@ fn render_mirror_frames(
                 if runtime.display_format
                     == crate::manage_configuration::WallpaperDisplayFormat::Windowed
                 {
-                    state.windowshader_next_callback_sequence += 1;
-                    let sequence = state.windowshader_next_callback_sequence;
+                    state.windowshader.windowshader_next_callback_sequence += 1;
+                    let sequence = state.windowshader.windowshader_next_callback_sequence;
                     let registry_name = native_target.info.registry_name;
                     native_target.surface.frame(
                         &frame_queue_handle,
@@ -4244,7 +4232,7 @@ fn render_mirror_frames(
                             sequence,
                         },
                     );
-                    state.windowshader_pending_callbacks.insert(registry_name, WindowshaderCallbackDiagnostic {
+                    state.windowshader.windowshader_pending_callbacks.insert(registry_name, WindowshaderCallbackDiagnostic {
                         sequence,
                         requested_at: Instant::now(),
                         swap_completed: false,
@@ -4293,7 +4281,7 @@ fn render_mirror_frames(
 
                 control.diagnostic_checkpoint(6);
                 if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed {
-                    if let Some(pending) = state.windowshader_pending_callbacks.get_mut(&native_target.info.registry_name) {
+                    if let Some(pending) = state.windowshader.windowshader_pending_callbacks.get_mut(&native_target.info.registry_name) {
                         pending.swap_completed = true;
                     }
                 }
@@ -5037,7 +5025,7 @@ fn process_wayland_events(
         )?;
 
 
-    for (target, pending) in state.windowshader_pending_callbacks.iter_mut() {
+    for (target, pending) in state.windowshader.windowshader_pending_callbacks.iter_mut() {
         if !pending.flushed {
             pending.flushed = true;
             // A successful flush submits queued requests to the connection;
