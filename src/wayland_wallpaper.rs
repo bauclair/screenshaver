@@ -1809,6 +1809,43 @@ impl RenderWaylandDispatch for WaylandState {
     }
 }
 
+// Stage 2D-2B Step 3A: EGL resources are scoped to one rendering session.
+// The session owns the EGL display, context, and surfaces; GL shader resources
+// continue to be released by the existing frame-processing implementation.
+struct EglRenderSession {
+    display: EglDisplay,
+    context: EglContext,
+    targets: Vec<EglWallpaperTarget>,
+    major: i32,
+    minor: i32,
+}
+
+impl EglRenderSession {
+    fn initialize(
+        connection: &Connection,
+        native_targets: &[NativeWallpaperTarget],
+    ) -> Result<Self, String> {
+        let (display, context, targets, major, minor) =
+            initialize_egl_targets(connection, native_targets)?;
+        Ok(Self { display, context, targets, major, minor })
+    }
+}
+
+impl Drop for EglRenderSession {
+    fn drop(&mut self) {
+        unsafe {
+            eglMakeCurrent(
+                self.display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT,
+            );
+        }
+        destroy_egl_targets(self.display, &self.targets);
+        unsafe {
+            eglDestroyContext(self.display, self.context);
+            eglTerminate(self.display);
+        }
+    }
+}
+
 // Stage 2D-2A step 1: EGL acquisition is separate from frame-loop ownership.
 // The caller still owns GL dispatch loading, frame processing, and teardown.
 fn initialize_egl_targets(
@@ -2035,16 +2072,16 @@ fn initialize_egl_targets(
     }
 
 
-    let first_surface =
-        egl_targets
-            .first()
-            .ok_or_else(
-                || {
-                    "No EGL wallpaper targets were created"
-                        .to_string()
-                }
-            )?
-            .surface;
+    let first_surface = match egl_targets.first() {
+        Some(target) => target.surface,
+        None => {
+            unsafe {
+                eglDestroyContext(display, context);
+                eglTerminate(display);
+            }
+            return Err("No EGL wallpaper targets were created".to_string());
+        }
+    };
 
 
     if unsafe {
@@ -2100,8 +2137,7 @@ pub(crate) fn render_egl_wallpapers<S: RenderWaylandDispatch + 'static>(
     control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
 ) -> Result<(), String> {
 
-    let (display, context, mut egl_targets, egl_major, egl_minor) =
-        initialize_egl_targets(connection, native_targets)?;
+    let mut egl_session = EglRenderSession::initialize(connection, native_targets)?;
 
 
     gl::load_with(
@@ -2128,9 +2164,9 @@ pub(crate) fn render_egl_wallpapers<S: RenderWaylandDispatch + 'static>(
 
     let render_result =
         render_mirror_frames(
-            display,
-            context,
-            &mut egl_targets,
+            egl_session.display,
+            egl_session.context,
+            &mut egl_session.targets,
             event_queue,
             state,
             native_targets,
@@ -2144,33 +2180,11 @@ pub(crate) fn render_egl_wallpapers<S: RenderWaylandDispatch + 'static>(
         );
 
 
-    unsafe {
-        eglMakeCurrent(
-            display,
-            EGL_NO_SURFACE,
-            EGL_NO_SURFACE,
-            EGL_NO_CONTEXT,
-        );
-    }
-
-
-    destroy_egl_targets(
-        display,
-        &egl_targets,
-    );
-
-
-    unsafe {
-        eglDestroyContext(
-            display,
-            context,
-        );
-
-        eglTerminate(
-            display
-        );
-    }
-
+    // Release EGL before reporting the renderer result, matching the previous
+    // shutdown order for both success and frame-processing errors.
+    let egl_major = egl_session.major;
+    let egl_minor = egl_session.minor;
+    drop(egl_session);
 
     render_result?;
 
