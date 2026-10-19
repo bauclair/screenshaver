@@ -1021,9 +1021,13 @@ pub struct Config {
     pub wallpaper_texture_policy:
         TexturePolicy,
 
+    pub windowshader_texture_policy: TexturePolicy,
+
     pub screensaver_global_speed: f32,
 
     pub wallpaper_global_speed: f32,
+
+    pub windowshader_global_speed: f32,
 
     pub screensaver_policies:
         Vec<
@@ -1051,6 +1055,8 @@ pub struct Config {
     pub wallpaper_speed_policy:
         AnimationSpeedPolicy,
 
+    pub windowshader_speed_policy: AnimationSpeedPolicy,
+
     pub global_rendered_fps: u32,
 
     pub screensaver_fps_policy_entries:
@@ -1061,11 +1067,15 @@ pub struct Config {
     pub wallpaper_fps_policy:
         FpsPolicy,
 
+    pub windowshader_fps_policy: FpsPolicy,
+
     pub(crate) screensaver_postprocess_policy:
         PostprocessPolicy,
 
     pub(crate) wallpaper_postprocess_policy:
         PostprocessPolicy,
+
+    pub(crate) windowshader_postprocess_policy: PostprocessPolicy,
 
     pub screen_lock_enabled: bool,
 
@@ -1193,6 +1203,9 @@ pub fn load_config(
             "wallpaper"
         )?;
 
+    let windowshader_defaults =
+        crate::manage_configuration::load_target_defaults("windowshader")?;
+
 
     let built_in_postprocess_profile =
         PostprocessProfile::default();
@@ -1297,6 +1310,12 @@ pub fn load_config(
             &wallpaper_defaults
         )?;
 
+    let windowshader_global_texture =
+        parse_database_global_texture(&windowshader_defaults)?;
+
+    let windowshader_global_palette =
+        parse_database_global_palette(&windowshader_defaults)?;
+
 
     // Per-shader policy authority now lives in screenshaver.db.
     // The legacy TOML policy/path tables are intentionally ignored.
@@ -1332,6 +1351,9 @@ pub fn load_config(
             &wallpaper_policies
         );
 
+    let windowshader_texture_policy_entries =
+        texture_policy_entries_from(&windowshader_policies);
+
 
     let texture_policy =
         TexturePolicy {
@@ -1354,6 +1376,12 @@ pub fn load_config(
                 wallpaper_texture_policy_entries,
         };
 
+
+    let windowshader_texture_policy = TexturePolicy {
+        global_texture: windowshader_global_texture,
+        global_palette: windowshader_global_palette,
+        texture_policy_entries: windowshader_texture_policy_entries,
+    };
 
     let wallpaper_monitor_mode =
         crate::define_wallpaper::WallpaperMonitorMode::parse(
@@ -1397,6 +1425,15 @@ pub fn load_config(
         );
 
 
+    let (windowshader_global_speed, windowshader_global_speed_warning) =
+        validate_animation_speed(
+            windowshader_defaults.animation_speed as f32,
+            crate::define_constants::WALLPAPER_SPEED_MIN,
+            crate::define_constants::WALLPAPER_SPEED_MAX,
+            crate::define_constants::WALLPAPER_SPEED_DEFAULT,
+            "windowshader.global_speed",
+        );
+
     let (
         global_rendered_fps,
         global_rendered_fps_warning,
@@ -1421,6 +1458,9 @@ pub fn load_config(
         );
 
 
+    let windowshader_fps_policy_entries =
+        fps_policy_entries_from(&windowshader_policies);
+
     let wallpaper_fps_policy =
         FpsPolicy {
             global_rendered_fps,
@@ -1428,6 +1468,11 @@ pub fn load_config(
                 wallpaper_fps_policy_entries,
         };
 
+
+    let windowshader_fps_policy = FpsPolicy {
+        global_rendered_fps,
+        fps_policy_entries: windowshader_fps_policy_entries,
+    };
 
     let screensaver_speed_policy =
         AnimationSpeedPolicy {
@@ -1447,6 +1492,11 @@ pub fn load_config(
         };
 
 
+    let windowshader_speed_policy = AnimationSpeedPolicy {
+        global_speed: windowshader_global_speed,
+        shader_policies: windowshader_policies.clone(),
+    };
+
     let screensaver_postprocess_policy =
         PostprocessPolicy {
             global_profile:
@@ -1464,6 +1514,11 @@ pub fn load_config(
                 wallpaper_policies.clone(),
         };
 
+
+    let windowshader_postprocess_policy = PostprocessPolicy {
+        global_profile: global_postprocess_profile,
+        shader_policies: windowshader_policies.clone(),
+    };
 
     let (
         log_level,
@@ -1573,9 +1628,13 @@ pub fn load_config(
 
             wallpaper_texture_policy,
 
+            windowshader_texture_policy,
+
             screensaver_global_speed,
 
             wallpaper_global_speed,
+
+            windowshader_global_speed,
 
             screensaver_policies,
 
@@ -1589,15 +1648,21 @@ pub fn load_config(
 
             wallpaper_speed_policy,
 
+            windowshader_speed_policy,
+
             global_rendered_fps,
 
             screensaver_fps_policy_entries,
 
             wallpaper_fps_policy,
 
+            windowshader_fps_policy,
+
             screensaver_postprocess_policy,
 
             wallpaper_postprocess_policy,
+
+            windowshader_postprocess_policy,
 
             screen_lock_enabled:
                 raw.locking.screen_lock_enabled,
@@ -1890,6 +1955,10 @@ pub fn load_config(
         );
     }
 
+
+    if let Some(warning) = windowshader_global_speed_warning {
+        diagnostics.push(warning);
+    }
 
     if let Some(warning) =
         global_rendered_fps_warning
