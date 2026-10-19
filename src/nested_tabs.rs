@@ -302,14 +302,16 @@ pub fn draw_configuration(
 
     let single_policy_missing =
         (
-            configuration.screensaver_display
+            configuration.screensaver_enabled
+                && configuration.screensaver_display
                 == "single"
                 && configuration
                     .screensaver_single_policy_id
                     .is_none()
         )
         || (
-            configuration.wallpaper_display
+            configuration.wallpaper_enabled
+                && configuration.wallpaper_display
                 == "single"
                 && configuration
                     .wallpaper_single_policy_id
@@ -337,19 +339,34 @@ pub fn draw_configuration(
 
             let save_response =
                 ui.add_enabled(
-                    dirty
-                        && !single_policy_missing,
+                    dirty,
                     egui::Button::new(
                         crate::manage_localization::runtime_text("config.save")
                     ),
                 );
 
             if save_response.clicked() {
-                *save_requested =
-                    true;
-
-                *status_message =
-                    crate::manage_localization::runtime_text("config.saving");
+                if single_policy_missing {
+                    let target = if configuration.screensaver_enabled
+                        && configuration.screensaver_display == "single"
+                        && configuration.screensaver_single_policy_id.is_none() {
+                        "Screensaver"
+                    } else if configuration.wallpaper_enabled
+                        && configuration.wallpaper_display == "single"
+                        && configuration.wallpaper_single_policy_id.is_none() {
+                        "Wallpaper"
+                    } else {
+                        "Windowshader"
+                    };
+                    *status_message = format!(
+                        "{} is enabled in Single mode. Select a Shader Policy or change its display mode to Random or Ordered.",
+                        target
+                    );
+                } else {
+                    *save_requested = true;
+                    *status_message =
+                        crate::manage_localization::runtime_text("config.saving");
+                }
             }
 
 
@@ -1671,10 +1688,24 @@ fn draw_target_page(
         PolicyTarget::Windowshader => {
             ui.heading(crate::manage_localization::runtime_text("target.windowshader"));
             ui.add_space(8.0);
-            ui.checkbox(
+            let enabled_changed = ui.checkbox(
                 &mut configuration.windowshader_enabled,
                 crate::manage_localization::runtime_text("common.enabled"),
-            );
+            ).changed();
+
+            // A newly enabled target may still have the schema's initial
+            // unresolved Single selection. Choose a valid rotating mode rather
+            // than silently disabling Save Configuration.
+            if enabled_changed
+                && configuration.windowshader_enabled
+                && configuration.windowshader_display == "single"
+                && configuration.windowshader_single_policy_id.is_none()
+            {
+                configuration.windowshader_display = "random".to_string();
+                configuration.windowshader_interval_seconds = 600;
+                *status_message = "Windowshader was set to Random because no Single policy is selected. You can choose Single and select a policy before saving.".to_string();
+            }
+
             ui.add_space(5.0);
             draw_target_grid(
                 ui,

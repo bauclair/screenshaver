@@ -651,9 +651,9 @@ pub fn save_target_defaults(
                      texture_mode = ?4,
                      texture_family = ?5,
                      texture_primitives = ?6,
-                     palette_mode = ?6,
-                     palette_color = ?7
-                 WHERE target = ?8",
+                     palette_mode = ?7,
+                     palette_color = ?8
+                 WHERE target = ?9",
                 rusqlite::params![
                     defaults.idle_timeout_value,
                     defaults.idle_timeout_unit,
@@ -1726,6 +1726,11 @@ fn validate_mode_string(
 
 
         "single" => {
+            // A disabled target may retain an unselected Single mode.
+            // The Control Center validates enabled targets before saving.
+            if argument.is_empty() {
+                return Ok(());
+            }
 
             let valid_policy_id =
                 argument

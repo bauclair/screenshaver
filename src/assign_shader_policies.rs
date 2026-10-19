@@ -832,3 +832,58 @@ fn show_completion_dialog(
             None::<&sdl2::video::Window>,
         );
 }
+
+
+// Manage Shader Policies: assignment presence is per shader AND target.
+#[derive(Clone, Debug)]
+pub struct ManagedAssignmentRow {
+    pub shader_id: i64,
+    pub filename: String,
+    pub existing: [bool; 3],
+    pub selected: [bool; 3],
+}
+
+pub fn load_managed_assignments() -> Result<Vec<ManagedAssignmentRow>, String> {
+    let connection = crate::open_database::open()?;
+    let managed_dir = crate::locate_paths::shader_dir().to_string_lossy().to_string();
+    let mut statement = connection.prepare(
+        "SELECT s.shader_id, s.filename,          EXISTS(SELECT 1 FROM shader_policies p WHERE p.shader_id=s.shader_id AND p.policy_target='screensaver'),          EXISTS(SELECT 1 FROM shader_policies p WHERE p.shader_id=s.shader_id AND p.policy_target='wallpaper'),          EXISTS(SELECT 1 FROM shader_policies p WHERE p.shader_id=s.shader_id AND p.policy_target='windowshader')          FROM shaders s WHERE s.source_path=?1 AND s.file_status <> 'missing'          ORDER BY s.filename COLLATE NOCASE, s.filename, s.shader_id"
+    ).map_err(|e| e.to_string())?;
+    let rows = statement.query_map([managed_dir], |row| {
+        let existing = [row.get::<_, i64>(2)? != 0, row.get::<_, i64>(3)? != 0, row.get::<_, i64>(4)? != 0];
+        Ok(ManagedAssignmentRow {
+            shader_id: row.get(0)?, filename: row.get(1)?, existing,
+            selected: [!existing[0], !existing[1], !existing[2]],
+        })
+    }).map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
+pub fn create_selected_assignments(rows: &[ManagedAssignmentRow]) -> Result<usize, String> {
+    let mut connection = crate::open_database::open()?;
+    let transaction = connection.transaction().map_err(|e| e.to_string())?;
+    let mut count = 0;
+    for row in rows {
+        for (index, target) in ["screensaver", "wallpaper", "windowshader"].iter().enumerate() {
+            if row.existing[index] || !row.selected[index] { continue; }
+            let exists: i64 = transaction.query_row(
+                "SELECT EXISTS(SELECT 1 FROM shader_policies WHERE shader_id=?1 AND policy_target=?2)",
+                params![row.shader_id, target], |r| r.get(0)
+            ).map_err(|e| e.to_string())?;
+            if exists != 0 { continue; }
+            // The physical shader must still exist and be managed.
+            let present: i64 = transaction.query_row(
+                "SELECT EXISTS(SELECT 1 FROM shaders WHERE shader_id=?1 AND file_status <> 'missing' AND source_path=?2)",
+                params![row.shader_id, crate::locate_paths::shader_dir().to_string_lossy().as_ref()],
+                |r| r.get(0)
+            ).map_err(|e| e.to_string())?;
+            if present == 0 { continue; }
+            insert_default_policy(&transaction, &PolicylessShader {
+                shader_id: row.shader_id, filename: row.filename.clone(),
+            }, target)?;
+            count += 1;
+        }
+    }
+    transaction.commit().map_err(|e| e.to_string())?;
+    Ok(count)
+}

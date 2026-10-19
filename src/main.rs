@@ -1118,56 +1118,8 @@ fn main() {
     }
 
 
-    match crate::assign_shader_policies::offer_assignment_if_needed(
-        &mut database_connection
-    ) {
-        Ok(
-            crate::assign_shader_policies::AssignmentOutcome::NoPoliciesNeeded
-        ) => {}
-
-        Ok(
-            crate::assign_shader_policies::AssignmentOutcome::Dismissed {
-                shader_count,
-            }
-        ) => {
-            crate::logger::information(
-                &logfile,
-                &format!(
-                    "[POLICY] New-policy assignment dismissed; {} shader(s) remain without policies",
-                    shader_count,
-                ),
-            );
-        }
-
-        Ok(
-            crate::assign_shader_policies::AssignmentOutcome::Created {
-                shader_count,
-                policy_count,
-                assignment,
-            }
-        ) => {
-            crate::logger::information(
-                &logfile,
-                &format!(
-                    "[POLICY] Created {} policy/policies for {} shader(s) using '{}'",
-                    policy_count,
-                    shader_count,
-                    assignment.name(),
-                ),
-            );
-        }
-
-        Err(error) => {
-            crate::logger::warning(
-                &logfile,
-                &format!(
-                    "[POLICY] Unable to offer new-policy assignment: {}",
-                    error,
-                ),
-            );
-        }
-    }
-
+    // Assignment management is initiated from the Control Center, not on
+    // every startup. Existing databases are never interrupted by a modal.
 
     // Automatic backup runs only after database preparation, shader
     // reconciliation, and required policy assignment have completed. A failed

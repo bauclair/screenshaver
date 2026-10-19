@@ -1026,6 +1026,8 @@ pub struct EditorOutput {
     pub export_destination_browse_requested: Option<PathBuf>,
     pub import_archive_browse_requested: Option<PathBuf>,
     pub restore_archive_browse_requested: Option<PathBuf>,
+    pub manage_assignments_open_requested: bool,
+    pub manage_assignments_create_requested: Option<Vec<crate::assign_shader_policies::ManagedAssignmentRow>>,
     pub bulk_create_browse_requested: bool,
     pub bulk_create_requested:
         Option<BulkCreateRequest>,
@@ -1323,6 +1325,10 @@ pub struct EditWindowOverlay {
 
     pending_bulk_save_confirmation:
         bool,
+
+    manage_assignments: Option<Vec<crate::assign_shader_policies::ManagedAssignmentRow>>,
+    manage_filter: String,
+    manage_missing_only: bool,
 
     pending_bulk_create_candidates:
         Option<Vec<BulkCreateCandidate>>,
@@ -1750,7 +1756,10 @@ impl EditWindowOverlay {
                 pending_bulk_save_confirmation:
                     false,
 
-                pending_bulk_create_candidates:
+                manage_assignments: None,
+            manage_filter: String::new(),
+            manage_missing_only: false,
+            pending_bulk_create_candidates:
                     None,
 
                 pending_bulk_create_rejected_count:
@@ -2964,6 +2973,8 @@ impl EditWindowOverlay {
         let mut restore_archive_browse_requested =
             None;
 
+        let mut manage_assignments_open_requested = false;
+        let mut manage_assignments_create_requested = None;
         let mut bulk_create_browse_requested =
             false;
 
@@ -3684,6 +3695,7 @@ impl EditWindowOverlay {
                                                 &mut qbe_returned_count,
                                                 &mut qbe_total_count,
                                                 &mut status_message,
+                                                &mut manage_assignments_open_requested,
                                             );
                                         }
 
@@ -4085,6 +4097,14 @@ impl EditWindowOverlay {
                         &mut self.pending_bulk_create_external_target,
                         self.pending_bulk_create_rejected_count,
                         &mut bulk_create_requested,
+                    );
+
+                    draw_manage_assignments_modal(
+                        context,
+                        &mut self.manage_assignments,
+                        &mut self.manage_filter,
+                        &mut self.manage_missing_only,
+                        &mut manage_assignments_create_requested,
                     );
 
 
@@ -4687,6 +4707,8 @@ impl EditWindowOverlay {
             import_archive_browse_requested,
             restore_archive_browse_requested,
 
+            manage_assignments_open_requested,
+            manage_assignments_create_requested,
             bulk_create_browse_requested,
 
             bulk_create_requested,
@@ -5276,6 +5298,12 @@ impl EditWindowOverlay {
             );
     }
 
+
+    pub fn begin_manage_assignments(&mut self, rows: Vec<crate::assign_shader_policies::ManagedAssignmentRow>) {
+        self.manage_assignments = Some(rows);
+        self.manage_filter.clear();
+        self.manage_missing_only = false;
+    }
 
     pub fn begin_bulk_policy_creation(
         &mut self,
@@ -6499,7 +6527,13 @@ fn draw_policies_tab(
         &mut usize,
     status_message:
         &mut String,
+    manage_requested: &mut bool,
 ) {
+    ui.horizontal(|ui| {
+        if ui.button("Shader Policy Assignment…").clicked() {
+            *manage_requested = true;
+        }
+    });
     fn header_text(
         label: &str,
         column: PolicySortColumn,
@@ -7622,6 +7656,118 @@ fn draw_policies_tab(
     }
 }
 
+
+fn draw_manage_assignments_modal(
+    context: &egui::Context,
+    pending: &mut Option<Vec<crate::assign_shader_policies::ManagedAssignmentRow>>,
+    filter: &mut String,
+    missing_only: &mut bool,
+    requested: &mut Option<Vec<crate::assign_shader_policies::ManagedAssignmentRow>>,
+) {
+    let Some(rows) = pending.as_mut() else { return; };
+    let mut cancel = false;
+    let mut create = false;
+    const SHADER_WIDTH: f32 = 290.0;
+    const TARGET_WIDTH: f32 = 160.0;
+
+    egui::Window::new("Shader Policy Assignment")
+        .id(egui::Id::new("manage_shader_policies_modal"))
+        .collapsible(false)
+        .resizable(true)
+        .default_width(850.0)
+        .min_width(820.0)
+        .show(context, |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Filter filenames:");
+                ui.text_edit_singleline(filter);
+                ui.checkbox(missing_only, "Only shaders with missing assignments");
+            });
+            ui.separator();
+
+            // Use the same grid and fixed column widths for header and body.
+            // Header checkboxes operate on editable cells only; existing
+            // assignments remain checked, disabled, and untouched.
+            egui::ScrollArea::vertical().max_height(390.0).show(ui, |ui| {
+                egui::Grid::new("manage_assignments_grid")
+                    .num_columns(4)
+                    .spacing([12.0, 5.0])
+                    .striped(true)
+                    .show(ui, |ui| {
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(SHADER_WIDTH, 22.0),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                ui.label(egui::RichText::new("Shader").strong());
+                            },
+                        );
+                        for (index, title) in ["Screensaver", "Wallpaper", "Windowshader"].iter().enumerate() {
+                            let editable = rows.iter().any(|row| !row.existing[index]);
+                            let mut all_selected = rows.iter()
+                                .filter(|row| !row.existing[index])
+                                .all(|row| row.selected[index]);
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(TARGET_WIDTH, 22.0),
+                                egui::Layout::left_to_right(egui::Align::Center),
+                                |ui| {
+                                    let response = ui.add_enabled(
+                                        editable,
+                                        egui::Checkbox::new(&mut all_selected, *title),
+                                    );
+                                    if response.changed() {
+                                        for row in rows.iter_mut() {
+                                            if !row.existing[index] {
+                                                row.selected[index] = all_selected;
+                                            }
+                                        }
+                                    }
+                                    response.on_hover_text("Select or clear all missing assignments in this column");
+                                },
+                            );
+                        }
+                        ui.end_row();
+
+                        let filter_lower = filter.to_lowercase();
+                        for row in rows.iter_mut() {
+                            if !filter_lower.is_empty() && !row.filename.to_lowercase().contains(&filter_lower) { continue; }
+                            if *missing_only && row.existing.iter().all(|value| *value) { continue; }
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(SHADER_WIDTH, 22.0),
+                                egui::Layout::left_to_right(egui::Align::Center),
+                                |ui| {
+                                    ui.add(egui::Label::new(&row.filename))
+                                        .on_hover_text(&row.filename);
+                                },
+                            );
+                            for index in 0..3 {
+                                ui.allocate_ui_with_layout(
+                                    egui::vec2(TARGET_WIDTH, 22.0),
+                                    egui::Layout::left_to_right(egui::Align::Center),
+                                    |ui| {
+                                        if row.existing[index] {
+                                            let mut checked = true;
+                                            ui.add_enabled(false, egui::Checkbox::without_text(&mut checked))
+                                                .on_hover_text("An existing policy is preserved");
+                                        } else {
+                                            ui.checkbox(&mut row.selected[index], "");
+                                        }
+                                    },
+                                );
+                            }
+                            ui.end_row();
+                        }
+                    });
+            });
+            let selected: usize = rows.iter().map(|row| (0..3).filter(|&i| !row.existing[i] && row.selected[i]).count()).sum();
+            ui.separator();
+            ui.label(format!("{selected} new policies selected; existing policies will not be modified."));
+            ui.horizontal(|ui| {
+                if ui.add_enabled(selected > 0, egui::Button::new("Create Selected Policies")).clicked() { create = true; }
+                if ui.button("Cancel").clicked() { cancel = true; }
+            });
+        });
+    if create { *requested = pending.take(); }
+    else if cancel { *pending = None; }
+}
 
 fn draw_bulk_create_confirmation_modal(
     context: &egui::Context,

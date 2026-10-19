@@ -34,6 +34,12 @@ locale = "en-US"            # U.S. English
   monitor_mode = "mirror"
 
 ################################
+# WINDOWSHADER
+################################
+[windowshader]
+ enabled = true            # Enable windowshader rendering mode
+
+################################
 # SCREEN LOCKING
 ################################
 [locking]

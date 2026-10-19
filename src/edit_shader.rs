@@ -1245,7 +1245,33 @@ fn run_empty_session(
                     Some(&config),
                 );
 
-                process_export_destination_browse_request(
+                
+                if editor_output.manage_assignments_open_requested {
+                    match crate::assign_shader_policies::load_managed_assignments() {
+                        Ok(rows) => edit_window.begin_manage_assignments(rows),
+                        Err(error) => edit_window.set_status_message(format!("Unable to load shader assignments: {error}")),
+                    }
+                }
+                if let Some(rows) = editor_output.manage_assignments_create_requested.as_ref() {
+                    match crate::assign_shader_policies::create_selected_assignments(rows) {
+                        Ok(created) => {
+                            match crate::load_config::load_config(&crate::locate_paths::config_path()) {
+                                Ok(reloaded) => {
+                                    config = reloaded.config;
+                                    policy_display_rows = build_policy_display_rows(&config);
+                                    edit_window.set_status_message(format!("Created {created} shader policies."));
+                                }
+                                Err(error) => edit_window.set_status_message(format!("Created {created} policies, but refresh failed: {error}")),
+                            }
+                        }
+                        Err(error) => {
+                            edit_window.begin_manage_assignments(rows.clone());
+                            edit_window.set_status_message(format!("Unable to create shader policies: {error}"));
+                        }
+                    }
+                }
+
+process_export_destination_browse_request(
                     &edit_window,
                     editor_output
                     .export_destination_browse_requested
@@ -3500,7 +3526,33 @@ fn run_paths(
                             );
 
 
-                            process_export_destination_browse_request(
+                            
+                if editor_output.manage_assignments_open_requested {
+                    match crate::assign_shader_policies::load_managed_assignments() {
+                        Ok(rows) => edit_window.begin_manage_assignments(rows),
+                        Err(error) => edit_window.set_status_message(format!("Unable to load shader assignments: {error}")),
+                    }
+                }
+                if let Some(rows) = editor_output.manage_assignments_create_requested.as_ref() {
+                    match crate::assign_shader_policies::create_selected_assignments(rows) {
+                        Ok(created) => {
+                            match crate::load_config::load_config(&crate::locate_paths::config_path()) {
+                                Ok(reloaded) => {
+                                    config = reloaded.config;
+                                    policy_display_rows = build_policy_display_rows(&config);
+                                    edit_window.set_status_message(format!("Created {created} shader policies."));
+                                }
+                                Err(error) => edit_window.set_status_message(format!("Created {created} policies, but refresh failed: {error}")),
+                            }
+                        }
+                        Err(error) => {
+                            edit_window.begin_manage_assignments(rows.clone());
+                            edit_window.set_status_message(format!("Unable to create shader policies: {error}"));
+                        }
+                    }
+                }
+
+process_export_destination_browse_request(
                                 &edit_window,
                                 editor_output
                                 .export_destination_browse_requested
@@ -4679,7 +4731,33 @@ fn run_paths(
                                                             Some(&config),
                                         );
 
-                                        process_export_destination_browse_request(
+                                        
+                if editor_output.manage_assignments_open_requested {
+                    match crate::assign_shader_policies::load_managed_assignments() {
+                        Ok(rows) => edit_window.begin_manage_assignments(rows),
+                        Err(error) => edit_window.set_status_message(format!("Unable to load shader assignments: {error}")),
+                    }
+                }
+                if let Some(rows) = editor_output.manage_assignments_create_requested.as_ref() {
+                    match crate::assign_shader_policies::create_selected_assignments(rows) {
+                        Ok(created) => {
+                            match crate::load_config::load_config(&crate::locate_paths::config_path()) {
+                                Ok(reloaded) => {
+                                    config = reloaded.config;
+                                    policy_display_rows = build_policy_display_rows(&config);
+                                    edit_window.set_status_message(format!("Created {created} shader policies."));
+                                }
+                                Err(error) => edit_window.set_status_message(format!("Created {created} policies, but refresh failed: {error}")),
+                            }
+                        }
+                        Err(error) => {
+                            edit_window.begin_manage_assignments(rows.clone());
+                            edit_window.set_status_message(format!("Unable to create shader policies: {error}"));
+                        }
+                    }
+                }
+
+process_export_destination_browse_request(
                                             &edit_window,
                                             editor_output
                                             .export_destination_browse_requested
@@ -9694,6 +9772,9 @@ fn load_database_policy_display_rows(
             "wallpaper" =>
             crate::editor_layout::PolicyTarget::Wallpaper,
 
+            "windowshader" =>
+            crate::editor_layout::PolicyTarget::Windowshader,
+
             "unassigned" =>
             crate::editor_layout::PolicyTarget::Unassigned,
 
@@ -11150,12 +11231,22 @@ fn save_control_configuration(
         Ok(("specific".to_string(), Some(normalized)))
     }
 
+    for (target, enabled, display, policy_id) in [
+        ("Screensaver", control.screensaver_enabled, &control.screensaver_display, control.screensaver_single_policy_id),
+        ("Wallpaper", control.wallpaper_enabled, &control.wallpaper_display, control.wallpaper_single_policy_id),
+        ("Windowshader", control.windowshader_enabled, &control.windowshader_display, control.windowshader_single_policy_id),
+    ] {
+        if enabled && display == "single" && !policy_id.is_some_and(|id| id > 0) {
+            return Err(format!("{} Single mode requires a selected Shader Policy", target));
+        }
+    }
+
     let screensaver_mode = build_mode(
         &control.screensaver_display,
         control.screensaver_interval_seconds,
         control.screensaver_single_policy_id,
         control.screensaver_playlist_id,
-        false,
+        !control.screensaver_enabled,
     )?;
 
     let windowshader_mode = build_mode(
@@ -11171,7 +11262,7 @@ fn save_control_configuration(
         control.wallpaper_interval_seconds,
         control.wallpaper_single_policy_id,
         control.wallpaper_playlist_id,
-        false,
+        !control.wallpaper_enabled,
     )?;
 
     let (screensaver_texture_mode, screensaver_texture_family) =
