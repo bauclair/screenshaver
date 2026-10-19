@@ -2533,14 +2533,12 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
                 let active_wallpaper =
                     tray_status.active_wallpaper();
 
+                // Always coordinate both renderers, even when tray metadata
+                // does not identify an active Wallpaper policy.
                 let wallpaper_pause_acquired =
-                    if active_wallpaper.is_some() {
-                        wallpaper_control.request_pause_after_first_frame(
-                            running.as_ref()
-                        )
-                    } else {
-                        true
-                    };
+                    wallpaper_control.request_pause_after_first_frame(
+                        running.as_ref()
+                    );
 
                 let edit_result =
                     if !wallpaper_pause_acquired {
@@ -2622,10 +2620,10 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
                     }
                 }
 
-                if tray_status.active_wallpaper().is_some() {
-                    wallpaper_control.resume_and_wait_for_frame(
-                        running.as_ref()
-                    );
+                // Release the coordinator even if the tray has no active-wallpaper
+                // metadata: Windowshader can be active independently.
+                if wallpaper_pause_acquired && !wallpaper_control.resume_and_wait_for_frame(running.as_ref()) {
+                    crate::logger::warning(&logfile, "[TRAY] Presentation resume was not confirmed by every active target");
                 }
 
                 match edit_result {

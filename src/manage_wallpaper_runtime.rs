@@ -96,13 +96,23 @@ impl PresentationRuntimeControl {
         true
     }
 
-    pub fn resume_and_wait_for_frame(&self, running: &AtomicBool) {
-        if let Some(control) = &self.wallpaper {
-            control.resume_and_wait_for_frame(running);
+    /// Release both pause requests, then verify each active target independently.
+    /// A false result means at least one renderer did not confirm a new frame.
+    pub fn resume_and_wait_for_frame(&self, running: &AtomicBool) -> bool {
+        // Do not short-circuit: both targets must receive their resume request.
+        let wallpaper_ok = self.wallpaper.as_ref().map_or(true, |control| {
+            control.resume_and_wait_for_frame(running)
+        });
+        let windowshader_ok = self.windowshader.as_ref().map_or(true, |control| {
+            control.resume_and_wait_for_frame(running)
+        });
+        if !wallpaper_ok || !windowshader_ok {
+            crate::logger::warning(
+                &crate::locate_paths::runtime_log_path(),
+                &format!("[PRESENTATION] Resume frame unconfirmed: wallpaper={}, windowshader={}", wallpaper_ok, windowshader_ok),
+            );
         }
-        if let Some(control) = &self.windowshader {
-            control.resume_and_wait_for_frame(running);
-        }
+        wallpaper_ok && windowshader_ok
     }
 
     pub(crate) fn request_policy_reload(&self, config: &crate::load_config::Config) {
@@ -306,12 +316,12 @@ impl WallpaperRuntimeControl {
     pub fn resume_and_wait_for_frame(
         &self,
         running: &AtomicBool,
-    ) {
+    ) -> bool {
 
         if !self.enabled
             || !self.active.load(Ordering::SeqCst)
         {
-            return;
+            return true;
         }
 
 
@@ -342,15 +352,17 @@ impl WallpaperRuntimeControl {
             );
         }
 
-        if running.load(Ordering::SeqCst)
-            && self.active.load(Ordering::SeqCst)
-            && !self.resume_frame_ready.load(Ordering::SeqCst)
-        {
+        let confirmed = self.resume_frame_ready.load(Ordering::SeqCst);
+        let inactive = !self.active.load(Ordering::SeqCst);
+        if !confirmed && !inactive && running.load(Ordering::SeqCst) {
             crate::logger::warning(
                 &crate::locate_paths::runtime_log_path(),
-                "[WINDOWSHADER_RESUME_DIAG] Wallpaper resume wait expired without a confirmed presented frame (500ms)",
+                &format!("[PRESENTATION] {} resume wait expired without a confirmed presented frame (500ms)",
+                    if self.windowshader { "Windowshader" } else { "Wallpaper" }),
             );
         }
+        // Shutdown is not evidence of a presented frame.
+        confirmed || inactive
     }
 
 

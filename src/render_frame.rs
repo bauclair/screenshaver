@@ -213,9 +213,10 @@ impl FrameRenderer {
                 first_frame_presented =
                     true;
 
-                wallpaper_control.request_pause_after_first_frame(
-                    running
-                );
+                if !wallpaper_control.request_pause_after_first_frame(running) {
+                    log_warning("[RENDER] Presentation pause was not acknowledged by both targets; terminating screensaver presentation");
+                    break ScreensaverRunOutcome::Exit;
+                }
             }
         };
 
@@ -228,9 +229,9 @@ impl FrameRenderer {
         // handed to the policy editor. A replacement screensaver renderer
         // will retain that pause until the user finally disengages it.
         if outcome == ScreensaverRunOutcome::Exit {
-            wallpaper_control.resume_and_wait_for_frame(
-                running
-            );
+            if !wallpaper_control.resume_and_wait_for_frame(running) {
+                log_warning("[RENDER] One or more presentation targets did not confirm a resumed frame");
+            }
         }
 
         crate::renderer_status::clear(
