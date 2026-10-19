@@ -1523,9 +1523,10 @@ fn main() {
     // or any rendering backend.
     if !cfg.screensaver_enabled
         && !cfg.wallpaper_enabled
+        && !cfg.windowshader_enabled
     {
         eprintln!(
-            "WARNING: Screensaver and wallpaper rendering are both disabled."
+            "WARNING: Screensaver, wallpaper, and windowshader rendering are all disabled."
         );
 
         eprintln!(
@@ -1533,13 +1534,13 @@ fn main() {
         );
 
         eprintln!(
-            "Run \"screenshaver --control\" to enable screensavers or wallpapers."
+            "Run \"screenshaver --control\" to configure rendering targets."
         );
 
 
         crate::logger::warning(
             &logfile,
-            "[MAIN] Screensaver and wallpaper rendering are both disabled; no renderer will be started",
+            "[MAIN] All three rendering targets are disabled; no renderer will be started",
         );
 
 
@@ -1980,16 +1981,23 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
             crate::tray_icon::TrayCommand
         >();
 
-    let windowshader_enabled =
-        cfg.wallpaper_enabled
-            && cfg.wallpaper_display_format
-                == crate::manage_configuration::WallpaperDisplayFormat::Windowed;
+    // Step 17 transitional startup: Windowshader is independently configured.
+    // The two presentation supervisors still share control paths, so they
+    // cannot safely operate simultaneously until lifecycle separation lands.
+    // Fail explicitly rather than silently disabling either requested target.
+    let windowshader_enabled = cfg.windowshader_enabled;
+    if cfg.wallpaper_enabled && windowshader_enabled {
+        let message = "Wallpaper and Windowshader are both enabled, but independent concurrent supervisors are not yet available. Disable one target in screenshaver.toml for this transitional build.";
+        eprintln!("ERROR: {}", message);
+        crate::logger::error(&logfile, &format!("[MAIN] {}", message));
+        drop(database_connection);
+        return;
+    }
 
     let tray_status =
         crate::tray_icon::TrayStatusControl::new(
+            cfg.wallpaper_enabled || windowshader_enabled,
             cfg.wallpaper_enabled,
-            cfg.wallpaper_enabled
-                && !windowshader_enabled,
         );
 
 
@@ -2435,10 +2443,21 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
     );
 
 
+    // Schema v004 selects Wallpaper and Windowshader independently. The
+    // legacy WallpaperRuntime remains shared during the transitional build,
+    // but its presentation format must match the selected supervisor.
+    // In particular, load_config defaults the retired wallpaper display
+    // format to FullScreen, which must not be passed to Windowshader.
+    let presentation_display_format = if windowshader_enabled {
+        crate::manage_configuration::WallpaperDisplayFormat::Windowed
+    } else {
+        crate::manage_configuration::WallpaperDisplayFormat::FullScreen
+    };
+
     let wallpaper_runtime =
         crate::define_wallpaper::WallpaperRuntime {
             display_format:
-                cfg.wallpaper_display_format,
+                presentation_display_format,
             monitor_mode:
                 cfg.wallpaper.monitor_mode,
             notifications:
@@ -2470,7 +2489,7 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
     };
     let mut windowshader_manager = if windowshader_enabled {
         Some(crate::manage_windowshader_runtime::WindowshaderRuntimeManager::start(
-            wallpaper_enabled_this_launch, cfg.wallpaper_mode.clone(),
+            windowshader_enabled, cfg.windowshader_mode.clone(),
             wallpaper_runtime, logfile.clone(), Arc::clone(&running)))
     } else { None };
     let wallpaper_control = match (&wallpaper_manager, &windowshader_manager) {

@@ -18,6 +18,11 @@ fn default_wallpaper_enabled() -> bool {
     true
 }
 
+// Conservative default: do not start a new renderer on existing installations.
+fn default_windowshader_enabled() -> bool {
+    false
+}
+
 
 fn default_log_level() -> u8 {
     5
@@ -49,6 +54,16 @@ struct WallpaperSection {
     monitor_mode: String,
 }
 
+
+#[derive(Debug, Deserialize)]
+struct WindowshaderSection {
+    #[serde(default = "default_windowshader_enabled")]
+    enabled: bool,
+}
+
+impl Default for WindowshaderSection {
+    fn default() -> Self { Self { enabled: false } }
+}
 
 #[derive(Debug, Deserialize)]
 struct LockingSection {
@@ -92,6 +107,9 @@ struct RawToml {
     screensaver: ScreensaverSection,
 
     wallpaper: WallpaperSection,
+
+    #[serde(default)]
+    windowshader: WindowshaderSection,
 
     locking: LockingSection,
 
@@ -972,6 +990,8 @@ pub struct Config {
 
     pub wallpaper_enabled: bool,
 
+    pub windowshader_enabled: bool,
+
     pub subtitles: bool,
 
     pub subtitle_placement:
@@ -996,6 +1016,8 @@ pub struct Config {
 
     pub wallpaper_mode: String,
 
+    pub windowshader_mode: String,
+
     pub wallpaper_texture_policy:
         TexturePolicy,
 
@@ -1012,6 +1034,9 @@ pub struct Config {
         Vec<
             ShaderPolicy
         >,
+
+    pub windowshader_policies:
+        Vec<ShaderPolicy>,
 
     // Control Center/editor staging policies. These are intentionally excluded
     // from all runtime screensaver/wallpaper policy resolution.
@@ -1287,6 +1312,9 @@ pub fn load_config(
         )?;
 
 
+    let windowshader_policies =
+        load_database_policy_table(PolicyTarget::Windowshader)?;
+
     let unassigned_policies =
         load_database_policy_table(
             PolicyTarget::Unassigned
@@ -1457,6 +1485,11 @@ pub fn load_config(
             "wallpaper"
         )?;
 
+    let windowshader_mode =
+        crate::manage_configuration::load_runtime_mode(
+            "windowshader"
+        )?;
+
 
     if raw.locking.screen_lock_enabled {
         enforce_screen_lock_screensaver_timeout(
@@ -1478,6 +1511,9 @@ pub fn load_config(
             wallpaper_enabled:
                 raw.wallpaper.enabled,
 
+            windowshader_enabled:
+                raw.windowshader.enabled,
+
             subtitles:
                 app_defaults.screensaver_subtitles,
 
@@ -1491,7 +1527,7 @@ pub fn load_config(
                 app_defaults.lyrics_enabled,
 
             wallpaper_display_format:
-                app_defaults.wallpaper_display_format,
+                crate::manage_configuration::WallpaperDisplayFormat::FullScreen,
 
             mode:
                 screensaver_mode,
@@ -1532,6 +1568,9 @@ pub fn load_config(
             wallpaper_mode:
                 wallpaper_mode,
 
+            windowshader_mode:
+                windowshader_mode,
+
             wallpaper_texture_policy,
 
             screensaver_global_speed,
@@ -1541,6 +1580,8 @@ pub fn load_config(
             screensaver_policies,
 
             wallpaper_policies,
+
+            windowshader_policies,
 
             unassigned_policies,
 
@@ -1983,6 +2024,7 @@ pub fn load_config(
 enum PolicyTarget {
     Screensaver,
     Wallpaper,
+    Windowshader,
     Unassigned,
 }
 
@@ -1996,6 +2038,7 @@ impl PolicyTarget {
         match self {
             Self::Screensaver => "screensaver_policies",
             Self::Wallpaper => "wallpaper_policies",
+            Self::Windowshader => "windowshader_policies",
             Self::Unassigned => "unassigned_policies",
         }
     }
@@ -2057,6 +2100,7 @@ fn load_database_policy_table(
         match target {
             PolicyTarget::Screensaver => "screensaver",
             PolicyTarget::Wallpaper => "wallpaper",
+            PolicyTarget::Windowshader => "windowshader",
             PolicyTarget::Unassigned => "unassigned",
         };
 

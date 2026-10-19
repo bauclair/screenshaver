@@ -531,6 +531,7 @@ fn draw_value_control(
                 &[
                     ("Screensaver", "target.screensaver"),
                     ("Wallpaper", "target.wallpaper"),
+                    ("Windowshader", "target.windowshader"),
                     ("Unassigned", "target.unassigned"),
                 ],
             );

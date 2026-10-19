@@ -40,7 +40,7 @@ use super::migration_data::{
 
 const CURRENT_SCHEMA_SQL: &str =
     include_str!(
-        "../../assets/database/schema_v003.sql"
+        "../../assets/database/schema_v004.sql"
     );
 
 
@@ -51,7 +51,7 @@ fn validate_animation_speeds(data: &MigrationData) -> Result<(), String> {
     fn check(label: &str, speed: f64) -> Result<(), String> {
         if !speed.is_finite() || !(-10.0..=10.0).contains(&speed) {
             return Err(format!(
-                "Schema V3 migration cannot preserve {} animation speed {}x; allowed range is -10x through +10x. The original database has not been modified. Adjust this value in the existing installation before retrying migration.",
+                "Schema V4 migration cannot preserve {} animation speed {}x; allowed range is -10x through +10x. The original database has not been modified. Adjust this value in the existing installation before retrying migration.",
                 label, speed,
             ));
         }
@@ -60,6 +60,7 @@ fn validate_animation_speeds(data: &MigrationData) -> Result<(), String> {
 
     check("screensaver default", data.target_defaults.screensaver.animation_speed)?;
     check("wallpaper default", data.target_defaults.wallpaper.animation_speed)?;
+    check("windowshader default", data.target_defaults.windowshader.animation_speed)?;
     for policy in &data.policies {
         if let Some(speed) = policy.animation_speed {
             check(&format!("policy '{}'", policy.policy_name), speed)?;
@@ -180,6 +181,12 @@ pub fn write(
                 &data.target_defaults.wallpaper,
             )?;
 
+            write_target_default(
+                &transaction,
+                "windowshader",
+                &data.target_defaults.windowshader,
+            )?;
+
             write_runtime_target(
                 &transaction,
                 "screensaver",
@@ -192,6 +199,14 @@ pub fn write(
                 &transaction,
                 "wallpaper",
                 &data.runtime_configuration.wallpaper,
+                &policy_ids,
+                &playlist_ids,
+            )?;
+
+            write_runtime_target(
+                &transaction,
+                "windowshader",
+                &data.runtime_configuration.windowshader,
                 &policy_ids,
                 &playlist_ids,
             )?;
@@ -711,6 +726,10 @@ fn write_policies(
                 MigrationPolicyTarget::Wallpaper => {
                     "wallpaper"
                 }
+
+                MigrationPolicyTarget::Windowshader => {
+                    "windowshader"
+                }
             };
 
         let policy_name =
@@ -934,7 +953,6 @@ fn write_application_defaults(
                  subtitle_placement,
                  wallpaper_notifications,
                  lyrics_enabled,
-                 wallpaper_display_format,
                  rendered_fps,
                  anti_aliasing,
                  dithering,
@@ -946,10 +964,10 @@ fn write_application_defaults(
              )
              VALUES (
                  1,
-                 ?1, ?2, ?3, ?4, ?5, ?6,
-                 ?7, ?8, ?9, ?10, ?11,
-                 ?12, ?13,
-                 COALESCE(?14, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+                 ?1, ?2, ?3, ?4, ?5,
+                 ?6, ?7, ?8, ?9, ?10,
+                 ?11, ?12,
+                 COALESCE(?13, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
              )",
             params![
                 bool_integer(defaults.show_splash),
@@ -957,7 +975,6 @@ fn write_application_defaults(
                 defaults.subtitle_placement,
                 bool_integer(defaults.wallpaper_notifications),
                 bool_integer(defaults.lyrics_enabled),
-                defaults.wallpaper_display_format,
                 i64::from(defaults.rendered_fps),
                 defaults.anti_aliasing,
                 defaults.dithering,
@@ -1357,7 +1374,7 @@ fn validate_reconstruction_counts(
     validate_count(
         connection,
         "runtime_targets",
-        2,
+        3,
     )?;
 
     validate_count(
@@ -1369,7 +1386,7 @@ fn validate_reconstruction_counts(
     validate_count(
         connection,
         "target_defaults",
-        2,
+        3,
     )?;
 
     Ok(())

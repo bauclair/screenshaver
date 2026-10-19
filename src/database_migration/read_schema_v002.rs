@@ -1239,6 +1239,15 @@ fn read_runtime_configuration(
                     policy_ids,
                     playlist_ids,
                 )?,
+        
+            // Historical schemas contain only two targets. This is a
+            // temporary semantic placeholder until legacy conversion.
+            windowshader: read_runtime_target(
+                    connection,
+                    "wallpaper",
+                    policy_ids,
+                    playlist_ids,
+                )?,
         }
     )
 }
@@ -1643,6 +1652,13 @@ fn read_target_defaults(
 
             wallpaper:
                 read_target_default(
+                    connection,
+                    "wallpaper",
+                )?,
+        
+            // Historical schemas contain only two targets. This is a
+            // temporary semantic placeholder until legacy conversion.
+            windowshader: read_target_default(
                     connection,
                     "wallpaper",
                 )?,

@@ -10,7 +10,7 @@ use std::time::{
 use rusqlite::{Connection, OpenFlags};
 
 
-pub const CURRENT_SCHEMA_VERSION: i64 = 3;
+pub const CURRENT_SCHEMA_VERSION: i64 = 4;
 
 
 #[derive(Debug, Clone)]
@@ -78,11 +78,15 @@ pub fn prepare(database_path: &Path) -> Result<Connection, String> {
             CURRENT_SCHEMA_VERSION,
         )?;
 
-    let migration_data =
+    let mut migration_data =
         read_historical_database(
             schema_version,
             &source_connection,
         )?;
+
+    if (1..=3).contains(&schema_version) {
+        crate::database_migration::convert_v003_to_v004::convert(&mut migration_data)?;
+    }
 
     let reconstruction_expectations =
         reconstruction_expectations(
@@ -305,10 +309,13 @@ pub fn prepare_staged_restore(database_path: &Path) -> Result<i64, String> {
         return Ok(source_schema_version);
     }
 
-    let migration_data = read_historical_database(
+    let mut migration_data = read_historical_database(
         source_schema_version,
         &source_connection,
     )?;
+    if (1..=3).contains(&source_schema_version) {
+        crate::database_migration::convert_v003_to_v004::convert(&mut migration_data)?;
+    }
     let expectations = reconstruction_expectations(&migration_data);
     drop(source_connection);
 
@@ -396,6 +403,12 @@ fn read_historical_database(
             )
         }
 
+        3 => {
+            crate::database_migration::read_schema_v003::read(
+                connection
+            )
+        }
+
         _ => {
             Err(
                 format!(
@@ -422,8 +435,25 @@ fn reconstruction_expectations(
                 }
             );
 
+    // A windowed v003 installation legitimately has no Wallpaper fallback
+    // after its historical Wallpaper policies become Windowshader policies.
+    // Require only the factory policies actually present in extracted data.
+    let default_shader_ids = data.shaders.iter()
+        .filter(|shader| shader.filename == "default.glsl")
+        .map(|shader| shader.migration_id)
+        .collect::<std::collections::HashSet<_>>();
+    let has_default = |target| data.policies.iter().any(|policy| {
+        policy.target == target && default_shader_ids.contains(&policy.shader)
+    });
+
     crate::validate_database::ReconstructionExpectations {
         require_factory_default,
+        require_screensaver_default: has_default(
+            crate::database_migration::migration_data::MigrationPolicyTarget::Screensaver),
+        require_wallpaper_default: has_default(
+            crate::database_migration::migration_data::MigrationPolicyTarget::Wallpaper),
+        require_windowshader_default: has_default(
+            crate::database_migration::migration_data::MigrationPolicyTarget::Windowshader),
     }
 }
 
@@ -641,6 +671,9 @@ pub(crate) fn test_promote_staging(
                 connection,
                 crate::validate_database::ReconstructionExpectations {
                     require_factory_default: false,
+                    require_screensaver_default: false,
+                    require_wallpaper_default: false,
+                    require_windowshader_default: false,
                 },
             )
         },

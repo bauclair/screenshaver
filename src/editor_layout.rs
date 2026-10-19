@@ -72,6 +72,7 @@ pub(crate) struct SliderDragState {
 pub enum PolicyTarget {
     Screensaver,
     Wallpaper,
+    Windowshader,
     Unassigned,
 }
 
@@ -325,10 +326,21 @@ pub struct ControlConfiguration {
     pub screensaver_texture_primitives: i64,
     pub screensaver_global_palette: String,
     pub wallpaper_enabled: bool,
+    pub windowshader_enabled: bool,
     pub notifications: bool,
     pub lyrics_enabled: bool,
     pub wallpaper_display_format:
         crate::manage_configuration::WallpaperDisplayFormat,
+    pub windowshader_display: String,
+    pub windowshader_interval_seconds: u64,
+    pub windowshader_single_policy_id: Option<i64>,
+    pub windowshader_single_policy_name: String,
+    pub windowshader_playlist_id: Option<i64>,
+    pub windowshader_playlist_name: String,
+    pub windowshader_animation_speed: f64,
+    pub windowshader_global_texture: String,
+    pub windowshader_texture_primitives: i64,
+    pub windowshader_global_palette: String,
     pub wallpaper_display: String,
     pub wallpaper_interval_seconds: u64,
     pub wallpaper_single_policy_id: Option<i64>,
@@ -361,10 +373,15 @@ impl ControlConfiguration {
             wallpaper_playlist_id,
         ) = split_display_mode(&config.wallpaper_mode);
 
+        let (windowshader_display, windowshader_interval_seconds, windowshader_single_policy_id, windowshader_playlist_id) =
+            split_display_mode(&config.windowshader_mode);
+
         let screensaver_single_policy_name =
             policy_name_for_id(&config.screensaver_policies, screensaver_single_policy_id);
         let wallpaper_single_policy_name =
             policy_name_for_id(&config.wallpaper_policies, wallpaper_single_policy_id);
+        let windowshader_single_policy_name =
+            policy_name_for_id(&config.windowshader_policies, windowshader_single_policy_id);
 
         let screensaver_playlist_name =
             playlist_name_for_id(screensaver_playlist_id);
@@ -376,6 +393,8 @@ impl ControlConfiguration {
             crate::manage_configuration::load_target_defaults("screensaver").ok();
         let wallpaper_defaults =
             crate::manage_configuration::load_target_defaults("wallpaper").ok();
+        let windowshader_defaults =
+            crate::manage_configuration::load_target_defaults("windowshader").ok();
 
         let target_texture = |defaults: Option<&crate::manage_configuration::TargetDefaults>,
                               legacy: String| {
@@ -427,12 +446,22 @@ impl ControlConfiguration {
                 config.texture_policy.global_palette.map(|palette| palette.to_hex()).unwrap_or_else(|| "random".to_string()),
             ),
             wallpaper_enabled: config.wallpaper_enabled,
+            windowshader_enabled: config.windowshader_enabled,
+            windowshader_display,
+            windowshader_interval_seconds,
+            windowshader_single_policy_id,
+            windowshader_single_policy_name,
+            windowshader_playlist_id,
+            windowshader_playlist_name: playlist_name_for_id(windowshader_playlist_id),
+            windowshader_animation_speed: windowshader_defaults.as_ref().map(|d| d.animation_speed).unwrap_or(0.03),
+            windowshader_global_texture: target_texture(windowshader_defaults.as_ref(), "random".to_string()),
+            windowshader_texture_primitives: windowshader_defaults.as_ref().map(|d| d.texture_primitives).unwrap_or(64),
+            windowshader_global_palette: target_palette(windowshader_defaults.as_ref(), "random".to_string()),
             notifications: app_defaults.as_ref().map(|d| d.wallpaper_notifications).unwrap_or(config.wallpaper.notifications),
             lyrics_enabled: app_defaults.as_ref().map(|d| d.lyrics_enabled).unwrap_or(config.lyrics_enabled),
-            wallpaper_display_format: app_defaults
-                .as_ref()
-                .map(|d| d.wallpaper_display_format)
-                .unwrap_or(config.wallpaper_display_format),
+            // Legacy presentation compatibility until the independent target editor lands.
+            // Schema v004 no longer stores this field in app_defaults.
+            wallpaper_display_format: config.wallpaper_display_format,
             wallpaper_display,
             wallpaper_interval_seconds,
             wallpaper_single_policy_id,
@@ -2817,6 +2846,10 @@ impl EditWindowOverlay {
                         wallpaper_policy_exists
                     }
 
+                    PolicyTarget::Windowshader => {
+                        self.selected_policy_row.as_ref().is_some_and(|row| row.policy_target == PolicyTarget::Windowshader)
+                    }
+
                     PolicyTarget::Unassigned => {
                         self.selected_policy_row
                             .as_ref()
@@ -3449,6 +3482,14 @@ impl EditWindowOverlay {
 
                                     Some(PolicyTarget::Wallpaper) => {
                                         wallpaper_policy_exists
+                                    }
+
+                                    Some(PolicyTarget::Windowshader) => {
+                                        selected_policy_row
+                                            .as_ref()
+                                            .is_some_and(|row| {
+                                                row.policy_target == PolicyTarget::Windowshader
+                                            })
                                     }
 
                                     Some(PolicyTarget::Unassigned) => {
@@ -5697,6 +5738,10 @@ fn draw_compact_header(
                                 crate::manage_localization::runtime_text(
                                     "target.wallpaper"
                                 ),
+                            Some(
+                                PolicyTarget::Windowshader
+                            ) =>
+                                "Windowshader".to_string(),
                             Some(
                                 PolicyTarget::Unassigned
                             ) =>
@@ -8629,6 +8674,9 @@ fn draw_policy_confirmation_modal(
                             PolicyTarget::Wallpaper =>
                                 crate::manage_localization::runtime_text("editor.any_screensaver_shader_or_screensaver_policy_with_the_same_filename"),
 
+                            PolicyTarget::Windowshader =>
+                                crate::manage_localization::runtime_text("editor.the_shader_file_will_not_be_changed"),
+
                             PolicyTarget::Unassigned =>
                                 crate::manage_localization::runtime_text("editor.the_shader_file_will_not_be_changed"),
                         }
@@ -8688,6 +8736,9 @@ fn policy_target_name(
 
         PolicyTarget::Wallpaper =>
             "Wallpaper",
+
+        PolicyTarget::Windowshader =>
+            "Windowshader",
 
         PolicyTarget::Unassigned =>
             "Unassigned",

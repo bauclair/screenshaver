@@ -19,6 +19,8 @@ pub enum PolicyTarget {
 
     Wallpaper,
 
+    Windowshader,
+
     Unassigned,
 }
 
@@ -46,6 +48,10 @@ impl PolicyTarget {
                 )
             }
 
+            "windowshader" => {
+                Ok(Self::Windowshader)
+            }
+
             "unassigned" => {
                 Ok(
                     Self::Unassigned
@@ -55,7 +61,7 @@ impl PolicyTarget {
             other => {
                 Err(
                     format!(
-                        "Unknown policy target '{}'; supported targets: screensaver, wallpaper, unassigned",
+                        "Unknown policy target '{}'; supported targets: screensaver, wallpaper, windowshader, unassigned",
                         other,
                     )
                 )
@@ -77,6 +83,10 @@ impl PolicyTarget {
                 "wallpaper"
             }
 
+            Self::Windowshader => {
+                "windowshader"
+            }
+
             Self::Unassigned => {
                 "unassigned"
             }
@@ -88,8 +98,8 @@ impl PolicyTarget {
 }
 
 
-/// Returns true for either canonical default.glsl fallback policy.
-/// These policies guarantee at least one Screensaver and Wallpaper target.
+/// Returns true for a canonical default.glsl fallback policy.
+/// These policies guarantee a fallback for each rendering target.
 pub fn is_protected_default_policy(
     policy_id: i64,
 ) -> Result<bool, String> {
@@ -131,7 +141,7 @@ fn is_protected_default_policy_in_connection(
                  WHERE p.policy_id = ?1
                    AND lower(s.filename) = 'default.glsl'
                    AND s.source_path = ?2
-                   AND p.policy_target IN ('screensaver', 'wallpaper')
+                   AND p.policy_target IN ('screensaver', 'wallpaper', 'windowshader')
                    AND p.policy_id = (
                        SELECT MIN(p2.policy_id)
                        FROM shader_policies AS p2
@@ -402,7 +412,7 @@ pub fn assign_unassigned_policies_by_id(
     destination_target: PolicyTarget,
 ) -> Result<usize, String> {
     if destination_target == PolicyTarget::Unassigned {
-        return Err("Unassigned policies must be assigned to Screensaver or Wallpaper".to_string());
+        return Err("Unassigned policies must be assigned to Screensaver, Wallpaper, or Windowshader".to_string());
     }
 
     let mut connection = crate::open_database::open()

@@ -59,11 +59,17 @@ pub struct ConfigurationUpdates {
     // Wallpaper settings.
     pub wallpaper_enabled: bool,
 
+    // Independent Windowshader startup toggle (TOML, not SQLite).
+    pub windowshader_enabled: bool,
+
     pub notifications: bool,
 
     /// Canonical Wallpaper runtime-mode string backed by runtime_targets.
     pub wallpaper_mode:
         String,
+
+    /// Independent Windowshader runtime mode in schema v004.
+    pub windowshader_mode: String,
 
     /// None means "random".
     pub wallpaper_global_texture:
@@ -120,11 +126,16 @@ impl ConfigurationUpdates {
             wallpaper_enabled:
                 config.wallpaper_enabled,
 
+            windowshader_enabled:
+                config.windowshader_enabled,
+
             notifications:
                 config.wallpaper.notifications,
 
             wallpaper_mode:
                 config.wallpaper_mode.clone(),
+
+            windowshader_mode: config.windowshader_mode.clone(),
 
             wallpaper_global_texture:
                 config
@@ -190,7 +201,6 @@ pub struct AppDefaults {
     pub subtitle_placement: String,
     pub wallpaper_notifications: bool,
     pub lyrics_enabled: bool,
-    pub wallpaper_display_format: WallpaperDisplayFormat,
     pub rendered_fps: i64,
     pub anti_aliasing: String,
     pub dithering: String,
@@ -240,7 +250,6 @@ pub fn load_app_defaults() -> Result<AppDefaults, String> {
                  subtitle_placement,
                  wallpaper_notifications,
                  lyrics_enabled,
-                 wallpaper_display_format,
                  rendered_fps,
                  anti_aliasing,
                  dithering,
@@ -262,34 +271,16 @@ pub fn load_app_defaults() -> Result<AppDefaults, String> {
                             row.get::<_, i64>(3)? != 0,
                         lyrics_enabled:
                             row.get::<_, i64>(4)? != 0,
-                        wallpaper_display_format:
-                            WallpaperDisplayFormat::parse_database_value(
-                                &row.get::<_, String>(5)?
-                            )
-                            .map_err(
-                                |error| {
-                                    rusqlite::Error::FromSqlConversionFailure(
-                                        5,
-                                        rusqlite::types::Type::Text,
-                                        Box::new(
-                                            std::io::Error::new(
-                                                std::io::ErrorKind::InvalidData,
-                                                error,
-                                            )
-                                        ),
-                                    )
-                                }
-                            )?,
                         rendered_fps:
-                            row.get(6)?,
+                            row.get(5)?,
                         anti_aliasing:
-                            row.get(7)?,
+                            row.get(6)?,
                         dithering:
-                            row.get(8)?,
+                            row.get(7)?,
                         color_precision:
-                            row.get(9)?,
+                            row.get(8)?,
                         render_scale:
-                            row.get(10)?,
+                            row.get(9)?,
                     }
                 )
             },
@@ -590,12 +581,11 @@ pub fn save_app_defaults(
                      subtitle_placement = ?3,
                      wallpaper_notifications = ?4,
                      lyrics_enabled = ?5,
-                     wallpaper_display_format = ?6,
-                     rendered_fps = ?7,
-                     anti_aliasing = ?8,
-                     dithering = ?9,
-                     color_precision = ?10,
-                     render_scale = ?11
+                     rendered_fps = ?6,
+                     anti_aliasing = ?7,
+                     dithering = ?8,
+                     color_precision = ?9,
+                     render_scale = ?10
                  WHERE defaults_id = 1",
                 rusqlite::params![
                     defaults.show_splash,
@@ -603,7 +593,6 @@ pub fn save_app_defaults(
                     defaults.subtitle_placement,
                     defaults.wallpaper_notifications,
                     defaults.lyrics_enabled,
-                    defaults.wallpaper_display_format.database_value(),
                     defaults.rendered_fps,
                     defaults.anti_aliasing,
                     defaults.dithering,
@@ -662,9 +651,9 @@ pub fn save_target_defaults(
                      texture_mode = ?4,
                      texture_family = ?5,
                      texture_primitives = ?6,
-                     palette_mode = ?7,
-                     palette_color = ?8
-                 WHERE target = ?9",
+                     palette_mode = ?6,
+                     palette_color = ?7
+                 WHERE target = ?8",
                 rusqlite::params![
                     defaults.idle_timeout_value,
                     defaults.idle_timeout_unit,
@@ -706,7 +695,7 @@ fn validate_target_name(
 ) -> Result<(), String> {
     if matches!(
         target,
-        "screensaver" | "wallpaper"
+        "screensaver" | "wallpaper" | "windowshader"
     ) {
         Ok(())
     } else {
@@ -922,6 +911,7 @@ pub fn load_runtime_mode(
 fn write_runtime_modes(
     screensaver_mode: &str,
     wallpaper_mode: &str,
+    windowshader_mode: &str,
 ) -> Result<(), String> {
 
     let screensaver =
@@ -936,6 +926,8 @@ fn write_runtime_modes(
             wallpaper_mode,
         )?;
 
+
+    let windowshader = parse_runtime_mode("windowshader", windowshader_mode)?;
 
     let mut connection =
         crate::open_database::open()
@@ -965,6 +957,7 @@ fn write_runtime_modes(
     for runtime in [
         screensaver,
         wallpaper,
+        windowshader,
     ] {
         if let Some(policy_id) =
             runtime.single_policy_id
@@ -1150,36 +1143,22 @@ fn parse_runtime_mode<'a>(
 
     match display_mode {
         "single" => {
-            let policy_id =
-                argument
-                    .parse::<i64>()
-                    .ok()
-                    .filter(
-                        |value| {
-                            *value > 0
-                        }
-                    )
-                    .ok_or_else(
-                        || {
-                            format!(
-                                "{} Single mode requires a valid policy selection",
-                                target,
-                            )
-                        }
-                    )?;
+            // A disabled, newly introduced target can legitimately have no
+            // policy selected yet. Schema v004 permits this NULL selection.
+            let policy_id = if argument.is_empty() {
+                None
+            } else {
+                Some(argument.parse::<i64>().ok().filter(|id| *id > 0)
+                    .ok_or_else(|| format!("{} Single mode has an invalid policy ID", target))?)
+            };
 
-            Ok(
-                ParsedRuntimeMode {
-                    target,
-                    display_mode,
-                    interval_seconds:
-                        None,
-                    single_policy_id:
-                        Some(policy_id),
-                    playlist_id:
-                        None,
-                }
-            )
+            Ok(ParsedRuntimeMode {
+                target,
+                display_mode,
+                interval_seconds: None,
+                single_policy_id: policy_id,
+                playlist_id: None,
+            })
         }
 
         "random"
@@ -1568,7 +1547,7 @@ pub fn parse_rotation_mode(
 /// Save the retained TOML enable flags and database-backed runtime modes.
 ///
 /// Runtime display modes are written to runtime_targets. The existing TOML
-/// document is then loaded and only screensaver.enabled and wallpaper.enabled
+/// document is then loaded and the three independent target enable flags
 /// are changed. All database-backed defaults remain outside this function.
 pub fn save_configuration(
     config_path: &Path,
@@ -1582,6 +1561,7 @@ pub fn save_configuration(
     write_runtime_modes(
         &updates.screensaver_mode,
         &updates.wallpaper_mode,
+        &updates.windowshader_mode,
     )?;
 
     let mut document =
@@ -1625,6 +1605,11 @@ pub fn save_configuration(
         // Database-backed defaults are deliberately not written to TOML.
     }
 
+    {
+        let windowshader = section_table_mut(&mut document, "windowshader")?;
+        windowshader["enabled"] = value(updates.windowshader_enabled);
+    }
+
     save_document(
         config_path,
         &document,
@@ -1650,7 +1635,9 @@ fn validate_updates(
     validate_mode_string(
         "wallpaper.mode",
         &updates.wallpaper_mode,
-    )
+    )?;
+
+    validate_mode_string("windowshader.mode", &updates.windowshader_mode)
 }
 
 

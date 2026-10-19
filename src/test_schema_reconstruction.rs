@@ -1,8 +1,8 @@
 //! Developer diagnostic for reconstruction migration.
 //!
-//! This command opens a selected historical Schema-1 database read-only,
+//! This command opens a selected historical Schema-1/2/3 database read-only,
 //! translates it to MigrationData, reconstructs a separate current-schema
-//! database, reads that reconstructed database back through the current Schema-2
+//! database, reads that reconstructed database back through the current Schema-4
 //! reader, and compares durable semantics.
 //!
 //! It deliberately bypasses normal Screenshaver database evaluation,
@@ -93,10 +93,30 @@ pub fn run(
             &source_path
         )?;
 
-    let source_data =
-        crate::database_migration::read_schema_v001::read(
-            &source_connection
-        )?;
+    // Select the reader using the source database's actual schema version.
+    // The diagnostic must never interpret a v002/v003 database as v001.
+    let source_schema_version: i64 = source_connection
+        .query_row(
+            "SELECT schema_version FROM schema_metadata WHERE metadata_id = 1",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|error| format!("Unable to read source schema version: {}", error))?;
+
+    let mut source_data = match source_schema_version {
+        1 => crate::database_migration::read_schema_v001::read(&source_connection)?,
+        2 => crate::database_migration::read_schema_v002::read(&source_connection)?,
+        3 => crate::database_migration::read_schema_v003::read(&source_connection)?,
+        other => return Err(format!(
+            "Reconstruction diagnostic supports historical schemas 1, 2, and 3; found {}",
+            other,
+        )),
+    };
+
+    crate::database_migration::convert_v003_to_v004::convert(&mut source_data)?;
+    // The current schema has no wallpaper_display_format column.
+    source_data.application_defaults.wallpaper_display_format =
+        "full_screen".to_string();
 
     println!(
         "[SCHEMA RECONSTRUCTION TEST] Source extracted: {} shaders, {} policies, {} playlists, {} memberships",
@@ -124,7 +144,7 @@ pub fn run(
         )?;
 
     let reconstructed_data =
-        crate::database_migration::read_schema_v002::read(
+        crate::database_migration::read_schema_v004::read(
             &reconstructed_connection
         )?;
 
@@ -143,7 +163,7 @@ pub fn run(
     )?;
 
     println!(
-        "[SCHEMA RECONSTRUCTION TEST] PASS: durable Schema-1 semantics survived read -> MigrationData -> Schema-2 reconstruction -> read."
+        "[SCHEMA RECONSTRUCTION TEST] PASS: historical schema semantics survived read -> MigrationData -> Schema-4 reconstruction -> read."
     );
 
     println!(
@@ -361,7 +381,7 @@ fn test_factory_default_reconstruction(
                 )?;
 
             let reconstructed_data =
-                crate::database_migration::read_schema_v002::read(
+                crate::database_migration::read_schema_v004::read(
                     &reconstructed_connection
                 )?;
 
@@ -842,6 +862,20 @@ fn compare_runtime_configuration(
         "wallpaper runtime configuration",
         &source_wallpaper,
         &reconstructed_wallpaper,
+    )?;
+
+    let source_windowshader = runtime_signature(
+        source,
+        &source.runtime_configuration.windowshader,
+    )?;
+    let reconstructed_windowshader = runtime_signature(
+        reconstructed,
+        &reconstructed.runtime_configuration.windowshader,
+    )?;
+    require_equal(
+        "windowshader runtime configuration",
+        &source_windowshader,
+        &reconstructed_windowshader,
     )
 }
 
@@ -1003,6 +1037,12 @@ fn compare_target_defaults(
         &target_default_signature(
             &reconstructed.target_defaults.wallpaper
         ),
+    )?;
+
+    require_equal(
+        "windowshader target defaults",
+        &target_default_signature(&source.target_defaults.windowshader),
+        &target_default_signature(&reconstructed.target_defaults.windowshader),
     )
 }
 
@@ -1094,6 +1134,7 @@ fn policy_target(
         MigrationPolicyTarget::Unassigned => "unassigned",
         MigrationPolicyTarget::Screensaver => "screensaver",
         MigrationPolicyTarget::Wallpaper => "wallpaper",
+        MigrationPolicyTarget::Windowshader => "windowshader",
     }
 }
 

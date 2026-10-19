@@ -227,6 +227,8 @@ fn localized_manage_policy_target_name(
             crate::manage_localization::runtime_text("target.screensaver"),
         crate::manage_policies::PolicyTarget::Wallpaper =>
             crate::manage_localization::runtime_text("target.wallpaper"),
+        crate::manage_policies::PolicyTarget::Windowshader =>
+            crate::manage_localization::runtime_text("target.windowshader"),
         crate::manage_policies::PolicyTarget::Unassigned =>
             crate::manage_localization::runtime_text("target.unassigned"),
     }
@@ -282,6 +284,7 @@ fn process_policy_rename_ui(
     {
         let manage_target =
         match row.policy_target {
+            crate::editor_layout::PolicyTarget::Windowshader => { crate::manage_policies::PolicyTarget::Windowshader },
             crate::editor_layout::PolicyTarget::Screensaver =>
             crate::manage_policies::PolicyTarget::Screensaver,
             crate::editor_layout::PolicyTarget::Wallpaper =>
@@ -441,6 +444,7 @@ fn process_policy_clone_ui(
     {
         let manage_target =
         match row.policy_target {
+            crate::editor_layout::PolicyTarget::Windowshader => { crate::manage_policies::PolicyTarget::Windowshader },
             crate::editor_layout::PolicyTarget::Screensaver =>
             crate::manage_policies::PolicyTarget::Screensaver,
             crate::editor_layout::PolicyTarget::Wallpaper =>
@@ -580,6 +584,7 @@ fn process_policy_clone_ui(
     {
         let manage_target =
         match row.policy_target {
+            crate::editor_layout::PolicyTarget::Windowshader => { crate::manage_policies::PolicyTarget::Windowshader },
             crate::editor_layout::PolicyTarget::Screensaver =>
             crate::manage_policies::PolicyTarget::Screensaver,
             crate::editor_layout::PolicyTarget::Wallpaper =>
@@ -1901,6 +1906,7 @@ fn run_empty_session(
                             {
                                 let manage_target =
                                 match row.policy_target {
+                                    crate::editor_layout::PolicyTarget::Windowshader => { crate::manage_policies::PolicyTarget::Windowshader },
                                     crate::editor_layout::PolicyTarget::Screensaver => {
                                         crate::manage_policies::PolicyTarget::Screensaver
                                     }
@@ -2012,6 +2018,7 @@ fn run_empty_session(
                             {
                                 let manage_target =
                                 match row.policy_target {
+                                    crate::editor_layout::PolicyTarget::Windowshader => { crate::manage_policies::PolicyTarget::Windowshader },
                                     crate::editor_layout::PolicyTarget::Screensaver => {
                                         crate::manage_policies::PolicyTarget::Screensaver
                                     }
@@ -2687,6 +2694,18 @@ fn run_paths(
                 }
 
                 Some(
+                    crate::editor_layout::PolicyTarget::Windowshader
+                ) => {
+                    // This legacy edit session has only Screensaver and
+                    // Wallpaper availability slots. Do not silently map
+                    // Windowshader to Wallpaper.
+                    return Err(
+                        "Windowshader policy editing is not yet supported by this editor session"
+                            .to_string()
+                    );
+                }
+
+                Some(
                     crate::editor_layout::PolicyTarget::Unassigned
                 ) => {
                     (
@@ -2811,6 +2830,7 @@ fn run_paths(
 
             let initial_policy_exists =
             match initial_editor_target {
+                Some(crate::editor_layout::PolicyTarget::Windowshader) => { config.windowshader_policies.iter().any(|policy| policy_applies_to_path(policy, crate::editor_layout::PolicyTarget::Windowshader, initial_shader_path)) },
                 Some(
                     crate::editor_layout::PolicyTarget::Screensaver
                 ) => {
@@ -2847,6 +2867,7 @@ fn run_paths(
 
             let startup_status =
             match initial_editor_target {
+                Some(crate::editor_layout::PolicyTarget::Windowshader) => { "Windowshader policy selected; using Windowshader target settings.".to_string() },
 
                 Some(
                     crate::editor_layout::PolicyTarget::Wallpaper
@@ -5270,6 +5291,7 @@ fn run_paths(
 
                                                                 EditorTargetRestriction::Unrestricted => {
                                                                     match new_managed_target {
+                                                                        Some(crate::editor_layout::PolicyTarget::Windowshader) => { (false, false) },
                                                                         Some(
                                                                             crate::editor_layout::PolicyTarget::Screensaver
                                                                         ) => {
@@ -5426,6 +5448,7 @@ fn run_paths(
 
                                                                     let new_policy_exists =
                                                                     match new_editor_target {
+                                                                        Some(crate::editor_layout::PolicyTarget::Windowshader) => { config.windowshader_policies.iter().any(|policy| policy_applies_to_path(policy, crate::editor_layout::PolicyTarget::Windowshader, &selected_path)) },
                                                                         Some(
                                                                             crate::editor_layout::PolicyTarget::Screensaver
                                                                         ) => {
@@ -5462,6 +5485,7 @@ fn run_paths(
 
                                                                     let load_status =
                                                                     match new_editor_target {
+                                                                        Some(crate::editor_layout::PolicyTarget::Windowshader) => { "Windowshader policy selected; using Windowshader target settings.".to_string() },
 
                                                                         Some(
                                                                             crate::editor_layout::PolicyTarget::Wallpaper
@@ -5906,6 +5930,7 @@ fn run_paths(
                                                                         active.texture_manager
                                                                         .active_specification_selection(),
                                                                                                          match editor_output.policy_target {
+                                                                                                             Some(crate::editor_layout::PolicyTarget::Windowshader) => { config.windowshader_policies.iter().any(|policy| policy_applies_to_path(policy, crate::editor_layout::PolicyTarget::Windowshader, &active.path)) },
                                                                                                              Some(
                                                                                                                  crate::editor_layout::PolicyTarget::Screensaver
                                                                                                              ) => {
@@ -6001,6 +6026,10 @@ fn run_paths(
                                                                         wallpaper_target_available
                                                                     }
 
+                                                                    crate::editor_layout::PolicyTarget::Windowshader => {
+                                                                        false // Legacy editor session has no Windowshader availability slot yet.
+                                                                    }
+
                                                                     crate::editor_layout::PolicyTarget::Unassigned => {
                                                                         true
                                                                     }
@@ -6015,6 +6044,10 @@ fn run_paths(
 
                                                                             crate::editor_layout::PolicyTarget::Wallpaper => {
                                                                                 localized_edit!("edit.this_shader_cannot_use_a_wallpaper_policy_in_the_current_editing_session")
+                                                                            }
+
+                                                                            crate::editor_layout::PolicyTarget::Windowshader => {
+                                                                                "Windowshader policy editing is not available in this editing session.".to_string()
                                                                             }
 
                                                                             crate::editor_layout::PolicyTarget::Unassigned => {
@@ -6034,6 +6067,10 @@ fn run_paths(
 
                                                                     crate::editor_layout::PolicyTarget::Wallpaper => {
                                                                         wallpaper_policy_exists
+                                                                    }
+
+                                                                    crate::editor_layout::PolicyTarget::Windowshader => {
+                                                                        false
                                                                     }
 
                                                                     crate::editor_layout::PolicyTarget::Unassigned => {
@@ -6186,6 +6223,7 @@ fn run_paths(
                                                                 match requested_target {
                                                                     crate::editor_layout::PolicyTarget::Screensaver => "Screensaver",
                                                                     crate::editor_layout::PolicyTarget::Wallpaper => "Wallpaper",
+                                                                    crate::editor_layout::PolicyTarget::Windowshader => "Windowshader",
                                                                     crate::editor_layout::PolicyTarget::Unassigned => "Unassigned",
                                                                 };
 
@@ -6195,6 +6233,8 @@ fn run_paths(
                                                                         crate::manage_localization::runtime_text("target.screensaver"),
                                                                     crate::editor_layout::PolicyTarget::Wallpaper =>
                                                                         crate::manage_localization::runtime_text("target.wallpaper"),
+                                                                    crate::editor_layout::PolicyTarget::Windowshader =>
+                                                                        crate::manage_localization::runtime_text("target.windowshader"),
                                                                     crate::editor_layout::PolicyTarget::Unassigned =>
                                                                         crate::manage_localization::runtime_text("target.unassigned"),
                                                                 };
@@ -6872,6 +6912,7 @@ fn run_paths(
 
                                                                                     let selected_target_available =
                                                                                     match policy_target {
+                                                                                        crate::editor_layout::PolicyTarget::Windowshader => { false },
                                                                                         crate::editor_layout::PolicyTarget::Screensaver => {
                                                                                             screensaver_target_available
                                                                                         }
@@ -7026,6 +7067,7 @@ fn run_paths(
 
                                                                                         let manage_target =
                                                                                         match policy_target {
+                                                                                            crate::editor_layout::PolicyTarget::Windowshader => { crate::manage_policies::PolicyTarget::Windowshader },
                                                                                             crate::editor_layout::PolicyTarget::Screensaver => {
                                                                                                 crate::manage_policies::PolicyTarget::Screensaver
                                                                                             }
@@ -7087,6 +7129,7 @@ fn run_paths(
                                                                                             {
                                                                                                 let selected_manage_target =
                                                                                                 match selected_policy.policy_target {
+                                                                                                    crate::editor_layout::PolicyTarget::Windowshader => { crate::manage_policies::PolicyTarget::Windowshader },
 
                                                                                                     crate::editor_layout::PolicyTarget::Screensaver => {
                                                                                                         crate::manage_policies::PolicyTarget::Screensaver
@@ -7384,6 +7427,7 @@ fn run_paths(
 
 
                                                                                                                 match destination_target {
+                                                                                                                    crate::editor_layout::PolicyTarget::Windowshader => { { screensaver_target_available = false; wallpaper_target_available = false; screensaver_policy_exists = false; wallpaper_policy_exists = false; } },
                                                                                                                     crate::editor_layout::PolicyTarget::Screensaver => {
                                                                                                                         screensaver_target_available =
                                                                                                                         true;
@@ -7484,6 +7528,7 @@ fn run_paths(
                                                                                                                                                          )
                                                                                                                                                          .unwrap_or_default(),
                                                                                                                                                              match destination_target {
+                                                                                                                                                                 crate::editor_layout::PolicyTarget::Windowshader => { "Windowshader" },
                                                                                                                                                                  crate::editor_layout::PolicyTarget::Screensaver =>
                                                                                                                                                                  "Screensaver",
 
@@ -7557,6 +7602,7 @@ fn run_paths(
                                                                                             crate::editor_layout::PolicyRowCommand::DeletePolicy => {
                                                                                                 let manage_target =
                                                                                                 match row.policy_target {
+                                                                                                    crate::editor_layout::PolicyTarget::Windowshader => { crate::manage_policies::PolicyTarget::Windowshader },
                                                                                                     crate::editor_layout::PolicyTarget::Screensaver => {
                                                                                                         crate::manage_policies::PolicyTarget::Screensaver
                                                                                                     }
@@ -7673,6 +7719,7 @@ fn run_paths(
                                                                                             crate::editor_layout::PolicyRowCommand::DeleteShader => {
                                                                                                 let manage_target =
                                                                                                 match row.policy_target {
+                                                                                                    crate::editor_layout::PolicyTarget::Windowshader => { crate::manage_policies::PolicyTarget::Windowshader },
                                                                                                     crate::editor_layout::PolicyTarget::Screensaver => {
                                                                                                         crate::manage_policies::PolicyTarget::Screensaver
                                                                                                     }
@@ -7941,6 +7988,7 @@ fn resolve_policy_shader_path(
 
     let policies =
     match target {
+        crate::editor_layout::PolicyTarget::Windowshader => { &config.windowshader_policies },
         crate::editor_layout::PolicyTarget::Screensaver => {
             &config.screensaver_policies
         }
@@ -8009,6 +8057,7 @@ fn editor_policy_context_for_path(
          policies,
     ) =
     match target {
+        Some(crate::editor_layout::PolicyTarget::Windowshader) => { (config.wallpaper_fps_policy.global_rendered_fps, &config.wallpaper_texture_policy, &config.wallpaper_postprocess_policy, config.wallpaper_speed_policy.global_speed, &config.windowshader_policies) },
 
         Some(
             crate::editor_layout::PolicyTarget::Wallpaper
@@ -8320,6 +8369,7 @@ fn move_policy_shader(
 
     let destination_directory =
     match destination_target {
+        crate::editor_layout::PolicyTarget::Windowshader => { crate::locate_paths::shader_dir() },
         crate::editor_layout::PolicyTarget::Screensaver =>
         crate::locate_paths::shader_dir(),
 
@@ -8363,6 +8413,7 @@ fn move_policy_shader(
 "edit.shader_already_exists_in",
 
                 match destination_target {
+                    crate::editor_layout::PolicyTarget::Windowshader => { "/shaders" },
                     crate::editor_layout::PolicyTarget::Screensaver =>
                     "/screensavers",
 
@@ -8409,6 +8460,8 @@ fn move_policy_shader(
                 crate::editor_layout::PolicyTarget::Wallpaper =>
                 crate::manage_policies::PolicyTarget::Wallpaper,
 
+                crate::editor_layout::PolicyTarget::Windowshader =>
+                crate::manage_policies::PolicyTarget::Windowshader,
                 crate::editor_layout::PolicyTarget::Unassigned =>
                 crate::manage_policies::PolicyTarget::Unassigned,
             },
@@ -8651,6 +8704,8 @@ fn bulk_policy_patch_from_editor_output(
         crate::manage_policies::PolicyTarget::Screensaver,
         crate::editor_layout::PolicyTarget::Wallpaper =>
         crate::manage_policies::PolicyTarget::Wallpaper,
+        crate::editor_layout::PolicyTarget::Windowshader =>
+        crate::manage_policies::PolicyTarget::Windowshader,
         crate::editor_layout::PolicyTarget::Unassigned =>
         crate::manage_policies::PolicyTarget::Unassigned,
     };
@@ -8666,6 +8721,8 @@ fn bulk_policy_patch_from_editor_output(
                     crate::manage_policies::PolicyTarget::Screensaver,
                     crate::editor_layout::PolicyTarget::Wallpaper =>
                     crate::manage_policies::PolicyTarget::Wallpaper,
+                    crate::editor_layout::PolicyTarget::Windowshader =>
+                    crate::manage_policies::PolicyTarget::Windowshader,
                     crate::editor_layout::PolicyTarget::Unassigned =>
                     crate::manage_policies::PolicyTarget::Unassigned,
                 }
@@ -8988,6 +9045,9 @@ fn create_bulk_policies(
                     crate::manage_policies::PolicyTarget::Wallpaper
                 }
 
+                crate::editor_layout::PolicyTarget::Windowshader => {
+                    crate::manage_policies::PolicyTarget::Windowshader
+                }
                 crate::editor_layout::PolicyTarget::Unassigned => {
                     crate::manage_policies::PolicyTarget::Unassigned
                 }
@@ -9196,6 +9256,9 @@ fn assign_selected_unassigned_policies(
                 crate::manage_policies::PolicyTarget::Wallpaper
             }
 
+            crate::editor_layout::PolicyTarget::Windowshader => {
+                crate::manage_policies::PolicyTarget::Windowshader
+            }
             crate::editor_layout::PolicyTarget::Unassigned => {
                 crate::manage_policies::PolicyTarget::Unassigned
             }
@@ -9238,6 +9301,9 @@ fn policy_for_bulk_row<'a>(
             &config.wallpaper_policies
         }
 
+        crate::editor_layout::PolicyTarget::Windowshader => {
+            &config.windowshader_policies
+        }
         crate::editor_layout::PolicyTarget::Unassigned => {
             &config.unassigned_policies
         }
@@ -9860,6 +9926,8 @@ String,
                 crate::editor_layout::PolicyTarget::Wallpaper =>
                 "wallpaper",
 
+                crate::editor_layout::PolicyTarget::Windowshader =>
+                "windowshader",
                 crate::editor_layout::PolicyTarget::Unassigned =>
                 "unassigned",
             }
@@ -10676,6 +10744,9 @@ fn policy_target_state_name(
         crate::editor_layout::PolicyTarget::Wallpaper =>
         "wallpaper",
 
+        crate::editor_layout::PolicyTarget::Windowshader =>
+        "windowshader",
+
         crate::editor_layout::PolicyTarget::Unassigned =>
         "unassigned",
     }
@@ -10702,6 +10773,9 @@ fn restored_policy_row(
 
         "wallpaper" =>
         crate::editor_layout::PolicyTarget::Wallpaper,
+
+        "windowshader" =>
+        crate::editor_layout::PolicyTarget::Windowshader,
 
         "unassigned" =>
         crate::editor_layout::PolicyTarget::Unassigned,
@@ -11010,6 +11084,7 @@ fn save_control_configuration(
         interval_seconds: u64,
         single_policy_id: Option<i64>,
         playlist_id: Option<i64>,
+        allow_unselected_single: bool,
     ) -> Result<String, String> {
         match display.trim().to_ascii_lowercase().as_str() {
             "ordered" => crate::manage_configuration::format_rotation_mode(
@@ -11021,6 +11096,9 @@ fn save_control_configuration(
                 interval_seconds,
             ),
             "single" => {
+                if allow_unselected_single && single_policy_id.is_none() {
+                    return Ok("single".to_string());
+                }
                 let policy_id = single_policy_id
                 .filter(|policy_id| *policy_id > 0)
                 .ok_or_else(|| {
@@ -11077,6 +11155,15 @@ fn save_control_configuration(
         control.screensaver_interval_seconds,
         control.screensaver_single_policy_id,
         control.screensaver_playlist_id,
+        false,
+    )?;
+
+    let windowshader_mode = build_mode(
+        &control.windowshader_display,
+        control.windowshader_interval_seconds,
+        control.windowshader_single_policy_id,
+        control.windowshader_playlist_id,
+        !control.windowshader_enabled,
     )?;
 
     let wallpaper_mode = build_mode(
@@ -11084,14 +11171,19 @@ fn save_control_configuration(
         control.wallpaper_interval_seconds,
         control.wallpaper_single_policy_id,
         control.wallpaper_playlist_id,
+        false,
     )?;
 
     let (screensaver_texture_mode, screensaver_texture_family) =
     texture_fields(&control.screensaver_global_texture);
+    let (windowshader_texture_mode, windowshader_texture_family) =
+        texture_fields(&control.windowshader_global_texture);
     let (wallpaper_texture_mode, wallpaper_texture_family) =
     texture_fields(&control.wallpaper_global_texture);
     let (screensaver_palette_mode, screensaver_palette_color) =
     palette_fields(&control.screensaver_global_palette)?;
+    let (windowshader_palette_mode, windowshader_palette_color) =
+        palette_fields(&control.windowshader_global_palette)?;
     let (wallpaper_palette_mode, wallpaper_palette_color) =
     palette_fields(&control.wallpaper_global_palette)?;
 
@@ -11102,7 +11194,6 @@ fn save_control_configuration(
         subtitle_placement: control.subtitle_placement.clone(),
         wallpaper_notifications: control.notifications,
         lyrics_enabled: control.lyrics_enabled,
-        wallpaper_display_format: control.wallpaper_display_format,
         rendered_fps: control.rendered_fps,
         anti_aliasing: control.anti_aliasing.clone(),
         dithering: control.dithering.clone(),
@@ -11167,9 +11258,22 @@ fn save_control_configuration(
         palette_color: wallpaper_palette_color,
     };
 
+    let windowshader_defaults = crate::manage_configuration::TargetDefaults {
+        target: "windowshader".to_string(),
+        idle_timeout_value: None,
+        idle_timeout_unit: None,
+        animation_speed: control.windowshader_animation_speed,
+        texture_mode: windowshader_texture_mode,
+        texture_family: windowshader_texture_family,
+        texture_primitives: control.windowshader_texture_primitives,
+        palette_mode: windowshader_palette_mode,
+        palette_color: windowshader_palette_color,
+    };
+
     crate::manage_configuration::save_app_defaults(&app_defaults)?;
     crate::manage_configuration::save_target_defaults(&screensaver_defaults)?;
     crate::manage_configuration::save_target_defaults(&wallpaper_defaults)?;
+    crate::manage_configuration::save_target_defaults(&windowshader_defaults)?;
 
     // Runtime target state is database-backed.  The TOML writer invoked below
     // retains only startup/recovery settings (currently the two enabled flags).
@@ -11191,8 +11295,10 @@ fn save_control_configuration(
         screensaver_global_texture: None,
         screensaver_global_palette: None,
         wallpaper_enabled: control.wallpaper_enabled,
+        windowshader_enabled: control.windowshader_enabled,
         notifications: control.notifications,
         wallpaper_mode,
+        windowshader_mode,
         wallpaper_global_texture: None,
         wallpaper_global_palette: None,
     };

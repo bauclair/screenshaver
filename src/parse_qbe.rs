@@ -1997,6 +1997,11 @@ fn canonical_policy_target(
                 "wallpaper".to_string()
             ),
 
+        "windowshader" =>
+            Ok(
+                "windowshader".to_string()
+            ),
+
         "unassigned" =>
             Ok(
                 "unassigned".to_string()

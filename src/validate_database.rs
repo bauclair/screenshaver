@@ -3,7 +3,7 @@ use rusqlite::{
         Connection,
 };
 
-const EXPECTED_SCHEMA_VERSION: i64 = 3;
+const EXPECTED_SCHEMA_VERSION: i64 = 4;
 
 
 pub fn validate_integrity(
@@ -84,6 +84,9 @@ pub fn validate_startup(
 #[derive(Debug, Clone, Copy)]
 pub struct ReconstructionExpectations {
     pub require_factory_default: bool,
+    pub require_screensaver_default: bool,
+    pub require_wallpaper_default: bool,
+    pub require_windowshader_default: bool,
 }
 
 
@@ -106,17 +109,19 @@ pub fn validate_reconstruction(
                 connection
             )?;
 
-        validate_reconstructed_default_policy(
-            connection,
-            default_shader_id,
-            "screensaver",
-        )?;
-
-        validate_reconstructed_default_policy(
-            connection,
-            default_shader_id,
-            "wallpaper",
-        )?;
+        for (required, target) in [
+            (expectations.require_screensaver_default, "screensaver"),
+            (expectations.require_wallpaper_default, "wallpaper"),
+            (expectations.require_windowshader_default, "windowshader"),
+        ] {
+            if required {
+                validate_reconstructed_default_policy(
+                    connection,
+                    default_shader_id,
+                    target,
+                )?;
+            }
+        }
     }
 
     Ok(())
@@ -182,10 +187,19 @@ pub fn validate_initialization(
         )?;
 
 
+    let default_windowshader_policy_id =
+        validate_default_policy(
+            connection,
+            default_shader_id,
+            "windowshader default",
+            "windowshader",
+        )?;
+
     validate_runtime_targets(
         connection,
         default_screensaver_policy_id,
         default_wallpaper_policy_id,
+        default_windowshader_policy_id,
     )?;
 
 
@@ -773,7 +787,6 @@ fn validate_app_defaults(
                    AND screensaver_subtitles = 1
                    AND subtitle_placement = 'bottom:center'
                    AND wallpaper_notifications = 1
-                   AND wallpaper_display_format = 'full_screen'
                    AND rendered_fps = 30
                    AND anti_aliasing = 'fxaa'
                    AND dithering = 'subtle'
@@ -837,11 +850,11 @@ fn validate_target_defaults(
 
 
     if row_count
-        != 2
+        != 3
     {
         return Err(
             format!(
-                "Target-default validation failed: expected exactly 2 rows, found {}",
+                "Target-default validation failed: expected exactly 3 rows, found {}",
                 row_count,
             )
         );
@@ -862,6 +875,12 @@ fn validate_target_defaults(
         ),
         (
             "wallpaper",
+            None,
+            None,
+            0.03_f64,
+        ),
+        (
+            "windowshader",
             None,
             None,
             0.03_f64,
@@ -1366,6 +1385,7 @@ fn validate_runtime_targets(
     connection: &Connection,
     expected_screensaver_policy_id: i64,
     expected_wallpaper_policy_id: i64,
+    expected_windowshader_policy_id: i64,
 ) -> Result<(), String> {
 
     let row_count: i64 =
@@ -1387,10 +1407,10 @@ fn validate_runtime_targets(
             )?;
 
 
-    if row_count != 2 {
+    if row_count != 3 {
         return Err(
             format!(
-                "Runtime-target validation failed: expected exactly 2 rows, found {}",
+                "Runtime-target validation failed: expected exactly 3 rows, found {}",
                 row_count,
             )
         );
@@ -1408,6 +1428,10 @@ fn validate_runtime_targets(
         (
             "wallpaper",
             expected_wallpaper_policy_id,
+        ),
+        (
+            "windowshader",
+            expected_windowshader_policy_id,
         ),
     ] {
         let (

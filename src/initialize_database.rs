@@ -10,7 +10,7 @@ use rusqlite::{
 
 const CURRENT_SCHEMA_SQL: &str =
     include_str!(
-        "../assets/database/schema_v003.sql"
+        "../assets/database/schema_v004.sql"
     );
 
 
@@ -160,6 +160,7 @@ fn initialize_contents(
     let (
         default_screensaver_policy_id,
         default_wallpaper_policy_id,
+        default_windowshader_policy_id,
     ) =
         create_default_policies(
             connection,
@@ -171,6 +172,7 @@ fn initialize_contents(
         connection,
         default_screensaver_policy_id,
         default_wallpaper_policy_id,
+        default_windowshader_policy_id,
     )?;
 
     insert_schema_metadata(
@@ -434,7 +436,6 @@ fn create_app_defaults(
                  subtitle_placement,
                  wallpaper_notifications,
                  lyrics_enabled,
-                 wallpaper_display_format,
                  rendered_fps,
                  anti_aliasing,
                  dithering,
@@ -451,7 +452,6 @@ fn create_app_defaults(
                  'bottom:center',
                  1,
                  0,
-                 'full_screen',
                  30,
                  'fxaa',
                  'subtle',
@@ -535,6 +535,12 @@ fn create_target_defaults(
             None,
             0.03_f64,
         ),
+        (
+            "windowshader",
+            None,
+            None,
+            0.03_f64,
+        ),
     ] {
         statement
             .execute(
@@ -564,7 +570,7 @@ fn create_target_defaults(
 fn create_default_policies(
     connection: &Connection,
     shader_id: i64,
-) -> Result<(i64, i64), String> {
+) -> Result<(i64, i64, i64), String> {
 
     let screensaver_policy_id =
         insert_default_policy(
@@ -586,10 +592,20 @@ fn create_default_policies(
         )?;
 
 
+    let windowshader_policy_id =
+        insert_default_policy(
+            connection,
+            shader_id,
+            "windowshader default",
+            "windowshader default",
+            "windowshader",
+        )?;
+
     Ok(
         (
             screensaver_policy_id,
             wallpaper_policy_id,
+            windowshader_policy_id,
         )
     )
 }
@@ -649,6 +665,7 @@ fn create_runtime_targets(
     connection: &Connection,
     screensaver_policy_id: i64,
     wallpaper_policy_id: i64,
+    windowshader_policy_id: i64,
 ) -> Result<(), String> {
 
     let mut statement =
@@ -690,6 +707,10 @@ fn create_runtime_targets(
         (
             "wallpaper",
             wallpaper_policy_id,
+        ),
+        (
+            "windowshader",
+            windowshader_policy_id,
         ),
     ] {
         statement

@@ -6,6 +6,12 @@ pub fn load_shader_entries(
     Vec<crate::manage_shader::ShaderEntry>,
     String,
 > {
+    load_shader_entries_for_target(crate::manage_policies::PolicyTarget::Wallpaper)
+}
+
+pub fn load_shader_entries_for_target(
+    target: crate::manage_policies::PolicyTarget,
+) -> Result<Vec<crate::manage_shader::ShaderEntry>, String> {
 
     let managed_source_path =
         crate::locate_paths::shader_dir()
@@ -42,7 +48,7 @@ pub fn load_shader_entries(
                    ON s.shader_id = p.shader_id
                  WHERE s.source_path = ?1
                    AND s.file_status = 'present'
-                   AND p.policy_target = 'wallpaper'
+                   AND p.policy_target = ?2
                  ORDER BY s.filename COLLATE NOCASE,
                           s.filename,
                           p.policy_name COLLATE NOCASE,
@@ -62,7 +68,8 @@ pub fn load_shader_entries(
         statement
             .query_map(
                 rusqlite::params![
-                    managed_source_path
+                    managed_source_path,
+                    target.name(),
                 ],
                 |row| {
                     Ok(
@@ -125,7 +132,7 @@ pub fn load_shader_entries(
 
     match crate::manage_policies::external_policy_entries(
         &config_path,
-        crate::manage_policies::PolicyTarget::Wallpaper,
+        target,
     ) {
         Ok(external_paths) => {
 
@@ -223,6 +230,22 @@ pub(crate) fn run_with_backend(
     running: std::sync::Arc<std::sync::atomic::AtomicBool>,
     control: crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
     backend_factory: fn() -> Result<Box<dyn crate::wallpaper_backend::WallpaperBackend>, String>,
+) -> Result<(), String> {
+    run_with_backend_for_target(
+        configured_mode, runtime, running, control, backend_factory,
+        crate::manage_policies::PolicyTarget::Wallpaper,
+        crate::manage_shader::OrderedTarget::Wallpaper,
+    )
+}
+
+pub(crate) fn run_with_backend_for_target(
+    configured_mode: &str,
+    runtime: &WallpaperRuntime,
+    running: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    control: crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+    backend_factory: fn() -> Result<Box<dyn crate::wallpaper_backend::WallpaperBackend>, String>,
+    policy_target: crate::manage_policies::PolicyTarget,
+    ordered_target: crate::manage_shader::OrderedTarget,
 ) -> Result<(), String> {
 
     let parsed_mode =
@@ -376,7 +399,7 @@ pub(crate) fn run_with_backend(
 
 
     let shader_entries =
-        load_shader_entries()?;
+        load_shader_entries_for_target(policy_target)?;
 
 
     let version =
@@ -577,7 +600,7 @@ pub(crate) fn run_with_backend(
         crate::manage_shader::ShaderManager::from_shader_entries_for_target(
             shader_mode,
             shader_entries,
-            crate::manage_shader::OrderedTarget::Wallpaper,
+            ordered_target,
         );
 
 

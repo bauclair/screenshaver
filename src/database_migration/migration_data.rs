@@ -63,6 +63,7 @@ pub enum MigrationPolicyTarget {
     Unassigned,
     Screensaver,
     Wallpaper,
+    Windowshader,
 }
 
 
@@ -201,6 +202,7 @@ pub enum MigrationDisplayMode {
 pub struct MigrationRuntimeConfiguration {
     pub screensaver: MigrationDisplayMode,
     pub wallpaper: MigrationDisplayMode,
+    pub windowshader: MigrationDisplayMode,
 }
 
 
@@ -214,6 +216,8 @@ pub struct MigrationApplicationDefaults {
     pub wallpaper_notifications: bool,
 
     pub lyrics_enabled: bool,
+    /// Historical v001-v003 presentation format; consumed during migration
+    /// and deliberately not written into the v004 app_defaults table.
     pub wallpaper_display_format: String,
 
     pub rendered_fps: u32,
@@ -289,4 +293,5 @@ pub struct MigrationTargetDefault {
 pub struct MigrationTargetDefaults {
     pub screensaver: MigrationTargetDefault,
     pub wallpaper: MigrationTargetDefault,
+    pub windowshader: MigrationTargetDefault,
 }

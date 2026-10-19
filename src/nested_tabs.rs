@@ -25,6 +25,7 @@ enum ConfigurationNestedTab {
     Appearance,
     Screensaver,
     Wallpaper,
+    Windowshader,
     Rendering,
     Lyrics,
     DataIo,
@@ -34,11 +35,12 @@ enum ConfigurationNestedTab {
 impl ConfigurationNestedTab {
     const ALL: [
         ConfigurationNestedTab;
-        6
+        7
     ] = [
         ConfigurationNestedTab::Appearance,
         ConfigurationNestedTab::Screensaver,
         ConfigurationNestedTab::Wallpaper,
+        ConfigurationNestedTab::Windowshader,
         ConfigurationNestedTab::Rendering,
         ConfigurationNestedTab::Lyrics,
         ConfigurationNestedTab::DataIo,
@@ -63,6 +65,10 @@ impl ConfigurationNestedTab {
                 crate::manage_localization::runtime_text(
                     "target.wallpaper"
                 )
+            }
+
+            ConfigurationNestedTab::Windowshader => {
+                crate::manage_localization::runtime_text("target.windowshader")
             }
 
             ConfigurationNestedTab::Rendering => {
@@ -240,6 +246,16 @@ pub fn draw_configuration(
                                     );
                                 }
 
+                                ConfigurationNestedTab::Windowshader => {
+                                    draw_target_page(
+                                        ui,
+                                        configuration,
+                                        policy_rows,
+                                        PolicyTarget::Windowshader,
+                                        status_message,
+                                    );
+                                }
+
                                 ConfigurationNestedTab::Rendering => {
                                     draw_rendering_placeholders(
                                         ui,
@@ -298,6 +314,11 @@ pub fn draw_configuration(
                 && configuration
                     .wallpaper_single_policy_id
                     .is_none()
+        )
+        || (
+            configuration.windowshader_enabled
+                && configuration.windowshader_display == "single"
+                && configuration.windowshader_single_policy_id.is_none()
         );
 
 
@@ -1586,7 +1607,6 @@ fn draw_target_page(
             draw_target_grid(
                 ui,
                 target,
-                None,
                 &mut configuration.screensaver_display,
                 &mut configuration.screensaver_interval_seconds,
                 &mut configuration.screensaver_single_policy_id,
@@ -1630,9 +1650,6 @@ fn draw_target_page(
             draw_target_grid(
                 ui,
                 target,
-                Some(
-                    &mut configuration.wallpaper_display_format
-                ),
                 &mut configuration.wallpaper_display,
                 &mut configuration.wallpaper_interval_seconds,
                 &mut configuration.wallpaper_single_policy_id,
@@ -1651,6 +1668,34 @@ fn draw_target_page(
         }
 
 
+        PolicyTarget::Windowshader => {
+            ui.heading(crate::manage_localization::runtime_text("target.windowshader"));
+            ui.add_space(8.0);
+            ui.checkbox(
+                &mut configuration.windowshader_enabled,
+                crate::manage_localization::runtime_text("common.enabled"),
+            );
+            ui.add_space(5.0);
+            draw_target_grid(
+                ui,
+                target,
+                &mut configuration.windowshader_display,
+                &mut configuration.windowshader_interval_seconds,
+                &mut configuration.windowshader_single_policy_id,
+                &mut configuration.windowshader_single_policy_name,
+                &mut configuration.windowshader_playlist_id,
+                &mut configuration.windowshader_playlist_name,
+                policy_rows,
+                None,
+                None,
+                &mut configuration.windowshader_animation_speed,
+                &mut configuration.windowshader_global_texture,
+                &mut configuration.windowshader_texture_primitives,
+                &mut configuration.windowshader_global_palette,
+                status_message,
+            );
+        }
+
         PolicyTarget::Unassigned => {}
     }
 }
@@ -1660,9 +1705,6 @@ fn draw_target_page(
 fn draw_target_grid(
     ui: &mut egui::Ui,
     target: PolicyTarget,
-    wallpaper_display_format: Option<
-        &mut crate::manage_configuration::WallpaperDisplayFormat
-    >,
     display_mode: &mut String,
     interval_seconds: &mut u64,
     single_policy_id: &mut Option<i64>,
@@ -1702,51 +1744,6 @@ fn draw_target_grid(
     .show(
         ui,
         |ui| {
-            if let Some(
-                wallpaper_display_format
-            ) = wallpaper_display_format
-            {
-                ui.label(
-                    crate::manage_localization::runtime_text("target.display_format")
-                )
-                .on_hover_text(
-                    crate::manage_localization::runtime_text("target.display_format_help")
-                );
-
-                egui::ComboBox::from_id_source(
-                    "nested_config_wallpaper_display_format_combo"
-                )
-                .selected_text(
-                    match *wallpaper_display_format {
-                        crate::manage_configuration::WallpaperDisplayFormat::FullScreen => { crate::manage_localization::runtime_text("target.full_screen") }
-
-                        crate::manage_configuration::WallpaperDisplayFormat::Windowed => { crate::manage_localization::runtime_text("target.windowshader") }
-                    }
-                )
-                .width(
-                    CONTROL_WIDTH
-                )
-                .show_ui(
-                    ui,
-                    |ui| {
-                        ui.selectable_value(
-                            wallpaper_display_format,
-                            crate::manage_configuration::WallpaperDisplayFormat::FullScreen,
-                            crate::manage_localization::runtime_text("target.full_screen"),
-                        );
-
-                        ui.selectable_value(
-                            wallpaper_display_format,
-                            crate::manage_configuration::WallpaperDisplayFormat::Windowed,
-                            crate::manage_localization::runtime_text("target.windowshader"),
-                        );
-                    },
-                );
-
-                ui.end_row();
-            }
-
-
             ui.label(
                 crate::manage_localization::runtime_text("target.mode")
             );
@@ -2614,6 +2611,7 @@ fn target_name(
     match target {
         PolicyTarget::Screensaver => crate::manage_localization::runtime_text("target.screensaver"),
         PolicyTarget::Wallpaper => crate::manage_localization::runtime_text("target.wallpaper"),
+        PolicyTarget::Windowshader => crate::manage_localization::runtime_text("target.windowshader"),
         PolicyTarget::Unassigned => "unassigned".to_string(),
     }
 }

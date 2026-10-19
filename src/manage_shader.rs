@@ -117,6 +117,7 @@ impl ShaderEntry {
 pub enum OrderedTarget {
     Screensaver,
     Wallpaper,
+    Windowshader,
 }
 
 
@@ -131,6 +132,7 @@ fn last_ordered_policy_id(target: OrderedTarget) -> Option<i64> {
     let key = match target {
         OrderedTarget::Screensaver => "last_screensaver_policy_id",
         OrderedTarget::Wallpaper => "last_wallpaper_policy_id",
+        OrderedTarget::Windowshader => "last_windowshader_policy_id",
     };
     root.get("ordered")
         .and_then(|ordered| ordered.get(key))
@@ -143,6 +145,7 @@ fn save_last_ordered_policy_id(target: OrderedTarget, policy_id: i64) -> Result<
     let key = match target {
         OrderedTarget::Screensaver => "last_screensaver_policy_id",
         OrderedTarget::Wallpaper => "last_wallpaper_policy_id",
+        OrderedTarget::Windowshader => "last_windowshader_policy_id",
     };
     crate::manage_runtime_state::update_state(|root| {
         let object = root.as_object_mut().ok_or("Runtime state root is not an object")?;
@@ -305,6 +308,7 @@ impl ShaderManager {
             match target {
                 OrderedTarget::Screensaver => "screensaver",
                 OrderedTarget::Wallpaper => "wallpaper",
+                OrderedTarget::Windowshader => "windowshader",
             };
 
         let mut playlist_entries =
