@@ -2395,21 +2395,13 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
     );
 
 
-    // Schema v004 selects Wallpaper and Windowshader independently. The
-    // legacy WallpaperRuntime remains shared during the transitional build,
-    // but its presentation format must match the selected supervisor.
-    // In particular, load_config defaults the retired wallpaper display
-    // format to FullScreen, which must not be passed to Windowshader.
-    let presentation_display_format = if windowshader_enabled {
-        crate::manage_configuration::WallpaperDisplayFormat::Windowed
-    } else {
-        crate::manage_configuration::WallpaperDisplayFormat::FullScreen
-    };
-
+    // Each presentation target owns an independent runtime configuration.
+    // Keep the existing mutually exclusive supervisor startup until the
+    // screensaver/lock-screen/Control Center handoff paths can coordinate both.
     let wallpaper_runtime =
         crate::define_wallpaper::WallpaperRuntime {
             display_format:
-                presentation_display_format,
+                crate::manage_configuration::WallpaperDisplayFormat::FullScreen,
             monitor_mode:
                 cfg.wallpaper.monitor_mode,
             notifications:
@@ -2433,6 +2425,32 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
         };
 
 
+    let windowshader_runtime =
+        crate::define_wallpaper::WallpaperRuntime {
+            display_format:
+                crate::manage_configuration::WallpaperDisplayFormat::Windowed,
+            monitor_mode:
+                cfg.wallpaper.monitor_mode,
+            notifications:
+                cfg.wallpaper.notifications,
+            lyrics_enabled:
+                cfg.lyrics_enabled,
+            lyrics_state:
+                None,
+            texture_policy:
+                cfg.windowshader_texture_policy.clone(),
+            fps_policy:
+                cfg.windowshader_fps_policy.clone(),
+            animation_speed_policy:
+                cfg.windowshader_speed_policy.clone(),
+            postprocess_policy:
+                cfg.windowshader_postprocess_policy.clone(),
+            audio_bands:
+                audio_bands.clone(),
+            tray_status:
+                tray_status.clone(),
+        };
+
     // Stage 1: exclusive configured modes, independently named supervisors.
     let mut wallpaper_manager = if windowshader_enabled { None } else {
         Some(crate::manage_wallpaper_runtime::WallpaperRuntimeManager::start(
@@ -2442,7 +2460,7 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
     let mut windowshader_manager = if windowshader_enabled {
         Some(crate::manage_windowshader_runtime::WindowshaderRuntimeManager::start(
             windowshader_enabled, cfg.windowshader_mode.clone(),
-            wallpaper_runtime, logfile.clone(), Arc::clone(&running)))
+            windowshader_runtime, logfile.clone(), Arc::clone(&running)))
     } else { None };
     let wallpaper_control = match (&wallpaper_manager, &windowshader_manager) {
         (Some(manager), None) => manager.control(),
@@ -2584,9 +2602,11 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
                             cfg = config_result.config;
 
                             wallpaper_control.request_policy_reload(
-                                crate::manage_wallpaper_runtime::WallpaperPolicyReload::from_config(
-                                    &cfg
-                                )
+                                if windowshader_enabled {
+                                    crate::manage_wallpaper_runtime::WallpaperPolicyReload::from_windowshader_config(&cfg)
+                                } else {
+                                    crate::manage_wallpaper_runtime::WallpaperPolicyReload::from_config(&cfg)
+                                }
                             );
 
                             crate::logger::information(

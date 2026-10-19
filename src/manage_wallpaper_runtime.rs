@@ -45,6 +45,16 @@ impl WallpaperPolicyReload {
                 config.wallpaper_postprocess_policy.clone(),
         }
     }
+    pub(crate) fn from_windowshader_config(
+        config: &crate::load_config::Config,
+    ) -> Self {
+        Self {
+            animation_speed_policy: config.windowshader_speed_policy.clone(),
+            fps_policy: config.windowshader_fps_policy.clone(),
+            texture_policy: config.windowshader_texture_policy.clone(),
+            postprocess_policy: config.windowshader_postprocess_policy.clone(),
+        }
+    }
 }
 
 
