@@ -517,7 +517,7 @@ pub fn playlist_members(
 ///
 /// A playlist may contain policies for multiple targets. Runtime selection
 /// filters that shared ordering rather than maintaining a second target-specific
-/// order. Unassigned policies are therefore excluded from both runtime targets.
+/// order. Unassigned policies are therefore excluded from all three runtime targets.
 pub fn playlist_render_policies(
     playlist_id: i64,
     target: &str,
@@ -2020,10 +2020,10 @@ fn normalized_runtime_target(
 ) -> Result<&str, String> {
 
     match target {
-        "screensaver" | "wallpaper" => Ok(target),
+        "screensaver" | "wallpaper" | "windowshader" => Ok(target),
         _ => Err(
             format!(
-                "Playlist runtime target must be 'screensaver' or 'wallpaper'; found '{}'",
+                "Playlist runtime target must be 'screensaver', 'wallpaper', or 'windowshader'; found '{}'",
                 target,
             )
         ),
