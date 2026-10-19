@@ -45,6 +45,7 @@ impl WallpaperPolicyReload {
                 config.wallpaper_postprocess_policy.clone(),
         }
     }
+
     pub(crate) fn from_windowshader_config(
         config: &crate::load_config::Config,
     ) -> Self {
@@ -57,6 +58,62 @@ impl WallpaperPolicyReload {
     }
 }
 
+
+
+/// Coordinates the two independently owned presentation supervisors.
+/// A missing supervisor is treated as already quiescent.
+#[derive(Clone)]
+pub struct PresentationRuntimeControl {
+    wallpaper: Option<WallpaperRuntimeControl>,
+    windowshader: Option<WallpaperRuntimeControl>,
+}
+
+impl PresentationRuntimeControl {
+    pub fn new(
+        wallpaper: Option<WallpaperRuntimeControl>,
+        windowshader: Option<WallpaperRuntimeControl>,
+    ) -> Self {
+        Self { wallpaper, windowshader }
+    }
+
+    pub fn request_pause_after_first_frame(&self, running: &AtomicBool) -> bool {
+        let wallpaper_ok = self.wallpaper.as_ref().map_or(true, |control| {
+            control.request_pause_after_first_frame(running)
+        });
+        let windowshader_ok = self.windowshader.as_ref().map_or(true, |control| {
+            control.request_pause_after_first_frame(running)
+        });
+        if !wallpaper_ok || !windowshader_ok {
+            crate::logger::error(
+                &crate::locate_paths::runtime_log_path(),
+                &format!("[PRESENTATION] Pause acknowledgment failed: wallpaper={}, windowshader={}", wallpaper_ok, windowshader_ok),
+            );
+            // The caller must not proceed with a handoff on failure. Release
+            // any successful partial pause to avoid stranding a renderer.
+            self.resume_and_wait_for_frame(running);
+            return false;
+        }
+        true
+    }
+
+    pub fn resume_and_wait_for_frame(&self, running: &AtomicBool) {
+        if let Some(control) = &self.wallpaper {
+            control.resume_and_wait_for_frame(running);
+        }
+        if let Some(control) = &self.windowshader {
+            control.resume_and_wait_for_frame(running);
+        }
+    }
+
+    pub(crate) fn request_policy_reload(&self, config: &crate::load_config::Config) {
+        if let Some(control) = &self.wallpaper {
+            control.request_policy_reload(WallpaperPolicyReload::from_config(config));
+        }
+        if let Some(control) = &self.windowshader {
+            control.request_policy_reload(WallpaperPolicyReload::from_windowshader_config(config));
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct WallpaperRuntimeControl {

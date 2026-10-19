@@ -251,7 +251,7 @@ pub fn run(
     logfile: &Path,
     running: &AtomicBool,
     wallpaper_control:
-        &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+        &crate::manage_wallpaper_runtime::PresentationRuntimeControl,
     shader_manager:
         crate::manage_shader::ShaderManager,
     shader_interval: u64,
@@ -1040,7 +1040,7 @@ fn wait_for_authenticated_unlock_without_renderer(
 
 fn resume_wallpaper_after_authenticated_unlock(
     wallpaper_control:
-        &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+        &crate::manage_wallpaper_runtime::PresentationRuntimeControl,
     running: &AtomicBool,
     logfile: &Path,
 ) {

@@ -34,7 +34,7 @@ pub fn run(
     logfile: &Path,
     running: &AtomicBool,
     wallpaper_control:
-        &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+        &crate::manage_wallpaper_runtime::PresentationRuntimeControl,
 ) -> Result<(), String> {
 
     crate::logger::information(

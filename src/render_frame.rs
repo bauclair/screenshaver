@@ -181,7 +181,7 @@ impl FrameRenderer {
     pub fn run(
         &mut self,
         running: &AtomicBool,
-        wallpaper_control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+        wallpaper_control: &crate::manage_wallpaper_runtime::PresentationRuntimeControl,
     ) -> ScreensaverRunOutcome {
         log_information(
             "[RENDER] Entering renderer-owned event loop"

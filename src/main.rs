@@ -2462,11 +2462,12 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
             windowshader_enabled, cfg.windowshader_mode.clone(),
             windowshader_runtime, logfile.clone(), Arc::clone(&running)))
     } else { None };
-    let wallpaper_control = match (&wallpaper_manager, &windowshader_manager) {
-        (Some(manager), None) => manager.control(),
-        (None, Some(manager)) => manager.control(),
-        _ => unreachable!("Exactly one presentation supervisor must be selected"),
-    };
+    // Keep separate supervisor identities even while the concurrent-startup
+    // restriction remains in force. The coordinator owns only cloned handles.
+    let wallpaper_control = crate::manage_wallpaper_runtime::PresentationRuntimeControl::new(
+        wallpaper_manager.as_ref().map(|manager| manager.control()),
+        windowshader_manager.as_ref().map(|manager| manager.control()),
+    );
 
 
     if cfg.debug_log {
@@ -2601,13 +2602,7 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
 
                             cfg = config_result.config;
 
-                            wallpaper_control.request_policy_reload(
-                                if windowshader_enabled {
-                                    crate::manage_wallpaper_runtime::WallpaperPolicyReload::from_windowshader_config(&cfg)
-                                } else {
-                                    crate::manage_wallpaper_runtime::WallpaperPolicyReload::from_config(&cfg)
-                                }
-                            );
+                            wallpaper_control.request_policy_reload(&cfg);
 
                             crate::logger::information(
                                 &logfile,

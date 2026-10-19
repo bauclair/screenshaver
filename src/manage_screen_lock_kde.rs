@@ -360,7 +360,7 @@ pub fn run(
     logfile: &Path,
     running: &AtomicBool,
     wallpaper_control:
-        &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+        &crate::manage_wallpaper_runtime::PresentationRuntimeControl,
 ) -> Result<(), String> {
     crate::logger::information(
         logfile,
@@ -1247,7 +1247,7 @@ fn command_failure_message(output: &Output) -> String {
 
 fn resume_wallpaper_after_kde_lock(
     wallpaper_control:
-        &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+        &crate::manage_wallpaper_runtime::PresentationRuntimeControl,
     running: &AtomicBool,
     logfile: &Path,
 ) {
