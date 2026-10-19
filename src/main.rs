@@ -1933,17 +1933,15 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
             crate::tray_icon::TrayCommand
         >();
 
-    // Step 17 transitional startup: Windowshader is independently configured.
-    // The two presentation supervisors still share control paths, so they
-    // cannot safely operate simultaneously until lifecycle separation lands.
-    // Fail explicitly rather than silently disabling either requested target.
+    // Stage D: both presentation targets have independent supervisors,
+    // backends, policy selection, and pause/reload control handles.
+    // The shared PresentationRuntimeControl coordinates handoffs.
     let windowshader_enabled = cfg.windowshader_enabled;
     if cfg.wallpaper_enabled && windowshader_enabled {
-        let message = "Wallpaper and Windowshader are both enabled, but independent concurrent supervisors are not yet available. Disable one target in screenshaver.toml for this transitional build.";
-        eprintln!("ERROR: {}", message);
-        crate::logger::error(&logfile, &format!("[MAIN] {}", message));
-        drop(database_connection);
-        return;
+        crate::logger::information(
+            &logfile,
+            "[PRESENTATION] Concurrent Wallpaper and Windowshader supervisors enabled",
+        );
     }
 
     let tray_status =
@@ -2451,19 +2449,19 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
                 tray_status.clone(),
         };
 
-    // Stage 1: exclusive configured modes, independently named supervisors.
-    let mut wallpaper_manager = if windowshader_enabled { None } else {
+    // Each enabled target owns its own supervisor thread and renderer backend.
+    // Both share the session shutdown flag, but not presentation pause state.
+    let mut wallpaper_manager = if wallpaper_enabled_this_launch {
         Some(crate::manage_wallpaper_runtime::WallpaperRuntimeManager::start(
             wallpaper_enabled_this_launch, cfg.wallpaper_mode.clone(),
             wallpaper_runtime.clone(), logfile.clone(), Arc::clone(&running)))
-    };
+    } else { None };
     let mut windowshader_manager = if windowshader_enabled {
         Some(crate::manage_windowshader_runtime::WindowshaderRuntimeManager::start(
             windowshader_enabled, cfg.windowshader_mode.clone(),
             windowshader_runtime, logfile.clone(), Arc::clone(&running)))
     } else { None };
-    // Keep separate supervisor identities even while the concurrent-startup
-    // restriction remains in force. The coordinator owns only cloned handles.
+    // The coordinator owns cloned handles, never supervisor threads.
     let wallpaper_control = crate::manage_wallpaper_runtime::PresentationRuntimeControl::new(
         wallpaper_manager.as_ref().map(|manager| manager.control()),
         windowshader_manager.as_ref().map(|manager| manager.control()),
