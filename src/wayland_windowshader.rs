@@ -1916,7 +1916,20 @@ pub(crate) struct WindowshaderCallbackRecovery {
     pub(crate) animation_shift: Duration,
 }
 
+// A Windowshader-owned schedule reset is not a presentation authorization.
+// Each cause discards the previous frame deadline; only a genuine compositor
+// callback can subsequently make a Windowshader frame eligible to render.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum WindowshaderScheduleReset {
+    PolicyOrShaderChange,
+    CallbackRecovery,
+}
+
 impl WindowshaderFrameLoopState {
+    pub(crate) fn on_schedule_discontinuity(&mut self, _reason: WindowshaderScheduleReset) {
+        self.reset_presentation_deadline();
+    }
+
     // Successful EGL swaps are the only source of Windowshader presentation
     // accounting. This does not create or acknowledge a Wayland frame callback.
     // Return the status heartbeat decision before the resume flag is cleared.

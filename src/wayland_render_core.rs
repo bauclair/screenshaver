@@ -756,7 +756,9 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                 );
 
                             if windowed_rotation {
-                                windowshader_state.reset_presentation_deadline();
+                                windowshader_state.on_schedule_discontinuity(
+                                    crate::wayland_windowshader::WindowshaderScheduleReset::PolicyOrShaderChange,
+                                );
                             } else {
                                 S::reset_frame_deadline(&mut next_frame_deadline);
                             }
@@ -910,7 +912,9 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     last_shader_switch += recovery.rotation_shift;
                     S::reset_frame_deadline(&mut next_frame_deadline);
                 } else {
-                    windowshader_state.reset_presentation_deadline();
+                    windowshader_state.on_schedule_discontinuity(
+                        crate::wayland_windowshader::WindowshaderScheduleReset::CallbackRecovery,
+                    );
                 }
                 frame_times.clear();
                 fps_warning_state = crate::fps_monitor::FpsWarningState::Normal;
@@ -1145,7 +1149,9 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
 
                                 if windowed_rotation {
-                                windowshader_state.reset_presentation_deadline();
+                                windowshader_state.on_schedule_discontinuity(
+                                    crate::wayland_windowshader::WindowshaderScheduleReset::PolicyOrShaderChange,
+                                );
                             } else {
                                 S::reset_frame_deadline(&mut next_frame_deadline);
                             }
