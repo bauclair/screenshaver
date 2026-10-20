@@ -945,23 +945,14 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                         false
                     )
             {
-                if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed {
-                    windowshader_state.rotation.windowshader_rotation_attempts = windowshader_state.rotation.windowshader_rotation_attempts.wrapping_add(1);
-                    crate::logger::warning(&crate::locate_paths::runtime_log_path(),
-                        &format!("[WINDOWSHADER_ROTATION_DIAG] Rotation attempt={} previous_shader='{}' policy_id={} elapsed_ms={} interval_ms={:?} frame_ready={} program={}",
-                            windowshader_state.rotation.windowshader_rotation_attempts, current_shader.shader_name,
-                            current_shader.policy_id, (if windowed_rotation { windowshader_state.rotation.last_shader_switch } else { last_shader_switch }).elapsed().as_millis(),
-                            shader_interval.map(|interval| interval.as_millis()), windowed_frame_ready, program));
-                }
-                if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed {
-                    windowshader_state.rotation.rotation_clock_last_shift_reason = "rotation_attempt_reset";
-                    windowshader_state.rotation.rotation_clock_last_shift_ms = (if windowed_rotation { windowshader_state.rotation.last_shader_switch } else { last_shader_switch }).elapsed().as_millis();
-                    crate::logger::warning(&crate::locate_paths::runtime_log_path(),
-                        &format!("[WINDOWSHADER_CLOCK_DIAG] reason=rotation_attempt_reset elapsed_before_ms={} interval_ms={:?} attempts={}",
-                            windowshader_state.rotation.rotation_clock_last_shift_ms, shader_interval.map(|v| v.as_millis()), windowshader_state.rotation.windowshader_rotation_attempts));
-                }
                 if windowed_rotation {
-                    windowshader_state.rotation.last_shader_switch = Instant::now();
+                    windowshader_state.rotation.begin_rotation_attempt(
+                        shader_interval,
+                        &current_shader.shader_name,
+                        current_shader.policy_id,
+                        windowed_frame_ready,
+                        program,
+                    );
                 } else {
                     last_shader_switch = Instant::now();
                 }

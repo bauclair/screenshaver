@@ -1688,6 +1688,36 @@ impl WindowshaderRotationClockState {
         interval.is_some_and(|interval| self.last_shader_switch.elapsed() >= interval)
     }
 
+    // Record a compositor-authorized Windowshader rotation attempt before
+    // shader selection/compilation. Preserve the original reset-before-switch
+    // semantics, including failed selections and compilation attempts.
+    pub(crate) fn begin_rotation_attempt(
+        &mut self,
+        interval: Option<Duration>,
+        shader_name: &str,
+        policy_id: impl std::fmt::Display,
+        frame_ready: bool,
+        program: u32,
+    ) {
+        self.windowshader_rotation_attempts = self.windowshader_rotation_attempts.wrapping_add(1);
+        let elapsed_ms = self.last_shader_switch.elapsed().as_millis();
+        crate::logger::warning(
+            &crate::locate_paths::runtime_log_path(),
+            &format!("[WINDOWSHADER_ROTATION_DIAG] Rotation attempt={} previous_shader='{}' policy_id={} elapsed_ms={} interval_ms={:?} frame_ready={} program={}",
+                self.windowshader_rotation_attempts, shader_name, policy_id,
+                elapsed_ms, interval.map(|value| value.as_millis()), frame_ready, program),
+        );
+        self.rotation_clock_last_shift_reason = "rotation_attempt_reset";
+        self.rotation_clock_last_shift_ms = self.last_shader_switch.elapsed().as_millis();
+        crate::logger::warning(
+            &crate::locate_paths::runtime_log_path(),
+            &format!("[WINDOWSHADER_CLOCK_DIAG] reason=rotation_attempt_reset elapsed_before_ms={} interval_ms={:?} attempts={}",
+                self.rotation_clock_last_shift_ms,
+                interval.map(|value| value.as_millis()), self.windowshader_rotation_attempts),
+        );
+        self.last_shader_switch = Instant::now();
+    }
+
     // A blocked rotation is reported once until the compositor allows another frame.
     // This is diagnostic only; the compositor callback remains authoritative.
     pub(crate) fn report_blocked_rotation_if_due(&mut self, interval: Option<Duration>) {
