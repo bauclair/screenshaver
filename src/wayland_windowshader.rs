@@ -1814,6 +1814,14 @@ pub(crate) struct WindowshaderFrameLoopState {
     pause_started: Option<Instant>,
 }
 
+// Pause-release result: the shared executor applies only the GL animation
+// shift and dispatch notification. Neither action grants frame readiness.
+#[derive(Clone, Copy)]
+pub(crate) struct WindowshaderPauseRelease {
+    pub(crate) animation_shift: Option<Duration>,
+    pub(crate) notify_dispatch: bool,
+}
+
 // Clock shifts calculated on a long compositor callback recovery.
 // The shared executor applies the animation shift and resets its FPS samples.
 pub(crate) struct WindowshaderCallbackRecovery {
@@ -1922,10 +1930,15 @@ impl WindowshaderFrameLoopState {
         Some(duration)
     }
 
-    // A pause release does not grant permission to draw. The compositor's
-    // outstanding wl_surface.frame callback remains authoritative.
-    pub(crate) fn on_pause_released(&self) -> bool {
-        self.resume_presentation_pending
+    // Windowshader owns the pause-release decision, including the interval
+    // adjustment and whether its dispatch layer should log the transition.
+    // This never grants frame readiness or acknowledges a resumed frame.
+    pub(crate) fn release_pause(&mut self, ended: Instant) -> WindowshaderPauseRelease {
+        let animation_shift = self.on_pause_ended(ended);
+        WindowshaderPauseRelease {
+            animation_shift,
+            notify_dispatch: self.resume_presentation_pending,
+        }
     }
 
     // Called only after eglSwapBuffers succeeds. Preserve the pending resume

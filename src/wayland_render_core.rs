@@ -820,8 +820,15 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
             if paused {
                 let pause_ended_at = Instant::now();
-                if windowed_rotation {
-                    if let Some(duration) = windowshader_state.on_pause_ended(pause_ended_at) {
+                // Windowshader owns its pause-release decision and rotation
+                // adjustment; Render Core applies only the animation shift.
+                let windowshader_release = if windowed_rotation {
+                    Some(windowshader_state.release_pause(pause_ended_at))
+                } else {
+                    None
+                };
+                if let Some(release) = windowshader_release {
+                    if let Some(duration) = release.animation_shift {
                         start_time += duration;
                     }
                 } else if let Some(paused_at) = pause_started.take() {
@@ -839,7 +846,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 // allowed another windowshader_state.presentation. Keep the separate pending
                 // flag until a successful EGL swap acknowledges resumption.
                 paused = false;
-                if windowed_rotation && windowshader_state.on_pause_released() {
+                if windowshader_release.is_some_and(|release| release.notify_dispatch) {
                     state.on_pause_released();
                 }
             }
