@@ -1067,7 +1067,21 @@ impl WindowshaderDispatchState {
 
 impl crate::wayland_wallpaper::RenderWaylandDispatch for WindowshaderDispatchState {
     fn surfaces(&mut self) -> &mut Vec<WallpaperSurfaceState> { &mut self.surface_states }
-    fn windowshader_state(&mut self) -> &mut WindowshaderWaylandState { &mut self.windowshader }
+    fn presentation_diagnostics(&self, native_targets: &[NativeWallpaperTarget]) -> crate::wayland_wallpaper::PresentationDiagnostics {
+        let pending = self.windowshader.windowshader_pending_callbacks.get(&0);
+        crate::wayland_wallpaper::PresentationDiagnostics {
+            frame_ready: native_targets.iter().all(|target| self.windowshader.frame_ready
+                .get(&target.info.registry_name).copied().unwrap_or(true)),
+            pending_description: pending.map_or_else(|| "none".to_string(), |record| format!(
+                "seq={} age_ms={} swap_completed={} flushed={}", record.sequence,
+                record.requested_at.elapsed().as_millis(), record.swap_completed, record.flushed)),
+            pending_sequence: pending.map(|record| record.sequence),
+            pending_age_ms: pending.map(|record| record.requested_at.elapsed().as_millis()),
+            activated: self.windowshader.windowed_activated,
+            activation_established: self.windowshader.windowed_activation_established,
+            configure_count: self.windowshader.windowshader_configure_count,
+        }
+    }
     fn removed_outputs(&mut self) -> &mut Vec<u32> { &mut self.removed_output_names }
     fn compositor_close_requests_shutdown() -> bool { true }
     fn on_pause_entering(&mut self) {

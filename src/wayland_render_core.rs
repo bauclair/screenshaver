@@ -524,7 +524,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     // Keep it grouped while the shared GL frame executor is extracted in stages.
     let mut windowshader_state = crate::wayland_windowshader::WindowshaderFrameLoopState::new(
         last_shader_switch,
-        state.windowshader_state().windowshader_configure_count,
+        state.presentation_diagnostics(native_targets).configure_count,
     );
     let windowed_rotation = runtime.display_format
         == crate::manage_configuration::WallpaperDisplayFormat::Windowed;
@@ -561,28 +561,14 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     )
                 {
                     windowshader_state.presentation.presentation_watchdog_last_report = Some(Instant::now());
-                    let ready = native_targets.iter().all(|target| {
-                        state.windowshader_state().frame_ready.get(&target.info.registry_name)
-                            .copied().unwrap_or(true)
-                    });
-                    let pending = state.windowshader_state().windowshader_pending_callbacks.get(&0);
-                    let pending_description = pending.map_or_else(
-                        || "none".to_string(),
-                        |record| format!(
-                            "seq={} age_ms={} swap_completed={} flushed={}",
-                            record.sequence,
-                            record.requested_at.elapsed().as_millis(),
-                            record.swap_completed,
-                            record.flushed,
-                        ),
-                    );
+                    let diagnostics = state.presentation_diagnostics(native_targets);
+                    let ready = diagnostics.frame_ready;
+                    let pending_description = &diagnostics.pending_description;
                     let configure_pending = state.surfaces().iter().any(|surface| {
                         surface.registry_name == 0 && surface.configured.is_some()
                     });
-                    let (activated, activation_established) = {
-                        let ws = state.windowshader_state();
-                        (ws.windowed_activated, ws.windowed_activation_established)
-                    };
+                    let (activated, activation_established) =
+                        (diagnostics.activated, diagnostics.activation_established);
                     crate::logger::warning(
                         &crate::locate_paths::runtime_log_path(),
                         &format!(
@@ -608,17 +594,12 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed
                 && windowshader_state.presentation.windowshader_summary_at.elapsed() >= Duration::from_secs(10)
             {
-                let (ready, pending_sequence, pending_age_ms, activated, configure_delta) = {
-                    let ws = state.windowshader_state();
-                    let pending = ws.windowshader_pending_callbacks.get(&0);
-                    (
-                        ws.frame_ready.get(&0).copied().unwrap_or(true),
-                        pending.map(|p| p.sequence),
-                        pending.map(|p| p.requested_at.elapsed().as_millis()),
-                        ws.windowed_activated,
-                        ws.windowshader_configure_count.wrapping_sub(windowshader_state.presentation.windowshader_last_configure_count),
-                    )
-                };
+                let diagnostics = state.presentation_diagnostics(native_targets);
+                let (ready, pending_sequence, pending_age_ms, activated, configure_delta) = (
+                    diagnostics.frame_ready, diagnostics.pending_sequence,
+                    diagnostics.pending_age_ms, diagnostics.activated,
+                    diagnostics.configure_count.wrapping_sub(windowshader_state.presentation.windowshader_last_configure_count),
+                );
                 let rotation_due = if windowed_rotation {
                     windowshader_state.rotation.rotation_due(shader_interval)
                 } else {
@@ -644,8 +625,8 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                         rotation_due, windowshader_state.rotation.rotation_clock_pause_shifts, windowshader_state.rotation.rotation_clock_callback_shifts,
                         windowshader_state.rotation.rotation_clock_callback_short_shifts, windowshader_state.rotation.rotation_clock_callback_shift_ms,
                         windowshader_state.rotation.rotation_clock_last_shift_reason, windowshader_state.rotation.rotation_clock_last_shift_ms,
-                        paused, ready, state.windowshader_state().windowed_activated, windowshader_state.presentation.presentation_watchdog_swaps));
-                windowshader_state.presentation.windowshader_last_configure_count = state.windowshader_state().windowshader_configure_count;
+                        paused, ready, state.presentation_diagnostics(native_targets).activated, windowshader_state.presentation.presentation_watchdog_swaps));
+                windowshader_state.presentation.windowshader_last_configure_count = state.presentation_diagnostics(native_targets).configure_count;
                 windowshader_state.presentation.windowshader_summary_at = Instant::now();
             }
             remove_disconnected_targets_from_names(
@@ -1015,7 +996,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
 
                     if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed {
-                        let activated = state.windowshader_state().windowed_activated;
+                        let activated = state.presentation_diagnostics(native_targets).activated;
                         windowshader_state.rotation.record_callback_shift(callback_wait, pause_overlap, rotation_shift,
                             windowed_frame_ready, paused, activated);
                     }

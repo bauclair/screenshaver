@@ -1789,12 +1789,25 @@ unsafe extern "C" {
 
 
 
+// Read-only, pipeline-neutral diagnostic values. No mutable XDG state escapes
+// through the shared renderer interface.
+#[derive(Debug, Default)]
+pub(crate) struct PresentationDiagnostics {
+    pub(crate) frame_ready: bool,
+    pub(crate) pending_description: String,
+    pub(crate) pending_sequence: Option<u64>,
+    pub(crate) pending_age_ms: Option<u128>,
+    pub(crate) activated: bool,
+    pub(crate) activation_established: bool,
+    pub(crate) configure_count: u64,
+}
+
 // Stage 2B-4B2C: shared rendering, independently dispatched presentation.
 pub(crate) trait RenderWaylandDispatch:
     wayland_client::Dispatch<wl_callback::WlCallback, crate::wayland_windowshader::FrameCallbackDispatchData>
 {
     fn surfaces(&mut self) -> &mut Vec<WallpaperSurfaceState>;
-    fn windowshader_state(&mut self) -> &mut crate::wayland_windowshader::WindowshaderWaylandState;
+    fn presentation_diagnostics(&self, native_targets: &[NativeWallpaperTarget]) -> PresentationDiagnostics;
     fn removed_outputs(&mut self) -> &mut Vec<u32>;
     // Stage 2D-2C Step 5: each presentation pipeline decides whether a
     // compositor close request also terminates its runtime supervisor.
@@ -1826,7 +1839,7 @@ pub(crate) trait RenderWaylandDispatch:
 
 impl RenderWaylandDispatch for WaylandState {
     fn surfaces(&mut self) -> &mut Vec<WallpaperSurfaceState> { &mut self.surface_states }
-    fn windowshader_state(&mut self) -> &mut crate::wayland_windowshader::WindowshaderWaylandState { &mut self.windowshader }
+    fn presentation_diagnostics(&self, _native_targets: &[NativeWallpaperTarget]) -> PresentationDiagnostics { PresentationDiagnostics { frame_ready: true, ..PresentationDiagnostics::default() } }
     fn removed_outputs(&mut self) -> &mut Vec<u32> { &mut self.removed_output_names }
     fn compositor_close_requests_shutdown() -> bool { false }
     fn on_pause_entering(&mut self) {}
