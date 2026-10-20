@@ -1798,9 +1798,16 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
                 control.diagnostic_checkpoint(6);
                 state.on_frame_swap_completed(native_target.info.registry_name);
-                windowshader_state.record_successful_swap(windowed_rotation);
-                if status_enabled && (paused || windowshader_state.resume_presentation_pending
-                    || status_heartbeat.elapsed() >= Duration::from_secs(1))
+                // Pipeline-specific presentation accounting belongs to the
+                // Windowshader controller; Wallpaper retains its own heartbeat.
+                let publish_rendering = if windowed_rotation {
+                    windowshader_state.record_windowshader_swap_and_check_status(
+                        paused, status_heartbeat.elapsed(),
+                    )
+                } else {
+                    paused || status_heartbeat.elapsed() >= Duration::from_secs(1)
+                };
+                if status_enabled && publish_rendering
                 {
                     crate::renderer_status::publish(status_pipeline, crate::renderer_status::State::Rendering);
                     status_heartbeat = Instant::now();

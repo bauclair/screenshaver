@@ -1893,6 +1893,19 @@ pub(crate) struct WindowshaderCallbackRecovery {
 }
 
 impl WindowshaderFrameLoopState {
+    // Successful EGL swaps are the only source of Windowshader presentation
+    // accounting. This does not create or acknowledge a Wayland frame callback.
+    // Return the status heartbeat decision before the resume flag is cleared.
+    pub(crate) fn record_windowshader_swap_and_check_status(
+        &mut self,
+        was_paused: bool,
+        heartbeat_elapsed: Duration,
+    ) -> bool {
+        self.record_successful_swap(true);
+        was_paused || self.resume_presentation_pending
+            || heartbeat_elapsed >= Duration::from_secs(1)
+    }
+
     // Windowshader's complete rotation eligibility decision. This is invoked
     // only after the compositor has supplied an actual frame callback.
     pub(crate) fn begin_due_rotation(
