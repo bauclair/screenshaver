@@ -1952,6 +1952,17 @@ impl WindowshaderFrameLoopState {
         resumed
     }
 
+    // The Windowshader controller owns its presentation deadline operations.
+    // These preserve the existing pacing algorithm and are only invoked after
+    // compositor-authorized presentation, or on an explicit timing reset.
+    pub(crate) fn reset_presentation_deadline(&mut self, deadline: &mut Instant) {
+        reset_frame_deadline(deadline);
+    }
+
+    pub(crate) fn pace_presented_frame(&mut self, deadline: &mut Instant, frame_duration: Duration) {
+        pace_next_frame(deadline, frame_duration);
+    }
+
     // Frame-loop scheduling remains compositor-authoritative. A blocked
     // Windowshader iteration waits without requesting or fabricating a frame.
     pub(crate) fn wait_for_blocked_callback(&self) {

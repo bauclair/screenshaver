@@ -744,7 +744,11 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                     rendered_fps
                                 );
 
-                            S::reset_frame_deadline(&mut next_frame_deadline);
+                            if windowed_rotation {
+                                windowshader_state.reset_presentation_deadline(&mut next_frame_deadline);
+                            } else {
+                                S::reset_frame_deadline(&mut next_frame_deadline);
+                            }
 
                             frame_times.clear();
                             fps_warning_state =
@@ -838,7 +842,11 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 }
 
 
-                S::reset_frame_deadline(&mut next_frame_deadline);
+                if windowed_rotation {
+                                windowshader_state.reset_presentation_deadline(&mut next_frame_deadline);
+                            } else {
+                                S::reset_frame_deadline(&mut next_frame_deadline);
+                            }
 
 
                 frame_times.clear();
@@ -936,7 +944,11 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 if !windowed_rotation {
                     last_shader_switch += recovery.rotation_shift;
                 }
-                S::reset_frame_deadline(&mut next_frame_deadline);
+                if windowed_rotation {
+                                windowshader_state.reset_presentation_deadline(&mut next_frame_deadline);
+                            } else {
+                                S::reset_frame_deadline(&mut next_frame_deadline);
+                            }
                 frame_times.clear();
                 fps_warning_state = crate::fps_monitor::FpsWarningState::Normal;
             }
@@ -1189,7 +1201,11 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                     );
 
 
+                                if windowed_rotation {
+                                windowshader_state.reset_presentation_deadline(&mut next_frame_deadline);
+                            } else {
                                 S::reset_frame_deadline(&mut next_frame_deadline);
+                            }
 
 
                                 current_shader =
@@ -2035,7 +2051,11 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
             control.diagnostic_checkpoint(7);
             // Dispatch pacing to the owning rendering pipeline.
-            S::pace_frame(&mut next_frame_deadline, frame_duration);
+            if windowed_rotation {
+                windowshader_state.pace_presented_frame(&mut next_frame_deadline, frame_duration);
+            } else {
+                S::pace_frame(&mut next_frame_deadline, frame_duration);
+            }
             Ok(FrameLoopAction::Continue)
         });
 
