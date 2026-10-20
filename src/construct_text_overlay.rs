@@ -213,6 +213,24 @@ pub fn construct_message(
     output_width: u32,
     output_height: u32,
 ) -> Result<ConstructedTextOverlay, String> {
+    construct_message_with_background(message, output_width, output_height, BACKGROUND_RGBA)
+}
+
+/// Opaque capsule exclusively for --show-renderer-status diagnostics.
+pub fn construct_renderer_status_message(
+    message: &str,
+    output_width: u32,
+    output_height: u32,
+) -> Result<ConstructedTextOverlay, String> {
+    construct_message_with_background(message, output_width, output_height, [0, 0, 0, 255])
+}
+
+fn construct_message_with_background(
+    message: &str,
+    output_width: u32,
+    output_height: u32,
+    background_rgba: [u8; 4],
+) -> Result<ConstructedTextOverlay, String> {
     let message =
         message.trim();
 
@@ -439,10 +457,11 @@ pub fn construct_message(
         ];
 
 
-    draw_capsule_background(
+    draw_capsule_background_rgba(
         &mut pixels,
         width,
         height,
+        background_rgba,
     );
 
 
@@ -756,6 +775,12 @@ fn locate_lyrics_font(bold: bool) -> Result<PathBuf, String> {
 }
 
 fn draw_capsule_background(pixels: &mut [u8], width: u32, height: u32) {
+    draw_capsule_background_rgba(pixels, width, height, BACKGROUND_RGBA);
+}
+
+fn draw_capsule_background_rgba(
+    pixels: &mut [u8], width: u32, height: u32, background_rgba: [u8; 4],
+) {
     let radius = height as f32 / 2.0;
     let left_center = radius;
     let right_center = width as f32 - radius;
@@ -776,7 +801,7 @@ fn draw_capsule_background(pixels: &mut [u8], width: u32, height: u32) {
 
             if inside {
                 let index = ((y as usize * width as usize) + x as usize) * 4;
-                pixels[index..index + 4].copy_from_slice(&BACKGROUND_RGBA);
+                pixels[index..index + 4].copy_from_slice(&background_rgba);
             }
         }
     }

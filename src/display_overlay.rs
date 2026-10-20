@@ -146,6 +146,19 @@ pub struct OpenGlOverlay {
 
 impl OpenGlOverlay {
 
+    /// Diagnostic-only variant: fully opaque black capsule background.
+    pub fn new_renderer_status_message(
+        message: &str,
+        placement: crate::parse_subtitle_placement::SubtitlePlacement,
+        output_width: u32,
+        output_height: u32,
+    ) -> Result<Self, String> {
+        let overlay = crate::construct_text_overlay::construct_renderer_status_message(
+            message, output_width, output_height,
+        )?;
+        Self::new_from_constructed(overlay, placement)
+    }
+
     pub fn new_message(
         message: &str,
 
@@ -1209,7 +1222,7 @@ impl RendererStatusPanel {
             if text != self.last_text || self.size != (width, height) {
                 let mut replacement = Vec::new();
                 for line in text.lines() {
-                    match OpenGlOverlay::new_message(line, crate::parse_subtitle_placement::SubtitlePlacement {
+                    match OpenGlOverlay::new_renderer_status_message(line, crate::parse_subtitle_placement::SubtitlePlacement {
                         horizontal: crate::parse_subtitle_placement::SubtitleHorizontalPosition::Center,
                         vertical: crate::parse_subtitle_placement::SubtitleVerticalPosition::Top,
                     }, width, height) {

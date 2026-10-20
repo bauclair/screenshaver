@@ -1834,6 +1834,16 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 }
 
 
+                // Windowshader-only diagnostic: eliminate any inherited scissor
+                // rectangle before the final scene presentation. A stale scissor
+                // can preserve pixels from an earlier EGL buffer after a Mango
+                // workspace transition, including renderer-status overlays.
+                if runtime.display_format
+                    == crate::manage_configuration::WallpaperDisplayFormat::Windowed
+                {
+                    unsafe { gl::Disable(gl::SCISSOR_TEST); }
+                }
+
                 postprocess.present_scene();
 
                 // Diagnostic only: compose after post-processing, before EGL presentation.
