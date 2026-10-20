@@ -879,32 +879,39 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             // surface on a non-visible workspace can stop receiving them.
             // The render worker therefore remains in this event/control loop
             // instead of entering a compositor-throttled eglSwapBuffers().
-            let windowed_frame_ready = state.frames_ready_for_presentation(native_targets);
-            // Windowshader owns callback eligibility, blocked-callback diagnostics,
-            // and the bounded wait. Only a real wl_surface.frame Done can pass.
-            let Some(inactive_since) = windowshader_state.await_presentation_eligibility(
-                state, native_targets, windowed_frame_ready,
-                shader_interval, windowed_rotation,
-            ) else {
-                return Ok(FrameLoopAction::Continue);
+            // Windowshader now owns the entire callback gate/recovery decision.
+            // Keep Wallpaper's historical path intact until its own extraction.
+            let (windowed_frame_ready, callback_recovery) = if windowed_rotation {
+                let Some(decision) = windowshader_state.evaluate_windowshader_presentation(
+                    state, native_targets, shader_interval, start_time, paused,
+                ) else {
+                    return Ok(FrameLoopAction::Continue);
+                };
+                decision
+            } else {
+                let ready = state.frames_ready_for_presentation(native_targets);
+                let Some(inactive_since) = windowshader_state.await_presentation_eligibility(
+                    state, native_targets, ready, shader_interval, false,
+                ) else {
+                    return Ok(FrameLoopAction::Continue);
+                };
+                let activated = state.presentation_diagnostics(native_targets).activated;
+                let recovery = windowshader_state.recover_presentation_clock(
+                    inactive_since, last_shader_switch, start_time,
+                    false, ready, paused, activated,
+                );
+                (ready, recovery)
             };
 
-            // Windowshader owns the callback-recovery clock accounting.
-            // Render Core retains the shared animation/FPS reset operations.
-            if let Some(recovery) = windowshader_state.recover_presentation_clock(
-                inactive_since, last_shader_switch, start_time,
-                windowed_rotation, windowed_frame_ready, paused,
-                state.presentation_diagnostics(native_targets).activated,
-            ) {
+            // Only the shared animation/FPS effects remain in Render Core.
+            if let Some(recovery) = callback_recovery {
                 start_time += recovery.animation_shift;
                 if !windowed_rotation {
                     last_shader_switch += recovery.rotation_shift;
+                    S::reset_frame_deadline(&mut next_frame_deadline);
+                } else {
+                    windowshader_state.reset_presentation_deadline();
                 }
-                if windowed_rotation {
-                                windowshader_state.reset_presentation_deadline();
-                            } else {
-                                S::reset_frame_deadline(&mut next_frame_deadline);
-                            }
                 frame_times.clear();
                 fps_warning_state = crate::fps_monitor::FpsWarningState::Normal;
             }

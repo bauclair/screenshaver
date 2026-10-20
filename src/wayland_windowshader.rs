@@ -2009,6 +2009,30 @@ impl WindowshaderFrameLoopState {
         }
     }
 
+    // Stage 4B-3: Windowshader owns the compositor-readiness observation,
+    // callback gate and recovery decision as one presentation-control step.
+    // `Activated` is forwarded solely for existing recovery diagnostics; it
+    // must never authorize a frame. Only a real wl_surface.frame Done can do so.
+    pub(crate) fn evaluate_windowshader_presentation<S: crate::wayland_wallpaper::RenderWaylandDispatch>(
+        &mut self,
+        state: &mut S,
+        targets: &[NativeWallpaperTarget],
+        interval: Option<Duration>,
+        animation_anchor: Instant,
+        paused: bool,
+    ) -> Option<(bool, Option<WindowshaderCallbackRecovery>)> {
+        let ready = state.frames_ready_for_presentation(targets);
+        let inactive_since = self.await_presentation_eligibility(
+            state, targets, ready, interval, true,
+        )?;
+        let activated = state.presentation_diagnostics(targets).activated;
+        let recovery = self.recover_presentation_clock(
+            inactive_since, self.rotation.last_shader_switch,
+            animation_anchor, true, ready, paused, activated,
+        );
+        Some((ready, recovery))
+    }
+
     // The controller chooses the rotation anchor; the caller applies only
     // shared animation/FPS effects returned by the existing recovery policy.
     pub(crate) fn recover_presentation_clock(
