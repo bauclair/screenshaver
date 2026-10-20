@@ -1820,6 +1820,74 @@ pub(crate) struct WindowshaderCallbackRecovery {
 }
 
 impl WindowshaderFrameLoopState {
+    // Windowshader owns its observational watchdog and lifecycle logging.
+    // This method never changes compositor readiness or rendering deadlines.
+    pub(crate) fn report_presentation_diagnostics(
+        &mut self,
+        diagnostics: &crate::wayland_wallpaper::PresentationDiagnostics,
+        configure_pending: bool,
+        paused: bool,
+        pause_requested: bool,
+        next_frame_deadline: Instant,
+        shader_interval: Option<Duration>,
+        shader_name: &str,
+        policy_id: i64,
+        program: u32,
+        frame: i32,
+    ) {
+        let presentation = &mut self.presentation;
+        presentation.presentation_watchdog_loop_ticks =
+            presentation.presentation_watchdog_loop_ticks.wrapping_add(1);
+        let swap_age = presentation.last_successful_swap.elapsed();
+        if swap_age >= Duration::from_millis(1500)
+            && presentation.presentation_watchdog_last_report.is_none_or(
+                |last| last.elapsed() >= Duration::from_secs(10))
+        {
+            presentation.presentation_watchdog_last_report = Some(Instant::now());
+            crate::logger::warning(
+                &crate::locate_paths::runtime_log_path(),
+                &format!(
+                    "[WINDOWSHADER_PRESENTATION_DIAG] no_swap_ms={} frame_ready={} pending_callback=[{}] paused={} pause_requested={} post_pause={} activated={} activation_established={} configure_pending={} loop_ticks_delta={} swaps_delta={} next_deadline_in_ms={}",
+                    swap_age.as_millis(), diagnostics.frame_ready,
+                    diagnostics.pending_description, paused, pause_requested,
+                    self.resume_presentation_pending, diagnostics.activated,
+                    diagnostics.activation_established, configure_pending,
+                    presentation.presentation_watchdog_loop_ticks.wrapping_sub(presentation.presentation_watchdog_last_ticks),
+                    presentation.presentation_watchdog_swaps.wrapping_sub(presentation.presentation_watchdog_last_swaps),
+                    next_frame_deadline.saturating_duration_since(Instant::now()).as_millis(),
+                ),
+            );
+            presentation.presentation_watchdog_last_ticks = presentation.presentation_watchdog_loop_ticks;
+            presentation.presentation_watchdog_last_swaps = presentation.presentation_watchdog_swaps;
+        }
+        if presentation.windowshader_summary_at.elapsed() >= Duration::from_secs(10) {
+            let configure_delta = diagnostics.configure_count.wrapping_sub(presentation.windowshader_last_configure_count);
+            let rotation_due = self.rotation.rotation_due(shader_interval);
+            crate::logger::warning(
+                &crate::locate_paths::runtime_log_path(),
+                &format!("[WINDOWSHADER_LIFECYCLE_DIAG] shader='{}' policy_id={} program={} frame={} swaps_total={} swap_age_ms={} frame_ready={} callback_seq={:?} callback_age_ms={:?} paused={} pause_requested={} activated={} rotation_due={} rotation_elapsed_ms={} rotation_interval_ms={:?} rotation_attempts={} rotation_successes={} rotation_failures={} configure_delta={} loop_ticks={}",
+                    shader_name, policy_id, program, frame,
+                    presentation.presentation_watchdog_swaps, presentation.last_successful_swap.elapsed().as_millis(),
+                    diagnostics.frame_ready, diagnostics.pending_sequence, diagnostics.pending_age_ms,
+                    paused, pause_requested, diagnostics.activated, rotation_due,
+                    self.rotation.last_shader_switch.elapsed().as_millis(), shader_interval.map(|v| v.as_millis()),
+                    self.rotation.windowshader_rotation_attempts, self.rotation.windowshader_rotation_successes,
+                    self.rotation.windowshader_rotation_failures, configure_delta,
+                    presentation.presentation_watchdog_loop_ticks),
+            );
+            crate::logger::warning(
+                &crate::locate_paths::runtime_log_path(),
+                &format!("[WINDOWSHADER_CLOCK_DIAG] summary elapsed_ms={} interval_ms={:?} due={} pause_shifts={} callback_shifts={} callback_shifts_under_2s={} callback_shift_total_ms={} last_reason={} last_shift_ms={} paused={} frame_ready={} activated={} swaps_total={}",
+                    self.rotation.last_shader_switch.elapsed().as_millis(), shader_interval.map(|v| v.as_millis()),
+                    rotation_due, self.rotation.rotation_clock_pause_shifts, self.rotation.rotation_clock_callback_shifts,
+                    self.rotation.rotation_clock_callback_short_shifts, self.rotation.rotation_clock_callback_shift_ms,
+                    self.rotation.rotation_clock_last_shift_reason, self.rotation.rotation_clock_last_shift_ms,
+                    paused, diagnostics.frame_ready, diagnostics.activated, presentation.presentation_watchdog_swaps),
+            );
+            presentation.windowshader_last_configure_count = diagnostics.configure_count;
+            presentation.windowshader_summary_at = Instant::now();
+        }
+    }
     pub(crate) fn new(shader_switch: Instant, configure_count: u64) -> Self {
         Self {
             callback_stall: WindowshaderCallbackStallClock::default(),

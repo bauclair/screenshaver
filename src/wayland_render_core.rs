@@ -550,84 +550,23 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
 
             control.diagnostic_checkpoint(2);
-            if runtime.display_format
-                == crate::manage_configuration::WallpaperDisplayFormat::Windowed
-            {
-                windowshader_state.presentation.presentation_watchdog_loop_ticks = windowshader_state.presentation.presentation_watchdog_loop_ticks.wrapping_add(1);
-                let swap_age = windowshader_state.presentation.last_successful_swap.elapsed();
-                if swap_age >= Duration::from_millis(1500)
-                    && windowshader_state.presentation.presentation_watchdog_last_report.is_none_or(
-                        |last| last.elapsed() >= Duration::from_secs(10)
-                    )
-                {
-                    windowshader_state.presentation.presentation_watchdog_last_report = Some(Instant::now());
-                    let diagnostics = state.presentation_diagnostics(native_targets);
-                    let ready = diagnostics.frame_ready;
-                    let pending_description = &diagnostics.pending_description;
-                    let configure_pending = state.surfaces().iter().any(|surface| {
-                        surface.registry_name == 0 && surface.configured.is_some()
-                    });
-                    let (activated, activation_established) =
-                        (diagnostics.activated, diagnostics.activation_established);
-                    crate::logger::warning(
-                        &crate::locate_paths::runtime_log_path(),
-                        &format!(
-                            "[WINDOWSHADER_PRESENTATION_DIAG] no_swap_ms={} frame_ready={} pending_callback=[{}] paused={} pause_requested={} post_pause={} activated={} activation_established={} configure_pending={} loop_ticks_delta={} swaps_delta={} next_deadline_in_ms={}",
-                            swap_age.as_millis(),
-                            ready,
-                            pending_description,
-                            paused,
-                            control.pause_requested(),
-                            windowshader_state.resume_presentation_pending,
-                            activated,
-                            activation_established,
-                            configure_pending,
-                            windowshader_state.presentation.presentation_watchdog_loop_ticks.wrapping_sub(windowshader_state.presentation.presentation_watchdog_last_ticks),
-                            windowshader_state.presentation.presentation_watchdog_swaps.wrapping_sub(windowshader_state.presentation.presentation_watchdog_last_swaps),
-                            next_frame_deadline.saturating_duration_since(Instant::now()).as_millis(),
-                        ),
-                    );
-                    windowshader_state.presentation.presentation_watchdog_last_ticks = windowshader_state.presentation.presentation_watchdog_loop_ticks;
-                    windowshader_state.presentation.presentation_watchdog_last_swaps = windowshader_state.presentation.presentation_watchdog_swaps;
-                }
-            }
-            if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed
-                && windowshader_state.presentation.windowshader_summary_at.elapsed() >= Duration::from_secs(10)
-            {
+            if windowed_rotation {
                 let diagnostics = state.presentation_diagnostics(native_targets);
-                let (ready, pending_sequence, pending_age_ms, activated, configure_delta) = (
-                    diagnostics.frame_ready, diagnostics.pending_sequence,
-                    diagnostics.pending_age_ms, diagnostics.activated,
-                    diagnostics.configure_count.wrapping_sub(windowshader_state.presentation.windowshader_last_configure_count),
+                let configure_pending = state.surfaces().iter().any(|surface| {
+                    surface.registry_name == 0 && surface.configured.is_some()
+                });
+                windowshader_state.report_presentation_diagnostics(
+                    &diagnostics,
+                    configure_pending,
+                    paused,
+                    control.pause_requested(),
+                    next_frame_deadline,
+                    shader_interval,
+                    &current_shader.shader_name,
+                    current_shader.policy_id,
+                    program,
+                    frame,
                 );
-                let rotation_due = if windowed_rotation {
-                    windowshader_state.rotation.rotation_due(shader_interval)
-                } else {
-                    shader_interval.is_some_and(|interval| last_shader_switch.elapsed() >= interval)
-                };
-                crate::logger::warning(
-                    &crate::locate_paths::runtime_log_path(),
-                    &format!("[WINDOWSHADER_LIFECYCLE_DIAG] shader='{}' policy_id={} program={} frame={} swaps_total={} swap_age_ms={} frame_ready={} callback_seq={:?} callback_age_ms={:?} paused={} pause_requested={} activated={} rotation_due={} rotation_elapsed_ms={} rotation_interval_ms={:?} rotation_attempts={} rotation_successes={} rotation_failures={} configure_delta={} loop_ticks={}",
-                        current_shader.shader_name, current_shader.policy_id, program, frame,
-                        windowshader_state.presentation.presentation_watchdog_swaps, windowshader_state.presentation.last_successful_swap.elapsed().as_millis(),
-                        ready, pending_sequence, pending_age_ms,
-                        paused, control.pause_requested(), activated,
-                        rotation_due, (if windowed_rotation { windowshader_state.rotation.last_shader_switch } else { last_shader_switch }).elapsed().as_millis(),
-                        shader_interval.map(|interval| interval.as_millis()),
-                        windowshader_state.rotation.windowshader_rotation_attempts, windowshader_state.rotation.windowshader_rotation_successes,
-                        windowshader_state.rotation.windowshader_rotation_failures,
-                        configure_delta,
-                        windowshader_state.presentation.presentation_watchdog_loop_ticks),
-                );
-                crate::logger::warning(&crate::locate_paths::runtime_log_path(),
-                    &format!("[WINDOWSHADER_CLOCK_DIAG] summary elapsed_ms={} interval_ms={:?} due={} pause_shifts={} callback_shifts={} callback_shifts_under_2s={} callback_shift_total_ms={} last_reason={} last_shift_ms={} paused={} frame_ready={} activated={} swaps_total={}",
-                        (if windowed_rotation { windowshader_state.rotation.last_shader_switch } else { last_shader_switch }).elapsed().as_millis(), shader_interval.map(|v| v.as_millis()),
-                        rotation_due, windowshader_state.rotation.rotation_clock_pause_shifts, windowshader_state.rotation.rotation_clock_callback_shifts,
-                        windowshader_state.rotation.rotation_clock_callback_short_shifts, windowshader_state.rotation.rotation_clock_callback_shift_ms,
-                        windowshader_state.rotation.rotation_clock_last_shift_reason, windowshader_state.rotation.rotation_clock_last_shift_ms,
-                        paused, ready, state.presentation_diagnostics(native_targets).activated, windowshader_state.presentation.presentation_watchdog_swaps));
-                windowshader_state.presentation.windowshader_last_configure_count = state.presentation_diagnostics(native_targets).configure_count;
-                windowshader_state.presentation.windowshader_summary_at = Instant::now();
             }
             remove_disconnected_targets_from_names(
                 display,
