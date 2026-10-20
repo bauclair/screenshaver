@@ -784,7 +784,6 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                         "[AMBIENT_HANDOFF_DIAG] Wayland renderer detected pause request",
                     );
                     control.acknowledge_pause_detected();
-                    windowshader_state.on_pause_entering();
                     state.on_pause_entering();
                     control.diagnostic_checkpoint(8);
                     state.on_pause_entered(native_targets);
@@ -792,10 +791,12 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                         true;
 
 
-                    pause_started =
-                        Some(
-                            Instant::now()
-                        );
+                    let pause_began_at = Instant::now();
+                    if windowed_rotation {
+                        windowshader_state.on_pause_entering(pause_began_at);
+                    } else {
+                        pause_started = Some(pause_began_at);
+                    }
                     control.acknowledge_paused();
                     if status_enabled {
                         crate::renderer_status::publish(status_pipeline, crate::renderer_status::State::Paused);
@@ -818,18 +819,15 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
 
             if paused {
-                if let Some(paused_at) =
-                    pause_started.take()
-                {
-                    let pause_ended_at = Instant::now();
-                    let paused_duration = pause_ended_at.duration_since(paused_at);
-                    start_time += paused_duration;
-
-                    if windowed_rotation {
-                        windowshader_state.on_pause_ended(paused_at, pause_ended_at);
-                    } else {
-                        last_shader_switch += paused_duration;
+                let pause_ended_at = Instant::now();
+                if windowed_rotation {
+                    if let Some(duration) = windowshader_state.on_pause_ended(pause_ended_at) {
+                        start_time += duration;
                     }
+                } else if let Some(paused_at) = pause_started.take() {
+                    let duration = pause_ended_at.duration_since(paused_at);
+                    start_time += duration;
+                    last_shader_switch += duration;
                 }
 
 

@@ -1810,6 +1810,8 @@ pub(crate) struct WindowshaderFrameLoopState {
     pub(crate) inactive_since: Option<Instant>,
     pub(crate) resume_presentation_pending: bool,
     pub(crate) resume_wait_reported: bool,
+    // Windowshader's pause interval is owned independently of Wallpaper.
+    pause_started: Option<Instant>,
 }
 
 // Clock shifts calculated on a long compositor callback recovery.
@@ -1896,27 +1898,28 @@ impl WindowshaderFrameLoopState {
             inactive_since: None,
             resume_presentation_pending: false,
             resume_wait_reported: false,
+            pause_started: None,
         }
     }
 
     // Screensaver pause bookkeeping is Windowshader-owned. The shared executor
     // continues to manage the Wallpaper clock and the animation time anchor.
-    pub(crate) fn on_pause_entering(&mut self) {
+    pub(crate) fn on_pause_entering(&mut self, started: Instant) {
+        self.pause_started = Some(started);
         self.resume_presentation_pending = true;
         self.resume_wait_reported = false;
     }
 
-    // Preserve the original diagnostic ordering: record the pause shift before
-    // advancing the Windowshader rotation anchor. Do not change callback readiness.
-    pub(crate) fn on_pause_ended(
-        &mut self,
-        pause_started: Instant,
-        pause_ended: Instant,
-    ) {
-        let duration = pause_ended.duration_since(pause_started);
-        self.rotation.last_windowed_pause_interval = Some((pause_started, pause_ended));
+    // Own the pause interval and rotation adjustment. Return only the elapsed
+    // duration needed by the shared GL animation clock. Never modify callback
+    // readiness or clear the pending presentation here.
+    pub(crate) fn on_pause_ended(&mut self, ended: Instant) -> Option<Duration> {
+        let started = self.pause_started.take()?;
+        let duration = ended.duration_since(started);
+        self.rotation.last_windowed_pause_interval = Some((started, ended));
         self.rotation.record_pause_shift(duration);
         self.rotation.last_shader_switch += duration;
+        Some(duration)
     }
 
     // A pause release does not grant permission to draw. The compositor's
