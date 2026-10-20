@@ -871,50 +871,20 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             // The render worker therefore remains in this event/control loop
             // instead of entering a compositor-throttled eglSwapBuffers().
             let windowed_frame_ready = state.frames_ready_for_presentation(native_targets);
-            let frame_eligibility = windowshader_state.assess_frame_eligibility(
-                windowed_frame_ready,
-                shader_interval,
-                windowed_rotation,
-            );
-
-            if let crate::wayland_windowshader::WindowshaderFrameEligibility::Blocked {
-                initial_warning, recurring_warning, post_pause_warning,
-            } = frame_eligibility {
-                // Windowshader owns blocked-callback diagnostics and waiting.
-                // Render Core does not infer frame readiness or alter its clocks.
-                windowshader_state.handle_blocked_callback(
-                    state,
-                    native_targets,
-                    initial_warning,
-                    recurring_warning,
-                    post_pause_warning,
-                );
+            // Windowshader owns callback eligibility, blocked-callback diagnostics,
+            // and the bounded wait. Only a real wl_surface.frame Done can pass.
+            let Some(inactive_since) = windowshader_state.await_presentation_eligibility(
+                state, native_targets, windowed_frame_ready,
+                shader_interval, windowed_rotation,
+            ) else {
                 return Ok(FrameLoopAction::Continue);
-            }
-
-            let inactive_since = match frame_eligibility {
-                crate::wayland_windowshader::WindowshaderFrameEligibility::Ready {
-                    inactive_since,
-                } => inactive_since,
-                crate::wayland_windowshader::WindowshaderFrameEligibility::Blocked { .. } => {
-                    unreachable!("blocked callback returns before rendering")
-                }
             };
 
             // Windowshader owns the callback-recovery clock accounting.
             // Render Core retains the shared animation/FPS reset operations.
-            let shader_anchor = if windowed_rotation {
-                windowshader_state.rotation.last_shader_switch
-            } else {
-                last_shader_switch
-            };
-            if let Some(recovery) = windowshader_state.account_callback_recovery(
-                inactive_since,
-                shader_anchor,
-                start_time,
-                windowed_rotation,
-                windowed_frame_ready,
-                paused,
+            if let Some(recovery) = windowshader_state.recover_presentation_clock(
+                inactive_since, last_shader_switch, start_time,
+                windowed_rotation, windowed_frame_ready, paused,
                 state.presentation_diagnostics(native_targets).activated,
             ) {
                 start_time += recovery.animation_shift;
@@ -1831,7 +1801,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
                 control.diagnostic_checkpoint(6);
                 state.on_frame_swap_completed(native_target.info.registry_name);
-                windowshader_state.presentation.last_successful_swap = Instant::now();
+                windowshader_state.record_successful_swap(windowed_rotation);
                 if status_enabled && (paused || windowshader_state.resume_presentation_pending
                     || status_heartbeat.elapsed() >= Duration::from_secs(1))
                 {
@@ -1839,12 +1809,6 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     status_heartbeat = Instant::now();
                 }
 
-                if runtime.display_format
-                    == crate::manage_configuration::WallpaperDisplayFormat::Windowed
-                {
-                    windowshader_state.presentation.presentation_watchdog_swaps = windowshader_state.presentation.presentation_watchdog_swaps.wrapping_add(1);
-                    windowshader_state.presentation.presentation_watchdog_last_report = None;
-                }
                 let presentation_duration =
                     presentation_started.elapsed();
 

@@ -1893,6 +1893,63 @@ pub(crate) struct WindowshaderCallbackRecovery {
 }
 
 impl WindowshaderFrameLoopState {
+    // Own the complete callback gate, including diagnostic reporting and the
+    // bounded wait. None of these operations manufactures frame readiness.
+    pub(crate) fn await_presentation_eligibility<S: crate::wayland_wallpaper::RenderWaylandDispatch>(
+        &mut self,
+        state: &mut S,
+        targets: &[NativeWallpaperTarget],
+        compositor_ready: bool,
+        interval: Option<Duration>,
+        windowed: bool,
+    ) -> Option<Option<Instant>> {
+        match self.assess_frame_eligibility(compositor_ready, interval, windowed) {
+            WindowshaderFrameEligibility::Ready { inactive_since } => Some(inactive_since),
+            WindowshaderFrameEligibility::Blocked {
+                initial_warning, recurring_warning, post_pause_warning,
+            } => {
+                self.handle_blocked_callback(
+                    state, targets, initial_warning, recurring_warning, post_pause_warning,
+                );
+                None
+            }
+        }
+    }
+
+    // The controller chooses the rotation anchor; the caller applies only
+    // shared animation/FPS effects returned by the existing recovery policy.
+    pub(crate) fn recover_presentation_clock(
+        &mut self,
+        inactive_since: Option<Instant>,
+        wallpaper_rotation_anchor: Instant,
+        animation_anchor: Instant,
+        windowed: bool,
+        frame_ready: bool,
+        paused: bool,
+        activated: bool,
+    ) -> Option<WindowshaderCallbackRecovery> {
+        let rotation_anchor = if windowed {
+            self.rotation.last_shader_switch
+        } else {
+            wallpaper_rotation_anchor
+        };
+        self.account_callback_recovery(
+            inactive_since, rotation_anchor, animation_anchor,
+            windowed, frame_ready, paused, activated,
+        )
+    }
+
+    // Count successful presentations in the owning controller. Wallpaper
+    // retains its historical last-swap timestamp behavior.
+    pub(crate) fn record_successful_swap(&mut self, windowed: bool) {
+        self.presentation.last_successful_swap = Instant::now();
+        if windowed {
+            self.presentation.presentation_watchdog_swaps =
+                self.presentation.presentation_watchdog_swaps.wrapping_add(1);
+            self.presentation.presentation_watchdog_last_report = None;
+        }
+    }
+
     // Windowshader owns its observational watchdog and lifecycle logging.
     // This method never changes compositor readiness or rendering deadlines.
     pub(crate) fn report_presentation_diagnostics(
