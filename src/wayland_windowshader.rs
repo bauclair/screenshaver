@@ -1952,6 +1952,23 @@ impl WindowshaderFrameLoopState {
         resumed
     }
 
+    // Frame-loop scheduling remains compositor-authoritative. A blocked
+    // Windowshader iteration waits without requesting or fabricating a frame.
+    pub(crate) fn wait_for_blocked_callback(&self) {
+        wait_for_blocked_frame_callback();
+    }
+
+    // The owning controller reports the transition back to eligibility.
+    // Reporting does not grant callback readiness or alter timing anchors.
+    pub(crate) fn report_callback_recovered(&self, recovered: bool) {
+        if recovered {
+            crate::logger::warning(
+                &crate::locate_paths::runtime_log_path(),
+                "[WINDOWSHADER_RESUME_DIAG] Outstanding frame callback delivered; presentation eligible",
+            );
+        }
+    }
+
     pub(crate) fn assess_frame_eligibility(
         &mut self,
         compositor_ready: bool,

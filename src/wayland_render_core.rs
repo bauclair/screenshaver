@@ -902,7 +902,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 }
                 // Windowshader owns callback-blocked pacing; the compositor remains
                 // the sole authority for permitting the next frame.
-                crate::wayland_windowshader::wait_for_blocked_frame_callback();
+                windowshader_state.wait_for_blocked_callback();
                 return Ok(FrameLoopAction::Continue);
             }
 
@@ -914,12 +914,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     unreachable!("blocked callback returns before rendering")
                 }
             };
-            if callback_recovered {
-                crate::logger::warning(
-                    &crate::locate_paths::runtime_log_path(),
-                    "[WINDOWSHADER_RESUME_DIAG] Outstanding frame callback delivered; presentation eligible",
-                );
-            }
+            windowshader_state.report_callback_recovered(callback_recovered);
 
             // Windowshader owns the callback-recovery clock accounting.
             // Render Core retains the shared animation/FPS reset operations.
