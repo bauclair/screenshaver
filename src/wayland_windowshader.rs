@@ -1774,3 +1774,23 @@ impl WindowshaderPresentationDiagnostics {
         }
     }
 }
+
+
+// Windowshader-owned mutable frame-loop bookkeeping. The shared GL executor
+// borrows this state during the staged extraction; it does not own the clocks.
+// Frame eligibility and Wayland callback pacing remain unchanged.
+pub(crate) struct WindowshaderFrameLoopState {
+    pub(crate) callback_stall: WindowshaderCallbackStallClock,
+    pub(crate) rotation: WindowshaderRotationClockState,
+    pub(crate) presentation: WindowshaderPresentationDiagnostics,
+}
+
+impl WindowshaderFrameLoopState {
+    pub(crate) fn new(shader_switch: Instant, configure_count: u64) -> Self {
+        Self {
+            callback_stall: WindowshaderCallbackStallClock::default(),
+            rotation: WindowshaderRotationClockState::new(shader_switch),
+            presentation: WindowshaderPresentationDiagnostics::new(configure_count),
+        }
+    }
+}
