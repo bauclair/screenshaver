@@ -1780,6 +1780,20 @@ impl WindowshaderPresentationDiagnostics {
 }
 
 
+// A pipeline-owned assessment of compositor callback eligibility. This is
+// bookkeeping only: wl_surface.frame Done remains the sole readiness authority.
+pub(crate) enum WindowshaderFrameEligibility {
+    Blocked {
+        initial_warning: bool,
+        recurring_warning: bool,
+        post_pause_warning: bool,
+    },
+    Ready {
+        callback_recovered: bool,
+        inactive_since: Option<Instant>,
+    },
+}
+
 // Windowshader-owned mutable frame-loop bookkeeping. The shared GL executor
 // borrows this state during the staged extraction; it does not own the clocks.
 // Frame eligibility and Wayland callback pacing remain unchanged.
@@ -1822,6 +1836,24 @@ impl WindowshaderFrameLoopState {
         self.rotation.last_windowed_pause_interval = Some((pause_started, pause_ended));
         self.rotation.record_pause_shift(duration);
         self.rotation.last_shader_switch += duration;
+    }
+
+    pub(crate) fn assess_frame_eligibility(
+        &mut self,
+        compositor_ready: bool,
+        shader_interval: Option<Duration>,
+        windowed: bool,
+    ) -> WindowshaderFrameEligibility {
+        if compositor_ready {
+            let (callback_recovered, inactive_since) = self.on_callback_ready(windowed);
+            WindowshaderFrameEligibility::Ready { callback_recovered, inactive_since }
+        } else {
+            let (initial_warning, recurring_warning, post_pause_warning) =
+                self.on_callback_blocked(shader_interval, windowed);
+            WindowshaderFrameEligibility::Blocked {
+                initial_warning, recurring_warning, post_pause_warning,
+            }
+        }
     }
 
     // A missing compositor frame callback is authoritative: record the wait,

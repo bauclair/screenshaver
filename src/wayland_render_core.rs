@@ -919,11 +919,15 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             // The render worker therefore remains in this event/control loop
             // instead of entering a compositor-throttled eglSwapBuffers().
             let windowed_frame_ready = state.frames_ready_for_presentation(native_targets);
+            let frame_eligibility = windowshader_state.assess_frame_eligibility(
+                windowed_frame_ready,
+                shader_interval,
+                windowed_rotation,
+            );
 
-
-            if !windowed_frame_ready {
-                let (initial_warning, recurring_warning, post_pause_warning) =
-                    windowshader_state.on_callback_blocked(shader_interval, windowed_rotation);
+            if let crate::wayland_windowshader::WindowshaderFrameEligibility::Blocked {
+                initial_warning, recurring_warning, post_pause_warning,
+            } = frame_eligibility {
 
                 if initial_warning
                 {
@@ -956,8 +960,14 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 return Ok(FrameLoopAction::Continue);
             }
 
-            let (callback_recovered, inactive_since) =
-                windowshader_state.on_callback_ready(windowed_rotation);
+            let (callback_recovered, inactive_since) = match frame_eligibility {
+                crate::wayland_windowshader::WindowshaderFrameEligibility::Ready {
+                    callback_recovered, inactive_since,
+                } => (callback_recovered, inactive_since),
+                crate::wayland_windowshader::WindowshaderFrameEligibility::Blocked { .. } => {
+                    unreachable!("blocked callback returns before rendering")
+                }
+            };
             if callback_recovered {
                 crate::logger::warning(
                     &crate::locate_paths::runtime_log_path(),
