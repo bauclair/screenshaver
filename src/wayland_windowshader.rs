@@ -1893,6 +1893,43 @@ pub(crate) struct WindowshaderCallbackRecovery {
 }
 
 impl WindowshaderFrameLoopState {
+    // Windowshader's complete rotation eligibility decision. This is invoked
+    // only after the compositor has supplied an actual frame callback.
+    pub(crate) fn begin_due_rotation(
+        &mut self,
+        interval: Option<Duration>,
+        shader_name: &str,
+        policy_id: i64,
+        frame_ready: bool,
+        program: u32,
+    ) -> bool {
+        self.rotation.rotation_due_and_begin(
+            interval, shader_name, policy_id, frame_ready, program,
+        )
+    }
+
+    // Own the post-pause presentation transition without altering the
+    // compositor's callback-ready state.
+    pub(crate) fn complete_presented_frame(&mut self, was_paused: bool) -> bool {
+        self.on_successful_presentation(was_paused)
+    }
+
+    // The only Windowshader-specific pacing decision following a completed
+    // GL frame; no callback is generated here.
+    pub(crate) fn finish_frame(&mut self, frame_duration: Duration) {
+        self.pace_presented_frame(frame_duration);
+    }
+
+    // Resume is a controller operation. The GL executor owns the animation
+    // anchor, so the elapsed pause is returned rather than applied here.
+    pub(crate) fn finish_pause(&mut self, ended: Instant) -> WindowshaderPauseRelease {
+        let release = self.release_pause(ended);
+        self.reset_presentation_deadline();
+        release
+    }
+}
+
+impl WindowshaderFrameLoopState {
     // Own the complete callback gate, including diagnostic reporting and the
     // bounded wait. None of these operations manufactures frame readiness.
     pub(crate) fn await_presentation_eligibility<S: crate::wayland_wallpaper::RenderWaylandDispatch>(

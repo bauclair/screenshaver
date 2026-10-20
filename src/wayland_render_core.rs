@@ -827,7 +827,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 // Windowshader owns its pause-release decision and rotation
                 // adjustment; Render Core applies only the animation shift.
                 let windowshader_release = if windowed_rotation {
-                    Some(windowshader_state.release_pause(pause_ended_at))
+                    Some(windowshader_state.finish_pause(pause_ended_at))
                 } else {
                     None
                 };
@@ -842,12 +842,9 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 }
 
 
-                if windowed_rotation {
-                                windowshader_state.reset_presentation_deadline();
-                            } else {
-                                S::reset_frame_deadline(&mut next_frame_deadline);
-                            }
-
+                if !windowed_rotation {
+                    S::reset_frame_deadline(&mut next_frame_deadline);
+                }
 
                 frame_times.clear();
                 // The pause has ended even if the compositor has not yet
@@ -905,7 +902,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             let rotation_requested = if paused {
                 false
             } else if windowed_rotation {
-                windowshader_state.rotation.rotation_due_and_begin(
+                windowshader_state.begin_due_rotation(
                     shader_interval, &current_shader.shader_name,
                     current_shader.policy_id, windowed_frame_ready, program,
                 )
@@ -1842,7 +1839,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             // Windowshader owns its post-pause presentation acknowledgment.
             // Wallpaper retains its existing local paused-state transition.
             let presentation_resumed = if windowed_rotation {
-                windowshader_state.on_successful_presentation(paused)
+                windowshader_state.complete_presented_frame(paused)
             } else {
                 paused
             };
@@ -1970,7 +1967,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             control.diagnostic_checkpoint(7);
             // Dispatch pacing to the owning rendering pipeline.
             if windowed_rotation {
-                windowshader_state.pace_presented_frame(frame_duration);
+                windowshader_state.finish_frame(frame_duration);
             } else {
                 S::pace_frame(&mut next_frame_deadline, frame_duration);
             }
