@@ -864,8 +864,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                         "[AMBIENT_HANDOFF_DIAG] Wayland renderer detected pause request",
                     );
                     control.acknowledge_pause_detected();
-                    windowshader_state.resume_presentation_pending = true;
-                    windowshader_state.resume_wait_reported = false;
+                    windowshader_state.on_pause_entering();
                     state.on_pause_entering();
                     control.diagnostic_checkpoint(8);
                     state.on_pause_entered(native_targets);
@@ -904,20 +903,10 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 {
                     let pause_ended_at = Instant::now();
                     let paused_duration = pause_ended_at.duration_since(paused_at);
-                    if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed {
-                        windowshader_state.rotation.last_windowed_pause_interval = Some((paused_at, pause_ended_at));
-                    }
+                    start_time += paused_duration;
 
-
-                    start_time +=
-                        paused_duration;
-
-
-                    if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed {
-                        windowshader_state.rotation.record_pause_shift(paused_duration, last_shader_switch, windowed_rotation);
-                    }
                     if windowed_rotation {
-                        windowshader_state.rotation.last_shader_switch += paused_duration;
+                        windowshader_state.on_pause_ended(paused_at, pause_ended_at, last_shader_switch);
                     } else {
                         last_shader_switch += paused_duration;
                     }

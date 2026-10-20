@@ -1800,6 +1800,27 @@ impl WindowshaderFrameLoopState {
         }
     }
 
+    // Screensaver pause bookkeeping is Windowshader-owned. The shared executor
+    // continues to manage the Wallpaper clock and the animation time anchor.
+    pub(crate) fn on_pause_entering(&mut self) {
+        self.resume_presentation_pending = true;
+        self.resume_wait_reported = false;
+    }
+
+    // Preserve the original diagnostic ordering: record the pause shift before
+    // advancing the Windowshader rotation anchor. Do not change callback readiness.
+    pub(crate) fn on_pause_ended(
+        &mut self,
+        pause_started: Instant,
+        pause_ended: Instant,
+        wallpaper_switch: Instant,
+    ) {
+        let duration = pause_ended.duration_since(pause_started);
+        self.rotation.last_windowed_pause_interval = Some((pause_started, pause_ended));
+        self.rotation.record_pause_shift(duration, wallpaper_switch, true);
+        self.rotation.last_shader_switch += duration;
+    }
+
     // A missing compositor frame callback is authoritative: record the wait,
     // but never manufacture frame readiness or advance the rotation clock.
     pub(crate) fn on_callback_blocked(&mut self, interval: Option<Duration>, windowed: bool) -> (bool, bool, bool) {
