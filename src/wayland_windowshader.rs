@@ -1957,6 +1957,25 @@ impl WindowshaderFrameLoopState {
         self.pace_presented_frame(frame_duration);
     }
 
+    // Stage 4B-2: Windowshader owns its pause clock, acknowledgment and
+    // status transition after the shared dispatch hooks have run.
+    // No compositor callback readiness is modified here.
+    pub(crate) fn enter_pause(
+        &mut self,
+        control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+        status_enabled: bool,
+    ) {
+        self.on_pause_entering(Instant::now());
+        control.acknowledge_paused();
+        if status_enabled {
+            crate::renderer_status::publish(
+                crate::renderer_status::Pipeline::Windowshader,
+                crate::renderer_status::State::Paused,
+            );
+        }
+        println!("Wayland wallpaper rendering paused.");
+    }
+
     // Resume is a controller operation. The GL executor owns the animation
     // anchor, so the elapsed pause is returned rather than applied here.
     pub(crate) fn finish_pause(&mut self, ended: Instant) -> WindowshaderPauseRelease {

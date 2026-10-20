@@ -794,33 +794,34 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             control.diagnostic_checkpoint(3);
             if control.pause_requested() {
                 if !paused {
-                    crate::logger::warning(
-                        &crate::locate_paths::runtime_log_path(),
-                        "[AMBIENT_HANDOFF_DIAG] Wayland renderer detected pause request",
-                    );
-                    control.acknowledge_pause_detected();
-                    state.on_pause_entering();
-                    control.diagnostic_checkpoint(8);
-                    state.on_pause_entered(native_targets);
-                    paused =
-                        true;
-
-
-                    let pause_began_at = Instant::now();
                     if windowed_rotation {
-                        windowshader_state.on_pause_entering(pause_began_at);
+                        // The Windowshader controller owns pause-entry sequencing.
+                        crate::logger::warning(
+                            &crate::locate_paths::runtime_log_path(),
+                            "[AMBIENT_HANDOFF_DIAG] Wayland renderer detected pause request",
+                        );
+                        control.acknowledge_pause_detected();
+                        state.on_pause_entering();
+                        control.diagnostic_checkpoint(8);
+                        state.on_pause_entered(native_targets);
+                        windowshader_state.enter_pause(control, status_enabled);
                     } else {
-                        pause_started = Some(pause_began_at);
+                        crate::logger::warning(
+                            &crate::locate_paths::runtime_log_path(),
+                            "[AMBIENT_HANDOFF_DIAG] Wayland renderer detected pause request",
+                        );
+                        control.acknowledge_pause_detected();
+                        state.on_pause_entering();
+                        control.diagnostic_checkpoint(8);
+                        state.on_pause_entered(native_targets);
+                        pause_started = Some(Instant::now());
+                        control.acknowledge_paused();
+                        if status_enabled {
+                            crate::renderer_status::publish(status_pipeline, crate::renderer_status::State::Paused);
+                        }
+                        println!("Wayland wallpaper rendering paused.");
                     }
-                    control.acknowledge_paused();
-                    if status_enabled {
-                        crate::renderer_status::publish(status_pipeline, crate::renderer_status::State::Paused);
-                    }
-
-
-                    println!(
-                        "Wayland wallpaper rendering paused."
-                    );
+                    paused = true;
                 }
 
 
