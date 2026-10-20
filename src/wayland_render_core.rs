@@ -880,37 +880,15 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             if let crate::wayland_windowshader::WindowshaderFrameEligibility::Blocked {
                 initial_warning, recurring_warning, post_pause_warning,
             } = frame_eligibility {
-
-                if initial_warning
-                {
-                    let outstanding = state.outstanding_frame_callbacks(native_targets);
-                    crate::logger::warning(
-                        &crate::locate_paths::runtime_log_path(),
-                        &format!("[WINDOWSHADER_RESUME_DIAG] Frame callback outstanding >1500ms; targets={outstanding:?}, post_pause={}", windowshader_state.resume_presentation_pending),
-                    );
-                }
-                // A one-shot warning is useful at 1500ms; thereafter emit
-                // a bounded heartbeat every 10s so a persistent stall can be
-                // distinguished from a recovered callback without log spam.
-                if recurring_warning
-                {
-                    let outstanding = state.outstanding_frame_callbacks(native_targets);
-                    let wait_ms = windowshader_state.inactive_since.map_or(0, |since| since.elapsed().as_millis());
-                    state.log_outstanding_callback_details(&outstanding);
-                    crate::logger::warning(
-                        &crate::locate_paths::runtime_log_path(),
-                        &format!("[WINDOWSHADER_RESUME_DIAG] Callback stall persists: targets={outstanding:?}, wait_ms={wait_ms}, last_swap_age_ms={}, post_pause={}; preserving compositor pacing", windowshader_state.presentation.last_successful_swap.elapsed().as_millis(), windowshader_state.resume_presentation_pending),
-                    );
-                }
-                if post_pause_warning {
-                    crate::logger::warning(
-                        &crate::locate_paths::runtime_log_path(),
-                        "[WINDOWSHADER_RESUME_DIAG] Post-pause presentation blocked by outstanding frame callback",
-                    );
-                }
-                // Windowshader owns callback-blocked pacing; the compositor remains
-                // the sole authority for permitting the next frame.
-                windowshader_state.wait_for_blocked_callback();
+                // Windowshader owns blocked-callback diagnostics and waiting.
+                // Render Core does not infer frame readiness or alter its clocks.
+                windowshader_state.handle_blocked_callback(
+                    state,
+                    native_targets,
+                    initial_warning,
+                    recurring_warning,
+                    post_pause_warning,
+                );
                 return Ok(FrameLoopAction::Continue);
             }
 

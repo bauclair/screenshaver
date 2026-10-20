@@ -1968,6 +1968,42 @@ impl WindowshaderFrameLoopState {
         wait_for_blocked_frame_callback();
     }
 
+    // The Windowshader controller owns blocked-callback diagnostics and the
+    // bounded wait. A subsequent iteration must still dispatch Wayland events
+    // and observe a real wl_surface.frame completion before presenting.
+    pub(crate) fn handle_blocked_callback<S: crate::wayland_wallpaper::RenderWaylandDispatch>(
+        &self,
+        state: &mut S,
+        native_targets: &[NativeWallpaperTarget],
+        initial_warning: bool,
+        recurring_warning: bool,
+        post_pause_warning: bool,
+    ) {
+        if initial_warning {
+            let outstanding = state.outstanding_frame_callbacks(native_targets);
+            crate::logger::warning(
+                &crate::locate_paths::runtime_log_path(),
+                &format!("[WINDOWSHADER_RESUME_DIAG] Frame callback outstanding >1500ms; targets={outstanding:?}, post_pause={}", self.resume_presentation_pending),
+            );
+        }
+        if recurring_warning {
+            let outstanding = state.outstanding_frame_callbacks(native_targets);
+            let wait_ms = self.inactive_since.map_or(0, |since| since.elapsed().as_millis());
+            state.log_outstanding_callback_details(&outstanding);
+            crate::logger::warning(
+                &crate::locate_paths::runtime_log_path(),
+                &format!("[WINDOWSHADER_RESUME_DIAG] Callback stall persists: targets={outstanding:?}, wait_ms={wait_ms}, last_swap_age_ms={}, post_pause={}; preserving compositor pacing", self.presentation.last_successful_swap.elapsed().as_millis(), self.resume_presentation_pending),
+            );
+        }
+        if post_pause_warning {
+            crate::logger::warning(
+                &crate::locate_paths::runtime_log_path(),
+                "[WINDOWSHADER_RESUME_DIAG] Post-pause presentation blocked by outstanding frame callback",
+            );
+        }
+        self.wait_for_blocked_callback();
+    }
+
     pub(crate) fn assess_frame_eligibility(
         &mut self,
         compositor_ready: bool,
