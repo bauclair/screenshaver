@@ -930,33 +930,22 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 fps_warning_state = crate::fps_monitor::FpsWarningState::Normal;
             }
 
-            if !paused
-                && shader_interval
-                    .map(
-                        |interval| {
-                            if windowed_rotation {
-                                windowshader_state.rotation.rotation_due(Some(interval))
-                            } else {
-                                last_shader_switch.elapsed() >= interval
-                            }
-                        }
-                    )
-                    .unwrap_or(
-                        false
-                    )
-            {
-                if windowed_rotation {
-                    windowshader_state.rotation.begin_rotation_attempt(
-                        shader_interval,
-                        &current_shader.shader_name,
-                        current_shader.policy_id,
-                        windowed_frame_ready,
-                        program,
-                    );
-                } else {
+            // The controller makes Windowshader's due/attempt decision only
+            // after compositor callback eligibility has been established.
+            let rotation_requested = if paused {
+                false
+            } else if windowed_rotation {
+                windowshader_state.rotation.rotation_due_and_begin(
+                    shader_interval, &current_shader.shader_name,
+                    current_shader.policy_id, windowed_frame_ready, program,
+                )
+            } else {
+                shader_interval.is_some_and(|interval| last_shader_switch.elapsed() >= interval)
+            };
+            if rotation_requested {
+                if !windowed_rotation {
                     last_shader_switch = Instant::now();
                 }
-
 
                 if let Some(
                     first_target
@@ -1178,11 +1167,10 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
                                 current_shader =
                                     next_shader.clone();
-                                if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed {
-                                    windowshader_state.rotation.windowshader_rotation_successes = windowshader_state.rotation.windowshader_rotation_successes.wrapping_add(1);
-                                    crate::logger::warning(&crate::locate_paths::runtime_log_path(),
-                                        &format!("[WINDOWSHADER_ROTATION_DIAG] Rotation succeeded shader='{}' policy_id={} program={} successes={}",
-                                            current_shader.shader_name, current_shader.policy_id, program, windowshader_state.rotation.windowshader_rotation_successes));
+                                if windowed_rotation {
+                                    windowshader_state.rotation.rotation_succeeded(
+                                        &current_shader.shader_name, current_shader.policy_id, program,
+                                    );
                                 }
 
 
@@ -1318,10 +1306,10 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                             Err(
                                 error
                             ) => {
-                                if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed {
-                                    windowshader_state.rotation.windowshader_rotation_failures = windowshader_state.rotation.windowshader_rotation_failures.wrapping_add(1);
-                                    crate::logger::warning(&crate::locate_paths::runtime_log_path(),
-                                        &format!("[WINDOWSHADER_ROTATION_DIAG] Compilation failed shader='{}' error={}", next_shader.shader_name, error));
+                                if windowed_rotation {
+                                    windowshader_state.rotation.rotation_compilation_failed(
+                                        &next_shader.shader_name, &error.to_string(),
+                                    );
                                 }
                                 println!(
                                     "Wallpaper shader compilation failed; keeping the current shader:"
@@ -1354,10 +1342,8 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     Err(
                         error
                     ) => {
-                        if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed {
-                            windowshader_state.rotation.windowshader_rotation_failures = windowshader_state.rotation.windowshader_rotation_failures.wrapping_add(1);
-                            crate::logger::warning(&crate::locate_paths::runtime_log_path(),
-                                &format!("[WINDOWSHADER_ROTATION_DIAG] Selection failed: {}", error));
+                        if windowed_rotation {
+                            windowshader_state.rotation.rotation_selection_failed(&error.to_string());
                         }
                         println!(
                             "Wallpaper shader selection failed; keeping the current shader:"

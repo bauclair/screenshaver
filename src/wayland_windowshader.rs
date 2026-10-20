@@ -1718,6 +1718,38 @@ impl WindowshaderRotationClockState {
         self.last_shader_switch = Instant::now();
     }
 
+    // Windowshader alone decides whether an eligible iteration should rotate.
+    // The caller has already established compositor frame eligibility.
+    pub(crate) fn rotation_due_and_begin(
+        &mut self, interval: Option<Duration>, shader_name: &str,
+        policy_id: i64, frame_ready: bool, program: u32,
+    ) -> bool {
+        if !self.rotation_due(interval) { return false; }
+        self.begin_rotation_attempt(interval, shader_name, policy_id, frame_ready, program);
+        true
+    }
+
+    // Rotation outcomes are Windowshader-owned. Resource replacement and
+    // shader-manager recovery remain in the shared GL execution path.
+    pub(crate) fn rotation_succeeded(&mut self, shader_name: &str, policy_id: i64, program: u32) {
+        self.windowshader_rotation_successes = self.windowshader_rotation_successes.wrapping_add(1);
+        crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+            &format!("[WINDOWSHADER_ROTATION_DIAG] Rotation succeeded shader='{}' policy_id={} program={} successes={}",
+                shader_name, policy_id, program, self.windowshader_rotation_successes));
+    }
+
+    pub(crate) fn rotation_compilation_failed(&mut self, shader_name: &str, error: &str) {
+        self.windowshader_rotation_failures = self.windowshader_rotation_failures.wrapping_add(1);
+        crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+            &format!("[WINDOWSHADER_ROTATION_DIAG] Compilation failed shader='{}' error={}", shader_name, error));
+    }
+
+    pub(crate) fn rotation_selection_failed(&mut self, error: &str) {
+        self.windowshader_rotation_failures = self.windowshader_rotation_failures.wrapping_add(1);
+        crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+            &format!("[WINDOWSHADER_ROTATION_DIAG] Selection failed: {}", error));
+    }
+
     // A blocked rotation is reported once until the compositor allows another frame.
     // This is diagnostic only; the compositor callback remains authoritative.
     pub(crate) fn report_blocked_rotation_if_due(&mut self, interval: Option<Duration>) {
