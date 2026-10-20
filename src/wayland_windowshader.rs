@@ -1919,6 +1919,23 @@ impl WindowshaderFrameLoopState {
         self.rotation.last_shader_switch += duration;
     }
 
+    // A pause release does not grant permission to draw. The compositor's
+    // outstanding wl_surface.frame callback remains authoritative.
+    pub(crate) fn on_pause_released(&self) -> bool {
+        self.resume_presentation_pending
+    }
+
+    // Called only after eglSwapBuffers succeeds. Preserve the pending resume
+    // state until a real presentation completes, including when the pause
+    // coordinator observed a pause during a blocked EGL swap.
+    pub(crate) fn on_successful_presentation(&mut self, was_paused: bool) -> bool {
+        let resumed = was_paused || self.resume_presentation_pending;
+        if resumed {
+            self.resume_presentation_pending = false;
+        }
+        resumed
+    }
+
     pub(crate) fn assess_frame_eligibility(
         &mut self,
         compositor_ready: bool,

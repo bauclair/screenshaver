@@ -841,7 +841,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 // allowed another windowshader_state.presentation. Keep the separate pending
                 // flag until a successful EGL swap acknowledges resumption.
                 paused = false;
-                if windowshader_state.resume_presentation_pending {
+                if windowed_rotation && windowshader_state.on_pause_released() {
                     state.on_pause_released();
                 }
             }
@@ -1905,9 +1905,15 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             }
 
 
-            if paused || windowshader_state.resume_presentation_pending {
+            // Windowshader owns its post-pause presentation acknowledgment.
+            // Wallpaper retains its existing local paused-state transition.
+            let presentation_resumed = if windowed_rotation {
+                windowshader_state.on_successful_presentation(paused)
+            } else {
+                paused
+            };
+            if presentation_resumed {
                 paused = false;
-                windowshader_state.resume_presentation_pending = false;
 
                 // Acknowledge only after a successful EGL presentation. This
                 // also covers pauses observed by the independent lighting
