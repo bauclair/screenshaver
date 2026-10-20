@@ -547,7 +547,13 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     let result = loop_driver(&mut || -> Result<FrameLoopAction, String> {
 
             control.diagnostic_checkpoint(1);
-            S::pump_events(event_queue, state)?;
+            // The Windowshader controller owns its event-dispatch entry point.
+            // Wallpaper retains its established event-pumping path.
+            if windowed_rotation {
+                crate::wayland_windowshader::pump_windowshader_frame_events(event_queue, state)?;
+            } else {
+                S::pump_events(event_queue, state)?;
+            }
 
 
             control.diagnostic_checkpoint(2);
@@ -597,21 +603,26 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             )?;
 
 
-            let compositor_closed = state
-                .surfaces()
-                .iter()
-                .any(|surface_state| surface_state.closed);
-
-            if compositor_closed {
-                // Windowshader's XDG close quits its supervisor; Wallpaper's
-                // layer-surface close only ends this presentation loop.
-                if S::compositor_close_requests_shutdown() {
-                    running.store(false, Ordering::SeqCst);
+            // Windowshader decides XDG-close and supervisor termination itself.
+            // Wallpaper preserves its original layer-surface shutdown policy.
+            if windowed_rotation {
+                if crate::wayland_windowshader::windowshader_should_stop(state, running) {
+                    return Ok(FrameLoopAction::Stop);
                 }
-                return Ok(FrameLoopAction::Stop);
-            }
-            if !running.load(Ordering::SeqCst) {
-                return Ok(FrameLoopAction::Stop);
+            } else {
+                let compositor_closed = state
+                    .surfaces()
+                    .iter()
+                    .any(|surface_state| surface_state.closed);
+                if compositor_closed {
+                    if S::compositor_close_requests_shutdown() {
+                        running.store(false, Ordering::SeqCst);
+                    }
+                    return Ok(FrameLoopAction::Stop);
+                }
+                if !running.load(Ordering::SeqCst) {
+                    return Ok(FrameLoopAction::Stop);
+                }
             }
 
 

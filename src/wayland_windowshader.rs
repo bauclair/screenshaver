@@ -125,6 +125,30 @@ fn drive_windowshader_frame_loop(
     }
 }
 
+// Stage 4B-1: pipeline-owned Wayland event dispatch and shutdown policy.
+// This is deliberately independent of the GL executor. It never marks a
+// frame ready, requests a synthetic callback, or uses XDG activation as
+// a visibility test. The shared renderer still owns target cleanup.
+pub(crate) fn pump_windowshader_frame_events<S: crate::wayland_wallpaper::RenderWaylandDispatch>(
+    event_queue: &mut wayland_client::EventQueue<S>,
+    state: &mut S,
+) -> Result<(), String> {
+    S::pump_events(event_queue, state)
+}
+
+pub(crate) fn windowshader_should_stop<S: crate::wayland_wallpaper::RenderWaylandDispatch>(
+    state: &mut S,
+    running: &Arc<AtomicBool>,
+) -> bool {
+    if state.surfaces().iter().any(|surface| surface.closed) {
+        // XDG toplevel Close ends the Windowshader supervisor, not just a
+        // single layer-surface presentation loop.
+        running.store(false, Ordering::SeqCst);
+        return true;
+    }
+    !running.load(Ordering::SeqCst)
+}
+
 // Stage 2D-2B Step 2: Windowshader owns its post-render surface lifecycle.
 // Preserve geometry persistence, XDG destruction, and compositor flush order.
 fn finish_windowshader_surface(
