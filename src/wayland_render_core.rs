@@ -515,9 +515,6 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
         None;
 
 
-    let mut windowed_inactive_started: Option<Instant> =
-        None;
-
     // Track the most recent pause interval so an outstanding compositor
     // callback cannot charge the same inactive time to both clocks twice.
 
@@ -529,8 +526,6 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
         last_shader_switch,
         state.windowshader_state().windowshader_configure_count,
     );
-    let mut resume_presentation_pending = false;
-    let mut resume_wait_reported = false;
     let windowed_rotation = runtime.display_format
         == crate::manage_configuration::WallpaperDisplayFormat::Windowed;
 
@@ -597,7 +592,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                             pending_description,
                             paused,
                             control.pause_requested(),
-                            resume_presentation_pending,
+                            windowshader_state.resume_presentation_pending,
                             activated,
                             activation_established,
                             configure_pending,
@@ -869,8 +864,8 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                         "[AMBIENT_HANDOFF_DIAG] Wayland renderer detected pause request",
                     );
                     control.acknowledge_pause_detected();
-                    resume_presentation_pending = true;
-                    resume_wait_reported = false;
+                    windowshader_state.resume_presentation_pending = true;
+                    windowshader_state.resume_wait_reported = false;
                     state.on_pause_entering();
                     control.diagnostic_checkpoint(8);
                     state.on_pause_entered(native_targets);
@@ -937,7 +932,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 // allowed another windowshader_state.presentation. Keep the separate pending
                 // flag until a successful EGL swap acknowledges resumption.
                 paused = false;
-                if resume_presentation_pending {
+                if windowshader_state.resume_presentation_pending {
                     state.on_pause_released();
                 }
             }
@@ -957,40 +952,31 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
 
             if !windowed_frame_ready {
-                if windowed_rotation {
-                    windowshader_state.rotation.on_presentation_blocked(shader_interval);
-                }
-                if windowed_inactive_started.is_none() {
-                    windowed_inactive_started =
-                        Some(
-                            Instant::now()
-                        );
-                }
+                let (initial_warning, recurring_warning, post_pause_warning) =
+                    windowshader_state.on_callback_blocked(shader_interval, windowed_rotation);
 
-
-                if windowshader_state.callback_stall.initial_warning_due(windowed_inactive_started)
+                if initial_warning
                 {
                     let outstanding = state.outstanding_frame_callbacks(native_targets);
                     crate::logger::warning(
                         &crate::locate_paths::runtime_log_path(),
-                        &format!("[WINDOWSHADER_RESUME_DIAG] Frame callback outstanding >1500ms; targets={outstanding:?}, post_pause={resume_presentation_pending}"),
+                        &format!("[WINDOWSHADER_RESUME_DIAG] Frame callback outstanding >1500ms; targets={outstanding:?}, post_pause={}", windowshader_state.resume_presentation_pending),
                     );
                 }
                 // A one-shot warning is useful at 1500ms; thereafter emit
                 // a bounded heartbeat every 10s so a persistent stall can be
                 // distinguished from a recovered callback without log spam.
-                if windowshader_state.callback_stall.recurring_report_due(windowed_inactive_started)
+                if recurring_warning
                 {
                     let outstanding = state.outstanding_frame_callbacks(native_targets);
-                    let wait_ms = windowed_inactive_started.map_or(0, |since| since.elapsed().as_millis());
+                    let wait_ms = windowshader_state.inactive_since.map_or(0, |since| since.elapsed().as_millis());
                     state.log_outstanding_callback_details(&outstanding);
                     crate::logger::warning(
                         &crate::locate_paths::runtime_log_path(),
-                        &format!("[WINDOWSHADER_RESUME_DIAG] Callback stall persists: targets={outstanding:?}, wait_ms={wait_ms}, last_swap_age_ms={}, post_pause={resume_presentation_pending}; preserving compositor pacing", windowshader_state.presentation.last_successful_swap.elapsed().as_millis()),
+                        &format!("[WINDOWSHADER_RESUME_DIAG] Callback stall persists: targets={outstanding:?}, wait_ms={wait_ms}, last_swap_age_ms={}, post_pause={}; preserving compositor pacing", windowshader_state.presentation.last_successful_swap.elapsed().as_millis(), windowshader_state.resume_presentation_pending),
                     );
                 }
-                if resume_presentation_pending && !resume_wait_reported {
-                    resume_wait_reported = true;
+                if post_pause_warning {
                     crate::logger::warning(
                         &crate::locate_paths::runtime_log_path(),
                         "[WINDOWSHADER_RESUME_DIAG] Post-pause presentation blocked by outstanding frame callback",
@@ -1000,10 +986,9 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 return Ok(FrameLoopAction::Continue);
             }
 
-            if windowed_rotation {
-                windowshader_state.rotation.on_presentation_eligible();
-            }
-            if windowshader_state.callback_stall.recovered() {
+            let (callback_recovered, inactive_since) =
+                windowshader_state.on_callback_ready(windowed_rotation);
+            if callback_recovered {
                 crate::logger::warning(
                     &crate::locate_paths::runtime_log_path(),
                     "[WINDOWSHADER_RESUME_DIAG] Outstanding frame callback delivered; presentation eligible",
@@ -1011,7 +996,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             }
 
             if let Some(inactive_at) =
-                windowed_inactive_started.take()
+                inactive_since
             {
                 let callback_ended_at = Instant::now();
                 let callback_wait = callback_ended_at.duration_since(inactive_at);
@@ -1987,7 +1972,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 control.diagnostic_checkpoint(6);
                 state.on_frame_swap_completed(native_target.info.registry_name);
                 windowshader_state.presentation.last_successful_swap = Instant::now();
-                if status_enabled && (paused || resume_presentation_pending
+                if status_enabled && (paused || windowshader_state.resume_presentation_pending
                     || status_heartbeat.elapsed() >= Duration::from_secs(1))
                 {
                     crate::renderer_status::publish(status_pipeline, crate::renderer_status::State::Rendering);
@@ -2030,9 +2015,9 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             }
 
 
-            if paused || resume_presentation_pending {
+            if paused || windowshader_state.resume_presentation_pending {
                 paused = false;
-                resume_presentation_pending = false;
+                windowshader_state.resume_presentation_pending = false;
 
                 // Acknowledge only after a successful EGL presentation. This
                 // also covers pauses observed by the independent lighting

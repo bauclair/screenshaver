@@ -1783,6 +1783,9 @@ pub(crate) struct WindowshaderFrameLoopState {
     pub(crate) callback_stall: WindowshaderCallbackStallClock,
     pub(crate) rotation: WindowshaderRotationClockState,
     pub(crate) presentation: WindowshaderPresentationDiagnostics,
+    pub(crate) inactive_since: Option<Instant>,
+    pub(crate) resume_presentation_pending: bool,
+    pub(crate) resume_wait_reported: bool,
 }
 
 impl WindowshaderFrameLoopState {
@@ -1791,6 +1794,36 @@ impl WindowshaderFrameLoopState {
             callback_stall: WindowshaderCallbackStallClock::default(),
             rotation: WindowshaderRotationClockState::new(shader_switch),
             presentation: WindowshaderPresentationDiagnostics::new(configure_count),
+            inactive_since: None,
+            resume_presentation_pending: false,
+            resume_wait_reported: false,
         }
+    }
+
+    // A missing compositor frame callback is authoritative: record the wait,
+    // but never manufacture frame readiness or advance the rotation clock.
+    pub(crate) fn on_callback_blocked(&mut self, interval: Option<Duration>, windowed: bool) -> (bool, bool, bool) {
+        if windowed {
+            self.rotation.on_presentation_blocked(interval);
+        }
+        if self.inactive_since.is_none() {
+            self.inactive_since = Some(Instant::now());
+        }
+        let initial = self.callback_stall.initial_warning_due(self.inactive_since);
+        let recurring = self.callback_stall.recurring_report_due(self.inactive_since);
+        let post_pause = self.resume_presentation_pending && !self.resume_wait_reported;
+        if post_pause {
+            self.resume_wait_reported = true;
+        }
+        (initial, recurring, post_pause)
+    }
+
+    // Return the beginning of a completed callback wait for the caller's
+    // existing animation/FPS clock adjustments. No timing policy changes.
+    pub(crate) fn on_callback_ready(&mut self, windowed: bool) -> (bool, Option<Instant>) {
+        if windowed {
+            self.rotation.on_presentation_eligible();
+        }
+        (self.callback_stall.recovered(), self.inactive_since.take())
     }
 }
