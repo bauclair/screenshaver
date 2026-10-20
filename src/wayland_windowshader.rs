@@ -1812,6 +1812,13 @@ pub(crate) struct WindowshaderFrameLoopState {
     pub(crate) resume_wait_reported: bool,
 }
 
+// Clock shifts calculated on a long compositor callback recovery.
+// The shared executor applies the animation shift and resets its FPS samples.
+pub(crate) struct WindowshaderCallbackRecovery {
+    pub(crate) rotation_shift: Duration,
+    pub(crate) animation_shift: Duration,
+}
+
 impl WindowshaderFrameLoopState {
     pub(crate) fn new(shader_switch: Instant, configure_count: u64) -> Self {
         Self {
@@ -1860,6 +1867,39 @@ impl WindowshaderFrameLoopState {
                 initial_warning, recurring_warning, post_pause_warning,
             }
         }
+    }
+
+    // Preserve the existing 250ms threshold and pause-overlap exclusion.
+    // Do not infer a callback completion: the caller has already checked it.
+    pub(crate) fn account_callback_recovery(
+        &mut self,
+        inactive_since: Option<Instant>,
+        shader_anchor: Instant,
+        animation_anchor: Instant,
+        windowed: bool,
+        frame_ready: bool,
+        paused: bool,
+        activated: bool,
+    ) -> Option<WindowshaderCallbackRecovery> {
+        let inactive_at = inactive_since?;
+        let ended_at = Instant::now();
+        let callback_wait = ended_at.duration_since(inactive_at);
+        if callback_wait < Duration::from_millis(250) {
+            return None;
+        }
+        let (pause_overlap, rotation_shift, animation_shift) = callback_clock_adjustments(
+            inactive_at, ended_at, self.rotation.last_windowed_pause_interval,
+            shader_anchor, animation_anchor,
+        );
+        if windowed {
+            self.rotation.record_callback_shift(
+                callback_wait, pause_overlap, rotation_shift,
+                frame_ready, paused, activated,
+            );
+            self.rotation.last_shader_switch += rotation_shift;
+        }
+        self.rotation.last_windowed_pause_interval = None;
+        Some(WindowshaderCallbackRecovery { rotation_shift, animation_shift })
     }
 
     // A missing compositor frame callback is authoritative: record the wait,

@@ -977,61 +977,30 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 );
             }
 
-            if let Some(inactive_at) =
-                inactive_since
-            {
-                let callback_ended_at = Instant::now();
-                let callback_wait = callback_ended_at.duration_since(inactive_at);
-                // A callback may have been outstanding before the screensaver
-                // paused and remain outstanding after it resumed. The pause
-                // duration was already excluded above; exclude only the
-                // non-overlapping part of this callback wait.
-                let (pause_overlap, rotation_shift, animation_shift) =
-                    crate::wayland_windowshader::callback_clock_adjustments(
-                        inactive_at,
-                        callback_ended_at,
-                        windowshader_state.rotation.last_windowed_pause_interval,
-                        if windowed_rotation { windowshader_state.rotation.last_shader_switch } else { last_shader_switch },
-                        start_time,
-                    );
-
-                // Ordinary frame-callback pacing is only a frame or two and
-                // must remain part of shader animation time.  A long callback
-                // silence indicates that presentation was suppressed (for
-                // example because the workspace was not visible); exclude
-                // only that long interval from shader/rotation timing.
-                if callback_wait
-                    >= Duration::from_millis(250)
-                {
-                    start_time +=
-                        animation_shift;
-
-
-                    if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::Windowed {
-                        let activated = state.presentation_diagnostics(native_targets).activated;
-                        windowshader_state.rotation.record_callback_shift(callback_wait, pause_overlap, rotation_shift,
-                            windowed_frame_ready, paused, activated);
-                    }
-                    if windowed_rotation {
-                        windowshader_state.rotation.last_shader_switch += rotation_shift;
-                    } else {
-                        last_shader_switch += rotation_shift;
-                    }
-                    // The overlapping pause interval has been accounted for.
-                    windowshader_state.rotation.last_windowed_pause_interval = None;
-
-
-                    S::reset_frame_deadline(&mut next_frame_deadline);
-
-
-                    frame_times.clear();
-
-
-                    fps_warning_state =
-                        crate::fps_monitor::FpsWarningState::Normal;
+            // Windowshader owns the callback-recovery clock accounting.
+            // Render Core retains the shared animation/FPS reset operations.
+            let shader_anchor = if windowed_rotation {
+                windowshader_state.rotation.last_shader_switch
+            } else {
+                last_shader_switch
+            };
+            if let Some(recovery) = windowshader_state.account_callback_recovery(
+                inactive_since,
+                shader_anchor,
+                start_time,
+                windowed_rotation,
+                windowed_frame_ready,
+                paused,
+                state.presentation_diagnostics(native_targets).activated,
+            ) {
+                start_time += recovery.animation_shift;
+                if !windowed_rotation {
+                    last_shader_switch += recovery.rotation_shift;
                 }
+                S::reset_frame_deadline(&mut next_frame_deadline);
+                frame_times.clear();
+                fps_warning_state = crate::fps_monitor::FpsWarningState::Normal;
             }
-
 
             if !paused
                 && shader_interval
