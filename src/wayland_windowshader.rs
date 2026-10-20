@@ -1702,8 +1702,8 @@ impl WindowshaderRotationClockState {
     }
 
     // Stage 2D-2C Step 14: pause-clock accounting belongs to Windowshader.
-    pub(crate) fn record_pause_shift(&mut self, duration: Duration, wallpaper_switch: Instant, windowed: bool) {
-        let before_ms = active_rotation_timestamp(windowed, self, wallpaper_switch).elapsed().as_millis();
+    pub(crate) fn record_pause_shift(&mut self, duration: Duration) {
+        let before_ms = self.last_shader_switch.elapsed().as_millis();
         self.rotation_clock_pause_shifts = self.rotation_clock_pause_shifts.wrapping_add(1);
         self.rotation_clock_last_shift_reason = "screensaver_pause";
         self.rotation_clock_last_shift_ms = duration.as_millis();
@@ -1714,9 +1714,9 @@ impl WindowshaderRotationClockState {
 
     // Record callback exclusion using the same thresholds and diagnostics as before.
     pub(crate) fn record_callback_shift(&mut self, callback_wait: Duration, pause_overlap: Duration,
-        rotation_shift: Duration, wallpaper_switch: Instant, windowed: bool,
+        rotation_shift: Duration,
         frame_ready: bool, paused: bool, activated: bool) {
-        let before_ms = active_rotation_timestamp(windowed, self, wallpaper_switch).elapsed().as_millis();
+        let before_ms = self.last_shader_switch.elapsed().as_millis();
         self.rotation_clock_callback_shifts = self.rotation_clock_callback_shifts.wrapping_add(1);
         self.rotation_clock_callback_shift_ms += rotation_shift.as_millis();
         if callback_wait < Duration::from_secs(2) {
@@ -1733,16 +1733,6 @@ impl WindowshaderRotationClockState {
                     frame_ready, paused, activated));
         }
     }
-}
-
-// Stage 2D-2A Step 4C: the Windowshader owns its live rotation timestamp.
-// The Wallpaper timestamp remains independent in the shared rendering loop.
-pub(crate) fn active_rotation_timestamp(
-    windowed: bool,
-    windowshader_clock: &WindowshaderRotationClockState,
-    wallpaper_timestamp: Instant,
-) -> Instant {
-    if windowed { windowshader_clock.last_shader_switch } else { wallpaper_timestamp }
 }
 
 // Stage 2D-2C Step 16A: Windowshader-owned presentation diagnostics.
@@ -1813,11 +1803,10 @@ impl WindowshaderFrameLoopState {
         &mut self,
         pause_started: Instant,
         pause_ended: Instant,
-        wallpaper_switch: Instant,
     ) {
         let duration = pause_ended.duration_since(pause_started);
         self.rotation.last_windowed_pause_interval = Some((pause_started, pause_ended));
-        self.rotation.record_pause_shift(duration, wallpaper_switch, true);
+        self.rotation.record_pause_shift(duration);
         self.rotation.last_shader_switch += duration;
     }
 
