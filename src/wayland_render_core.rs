@@ -525,6 +525,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     let mut windowshader_state = crate::wayland_windowshader::WindowshaderFrameLoopState::new(
         last_shader_switch,
         state.presentation_diagnostics(native_targets).configure_count,
+        next_frame_deadline,
     );
     let windowed_rotation = runtime.display_format
         == crate::manage_configuration::WallpaperDisplayFormat::Windowed;
@@ -560,7 +561,6 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     configure_pending,
                     paused,
                     control.pause_requested(),
-                    next_frame_deadline,
                     shader_interval,
                     &current_shader.shader_name,
                     current_shader.policy_id,
@@ -745,7 +745,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                 );
 
                             if windowed_rotation {
-                                windowshader_state.reset_presentation_deadline(&mut next_frame_deadline);
+                                windowshader_state.reset_presentation_deadline();
                             } else {
                                 S::reset_frame_deadline(&mut next_frame_deadline);
                             }
@@ -843,7 +843,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
 
                 if windowed_rotation {
-                                windowshader_state.reset_presentation_deadline(&mut next_frame_deadline);
+                                windowshader_state.reset_presentation_deadline();
                             } else {
                                 S::reset_frame_deadline(&mut next_frame_deadline);
                             }
@@ -922,7 +922,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     last_shader_switch += recovery.rotation_shift;
                 }
                 if windowed_rotation {
-                                windowshader_state.reset_presentation_deadline(&mut next_frame_deadline);
+                                windowshader_state.reset_presentation_deadline();
                             } else {
                                 S::reset_frame_deadline(&mut next_frame_deadline);
                             }
@@ -1179,7 +1179,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
 
                                 if windowed_rotation {
-                                windowshader_state.reset_presentation_deadline(&mut next_frame_deadline);
+                                windowshader_state.reset_presentation_deadline();
                             } else {
                                 S::reset_frame_deadline(&mut next_frame_deadline);
                             }
@@ -2029,7 +2029,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             control.diagnostic_checkpoint(7);
             // Dispatch pacing to the owning rendering pipeline.
             if windowed_rotation {
-                windowshader_state.pace_presented_frame(&mut next_frame_deadline, frame_duration);
+                windowshader_state.pace_presented_frame(frame_duration);
             } else {
                 S::pace_frame(&mut next_frame_deadline, frame_duration);
             }

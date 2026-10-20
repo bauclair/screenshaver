@@ -1811,6 +1811,8 @@ pub(crate) struct WindowshaderFrameLoopState {
     pub(crate) resume_wait_reported: bool,
     // Windowshader's pause interval is owned independently of Wallpaper.
     pause_started: Option<Instant>,
+    // Independent Windowshader pacing deadline; Wallpaper retains its own.
+    next_frame_deadline: Instant,
 }
 
 // Pause-release result: the shared executor applies only the GL animation
@@ -1837,7 +1839,6 @@ impl WindowshaderFrameLoopState {
         configure_pending: bool,
         paused: bool,
         pause_requested: bool,
-        next_frame_deadline: Instant,
         shader_interval: Option<Duration>,
         shader_name: &str,
         policy_id: i64,
@@ -1863,7 +1864,7 @@ impl WindowshaderFrameLoopState {
                     diagnostics.activation_established, configure_pending,
                     presentation.presentation_watchdog_loop_ticks.wrapping_sub(presentation.presentation_watchdog_last_ticks),
                     presentation.presentation_watchdog_swaps.wrapping_sub(presentation.presentation_watchdog_last_swaps),
-                    next_frame_deadline.saturating_duration_since(Instant::now()).as_millis(),
+                    self.next_frame_deadline.saturating_duration_since(Instant::now()).as_millis(),
                 ),
             );
             presentation.presentation_watchdog_last_ticks = presentation.presentation_watchdog_loop_ticks;
@@ -1897,7 +1898,7 @@ impl WindowshaderFrameLoopState {
             presentation.windowshader_summary_at = Instant::now();
         }
     }
-    pub(crate) fn new(shader_switch: Instant, configure_count: u64) -> Self {
+    pub(crate) fn new(shader_switch: Instant, configure_count: u64, next_frame_deadline: Instant) -> Self {
         Self {
             callback_stall: WindowshaderCallbackStallClock::default(),
             rotation: WindowshaderRotationClockState::new(shader_switch),
@@ -1906,6 +1907,7 @@ impl WindowshaderFrameLoopState {
             resume_presentation_pending: false,
             resume_wait_reported: false,
             pause_started: None,
+            next_frame_deadline,
         }
     }
 
@@ -1954,12 +1956,12 @@ impl WindowshaderFrameLoopState {
     // The Windowshader controller owns its presentation deadline operations.
     // These preserve the existing pacing algorithm and are only invoked after
     // compositor-authorized presentation, or on an explicit timing reset.
-    pub(crate) fn reset_presentation_deadline(&mut self, deadline: &mut Instant) {
-        reset_frame_deadline(deadline);
+    pub(crate) fn reset_presentation_deadline(&mut self) {
+        reset_frame_deadline(&mut self.next_frame_deadline);
     }
 
-    pub(crate) fn pace_presented_frame(&mut self, deadline: &mut Instant, frame_duration: Duration) {
-        pace_next_frame(deadline, frame_duration);
+    pub(crate) fn pace_presented_frame(&mut self, frame_duration: Duration) {
+        pace_next_frame(&mut self.next_frame_deadline, frame_duration);
     }
 
     // Frame-loop scheduling remains compositor-authoritative. A blocked
