@@ -1795,7 +1795,6 @@ pub(crate) enum WindowshaderFrameEligibility {
         post_pause_warning: bool,
     },
     Ready {
-        callback_recovered: bool,
         inactive_since: Option<Instant>,
     },
 }
@@ -1969,17 +1968,6 @@ impl WindowshaderFrameLoopState {
         wait_for_blocked_frame_callback();
     }
 
-    // The owning controller reports the transition back to eligibility.
-    // Reporting does not grant callback readiness or alter timing anchors.
-    pub(crate) fn report_callback_recovered(&self, recovered: bool) {
-        if recovered {
-            crate::logger::warning(
-                &crate::locate_paths::runtime_log_path(),
-                "[WINDOWSHADER_RESUME_DIAG] Outstanding frame callback delivered; presentation eligible",
-            );
-        }
-    }
-
     pub(crate) fn assess_frame_eligibility(
         &mut self,
         compositor_ready: bool,
@@ -1988,7 +1976,15 @@ impl WindowshaderFrameLoopState {
     ) -> WindowshaderFrameEligibility {
         if compositor_ready {
             let (callback_recovered, inactive_since) = self.on_callback_ready(windowed);
-            WindowshaderFrameEligibility::Ready { callback_recovered, inactive_since }
+            // Recovery reporting belongs to the same controller decision that
+            // observes compositor readiness. It never grants frame eligibility.
+            if callback_recovered {
+                crate::logger::warning(
+                    &crate::locate_paths::runtime_log_path(),
+                    "[WINDOWSHADER_RESUME_DIAG] Outstanding frame callback delivered; presentation eligible",
+                );
+            }
+            WindowshaderFrameEligibility::Ready { inactive_since }
         } else {
             let (initial_warning, recurring_warning, post_pause_warning) =
                 self.on_callback_blocked(shader_interval, windowed);

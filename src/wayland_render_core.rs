@@ -914,15 +914,14 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 return Ok(FrameLoopAction::Continue);
             }
 
-            let (callback_recovered, inactive_since) = match frame_eligibility {
+            let inactive_since = match frame_eligibility {
                 crate::wayland_windowshader::WindowshaderFrameEligibility::Ready {
-                    callback_recovered, inactive_since,
-                } => (callback_recovered, inactive_since),
+                    inactive_since,
+                } => inactive_since,
                 crate::wayland_windowshader::WindowshaderFrameEligibility::Blocked { .. } => {
                     unreachable!("blocked callback returns before rendering")
                 }
             };
-            windowshader_state.report_callback_recovered(callback_recovered);
 
             // Windowshader owns the callback-recovery clock accounting.
             // Render Core retains the shared animation/FPS reset operations.
