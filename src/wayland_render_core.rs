@@ -956,7 +956,9 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                         "[WINDOWSHADER_RESUME_DIAG] Post-pause presentation blocked by outstanding frame callback",
                     );
                 }
-                thread::sleep(Duration::from_millis(10));
+                // Windowshader owns callback-blocked pacing; the compositor remains
+                // the sole authority for permitting the next frame.
+                crate::wayland_windowshader::wait_for_blocked_frame_callback();
                 return Ok(FrameLoopAction::Continue);
             }
 

@@ -1780,6 +1780,12 @@ impl WindowshaderPresentationDiagnostics {
 }
 
 
+// Windowshader-owned callback wait policy. Do not infer readiness from the
+// timeout: the next iteration must dispatch and check wl_surface.frame again.
+pub(crate) fn wait_for_blocked_frame_callback() {
+    std::thread::sleep(Duration::from_millis(10));
+}
+
 // A pipeline-owned assessment of compositor callback eligibility. This is
 // bookkeeping only: wl_surface.frame Done remains the sole readiness authority.
 pub(crate) enum WindowshaderFrameEligibility {
