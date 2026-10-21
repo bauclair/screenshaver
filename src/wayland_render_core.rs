@@ -228,6 +228,30 @@ impl SharedFrameContext {
         Self { gl, pipeline }
     }
 
+    // Pipeline-neutral frame execution boundaries.  The owning pipeline
+    // remains responsible for callback eligibility, diagnostics, pause state,
+    // accounting and pacing.  In particular, this never requests or fabricates
+    // a Wayland frame callback.
+    fn begin_frame_gpu_measurement(&self) {
+        self.gl.begin_gpu_frame();
+    }
+
+    fn finish_frame_gpu_measurement(&self) {
+        self.gl.end_gpu_frame_before_presentation();
+    }
+
+    fn present_frame(
+        &self,
+        display: EglDisplay,
+        surface: *mut std::ffi::c_void,
+    ) -> Result<Duration, String> {
+        present_egl_frame_target(display, surface)
+    }
+
+    fn completed_frame_gpu_duration(&self) -> Duration {
+        self.gl.completed_gpu_frame_duration()
+    }
+
     fn release(&mut self) {
         // Post-processing targets and textures must be destroyed before the
         // shader program and timing objects, while EGL is still current.
@@ -1502,7 +1526,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 start_time.elapsed();
 
 
-            frame_context.gl.begin_gpu_frame();
+            frame_context.begin_frame_gpu_measurement();
 
             audio_demand.set_required(
                 audio_required
@@ -1833,10 +1857,10 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 // xdg_toplevel on an inactive workspace may block for seconds
                 // in eglSwapBuffers(); that presentation wait is not shader
                 // rendering cost.
-                frame_context.gl.end_gpu_frame_before_presentation();
+                frame_context.finish_frame_gpu_measurement();
 
                 control.diagnostic_checkpoint(5);
-                let presentation_duration = present_egl_frame_target(display, egl_target.surface)?;
+                let presentation_duration = frame_context.present_frame(display, egl_target.surface)?;
 
                 control.diagnostic_checkpoint(6);
                 state.on_frame_swap_completed(native_target.info.registry_name);
@@ -1905,7 +1929,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             }
 
 
-            let gpu_render_duration = frame_context.gl.completed_gpu_frame_duration();
+            let gpu_render_duration = frame_context.completed_frame_gpu_duration();
 
             let performance_status =
                 frame_times.record(
