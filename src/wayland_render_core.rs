@@ -252,6 +252,42 @@ impl SharedFrameContext {
         self.gl.completed_gpu_frame_duration()
     }
 
+    // Shader-lifecycle boundary: prepare a replacement texture set without
+    // touching the currently active program or texture resources.  The caller
+    // retains ownership of the candidate GL program until commit succeeds.
+    fn prepare_replacement_textures(
+        &self,
+        shader: &ActiveWallpaperShader,
+        runtime: &crate::define_wallpaper::WallpaperRuntime,
+        candidate_program: u32,
+    ) -> Result<crate::manage_textures::TextureManager, String> {
+        let mut candidate = crate::manage_textures::TextureManager::new(
+            runtime.texture_policy.clone(),
+        );
+        if let Err(error) = candidate.prepare_for_policy_with_path(
+            shader.policy_id,
+            &shader.shader_name,
+            Some(shader.source_path.as_path()),
+            shader.channel_usage,
+        ) {
+            candidate.delete_all();
+            return Err(error);
+        }
+        candidate.configure_program(candidate_program);
+        Ok(candidate)
+    }
+
+    // The candidate program and textures are already prepared.  Preserve the
+    // established commit ordering: retire old textures, then old program.
+    fn commit_shader_replacement(
+        &mut self,
+        candidate_program: u32,
+        candidate_textures: crate::manage_textures::TextureManager,
+    ) {
+        self.pipeline.commit_textures(candidate_textures);
+        self.gl.replace_program(candidate_program);
+    }
+
     fn release(&mut self) {
         // Post-processing targets and textures must be destroyed before the
         // shader program and timing objects, while EGL is still current.
@@ -1157,64 +1193,26 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                             Ok(
                                 next_program
                             ) => {
-                                let mut next_texture_manager =
-                                    crate::manage_textures::TextureManager::new(
-                                        runtime.texture_policy.clone()
-                                    );
-
-
-                                if let Err(
-                                    error
-                                ) =
-                                    next_texture_manager.prepare_for_policy_with_path(
-                                        next_shader.policy_id,
-                                        &next_shader.shader_name,
-                                        Some(
-                                            next_shader.source_path.as_path()
-                                        ),
-                                        next_shader.channel_usage,
+                                let next_texture_manager = match frame_context
+                                    .prepare_replacement_textures(
+                                        &next_shader,
+                                        runtime,
+                                        next_program,
                                     )
                                 {
-                                    println!(
-                                        "Wallpaper shader texture preparation failed; keeping the current shader:"
-                                    );
-
-
-                                    println!(
-                                        "    Shader: {}",
-                                        next_shader.shader_name
-                                    );
-
-
-                                    println!(
-                                        "    Error: {}",
-                                        error
-                                    );
-
-
-                                    println!();
-
-
-                                    unsafe {
-                                        gl::DeleteProgram(
-                                            next_program
+                                    Ok(textures) => textures,
+                                    Err(error) => {
+                                        println!(
+                                            "Wallpaper shader texture preparation failed; keeping the current shader:"
                                         );
+                                        println!("    Shader: {}", next_shader.shader_name);
+                                        println!("    Error: {}", error);
+                                        println!();
+                                        unsafe { gl::DeleteProgram(next_program); }
+                                        shader_manager.remove_shader(&next_shader.manager_name);
+                                        return Ok(FrameLoopAction::Continue);
                                     }
-
-
-                                    shader_manager.remove_shader(
-                                        &next_shader.manager_name
-                                    );
-
-
-                                    return Ok(FrameLoopAction::Continue);
-                                }
-
-
-                                next_texture_manager.configure_program(
-                                    next_program
-                                );
-
+                                };
 
                                 unsafe {
                                     gl::UseProgram(
@@ -1257,10 +1255,10 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                     )?;
 
 
-                                frame_context.pipeline.commit_textures(next_texture_manager);
-
-
-                                frame_context.gl.replace_program(next_program);
+                                frame_context.commit_shader_replacement(
+                                    next_program,
+                                    next_texture_manager,
+                                );
 
 
                                 i_time =
