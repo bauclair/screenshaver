@@ -349,6 +349,24 @@ impl SharedFrameAccountingState {
     }
 }
 
+// Stage 4B-5D: persistent active-policy/shader selection state. The shared
+// renderer still performs the GL replacement; this object records the accepted
+// shader only after the replacement has succeeded. Wallpaper and Windowshader
+// retain their existing selection and scheduling behavior.
+struct SharedActiveShaderState {
+    current: ActiveWallpaperShader,
+}
+
+impl SharedActiveShaderState {
+    fn new(initial: ActiveWallpaperShader) -> Self {
+        Self { current: initial }
+    }
+
+    fn accept_replacement(&mut self, shader: ActiveWallpaperShader) {
+        self.current = shader;
+    }
+}
+
 // Common GL entry-point loading; called by each pipeline before frame execution.
 pub(crate) fn prepare_egl_frame_processing() {
     gl::load_with(
@@ -753,15 +771,15 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     let mut frame_accounting = SharedFrameAccountingState::new();
 
 
-    let mut current_shader =
-        active_shader.clone();
+    let mut active_shader_state =
+        SharedActiveShaderState::new(active_shader.clone());
 
 
     // The initial wallpaper has now loaded, compiled, prepared textures,
     // created post-processing pipelines, and resolved its uniforms. Persist
     // Ordered position only after reaching this accepted render state.
     shader_manager.record_rendered_policy(
-        current_shader.policy_id
+        active_shader_state.current.policy_id
     );
 
 
@@ -811,8 +829,8 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 let should_continue = crate::wayland_windowshader::run_windowshader_frame_preflight(
                     windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode"),
                     event_queue, state, native_targets, frame_clock.paused,
-                    control, shader_interval, &current_shader.shader_name,
-                    current_shader.policy_id, frame_context.gl.program, frame_accounting.frame,
+                    control, shader_interval, &active_shader_state.current.shader_name,
+                    active_shader_state.current.policy_id, frame_context.gl.program, frame_accounting.frame,
                     running,
                     |state, native_targets| reconcile_shared_frame_targets(
                         display, context, state, egl_targets, native_targets,
@@ -855,21 +873,21 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     );
 
                 match replacement_texture_manager.prepare_for_policy_with_path(
-                    current_shader.policy_id,
-                    &current_shader.shader_name,
+                    active_shader_state.current.policy_id,
+                    &active_shader_state.current.shader_name,
                     Some(
-                        current_shader.source_path.as_path()
+                        active_shader_state.current.source_path.as_path()
                     ),
-                    current_shader.channel_usage,
+                    active_shader_state.current.channel_usage,
                 ) {
                     Ok(()) => {
                         let replacement_profile =
                             reload.postprocess_policy
                                 .profile_for_policy(
-                                    current_shader.policy_id,
-                                    &current_shader.shader_name,
+                                    active_shader_state.current.policy_id,
+                                    &active_shader_state.current.shader_name,
                                     Some(
-                                        current_shader.source_path.as_path()
+                                        active_shader_state.current.source_path.as_path()
                                     ),
                                 );
 
@@ -949,10 +967,10 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                             animation_speed =
                                 reload.animation_speed_policy
                                     .animation_speed_for_policy(
-                                        current_shader.policy_id,
-                                        &current_shader.shader_name,
+                                        active_shader_state.current.policy_id,
+                                        &active_shader_state.current.shader_name,
                                         Some(
-                                            current_shader.source_path.as_path()
+                                            active_shader_state.current.source_path.as_path()
                                         ),
                                         None,
                                     );
@@ -960,10 +978,10 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                             rendered_fps =
                                 reload.fps_policy
                                     .rendered_fps_for_policy(
-                                        current_shader.policy_id,
-                                        &current_shader.shader_name,
+                                        active_shader_state.current.policy_id,
+                                        &active_shader_state.current.shader_name,
                                         Some(
-                                            current_shader.source_path.as_path()
+                                            active_shader_state.current.source_path.as_path()
                                         ),
                                         None,
                                     );
@@ -989,7 +1007,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                 &mut notification_state,
                                 false,
                                 runtime.notifications,
-                                &current_shader,
+                                &active_shader_state.current,
                                 &frame_context.pipeline.textures,
                                 rendered_fps,
                                 animation_speed,
@@ -1101,7 +1119,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     .expect("Windowshader controller exists only in Windowed mode")
                     .authorize_windowshader_frame(
                         control, state, native_targets, shader_interval, frame_clock.animation_started, frame_clock.paused,
-                        &current_shader.shader_name, current_shader.policy_id,
+                        &active_shader_state.current.shader_name, active_shader_state.current.policy_id,
                         frame_context.gl.program,
                     ) else {
                     return Ok(FrameLoopAction::Continue);
@@ -1285,11 +1303,10 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                             }
 
 
-                                current_shader =
-                                    next_shader.clone();
+                                active_shader_state.accept_replacement(next_shader.clone());
                                 if windowed_rotation {
                                     windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").rotation.rotation_succeeded(
-                                        &current_shader.shader_name, current_shader.policy_id, frame_context.gl.program,
+                                        &active_shader_state.current.shader_name, active_shader_state.current.policy_id, frame_context.gl.program,
                                     );
                                 }
 
@@ -1297,10 +1314,10 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                 let postprocess_profile =
                                     runtime.postprocess_policy
                                         .profile_for_policy(
-                                            current_shader.policy_id,
-                                            &current_shader.shader_name,
+                                            active_shader_state.current.policy_id,
+                                            &active_shader_state.current.shader_name,
                                             Some(
-                                                current_shader.source_path.as_path()
+                                                active_shader_state.current.source_path.as_path()
                                             ),
                                         );
 
@@ -1355,14 +1372,14 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
 
                                 runtime.tray_status.set_active(
-                                    current_shader.policy_id,
-                                    current_shader.shader_name.clone(),
-                                    current_shader.source_path.clone(),
+                                    active_shader_state.current.policy_id,
+                                    active_shader_state.current.shader_name.clone(),
+                                    active_shader_state.current.source_path.clone(),
                                 );
 
 
                                 shader_manager.record_rendered_policy(
-                                    current_shader.policy_id
+                                    active_shader_state.current.policy_id
                                 );
 
 
@@ -1377,7 +1394,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                     &mut notification_state,
                                     true,
                                     runtime.notifications,
-                                    &current_shader,
+                                    &active_shader_state.current,
                                     &frame_context.pipeline.textures,
                                     rendered_fps,
                                     animation_speed,
@@ -1942,7 +1959,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                         &mut notification_state,
                         false,
                         runtime.notifications,
-                        &current_shader,
+                        &active_shader_state.current,
                         &frame_context.pipeline.textures,
                         rendered_fps,
                         animation_speed,
