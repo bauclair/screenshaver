@@ -799,33 +799,17 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 S::pump_events(event_queue, state)?;
             }
             control.diagnostic_checkpoint(2);
-            remove_disconnected_targets_from_names(
+            if !reconcile_shared_frame_targets(
                 display,
                 context,
-                state.removed_outputs(),
+                state,
                 egl_targets,
                 native_targets,
                 &mut frame_context.pipeline.postprocess,
-            )?;
-            // Prune records for disconnected outputs after EGL cleanup.
-            state.surfaces().retain(|surface| native_targets.iter().any(|target| target.info.registry_name == surface.registry_name));
-
-            if native_targets
-                .is_empty()
-            {
-                println!(
-                    "All wallpaper outputs have been disconnected."
-                );
-
-
+            )? {
+                println!("All wallpaper outputs have been disconnected.");
                 return Ok(FrameLoopAction::Stop);
             }
-
-
-            apply_pending_target_resizes_from_states(
-                state.surfaces(),
-                native_targets,
-            )?;
 
 
             // Windowshader decides XDG-close and supervisor termination itself.
@@ -2133,6 +2117,35 @@ fn remove_disconnected_targets(
         native_targets,
         postprocess_pipelines,
     )
+}
+
+// Pipeline-neutral target maintenance, invoked after the owning pipeline has
+// dispatched compositor events.  The false result means no presentation
+// targets remain; it does not decide whether a frame is callback-authorized.
+// Preserve the original ordering: destroy disconnected EGL targets, prune
+// surface records, check for zero targets, then apply pending resizes.
+fn reconcile_shared_frame_targets<S: RenderWaylandDispatch>(
+    display: EglDisplay,
+    context: EglContext,
+    state: &mut S,
+    egl_targets: &mut Vec<EglWallpaperTarget>,
+    native_targets: &mut Vec<NativeWallpaperTarget>,
+    postprocess_pipelines: &mut HashMap<u32, crate::postprocess_shader::PostprocessPipeline>,
+) -> Result<bool, String> {
+    remove_disconnected_targets_from_names(
+        display, context, state.removed_outputs(), egl_targets,
+        native_targets, postprocess_pipelines,
+    )?;
+    state.surfaces().retain(|surface| {
+        native_targets.iter().any(|target| {
+            target.info.registry_name == surface.registry_name
+        })
+    });
+    if native_targets.is_empty() {
+        return Ok(false);
+    }
+    apply_pending_target_resizes_from_states(state.surfaces(), native_targets)?;
+    Ok(true)
 }
 
 // Keep EGL cleanup independent of the Wayland event-dispatch state type.
