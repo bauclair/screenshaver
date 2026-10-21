@@ -1612,102 +1612,19 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 )?;
 
 
-                postprocess.bind_scene_target();
-
-
-                let (
-                    scene_width,
-                    scene_height,
-                ) =
-                    postprocess.scene_dimensions();
-
-
-                unsafe {
-                    gl::Disable(
-                        gl::BLEND
-                    );
-
-                    gl::ColorMask(
-                        gl::TRUE,
-                        gl::TRUE,
-                        gl::TRUE,
-                        gl::TRUE,
-                    );
-
-                    gl::ClearColor(
-                        0.0,
-                        0.0,
-                        0.0,
-                        1.0,
-                    );
-
-                    gl::Clear(
-                        gl::COLOR_BUFFER_BIT
-                    );
-
-                    gl::ColorMask(
-                        gl::TRUE,
-                        gl::TRUE,
-                        gl::TRUE,
-                        gl::FALSE,
-                    );
-
-                    gl::UseProgram(
-                        frame_gl.program
-                    );
-                }
-
-
-                frame_pipeline.textures.bind_channels();
-
-
-                unsafe {
-                    set_uniform_1f(
-                        i_time,
-                        elapsed.as_secs_f32()
-                            * animation_speed,
-                    );
-
-                    set_uniform_3f(
-                        i_resolution,
-                        scene_width as f32,
-                        scene_height as f32,
-                        1.0,
-                    );
-
-                    set_uniform_4f(
-                        i_mouse,
-                        0.0,
-                        0.0,
-                        0.0,
-                        0.0,
-                    );
-
-                    set_uniform_1i(
-                        i_frame,
+                execute_shader_scene_frame(
+                    &frame_gl,
+                    &frame_pipeline.textures,
+                    postprocess,
+                    ShaderSceneUniforms {
+                        time: elapsed.as_secs_f32() * animation_speed,
                         frame,
-                    );
-
-                    gl::BindVertexArray(
-                        frame_gl.vertex_array
-                    );
-
-                    gl::DrawArrays(
-                        gl::TRIANGLES,
-                        0,
-                        3,
-                    );
-
-                    gl::ColorMask(
-                        gl::TRUE,
-                        gl::TRUE,
-                        gl::TRUE,
-                        gl::TRUE,
-                    );
-                }
-
-
-                postprocess.present_scene();
+                        i_time,
+                        i_resolution,
+                        i_mouse,
+                        i_frame,
+                    },
+                );
 
                 // Diagnostic only: compose after post-processing, before EGL windowshader_state.presentation.
                 let status_text = crate::renderer_status::enabled()
@@ -2011,6 +1928,48 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 // Stage 4B-5B: context binding and presentation are reusable EGL operations.
 // Wayland frame-callback eligibility and callback requests remain exclusively
 // with the owning pipeline; these helpers never synthesize frame callbacks.
+// Stage 4B-5B: one shared scene executor, independent of Wayland dispatch,
+// frame eligibility, swap scheduling, overlays, and shader rotation policy.
+// The caller must have made the target's EGL context current and resized its
+// post-processing pipeline before entering this function.
+struct ShaderSceneUniforms {
+    time: f32,
+    frame: i32,
+    i_time: i32,
+    i_resolution: i32,
+    i_mouse: i32,
+    i_frame: i32,
+}
+
+fn execute_shader_scene_frame(
+    gl_resources: &SharedFrameGlResources,
+    textures: &crate::manage_textures::TextureManager,
+    postprocess: &mut crate::postprocess_shader::PostprocessPipeline,
+    uniforms: ShaderSceneUniforms,
+) {
+    postprocess.bind_scene_target();
+    let (scene_width, scene_height) = postprocess.scene_dimensions();
+    unsafe {
+        gl::Disable(gl::BLEND);
+        gl::ColorMask(gl::TRUE, gl::TRUE, gl::TRUE, gl::TRUE);
+        gl::ClearColor(0.0, 0.0, 0.0, 1.0);
+        gl::Clear(gl::COLOR_BUFFER_BIT);
+        gl::ColorMask(gl::TRUE, gl::TRUE, gl::TRUE, gl::FALSE);
+        gl::UseProgram(gl_resources.program);
+    }
+    textures.bind_channels();
+    unsafe {
+        set_uniform_1f(uniforms.i_time, uniforms.time);
+        set_uniform_3f(uniforms.i_resolution, scene_width as f32, scene_height as f32, 1.0);
+        set_uniform_4f(uniforms.i_mouse, 0.0, 0.0, 0.0, 0.0);
+        set_uniform_1i(uniforms.i_frame, uniforms.frame);
+        gl::BindVertexArray(gl_resources.vertex_array);
+        gl::DrawArrays(gl::TRIANGLES, 0, 3);
+        gl::ColorMask(gl::TRUE, gl::TRUE, gl::TRUE, gl::TRUE);
+    }
+    postprocess.present_scene();
+}
+
 fn bind_egl_frame_target(display: EglDisplay, context: EglContext, surface: *mut std::ffi::c_void) -> Result<(), String> {
     if unsafe { eglMakeCurrent(display, surface, surface, context) } == EGL_FALSE {
         return Err(egl_failure("eglMakeCurrent"));
