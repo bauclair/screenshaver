@@ -1926,6 +1926,33 @@ pub(crate) enum WindowshaderScheduleReset {
 }
 
 impl WindowshaderFrameLoopState {
+    // Controller-owned event dispatch and callback diagnostics.  This method
+    // never changes frame eligibility or manufactures a callback.
+    pub(crate) fn dispatch_and_observe<S: crate::wayland_wallpaper::RenderWaylandDispatch>(
+        &mut self,
+        event_queue: &mut wayland_client::EventQueue<S>,
+        state: &mut S,
+        native_targets: &[NativeWallpaperTarget],
+        paused: bool,
+        pause_requested: bool,
+        shader_interval: Option<Duration>,
+        shader_name: &str,
+        policy_id: i64,
+        program: u32,
+        frame: i32,
+    ) -> Result<(), String> {
+        pump_windowshader_frame_events(event_queue, state)?;
+        let diagnostics = state.presentation_diagnostics(native_targets);
+        let configure_pending = state.surfaces().iter().any(|surface| {
+            surface.registry_name == 0 && surface.configured.is_some()
+        });
+        self.report_presentation_diagnostics(
+            &diagnostics, configure_pending, paused, pause_requested,
+            shader_interval, shader_name, policy_id, program, frame,
+        );
+        Ok(())
+    }
+
     pub(crate) fn on_schedule_discontinuity(&mut self, _reason: WindowshaderScheduleReset) {
         self.reset_presentation_deadline();
     }

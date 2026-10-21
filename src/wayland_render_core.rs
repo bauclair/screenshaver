@@ -627,33 +627,17 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     let result = loop_driver(&mut || -> Result<FrameLoopAction, String> {
 
             control.diagnostic_checkpoint(1);
-            // The Windowshader controller owns its event-dispatch entry point.
-            // Wallpaper retains its established event-pumping path.
             if windowed_rotation {
-                crate::wayland_windowshader::pump_windowshader_frame_events(event_queue, state)?;
+                windowshader_state.dispatch_and_observe(
+                    event_queue, state, native_targets, paused,
+                    control.pause_requested(), shader_interval,
+                    &current_shader.shader_name, current_shader.policy_id,
+                    frame_gl.program, frame,
+                )?;
             } else {
                 S::pump_events(event_queue, state)?;
             }
-
-
             control.diagnostic_checkpoint(2);
-            if windowed_rotation {
-                let diagnostics = state.presentation_diagnostics(native_targets);
-                let configure_pending = state.surfaces().iter().any(|surface| {
-                    surface.registry_name == 0 && surface.configured.is_some()
-                });
-                windowshader_state.report_presentation_diagnostics(
-                    &diagnostics,
-                    configure_pending,
-                    paused,
-                    control.pause_requested(),
-                    shader_interval,
-                    &current_shader.shader_name,
-                    current_shader.policy_id,
-                    frame_gl.program,
-                    frame,
-                );
-            }
             remove_disconnected_targets_from_names(
                 display,
                 context,
