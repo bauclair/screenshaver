@@ -28,7 +28,6 @@ use wayland_client::Proxy;
 // compositor-authorized frame may proceed; the shared executor only applies
 // clock/FPS effects. This type does not grant frame readiness.
 struct FramePresentationDecision {
-    ready: bool,
     recovery: Option<FrameClockRecovery>,
 }
 
@@ -1034,63 +1033,48 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             // instead of entering a compositor-throttled eglSwapBuffers().
             // Windowshader now owns the entire callback gate/recovery decision.
             // Keep Wallpaper's historical path intact until its own extraction.
-            let presentation = if windowed_rotation {
-                let Some((ready, recovery)) = windowshader_state.as_mut()
+            let (presentation, rotation_requested) = if windowed_rotation {
+                let Some((recovery, rotate)) = windowshader_state.as_mut()
                     .expect("Windowshader controller exists only in Windowed mode")
-                    .evaluate_windowshader_presentation(
+                    .decide_frame_and_rotation(
                         state, native_targets, shader_interval, start_time, paused,
+                        &current_shader.shader_name, current_shader.policy_id,
+                        frame_gl.program,
                     ) else {
                     return Ok(FrameLoopAction::Continue);
                 };
-                FramePresentationDecision {
-                    ready,
+                (FramePresentationDecision {
                     recovery: recovery.map(|shift| FrameClockRecovery {
                         rotation_shift: shift.rotation_shift,
                         animation_shift: shift.animation_shift,
                     }),
-                }
+                }, rotate)
             } else {
                 let Some(recovery) = wallpaper_callbacks.evaluate(
                     state, native_targets, last_shader_switch, start_time,
                 ) else {
                     return Ok(FrameLoopAction::Continue);
                 };
-                FramePresentationDecision {
-                    ready: true,
+                (FramePresentationDecision {
                     recovery: recovery.map(|(rotation_shift, animation_shift)| FrameClockRecovery {
                         rotation_shift,
                         animation_shift,
                     }),
-                }
+                }, !paused && shader_interval.is_some_and(|interval| last_shader_switch.elapsed() >= interval))
             };
 
-            // Only the shared animation/FPS effects remain in Render Core.
+            // Render Core applies only shared animation/FPS accounting.
+            // Windowshader has already reset its own deadline on recovery.
             if let Some(recovery) = presentation.recovery {
                 start_time += recovery.animation_shift;
                 if !windowed_rotation {
                     last_shader_switch += recovery.rotation_shift;
                     S::reset_frame_deadline(&mut next_frame_deadline);
-                } else {
-                    windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").on_schedule_discontinuity(
-                        crate::wayland_windowshader::WindowshaderScheduleReset::CallbackRecovery,
-                    );
                 }
                 frame_times.clear();
                 fps_warning_state = crate::fps_monitor::FpsWarningState::Normal;
             }
 
-            // The controller makes Windowshader's due/attempt decision only
-            // after compositor callback eligibility has been established.
-            let rotation_requested = if paused {
-                false
-            } else if windowed_rotation {
-                windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").begin_due_rotation(
-                    shader_interval, &current_shader.shader_name,
-                    current_shader.policy_id, presentation.ready, frame_gl.program,
-                )
-            } else {
-                shader_interval.is_some_and(|interval| last_shader_switch.elapsed() >= interval)
-            };
             if rotation_requested {
                 if !windowed_rotation {
                     last_shader_switch = Instant::now();

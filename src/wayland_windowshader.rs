@@ -2090,6 +2090,33 @@ impl WindowshaderFrameLoopState {
         Some((ready, recovery))
     }
 
+    // Consolidated Windowshader scheduling decision: callback authorization,
+    // recovery, and rotation eligibility are evaluated in controller order.
+    // A blocked callback returns None; no timer or activation signal can
+    // manufacture frame readiness.
+    pub(crate) fn decide_frame_and_rotation<S: crate::wayland_wallpaper::RenderWaylandDispatch>(
+        &mut self,
+        state: &mut S,
+        targets: &[NativeWallpaperTarget],
+        interval: Option<Duration>,
+        animation_anchor: Instant,
+        paused: bool,
+        shader_name: &str,
+        policy_id: i64,
+        program: u32,
+    ) -> Option<(Option<WindowshaderCallbackRecovery>, bool)> {
+        let (ready, recovery) = self.evaluate_windowshader_presentation(
+            state, targets, interval, animation_anchor, paused,
+        )?;
+        if recovery.is_some() {
+            self.on_schedule_discontinuity(WindowshaderScheduleReset::CallbackRecovery);
+        }
+        let rotate = !paused && self.begin_due_rotation(
+            interval, shader_name, policy_id, ready, program,
+        );
+        Some((recovery, rotate))
+    }
+
     // The controller chooses the rotation anchor; the caller applies only
     // shared animation/FPS effects returned by the existing recovery policy.
     pub(crate) fn recover_presentation_clock(
