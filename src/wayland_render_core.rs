@@ -669,14 +669,21 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     // never synthesize a wl_surface.frame completion after a screensaver pause.
     // Windowshader owns its callback, rotation and presentation bookkeeping.
     // Keep it grouped while the shared GL frame executor is extracted in stages.
-    let mut windowshader_state = crate::wayland_windowshader::WindowshaderFrameLoopState::new(
-        last_shader_switch,
-        state.presentation_diagnostics(native_targets).configure_count,
-        next_frame_deadline,
-    );
-    let mut wallpaper_callbacks = WallpaperCallbackController::new();
     let windowed_rotation = runtime.display_format
         == crate::manage_configuration::WallpaperDisplayFormat::Windowed;
+    // A Wallpaper run must never construct or advance Windowshader control state.
+    // This is a temporary boundary until the Windowshader loop is fully moved
+    // into wayland_windowshader.rs; the shared renderer still executes frames.
+    let mut windowshader_state = if windowed_rotation {
+        Some(crate::wayland_windowshader::WindowshaderFrameLoopState::new(
+            last_shader_switch,
+            state.presentation_diagnostics(native_targets).configure_count,
+            next_frame_deadline,
+        ))
+    } else {
+        None
+    };
+    let mut wallpaper_callbacks = WallpaperCallbackController::new();
 
 
     let status_pipeline = if runtime.display_format
@@ -696,7 +703,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
             control.diagnostic_checkpoint(1);
             if windowed_rotation {
-                windowshader_state.dispatch_and_observe(
+                windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").dispatch_and_observe(
                     event_queue, state, native_targets, paused,
                     control.pause_requested(), shader_interval,
                     &current_shader.shader_name, current_shader.policy_id,
@@ -886,7 +893,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                 );
 
                             if windowed_rotation {
-                                windowshader_state.on_schedule_discontinuity(
+                                windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").on_schedule_discontinuity(
                                     crate::wayland_windowshader::WindowshaderScheduleReset::PolicyOrShaderChange,
                                 );
                             } else {
@@ -936,7 +943,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                         state.on_pause_entering();
                         control.diagnostic_checkpoint(8);
                         state.on_pause_entered(native_targets);
-                        windowshader_state.enter_pause(control, status_enabled);
+                        windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").enter_pause(control, status_enabled);
                     } else {
                         crate::logger::warning(
                             &crate::locate_paths::runtime_log_path(),
@@ -971,7 +978,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 // Windowshader owns its pause-release decision and rotation
                 // adjustment; Render Core applies only the animation shift.
                 let windowshader_release = if windowed_rotation {
-                    Some(windowshader_state.finish_pause(pause_ended_at))
+                    Some(windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").finish_pause(pause_ended_at))
                 } else {
                     None
                 };
@@ -992,7 +999,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
                 frame_times.clear();
                 // The pause has ended even if the compositor has not yet
-                // allowed another windowshader_state.presentation. Keep the separate pending
+                // allowed another windowshader presentation. Keep the separate pending
                 // flag until a successful EGL swap acknowledges resumption.
                 paused = false;
                 if windowshader_release.is_some_and(|release| release.notify_dispatch) {
@@ -1014,7 +1021,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             // Windowshader now owns the entire callback gate/recovery decision.
             // Keep Wallpaper's historical path intact until its own extraction.
             let (windowed_frame_ready, callback_recovery) = if windowed_rotation {
-                let Some(decision) = windowshader_state.evaluate_windowshader_presentation(
+                let Some(decision) = windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").evaluate_windowshader_presentation(
                     state, native_targets, shader_interval, start_time, paused,
                 ) else {
                     return Ok(FrameLoopAction::Continue);
@@ -1044,7 +1051,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     last_shader_switch += recovery.rotation_shift;
                     S::reset_frame_deadline(&mut next_frame_deadline);
                 } else {
-                    windowshader_state.on_schedule_discontinuity(
+                    windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").on_schedule_discontinuity(
                         crate::wayland_windowshader::WindowshaderScheduleReset::CallbackRecovery,
                     );
                 }
@@ -1057,7 +1064,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             let rotation_requested = if paused {
                 false
             } else if windowed_rotation {
-                windowshader_state.begin_due_rotation(
+                windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").begin_due_rotation(
                     shader_interval, &current_shader.shader_name,
                     current_shader.policy_id, windowed_frame_ready, frame_gl.program,
                 )
@@ -1265,7 +1272,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
 
                                 if windowed_rotation {
-                                windowshader_state.on_schedule_discontinuity(
+                                windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").on_schedule_discontinuity(
                                     crate::wayland_windowshader::WindowshaderScheduleReset::PolicyOrShaderChange,
                                 );
                             } else {
@@ -1276,7 +1283,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                 current_shader =
                                     next_shader.clone();
                                 if windowed_rotation {
-                                    windowshader_state.rotation.rotation_succeeded(
+                                    windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").rotation.rotation_succeeded(
                                         &current_shader.shader_name, current_shader.policy_id, frame_gl.program,
                                     );
                                 }
@@ -1415,7 +1422,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                 error
                             ) => {
                                 if windowed_rotation {
-                                    windowshader_state.rotation.rotation_compilation_failed(
+                                    windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").rotation.rotation_compilation_failed(
                                         &next_shader.shader_name, &error.to_string(),
                                     );
                                 }
@@ -1451,7 +1458,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                         error
                     ) => {
                         if windowed_rotation {
-                            windowshader_state.rotation.rotation_selection_failed(&error.to_string());
+                            windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").rotation.rotation_selection_failed(&error.to_string());
                         }
                         println!(
                             "Wallpaper shader selection failed; keeping the current shader:"
@@ -1680,7 +1687,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     },
                 );
 
-                // Diagnostic only: compose after post-processing, before EGL windowshader_state.presentation.
+                // Diagnostic only: compose after post-processing, before EGL windowshader presentation.
                 let status_text = crate::renderer_status::enabled()
                     .then(crate::renderer_status::panel_text);
                 renderer_status_panels
@@ -1815,7 +1822,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 // Pipeline-specific presentation accounting belongs to the
                 // Windowshader controller; Wallpaper retains its own heartbeat.
                 let publish_rendering = if windowed_rotation {
-                    windowshader_state.record_windowshader_swap_and_check_status(
+                    windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").record_windowshader_swap_and_check_status(
                         paused, status_heartbeat.elapsed(),
                     )
                 } else {
@@ -1857,7 +1864,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             // Windowshader owns its post-pause presentation acknowledgment.
             // Wallpaper retains its existing local paused-state transition.
             let presentation_resumed = if windowed_rotation {
-                windowshader_state.complete_presented_frame(paused)
+                windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").complete_presented_frame(paused)
             } else {
                 paused
             };
@@ -1949,7 +1956,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             control.diagnostic_checkpoint(7);
             // Dispatch pacing to the owning rendering pipeline.
             if windowed_rotation {
-                windowshader_state.finish_frame(frame_duration);
+                windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").finish_frame(frame_duration);
             } else {
                 S::pace_frame(&mut next_frame_deadline, frame_duration);
             }
