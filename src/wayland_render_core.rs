@@ -433,6 +433,27 @@ pub(crate) fn prepare_egl_frame_processing() {
 
 }
 
+// Shared policy-reload preparation transaction. The candidate texture manager
+// remains isolated from the active rendering context until the caller commits
+// it after the post-processing profile has been applied successfully.
+// Windowshader owns *when* a reload is requested; this function owns only
+// the reusable, pipeline-neutral preparation operation.
+fn prepare_shared_policy_reload_textures(
+    reload: &crate::manage_wallpaper_runtime::WallpaperPolicyReload,
+    shader: &ActiveWallpaperShader,
+) -> Result<crate::manage_textures::TextureManager, String> {
+    let mut candidate = crate::manage_textures::TextureManager::new(
+        reload.texture_policy.clone(),
+    );
+    candidate.prepare_for_policy_with_path(
+        shader.policy_id,
+        &shader.shader_name,
+        Some(shader.source_path.as_path()),
+        shader.channel_usage,
+    )?;
+    Ok(candidate)
+}
+
 // Stage 2D-2C Step 16 (consolidated): execution-loop drivers are owned by
 // the presentation pipeline. Render Core provides one reusable frame step.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -914,20 +935,11 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 control.take_policy_reload()
             };
             if let Some(reload) = pending_policy_reload {
-                let mut replacement_texture_manager =
-                    crate::manage_textures::TextureManager::new(
-                        reload.texture_policy.clone()
-                    );
-
-                match replacement_texture_manager.prepare_for_policy_with_path(
-                    frame_runtime.shader.current.policy_id,
-                    &frame_runtime.shader.current.shader_name,
-                    Some(
-                        frame_runtime.shader.current.source_path.as_path()
-                    ),
-                    frame_runtime.shader.current.channel_usage,
+                match prepare_shared_policy_reload_textures(
+                    &reload,
+                    &frame_runtime.shader.current,
                 ) {
-                    Ok(()) => {
+                    Ok(mut replacement_texture_manager) => {
                         let replacement_profile =
                             reload.postprocess_policy
                                 .profile_for_policy(
