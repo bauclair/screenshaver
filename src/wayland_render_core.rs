@@ -24,6 +24,73 @@ use std::sync::atomic::Ordering;
 use wayland_client::Proxy;
 
 
+// Wallpaper's compositor callback accounting is independent of Windowshader.
+// This state never grants frame readiness: the dispatch implementation must
+// first observe the real wl_surface.frame Done event.
+struct WallpaperCallbackController {
+    inactive_since: Option<Instant>,
+    warned: bool,
+    last_report: Option<Instant>,
+}
+
+impl WallpaperCallbackController {
+    fn new() -> Self {
+        Self { inactive_since: None, warned: false, last_report: None }
+    }
+
+    // Returns None when the compositor has not authorized another frame.
+    // Recovery shifts are returned to the Wallpaper clock owner; this
+    // controller never changes Windowshader's rotation or presentation state.
+    fn evaluate<S: RenderWaylandDispatch>(
+        &mut self,
+        state: &mut S,
+        targets: &[NativeWallpaperTarget],
+        shader_anchor: Instant,
+        animation_anchor: Instant,
+    ) -> Option<Option<(Duration, Duration)>> {
+        if !state.frames_ready_for_presentation(targets) {
+            let started = *self.inactive_since.get_or_insert_with(Instant::now);
+            let elapsed = started.elapsed();
+            if !self.warned && elapsed >= Duration::from_millis(1500) {
+                self.warned = true;
+                let outstanding = state.outstanding_frame_callbacks(targets);
+                crate::logger::warning(
+                    &crate::locate_paths::runtime_log_path(),
+                    &format!("[WALLPAPER_CALLBACK_DIAG] Frame callback outstanding >1500ms; targets={outstanding:?}"),
+                );
+            }
+            if elapsed >= Duration::from_secs(10)
+                && self.last_report.is_none_or(|at| at.elapsed() >= Duration::from_secs(10))
+            {
+                self.last_report = Some(Instant::now());
+                let outstanding = state.outstanding_frame_callbacks(targets);
+                state.log_outstanding_callback_details(&outstanding);
+                crate::logger::warning(
+                    &crate::locate_paths::runtime_log_path(),
+                    &format!("[WALLPAPER_CALLBACK_DIAG] Callback stall persists: targets={outstanding:?}, wait_ms={}", elapsed.as_millis()),
+                );
+            }
+            thread::sleep(Duration::from_millis(10));
+            return None;
+        }
+
+        self.warned = false;
+        self.last_report = None;
+        let Some(inactive_since) = self.inactive_since.take() else {
+            return Some(None);
+        };
+        let elapsed = inactive_since.elapsed();
+        if elapsed < Duration::from_millis(250) {
+            return Some(None);
+        }
+        // Wallpaper's historical callback recovery has no windowed pause
+        // interval to exclude. Cap shifts to each clock's elapsed lifetime.
+        let rotation_shift = elapsed.min(shader_anchor.elapsed());
+        let animation_shift = elapsed.min(animation_anchor.elapsed());
+        Some(Some((rotation_shift, animation_shift)))
+    }
+}
+
 // Stage 4B-5A2: shared GL resources also own the active shader program.
 // Texture, post-processing, and frame control remain unchanged. Shader program
 // replacement is committed only after preparation of the next shader.
@@ -607,6 +674,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
         state.presentation_diagnostics(native_targets).configure_count,
         next_frame_deadline,
     );
+    let mut wallpaper_callbacks = WallpaperCallbackController::new();
     let windowed_rotation = runtime.display_format
         == crate::manage_configuration::WallpaperDisplayFormat::Windowed;
 
@@ -953,18 +1021,20 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 };
                 decision
             } else {
-                let ready = state.frames_ready_for_presentation(native_targets);
-                let Some(inactive_since) = windowshader_state.await_presentation_eligibility(
-                    state, native_targets, ready, shader_interval, false,
+                let Some(recovery) = wallpaper_callbacks.evaluate(
+                    state, native_targets, last_shader_switch, start_time,
                 ) else {
                     return Ok(FrameLoopAction::Continue);
                 };
-                let activated = state.presentation_diagnostics(native_targets).activated;
-                let recovery = windowshader_state.recover_presentation_clock(
-                    inactive_since, last_shader_switch, start_time,
-                    false, ready, paused, activated,
-                );
-                (ready, recovery)
+                // Adapt Wallpaper-owned recovery to the shared animation/FPS
+                // accounting below without borrowing Windowshader state.
+                let recovery = recovery.map(|(rotation_shift, animation_shift)| {
+                    crate::wayland_windowshader::WindowshaderCallbackRecovery {
+                        rotation_shift,
+                        animation_shift,
+                    }
+                });
+                (true, recovery)
             };
 
             // Only the shared animation/FPS effects remain in Render Core.
