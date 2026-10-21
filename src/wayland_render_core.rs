@@ -905,9 +905,15 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             }
 
 
-            if let Some(reload) =
+            // Windowshader owns consumption of its pending policy-reload request.
+            // Wallpaper keeps its existing control path. The shared executor
+            // still performs the transactional GL/policy application below.
+            let pending_policy_reload = if windowed_rotation {
+                crate::wayland_windowshader::take_windowshader_policy_reload(control)
+            } else {
                 control.take_policy_reload()
-            {
+            };
+            if let Some(reload) = pending_policy_reload {
                 let mut replacement_texture_manager =
                     crate::manage_textures::TextureManager::new(
                         reload.texture_policy.clone()

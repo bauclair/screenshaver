@@ -142,6 +142,16 @@ fn drive_windowshader_frame_loop(
     }
 }
 
+// Windowshader owns the policy-reload request boundary. This consumes at most
+// one pending request per frame iteration, before pause and callback gating,
+// preserving policy updates even while a workspace is not being presented.
+// GL resource changes remain transactional in the shared frame executor.
+pub(crate) fn take_windowshader_policy_reload(
+    control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+) -> Option<crate::manage_wallpaper_runtime::WallpaperPolicyReload> {
+    control.take_policy_reload()
+}
+
 // Stage 4B-1: pipeline-owned Wayland event dispatch and shutdown policy.
 // This is deliberately independent of the GL executor. It never marks a
 // frame ready, requests a synthetic callback, or uses XDG activation as
