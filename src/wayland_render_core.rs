@@ -252,6 +252,17 @@ impl SharedFrameContext {
         self.gl.completed_gpu_frame_duration()
     }
 
+    // Resolve all standard uniforms for a candidate program before replacing
+    // the active program. Preserve lookup order and propagate failures.
+    fn shader_uniform_locations(program: u32) -> Result<(i32, i32, i32, i32), String> {
+        Ok((
+            uniform_location(program, "iTime")?,
+            uniform_location(program, "iResolution")?,
+            uniform_location(program, "iMouse")?,
+            uniform_location(program, "iFrame")?,
+        ))
+    }
+
     // Shader-lifecycle boundary: prepare a replacement texture set without
     // touching the currently active program or texture resources.  The caller
     // retains ownership of the candidate GL program until commit succeeds.
@@ -692,32 +703,8 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
         Instant::now();
 
 
-    let mut i_time =
-        uniform_location(
-            frame_context.gl.program,
-            "iTime",
-        )?;
-
-
-    let mut i_resolution =
-        uniform_location(
-            frame_context.gl.program,
-            "iResolution",
-        )?;
-
-
-    let mut i_mouse =
-        uniform_location(
-            frame_context.gl.program,
-            "iMouse",
-        )?;
-
-
-    let mut i_frame =
-        uniform_location(
-            frame_context.gl.program,
-            "iFrame",
-        )?;
+    let (mut i_time, mut i_resolution, mut i_mouse, mut i_frame) =
+        SharedFrameContext::shader_uniform_locations(frame_context.gl.program)?;
 
 
     let mut start_time =
@@ -1227,32 +1214,8 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                 );
 
 
-                                let next_i_time =
-                                    uniform_location(
-                                        next_program,
-                                        "iTime",
-                                    )?;
-
-
-                                let next_i_resolution =
-                                    uniform_location(
-                                        next_program,
-                                        "iResolution",
-                                    )?;
-
-
-                                let next_i_mouse =
-                                    uniform_location(
-                                        next_program,
-                                        "iMouse",
-                                    )?;
-
-
-                                let next_i_frame =
-                                    uniform_location(
-                                        next_program,
-                                        "iFrame",
-                                    )?;
+                                let (next_i_time, next_i_resolution, next_i_mouse, next_i_frame) =
+                                    SharedFrameContext::shader_uniform_locations(next_program)?;
 
 
                                 frame_context.commit_shader_replacement(
