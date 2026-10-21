@@ -214,6 +214,29 @@ impl SharedFramePipelineResources {
     }
 }
 
+// Stage 4B-5C: persistent EGL-frame resource context.  This owns only
+// pipeline-neutral GL objects.  Callback eligibility, rotation scheduling,
+// pause/resume and dispatch remain with their respective controllers.
+// Explicit release is required while the EGL context is current.
+struct SharedFrameContext {
+    gl: SharedFrameGlResources,
+    pipeline: SharedFramePipelineResources,
+}
+
+impl SharedFrameContext {
+    fn new(gl: SharedFrameGlResources, pipeline: SharedFramePipelineResources) -> Self {
+        Self { gl, pipeline }
+    }
+
+    fn release(&mut self) {
+        // Post-processing targets and textures must be destroyed before the
+        // shader program and timing objects, while EGL is still current.
+        self.pipeline.release();
+        unsafe { gl::UseProgram(0); }
+        self.gl.release();
+    }
+}
+
 // Common GL entry-point loading; called by each pipeline before frame execution.
 pub(crate) fn prepare_egl_frame_processing() {
     gl::load_with(
@@ -441,7 +464,10 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     );
 
 
-    let mut frame_pipeline = SharedFramePipelineResources::new(texture_manager, native_targets.len());
+    let mut frame_context = SharedFrameContext::new(
+        frame_gl,
+        SharedFramePipelineResources::new(texture_manager, native_targets.len()),
+    );
 
     let mut animation_speed =
         runtime.animation_speed_policy
@@ -471,7 +497,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
         true,
         runtime.notifications,
         active_shader,
-        &frame_pipeline.textures,
+        &frame_context.pipeline.textures,
         rendered_fps,
         animation_speed,
         crate::fps_monitor::FpsWarningState::Normal,
@@ -479,11 +505,11 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
 
     unsafe {
-        gl::UseProgram(frame_gl.program);
+        gl::UseProgram(frame_context.gl.program);
     }
 
     crate::apply_shader_inputs::apply(
-        frame_gl.program,
+        frame_context.gl.program,
         &active_shader.shader_inputs,
     );
 
@@ -493,7 +519,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     // compositor may throttle or defer a non-visible xdg_toplevel while its
     // workspace is inactive.  CPU elapsed time across that lifecycle event is
     // not evidence that the shader itself is slow.
-    frame_gl.initialize_timing_queries();
+    frame_context.gl.initialize_timing_queries();
 
     for target in native_targets.iter() {
         let width =
@@ -543,7 +569,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             )?;
 
 
-        frame_pipeline.postprocess.insert(
+        frame_context.pipeline.postprocess.insert(
             target.info.registry_name,
             pipeline,
         );
@@ -608,28 +634,28 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
     let mut i_time =
         uniform_location(
-            frame_gl.program,
+            frame_context.gl.program,
             "iTime",
         )?;
 
 
     let mut i_resolution =
         uniform_location(
-            frame_gl.program,
+            frame_context.gl.program,
             "iResolution",
         )?;
 
 
     let mut i_mouse =
         uniform_location(
-            frame_gl.program,
+            frame_context.gl.program,
             "iMouse",
         )?;
 
 
     let mut i_frame =
         uniform_location(
-            frame_gl.program,
+            frame_context.gl.program,
             "iFrame",
         )?;
 
@@ -720,7 +746,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     event_queue, state, native_targets, paused,
                     control.pause_requested(), shader_interval,
                     &current_shader.shader_name, current_shader.policy_id,
-                    frame_gl.program, frame,
+                    frame_context.gl.program, frame,
                 )?;
             } else {
                 S::pump_events(event_queue, state)?;
@@ -732,7 +758,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 state.removed_outputs(),
                 egl_targets,
                 native_targets,
-                &mut frame_pipeline.postprocess,
+                &mut frame_context.pipeline.postprocess,
             )?;
             // Prune records for disconnected outputs after EGL cleanup.
             state.surfaces().retain(|surface| native_targets.iter().any(|target| target.info.registry_name == surface.registry_name));
@@ -809,7 +835,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                             None;
 
                         for pipeline in
-                            frame_pipeline.postprocess.values_mut()
+                            frame_context.pipeline.postprocess.values_mut()
                         {
                             if let Err(error) =
                                 pipeline.set_profile(
@@ -832,10 +858,10 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                             );
                         } else {
                             replacement_texture_manager.configure_program(
-                                frame_gl.program
+                                frame_context.gl.program
                             );
 
-                            frame_pipeline.commit_textures(replacement_texture_manager);
+                            frame_context.pipeline.commit_textures(replacement_texture_manager);
 
                             audio_required =
                                 matches!(
@@ -867,7 +893,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                 audio_motion_state.reset();
 
                                 for pipeline in
-                                    frame_pipeline.postprocess.values_mut()
+                                    frame_context.pipeline.postprocess.values_mut()
                                 {
                                     pipeline.set_audio_motion_scale(
                                         1.0
@@ -922,7 +948,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                 false,
                                 runtime.notifications,
                                 &current_shader,
-                                &frame_pipeline.textures,
+                                &frame_context.pipeline.textures,
                                 rendered_fps,
                                 animation_speed,
                                 fps_warning_state,
@@ -1030,7 +1056,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     .decide_frame_and_rotation(
                         state, native_targets, shader_interval, start_time, paused,
                         &current_shader.shader_name, current_shader.policy_id,
-                        frame_gl.program,
+                        frame_context.gl.program,
                     ) else {
                     return Ok(FrameLoopAction::Continue);
                 };
@@ -1207,10 +1233,10 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                     )?;
 
 
-                                frame_pipeline.commit_textures(next_texture_manager);
+                                frame_context.pipeline.commit_textures(next_texture_manager);
 
 
-                                frame_gl.replace_program(next_program);
+                                frame_context.gl.replace_program(next_program);
 
 
                                 i_time =
@@ -1279,7 +1305,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                     next_shader.clone();
                                 if windowed_rotation {
                                     windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").rotation.rotation_succeeded(
-                                        &current_shader.shader_name, current_shader.policy_id, frame_gl.program,
+                                        &current_shader.shader_name, current_shader.policy_id, frame_context.gl.program,
                                     );
                                 }
 
@@ -1336,7 +1362,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
 
                                 for pipeline in
-                                    frame_pipeline.postprocess.values_mut()
+                                    frame_context.pipeline.postprocess.values_mut()
                                 {
                                     pipeline.set_profile(
                                         postprocess_profile
@@ -1368,7 +1394,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                     true,
                                     runtime.notifications,
                                     &current_shader,
-                                    &frame_pipeline.textures,
+                                    &frame_context.pipeline.textures,
                                     rendered_fps,
                                     animation_speed,
                                     fps_warning_state,
@@ -1476,7 +1502,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 start_time.elapsed();
 
 
-            frame_gl.begin_gpu_frame();
+            frame_context.gl.begin_gpu_frame();
 
             audio_demand.set_required(
                 audio_required
@@ -1601,7 +1627,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 bind_egl_frame_target(display, context, egl_target.surface)?;
 
                 let postprocess =
-                    frame_pipeline.postprocess
+                    frame_context.pipeline.postprocess
                         .get_mut(
                             &native_target.info.registry_name
                         )
@@ -1669,8 +1695,8 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
 
                 execute_shader_scene_frame(
-                    &frame_gl,
-                    &frame_pipeline.textures,
+                    &frame_context.gl,
+                    &frame_context.pipeline.textures,
                     postprocess,
                     ShaderSceneUniforms {
                         time: elapsed.as_secs_f32() * animation_speed,
@@ -1807,7 +1833,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 // xdg_toplevel on an inactive workspace may block for seconds
                 // in eglSwapBuffers(); that presentation wait is not shader
                 // rendering cost.
-                frame_gl.end_gpu_frame_before_presentation();
+                frame_context.gl.end_gpu_frame_before_presentation();
 
                 control.diagnostic_checkpoint(5);
                 let presentation_duration = present_egl_frame_target(display, egl_target.surface)?;
@@ -1879,7 +1905,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             }
 
 
-            let gpu_render_duration = frame_gl.completed_gpu_frame_duration();
+            let gpu_render_duration = frame_context.gl.completed_gpu_frame_duration();
 
             let performance_status =
                 frame_times.record(
@@ -1933,7 +1959,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                         false,
                         runtime.notifications,
                         &current_shader,
-                        &frame_pipeline.textures,
+                        &frame_context.pipeline.textures,
                         rendered_fps,
                         animation_speed,
                         fps_warning_state,
@@ -1957,16 +1983,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
         });
 
 
-    frame_pipeline.release();
-
-
-    unsafe {
-        gl::UseProgram(
-            0
-        );
-    }
-
-    frame_gl.release();
+    frame_context.release();
 
 
 
