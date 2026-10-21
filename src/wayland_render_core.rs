@@ -675,9 +675,10 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     // This is a temporary boundary until the Windowshader loop is fully moved
     // into wayland_windowshader.rs; the shared renderer still executes frames.
     let mut windowshader_state = if windowed_rotation {
-        Some(crate::wayland_windowshader::WindowshaderFrameLoopState::new(
+        Some(crate::wayland_windowshader::initialize_windowshader_frame_controller(
+            state,
+            native_targets,
             last_shader_switch,
-            state.presentation_diagnostics(native_targets).configure_count,
             next_frame_deadline,
         ))
     } else {

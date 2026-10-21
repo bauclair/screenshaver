@@ -54,6 +54,23 @@ use crate::wayland_wallpaper::{
     configured_dimension,
 };
 
+// Stage 4B-5C incremental ownership transfer: Windowshader constructs its own
+// scheduling controller from compositor dispatch diagnostics. The shared core
+// still holds the controller temporarily until the frame-step closure is split.
+// This helper does not grant callback readiness or alter callback state.
+pub(crate) fn initialize_windowshader_frame_controller<S: crate::wayland_wallpaper::RenderWaylandDispatch>(
+    state: &S,
+    native_targets: &[NativeWallpaperTarget],
+    shader_switch: std::time::Instant,
+    next_frame_deadline: std::time::Instant,
+) -> WindowshaderFrameLoopState {
+    WindowshaderFrameLoopState::new(
+        shader_switch,
+        state.presentation_diagnostics(native_targets).configure_count,
+        next_frame_deadline,
+    )
+}
+
 // Stage 2D-2B Step 1: Windowshader owns the frame-loop entry point.
 // Windowshader owns EGL session acquisition and release; GL frame processing
 // remains shared until the separate rendering loop is extracted.
