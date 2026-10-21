@@ -367,6 +367,26 @@ impl SharedActiveShaderState {
     }
 }
 
+// Stage 4B-5D: runtime controls shared by the current frame executor.
+// These are policy-derived values and status cadence, not compositor
+// presentation authorization. The independent Windowshader loop will
+// eventually own the control sequence that updates them.
+struct SharedFrameRuntimeControls {
+    animation_speed: f32,
+    audio_required: bool,
+    status_heartbeat: Instant,
+}
+
+impl SharedFrameRuntimeControls {
+    fn new(animation_speed: f32, audio_required: bool) -> Self {
+        Self {
+            animation_speed,
+            audio_required,
+            status_heartbeat: Instant::now() - Duration::from_secs(2),
+        }
+    }
+}
+
 // Common GL entry-point loading; called by each pipeline before frame execution.
 pub(crate) fn prepare_egl_frame_processing() {
     gl::load_with(
@@ -599,7 +619,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
         SharedFramePipelineResources::new(texture_manager, native_targets.len()),
     );
 
-    let mut animation_speed =
+    let initial_animation_speed =
         runtime.animation_speed_policy
             .animation_speed_for_policy(
                 active_shader.policy_id,
@@ -618,6 +638,27 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     } = initial_timing;
 
 
+    let initial_postprocess_profile =
+        runtime.postprocess_policy
+            .profile_for_policy(
+                active_shader.policy_id,
+                &active_shader.shader_name,
+                Some(
+                    active_shader.source_path.as_path()
+                ),
+            );
+
+    let initial_audio_required =
+        matches!(
+            initial_postprocess_profile.bloom.name(),
+            "audio" | "spectral" | "loudness"
+        ) || initial_postprocess_profile.audio_motion.is_enabled();
+
+    let mut runtime_controls = SharedFrameRuntimeControls::new(
+        initial_animation_speed,
+        initial_audio_required,
+    );
+
     let mut notification_state =
         crate::notify_wallpaper::WallpaperNotificationState::new();
 
@@ -629,7 +670,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
         active_shader,
         &frame_context.pipeline.textures,
         rendered_fps,
-        animation_speed,
+        runtime_controls.animation_speed,
         crate::fps_monitor::FpsWarningState::Normal,
     );
 
@@ -719,24 +760,9 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             HashMap::new();
 
 
-    let initial_postprocess_profile =
-        runtime.postprocess_policy
-            .profile_for_policy(
-                active_shader.policy_id,
-                &active_shader.shader_name,
-                Some(
-                    active_shader.source_path.as_path()
-                ),
-            );
-
 
     let audio_demand = crate::audio_backend::register_audio_demand();
 
-    let mut audio_required =
-        matches!(
-            initial_postprocess_profile.bloom.name(),
-            "audio" | "spectral" | "loudness"
-        ) || initial_postprocess_profile.audio_motion.is_enabled();
 
 
     let mut audio_motion_effect =
@@ -819,7 +845,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     if status_enabled {
         crate::renderer_status::publish(status_pipeline, crate::renderer_status::State::Starting);
     }
-    let mut status_heartbeat = Instant::now() - Duration::from_secs(2);
+    
 
     let result = loop_driver(&mut || -> Result<FrameLoopAction, String> {
 
@@ -923,7 +949,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
                             frame_context.pipeline.commit_textures(replacement_texture_manager);
 
-                            audio_required =
+                            runtime_controls.audio_required =
                                 matches!(
                                     replacement_profile.bloom.name(),
                                     "audio" | "spectral" | "loudness"
@@ -964,7 +990,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                             last_audio_motion_update =
                                 Instant::now();
 
-                            animation_speed =
+                            runtime_controls.animation_speed =
                                 reload.animation_speed_policy
                                     .animation_speed_for_policy(
                                         active_shader_state.current.policy_id,
@@ -1010,7 +1036,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                 &active_shader_state.current,
                                 &frame_context.pipeline.textures,
                                 rendered_fps,
-                                animation_speed,
+                                runtime_controls.animation_speed,
                                 frame_accounting.fps_warning_state,
                             );
 
@@ -1265,7 +1291,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                     0;
 
 
-                                animation_speed =
+                                runtime_controls.animation_speed =
                                     runtime.animation_speed_policy
                                         .animation_speed_for_policy(
                                             next_shader.policy_id,
@@ -1322,7 +1348,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                         );
 
 
-                                audio_required =
+                                runtime_controls.audio_required =
                                     matches!(
                                         postprocess_profile.bloom.name(),
                                         "audio" | "spectral" | "loudness"
@@ -1397,7 +1423,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                     &active_shader_state.current,
                                     &frame_context.pipeline.textures,
                                     rendered_fps,
-                                    animation_speed,
+                                    runtime_controls.animation_speed,
                                     frame_accounting.fps_warning_state,
                                 );
 
@@ -1421,7 +1447,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
                                 println!(
                                     "    Animation speed: {:.3}x",
-                                    animation_speed
+                                    runtime_controls.animation_speed
                                 );
 
 
@@ -1506,7 +1532,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             frame_context.begin_frame_gpu_measurement();
 
             audio_demand.set_required(
-                audio_required
+                runtime_controls.audio_required
             );
 
 
@@ -1700,7 +1726,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     &frame_context.pipeline.textures,
                     postprocess,
                     ShaderSceneUniforms {
-                        time: elapsed.as_secs_f32() * animation_speed,
+                        time: elapsed.as_secs_f32() * runtime_controls.animation_speed,
                         frame: frame_accounting.frame,
                         i_time,
                         i_resolution,
@@ -1845,15 +1871,15 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 // Windowshader controller; Wallpaper retains its own heartbeat.
                 let publish_rendering = if windowed_rotation {
                     windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").record_windowshader_swap_and_check_status(
-                        frame_clock.paused, status_heartbeat.elapsed(),
+                        frame_clock.paused, runtime_controls.status_heartbeat.elapsed(),
                     )
                 } else {
-                    frame_clock.paused || status_heartbeat.elapsed() >= Duration::from_secs(1)
+                    frame_clock.paused || runtime_controls.status_heartbeat.elapsed() >= Duration::from_secs(1)
                 };
                 if status_enabled && publish_rendering
                 {
                     crate::renderer_status::publish(status_pipeline, crate::renderer_status::State::Rendering);
-                    status_heartbeat = Instant::now();
+                    runtime_controls.status_heartbeat = Instant::now();
                 }
 
                 // Diagnostic only: report a compositor wait that overlapped a
@@ -1962,7 +1988,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                         &active_shader_state.current,
                         &frame_context.pipeline.textures,
                         rendered_fps,
-                        animation_speed,
+                        runtime_controls.animation_speed,
                         frame_accounting.fps_warning_state,
                     );
                 }
