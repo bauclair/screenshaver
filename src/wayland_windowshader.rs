@@ -2174,6 +2174,28 @@ impl WindowshaderFrameLoopState {
         Some((ready, recovery))
     }
 
+    // Stage 4B-5C: Windowshader owns the post-preflight diagnostic boundary
+    // and compositor-authorized frame gate. No elapsed-time or XDG activation
+    // signal is allowed to substitute for a real wl_surface.frame Done.
+    pub(crate) fn authorize_windowshader_frame<S: crate::wayland_wallpaper::RenderWaylandDispatch>(
+        &mut self,
+        control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+        state: &mut S,
+        targets: &[NativeWallpaperTarget],
+        interval: Option<Duration>,
+        animation_anchor: Instant,
+        paused: bool,
+        shader_name: &str,
+        policy_id: i64,
+        program: u32,
+    ) -> Option<(Option<WindowshaderCallbackRecovery>, bool)> {
+        control.diagnostic_checkpoint(4);
+        self.decide_frame_and_rotation(
+            state, targets, interval, animation_anchor, paused,
+            shader_name, policy_id, program,
+        )
+    }
+
     // Consolidated Windowshader scheduling decision: callback authorization,
     // recovery, and rotation eligibility are evaluated in controller order.
     // A blocked callback returns None; no timer or activation signal can

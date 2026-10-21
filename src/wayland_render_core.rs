@@ -1062,7 +1062,11 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             }
 
 
-            control.diagnostic_checkpoint(4);
+            // Wallpaper retains its historical checkpoint location; Windowshader
+            // owns its checkpoint and callback-authorization sequence.
+            if !windowed_rotation {
+                control.diagnostic_checkpoint(4);
+            }
             // Do not use xdg_toplevel::State::Activated as a visibility
             // signal.  Activated represents compositor activation/focus, so
             // Mango legitimately removes it when the pointer/keyboard focus
@@ -1077,8 +1081,8 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             let (presentation, rotation_requested) = if windowed_rotation {
                 let Some((recovery, rotate)) = windowshader_state.as_mut()
                     .expect("Windowshader controller exists only in Windowed mode")
-                    .decide_frame_and_rotation(
-                        state, native_targets, shader_interval, start_time, paused,
+                    .authorize_windowshader_frame(
+                        control, state, native_targets, shader_interval, start_time, paused,
                         &current_shader.shader_name, current_shader.policy_id,
                         frame_context.gl.program,
                     ) else {
