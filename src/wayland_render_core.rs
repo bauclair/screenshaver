@@ -947,16 +947,8 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             if control.pause_requested() {
                 if !paused {
                     if windowed_rotation {
-                        // The Windowshader controller owns pause-entry sequencing.
-                        crate::logger::warning(
-                            &crate::locate_paths::runtime_log_path(),
-                            "[AMBIENT_HANDOFF_DIAG] Wayland renderer detected pause request",
-                        );
-                        control.acknowledge_pause_detected();
-                        state.on_pause_entering();
-                        control.diagnostic_checkpoint(8);
-                        state.on_pause_entered(native_targets);
-                        windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").enter_pause(control, status_enabled);
+                        windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode")
+                            .enter_pause_with_dispatch(state, native_targets, control, status_enabled);
                     } else {
                         crate::logger::warning(
                             &crate::locate_paths::runtime_log_path(),
@@ -991,7 +983,8 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 // Windowshader owns its pause-release decision and rotation
                 // adjustment; Render Core applies only the animation shift.
                 let windowshader_release = if windowed_rotation {
-                    Some(windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").finish_pause(pause_ended_at))
+                    Some(windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode")
+                        .finish_pause_with_dispatch(state, pause_ended_at))
                 } else {
                     None
                 };
@@ -1015,9 +1008,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 // allowed another windowshader presentation. Keep the separate pending
                 // flag until a successful EGL swap acknowledges resumption.
                 paused = false;
-                if windowshader_release.is_some_and(|release| release.notify_dispatch) {
-                    state.on_pause_released();
-                }
+
             }
 
 

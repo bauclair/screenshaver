@@ -2014,6 +2014,40 @@ impl WindowshaderFrameLoopState {
         self.pace_presented_frame(frame_duration);
     }
 
+    // Stage 4B-5C: Windowshader owns the ordered pause-entry dispatch and
+    // acknowledgment sequence. The shared executor does not alter callback readiness.
+    pub(crate) fn enter_pause_with_dispatch<S: crate::wayland_wallpaper::RenderWaylandDispatch>(
+        &mut self,
+        state: &mut S,
+        targets: &[NativeWallpaperTarget],
+        control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+        status_enabled: bool,
+    ) {
+        crate::logger::warning(
+            &crate::locate_paths::runtime_log_path(),
+            "[AMBIENT_HANDOFF_DIAG] Wayland renderer detected pause request",
+        );
+        control.acknowledge_pause_detected();
+        state.on_pause_entering();
+        control.diagnostic_checkpoint(8);
+        state.on_pause_entered(targets);
+        self.enter_pause(control, status_enabled);
+    }
+
+    // Dispatch notification follows the controller's release decision, never
+    // a synthetic callback or an XDG activation transition.
+    pub(crate) fn finish_pause_with_dispatch<S: crate::wayland_wallpaper::RenderWaylandDispatch>(
+        &mut self,
+        state: &mut S,
+        ended: Instant,
+    ) -> WindowshaderPauseRelease {
+        let release = self.finish_pause(ended);
+        if release.notify_dispatch {
+            state.on_pause_released();
+        }
+        release
+    }
+
     // Stage 4B-2: Windowshader owns its pause clock, acknowledgment and
     // status transition after the shared dispatch hooks have run.
     // No compositor callback readiness is modified here.
