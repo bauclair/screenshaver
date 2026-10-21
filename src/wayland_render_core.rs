@@ -24,6 +24,49 @@ use std::sync::atomic::Ordering;
 use wayland_client::Proxy;
 
 
+// Stage 4B-5A1: fixed-lifetime GL frame resources are owned together.
+// This is the first resource-ownership extraction; shader programs, textures,
+// post-processing, and control flow remain unchanged in this checkpoint.
+// Creation and explicit release must run with the owning EGL context current.
+struct SharedFrameGlResources {
+    vertex_array: u32,
+    timing_queries: [u32; 2],
+}
+
+impl SharedFrameGlResources {
+    fn create() -> Self {
+        let mut resources = Self {
+            vertex_array: 0,
+            timing_queries: [0; 2],
+        };
+        unsafe {
+            gl::GenVertexArrays(1, &mut resources.vertex_array);
+            gl::BindVertexArray(resources.vertex_array);
+        }
+        resources
+    }
+
+    fn initialize_timing_queries(&mut self) {
+        unsafe {
+            gl::GenQueries(2, self.timing_queries.as_mut_ptr());
+        }
+    }
+
+    fn release(&mut self) {
+        unsafe {
+            gl::BindVertexArray(0);
+            if self.vertex_array != 0 {
+                gl::DeleteVertexArrays(1, &self.vertex_array);
+                self.vertex_array = 0;
+            }
+            if self.timing_queries.iter().any(|query| *query != 0) {
+                gl::DeleteQueries(2, self.timing_queries.as_ptr());
+                self.timing_queries = [0; 2];
+            }
+        }
+    }
+}
+
 // Common GL entry-point loading; called by each pipeline before frame execution.
 pub(crate) fn prepare_egl_frame_processing() {
     gl::load_with(
@@ -288,25 +331,11 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     );
 
 
-    let mut vao =
-        0_u32;
-
+    let mut frame_gl = SharedFrameGlResources::create();
 
     unsafe {
-        gl::GenVertexArrays(
-            1,
-            &mut vao,
-        );
-
-        gl::BindVertexArray(
-            vao
-        );
-
-        gl::UseProgram(
-            program
-        );
+        gl::UseProgram(program);
     }
-
 
     crate::apply_shader_inputs::apply(
         program,
@@ -319,16 +348,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     // compositor may throttle or defer a non-visible xdg_toplevel while its
     // workspace is inactive.  CPU elapsed time across that lifecycle event is
     // not evidence that the shader itself is slow.
-    let mut performance_queries =
-        [0_u32; 2];
-
-    unsafe {
-        gl::GenQueries(
-            2,
-            performance_queries.as_mut_ptr(),
-        );
-    }
-
+    frame_gl.initialize_timing_queries();
 
     let mut postprocess_pipelines =
         HashMap::with_capacity(
@@ -1360,7 +1380,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
             unsafe {
                 gl::QueryCounter(
-                    performance_queries[0],
+                    frame_gl.timing_queries[0],
                     gl::TIMESTAMP,
                 );
             }
@@ -1648,7 +1668,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     );
 
                     gl::BindVertexArray(
-                        vao
+                        frame_gl.vertex_array
                     );
 
                     gl::DrawArrays(
@@ -1795,7 +1815,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 // rendering cost.
                 unsafe {
                     gl::QueryCounter(
-                        performance_queries[1],
+                        frame_gl.timing_queries[1],
                         gl::TIMESTAMP,
                     );
                 }
@@ -1908,13 +1928,13 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
             unsafe {
                 gl::GetQueryObjectui64v(
-                    performance_queries[0],
+                    frame_gl.timing_queries[0],
                     gl::QUERY_RESULT,
                     &mut gpu_start_ns,
                 );
 
                 gl::GetQueryObjectui64v(
-                    performance_queries[1],
+                    frame_gl.timing_queries[1],
                     gl::QUERY_RESULT,
                     &mut gpu_end_ns,
                 );
@@ -2019,21 +2039,11 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
         gl::UseProgram(
             0
         );
+    }
 
-        gl::BindVertexArray(
-            0
-        );
+    frame_gl.release();
 
-        gl::DeleteVertexArrays(
-            1,
-            &vao,
-        );
-
-        gl::DeleteQueries(
-            2,
-            performance_queries.as_ptr(),
-        );
-
+    unsafe {
         gl::DeleteProgram(
             program
         );
