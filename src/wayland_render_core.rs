@@ -1859,7 +1859,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             // Windowshader owns its post-pause presentation acknowledgment.
             // Wallpaper retains its existing local paused-state transition.
             let presentation_resumed = if windowed_rotation {
-                windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").complete_presented_frame(paused)
+                windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").complete_presented_frame_and_pace(paused, frame_duration)
             } else {
                 paused
             };
@@ -1950,9 +1950,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
             control.diagnostic_checkpoint(7);
             // Dispatch pacing to the owning rendering pipeline.
-            if windowed_rotation {
-                windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").finish_frame(frame_duration);
-            } else {
+            if !windowed_rotation {
                 S::pace_frame(&mut next_frame_deadline, frame_duration);
             }
             Ok(FrameLoopAction::Continue)

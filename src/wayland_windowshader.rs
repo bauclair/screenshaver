@@ -2014,6 +2014,19 @@ impl WindowshaderFrameLoopState {
         self.pace_presented_frame(frame_duration);
     }
 
+    // Stage 4B-5C: one Windowshader-owned post-frame control transition.
+    // Called only after the shared executor has completed presentation.
+    // Pacing changes deadlines but never grants frame callback readiness.
+    pub(crate) fn complete_presented_frame_and_pace(
+        &mut self,
+        was_paused: bool,
+        frame_duration: Duration,
+    ) -> bool {
+        let resumed = self.complete_presented_frame(was_paused);
+        self.finish_frame(frame_duration);
+        resumed
+    }
+
     // Stage 4B-5C: Windowshader owns the ordered pause-entry dispatch and
     // acknowledgment sequence. The shared executor does not alter callback readiness.
     pub(crate) fn enter_pause_with_dispatch<S: crate::wayland_wallpaper::RenderWaylandDispatch>(
