@@ -66,6 +66,29 @@ impl SharedFrameGlResources {
         self.program = replacement;
     }
 
+    // Stage 4B-5B: the GL execution layer owns GPU timestamp operations.
+    // The pipeline controller determines when a frame begins and ends.
+    fn begin_gpu_frame(&self) {
+        unsafe { gl::QueryCounter(self.timing_queries[0], gl::TIMESTAMP); }
+    }
+
+    fn end_gpu_frame_before_presentation(&self) {
+        unsafe { gl::QueryCounter(self.timing_queries[1], gl::TIMESTAMP); }
+    }
+
+    fn completed_gpu_frame_duration(&self) -> Duration {
+        // The second timestamp is recorded before compositor presentation,
+        // so a hidden workspace cannot inflate the shader's GPU measurement.
+        unsafe { gl::Finish(); }
+        let mut start_ns = 0_u64;
+        let mut end_ns = 0_u64;
+        unsafe {
+            gl::GetQueryObjectui64v(self.timing_queries[0], gl::QUERY_RESULT, &mut start_ns);
+            gl::GetQueryObjectui64v(self.timing_queries[1], gl::QUERY_RESULT, &mut end_ns);
+        }
+        Duration::from_nanos(end_ns.saturating_sub(start_ns))
+    }
+
     fn release(&mut self) {
         unsafe {
             gl::BindVertexArray(0);
@@ -1397,13 +1420,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 start_time.elapsed();
 
 
-            unsafe {
-                gl::QueryCounter(
-                    frame_gl.timing_queries[0],
-                    gl::TIMESTAMP,
-                );
-            }
-
+            frame_gl.begin_gpu_frame();
 
             audio_demand.set_required(
                 audio_required
@@ -1525,22 +1542,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     native_targets.iter()
                 )
             {
-                if unsafe {
-                    eglMakeCurrent(
-                        display,
-                        egl_target.surface,
-                        egl_target.surface,
-                        context,
-                    )
-                } == EGL_FALSE
-                {
-                    return Err(
-                        egl_failure(
-                            "eglMakeCurrent"
-                        )
-                    );
-                }
-
+                bind_egl_frame_target(display, context, egl_target.surface)?;
 
                 let postprocess =
                     frame_pipeline.postprocess
@@ -1832,33 +1834,10 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 // xdg_toplevel on an inactive workspace may block for seconds
                 // in eglSwapBuffers(); that presentation wait is not shader
                 // rendering cost.
-                unsafe {
-                    gl::QueryCounter(
-                        frame_gl.timing_queries[1],
-                        gl::TIMESTAMP,
-                    );
-                }
-
+                frame_gl.end_gpu_frame_before_presentation();
 
                 control.diagnostic_checkpoint(5);
-                let presentation_started =
-                    Instant::now();
-
-
-                if unsafe {
-                    eglSwapBuffers(
-                        display,
-                        egl_target.surface,
-                    )
-                } == EGL_FALSE
-                {
-                    return Err(
-                        egl_failure(
-                            "eglSwapBuffers"
-                        )
-                    );
-                }
-
+                let presentation_duration = present_egl_frame_target(display, egl_target.surface)?;
 
                 control.diagnostic_checkpoint(6);
                 state.on_frame_swap_completed(native_target.info.registry_name);
@@ -1876,9 +1855,6 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     crate::renderer_status::publish(status_pipeline, crate::renderer_status::State::Rendering);
                     status_heartbeat = Instant::now();
                 }
-
-                let presentation_duration =
-                    presentation_started.elapsed();
 
                 // Diagnostic only: report a compositor wait that overlapped a
                 // pause request. Do not change frame pacing or handoff behavior.
@@ -1930,43 +1906,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             }
 
 
-            unsafe {
-                // Preserve the existing synchronization behavior.  The end
-                // timestamp was issued before eglSwapBuffers(), so any
-                // compositor presentation stall is excluded from the GPU
-                // performance sample.
-                gl::Finish();
-            }
-
-
-            let mut gpu_start_ns =
-                0_u64;
-
-            let mut gpu_end_ns =
-                0_u64;
-
-            unsafe {
-                gl::GetQueryObjectui64v(
-                    frame_gl.timing_queries[0],
-                    gl::QUERY_RESULT,
-                    &mut gpu_start_ns,
-                );
-
-                gl::GetQueryObjectui64v(
-                    frame_gl.timing_queries[1],
-                    gl::QUERY_RESULT,
-                    &mut gpu_end_ns,
-                );
-            }
-
-
-            let gpu_render_duration =
-                Duration::from_nanos(
-                    gpu_end_ns.saturating_sub(
-                        gpu_start_ns
-                    )
-                );
-
+            let gpu_render_duration = frame_gl.completed_gpu_frame_duration();
 
             let performance_status =
                 frame_times.record(
@@ -2067,6 +2007,24 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     result
 }
 
+
+// Stage 4B-5B: context binding and presentation are reusable EGL operations.
+// Wayland frame-callback eligibility and callback requests remain exclusively
+// with the owning pipeline; these helpers never synthesize frame callbacks.
+fn bind_egl_frame_target(display: EglDisplay, context: EglContext, surface: *mut std::ffi::c_void) -> Result<(), String> {
+    if unsafe { eglMakeCurrent(display, surface, surface, context) } == EGL_FALSE {
+        return Err(egl_failure("eglMakeCurrent"));
+    }
+    Ok(())
+}
+
+fn present_egl_frame_target(display: EglDisplay, surface: *mut std::ffi::c_void) -> Result<Duration, String> {
+    let started = Instant::now();
+    if unsafe { eglSwapBuffers(display, surface) } == EGL_FALSE {
+        return Err(egl_failure("eglSwapBuffers"));
+    }
+    Ok(started.elapsed())
+}
 
 pub(crate) fn frame_duration_for_fps(
     fps: u32,
