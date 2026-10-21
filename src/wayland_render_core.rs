@@ -787,42 +787,35 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
     let result = loop_driver(&mut || -> Result<FrameLoopAction, String> {
 
-            control.diagnostic_checkpoint(1);
+            // The Windowshader pipeline owns the ordered pre-frame control
+            // sequence. The shared core supplies only target reconciliation.
             if windowed_rotation {
-                windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").dispatch_and_observe(
+                let should_continue = crate::wayland_windowshader::run_windowshader_frame_preflight(
+                    windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode"),
                     event_queue, state, native_targets, paused,
-                    control.pause_requested(), shader_interval,
-                    &current_shader.shader_name, current_shader.policy_id,
-                    frame_context.gl.program, frame,
+                    control, shader_interval, &current_shader.shader_name,
+                    current_shader.policy_id, frame_context.gl.program, frame,
+                    running,
+                    |state, native_targets| reconcile_shared_frame_targets(
+                        display, context, state, egl_targets, native_targets,
+                        &mut frame_context.pipeline.postprocess,
+                    ),
                 )?;
-            } else {
-                S::pump_events(event_queue, state)?;
-            }
-            control.diagnostic_checkpoint(2);
-            if !reconcile_shared_frame_targets(
-                display,
-                context,
-                state,
-                egl_targets,
-                native_targets,
-                &mut frame_context.pipeline.postprocess,
-            )? {
-                println!("All wallpaper outputs have been disconnected.");
-                return Ok(FrameLoopAction::Stop);
-            }
-
-
-            // Windowshader decides XDG-close and supervisor termination itself.
-            // Wallpaper preserves its original layer-surface shutdown policy.
-            if windowed_rotation {
-                if crate::wayland_windowshader::windowshader_should_stop(state, running) {
+                if !should_continue {
                     return Ok(FrameLoopAction::Stop);
                 }
             } else {
-                let compositor_closed = state
-                    .surfaces()
-                    .iter()
-                    .any(|surface_state| surface_state.closed);
+                control.diagnostic_checkpoint(1);
+                S::pump_events(event_queue, state)?;
+                control.diagnostic_checkpoint(2);
+                if !reconcile_shared_frame_targets(
+                    display, context, state, egl_targets, native_targets,
+                    &mut frame_context.pipeline.postprocess,
+                )? {
+                    println!("All wallpaper outputs have been disconnected.");
+                    return Ok(FrameLoopAction::Stop);
+                }
+                let compositor_closed = state.surfaces().iter().any(|surface| surface.closed);
                 if compositor_closed {
                     if S::compositor_close_requests_shutdown() {
                         running.store(false, Ordering::SeqCst);
