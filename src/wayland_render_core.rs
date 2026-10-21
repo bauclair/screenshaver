@@ -24,20 +24,22 @@ use std::sync::atomic::Ordering;
 use wayland_client::Proxy;
 
 
-// Stage 4B-5A1: fixed-lifetime GL frame resources are owned together.
-// This is the first resource-ownership extraction; shader programs, textures,
-// post-processing, and control flow remain unchanged in this checkpoint.
+// Stage 4B-5A2: shared GL resources also own the active shader program.
+// Texture, post-processing, and frame control remain unchanged. Shader program
+// replacement is committed only after preparation of the next shader.
 // Creation and explicit release must run with the owning EGL context current.
 struct SharedFrameGlResources {
     vertex_array: u32,
     timing_queries: [u32; 2],
+    program: u32,
 }
 
 impl SharedFrameGlResources {
-    fn create() -> Self {
+    fn create(program: u32) -> Self {
         let mut resources = Self {
             vertex_array: 0,
             timing_queries: [0; 2],
+            program,
         };
         unsafe {
             gl::GenVertexArrays(1, &mut resources.vertex_array);
@@ -52,12 +54,29 @@ impl SharedFrameGlResources {
         }
     }
 
+    // Commit only after the replacement program and its dependent resources
+    // have been prepared. The previous program remains valid until this call.
+    fn replace_program(&mut self, replacement: u32) {
+        unsafe {
+            gl::UseProgram(0);
+            if self.program != 0 {
+                gl::DeleteProgram(self.program);
+            }
+        }
+        self.program = replacement;
+    }
+
     fn release(&mut self) {
         unsafe {
             gl::BindVertexArray(0);
             if self.vertex_array != 0 {
                 gl::DeleteVertexArrays(1, &self.vertex_array);
                 self.vertex_array = 0;
+            }
+            if self.program != 0 {
+                gl::UseProgram(0);
+                gl::DeleteProgram(self.program);
+                self.program = 0;
             }
             if self.timing_queries.iter().any(|query| *query != 0) {
                 gl::DeleteQueries(2, self.timing_queries.as_ptr());
@@ -251,12 +270,14 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     loop_driver: FrameLoopDriver,
 ) -> Result<(), String> {
 
-    let mut program =
+    let initial_program =
         crate::compile_shader::build_program(
             crate::define_constants::VERTEX_SHADER,
             &active_shader.source,
         )?;
 
+
+    let mut frame_gl = SharedFrameGlResources::create(initial_program);
 
     let mut texture_manager =
         crate::manage_textures::TextureManager::new(
@@ -274,11 +295,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             active_shader.channel_usage,
         )
     {
-        unsafe {
-            gl::DeleteProgram(
-                program
-            );
-        }
+        frame_gl.release();
 
 
         return Err(
@@ -292,7 +309,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
 
     texture_manager.configure_program(
-        program
+        frame_gl.program
     );
 
 
@@ -331,14 +348,12 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     );
 
 
-    let mut frame_gl = SharedFrameGlResources::create();
-
     unsafe {
-        gl::UseProgram(program);
+        gl::UseProgram(frame_gl.program);
     }
 
     crate::apply_shader_inputs::apply(
-        program,
+        frame_gl.program,
         &active_shader.shader_inputs,
     );
 
@@ -469,28 +484,28 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
     let mut i_time =
         uniform_location(
-            program,
+            frame_gl.program,
             "iTime",
         )?;
 
 
     let mut i_resolution =
         uniform_location(
-            program,
+            frame_gl.program,
             "iResolution",
         )?;
 
 
     let mut i_mouse =
         uniform_location(
-            program,
+            frame_gl.program,
             "iMouse",
         )?;
 
 
     let mut i_frame =
         uniform_location(
-            program,
+            frame_gl.program,
             "iFrame",
         )?;
 
@@ -590,7 +605,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     shader_interval,
                     &current_shader.shader_name,
                     current_shader.policy_id,
-                    program,
+                    frame_gl.program,
                     frame,
                 );
             }
@@ -700,7 +715,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                             );
                         } else {
                             replacement_texture_manager.configure_program(
-                                program
+                                frame_gl.program
                             );
 
                             texture_manager.delete_all();
@@ -947,7 +962,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             } else if windowed_rotation {
                 windowshader_state.begin_due_rotation(
                     shader_interval, &current_shader.shader_name,
-                    current_shader.policy_id, windowed_frame_ready, program,
+                    current_shader.policy_id, windowed_frame_ready, frame_gl.program,
                 )
             } else {
                 shader_interval.is_some_and(|interval| last_shader_switch.elapsed() >= interval)
@@ -1100,19 +1115,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                     next_texture_manager;
 
 
-                                unsafe {
-                                    gl::UseProgram(
-                                        0
-                                    );
-
-                                    gl::DeleteProgram(
-                                        program
-                                    );
-                                }
-
-
-                                program =
-                                    next_program;
+                                frame_gl.replace_program(next_program);
 
 
                                 i_time =
@@ -1181,7 +1184,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                     next_shader.clone();
                                 if windowed_rotation {
                                     windowshader_state.rotation.rotation_succeeded(
-                                        &current_shader.shader_name, current_shader.policy_id, program,
+                                        &current_shader.shader_name, current_shader.policy_id, frame_gl.program,
                                     );
                                 }
 
@@ -1632,7 +1635,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     );
 
                     gl::UseProgram(
-                        program
+                        frame_gl.program
                     );
                 }
 
@@ -2043,11 +2046,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
     frame_gl.release();
 
-    unsafe {
-        gl::DeleteProgram(
-            program
-        );
-    }
+
 
 
     if status_enabled {
