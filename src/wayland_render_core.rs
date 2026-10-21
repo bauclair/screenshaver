@@ -24,6 +24,19 @@ use std::sync::atomic::Ordering;
 use wayland_client::Proxy;
 
 
+// Pipeline-neutral callback result. The owning controller decides whether a
+// compositor-authorized frame may proceed; the shared executor only applies
+// clock/FPS effects. This type does not grant frame readiness.
+struct FramePresentationDecision {
+    ready: bool,
+    recovery: Option<FrameClockRecovery>,
+}
+
+struct FrameClockRecovery {
+    rotation_shift: Duration,
+    animation_shift: Duration,
+}
+
 // Wallpaper's compositor callback accounting is independent of Windowshader.
 // This state never grants frame readiness: the dispatch implementation must
 // first observe the real wl_surface.frame Done event.
@@ -1021,32 +1034,38 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             // instead of entering a compositor-throttled eglSwapBuffers().
             // Windowshader now owns the entire callback gate/recovery decision.
             // Keep Wallpaper's historical path intact until its own extraction.
-            let (windowed_frame_ready, callback_recovery) = if windowed_rotation {
-                let Some(decision) = windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").evaluate_windowshader_presentation(
-                    state, native_targets, shader_interval, start_time, paused,
-                ) else {
+            let presentation = if windowed_rotation {
+                let Some((ready, recovery)) = windowshader_state.as_mut()
+                    .expect("Windowshader controller exists only in Windowed mode")
+                    .evaluate_windowshader_presentation(
+                        state, native_targets, shader_interval, start_time, paused,
+                    ) else {
                     return Ok(FrameLoopAction::Continue);
                 };
-                decision
+                FramePresentationDecision {
+                    ready,
+                    recovery: recovery.map(|shift| FrameClockRecovery {
+                        rotation_shift: shift.rotation_shift,
+                        animation_shift: shift.animation_shift,
+                    }),
+                }
             } else {
                 let Some(recovery) = wallpaper_callbacks.evaluate(
                     state, native_targets, last_shader_switch, start_time,
                 ) else {
                     return Ok(FrameLoopAction::Continue);
                 };
-                // Adapt Wallpaper-owned recovery to the shared animation/FPS
-                // accounting below without borrowing Windowshader state.
-                let recovery = recovery.map(|(rotation_shift, animation_shift)| {
-                    crate::wayland_windowshader::WindowshaderCallbackRecovery {
+                FramePresentationDecision {
+                    ready: true,
+                    recovery: recovery.map(|(rotation_shift, animation_shift)| FrameClockRecovery {
                         rotation_shift,
                         animation_shift,
-                    }
-                });
-                (true, recovery)
+                    }),
+                }
             };
 
             // Only the shared animation/FPS effects remain in Render Core.
-            if let Some(recovery) = callback_recovery {
+            if let Some(recovery) = presentation.recovery {
                 start_time += recovery.animation_shift;
                 if !windowed_rotation {
                     last_shader_switch += recovery.rotation_shift;
@@ -1067,7 +1086,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             } else if windowed_rotation {
                 windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").begin_due_rotation(
                     shader_interval, &current_shader.shader_name,
-                    current_shader.policy_id, windowed_frame_ready, frame_gl.program,
+                    current_shader.policy_id, presentation.ready, frame_gl.program,
                 )
             } else {
                 shader_interval.is_some_and(|interval| last_shader_switch.elapsed() >= interval)
