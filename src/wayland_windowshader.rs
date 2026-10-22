@@ -1898,7 +1898,14 @@ impl WindowshaderRotationClockState {
         &mut self, interval: Option<Duration>, shader_name: &str,
         policy_id: i64, frame_ready: bool, program: u32,
     ) -> bool {
-        if !self.rotation_due(interval) { return false; }
+        // Rotation is subordinate to compositor presentation eligibility.
+        // Even if the rotation deadline has elapsed, a hidden/unready
+        // Windowshader must not select or compile a replacement shader.
+        // Do not reset the rotation anchor until a real callback authorizes
+        // this attempt; otherwise hidden-workspace time is charged twice.
+        if !frame_ready || !self.rotation_due(interval) {
+            return false;
+        }
         self.begin_rotation_attempt(interval, shader_name, policy_id, frame_ready, program);
         true
     }
