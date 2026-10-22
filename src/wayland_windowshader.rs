@@ -241,13 +241,11 @@ where
     S: crate::wayland_wallpaper::RenderWaylandDispatch,
     F: FnMut(&mut S, &mut Vec<NativeWallpaperTarget>) -> Result<bool, String>,
 {
-    control.diagnostic_checkpoint(1);
     controller.dispatch_and_observe(
         event_queue, state, native_targets, paused,
-        control.pause_requested(), shader_interval,
+        control, control.pause_requested(), shader_interval,
         shader_name, policy_id, program, frame,
     )?;
-    control.diagnostic_checkpoint(2);
     if !reconcile_targets(state, native_targets)? {
         println!("All wallpaper outputs have been disconnected.");
         return Ok(Some(crate::wayland_render_core::FrameLoopAction::Stop));
@@ -2041,6 +2039,7 @@ impl WindowshaderFrameLoopState {
         state: &mut S,
         native_targets: &[NativeWallpaperTarget],
         paused: bool,
+        control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
         pause_requested: bool,
         shader_interval: Option<Duration>,
         shader_name: &str,
@@ -2048,6 +2047,7 @@ impl WindowshaderFrameLoopState {
         program: u32,
         frame: i32,
     ) -> Result<(), String> {
+        control.diagnostic_checkpoint(1);
         pump_windowshader_frame_events(event_queue, state)?;
         let diagnostics = state.presentation_diagnostics(native_targets);
         let configure_pending = state.surfaces().iter().any(|surface| {
@@ -2057,6 +2057,7 @@ impl WindowshaderFrameLoopState {
             &diagnostics, configure_pending, paused, pause_requested,
             shader_interval, shader_name, policy_id, program, frame,
         );
+        control.diagnostic_checkpoint(2);
         Ok(())
     }
 
