@@ -27,20 +27,20 @@ use wayland_client::Proxy;
 // Pipeline-neutral callback result. The owning controller decides whether a
 // compositor-authorized frame may proceed; the shared executor only applies
 // clock/FPS effects. This type does not grant frame readiness.
-struct FramePresentationDecision {
-    recovery: Option<FrameClockRecovery>,
+pub(crate) struct FramePresentationDecision {
+    pub(crate) recovery: Option<FrameClockRecovery>,
 }
 
-struct FrameClockRecovery {
-    rotation_shift: Duration,
-    animation_shift: Duration,
+pub(crate) struct FrameClockRecovery {
+    pub(crate) rotation_shift: Duration,
+    pub(crate) animation_shift: Duration,
 }
 
 impl FramePresentationDecision {
     // The pipeline's callback controller has already authorized this frame.
     // These constructors only normalize its clock-recovery result; they
     // cannot create compositor presentation eligibility.
-    fn from_recovery_durations(recovery: Option<(Duration, Duration)>) -> Self {
+    pub(crate) fn from_recovery_durations(recovery: Option<(Duration, Duration)>) -> Self {
         Self {
             recovery: recovery.map(|(rotation_shift, animation_shift)| FrameClockRecovery {
                 rotation_shift,
@@ -1259,9 +1259,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 ) else {
                     return Ok(FrameLoopAction::Continue);
                 };
-                (FramePresentationDecision::from_recovery_durations(
-                    authorization.recovery_shifts,
-                ), authorization.rotate)
+                (authorization.presentation, authorization.rotate)
             } else {
                 let Some(recovery) = wallpaper_callbacks.evaluate(
                     state, native_targets, frame_runtime.clock.shader_switched, frame_runtime.clock.animation_started,

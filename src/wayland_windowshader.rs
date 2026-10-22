@@ -57,8 +57,12 @@ use crate::wayland_wallpaper::{
 // Windowshader owns the presentation-eligibility decision and the shape of
 // its result. None means no compositor-authorized frame: the caller must skip
 // all GL work and presentation. This wrapper does not manufacture readiness.
+// The Windowshader controller supplies an already-normalized frame-control
+// outcome. None still means that no real compositor callback authorized work.
+// The shared GL executor applies clock changes; it does not interpret
+// Windowshader callback recovery data or decide whether to rotate.
 pub(crate) struct WindowshaderPresentationAuthorization {
-    pub(crate) recovery_shifts: Option<(Duration, Duration)>,
+    pub(crate) presentation: crate::wayland_render_core::FramePresentationDecision,
     pub(crate) rotate: bool,
 }
 
@@ -79,7 +83,9 @@ pub(crate) fn authorize_windowshader_presentation<S: crate::wayland_wallpaper::R
         shader_name, policy_id, program,
     )?;
     Some(WindowshaderPresentationAuthorization {
-        recovery_shifts: recovery.map(|shift| (shift.rotation_shift, shift.animation_shift)),
+        presentation: crate::wayland_render_core::FramePresentationDecision::from_recovery_durations(
+            recovery.map(|shift| (shift.rotation_shift, shift.animation_shift)),
+        ),
         rotate,
     })
 }
