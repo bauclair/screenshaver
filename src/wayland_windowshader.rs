@@ -61,9 +61,15 @@ use crate::wayland_wallpaper::{
 // outcome. None still means that no real compositor callback authorized work.
 // The shared GL executor applies clock changes; it does not interpret
 // Windowshader callback recovery data or decide whether to rotate.
-pub(crate) struct WindowshaderPresentationAuthorization {
-    pub(crate) presentation: crate::wayland_render_core::FramePresentationDecision,
-    pub(crate) rotate: bool,
+// The Windowshader controller, not Render Core, decides whether a compositor-
+// authorized frame exists. An explicit Skip keeps that decision distinct from
+// a successfully authorized frame with no clock recovery to apply.
+pub(crate) enum WindowshaderFrameGate {
+    Skip,
+    Present {
+        presentation: crate::wayland_render_core::FramePresentationDecision,
+        rotate: bool,
+    },
 }
 
 pub(crate) fn authorize_windowshader_presentation<S: crate::wayland_wallpaper::RenderWaylandDispatch>(
@@ -77,17 +83,19 @@ pub(crate) fn authorize_windowshader_presentation<S: crate::wayland_wallpaper::R
     shader_name: &str,
     policy_id: i64,
     program: u32,
-) -> Option<WindowshaderPresentationAuthorization> {
-    let (recovery, rotate) = controller.authorize_windowshader_frame(
+) -> WindowshaderFrameGate {
+    let Some((recovery, rotate)) = controller.authorize_windowshader_frame(
         control, state, targets, interval, animation_anchor, paused,
         shader_name, policy_id, program,
-    )?;
-    Some(WindowshaderPresentationAuthorization {
+    ) else {
+        return WindowshaderFrameGate::Skip;
+    };
+    WindowshaderFrameGate::Present {
         presentation: crate::wayland_render_core::FramePresentationDecision::from_recovery_durations(
             recovery.map(|shift| (shift.rotation_shift, shift.animation_shift)),
         ),
         rotate,
-    })
+    }
 }
 
 // Stage 4B-5C incremental ownership transfer: Windowshader constructs its own
