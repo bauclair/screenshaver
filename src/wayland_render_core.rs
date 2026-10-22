@@ -36,6 +36,20 @@ struct FrameClockRecovery {
     animation_shift: Duration,
 }
 
+impl FramePresentationDecision {
+    // The pipeline's callback controller has already authorized this frame.
+    // These constructors only normalize its clock-recovery result; they
+    // cannot create compositor presentation eligibility.
+    fn from_recovery_durations(recovery: Option<(Duration, Duration)>) -> Self {
+        Self {
+            recovery: recovery.map(|(rotation_shift, animation_shift)| FrameClockRecovery {
+                rotation_shift,
+                animation_shift,
+            }),
+        }
+    }
+}
+
 // Wallpaper's compositor callback accounting is independent of Windowshader.
 // This state never grants frame readiness: the dispatch implementation must
 // first observe the real wl_surface.frame Done event.
@@ -1246,24 +1260,17 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     ) else {
                     return Ok(FrameLoopAction::Continue);
                 };
-                (FramePresentationDecision {
-                    recovery: recovery.map(|shift| FrameClockRecovery {
-                        rotation_shift: shift.rotation_shift,
-                        animation_shift: shift.animation_shift,
-                    }),
-                }, rotate)
+                (FramePresentationDecision::from_recovery_durations(
+                    recovery.map(|shift| (shift.rotation_shift, shift.animation_shift)),
+                ), rotate)
             } else {
                 let Some(recovery) = wallpaper_callbacks.evaluate(
                     state, native_targets, frame_runtime.clock.shader_switched, frame_runtime.clock.animation_started,
                 ) else {
                     return Ok(FrameLoopAction::Continue);
                 };
-                (FramePresentationDecision {
-                    recovery: recovery.map(|(rotation_shift, animation_shift)| FrameClockRecovery {
-                        rotation_shift,
-                        animation_shift,
-                    }),
-                }, !frame_runtime.clock.paused && shader_interval.is_some_and(|interval| frame_runtime.clock.shader_switched.elapsed() >= interval))
+                (FramePresentationDecision::from_recovery_durations(recovery),
+                    !frame_runtime.clock.paused && shader_interval.is_some_and(|interval| frame_runtime.clock.shader_switched.elapsed() >= interval))
             };
 
             // Render Core applies only shared animation/FPS accounting.
