@@ -324,6 +324,21 @@ impl SharedFrameContext {
         self.gl.replace_program(candidate_program);
     }
 
+    // Activate a prepared rotation candidate. Uniform lookup must succeed
+    // before retiring the active textures/program, as in the original loop.
+    fn activate_rotation_candidate(
+        &mut self,
+        program: u32,
+        textures: crate::manage_textures::TextureManager,
+        shader_inputs: &[crate::isf_types::ShaderInput],
+    ) -> Result<(i32, i32, i32, i32), String> {
+        unsafe { gl::UseProgram(program); }
+        crate::apply_shader_inputs::apply(program, shader_inputs);
+        let uniforms = Self::shader_uniform_locations(program)?;
+        self.commit_shader_replacement(program, textures);
+        Ok(uniforms)
+    }
+
     fn release(&mut self) {
         // Post-processing targets and textures must be destroyed before the
         // shader program and timing objects, while EGL is still current.
@@ -1359,28 +1374,12 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                     }
                                 };
 
-                                unsafe {
-                                    gl::UseProgram(
-                                        next_program
-                                    );
-                                }
-
-
-                                crate::apply_shader_inputs::apply(
-                                    next_program,
-                                    &next_shader.shader_inputs,
-                                );
-
-
                                 let (next_i_time, next_i_resolution, next_i_mouse, next_i_frame) =
-                                    SharedFrameContext::shader_uniform_locations(next_program)?;
-
-
-                                frame_context.commit_shader_replacement(
-                                    next_program,
-                                    next_texture_manager,
-                                );
-
+                                    frame_context.activate_rotation_candidate(
+                                        next_program,
+                                        next_texture_manager,
+                                        &next_shader.shader_inputs,
+                                    )?;
 
                                 i_time =
                                     next_i_time;
