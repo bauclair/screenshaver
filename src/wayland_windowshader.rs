@@ -84,24 +84,25 @@ pub(crate) fn authorize_windowshader_presentation<S: crate::wayland_wallpaper::R
     state: &mut S,
     targets: &[NativeWallpaperTarget],
     interval: Option<Duration>,
-    animation_anchor: std::time::Instant,
+    animation_anchor: &mut std::time::Instant,
     paused: bool,
     shader_name: &str,
     policy_id: i64,
     program: u32,
 ) -> WindowshaderFrameGate {
     let Some((recovery, rotate)) = controller.authorize_windowshader_frame(
-        control, state, targets, interval, animation_anchor, paused,
+        control, state, targets, interval, *animation_anchor, paused,
         shader_name, policy_id, program,
     ) else {
         return WindowshaderFrameGate::Skip;
     };
-    WindowshaderFrameGate::Present {
-        presentation: crate::wayland_render_core::FramePresentationDecision::from_recovery_durations(
-            recovery.map(|shift| (shift.rotation_shift, shift.animation_shift)),
-        ),
-        rotate,
-    }
+    let presentation = crate::wayland_render_core::FramePresentationDecision::from_recovery_durations(
+        recovery.map(|shift| (shift.rotation_shift, shift.animation_shift)),
+    );
+    // Windowshader owns the callback-gap animation-clock decision.
+    // Hidden time must not advance shader rotation.
+    apply_windowshader_callback_recovery(&presentation, animation_anchor);
+    WindowshaderFrameGate::Present { presentation, rotate }
 }
 
 // Windowshader owns the clock policy after a genuine compositor callback

@@ -1354,7 +1354,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     windowshader_state.as_mut()
                         .expect("Windowshader controller exists only in Windowed mode"),
                     control, state, native_targets, shader_interval,
-                    frame_runtime.clock.animation_started, frame_runtime.clock.paused,
+                    &mut frame_runtime.clock.animation_started, frame_runtime.clock.paused,
                     &frame_runtime.shader.current.shader_name,
                     frame_runtime.shader.current.policy_id, frame_context.gl.program,
                 ) {
@@ -1380,10 +1380,9 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             // Windowshader never advances shader rotation for hidden time;
             // Wallpaper retains its historical rotation/deadline adjustment.
             let recovered_from_callback_gap = if windowed_rotation {
-                crate::wayland_windowshader::apply_windowshader_callback_recovery(
-                    &presentation,
-                    &mut frame_runtime.clock.animation_started,
-                )
+                // Windowshader applied its animation-clock recovery while
+                // authorizing this compositor callback.
+                presentation.recovery.is_some()
             } else if let Some(recovery) = presentation.recovery.as_ref() {
                 frame_runtime.clock.animation_started += recovery.animation_shift;
                 frame_runtime.clock.shader_switched += recovery.rotation_shift;
