@@ -548,6 +548,24 @@ pub(crate) enum FrameLoopAction {
     Stop,
 }
 
+// Shared shader-rotation execution prerequisite.  Both Wallpaper and
+// Windowshader use the same EGL context-binding operation; neither pipeline
+// delegates its rotation scheduling or callback authorization here.
+fn bind_rotation_target(
+    display: EglDisplay,
+    context: EglContext,
+    targets: &[EglWallpaperTarget],
+) -> Result<(), String> {
+    if let Some(first_target) = targets.first() {
+        if unsafe {
+            eglMakeCurrent(display, first_target.surface, first_target.surface, context)
+        } == EGL_FALSE {
+            return Err(egl_failure("eglMakeCurrent before switching wallpaper shaders"));
+        }
+    }
+    Ok(())
+}
+
 pub(crate) type FrameStep<'a> = dyn FnMut() -> Result<FrameLoopAction, String> + 'a;
 pub(crate) type FrameLoopDriver = for<'a> fn(&mut FrameStep<'a>) -> Result<(), String>;
 
@@ -1294,27 +1312,9 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             }
 
             if rotation_requested {
-                if let Some(
-                    first_target
-                ) = egl_targets.first()
-                {
-                    if unsafe {
-                        eglMakeCurrent(
-                            display,
-                            first_target.surface,
-                            first_target.surface,
-                            context,
-                        )
-                    } == EGL_FALSE
-                    {
-                        return Err(
-                            egl_failure(
-                                "eglMakeCurrent before switching wallpaper shaders"
-                            )
-                        );
-                    }
-                }
-
+                // Rotation execution is pipeline-neutral: bind the first
+                // render target before selecting or compiling a candidate.
+                bind_rotation_target(display, context, egl_targets)?;
 
                 match select_safe_wallpaper_shader(
                     shader_manager,
