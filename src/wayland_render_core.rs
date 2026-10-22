@@ -520,6 +520,35 @@ impl SharedFrameRuntimeState {
     }
 }
 
+// Audio-motion state is persistent rendering state, not a compositor scheduling
+// decision. Keep effect selection, smoothing, lyric tracking, and update timing
+// together so a future pipeline-owned loop can borrow them as one unit.
+struct SharedFrameAudioMotionState {
+    effect: crate::render_audio_motion::AudioMotionEffect,
+    motion: crate::render_audio_motion::AudioMotionState,
+    lyrics_manager: Option<crate::manage_lyrics::LyricsManager>,
+    last_update: Instant,
+}
+
+impl SharedFrameAudioMotionState {
+    fn new(effect: crate::render_audio_motion::AudioMotionEffect) -> Self {
+        let lyrics_manager = if matches!(
+            effect,
+            crate::render_audio_motion::AudioMotionEffect::WooferFromHell
+        ) {
+            crate::manage_lyrics::LyricsManager::start().ok()
+        } else {
+            None
+        };
+        Self {
+            effect,
+            motion: crate::render_audio_motion::AudioMotionState::default(),
+            lyrics_manager,
+            last_update: Instant::now(),
+        }
+    }
+}
+
 // Common GL entry-point loading; called by each pipeline before frame execution.
 pub(crate) fn prepare_egl_frame_processing() {
     gl::load_with(
@@ -989,27 +1018,9 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
 
 
-    let mut audio_motion_effect =
-        initial_postprocess_profile.audio_motion;
-
-
-    let mut audio_motion_state =
-        crate::render_audio_motion::AudioMotionState::default();
-
-
-    let mut audio_motion_lyrics_manager =
-        if matches!(
-            audio_motion_effect,
-            crate::render_audio_motion::AudioMotionEffect::WooferFromHell
-        ) {
-            crate::manage_lyrics::LyricsManager::start().ok()
-        } else {
-            None
-        };
-
-
-    let mut last_audio_motion_update =
-        Instant::now();
+    let mut frame_audio = SharedFrameAudioMotionState::new(
+        initial_postprocess_profile.audio_motion,
+    );
 
 
     frame_context.uniforms =
@@ -1168,28 +1179,28 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                     "audio" | "spectral" | "loudness"
                                 ) || replacement_profile.audio_motion.is_enabled();
 
-                            audio_motion_effect =
+                            frame_audio.effect =
                                 replacement_profile.audio_motion;
 
                             if matches!(
-                                audio_motion_effect,
+                                frame_audio.effect,
                                 crate::render_audio_motion::AudioMotionEffect::WooferFromHell
-                            ) && audio_motion_lyrics_manager.is_none()
+                            ) && frame_audio.lyrics_manager.is_none()
                             {
-                                audio_motion_lyrics_manager =
+                                frame_audio.lyrics_manager =
                                     crate::manage_lyrics::LyricsManager::start().ok();
                             }
 
                             if !matches!(
-                                audio_motion_effect,
+                                frame_audio.effect,
                                 crate::render_audio_motion::AudioMotionEffect::WooferFromHell
                             ) {
-                                audio_motion_lyrics_manager = None;
+                                frame_audio.lyrics_manager = None;
                             }
 
-                            if !audio_motion_effect.is_enabled() {
-                                audio_motion_lyrics_manager = None;
-                                audio_motion_state.reset();
+                            if !frame_audio.effect.is_enabled() {
+                                frame_audio.lyrics_manager = None;
+                                frame_audio.motion.reset();
 
                                 for pipeline in
                                     frame_context.pipeline.postprocess.values_mut()
@@ -1200,7 +1211,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                 }
                             }
 
-                            last_audio_motion_update =
+                            frame_audio.last_update =
                                 Instant::now();
 
                             frame_runtime.controls.animation_speed =
@@ -1475,36 +1486,36 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                     ) || postprocess_profile.audio_motion.is_enabled();
 
 
-                                audio_motion_effect =
+                                frame_audio.effect =
                                     postprocess_profile.audio_motion;
 
 
                                 if matches!(
-                                    audio_motion_effect,
+                                    frame_audio.effect,
                                     crate::render_audio_motion::AudioMotionEffect::WooferFromHell
-                                ) && audio_motion_lyrics_manager.is_none()
+                                ) && frame_audio.lyrics_manager.is_none()
                                 {
-                                    audio_motion_lyrics_manager =
+                                    frame_audio.lyrics_manager =
                                         crate::manage_lyrics::LyricsManager::start().ok();
                                 }
 
                                 if !matches!(
-                                    audio_motion_effect,
+                                    frame_audio.effect,
                                     crate::render_audio_motion::AudioMotionEffect::WooferFromHell
                                 ) {
-                                    audio_motion_lyrics_manager = None;
+                                    frame_audio.lyrics_manager = None;
                                 }
 
 
-                                if !audio_motion_effect.is_enabled() {
-                                    audio_motion_lyrics_manager =
+                                if !frame_audio.effect.is_enabled() {
+                                    frame_audio.lyrics_manager =
                                         None;
 
-                                    audio_motion_state.reset();
+                                    frame_audio.motion.reset();
                                 }
 
 
-                                last_audio_motion_update =
+                                frame_audio.last_update =
                                     Instant::now();
 
 
@@ -1648,11 +1659,11 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
             let audio_motion_frame_seconds =
                 now.duration_since(
-                    last_audio_motion_update
+                    frame_audio.last_update
                 )
                 .as_secs_f32();
 
-            last_audio_motion_update =
+            frame_audio.last_update =
                 now;
 
             let mut audio_motion_scale =
@@ -1661,7 +1672,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             let mut audio_motion_fft_trace =
                 [0.0_f32; crate::analyze_audio::AUDIO_MOTION_TRACE_CHANNELS];
 
-            match audio_motion_effect {
+            match frame_audio.effect {
                 crate::render_audio_motion::AudioMotionEffect::WooferFromHell => {
                     let spectrum =
                         crate::analyze_audio::shared_audio_motion_spectrum()
@@ -1682,7 +1693,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                             .unwrap_or_default();
 
                     audio_motion_scale =
-                        audio_motion_state.update(
+                        frame_audio.motion.update(
                             spectrum,
                             audio_motion_frame_seconds,
                             &vocal_timing,
@@ -1700,7 +1711,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                             .unwrap_or_default();
 
                     audio_motion_fft_trace =
-                        audio_motion_state.update_fft_mirror_warp(
+                        frame_audio.motion.update_fft_mirror_warp(
                             spectrum,
                             audio_motion_frame_seconds,
                         );
@@ -1717,14 +1728,14 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                             .unwrap_or_default();
 
                     audio_motion_fft_trace =
-                        audio_motion_state.update_polar_propeller(
+                        frame_audio.motion.update_polar_propeller(
                             spectrum,
                             audio_motion_frame_seconds,
                         );
                 }
 
                 crate::render_audio_motion::AudioMotionEffect::Off => {
-                    audio_motion_state.reset();
+                    frame_audio.motion.reset();
                 }
             }
 
@@ -1770,7 +1781,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                         audio_bands: current_audio_bands,
                         audio_motion_scale,
                         audio_motion_fft_trace,
-                        rotation_turns: audio_motion_state.polar_rotation_turns(),
+                        rotation_turns: frame_audio.motion.polar_rotation_turns(),
                     },
                     ShaderSceneUniforms {
                         time: elapsed.as_secs_f32() * frame_runtime.controls.animation_speed,
