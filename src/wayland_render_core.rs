@@ -1075,7 +1075,10 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     }
     
 
-    let result = loop_driver(&mut || -> Result<FrameLoopAction, String> {
+    // Keep the GPU execution step separate from the pipeline-owned loop driver.
+    // This closure is still hosted by Render Core; the next ownership transfer
+    // will move its scheduling decisions into the Windowshader controller.
+    let mut execute_frame_step = || -> Result<FrameLoopAction, String> {
 
             // The Windowshader pipeline owns the ordered pre-frame control
             // sequence. The shared core supplies only target reconciliation.
@@ -2004,8 +2007,9 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 frame_runtime.pacing.pace_wallpaper::<S>();
             }
             Ok(FrameLoopAction::Continue)
-        });
-
+        };
+    let result = loop_driver(&mut execute_frame_step);
+    drop(execute_frame_step);
 
     frame_context.release();
 
