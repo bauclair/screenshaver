@@ -2069,14 +2069,15 @@ fn resize_frame_scene_target(
     Ok((target_width, target_height))
 }
 
-fn execute_shader_scene_frame(
+// Prepare the offscreen scene and bind the active shader inputs. This is
+// GPU execution only: it neither requests nor authorizes Wayland presentation.
+fn prepare_shader_scene_draw(
     gl_resources: &SharedFrameGlResources,
     textures: &crate::manage_textures::TextureManager,
     postprocess: &mut crate::postprocess_shader::PostprocessPipeline,
-    uniforms: ShaderSceneUniforms,
-) {
+) -> (u32, u32) {
     postprocess.bind_scene_target();
-    let (scene_width, scene_height) = postprocess.scene_dimensions();
+    let dimensions = postprocess.scene_dimensions();
     unsafe {
         gl::Disable(gl::BLEND);
         gl::ColorMask(gl::TRUE, gl::TRUE, gl::TRUE, gl::TRUE);
@@ -2086,6 +2087,20 @@ fn execute_shader_scene_frame(
         gl::UseProgram(gl_resources.program);
     }
     textures.bind_channels();
+    dimensions
+}
+
+fn execute_shader_scene_frame(
+    gl_resources: &SharedFrameGlResources,
+    textures: &crate::manage_textures::TextureManager,
+    postprocess: &mut crate::postprocess_shader::PostprocessPipeline,
+    uniforms: ShaderSceneUniforms,
+) {
+    let (scene_width, scene_height) = prepare_shader_scene_draw(
+        gl_resources,
+        textures,
+        postprocess,
+    );
     unsafe {
         set_uniform_1f(uniforms.i_time, uniforms.time);
         set_uniform_3f(uniforms.i_resolution, scene_width as f32, scene_height as f32, 1.0);
