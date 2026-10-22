@@ -2101,6 +2101,19 @@ fn execute_shader_scene_frame(
         textures,
         postprocess,
     );
+    draw_shader_scene_triangle(gl_resources, uniforms, scene_width, scene_height);
+    postprocess.present_scene();
+}
+
+// Apply the active shader's per-frame uniforms and execute its fullscreen
+// triangle. The caller owns scene preparation and post-processing; no Wayland
+// presentation authorization or EGL buffer swap occurs here.
+fn draw_shader_scene_triangle(
+    gl_resources: &SharedFrameGlResources,
+    uniforms: ShaderSceneUniforms,
+    scene_width: u32,
+    scene_height: u32,
+) {
     unsafe {
         set_uniform_1f(uniforms.i_time, uniforms.time);
         set_uniform_3f(uniforms.i_resolution, scene_width as f32, scene_height as f32, 1.0);
@@ -2110,7 +2123,6 @@ fn execute_shader_scene_frame(
         gl::DrawArrays(gl::TRIANGLES, 0, 3);
         gl::ColorMask(gl::TRUE, gl::TRUE, gl::TRUE, gl::TRUE);
     }
-    postprocess.present_scene();
 }
 
 fn bind_egl_frame_target(display: EglDisplay, context: EglContext, surface: *mut std::ffi::c_void) -> Result<(), String> {
