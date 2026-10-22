@@ -217,7 +217,9 @@ pub(crate) fn windowshader_should_stop<S: crate::wayland_wallpaper::RenderWaylan
 // Stage 2D-2B Step 2: Windowshader owns its post-render surface lifecycle.
 // Preserve geometry persistence, XDG destruction, and compositor flush order.
 // Stage 4B-5C: Windowshader owns the ordered dispatch / target maintenance /
-// shutdown preflight. Target maintenance remains a shared, pipeline-neutral
+// shutdown preflight. It now returns the loop termination action directly,
+// rather than asking the shared renderer to interpret a boolean.
+// Target maintenance remains a shared, pipeline-neutral
 // operation injected by the caller. Neither this function nor its callback
 // fabricates wl_surface.frame Done or treats XDG activation as visibility.
 pub(crate) fn run_windowshader_frame_preflight<S, F>(
@@ -234,7 +236,7 @@ pub(crate) fn run_windowshader_frame_preflight<S, F>(
     frame: i32,
     running: &Arc<AtomicBool>,
     mut reconcile_targets: F,
-) -> Result<bool, String>
+) -> Result<Option<crate::wayland_render_core::FrameLoopAction>, String>
 where
     S: crate::wayland_wallpaper::RenderWaylandDispatch,
     F: FnMut(&mut S, &mut Vec<NativeWallpaperTarget>) -> Result<bool, String>,
@@ -248,9 +250,12 @@ where
     control.diagnostic_checkpoint(2);
     if !reconcile_targets(state, native_targets)? {
         println!("All wallpaper outputs have been disconnected.");
-        return Ok(false);
+        return Ok(Some(crate::wayland_render_core::FrameLoopAction::Stop));
     }
-    Ok(!windowshader_should_stop(state, running))
+    if windowshader_should_stop(state, running) {
+        return Ok(Some(crate::wayland_render_core::FrameLoopAction::Stop));
+    }
+    Ok(None)
 }
 
 fn finish_windowshader_surface(

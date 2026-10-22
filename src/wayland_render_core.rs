@@ -970,7 +970,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             // The Windowshader pipeline owns the ordered pre-frame control
             // sequence. The shared core supplies only target reconciliation.
             if windowed_rotation {
-                let should_continue = crate::wayland_windowshader::run_windowshader_frame_preflight(
+                let exit_action = crate::wayland_windowshader::run_windowshader_frame_preflight(
                     windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode"),
                     event_queue, state, native_targets, frame_runtime.clock.paused,
                     control, shader_interval, &frame_runtime.shader.current.shader_name,
@@ -981,8 +981,8 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                         &mut frame_context.pipeline.postprocess,
                     ),
                 )?;
-                if !should_continue {
-                    return Ok(FrameLoopAction::Stop);
+                if let Some(exit_action) = exit_action {
+                    return Ok(exit_action);
                 }
             } else {
                 control.diagnostic_checkpoint(1);
