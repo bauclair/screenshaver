@@ -64,6 +64,12 @@ use crate::wayland_wallpaper::{
 // The Windowshader controller, not Render Core, decides whether a compositor-
 // authorized frame exists. An explicit Skip keeps that decision distinct from
 // a successfully authorized frame with no clock recovery to apply.
+pub(crate) enum WindowshaderPauseTransition {
+    Idle,
+    Resumed,
+    Running,
+}
+
 pub(crate) enum WindowshaderFrameGate {
     Skip,
     Present {
@@ -2141,6 +2147,37 @@ impl WindowshaderFrameLoopState {
         let resumed = self.complete_presented_frame(was_paused);
         self.finish_frame(frame_duration);
         resumed
+    }
+
+    // Increment 14: own the complete Windowshader pause/idle/resume
+    // transition. This does not grant compositor presentation eligibility.
+    pub(crate) fn process_pause_transition<S: crate::wayland_wallpaper::RenderWaylandDispatch>(
+        &mut self,
+        state: &mut S,
+        targets: &[NativeWallpaperTarget],
+        control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+        status_enabled: bool,
+        paused: &mut bool,
+        animation_started: &mut Instant,
+    ) -> WindowshaderPauseTransition {
+        if control.pause_requested() {
+            if !*paused {
+                self.enter_pause_with_dispatch(state, targets, control, status_enabled);
+                *paused = true;
+            }
+            idle_paused_windowshader_frame();
+            return WindowshaderPauseTransition::Idle;
+        }
+        if *paused {
+            self.release_pause_and_adjust_animation_clock(
+                state, Instant::now(), animation_started,
+            );
+            // A real compositor frame callback is still required before
+            // presentation; release alone never marks a frame ready.
+            *paused = false;
+            return WindowshaderPauseTransition::Resumed;
+        }
+        WindowshaderPauseTransition::Running
     }
 
     // Stage 4B-5C: Windowshader owns the ordered pause-entry dispatch and

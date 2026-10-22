@@ -1165,12 +1165,28 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             }
 
             control.diagnostic_checkpoint(3);
-            if control.pause_requested() {
-                if !frame_runtime.clock.paused {
-                    if windowed_rotation {
-                        windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode")
-                            .enter_pause_with_dispatch(state, native_targets, control, status_enabled);
-                    } else {
+            // Windowshader owns its complete pause transition, including the
+            // idle wait and release of its animation clock. Wallpaper retains
+            // its original pause path below.
+            if windowed_rotation {
+                match windowshader_state.as_mut()
+                    .expect("Windowshader controller exists only in Windowed mode")
+                    .process_pause_transition(
+                        state, native_targets, control, status_enabled,
+                        &mut frame_runtime.clock.paused,
+                        &mut frame_runtime.clock.animation_started,
+                    ) {
+                    crate::wayland_windowshader::WindowshaderPauseTransition::Idle => {
+                        return Ok(FrameLoopAction::Continue);
+                    }
+                    crate::wayland_windowshader::WindowshaderPauseTransition::Resumed => {
+                        frame_runtime.accounting.frame_times.clear();
+                    }
+                    crate::wayland_windowshader::WindowshaderPauseTransition::Running => {}
+                }
+            } else {
+                if control.pause_requested() {
+                    if !frame_runtime.clock.paused {
                         crate::logger::warning(
                             &crate::locate_paths::runtime_log_path(),
                             "[AMBIENT_HANDOFF_DIAG] Wayland renderer detected pause request",
@@ -1185,51 +1201,24 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                             crate::renderer_status::publish(status_pipeline, crate::renderer_status::State::Paused);
                         }
                         println!("Wayland wallpaper rendering paused.");
+                        frame_runtime.clock.paused = true;
                     }
-                    frame_runtime.clock.paused = true;
-                }
-
-
-                // Windowshader owns its paused-loop idle policy; Wallpaper
-                // retains its existing 10 ms wait. Neither path presents.
-                if windowed_rotation {
-                    crate::wayland_windowshader::idle_paused_windowshader_frame();
-                } else {
                     thread::sleep(Duration::from_millis(10));
+                    return Ok(FrameLoopAction::Continue);
                 }
 
-                return Ok(FrameLoopAction::Continue);
-            }
-
-
-            if frame_runtime.clock.paused {
-                let pause_ended_at = Instant::now();
-                // Windowshader owns the entire pause-release clock adjustment.
-                // Wallpaper keeps its historical pause and rotation clocks.
-                if windowed_rotation {
-                    windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode")
-                        .release_pause_and_adjust_animation_clock(
-                            state, pause_ended_at, &mut frame_runtime.clock.animation_started,
-                        );
-                } else if let Some(paused_at) = frame_runtime.clock.pause_started.take() {
-                    let duration = pause_ended_at.duration_since(paused_at);
-                    frame_runtime.clock.animation_started += duration;
-                    frame_runtime.clock.shader_switched += duration;
-                }
-
-
-                if !windowed_rotation {
+                if frame_runtime.clock.paused {
+                    let pause_ended_at = Instant::now();
+                    if let Some(paused_at) = frame_runtime.clock.pause_started.take() {
+                        let duration = pause_ended_at.duration_since(paused_at);
+                        frame_runtime.clock.animation_started += duration;
+                        frame_runtime.clock.shader_switched += duration;
+                    }
                     pacing.reset_wallpaper_deadline::<S>();
+                    frame_runtime.accounting.frame_times.clear();
+                    frame_runtime.clock.paused = false;
                 }
-
-                frame_runtime.accounting.frame_times.clear();
-                // The pause has ended even if the compositor has not yet
-                // allowed another windowshader presentation. Keep the separate pending
-                // flag until a successful EGL swap acknowledges resumption.
-                frame_runtime.clock.paused = false;
-
             }
-
 
             // Wallpaper retains its historical checkpoint location; Windowshader
             // owns its checkpoint and callback-authorization sequence.
