@@ -347,6 +347,27 @@ impl SharedFrameAccountingState {
             fps_warning_state: crate::fps_monitor::FpsWarningState::Normal,
         }
     }
+
+    // Account only for completed GPU work, never compositor swap latency.
+    // Returns true precisely when the warning state changes to non-Normal;
+    // the pipeline caller retains ownership of user notifications.
+    fn record_completed_gpu_frame(&mut self, gpu_duration: Duration, target_fps: u32) -> bool {
+        let performance = self.frame_times.record(gpu_duration, target_fps);
+        if performance.warning_state == self.fps_warning_state {
+            return false;
+        }
+        self.fps_warning_state = performance.warning_state;
+        println!("Wallpaper performance changed:");
+        println!("    Target FPS: {}", target_fps);
+        println!("    Average FPS: {}", performance.average_fps);
+        println!("    State: {:?}", self.fps_warning_state);
+        println!();
+        self.fps_warning_state != crate::fps_monitor::FpsWarningState::Normal
+    }
+
+    fn advance_presented_frame(&mut self) {
+        self.frame = self.frame.saturating_add(1);
+    }
 }
 
 // Stage 4B-5D: persistent active-policy/shader selection state. The shared
@@ -1966,73 +1987,19 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
 
             let gpu_render_duration = frame_context.completed_frame_gpu_duration();
-
-            let performance_status =
-                frame_runtime.accounting.frame_times.record(
-                    gpu_render_duration,
+            if frame_runtime.accounting.record_completed_gpu_frame(gpu_render_duration, rendered_fps) {
+                notify_active_wallpaper(
+                    &mut notification_state,
+                    false,
+                    runtime.notifications,
+                    &frame_runtime.shader.current,
+                    &frame_context.pipeline.textures,
                     rendered_fps,
+                    frame_runtime.controls.animation_speed,
+                    frame_runtime.accounting.fps_warning_state,
                 );
-
-
-            let new_warning_state =
-                performance_status.warning_state;
-
-
-            if new_warning_state
-                != frame_runtime.accounting.fps_warning_state
-            {
-                frame_runtime.accounting.fps_warning_state =
-                    new_warning_state;
-
-
-                println!(
-                    "Wallpaper performance changed:"
-                );
-
-
-                println!(
-                    "    Target FPS: {}",
-                    rendered_fps
-                );
-
-
-                println!(
-                    "    Average FPS: {}",
-                    performance_status.average_fps
-                );
-
-
-                println!(
-                    "    State: {:?}",
-                    frame_runtime.accounting.fps_warning_state
-                );
-
-
-                println!();
-
-
-                if frame_runtime.accounting.fps_warning_state
-                    != crate::fps_monitor::FpsWarningState::Normal
-                {
-                    notify_active_wallpaper(
-                        &mut notification_state,
-                        false,
-                        runtime.notifications,
-                        &frame_runtime.shader.current,
-                        &frame_context.pipeline.textures,
-                        rendered_fps,
-                        frame_runtime.controls.animation_speed,
-                        frame_runtime.accounting.fps_warning_state,
-                    );
-                }
             }
-
-
-            frame_runtime.accounting.frame =
-                frame_runtime.accounting.frame.saturating_add(
-                    1
-                );
-
+            frame_runtime.accounting.advance_presented_frame();
 
             control.diagnostic_checkpoint(7);
             // Dispatch pacing to the owning rendering pipeline.
