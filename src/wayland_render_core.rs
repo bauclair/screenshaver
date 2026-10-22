@@ -1761,27 +1761,19 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                         )?;
 
 
-                configure_frame_postprocess_effects(
-                    postprocess,
-                    current_audio_bands,
-                    audio_motion_scale,
-                    audio_motion_fft_trace,
-                    audio_motion_state.polar_rotation_turns(),
-                );
-
-
-                let (target_width, target_height) =
-                    resize_frame_scene_target(
-                        postprocess,
-                        native_target.info.registry_name,
-                        native_target.width,
-                        native_target.height,
-                    )?;
-
-                execute_shader_scene_frame(
+                let (target_width, target_height) = execute_target_shader_scene(
                     &frame_context.gl,
                     &frame_context.pipeline.textures,
                     postprocess,
+                    native_target.info.registry_name,
+                    native_target.width,
+                    native_target.height,
+                    FrameSceneEffects {
+                        audio_bands: current_audio_bands,
+                        audio_motion_scale,
+                        audio_motion_fft_trace,
+                        rotation_turns: audio_motion_state.polar_rotation_turns(),
+                    },
                     ShaderSceneUniforms {
                         time: elapsed.as_secs_f32() * frame_runtime.controls.animation_speed,
                         frame: frame_runtime.accounting.frame,
@@ -1790,7 +1782,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                         i_mouse,
                         i_frame,
                     },
-                );
+                )?;
 
                 // Diagnostic only: compose after post-processing, before EGL windowshader presentation.
                 let status_text = crate::renderer_status::enabled()
@@ -2033,6 +2025,39 @@ struct ShaderSceneUniforms {
     i_resolution: i32,
     i_mouse: i32,
     i_frame: i32,
+}
+
+// Pipeline-neutral per-target scene execution. The caller owns compositor
+// eligibility, EGL context binding, overlays and presentation. Keeping these
+// operations together ensures effect state and target dimensions are applied
+// before the scene draw on both Wallpaper and Windowshader paths.
+struct FrameSceneEffects {
+    audio_bands: crate::analyze_audio::AudioBands,
+    audio_motion_scale: f32,
+    audio_motion_fft_trace: [f32; crate::analyze_audio::AUDIO_MOTION_TRACE_CHANNELS],
+    rotation_turns: f32,
+}
+
+fn execute_target_shader_scene(
+    gl_resources: &SharedFrameGlResources,
+    textures: &crate::manage_textures::TextureManager,
+    postprocess: &mut crate::postprocess_shader::PostprocessPipeline,
+    registry_name: u32,
+    width: i32,
+    height: i32,
+    effects: FrameSceneEffects,
+    uniforms: ShaderSceneUniforms,
+) -> Result<(u32, u32), String> {
+    configure_frame_postprocess_effects(
+        postprocess,
+        effects.audio_bands,
+        effects.audio_motion_scale,
+        effects.audio_motion_fft_trace,
+        effects.rotation_turns,
+    );
+    let dimensions = resize_frame_scene_target(postprocess, registry_name, width, height)?;
+    execute_shader_scene_frame(gl_resources, textures, postprocess, uniforms);
+    Ok(dimensions)
 }
 
 // Shared per-target effect configuration. Both rendering controllers can
