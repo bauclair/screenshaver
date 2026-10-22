@@ -240,12 +240,23 @@ impl SharedFrameContext {
         self.gl.end_gpu_frame_before_presentation();
     }
 
-    fn present_frame(
+    // Complete the GPU measurement before the potentially blocking compositor
+    // swap, then acknowledge the successful swap to the owning dispatch state.
+    // The caller alone owns wl_surface.frame callback requests/eligibility.
+    fn present_and_acknowledge<S: RenderWaylandDispatch>(
         &self,
         display: EglDisplay,
         surface: *mut std::ffi::c_void,
+        registry_name: u32,
+        state: &mut S,
+        control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
     ) -> Result<Duration, String> {
-        present_egl_frame_target(display, surface)
+        self.finish_frame_gpu_measurement();
+        control.diagnostic_checkpoint(5);
+        let duration = present_egl_frame_target(display, surface)?;
+        control.diagnostic_checkpoint(6);
+        state.on_frame_swap_completed(registry_name);
+        Ok(duration)
     }
 
     fn completed_frame_gpu_duration(&self) -> Duration {
@@ -363,6 +374,14 @@ impl SharedFrameAccountingState {
         println!("    State: {:?}", self.fps_warning_state);
         println!();
         self.fps_warning_state != crate::fps_monitor::FpsWarningState::Normal
+    }
+
+    // A compositor stall must not contaminate the next GPU FPS epoch.
+    fn reset_after_presentation_stall(&mut self, swap_duration: Duration) {
+        if swap_duration >= Duration::from_millis(250) {
+            self.frame_times.clear();
+            self.fps_warning_state = crate::fps_monitor::FpsWarningState::Normal;
+        }
     }
 
     fn advance_presented_frame(&mut self) {
@@ -1914,13 +1933,13 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 // xdg_toplevel on an inactive workspace may block for seconds
                 // in eglSwapBuffers(); that presentation wait is not shader
                 // rendering cost.
-                frame_context.finish_frame_gpu_measurement();
-
-                control.diagnostic_checkpoint(5);
-                let presentation_duration = frame_context.present_frame(display, egl_target.surface)?;
-
-                control.diagnostic_checkpoint(6);
-                state.on_frame_swap_completed(native_target.info.registry_name);
+                let presentation_duration = frame_context.present_and_acknowledge(
+                    display,
+                    egl_target.surface,
+                    native_target.info.registry_name,
+                    state,
+                    control,
+                )?;
                 // Pipeline-specific presentation accounting belongs to the
                 // Windowshader controller; Wallpaper retains its own heartbeat.
                 let publish_rendering = if windowed_rotation {
@@ -1952,14 +1971,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 // A long compositor wait breaks continuous presentation.
                 // Begin a new rolling performance epoch instead of carrying
                 // samples from before the hidden/inactive interval forward.
-                if presentation_duration
-                    >= Duration::from_millis(250)
-                {
-                    frame_runtime.accounting.frame_times.clear();
-
-                    frame_runtime.accounting.fps_warning_state =
-                        crate::fps_monitor::FpsWarningState::Normal;
-                }
+                frame_runtime.accounting.reset_after_presentation_stall(presentation_duration);
             }
 
 
