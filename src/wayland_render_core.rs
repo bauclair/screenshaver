@@ -1761,20 +1761,12 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                         )?;
 
 
-                postprocess.set_audio_bands(
-                    current_audio_bands
-                );
-
-
-                postprocess.set_audio_motion_scale(
-                    audio_motion_scale
-                );
-
-                postprocess.set_audio_motion_fft_trace(
-                    audio_motion_fft_trace
-                );
-                postprocess.set_audio_motion_rotation_turns(
-                    audio_motion_state.polar_rotation_turns()
+                configure_frame_postprocess_effects(
+                    postprocess,
+                    current_audio_bands,
+                    audio_motion_scale,
+                    audio_motion_fft_trace,
+                    audio_motion_state.polar_rotation_turns(),
                 );
 
 
@@ -2069,6 +2061,22 @@ struct ShaderSceneUniforms {
     i_resolution: i32,
     i_mouse: i32,
     i_frame: i32,
+}
+
+// Shared per-target effect configuration. Both rendering controllers can
+// eventually call this before the pipeline-neutral shader scene executor.
+// This operation does not request frames or authorize EGL presentation.
+fn configure_frame_postprocess_effects(
+    postprocess: &mut crate::postprocess_shader::PostprocessPipeline,
+    audio_bands: crate::analyze_audio::AudioBands,
+    audio_motion_scale: f32,
+    audio_motion_fft_trace: [f32; crate::analyze_audio::AUDIO_MOTION_TRACE_CHANNELS],
+    rotation_turns: f32,
+) {
+    postprocess.set_audio_bands(audio_bands);
+    postprocess.set_audio_motion_scale(audio_motion_scale);
+    postprocess.set_audio_motion_fft_trace(audio_motion_fft_trace);
+    postprocess.set_audio_motion_rotation_turns(rotation_turns);
 }
 
 fn execute_shader_scene_frame(
