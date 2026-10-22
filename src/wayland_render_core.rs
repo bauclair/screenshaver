@@ -596,6 +596,50 @@ fn select_and_compile_rotation_candidate(
     Ok((shader, program))
 }
 
+// A pipeline-neutral rotation executor. The owning pipeline decides *when*
+// rotation is permitted; this operation only selects, compiles, prepares and
+// activates the candidate. Failure outcomes preserve the caller's existing
+// diagnostics and rotation bookkeeping.
+enum RotationExecutionOutcome {
+    Activated { shader: ActiveWallpaperShader, uniforms: (i32, i32, i32, i32) },
+    SelectionFailed(String),
+    CompilationFailed { shader: ActiveWallpaperShader, error: String },
+    TextureFailed { shader: ActiveWallpaperShader, error: String },
+}
+
+fn execute_shader_rotation(
+    display: EglDisplay,
+    context: EglContext,
+    targets: &[EglWallpaperTarget],
+    shader_manager: &mut crate::manage_shader::ShaderManager,
+    wallpaper_directory: &Path,
+    frame_context: &mut SharedFrameContext,
+    runtime: &crate::define_wallpaper::WallpaperRuntime,
+) -> Result<RotationExecutionOutcome, String> {
+    bind_rotation_target(display, context, targets)?;
+    let (shader, compilation) = match select_and_compile_rotation_candidate(
+        shader_manager, wallpaper_directory,
+    ) {
+        Ok(candidate) => candidate,
+        Err(error) => return Ok(RotationExecutionOutcome::SelectionFailed(error)),
+    };
+    let program = match compilation {
+        Ok(program) => program,
+        Err(error) => return Ok(RotationExecutionOutcome::CompilationFailed { shader, error }),
+    };
+    let textures = match frame_context.prepare_replacement_textures(&shader, runtime, program) {
+        Ok(textures) => textures,
+        Err(error) => {
+            unsafe { gl::DeleteProgram(program); }
+            return Ok(RotationExecutionOutcome::TextureFailed { shader, error });
+        }
+    };
+    let uniforms = frame_context.activate_rotation_candidate(
+        program, textures, &shader.shader_inputs,
+    )?;
+    Ok(RotationExecutionOutcome::Activated { shader, uniforms })
+}
+
 pub(crate) type FrameStep<'a> = dyn FnMut() -> Result<FrameLoopAction, String> + 'a;
 pub(crate) type FrameLoopDriver = for<'a> fn(&mut FrameStep<'a>) -> Result<(), String>;
 
@@ -1342,45 +1386,14 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             }
 
             if rotation_requested {
-                // Rotation execution is pipeline-neutral: bind the first
-                // render target before selecting or compiling a candidate.
-                bind_rotation_target(display, context, egl_targets)?;
-
-                match select_and_compile_rotation_candidate(
-                    shader_manager,
-                    wallpaper_directory,
-                ) {
-                    Ok((next_shader, compiled_program)) => {
-                        match compiled_program {
-                            Ok(next_program) => {
-                                let next_texture_manager = match frame_context
-                                    .prepare_replacement_textures(
-                                        &next_shader,
-                                        runtime,
-                                        next_program,
-                                    )
-                                {
-                                    Ok(textures) => textures,
-                                    Err(error) => {
-                                        println!(
-                                            "Wallpaper shader texture preparation failed; keeping the current shader:"
-                                        );
-                                        println!("    Shader: {}", next_shader.shader_name);
-                                        println!("    Error: {}", error);
-                                        println!();
-                                        unsafe { gl::DeleteProgram(next_program); }
-                                        shader_manager.remove_shader(&next_shader.manager_name);
-                                        return Ok(FrameLoopAction::Continue);
-                                    }
-                                };
-
-                                let (next_i_time, next_i_resolution, next_i_mouse, next_i_frame) =
-                                    frame_context.activate_rotation_candidate(
-                                        next_program,
-                                        next_texture_manager,
-                                        &next_shader.shader_inputs,
-                                    )?;
-
+                match execute_shader_rotation(
+                    display, context, egl_targets, shader_manager,
+                    wallpaper_directory, &mut frame_context, runtime,
+                )? {
+                    RotationExecutionOutcome::Activated {
+                        shader: next_shader,
+                        uniforms: (next_i_time, next_i_resolution, next_i_mouse, next_i_frame),
+                    } => {
                                 i_time =
                                     next_i_time;
 
@@ -1572,62 +1585,33 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
 
                                 println!();
-                            }
-
-
-                            Err(
-                                error
-                            ) => {
-                                if windowed_rotation {
-                                    windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").record_rotation_compile_failure(
-                                        &next_shader.shader_name, &error.to_string(),
-                                    );
-                                }
-                                println!(
-                                    "Wallpaper shader compilation failed; keeping the current shader:"
-                                );
-
-
-                                println!(
-                                    "    Shader: {}",
-                                    next_shader.shader_name
-                                );
-
-
-                                println!(
-                                    "    Error: {}",
-                                    error
-                                );
-
-
-                                println!();
-
-
-                                shader_manager.remove_shader(
-                                    &next_shader.manager_name
-                                );
-                            }
-                        }
                     }
-
-
-                    Err(
-                        error
-                    ) => {
+                    RotationExecutionOutcome::TextureFailed { shader, error } => {
+                        println!("Wallpaper shader texture preparation failed; keeping the current shader:");
+                        println!("    Shader: {}", shader.shader_name);
+                        println!("    Error: {}", error);
+                        println!();
+                        shader_manager.remove_shader(&shader.manager_name);
+                        return Ok(FrameLoopAction::Continue);
+                    }
+                    RotationExecutionOutcome::CompilationFailed { shader, error } => {
                         if windowed_rotation {
-                            windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").record_rotation_selection_failure(&error.to_string());
+                            windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode")
+                                .record_rotation_compile_failure(&shader.shader_name, &error);
                         }
-                        println!(
-                            "Wallpaper shader selection failed; keeping the current shader:"
-                        );
-
-
-                        println!(
-                            "    Error: {}",
-                            error
-                        );
-
-
+                        println!("Wallpaper shader compilation failed; keeping the current shader:");
+                        println!("    Shader: {}", shader.shader_name);
+                        println!("    Error: {}", error);
+                        println!();
+                        shader_manager.remove_shader(&shader.manager_name);
+                    }
+                    RotationExecutionOutcome::SelectionFailed(error) => {
+                        if windowed_rotation {
+                            windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode")
+                                .record_rotation_selection_failure(&error);
+                        }
+                        println!("Wallpaper shader selection failed; keeping the current shader:");
+                        println!("    Error: {}", error);
                         println!();
                     }
                 }
