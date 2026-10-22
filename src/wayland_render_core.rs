@@ -566,6 +566,21 @@ fn bind_rotation_target(
     Ok(())
 }
 
+// Select and compile a rotation candidate without changing the active GL
+// program or its textures. The caller retains responsibility for recording
+// pipeline-specific outcomes and committing a successful replacement.
+fn select_and_compile_rotation_candidate(
+    shader_manager: &mut crate::manage_shader::ShaderManager,
+    wallpaper_directory: &Path,
+) -> Result<(ActiveWallpaperShader, Result<u32, String>), String> {
+    let shader = select_safe_wallpaper_shader(shader_manager, wallpaper_directory)?;
+    let program = crate::compile_shader::build_program(
+        crate::define_constants::VERTEX_SHADER,
+        &shader.source,
+    ).map_err(|error| error.to_string());
+    Ok((shader, program))
+}
+
 pub(crate) type FrameStep<'a> = dyn FnMut() -> Result<FrameLoopAction, String> + 'a;
 pub(crate) type FrameLoopDriver = for<'a> fn(&mut FrameStep<'a>) -> Result<(), String>;
 
@@ -1316,20 +1331,13 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 // render target before selecting or compiling a candidate.
                 bind_rotation_target(display, context, egl_targets)?;
 
-                match select_safe_wallpaper_shader(
+                match select_and_compile_rotation_candidate(
                     shader_manager,
                     wallpaper_directory,
                 ) {
-                    Ok(
-                        next_shader
-                    ) => {
-                        match crate::compile_shader::build_program(
-                            crate::define_constants::VERTEX_SHADER,
-                            &next_shader.source,
-                        ) {
-                            Ok(
-                                next_program
-                            ) => {
+                    Ok((next_shader, compiled_program)) => {
+                        match compiled_program {
+                            Ok(next_program) => {
                                 let next_texture_manager = match frame_context
                                     .prepare_replacement_textures(
                                         &next_shader,
