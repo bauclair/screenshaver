@@ -54,6 +54,36 @@ use crate::wayland_wallpaper::{
     configured_dimension,
 };
 
+// Windowshader owns the presentation-eligibility decision and the shape of
+// its result. None means no compositor-authorized frame: the caller must skip
+// all GL work and presentation. This wrapper does not manufacture readiness.
+pub(crate) struct WindowshaderPresentationAuthorization {
+    pub(crate) recovery_shifts: Option<(Duration, Duration)>,
+    pub(crate) rotate: bool,
+}
+
+pub(crate) fn authorize_windowshader_presentation<S: crate::wayland_wallpaper::RenderWaylandDispatch>(
+    controller: &mut WindowshaderFrameLoopState,
+    control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+    state: &mut S,
+    targets: &[NativeWallpaperTarget],
+    interval: Option<Duration>,
+    animation_anchor: std::time::Instant,
+    paused: bool,
+    shader_name: &str,
+    policy_id: i64,
+    program: u32,
+) -> Option<WindowshaderPresentationAuthorization> {
+    let (recovery, rotate) = controller.authorize_windowshader_frame(
+        control, state, targets, interval, animation_anchor, paused,
+        shader_name, policy_id, program,
+    )?;
+    Some(WindowshaderPresentationAuthorization {
+        recovery_shifts: recovery.map(|shift| (shift.rotation_shift, shift.animation_shift)),
+        rotate,
+    })
+}
+
 // Stage 4B-5C incremental ownership transfer: Windowshader constructs its own
 // scheduling controller from compositor dispatch diagnostics. The shared core
 // still holds the controller temporarily until the frame-step closure is split.

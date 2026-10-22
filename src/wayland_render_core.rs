@@ -1251,18 +1251,19 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             // Windowshader now owns the entire callback gate/recovery decision.
             // Keep Wallpaper's historical path intact until its own extraction.
             let (presentation, rotation_requested) = if windowed_rotation {
-                let Some((recovery, rotate)) = windowshader_state.as_mut()
-                    .expect("Windowshader controller exists only in Windowed mode")
-                    .authorize_windowshader_frame(
-                        control, state, native_targets, shader_interval, frame_runtime.clock.animation_started, frame_runtime.clock.paused,
-                        &frame_runtime.shader.current.shader_name, frame_runtime.shader.current.policy_id,
-                        frame_context.gl.program,
-                    ) else {
+                let Some(authorization) = crate::wayland_windowshader::authorize_windowshader_presentation(
+                    windowshader_state.as_mut()
+                        .expect("Windowshader controller exists only in Windowed mode"),
+                    control, state, native_targets, shader_interval,
+                    frame_runtime.clock.animation_started, frame_runtime.clock.paused,
+                    &frame_runtime.shader.current.shader_name,
+                    frame_runtime.shader.current.policy_id, frame_context.gl.program,
+                ) else {
                     return Ok(FrameLoopAction::Continue);
                 };
                 (FramePresentationDecision::from_recovery_durations(
-                    recovery.map(|shift| (shift.rotation_shift, shift.animation_shift)),
-                ), rotate)
+                    authorization.recovery_shifts,
+                ), authorization.rotate)
             } else {
                 let Some(recovery) = wallpaper_callbacks.evaluate(
                     state, native_targets, frame_runtime.clock.shader_switched, frame_runtime.clock.animation_started,
