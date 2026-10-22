@@ -389,6 +389,38 @@ impl SharedFrameAccountingState {
     }
 }
 
+// Increment 3: keep the configured frame cadence and Wallpaper deadline in
+// one persistent owner. Windowshader continues to own its separate compositor-
+// callback pacing controller; this state never authorizes presentation.
+struct SharedFramePacingState {
+    rendered_fps: u32,
+    frame_duration: Duration,
+    next_frame_deadline: Instant,
+}
+
+impl SharedFramePacingState {
+    fn new(initial: FrameLoopInitialTiming) -> Self {
+        Self {
+            rendered_fps: initial.rendered_fps,
+            frame_duration: initial.frame_duration,
+            next_frame_deadline: initial.next_frame_deadline,
+        }
+    }
+
+    fn update_rendered_fps(&mut self, rendered_fps: u32) {
+        self.rendered_fps = rendered_fps;
+        self.frame_duration = frame_duration_for_fps(rendered_fps);
+    }
+
+    fn reset_wallpaper_deadline<S: RenderWaylandDispatch>(&mut self) {
+        S::reset_frame_deadline(&mut self.next_frame_deadline);
+    }
+
+    fn pace_wallpaper<S: RenderWaylandDispatch>(&mut self) {
+        S::pace_frame(&mut self.next_frame_deadline, self.frame_duration);
+    }
+}
+
 // Stage 4B-5D: persistent active-policy/shader selection state. The shared
 // renderer still performs the GL replacement; this object records the accepted
 // shader only after the replacement has succeeded. Wallpaper and Windowshader
@@ -713,11 +745,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             );
 
 
-    let FrameLoopInitialTiming {
-        mut rendered_fps,
-        mut frame_duration,
-        mut next_frame_deadline,
-    } = initial_timing;
+    let mut pacing = SharedFramePacingState::new(initial_timing);
 
 
     let initial_postprocess_profile =
@@ -752,7 +780,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
         runtime.notifications,
         active_shader,
         &frame_context.pipeline.textures,
-        rendered_fps,
+        pacing.rendered_fps,
         frame_runtime.controls.animation_speed,
         crate::fps_monitor::FpsWarningState::Normal,
     );
@@ -902,7 +930,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             state,
             native_targets,
             frame_runtime.clock.shader_switched,
-            next_frame_deadline,
+            pacing.next_frame_deadline,
         ))
     } else {
         None
@@ -1074,28 +1102,23 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                         None,
                                     );
 
-                            rendered_fps =
-                                reload.fps_policy
-                                    .rendered_fps_for_policy(
+                            pacing.update_rendered_fps(
+                                reload.fps_policy.rendered_fps_for_policy(
                                         frame_runtime.shader.current.policy_id,
                                         &frame_runtime.shader.current.shader_name,
                                         Some(
                                             frame_runtime.shader.current.source_path.as_path()
                                         ),
                                         None,
-                                    );
-
-                            frame_duration =
-                                frame_duration_for_fps(
-                                    rendered_fps
-                                );
+                                    )
+                            );
 
                             if windowed_rotation {
                                 windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").on_schedule_discontinuity(
                                     crate::wayland_windowshader::WindowshaderScheduleReset::PolicyOrShaderChange,
                                 );
                             } else {
-                                S::reset_frame_deadline(&mut next_frame_deadline);
+                                pacing.reset_wallpaper_deadline::<S>();
                             }
 
                             frame_runtime.accounting.frame_times.clear();
@@ -1108,7 +1131,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                 runtime.notifications,
                                 &frame_runtime.shader.current,
                                 &frame_context.pipeline.textures,
-                                rendered_fps,
+                                pacing.rendered_fps,
                                 frame_runtime.controls.animation_speed,
                                 frame_runtime.accounting.fps_warning_state,
                             );
@@ -1185,7 +1208,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
 
                 if !windowed_rotation {
-                    S::reset_frame_deadline(&mut next_frame_deadline);
+                    pacing.reset_wallpaper_deadline::<S>();
                 }
 
                 frame_runtime.accounting.frame_times.clear();
@@ -1249,7 +1272,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 frame_runtime.clock.animation_started += recovery.animation_shift;
                 if !windowed_rotation {
                     frame_runtime.clock.shader_switched += recovery.rotation_shift;
-                    S::reset_frame_deadline(&mut next_frame_deadline);
+                    pacing.reset_wallpaper_deadline::<S>();
                 }
                 frame_runtime.accounting.frame_times.clear();
                 frame_runtime.accounting.fps_warning_state = crate::fps_monitor::FpsWarningState::Normal;
@@ -1376,21 +1399,16 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                         );
 
 
-                                rendered_fps =
-                                    runtime.fps_policy.rendered_fps_for_policy(
+                                pacing.update_rendered_fps(
+                                runtime.fps_policy.rendered_fps_for_policy(
                                         next_shader.policy_id,
                                         &next_shader.shader_name,
                                         Some(
                                             next_shader.source_path.as_path()
                                         ),
                                         None,
-                                    );
-
-
-                                frame_duration =
-                                    frame_duration_for_fps(
-                                        rendered_fps
-                                    );
+                                    )
+                            );
 
 
                                 if windowed_rotation {
@@ -1398,7 +1416,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                     crate::wayland_windowshader::WindowshaderScheduleReset::PolicyOrShaderChange,
                                 );
                             } else {
-                                S::reset_frame_deadline(&mut next_frame_deadline);
+                                pacing.reset_wallpaper_deadline::<S>();
                             }
 
 
@@ -1495,7 +1513,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                     runtime.notifications,
                                     &frame_runtime.shader.current,
                                     &frame_context.pipeline.textures,
-                                    rendered_fps,
+                                    pacing.rendered_fps,
                                     frame_runtime.controls.animation_speed,
                                     frame_runtime.accounting.fps_warning_state,
                                 );
@@ -1514,7 +1532,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
                                 println!(
                                     "    FPS: {}",
-                                    rendered_fps
+                                    pacing.rendered_fps
                                 );
 
 
@@ -1978,7 +1996,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             // Windowshader owns its post-pause presentation acknowledgment.
             // Wallpaper retains its existing local paused-state transition.
             let presentation_resumed = if windowed_rotation {
-                windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").complete_presented_frame_and_pace(frame_runtime.clock.paused, frame_duration)
+                windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").complete_presented_frame_and_pace(frame_runtime.clock.paused, pacing.frame_duration)
             } else {
                 frame_runtime.clock.paused
             };
@@ -1999,14 +2017,14 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
 
             let gpu_render_duration = frame_context.completed_frame_gpu_duration();
-            if frame_runtime.accounting.record_completed_gpu_frame(gpu_render_duration, rendered_fps) {
+            if frame_runtime.accounting.record_completed_gpu_frame(gpu_render_duration, pacing.rendered_fps) {
                 notify_active_wallpaper(
                     &mut notification_state,
                     false,
                     runtime.notifications,
                     &frame_runtime.shader.current,
                     &frame_context.pipeline.textures,
-                    rendered_fps,
+                    pacing.rendered_fps,
                     frame_runtime.controls.animation_speed,
                     frame_runtime.accounting.fps_warning_state,
                 );
@@ -2016,7 +2034,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             control.diagnostic_checkpoint(7);
             // Dispatch pacing to the owning rendering pipeline.
             if !windowed_rotation {
-                S::pace_frame(&mut next_frame_deadline, frame_duration);
+                pacing.pace_wallpaper::<S>();
             }
             Ok(FrameLoopAction::Continue)
         });
