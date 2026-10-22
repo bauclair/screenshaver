@@ -2106,6 +2106,20 @@ impl WindowshaderFrameLoopState {
         Ok(())
     }
 
+    // Rotation-result bookkeeping belongs to the Windowshader controller,
+    // not to the shared GPU executor's internal rotation state.
+    pub(crate) fn record_rotation_success(&mut self, shader_name: &str, policy_id: i64, program: u32) {
+        self.rotation.rotation_succeeded(shader_name, policy_id, program);
+    }
+
+    pub(crate) fn record_rotation_compile_failure(&mut self, shader_name: &str, error: &str) {
+        self.rotation.rotation_compilation_failed(shader_name, error);
+    }
+
+    pub(crate) fn record_rotation_selection_failure(&mut self, error: &str) {
+        self.rotation.rotation_selection_failed(error);
+    }
+
     pub(crate) fn on_schedule_discontinuity(&mut self, _reason: WindowshaderScheduleReset) {
         self.reset_presentation_deadline();
     }

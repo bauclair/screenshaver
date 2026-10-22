@@ -1427,7 +1427,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
                                 frame_runtime.shader.accept_replacement(next_shader.clone());
                                 if windowed_rotation {
-                                    windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").rotation.rotation_succeeded(
+                                    windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").record_rotation_success(
                                         &frame_runtime.shader.current.shader_name, frame_runtime.shader.current.policy_id, frame_context.gl.program,
                                     );
                                 }
@@ -1566,7 +1566,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                 error
                             ) => {
                                 if windowed_rotation {
-                                    windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").rotation.rotation_compilation_failed(
+                                    windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").record_rotation_compile_failure(
                                         &next_shader.shader_name, &error.to_string(),
                                     );
                                 }
@@ -1602,7 +1602,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                         error
                     ) => {
                         if windowed_rotation {
-                            windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").rotation.rotation_selection_failed(&error.to_string());
+                            windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").record_rotation_selection_failure(&error.to_string());
                         }
                         println!(
                             "Wallpaper shader selection failed; keeping the current shader:"
