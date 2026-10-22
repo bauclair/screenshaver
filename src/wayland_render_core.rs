@@ -1929,17 +1929,23 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 )?;
                 // Pipeline-specific presentation accounting belongs to the
                 // Windowshader controller; Wallpaper retains its own heartbeat.
-                let publish_rendering = if windowed_rotation {
-                    windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").record_windowshader_swap_and_check_status(
-                        frame_runtime.clock.paused, frame_runtime.controls.status_heartbeat.elapsed(),
-                    )
+                if windowed_rotation {
+                    // Windowshader owns its post-swap status heartbeat decision
+                    // and timestamp update; only successful swaps reach here.
+                    windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode")
+                        .record_windowshader_swap_and_publish_status(
+                            frame_runtime.clock.paused,
+                            &mut frame_runtime.controls.status_heartbeat,
+                            status_enabled,
+                            status_pipeline,
+                        );
                 } else {
-                    frame_runtime.clock.paused || frame_runtime.controls.status_heartbeat.elapsed() >= Duration::from_secs(1)
-                };
-                if status_enabled && publish_rendering
-                {
-                    crate::renderer_status::publish(status_pipeline, crate::renderer_status::State::Rendering);
-                    frame_runtime.controls.status_heartbeat = Instant::now();
+                    let publish_rendering = frame_runtime.clock.paused
+                        || frame_runtime.controls.status_heartbeat.elapsed() >= Duration::from_secs(1);
+                    if status_enabled && publish_rendering {
+                        crate::renderer_status::publish(status_pipeline, crate::renderer_status::State::Rendering);
+                        frame_runtime.controls.status_heartbeat = Instant::now();
+                    }
                 }
 
                 // Diagnostic only: report a compositor wait that overlapped a

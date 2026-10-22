@@ -2135,14 +2135,20 @@ impl WindowshaderFrameLoopState {
     // Successful EGL swaps are the only source of Windowshader presentation
     // accounting. This does not create or acknowledge a Wayland frame callback.
     // Return the status heartbeat decision before the resume flag is cleared.
-    pub(crate) fn record_windowshader_swap_and_check_status(
+    pub(crate) fn record_windowshader_swap_and_publish_status(
         &mut self,
         was_paused: bool,
-        heartbeat_elapsed: Duration,
-    ) -> bool {
+        heartbeat: &mut Instant,
+        status_enabled: bool,
+        status_pipeline: crate::renderer_status::Pipeline,
+    ) {
         self.record_successful_swap(true);
-        was_paused || self.resume_presentation_pending
-            || heartbeat_elapsed >= Duration::from_secs(1)
+        let publish = was_paused || self.resume_presentation_pending
+            || heartbeat.elapsed() >= Duration::from_secs(1);
+        if status_enabled && publish {
+            crate::renderer_status::publish(status_pipeline, crate::renderer_status::State::Rendering);
+            *heartbeat = Instant::now();
+        }
     }
 
     // Windowshader's complete rotation eligibility decision. This is invoked
