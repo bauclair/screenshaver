@@ -2177,6 +2177,22 @@ impl WindowshaderFrameLoopState {
         release
     }
 
+    // Complete Windowshader pause release at the controller boundary.  The
+    // shared executor no longer interprets WindowshaderPauseRelease or
+    // applies its animation-clock adjustment.  This does not authorize a
+    // frame; compositor callback eligibility is checked separately.
+    pub(crate) fn release_pause_and_adjust_animation_clock<S: crate::wayland_wallpaper::RenderWaylandDispatch>(
+        &mut self,
+        state: &mut S,
+        ended: Instant,
+        animation_started: &mut Instant,
+    ) {
+        let release = self.finish_pause_with_dispatch(state, ended);
+        if let Some(duration) = release.animation_shift {
+            *animation_started += duration;
+        }
+    }
+
     // Stage 4B-2: Windowshader owns its pause clock, acknowledgment and
     // status transition after the shared dispatch hooks have run.
     // No compositor callback readiness is modified here.

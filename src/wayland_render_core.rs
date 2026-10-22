@@ -1204,18 +1204,13 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
             if frame_runtime.clock.paused {
                 let pause_ended_at = Instant::now();
-                // Windowshader owns its pause-release decision and rotation
-                // adjustment; Render Core applies only the animation shift.
-                let windowshader_release = if windowed_rotation {
-                    Some(windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode")
-                        .finish_pause_with_dispatch(state, pause_ended_at))
-                } else {
-                    None
-                };
-                if let Some(release) = windowshader_release {
-                    if let Some(duration) = release.animation_shift {
-                        frame_runtime.clock.animation_started += duration;
-                    }
+                // Windowshader owns the entire pause-release clock adjustment.
+                // Wallpaper keeps its historical pause and rotation clocks.
+                if windowed_rotation {
+                    windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode")
+                        .release_pause_and_adjust_animation_clock(
+                            state, pause_ended_at, &mut frame_runtime.clock.animation_started,
+                        );
                 } else if let Some(paused_at) = frame_runtime.clock.pause_started.take() {
                     let duration = pause_ended_at.duration_since(paused_at);
                     frame_runtime.clock.animation_started += duration;
