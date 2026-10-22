@@ -1770,41 +1770,13 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 );
 
 
-                let target_width =
-                    u32::try_from(
-                        native_target.width
-                    )
-                    .map_err(
-                        |_| {
-                            format!(
-                                "Wallpaper target {} has an invalid width: {}",
-                                native_target.info.registry_name,
-                                native_target.width,
-                            )
-                        }
+                let (target_width, target_height) =
+                    resize_frame_scene_target(
+                        postprocess,
+                        native_target.info.registry_name,
+                        native_target.width,
+                        native_target.height,
                     )?;
-
-
-                let target_height =
-                    u32::try_from(
-                        native_target.height
-                    )
-                    .map_err(
-                        |_| {
-                            format!(
-                                "Wallpaper target {} has an invalid height: {}",
-                                native_target.info.registry_name,
-                                native_target.height,
-                            )
-                        }
-                    )?;
-
-
-                postprocess.resize(
-                    target_width,
-                    target_height,
-                )?;
-
 
                 execute_shader_scene_frame(
                     &frame_context.gl,
@@ -2077,6 +2049,24 @@ fn configure_frame_postprocess_effects(
     postprocess.set_audio_motion_scale(audio_motion_scale);
     postprocess.set_audio_motion_fft_trace(audio_motion_fft_trace);
     postprocess.set_audio_motion_rotation_turns(rotation_turns);
+}
+
+// Validate native target dimensions and resize the scene framebuffer before
+// rendering. This does not grant presentation eligibility or swap EGL buffers.
+fn resize_frame_scene_target(
+    postprocess: &mut crate::postprocess_shader::PostprocessPipeline,
+    registry_name: u32,
+    width: i32,
+    height: i32,
+) -> Result<(u32, u32), String> {
+    let target_width = u32::try_from(width).map_err(|_| {
+        format!("Wallpaper target {} has an invalid width: {}", registry_name, width)
+    })?;
+    let target_height = u32::try_from(height).map_err(|_| {
+        format!("Wallpaper target {} has an invalid height: {}", registry_name, height)
+    })?;
+    postprocess.resize(target_width, target_height)?;
+    Ok((target_width, target_height))
 }
 
 fn execute_shader_scene_frame(
