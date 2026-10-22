@@ -1258,8 +1258,9 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 ) else {
                     return Ok(FrameLoopAction::Continue);
                 };
-                (FramePresentationDecision::from_recovery_durations(recovery),
-                    !frame_runtime.clock.paused && shader_interval.is_some_and(|interval| frame_runtime.clock.shader_switched.elapsed() >= interval))
+                let rotate = !frame_runtime.clock.paused
+                    && shader_interval.is_some_and(|interval| frame_runtime.clock.shader_switched.elapsed() >= interval);
+                (FramePresentationDecision::from_recovery_durations(recovery), rotate)
             };
 
             // Each pipeline applies its own callback-recovery clock policy.
@@ -1283,11 +1284,16 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 frame_runtime.accounting.fps_warning_state = crate::fps_monitor::FpsWarningState::Normal;
             }
 
-            if rotation_requested {
-                if !windowed_rotation {
-                    frame_runtime.clock.shader_switched = Instant::now();
-                }
+            // Resolve Wallpaper rotation-clock ownership before entering the
+            // pipeline-neutral shader selection/compilation execution block.
+            // This remains after callback-gap recovery to preserve the prior
+            // clock adjustment order. Windowshader resets its own rotation
+            // anchor in begin_due_rotation().
+            if rotation_requested && !windowed_rotation {
+                frame_runtime.clock.shader_switched = Instant::now();
+            }
 
+            if rotation_requested {
                 if let Some(
                     first_target
                 ) = egl_targets.first()
