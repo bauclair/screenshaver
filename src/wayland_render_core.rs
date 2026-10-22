@@ -497,6 +497,7 @@ struct SharedFrameRuntimeState {
     shader: SharedActiveShaderState,
     controls: SharedFrameRuntimeControls,
     pacing: SharedFramePacingState,
+    notifications: crate::notify_wallpaper::WallpaperNotificationState,
 }
 
 impl SharedFrameRuntimeState {
@@ -512,6 +513,7 @@ impl SharedFrameRuntimeState {
             shader: SharedActiveShaderState::new(shader),
             controls: SharedFrameRuntimeControls::new(animation_speed, audio_required),
             pacing: SharedFramePacingState::new(initial_timing),
+            notifications: crate::notify_wallpaper::WallpaperNotificationState::new(),
         }
     }
 }
@@ -883,12 +885,8 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
         initial_timing,
     );
 
-    let mut notification_state =
-        crate::notify_wallpaper::WallpaperNotificationState::new();
-
-
     notify_active_wallpaper(
-        &mut notification_state,
+        &mut frame_runtime.notifications,
         true,
         runtime.notifications,
         active_shader,
@@ -1238,7 +1236,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                 crate::fps_monitor::FpsWarningState::Normal;
 
                             notify_active_wallpaper(
-                                &mut notification_state,
+                                &mut frame_runtime.notifications,
                                 false,
                                 runtime.notifications,
                                 &frame_runtime.shader.current,
@@ -1546,7 +1544,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
 
                                 notify_active_wallpaper(
-                                    &mut notification_state,
+                                    &mut frame_runtime.notifications,
                                     true,
                                     runtime.notifications,
                                     &frame_runtime.shader.current,
@@ -1984,7 +1982,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             let gpu_render_duration = frame_context.completed_frame_gpu_duration();
             if frame_runtime.accounting.record_completed_gpu_frame(gpu_render_duration, frame_runtime.pacing.rendered_fps) {
                 notify_active_wallpaper(
-                    &mut notification_state,
+                    &mut frame_runtime.notifications,
                     false,
                     runtime.notifications,
                     &frame_runtime.shader.current,
