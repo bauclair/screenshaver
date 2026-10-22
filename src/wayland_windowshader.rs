@@ -238,9 +238,11 @@ pub(crate) fn windowshader_should_stop<S: crate::wayland_wallpaper::RenderWaylan
 // fabricates wl_surface.frame Done or treats XDG activation as visibility.
 // One Windowshader-owned preflight result: lifecycle termination and the
 // pending policy update are decided before shared GL work begins.
-pub(crate) struct WindowshaderPreflightOutcome {
-    pub(crate) exit_action: Option<crate::wayland_render_core::FrameLoopAction>,
-    pub(crate) pending_policy_reload: Option<crate::manage_wallpaper_runtime::WallpaperPolicyReload>,
+pub(crate) enum WindowshaderPreflightOutcome {
+    Stop,
+    Continue {
+        pending_policy_reload: Option<crate::manage_wallpaper_runtime::WallpaperPolicyReload>,
+    },
 }
 
 pub(crate) fn run_windowshader_frame_preflight<S, F>(
@@ -269,13 +271,12 @@ where
     )?;
     if !reconcile_targets(state, native_targets)? {
         println!("All wallpaper outputs have been disconnected.");
-        return Ok(WindowshaderPreflightOutcome { exit_action: Some(crate::wayland_render_core::FrameLoopAction::Stop), pending_policy_reload: None });
+        return Ok(WindowshaderPreflightOutcome::Stop);
     }
     if windowshader_should_stop(state, running) {
-        return Ok(WindowshaderPreflightOutcome { exit_action: Some(crate::wayland_render_core::FrameLoopAction::Stop), pending_policy_reload: None });
+        return Ok(WindowshaderPreflightOutcome::Stop);
     }
-    Ok(WindowshaderPreflightOutcome {
-        exit_action: None,
+    Ok(WindowshaderPreflightOutcome::Continue {
         pending_policy_reload: take_windowshader_policy_reload(control),
     })
 }

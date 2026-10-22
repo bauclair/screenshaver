@@ -981,10 +981,14 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                         &mut frame_context.pipeline.postprocess,
                     ),
                 )?;
-                if let Some(exit_action) = preflight.exit_action {
-                    return Ok(exit_action);
+                match preflight {
+                    crate::wayland_windowshader::WindowshaderPreflightOutcome::Stop => {
+                        return Ok(FrameLoopAction::Stop);
+                    }
+                    crate::wayland_windowshader::WindowshaderPreflightOutcome::Continue {
+                        pending_policy_reload,
+                    } => pending_policy_reload,
                 }
-                preflight.pending_policy_reload
             } else {
                 control.diagnostic_checkpoint(1);
                 S::pump_events(event_queue, state)?;
