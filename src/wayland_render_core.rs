@@ -969,8 +969,8 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
             // The Windowshader pipeline owns the ordered pre-frame control
             // sequence. The shared core supplies only target reconciliation.
-            if windowed_rotation {
-                let exit_action = crate::wayland_windowshader::run_windowshader_frame_preflight(
+            let pending_policy_reload = if windowed_rotation {
+                let preflight = crate::wayland_windowshader::run_windowshader_frame_preflight(
                     windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode"),
                     event_queue, state, native_targets, frame_runtime.clock.paused,
                     control, shader_interval, &frame_runtime.shader.current.shader_name,
@@ -981,9 +981,10 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                         &mut frame_context.pipeline.postprocess,
                     ),
                 )?;
-                if let Some(exit_action) = exit_action {
+                if let Some(exit_action) = preflight.exit_action {
                     return Ok(exit_action);
                 }
+                preflight.pending_policy_reload
             } else {
                 control.diagnostic_checkpoint(1);
                 S::pump_events(event_queue, state)?;
@@ -1005,17 +1006,11 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 if !running.load(Ordering::SeqCst) {
                     return Ok(FrameLoopAction::Stop);
                 }
-            }
-
-
-            // Windowshader owns consumption of its pending policy-reload request.
-            // Wallpaper keeps its existing control path. The shared executor
-            // still performs the transactional GL/policy application below.
-            let pending_policy_reload = if windowed_rotation {
-                crate::wayland_windowshader::take_windowshader_policy_reload(control)
-            } else {
                 control.take_policy_reload()
             };
+
+            // The Windowshader preflight owns reload-request consumption;
+            // the shared executor still applies GL/policy updates transactionally.
             if let Some(reload) = pending_policy_reload {
                 match prepare_shared_policy_reload_textures(
                     &reload,

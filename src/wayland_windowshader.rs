@@ -222,6 +222,13 @@ pub(crate) fn windowshader_should_stop<S: crate::wayland_wallpaper::RenderWaylan
 // Target maintenance remains a shared, pipeline-neutral
 // operation injected by the caller. Neither this function nor its callback
 // fabricates wl_surface.frame Done or treats XDG activation as visibility.
+// One Windowshader-owned preflight result: lifecycle termination and the
+// pending policy update are decided before shared GL work begins.
+pub(crate) struct WindowshaderPreflightOutcome {
+    pub(crate) exit_action: Option<crate::wayland_render_core::FrameLoopAction>,
+    pub(crate) pending_policy_reload: Option<crate::manage_wallpaper_runtime::WallpaperPolicyReload>,
+}
+
 pub(crate) fn run_windowshader_frame_preflight<S, F>(
     controller: &mut WindowshaderFrameLoopState,
     event_queue: &mut wayland_client::EventQueue<S>,
@@ -236,7 +243,7 @@ pub(crate) fn run_windowshader_frame_preflight<S, F>(
     frame: i32,
     running: &Arc<AtomicBool>,
     mut reconcile_targets: F,
-) -> Result<Option<crate::wayland_render_core::FrameLoopAction>, String>
+) -> Result<WindowshaderPreflightOutcome, String>
 where
     S: crate::wayland_wallpaper::RenderWaylandDispatch,
     F: FnMut(&mut S, &mut Vec<NativeWallpaperTarget>) -> Result<bool, String>,
@@ -248,12 +255,15 @@ where
     )?;
     if !reconcile_targets(state, native_targets)? {
         println!("All wallpaper outputs have been disconnected.");
-        return Ok(Some(crate::wayland_render_core::FrameLoopAction::Stop));
+        return Ok(WindowshaderPreflightOutcome { exit_action: Some(crate::wayland_render_core::FrameLoopAction::Stop), pending_policy_reload: None });
     }
     if windowshader_should_stop(state, running) {
-        return Ok(Some(crate::wayland_render_core::FrameLoopAction::Stop));
+        return Ok(WindowshaderPreflightOutcome { exit_action: Some(crate::wayland_render_core::FrameLoopAction::Stop), pending_policy_reload: None });
     }
-    Ok(None)
+    Ok(WindowshaderPreflightOutcome {
+        exit_action: None,
+        pending_policy_reload: take_windowshader_policy_reload(control),
+    })
 }
 
 fn finish_windowshader_surface(
