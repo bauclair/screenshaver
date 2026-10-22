@@ -1262,14 +1262,23 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     !frame_runtime.clock.paused && shader_interval.is_some_and(|interval| frame_runtime.clock.shader_switched.elapsed() >= interval))
             };
 
-            // Render Core applies only shared animation/FPS accounting.
-            // Windowshader has already reset its own deadline on recovery.
-            if let Some(recovery) = presentation.recovery {
+            // Each pipeline applies its own callback-recovery clock policy.
+            // Windowshader never advances shader rotation for hidden time;
+            // Wallpaper retains its historical rotation/deadline adjustment.
+            let recovered_from_callback_gap = if windowed_rotation {
+                crate::wayland_windowshader::apply_windowshader_callback_recovery(
+                    &presentation,
+                    &mut frame_runtime.clock.animation_started,
+                )
+            } else if let Some(recovery) = presentation.recovery.as_ref() {
                 frame_runtime.clock.animation_started += recovery.animation_shift;
-                if !windowed_rotation {
-                    frame_runtime.clock.shader_switched += recovery.rotation_shift;
-                    pacing.reset_wallpaper_deadline::<S>();
-                }
+                frame_runtime.clock.shader_switched += recovery.rotation_shift;
+                pacing.reset_wallpaper_deadline::<S>();
+                true
+            } else {
+                false
+            };
+            if recovered_from_callback_gap {
                 frame_runtime.accounting.frame_times.clear();
                 frame_runtime.accounting.fps_warning_state = crate::fps_monitor::FpsWarningState::Normal;
             }

@@ -104,6 +104,20 @@ pub(crate) fn authorize_windowshader_presentation<S: crate::wayland_wallpaper::R
     }
 }
 
+// Windowshader owns the clock policy after a genuine compositor callback
+// resumes presentation. Hidden-workspace time is excluded from animation,
+// but never charged to shader rotation. The shared executor owns FPS samples.
+pub(crate) fn apply_windowshader_callback_recovery(
+    presentation: &crate::wayland_render_core::FramePresentationDecision,
+    animation_started: &mut std::time::Instant,
+) -> bool {
+    let Some(recovery) = presentation.recovery.as_ref() else {
+        return false;
+    };
+    *animation_started += recovery.animation_shift;
+    true
+}
+
 // Stage 4B-5C incremental ownership transfer: Windowshader constructs its own
 // scheduling controller from compositor dispatch diagnostics. The shared core
 // still holds the controller temporarily until the frame-step closure is split.
