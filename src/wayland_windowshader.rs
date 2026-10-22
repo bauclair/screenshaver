@@ -172,6 +172,14 @@ fn drive_windowshader_frame_loop(
     }
 }
 
+// Windowshader owns the paused-frame idle interval. Event dispatch and
+// shutdown checks still run at the start of every frame iteration; this
+// wait does not request, synthesize, or consume a Wayland frame callback.
+// Preserve the previously verified 10 ms polling cadence.
+pub(crate) fn idle_paused_windowshader_frame() {
+    std::thread::sleep(Duration::from_millis(10));
+}
+
 // Windowshader owns the policy-reload request boundary. This consumes at most
 // one pending request per frame iteration, before pause and callback gating,
 // preserving policy updates even while a workspace is not being presented.

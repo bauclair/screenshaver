@@ -1191,10 +1191,13 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 }
 
 
-                thread::sleep(
-                    Duration::from_millis(10)
-                );
-
+                // Windowshader owns its paused-loop idle policy; Wallpaper
+                // retains its existing 10 ms wait. Neither path presents.
+                if windowed_rotation {
+                    crate::wayland_windowshader::idle_paused_windowshader_frame();
+                } else {
+                    thread::sleep(Duration::from_millis(10));
+                }
 
                 return Ok(FrameLoopAction::Continue);
             }
