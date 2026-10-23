@@ -598,6 +598,164 @@ fn prepare_shared_policy_reload_textures(
     Ok(candidate)
 }
 
+// Applies a prepared policy reload to the persistent rendering resources.
+// Scheduling remains with the owning pipeline; the callback is invoked only
+// when a successfully committed Windowshader reload invalidates its schedule.
+fn apply_shared_frame_policy_reload<S: RenderWaylandDispatch>(
+    reload: crate::manage_wallpaper_runtime::WallpaperPolicyReload,
+    frame_context: &mut SharedFrameContext,
+    frame_runtime: &mut SharedFrameRuntimeState,
+    frame_audio: &mut SharedFrameAudioMotionState,
+    windowed_rotation: bool,
+    notifications_enabled: bool,
+    mut on_windowshader_schedule_reset: impl FnMut(),
+) {
+                match prepare_shared_policy_reload_textures(
+                    &reload,
+                    &frame_runtime.shader.current,
+                ) {
+                    Ok(mut replacement_texture_manager) => {
+                        let replacement_profile =
+                            reload.postprocess_policy
+                                .profile_for_policy(
+                                    frame_runtime.shader.current.policy_id,
+                                    &frame_runtime.shader.current.shader_name,
+                                    Some(
+                                        frame_runtime.shader.current.source_path.as_path()
+                                    ),
+                                );
+
+                        let mut profile_error =
+                            None;
+
+                        for pipeline in
+                            frame_context.pipeline.postprocess.values_mut()
+                        {
+                            if let Err(error) =
+                                pipeline.set_profile(
+                                    replacement_profile
+                                )
+                            {
+                                profile_error =
+                                    Some(error);
+                                break;
+                            }
+                        }
+
+                        if let Some(error) =
+                            profile_error
+                        {
+                            replacement_texture_manager.delete_all();
+                            println!(
+                                "Unable to reload Wayland active wallpaper policy; keeping the previous settings: {}",
+                                error,
+                            );
+                        } else {
+                            replacement_texture_manager.configure_program(
+                                frame_context.gl.program
+                            );
+
+                            frame_context.pipeline.commit_textures(replacement_texture_manager);
+
+                            frame_runtime.controls.audio_required =
+                                matches!(
+                                    replacement_profile.bloom.name(),
+                                    "audio" | "spectral" | "loudness"
+                                ) || replacement_profile.audio_motion.is_enabled();
+
+                            frame_audio.effect =
+                                replacement_profile.audio_motion;
+
+                            if matches!(
+                                frame_audio.effect,
+                                crate::render_audio_motion::AudioMotionEffect::WooferFromHell
+                            ) && frame_audio.lyrics_manager.is_none()
+                            {
+                                frame_audio.lyrics_manager =
+                                    crate::manage_lyrics::LyricsManager::start().ok();
+                            }
+
+                            if !matches!(
+                                frame_audio.effect,
+                                crate::render_audio_motion::AudioMotionEffect::WooferFromHell
+                            ) {
+                                frame_audio.lyrics_manager = None;
+                            }
+
+                            if !frame_audio.effect.is_enabled() {
+                                frame_audio.lyrics_manager = None;
+                                frame_audio.motion.reset();
+
+                                for pipeline in
+                                    frame_context.pipeline.postprocess.values_mut()
+                                {
+                                    pipeline.set_audio_motion_scale(
+                                        1.0
+                                    );
+                                }
+                            }
+
+                            frame_audio.last_update =
+                                Instant::now();
+
+                            frame_runtime.controls.animation_speed =
+                                reload.animation_speed_policy
+                                    .animation_speed_for_policy(
+                                        frame_runtime.shader.current.policy_id,
+                                        &frame_runtime.shader.current.shader_name,
+                                        Some(
+                                            frame_runtime.shader.current.source_path.as_path()
+                                        ),
+                                        None,
+                                    );
+
+                            frame_runtime.pacing.update_rendered_fps(
+                                reload.fps_policy.rendered_fps_for_policy(
+                                        frame_runtime.shader.current.policy_id,
+                                        &frame_runtime.shader.current.shader_name,
+                                        Some(
+                                            frame_runtime.shader.current.source_path.as_path()
+                                        ),
+                                        None,
+                                    )
+                            );
+
+                            if windowed_rotation {
+                                on_windowshader_schedule_reset();
+                            } else {
+                                frame_runtime.pacing.reset_wallpaper_deadline::<S>();
+                            }
+
+                            frame_runtime.accounting.frame_times.clear();
+                            frame_runtime.accounting.fps_warning_state =
+                                crate::fps_monitor::FpsWarningState::Normal;
+
+                            notify_active_wallpaper(
+                                &mut frame_runtime.notifications,
+                                false,
+                                notifications_enabled,
+                                &frame_runtime.shader.current,
+                                &frame_context.pipeline.textures,
+                                frame_runtime.pacing.rendered_fps,
+                                frame_runtime.controls.animation_speed,
+                                frame_runtime.accounting.fps_warning_state,
+                            );
+
+                            println!(
+                                "Wayland active wallpaper policy reloaded."
+                            );
+                        }
+                    }
+
+                    Err(error) => {
+                        println!(
+                            "Unable to reload Wayland active wallpaper texture policy; keeping the previous settings: {}",
+                            error,
+                        );
+                    }
+                }
+}
+
 // Stage 2D-2C Step 16 (consolidated): execution-loop drivers are owned by
 // the presentation pipeline. Render Core provides one reusable frame step.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1174,155 +1332,24 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 control.take_policy_reload()
             };
 
-            // The Windowshader preflight owns reload-request consumption;
-            // the shared executor still applies GL/policy updates transactionally.
+            // Reload preparation/commit is now a separate rendering operation.
+            // Preserve its position between preflight and pause/authorization.
             if let Some(reload) = pending_policy_reload {
-                match prepare_shared_policy_reload_textures(
-                    &reload,
-                    &frame_runtime.shader.current,
-                ) {
-                    Ok(mut replacement_texture_manager) => {
-                        let replacement_profile =
-                            reload.postprocess_policy
-                                .profile_for_policy(
-                                    frame_runtime.shader.current.policy_id,
-                                    &frame_runtime.shader.current.shader_name,
-                                    Some(
-                                        frame_runtime.shader.current.source_path.as_path()
-                                    ),
-                                );
-
-                        let mut profile_error =
-                            None;
-
-                        for pipeline in
-                            frame_context.pipeline.postprocess.values_mut()
-                        {
-                            if let Err(error) =
-                                pipeline.set_profile(
-                                    replacement_profile
-                                )
-                            {
-                                profile_error =
-                                    Some(error);
-                                break;
-                            }
-                        }
-
-                        if let Some(error) =
-                            profile_error
-                        {
-                            replacement_texture_manager.delete_all();
-                            println!(
-                                "Unable to reload Wayland active wallpaper policy; keeping the previous settings: {}",
-                                error,
+                apply_shared_frame_policy_reload::<S>(
+                    reload,
+                    &mut frame_context,
+                    &mut frame_runtime,
+                    &mut frame_audio,
+                    windowed_rotation,
+                    runtime.notifications,
+                    || {
+                        windowshader_state.as_mut()
+                            .expect("Windowshader controller exists only in Windowed mode")
+                            .on_schedule_discontinuity(
+                                crate::wayland_windowshader::WindowshaderScheduleReset::PolicyOrShaderChange,
                             );
-                        } else {
-                            replacement_texture_manager.configure_program(
-                                frame_context.gl.program
-                            );
-
-                            frame_context.pipeline.commit_textures(replacement_texture_manager);
-
-                            frame_runtime.controls.audio_required =
-                                matches!(
-                                    replacement_profile.bloom.name(),
-                                    "audio" | "spectral" | "loudness"
-                                ) || replacement_profile.audio_motion.is_enabled();
-
-                            frame_audio.effect =
-                                replacement_profile.audio_motion;
-
-                            if matches!(
-                                frame_audio.effect,
-                                crate::render_audio_motion::AudioMotionEffect::WooferFromHell
-                            ) && frame_audio.lyrics_manager.is_none()
-                            {
-                                frame_audio.lyrics_manager =
-                                    crate::manage_lyrics::LyricsManager::start().ok();
-                            }
-
-                            if !matches!(
-                                frame_audio.effect,
-                                crate::render_audio_motion::AudioMotionEffect::WooferFromHell
-                            ) {
-                                frame_audio.lyrics_manager = None;
-                            }
-
-                            if !frame_audio.effect.is_enabled() {
-                                frame_audio.lyrics_manager = None;
-                                frame_audio.motion.reset();
-
-                                for pipeline in
-                                    frame_context.pipeline.postprocess.values_mut()
-                                {
-                                    pipeline.set_audio_motion_scale(
-                                        1.0
-                                    );
-                                }
-                            }
-
-                            frame_audio.last_update =
-                                Instant::now();
-
-                            frame_runtime.controls.animation_speed =
-                                reload.animation_speed_policy
-                                    .animation_speed_for_policy(
-                                        frame_runtime.shader.current.policy_id,
-                                        &frame_runtime.shader.current.shader_name,
-                                        Some(
-                                            frame_runtime.shader.current.source_path.as_path()
-                                        ),
-                                        None,
-                                    );
-
-                            frame_runtime.pacing.update_rendered_fps(
-                                reload.fps_policy.rendered_fps_for_policy(
-                                        frame_runtime.shader.current.policy_id,
-                                        &frame_runtime.shader.current.shader_name,
-                                        Some(
-                                            frame_runtime.shader.current.source_path.as_path()
-                                        ),
-                                        None,
-                                    )
-                            );
-
-                            if windowed_rotation {
-                                windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").on_schedule_discontinuity(
-                                    crate::wayland_windowshader::WindowshaderScheduleReset::PolicyOrShaderChange,
-                                );
-                            } else {
-                                frame_runtime.pacing.reset_wallpaper_deadline::<S>();
-                            }
-
-                            frame_runtime.accounting.frame_times.clear();
-                            frame_runtime.accounting.fps_warning_state =
-                                crate::fps_monitor::FpsWarningState::Normal;
-
-                            notify_active_wallpaper(
-                                &mut frame_runtime.notifications,
-                                false,
-                                runtime.notifications,
-                                &frame_runtime.shader.current,
-                                &frame_context.pipeline.textures,
-                                frame_runtime.pacing.rendered_fps,
-                                frame_runtime.controls.animation_speed,
-                                frame_runtime.accounting.fps_warning_state,
-                            );
-
-                            println!(
-                                "Wayland active wallpaper policy reloaded."
-                            );
-                        }
-                    }
-
-                    Err(error) => {
-                        println!(
-                            "Unable to reload Wayland active wallpaper texture policy; keeping the previous settings: {}",
-                            error,
-                        );
-                    }
-                }
+                    },
+                );
             }
 
             control.diagnostic_checkpoint(3);
