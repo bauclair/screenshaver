@@ -1050,7 +1050,7 @@ impl FrameHandoffState {
     }
 }
 
-// Increment 46H-2: command dispatch is a distinct adapter. The session
+// Increment 46H-2: Wallpaper command dispatch is a distinct adapter. The session
 // enforces handoff rules; the adapter owns the temporary legacy executor.
 // A later increment can replace this adapter without changing those rules.
 struct FrameCommandDispatcher<F> {
@@ -1157,10 +1157,12 @@ where
     }
 }
 
-// Increment 46H-5: Windowshader owns its own handoff state and command
-// dispatcher. The legacy command handler remains until GPU-resource extraction.
+// Increment 46H-9: Windowshader owns its handoff state and calls its
+// command handler directly. Wallpaper alone retains FrameCommandDispatcher.
+// The Windowshader handler is still the legacy Render Core closure; removing
+// that closure requires the subsequent resource/operation extraction.
 struct WindowshaderExecutionContext<F> {
-    dispatcher: FrameCommandDispatcher<F>,
+    command_handler: F,
     handoff: FrameHandoffState,
     prepared_info: Rc<RefCell<Option<PreparedFrameInfo>>>,
     // Exclusive authorization ownership. The token moves through command
@@ -1177,7 +1179,7 @@ where
         prepared_info: Rc<RefCell<Option<PreparedFrameInfo>>>,
     ) -> Self {
         Self {
-            dispatcher: FrameCommandDispatcher { handler },
+            command_handler: handler,
             handoff: FrameHandoffState::default(),
             prepared_info,
             authorized_frame: WindowshaderAuthorizedFrame::default(),
@@ -1208,7 +1210,7 @@ where
             return Err("Frame preparation requested while a prepared frame is pending".into());
         }
         self.invalidate_pending_frame();
-        match self.dispatcher.dispatch(FrameSessionCommand::Prepare)? {
+        match (self.command_handler)(FrameSessionCommand::Prepare)? {
             FrameSessionResult::Prepared(FrameLoopAction::Continue) => {
                 if self.prepared_info.borrow().is_none() {
                     return Err("Frame preparation completed without an active shader snapshot".into());
@@ -1228,7 +1230,7 @@ where
         if !self.handoff.prepared || self.handoff.authorized {
             return Err("Windowshader authorization requires a new prepared frame".into());
         }
-        let result = self.dispatcher.dispatch(FrameSessionCommand::Authorize);
+        let result = (self.command_handler)(FrameSessionCommand::Authorize);
         if result.is_err() {
             self.invalidate_pending_frame();
         }
@@ -1261,7 +1263,7 @@ where
         self.handoff.clear();
         *self.prepared_info.borrow_mut() = None;
         let authorization = std::mem::take(&mut self.authorized_frame);
-        let result = self.dispatcher.dispatch(FrameSessionCommand::Execute(Some(authorization)));
+        let result = (self.command_handler)(FrameSessionCommand::Execute(Some(authorization)));
         match result? {
             FrameSessionResult::Executed(action) => Ok(action),
             FrameSessionResult::Prepared(_)
