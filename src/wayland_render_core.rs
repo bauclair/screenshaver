@@ -680,6 +680,17 @@ fn execute_shader_rotation(
     Ok(RotationExecutionOutcome::Activated { shader, uniforms })
 }
 
+// Increment 36: explicit scheduling result before shared GPU execution.
+// The compositor-owning pipeline decides whether a frame is eligible;
+// a skipped iteration must never reach GL drawing or EGL presentation.
+enum FrameSchedulingDecision {
+    Skip,
+    Ready {
+        presentation: FramePresentationDecision,
+        rotate: bool,
+    },
+}
+
 pub(crate) type FrameStep<'a> = dyn FnMut() -> Result<FrameLoopAction, String> + 'a;
 pub(crate) type FrameLoopDriver = for<'a> fn(&mut FrameStep<'a>) -> Result<(), String>;
 
@@ -1349,7 +1360,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             // instead of entering a compositor-throttled eglSwapBuffers().
             // Windowshader now owns the entire callback gate/recovery decision.
             // Keep Wallpaper's historical path intact until its own extraction.
-            let (presentation, rotation_requested) = if windowed_rotation {
+            let scheduling = if windowed_rotation {
                 match crate::wayland_windowshader::authorize_windowshader_presentation(
                     windowshader_state.as_mut()
                         .expect("Windowshader controller exists only in Windowed mode"),
@@ -1359,21 +1370,33 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     frame_runtime.shader.current.policy_id, frame_context.gl.program,
                 ) {
                     crate::wayland_windowshader::WindowshaderFrameGate::Skip => {
-                        return Ok(FrameLoopAction::Continue);
+                        FrameSchedulingDecision::Skip
                     }
                     crate::wayland_windowshader::WindowshaderFrameGate::Present {
                         presentation, rotate,
-                    } => (presentation, rotate),
+                    } => FrameSchedulingDecision::Ready { presentation, rotate },
                 }
             } else {
-                let Some(recovery) = wallpaper_callbacks.evaluate(
-                    state, native_targets, frame_runtime.clock.shader_switched, frame_runtime.clock.animation_started,
-                ) else {
-                    return Ok(FrameLoopAction::Continue);
-                };
-                let rotate = !frame_runtime.clock.paused
-                    && shader_interval.is_some_and(|interval| frame_runtime.clock.shader_switched.elapsed() >= interval);
-                (FramePresentationDecision::from_recovery_durations(recovery), rotate)
+                match wallpaper_callbacks.evaluate(
+                    state, native_targets, frame_runtime.clock.shader_switched,
+                    frame_runtime.clock.animation_started,
+                ) {
+                    Some(recovery) => {
+                        let rotate = !frame_runtime.clock.paused
+                            && shader_interval.is_some_and(|interval| {
+                                frame_runtime.clock.shader_switched.elapsed() >= interval
+                            });
+                        FrameSchedulingDecision::Ready {
+                            presentation: FramePresentationDecision::from_recovery_durations(recovery),
+                            rotate,
+                        }
+                    }
+                    None => FrameSchedulingDecision::Skip,
+                }
+            };
+            let (presentation, rotation_requested) = match scheduling {
+                FrameSchedulingDecision::Skip => return Ok(FrameLoopAction::Continue),
+                FrameSchedulingDecision::Ready { presentation, rotate } => (presentation, rotate),
             };
 
             // Each pipeline applies its own callback-recovery clock policy.
