@@ -234,7 +234,19 @@ pub(crate) fn drive_windowshader_frame_session(
     session: &mut dyn crate::wayland_render_core::FrameExecution,
 ) -> Result<(), String> {
     loop {
-        match session.execute_next_frame()? {
+        match session.prepare_next_frame()? {
+            crate::wayland_render_core::FrameLoopAction::Stop => return Ok(()),
+            crate::wayland_render_core::FrameLoopAction::Continue => {},
+        }
+        if session.prepared_frame_info().is_none() {
+            continue;
+        }
+        // Authorization is invoked by the Windowshader loop, not by the
+        // shared GPU execution stage. A skipped callback cannot draw.
+        if !session.authorize_prepared_windowshader_frame()? {
+            continue;
+        }
+        match session.execute_prepared_frame()? {
             crate::wayland_render_core::FrameLoopAction::Continue => {},
             crate::wayland_render_core::FrameLoopAction::Stop => return Ok(()),
         }
