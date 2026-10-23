@@ -1164,23 +1164,32 @@ struct WindowshaderExecutionContext<F> {
     dispatcher: FrameCommandDispatcher<F>,
     handoff: FrameHandoffState,
     prepared_info: Rc<RefCell<Option<PreparedFrameInfo>>>,
+    // The Windowshader session owns the authorization handoff; the legacy
+    // GPU command handler temporarily borrows it through a shared handle.
+    authorized_frame: Rc<RefCell<WindowshaderAuthorizedFrame>>,
 }
 
 impl<F> WindowshaderExecutionContext<F>
 where
     F: FnMut(FrameSessionCommand) -> Result<FrameSessionResult, String>,
 {
-    fn new(handler: F, prepared_info: Rc<RefCell<Option<PreparedFrameInfo>>>) -> Self {
+    fn new(
+        handler: F,
+        prepared_info: Rc<RefCell<Option<PreparedFrameInfo>>>,
+        authorized_frame: Rc<RefCell<WindowshaderAuthorizedFrame>>,
+    ) -> Self {
         Self {
             dispatcher: FrameCommandDispatcher { handler },
             handoff: FrameHandoffState::default(),
             prepared_info,
+            authorized_frame,
         }
     }
 
     fn invalidate_pending_frame(&mut self) {
         self.handoff.clear();
         *self.prepared_info.borrow_mut() = None;
+        self.authorized_frame.borrow_mut().clear();
     }
 }
 
@@ -1248,9 +1257,13 @@ where
         if !self.handoff.authorized {
             return Err("Windowshader execution requested without compositor authorization".into());
         }
-        // Consume authorization before entering rendering, even on error.
-        self.invalidate_pending_frame();
-        match self.dispatcher.dispatch(FrameSessionCommand::Execute)? {
+        // The legacy GPU handler consumes the authorization token on entry.
+        // Keep it available until dispatch, then clear it on every exit path.
+        self.handoff.clear();
+        *self.prepared_info.borrow_mut() = None;
+        let result = self.dispatcher.dispatch(FrameSessionCommand::Execute);
+        self.authorized_frame.borrow_mut().clear();
+        match result? {
             FrameSessionResult::Executed(action) => Ok(action),
             FrameSessionResult::Prepared(_)
             | FrameSessionResult::Skipped
@@ -1664,11 +1677,12 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     // will move its scheduling decisions into the Windowshader controller.
     let prepared_info = Rc::new(RefCell::new(None::<PreparedFrameInfo>));
     let prepared_info_for_step = Rc::clone(&prepared_info);
-    let mut authorized_windowshader_scheduling = WindowshaderAuthorizedFrame::default();
+    let authorized_windowshader_scheduling =
+        Rc::new(RefCell::new(WindowshaderAuthorizedFrame::default()));
+    let authorized_windowshader_for_step = Rc::clone(&authorized_windowshader_scheduling);
     let mut execute_frame_step = |command: FrameSessionCommand| -> Result<FrameSessionResult, String> {
         if matches!(command, FrameSessionCommand::Prepare) {
-            authorized_windowshader_scheduling.clear();
-
+            // WindowshaderExecutionContext clears the handoff before preparation.
             // Both pipeline preflight operations are separately callable.
             // Their invocation still occurs inside the shared frame closure;
             // the session-level split is the next architectural step.
@@ -1757,7 +1771,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             match scheduling {
                 FrameSchedulingDecision::Skip => Ok(FrameSessionResult::Authorized(false)),
                 FrameSchedulingDecision::Ready { presentation, rotate } => {
-                    authorized_windowshader_scheduling.grant(presentation, rotate)?;
+                    authorized_windowshader_for_step.borrow_mut().grant(presentation, rotate)?;
                     Ok(FrameSessionResult::Authorized(true))
                 }
             }
@@ -1817,7 +1831,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             // Windowshader now owns the entire callback gate/recovery decision.
             // Keep Wallpaper's historical path intact until its own extraction.
             let (presentation, rotation_requested) = if windowed_rotation {
-                authorized_windowshader_scheduling.consume()?
+                authorized_windowshader_for_step.borrow_mut().consume()?
             } else {
                 let scheduling = match wallpaper_callbacks.evaluate(
                     state, native_targets, frame_runtime.clock.shader_switched,
@@ -2351,7 +2365,9 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     // The command handler remains shared until the next extraction stage.
     let result = if windowed_rotation {
         let mut windowshader_context =
-            WindowshaderExecutionContext::new(execute_frame_step, prepared_info);
+            WindowshaderExecutionContext::new(
+                execute_frame_step, prepared_info, authorized_windowshader_scheduling,
+            );
         let result =
             crate::wayland_windowshader::drive_windowshader_frame_session(&mut windowshader_context);
         drop(windowshader_context);
