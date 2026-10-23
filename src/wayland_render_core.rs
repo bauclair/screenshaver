@@ -759,7 +759,7 @@ pub(crate) fn execute_shared_egl_frame_processing<S: RenderWaylandDispatch + 'st
     execute_egl_frame_processing_with_driver(
         egl_session, event_queue, state, native_targets, active_shader,
         shader_manager, wallpaper_directory, shader_interval, runtime,
-        running, control, initial_timing, run_wallpaper_frame_loop,
+        running, control, initial_timing, Some(run_wallpaper_frame_loop),
     )
 }
 
@@ -776,7 +776,7 @@ pub(crate) fn execute_egl_frame_processing_with_driver<S: RenderWaylandDispatch 
     running: &Arc<AtomicBool>,
     control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
     initial_timing: FrameLoopInitialTiming,
-    loop_driver: FrameLoopDriver,
+    wallpaper_loop_driver: Option<FrameLoopDriver>,
 ) -> Result<(), String> {
 
 
@@ -796,7 +796,7 @@ pub(crate) fn execute_egl_frame_processing_with_driver<S: RenderWaylandDispatch 
             running,
             control,
             initial_timing,
-            loop_driver,
+            wallpaper_loop_driver,
         );
 
 
@@ -876,7 +876,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     running: &Arc<AtomicBool>,
     control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
     initial_timing: FrameLoopInitialTiming,
-    loop_driver: FrameLoopDriver,
+    wallpaper_loop_driver: Option<FrameLoopDriver>,
 ) -> Result<(), String> {
 
     let initial_program =
@@ -1945,7 +1945,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     let result = if windowed_rotation {
         crate::wayland_windowshader::drive_windowshader_frame_session(&mut execution_session)
     } else {
-        execution_session.run(loop_driver)
+        execution_session.run(wallpaper_loop_driver.expect("Wallpaper requires a frame-loop driver"))
     };
     // Release all borrows held by the frame operation before GL teardown.
     drop(execution_session);
