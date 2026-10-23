@@ -987,15 +987,31 @@ impl FrameSessionResources {
         Self { context, runtime }
     }
 
-    // Increment 46H-3: the execution adapter receives two disjoint mutable
-    // borrows rather than borrowing or destructuring the owning session.
-    // The owner remains responsible for teardown after the adapter is dropped.
-    fn execution_borrows(&mut self) -> (&mut SharedFrameContext, &mut SharedFrameRuntimeState) {
-        (&mut self.context, &mut self.runtime)
+    // Increment 46H-23B-3A: grant a named, exclusive session lease. The lease
+    // cannot outlive this owner, and teardown follows the command handler.
+    fn lease_execution(&mut self) -> FrameExecutionResourceLease<'_> {
+        FrameExecutionResourceLease {
+            context: &mut self.context,
+            runtime: &mut self.runtime,
+        }
     }
 
     fn release_gl(&mut self) {
         self.context.release();
+    }
+}
+
+// Exclusive borrow of persistent frame resources for one execution session.
+// This lease owns *borrows*, not EGL or GL objects; it must be dropped before
+// FrameSessionResources::release_gl().
+struct FrameExecutionResourceLease<'a> {
+    context: &'a mut SharedFrameContext,
+    runtime: &'a mut SharedFrameRuntimeState,
+}
+
+impl FrameExecutionResourceLease<'_> {
+    fn split(&mut self) -> (&mut SharedFrameContext, &mut SharedFrameRuntimeState) {
+        (&mut *self.context, &mut *self.runtime)
     }
 }
 
@@ -1109,6 +1125,104 @@ impl PreparedFrameTransaction {
         debug_assert!(self.pending_reload.is_none());
         capture_prepared_frame_info(context, runtime)
     }
+}
+
+// Increment 46H-21: Windowshader commits and publishes its preparation as
+// one pipeline-specific operation. The caller lends existing resources;
+// ownership of EGL/GL objects remains with the session.
+fn commit_windowshader_preparation<S: RenderWaylandDispatch>(
+    mut transaction: PreparedFrameTransaction,
+    frame_context: &mut SharedFrameContext,
+    frame_runtime: &mut SharedFrameRuntimeState,
+    frame_audio: &mut SharedFrameAudioMotionState,
+    notifications_enabled: bool,
+    windowshader_state: &mut crate::wayland_windowshader::WindowshaderFrameLoopState,
+) -> PreparedFrameInfo {
+    coordinate_prepared_frame_policy_reload::<S>(
+        transaction.take_reload(),
+        frame_context,
+        frame_runtime,
+        frame_audio,
+        true,
+        notifications_enabled,
+        || windowshader_state.on_schedule_discontinuity(
+            crate::wayland_windowshader::WindowshaderScheduleReset::PolicyOrShaderChange,
+        ),
+    );
+    transaction.publish(frame_context, frame_runtime)
+}
+
+// Increment 46H-23A: the preparation phase receives one short-lived,
+// exclusive lease over the existing persistent frame resources. The lease
+// cannot outlive the call, and does not recreate any EGL or GL objects.
+// This is a resource-borrow boundary, not yet a separate execution owner.
+struct WindowshaderPreparationLease<'a> {
+    frame_context: &'a mut SharedFrameContext,
+    frame_runtime: &'a mut SharedFrameRuntimeState,
+    frame_audio: &'a mut SharedFrameAudioMotionState,
+}
+
+impl<'a> WindowshaderPreparationLease<'a> {
+    fn new(
+        frame_context: &'a mut SharedFrameContext,
+        frame_runtime: &'a mut SharedFrameRuntimeState,
+        frame_audio: &'a mut SharedFrameAudioMotionState,
+    ) -> Self {
+        Self { frame_context, frame_runtime, frame_audio }
+    }
+}
+
+// Increment 46H-22: Windowshader preparation runs as one pipeline-specific
+// operation. Preflight's short-lived postprocess borrow ends before the
+// policy commit borrows the complete frame context. No EGL/GL object is made.
+fn prepare_and_commit_windowshader_frame<S: RenderWaylandDispatch>(
+    controller: &mut crate::wayland_windowshader::WindowshaderFrameLoopState,
+    display: EglDisplay,
+    context: EglContext,
+    event_queue: &mut wayland_client::EventQueue<S>,
+    state: &mut S,
+    egl_targets: &mut Vec<EglWallpaperTarget>,
+    native_targets: &mut Vec<NativeWallpaperTarget>,
+    lease: WindowshaderPreparationLease<'_>,
+    control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+    shader_interval: Option<Duration>,
+    notifications_enabled: bool,
+    running: &Arc<AtomicBool>,
+) -> Result<FrameSessionResult, String> {
+    // Consume the exclusive lease: this preparation operation cannot retain
+    // or reuse it after returning the committed snapshot.
+    let WindowshaderPreparationLease {
+        frame_context,
+        frame_runtime,
+        frame_audio,
+    } = lease;
+    let preflight = WindowshaderPreparationResources {
+        controller,
+        display,
+        context,
+        event_queue,
+        state,
+        egl_targets,
+        native_targets,
+        postprocess_pipelines: &mut frame_context.pipeline.postprocess,
+        paused: frame_runtime.clock.paused,
+        control,
+        shader_interval,
+        shader_name: &frame_runtime.shader.current.shader_name,
+        policy_id: frame_runtime.shader.current.policy_id,
+        program: frame_context.gl.program,
+        frame: frame_runtime.accounting.frame,
+        running,
+    }.prepare_transaction()?;
+    let transaction = match preflight {
+        Ok(transaction) => transaction,
+        Err(action) => return Ok(action),
+    };
+    let info = commit_windowshader_preparation::<S>(
+        transaction, frame_context, frame_runtime, frame_audio,
+        notifications_enabled, controller,
+    );
+    Ok(FrameSessionResult::PreparedWindowshader(info))
 }
 
 // Increment 46H-14: commit a pending policy reload between successful
@@ -1797,7 +1911,8 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     // the frame operation. Borrow disjoint fields for the existing closure;
     // neither the runtime nor the GL resources are recreated per frame.
     let mut session_resources = FrameSessionResources::new(frame_context, frame_runtime);
-    let (mut frame_context, mut frame_runtime) = session_resources.execution_borrows();
+    // Increment 46H-23B-3B: retain persistent resources in their owner.
+    // Do not hold an execution lease while waiting for the next command.
 
     // Keep the GPU execution step separate from the pipeline-owned loop driver.
     // This closure is still hosted by Render Core; the next ownership transfer
@@ -1811,65 +1926,52 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     };
     let wallpaper_prepared_info_for_step = wallpaper_prepared_info.clone();
     let mut execute_frame_step = |command: FrameSessionCommand| -> Result<FrameSessionResult, String> {
+        // Each command obtains an exclusive lease only while it is running.
+        // The lease and its two mutable borrows are dropped on every return
+        // path, including preparation skips, authorization and errors.
+        let mut execution_lease = session_resources.lease_execution();
+        let (mut frame_context, mut frame_runtime) = execution_lease.split();
         if matches!(&command, FrameSessionCommand::PrepareWallpaper | FrameSessionCommand::PrepareWindowshader) {
-            let mut prepared_transaction = match (&command, windowed_rotation) {
-                (FrameSessionCommand::PrepareWindowshader, true) => {
-                    let result = WindowshaderPreparationResources {
-                        controller: windowshader_state.as_mut().ok_or_else(||
-                            "Windowshader controller missing during preparation".to_string())?,
-                        display, context, event_queue, state, egl_targets, native_targets,
-                        postprocess_pipelines: &mut frame_context.pipeline.postprocess,
-                        paused: frame_runtime.clock.paused,
-                        control, shader_interval,
-                        shader_name: &frame_runtime.shader.current.shader_name,
-                        policy_id: frame_runtime.shader.current.policy_id,
-                        program: frame_context.gl.program,
-                        frame: frame_runtime.accounting.frame,
-                        running,
-                    }.prepare_transaction()?;
-                    match result {
-                        Ok(transaction) => transaction,
-                        Err(action) => return Ok(action),
-                    }
+            if matches!(&command, FrameSessionCommand::PrepareWindowshader) {
+                if !windowed_rotation {
+                    return Err("Windowshader preparation requested from Wallpaper pipeline".into());
                 }
-                (FrameSessionCommand::PrepareWallpaper, false) => {
-                    let outcome = prepare_wallpaper_frame_iteration::<S>(
-                        display, context, event_queue, state, egl_targets, native_targets,
-                        &mut frame_context.pipeline.postprocess, control, running,
-                    )?;
-                    match PreparedFrameTransaction::begin(outcome) {
-                        Ok(transaction) => transaction,
-                        Err(action) => return Ok(action),
-                    }
-                }
-                _ => return Err("Frame preparation command does not match the rendering pipeline".into()),
+                // The exclusive preparation lease ends at this call boundary,
+                // before authorization or GPU execution can borrow resources.
+                let preparation_lease = WindowshaderPreparationLease::new(
+                    &mut frame_context, &mut frame_runtime, &mut frame_audio,
+                );
+                return prepare_and_commit_windowshader_frame::<S>(
+                    windowshader_state.as_mut().ok_or_else(||
+                        "Windowshader controller missing during preparation".to_string())?,
+                    display, context, event_queue, state, egl_targets, native_targets,
+                    preparation_lease,
+                    control, shader_interval, runtime.notifications, running,
+                );
+            }
+            if windowed_rotation {
+                return Err("Wallpaper preparation requested from Windowshader pipeline".into());
+            }
+            let outcome = prepare_wallpaper_frame_iteration::<S>(
+                display, context, event_queue, state, egl_targets, native_targets,
+                &mut frame_context.pipeline.postprocess, control, running,
+            )?;
+            let mut prepared_transaction = match PreparedFrameTransaction::begin(outcome) {
+                Ok(transaction) => transaction,
+                Err(action) => return Ok(action),
             };
 
-            // Commit the pending reload before publishing the prepared identity.
-            // Windowshader scheduling is reset only by the reload operation.
+            // Wallpaper retains its established reload and snapshot path.
             coordinate_prepared_frame_policy_reload::<S>(
                 prepared_transaction.take_reload(),
                 &mut frame_context,
                 &mut frame_runtime,
                 &mut frame_audio,
-                windowed_rotation,
+                false,
                 runtime.notifications,
-                || {
-                    windowshader_state.as_mut()
-                        .expect("Windowshader controller exists only in Windowed mode")
-                        .on_schedule_discontinuity(
-                            crate::wayland_windowshader::WindowshaderScheduleReset::PolicyOrShaderChange,
-                        );
-                },
+                || {},
             );
-
-            // Capture identity after reload, so a policy change cannot leave
-            // Windowshader observing stale shader/program information.
             let info = prepared_transaction.publish(&frame_context, &frame_runtime);
-            if windowed_rotation {
-                // Transfer the committed snapshot by value to Windowshader.
-                return Ok(FrameSessionResult::PreparedWindowshader(info));
-            }
             let wallpaper_snapshot = wallpaper_prepared_info_for_step.as_ref()
                 .ok_or_else(|| "Wallpaper preparation has no snapshot storage".to_string())?;
             *wallpaper_snapshot.borrow_mut() = Some(info);
@@ -1912,8 +2014,10 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     Ok(FrameSessionResult::Authorized(Some(token)))
                 }
             }
-        } else {
-        // Execute is reachable only after a successful Prepare call.
+        } else if matches!(&command, FrameSessionCommand::Execute(_)) {
+        // Execution is an explicit command branch, never a default fallback.
+        // The session enforces successful preparation and, for Windowshader,
+        // compositor authorization before issuing this command.
             if !windowed_rotation { control.diagnostic_checkpoint(3); }
             if !windowed_rotation {
                 if control.pause_requested() {
@@ -2499,6 +2603,8 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 frame_runtime.pacing.pace_wallpaper::<S>();
             }
             Ok(FrameSessionResult::Executed(FrameLoopAction::Continue))
+        } else {
+            Err("Unsupported frame-session command".into())
         }
         };
     // Each pipeline now constructs its own session state machine.
@@ -2526,7 +2632,8 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
         drop(execution_session);
         result
     };
-    // Both branches release their closure-held borrows before GL teardown.
+    // Both branches drop their command handler before GL teardown; no
+    // command-scoped lease remains live after a handler invocation.
 
     session_resources.release_gl();
 
