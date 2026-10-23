@@ -1815,44 +1815,20 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     native_targets.iter()
                 )
             {
-                bind_egl_frame_target(display, context, egl_target.surface)?;
-
-                let postprocess =
-                    frame_context.pipeline.postprocess
-                        .get_mut(
-                            &native_target.info.registry_name
-                        )
-                        .ok_or_else(
-                            || {
-                                format!(
-                                    "No post-processing pipeline exists for wallpaper target {}",
-                                    native_target.info.registry_name,
-                                )
-                            }
-                        )?;
-
-
-                let (target_width, target_height) = execute_target_shader_scene(
-                    &frame_context.gl,
-                    &frame_context.pipeline.textures,
-                    postprocess,
-                    native_target.info.registry_name,
-                    native_target.width,
-                    native_target.height,
+                let (target_width, target_height) = execute_bound_target_scene(
+                    display,
+                    context,
+                    egl_target.surface,
+                    &mut frame_context,
+                    native_target,
                     FrameSceneEffects {
                         audio_bands: current_audio_bands,
                         audio_motion_scale,
                         audio_motion_fft_trace,
                         rotation_turns: frame_audio.motion.polar_rotation_turns(),
                     },
-                    ShaderSceneUniforms {
-                        time: elapsed.as_secs_f32() * frame_runtime.controls.animation_speed,
-                        frame: frame_runtime.accounting.frame,
-                        i_time: frame_context.gl.uniforms.0,
-                        i_resolution: frame_context.gl.uniforms.1,
-                        i_mouse: frame_context.gl.uniforms.2,
-                        i_frame: frame_context.gl.uniforms.3,
-                    },
+                    elapsed.as_secs_f32() * frame_runtime.controls.animation_speed,
+                    frame_runtime.accounting.frame,
                 )?;
 
                 // Diagnostic only: compose after post-processing, before EGL windowshader presentation.
@@ -2105,6 +2081,46 @@ struct ShaderSceneUniforms {
     i_resolution: i32,
     i_mouse: i32,
     i_frame: i32,
+}
+
+// Executes a complete GPU scene for one already-authorized Wayland target.
+// This is deliberately outside the frame-loop closure: neither frame callback
+// eligibility nor EGL swapping is performed here. The caller retains ownership
+// of persistent resources and the presentation lifecycle.
+fn execute_bound_target_scene(
+    display: EglDisplay,
+    context: EglContext,
+    surface: *mut std::ffi::c_void,
+    frame_context: &mut SharedFrameContext,
+    native_target: &NativeWallpaperTarget,
+    effects: FrameSceneEffects,
+    animation_time: f32,
+    frame_number: i32,
+) -> Result<(u32, u32), String> {
+    bind_egl_frame_target(display, context, surface)?;
+    let postprocess = frame_context.pipeline.postprocess
+        .get_mut(&native_target.info.registry_name)
+        .ok_or_else(|| format!(
+            "No post-processing pipeline exists for wallpaper target {}",
+            native_target.info.registry_name,
+        ))?;
+    execute_target_shader_scene(
+        &frame_context.gl,
+        &frame_context.pipeline.textures,
+        postprocess,
+        native_target.info.registry_name,
+        native_target.width,
+        native_target.height,
+        effects,
+        ShaderSceneUniforms {
+            time: animation_time,
+            frame: frame_number,
+            i_time: frame_context.gl.uniforms.0,
+            i_resolution: frame_context.gl.uniforms.1,
+            i_mouse: frame_context.gl.uniforms.2,
+            i_frame: frame_context.gl.uniforms.3,
+        },
+    )
 }
 
 // Pipeline-neutral per-target scene execution. The caller owns compositor
