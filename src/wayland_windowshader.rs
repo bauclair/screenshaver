@@ -78,6 +78,19 @@ pub(crate) enum WindowshaderFrameGate {
     },
 }
 
+// The Windowshader pipeline registers its next genuine compositor callback
+// before EGL presentation. This is not a synthetic readiness signal: the
+// dispatch implementation tracks the outstanding callback until wl_surface
+// frame Done is received. Wallpaper retains its own registration path.
+pub(crate) fn request_windowshader_next_frame<S: crate::wayland_wallpaper::RenderWaylandDispatch>(
+    state: &mut S,
+    surface: &wayland_client::protocol::wl_surface::WlSurface,
+    registry_name: u32,
+    queue: &wayland_client::QueueHandle<S>,
+) {
+    state.request_next_presentation_frame(surface, registry_name, queue);
+}
+
 pub(crate) fn authorize_windowshader_presentation<S: crate::wayland_wallpaper::RenderWaylandDispatch>(
     controller: &mut WindowshaderFrameLoopState,
     control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,

@@ -1843,11 +1843,22 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     &mut lyrics_overlay_states,
                 );
 
-                state.request_next_presentation_frame(
-                    &native_target.surface,
-                    native_target.info.registry_name,
-                    &frame_queue_handle,
-                );
+                if windowed_rotation {
+                    // Windowshader owns registration of its next genuine
+                    // compositor callback, before the potentially blocking swap.
+                    crate::wayland_windowshader::request_windowshader_next_frame(
+                        state,
+                        &native_target.surface,
+                        native_target.info.registry_name,
+                        &frame_queue_handle,
+                    );
+                } else {
+                    state.request_next_presentation_frame(
+                        &native_target.surface,
+                        native_target.info.registry_name,
+                        &frame_queue_handle,
+                    );
+                }
 
 
                 // Finish measuring Screenshaver's GPU work before handing
