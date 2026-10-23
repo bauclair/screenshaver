@@ -764,6 +764,18 @@ pub(crate) enum FrameLoopAction {
     Stop,
 }
 
+// Increment 46B-2: preflight has a typed outcome before resource preparation.
+// Skip is reserved for the later pause/authorization extraction; this step
+// deliberately preserves the existing pause handling and frame order.
+#[allow(dead_code)]
+enum FramePreparationOutcome {
+    Stop,
+    Skip,
+    Ready {
+        pending_policy_reload: Option<crate::manage_wallpaper_runtime::WallpaperPolicyReload>,
+    },
+}
+
 // Shared shader-rotation execution prerequisite.  Both Wallpaper and
 // Windowshader use the same EGL context-binding operation; neither pipeline
 // delegates its rotation scheduling or callback authorization here.
@@ -1288,48 +1300,57 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
             // The Windowshader pipeline owns the ordered pre-frame control
             // sequence. The shared core supplies only target reconciliation.
-            let pending_policy_reload = if windowed_rotation {
-                let preflight = crate::wayland_windowshader::run_windowshader_frame_preflight(
-                    windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode"),
-                    event_queue, state, native_targets, frame_runtime.clock.paused,
-                    control, shader_interval, &frame_runtime.shader.current.shader_name,
-                    frame_runtime.shader.current.policy_id, frame_context.gl.program, frame_runtime.accounting.frame,
-                    running,
-                    |state, native_targets| reconcile_shared_frame_targets(
+            let preparation = (|| -> Result<FramePreparationOutcome, String> {
+                let pending_policy_reload = if windowed_rotation {
+                    let preflight = crate::wayland_windowshader::run_windowshader_frame_preflight(
+                        windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode"),
+                        event_queue, state, native_targets, frame_runtime.clock.paused,
+                        control, shader_interval, &frame_runtime.shader.current.shader_name,
+                        frame_runtime.shader.current.policy_id, frame_context.gl.program, frame_runtime.accounting.frame,
+                        running,
+                        |state, native_targets| reconcile_shared_frame_targets(
+                            display, context, state, egl_targets, native_targets,
+                            &mut frame_context.pipeline.postprocess,
+                        ),
+                    )?;
+                    match preflight {
+                        crate::wayland_windowshader::WindowshaderPreflightOutcome::Stop => {
+                            return Ok(FramePreparationOutcome::Stop);
+                        }
+                        crate::wayland_windowshader::WindowshaderPreflightOutcome::Continue {
+                            pending_policy_reload,
+                        } => pending_policy_reload,
+                    }
+            } else {
+                    control.diagnostic_checkpoint(1);
+                    S::pump_events(event_queue, state)?;
+                    control.diagnostic_checkpoint(2);
+                    if !reconcile_shared_frame_targets(
                         display, context, state, egl_targets, native_targets,
                         &mut frame_context.pipeline.postprocess,
-                    ),
-                )?;
-                match preflight {
-                    crate::wayland_windowshader::WindowshaderPreflightOutcome::Stop => {
-                        return Ok(FrameLoopAction::Stop);
+                    )? {
+                        println!("All wallpaper outputs have been disconnected.");
+                        return Ok(FramePreparationOutcome::Stop);
                     }
-                    crate::wayland_windowshader::WindowshaderPreflightOutcome::Continue {
-                        pending_policy_reload,
-                    } => pending_policy_reload,
-                }
-            } else {
-                control.diagnostic_checkpoint(1);
-                S::pump_events(event_queue, state)?;
-                control.diagnostic_checkpoint(2);
-                if !reconcile_shared_frame_targets(
-                    display, context, state, egl_targets, native_targets,
-                    &mut frame_context.pipeline.postprocess,
-                )? {
-                    println!("All wallpaper outputs have been disconnected.");
-                    return Ok(FrameLoopAction::Stop);
-                }
-                let compositor_closed = state.surfaces().iter().any(|surface| surface.closed);
-                if compositor_closed {
-                    if S::compositor_close_requests_shutdown() {
-                        running.store(false, Ordering::SeqCst);
+                    let compositor_closed = state.surfaces().iter().any(|surface| surface.closed);
+                    if compositor_closed {
+                        if S::compositor_close_requests_shutdown() {
+                            running.store(false, Ordering::SeqCst);
+                        }
+                        return Ok(FramePreparationOutcome::Stop);
                     }
-                    return Ok(FrameLoopAction::Stop);
-                }
-                if !running.load(Ordering::SeqCst) {
-                    return Ok(FrameLoopAction::Stop);
-                }
-                control.take_policy_reload()
+                    if !running.load(Ordering::SeqCst) {
+                        return Ok(FramePreparationOutcome::Stop);
+                    }
+                    control.take_policy_reload()
+                };
+                Ok(FramePreparationOutcome::Ready { pending_policy_reload })
+            })()?;
+
+            let pending_policy_reload = match preparation {
+                FramePreparationOutcome::Stop => return Ok(FrameLoopAction::Stop),
+                FramePreparationOutcome::Skip => return Ok(FrameLoopAction::Continue),
+                FramePreparationOutcome::Ready { pending_policy_reload } => pending_policy_reload,
             };
 
             // Reload preparation/commit is now a separate rendering operation.
