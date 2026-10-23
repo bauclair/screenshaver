@@ -1128,6 +1128,39 @@ where
     }
 }
 
+// Increment 46H-4: a Windowshader-specific session adapter. It preserves
+// the verified handoff contract while isolating the driver-facing context.
+// The legacy command closure is retained pending resource extraction.
+struct WindowshaderExecutionContext<F> {
+    session: FrameExecutionSession<F>,
+}
+
+impl<F> WindowshaderExecutionContext<F>
+where F: FnMut(FrameSessionCommand) -> Result<FrameSessionResult, String>,
+{
+    fn new(session: FrameExecutionSession<F>) -> Self {
+        debug_assert!(session.requires_windowshader_authorization);
+        Self { session }
+    }
+}
+
+impl<F> FrameExecution for WindowshaderExecutionContext<F>
+where F: FnMut(FrameSessionCommand) -> Result<FrameSessionResult, String>,
+{
+    fn prepared_frame_info(&self) -> Option<PreparedFrameInfo> {
+        self.session.prepared_frame_info()
+    }
+    fn prepare_next_frame(&mut self) -> Result<FrameLoopAction, String> {
+        self.session.prepare_next_frame()
+    }
+    fn authorize_prepared_windowshader_frame(&mut self) -> Result<bool, String> {
+        self.session.authorize_prepared_windowshader_frame()
+    }
+    fn execute_prepared_frame(&mut self) -> Result<FrameLoopAction, String> {
+        self.session.execute_prepared_frame()
+    }
+}
+
 pub(crate) fn run_wallpaper_frame_loop(step: &mut FrameStep<'_>) -> Result<(), String> {
     loop {
         match step()? {
@@ -2218,12 +2251,16 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     // Windowshader drives the frame session directly through the single-frame
     // contract. Wallpaper retains the established closure-driver adapter.
     let result = if windowed_rotation {
-        crate::wayland_windowshader::drive_windowshader_frame_session(&mut execution_session)
+        let mut windowshader_context = WindowshaderExecutionContext::new(execution_session);
+        let result = crate::wayland_windowshader::drive_windowshader_frame_session(&mut windowshader_context);
+        drop(windowshader_context);
+        result
     } else {
-        execution_session.run(wallpaper_loop_driver.expect("Wallpaper requires a frame-loop driver"))
+        let result = execution_session.run(wallpaper_loop_driver.expect("Wallpaper requires a frame-loop driver"));
+        drop(execution_session);
+        result
     };
-    // Release all borrows held by the frame operation before GL teardown.
-    drop(execution_session);
+    // Both branches release their closure-held borrows before GL teardown.
 
     session_resources.release_gl();
 
