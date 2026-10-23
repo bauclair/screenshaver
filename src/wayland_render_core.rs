@@ -2057,7 +2057,10 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     native_targets.iter()
                 )
             {
-                let (target_width, target_height) = execute_bound_target_scene(
+                // GPU scene and overlay composition are one reusable, per-target
+                // operation. Compositor authorization and presentation remain
+                // with the owning pipeline outside this function.
+                execute_target_gpu_frame(
                     display,
                     context,
                     egl_target.surface,
@@ -2071,19 +2074,11 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     },
                     elapsed.as_secs_f32() * frame_runtime.controls.animation_speed,
                     frame_runtime.accounting.frame,
-                )?;
-
-                // Overlay composition is a reusable GPU presentation stage;
-                // it does not authorize or request compositor callbacks.
-                compose_target_frame_overlays(
                     runtime,
-                    native_target.info.registry_name,
-                    target_width,
-                    target_height,
                     &mut renderer_status_panels,
                     &mut lyrics_overlays,
                     &mut lyrics_overlay_states,
-                );
+                )?;
 
                 // The Windowshader controller owns callback registration and
                 // successful-swap bookkeeping as one ordered presentation
@@ -2349,6 +2344,47 @@ fn compose_target_frame_overlays(
             }
         }
     }
+}
+
+// Reusable per-target GPU execution stage. The caller must already have
+// obtained compositor authorization. This function deliberately neither
+// requests Wayland frame callbacks nor swaps EGL buffers, and does not update
+// frame accounting. Scene and overlays execute in their original order.
+fn execute_target_gpu_frame(
+    display: EglDisplay,
+    context: EglContext,
+    surface: *mut std::ffi::c_void,
+    frame_context: &mut SharedFrameContext,
+    native_target: &NativeWallpaperTarget,
+    effects: FrameSceneEffects,
+    animation_time: f32,
+    frame_number: i32,
+    runtime: &crate::define_wallpaper::WallpaperRuntime,
+    renderer_status_panels: &mut HashMap<u32, crate::display_overlay::RendererStatusPanel>,
+    lyrics_overlays: &mut HashMap<u32, crate::display_overlay::OpenGlOverlay>,
+    lyrics_overlay_states: &mut HashMap<u32, (crate::manage_lyrics::LyricsState, u32, u32)>,
+) -> Result<(), String> {
+    let (target_width, target_height) = execute_bound_target_scene(
+        display,
+        context,
+        surface,
+        frame_context,
+        native_target,
+        effects,
+        animation_time,
+        frame_number,
+    )?;
+
+    compose_target_frame_overlays(
+        runtime,
+        native_target.info.registry_name,
+        target_width,
+        target_height,
+        renderer_status_panels,
+        lyrics_overlays,
+        lyrics_overlay_states,
+    );
+    Ok(())
 }
 
 // Executes a complete GPU scene for one already-authorized Wayland target.
