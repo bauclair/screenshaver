@@ -125,6 +125,8 @@ struct SharedFrameGlResources {
     vertex_array: u32,
     timing_queries: [u32; 2],
     program: u32,
+    // Locations are valid only for the program owned by this GL resource set.
+    uniforms: (i32, i32, i32, i32),
 }
 
 impl SharedFrameGlResources {
@@ -133,6 +135,7 @@ impl SharedFrameGlResources {
             vertex_array: 0,
             timing_queries: [0; 2],
             program,
+            uniforms: (-1, -1, -1, -1),
         };
         unsafe {
             gl::GenVertexArrays(1, &mut resources.vertex_array);
@@ -157,6 +160,8 @@ impl SharedFrameGlResources {
             }
         }
         self.program = replacement;
+        // Never retain locations belonging to the retired program.
+        self.uniforms = (-1, -1, -1, -1);
     }
 
     // Stage 4B-5B: the GL execution layer owns GPU timestamp operations.
@@ -235,13 +240,11 @@ impl SharedFramePipelineResources {
 struct SharedFrameContext {
     gl: SharedFrameGlResources,
     pipeline: SharedFramePipelineResources,
-    // Uniform locations belong to the active GL program, not the frame loop.
-    uniforms: (i32, i32, i32, i32),
 }
 
 impl SharedFrameContext {
     fn new(gl: SharedFrameGlResources, pipeline: SharedFramePipelineResources) -> Self {
-        Self { gl, pipeline, uniforms: (-1, -1, -1, -1) }
+        Self { gl, pipeline }
     }
 
     // Pipeline-neutral frame execution boundaries.  The owning pipeline
@@ -1050,7 +1053,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     );
 
 
-    frame_context.uniforms =
+    frame_context.gl.uniforms =
         SharedFrameContext::shader_uniform_locations(frame_context.gl.program)?;
 
 
@@ -1453,7 +1456,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                         shader: next_shader,
                         uniforms: (next_i_time, next_i_resolution, next_i_mouse, next_i_frame),
                     } => {
-                                frame_context.uniforms = (
+                                frame_context.gl.uniforms = (
                                     next_i_time,
                                     next_i_resolution,
                                     next_i_mouse,
@@ -1827,10 +1830,10 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     ShaderSceneUniforms {
                         time: elapsed.as_secs_f32() * frame_runtime.controls.animation_speed,
                         frame: frame_runtime.accounting.frame,
-                        i_time: frame_context.uniforms.0,
-                        i_resolution: frame_context.uniforms.1,
-                        i_mouse: frame_context.uniforms.2,
-                        i_frame: frame_context.uniforms.3,
+                        i_time: frame_context.gl.uniforms.0,
+                        i_resolution: frame_context.gl.uniforms.1,
+                        i_mouse: frame_context.gl.uniforms.2,
+                        i_frame: frame_context.gl.uniforms.3,
                     },
                 )?;
 
