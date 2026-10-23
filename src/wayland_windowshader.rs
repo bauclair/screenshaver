@@ -70,14 +70,6 @@ pub(crate) enum WindowshaderPauseTransition {
     Running,
 }
 
-pub(crate) enum WindowshaderFrameGate {
-    Skip,
-    Present {
-        presentation: crate::wayland_render_core::FramePresentationDecision,
-        rotate: bool,
-    },
-}
-
 // The Windowshader pipeline registers its next genuine compositor callback
 // before EGL presentation. This is not a synthetic readiness signal: the
 // dispatch implementation tracks the outstanding callback until wl_surface
@@ -131,12 +123,12 @@ pub(crate) fn authorize_windowshader_presentation<S: crate::wayland_wallpaper::R
     shader_name: &str,
     policy_id: i64,
     program: u32,
-) -> WindowshaderFrameGate {
+) -> crate::wayland_render_core::FrameSchedulingDecision {
     let Some((recovery, rotate)) = controller.authorize_windowshader_frame(
         control, state, targets, interval, *animation_anchor, paused,
         shader_name, policy_id, program,
     ) else {
-        return WindowshaderFrameGate::Skip;
+        return crate::wayland_render_core::FrameSchedulingDecision::Skip;
     };
     let presentation = crate::wayland_render_core::FramePresentationDecision::from_recovery_durations(
         recovery.map(|shift| (shift.rotation_shift, shift.animation_shift)),
@@ -144,7 +136,7 @@ pub(crate) fn authorize_windowshader_presentation<S: crate::wayland_wallpaper::R
     // Windowshader owns the callback-gap animation-clock decision.
     // Hidden time must not advance shader rotation.
     apply_windowshader_callback_recovery(&presentation, animation_anchor);
-    WindowshaderFrameGate::Present { presentation, rotate }
+    crate::wayland_render_core::FrameSchedulingDecision::Ready { presentation, rotate }
 }
 
 // Windowshader owns the clock policy after a genuine compositor callback

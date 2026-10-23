@@ -686,7 +686,7 @@ fn execute_shader_rotation(
 // Increment 36: explicit scheduling result before shared GPU execution.
 // The compositor-owning pipeline decides whether a frame is eligible;
 // a skipped iteration must never reach GL drawing or EGL presentation.
-enum FrameSchedulingDecision {
+pub(crate) enum FrameSchedulingDecision {
     Skip,
     Ready {
         presentation: FramePresentationDecision,
@@ -1398,21 +1398,14 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             // Windowshader now owns the entire callback gate/recovery decision.
             // Keep Wallpaper's historical path intact until its own extraction.
             let scheduling = if windowed_rotation {
-                match crate::wayland_windowshader::authorize_windowshader_presentation(
+                crate::wayland_windowshader::authorize_windowshader_presentation(
                     windowshader_state.as_mut()
                         .expect("Windowshader controller exists only in Windowed mode"),
                     control, state, native_targets, shader_interval,
                     &mut frame_runtime.clock.animation_started, frame_runtime.clock.paused,
                     &frame_runtime.shader.current.shader_name,
                     frame_runtime.shader.current.policy_id, frame_context.gl.program,
-                ) {
-                    crate::wayland_windowshader::WindowshaderFrameGate::Skip => {
-                        FrameSchedulingDecision::Skip
-                    }
-                    crate::wayland_windowshader::WindowshaderFrameGate::Present {
-                        presentation, rotate,
-                    } => FrameSchedulingDecision::Ready { presentation, rotate },
-                }
+                )
             } else {
                 match wallpaper_callbacks.evaluate(
                     state, native_targets, frame_runtime.clock.shader_switched,
