@@ -1831,118 +1831,17 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     frame_runtime.accounting.frame,
                 )?;
 
-                // Diagnostic only: compose after post-processing, before EGL windowshader presentation.
-                let status_text = crate::renderer_status::enabled()
-                    .then(crate::renderer_status::panel_text);
-                renderer_status_panels
-                    .entry(native_target.info.registry_name)
-                    .or_insert_with(crate::display_overlay::RendererStatusPanel::new)
-                    .draw(target_width, target_height, status_text.as_deref());
-
-                if runtime.display_format
-                    == crate::manage_configuration::WallpaperDisplayFormat::Windowed
-                {
-                    let registry_name =
-                        native_target.info.registry_name;
-
-                    let lyrics_state =
-                        runtime.lyrics_state
-                            .as_ref()
-                            .and_then(
-                                |shared| {
-                                    shared
-                                        .lock()
-                                        .ok()
-                                        .map(
-                                            |state| state.clone()
-                                        )
-                                }
-                            )
-                            .unwrap_or_default();
-
-                    if lyrics_state.current.is_none() {
-                        lyrics_overlays.remove(
-                            &registry_name
-                        );
-                        lyrics_overlay_states.remove(
-                            &registry_name
-                        );
-                    } else {
-                        let needs_rebuild =
-                            lyrics_overlay_states
-                                .get(
-                                    &registry_name
-                                )
-                                .is_none_or(
-                                    |(state, width, height)| {
-                                        state != &lyrics_state
-                                            || *width != target_width
-                                            || *height != target_height
-                                    }
-                                );
-
-                        if needs_rebuild {
-                            match crate::construct_text_overlay::construct_lyrics_panel(
-                                lyrics_state.previous.as_deref(),
-                                lyrics_state.current.as_deref(),
-                                lyrics_state.next.as_deref(),
-                                target_width,
-                                target_height,
-                            )
-                            .and_then(
-                                |constructed| {
-                                    crate::display_overlay::OpenGlOverlay::new_from_constructed(
-                                        constructed,
-                                        crate::parse_subtitle_placement::parse(None).placement,
-                                    )
-                                }
-                            ) {
-                                Ok(overlay) => {
-                                    lyrics_overlays.insert(
-                                        registry_name,
-                                        overlay,
-                                    );
-                                    lyrics_overlay_states.insert(
-                                        registry_name,
-                                        (
-                                            lyrics_state,
-                                            target_width,
-                                            target_height,
-                                        ),
-                                    );
-                                }
-
-                                Err(error) => {
-                                    crate::logger::warning(
-                                        &crate::locate_paths::runtime_log_path(),
-                                        &format!(
-                                            "[LYRICS] Unable to build Wayland Windowpaper lyrics overlay: {}",
-                                            error,
-                                        ),
-                                    );
-                                    lyrics_overlays.remove(
-                                        &registry_name
-                                    );
-                                    lyrics_overlay_states.remove(
-                                        &registry_name
-                                    );
-                                }
-                            }
-                        }
-
-                        if let Some(overlay) =
-                            lyrics_overlays.get(
-                                &registry_name
-                            )
-                        {
-                            overlay.display_bottom_edge(
-                                target_width,
-                                target_height,
-                            );
-                        }
-                    }
-                }
-
+                // Overlay composition is a reusable GPU presentation stage;
+                // it does not authorize or request compositor callbacks.
+                compose_target_frame_overlays(
+                    runtime,
+                    native_target.info.registry_name,
+                    target_width,
+                    target_height,
+                    &mut renderer_status_panels,
+                    &mut lyrics_overlays,
+                    &mut lyrics_overlay_states,
+                );
 
                 state.request_next_presentation_frame(
                     &native_target.surface,
@@ -2081,6 +1980,128 @@ struct ShaderSceneUniforms {
     i_resolution: i32,
     i_mouse: i32,
     i_frame: i32,
+}
+
+// GPU overlay composition for a completed target scene. This operation is
+// independent of Wayland callback eligibility and EGL buffer presentation.
+// The pipeline owner still requests the next genuine callback and swaps.
+fn compose_target_frame_overlays(
+    runtime: &crate::define_wallpaper::WallpaperRuntime,
+    registry_name: u32,
+    target_width: u32,
+    target_height: u32,
+    renderer_status_panels: &mut HashMap<u32, crate::display_overlay::RendererStatusPanel>,
+    lyrics_overlays: &mut HashMap<u32, crate::display_overlay::OpenGlOverlay>,
+    lyrics_overlay_states: &mut HashMap<u32, (crate::manage_lyrics::LyricsState, u32, u32)>,
+) {
+    // Diagnostic only: compose after post-processing, before EGL windowshader presentation.
+    let status_text = crate::renderer_status::enabled()
+        .then(crate::renderer_status::panel_text);
+    renderer_status_panels
+        .entry(registry_name)
+        .or_insert_with(crate::display_overlay::RendererStatusPanel::new)
+        .draw(target_width, target_height, status_text.as_deref());
+    
+    if runtime.display_format
+        == crate::manage_configuration::WallpaperDisplayFormat::Windowed
+    {
+        let lyrics_state =
+            runtime.lyrics_state
+                .as_ref()
+                .and_then(
+                    |shared| {
+                        shared
+                            .lock()
+                            .ok()
+                            .map(
+                                |state| state.clone()
+                            )
+                    }
+                )
+                .unwrap_or_default();
+    
+        if lyrics_state.current.is_none() {
+            lyrics_overlays.remove(
+                &registry_name
+            );
+            lyrics_overlay_states.remove(
+                &registry_name
+            );
+        } else {
+            let needs_rebuild =
+                lyrics_overlay_states
+                    .get(
+                        &registry_name
+                    )
+                    .is_none_or(
+                        |(state, width, height)| {
+                            state != &lyrics_state
+                                || *width != target_width
+                                || *height != target_height
+                        }
+                    );
+    
+            if needs_rebuild {
+                match crate::construct_text_overlay::construct_lyrics_panel(
+                    lyrics_state.previous.as_deref(),
+                    lyrics_state.current.as_deref(),
+                    lyrics_state.next.as_deref(),
+                    target_width,
+                    target_height,
+                )
+                .and_then(
+                    |constructed| {
+                        crate::display_overlay::OpenGlOverlay::new_from_constructed(
+                            constructed,
+                            crate::parse_subtitle_placement::parse(None).placement,
+                        )
+                    }
+                ) {
+                    Ok(overlay) => {
+                        lyrics_overlays.insert(
+                            registry_name,
+                            overlay,
+                        );
+                        lyrics_overlay_states.insert(
+                            registry_name,
+                            (
+                                lyrics_state,
+                                target_width,
+                                target_height,
+                            ),
+                        );
+                    }
+    
+                    Err(error) => {
+                        crate::logger::warning(
+                            &crate::locate_paths::runtime_log_path(),
+                            &format!(
+                                "[LYRICS] Unable to build Wayland Windowpaper lyrics overlay: {}",
+                                error,
+                            ),
+                        );
+                        lyrics_overlays.remove(
+                            &registry_name
+                        );
+                        lyrics_overlay_states.remove(
+                            &registry_name
+                        );
+                    }
+                }
+            }
+    
+            if let Some(overlay) =
+                lyrics_overlays.get(
+                    &registry_name
+                )
+            {
+                overlay.display_bottom_edge(
+                    target_width,
+                    target_height,
+                );
+            }
+        }
+    }
 }
 
 // Executes a complete GPU scene for one already-authorized Wayland target.
