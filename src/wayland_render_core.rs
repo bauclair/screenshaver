@@ -814,6 +814,44 @@ fn prepare_wallpaper_frame_iteration<S: RenderWaylandDispatch>(
                     Ok(FramePreparationOutcome::Ready { pending_policy_reload: control.take_policy_reload() })
 }
 
+// Increment 46B-3B: Windowshader preflight now has a separately callable
+// preparation entry point, parallel to Wallpaper's preflight operation.
+// This does not yet split the session's borrowed frame-execution closure.
+fn prepare_windowshader_frame_iteration<S: RenderWaylandDispatch>(
+    controller: &mut crate::wayland_windowshader::WindowshaderFrameLoopState,
+    display: EglDisplay,
+    context: EglContext,
+    event_queue: &mut wayland_client::EventQueue<S>,
+    state: &mut S,
+    egl_targets: &mut Vec<EglWallpaperTarget>,
+    native_targets: &mut Vec<NativeWallpaperTarget>,
+    postprocess_pipelines: &mut HashMap<u32, crate::postprocess_shader::PostprocessPipeline>,
+    paused: bool,
+    control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+    shader_interval: Option<Duration>,
+    shader_name: &str,
+    policy_id: i64,
+    program: u32,
+    frame: i32,
+    running: &Arc<AtomicBool>,
+) -> Result<FramePreparationOutcome, String> {
+    let preflight = crate::wayland_windowshader::run_windowshader_frame_preflight(
+        controller, event_queue, state, native_targets, paused,
+        control, shader_interval, shader_name, policy_id, program, frame,
+        running,
+        |state, native_targets| reconcile_shared_frame_targets(
+            display, context, state, egl_targets, native_targets,
+            postprocess_pipelines,
+        ),
+    )?;
+    Ok(match preflight {
+        crate::wayland_windowshader::WindowshaderPreflightOutcome::Stop =>
+            FramePreparationOutcome::Stop,
+        crate::wayland_windowshader::WindowshaderPreflightOutcome::Continue { pending_policy_reload } =>
+            FramePreparationOutcome::Ready { pending_policy_reload },
+    })
+}
+
 // Shared shader-rotation execution prerequisite.  Both Wallpaper and
 // Windowshader use the same EGL context-binding operation; neither pipeline
 // delegates its rotation scheduling or callback authorization here.
@@ -1336,27 +1374,20 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     // will move its scheduling decisions into the Windowshader controller.
     let mut execute_frame_step = || -> Result<FrameLoopAction, String> {
 
-            // Windowshader preflight still runs in the shared closure for now;
-            // Wallpaper preflight is separately callable and preserves its
-            // original ordering before policy reload and authorization.
+            // Both pipeline preflight operations are separately callable.
+            // Their invocation still occurs inside the shared frame closure;
+            // the session-level split is the next architectural step.
             let preparation = if windowed_rotation {
-                let preflight = crate::wayland_windowshader::run_windowshader_frame_preflight(
-                    windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode"),
-                    event_queue, state, native_targets, frame_runtime.clock.paused,
-                    control, shader_interval, &frame_runtime.shader.current.shader_name,
-                    frame_runtime.shader.current.policy_id, frame_context.gl.program, frame_runtime.accounting.frame,
-                    running,
-                    |state, native_targets| reconcile_shared_frame_targets(
-                        display, context, state, egl_targets, native_targets,
-                        &mut frame_context.pipeline.postprocess,
-                    ),
-                )?;
-                match preflight {
-                    crate::wayland_windowshader::WindowshaderPreflightOutcome::Stop => FramePreparationOutcome::Stop,
-                    crate::wayland_windowshader::WindowshaderPreflightOutcome::Continue { pending_policy_reload } => {
-                        FramePreparationOutcome::Ready { pending_policy_reload }
-                    }
-                }
+                prepare_windowshader_frame_iteration::<S>(
+                    windowshader_state.as_mut()
+                        .expect("Windowshader controller exists only in Windowed mode"),
+                    display, context, event_queue, state, egl_targets, native_targets,
+                    &mut frame_context.pipeline.postprocess,
+                    frame_runtime.clock.paused, control, shader_interval,
+                    &frame_runtime.shader.current.shader_name,
+                    frame_runtime.shader.current.policy_id, frame_context.gl.program,
+                    frame_runtime.accounting.frame, running,
+                )?
             } else {
                 prepare_wallpaper_frame_iteration::<S>(
                     display, context, event_queue, state, egl_targets, native_targets,
