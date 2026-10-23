@@ -249,6 +249,20 @@ fn drive_windowshader_frame_loop(
     }
 }
 
+// Windowshader invokes the persistent session's one-frame interface directly.
+// The underlying rendering implementation remains in Render Core for now;
+// this removes the FrameStep adapter from the Windowshader loop boundary.
+pub(crate) fn drive_windowshader_frame_session(
+    session: &mut dyn crate::wayland_render_core::FrameExecution,
+) -> Result<(), String> {
+    loop {
+        match session.execute_next_frame()? {
+            crate::wayland_render_core::FrameLoopAction::Continue => {},
+            crate::wayland_render_core::FrameLoopAction::Stop => return Ok(()),
+        }
+    }
+}
+
 // Windowshader owns the paused-frame idle interval. Event dispatch and
 // shutdown checks still run at the start of every frame iteration; this
 // wait does not request, synthesize, or consume a Wayland frame callback.

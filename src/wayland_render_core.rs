@@ -702,7 +702,7 @@ pub(crate) type FrameLoopDriver = for<'a> fn(&mut FrameStep<'a>) -> Result<(), S
 // resources across calls; no resources are initialized per frame.
 // The result is a loop-control action, not permission to present: compositor
 // authorization remains in the pipeline-specific scheduling path.
-trait FrameExecution {
+pub(crate) trait FrameExecution {
     fn execute_next_frame(&mut self) -> Result<FrameLoopAction, String>;
 }
 
@@ -1947,7 +1947,13 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             Ok(FrameLoopAction::Continue)
         };
     let mut execution_session = FrameExecutionSession { step: execute_frame_step };
-    let result = execution_session.run(loop_driver);
+    // Windowshader drives the frame session directly through the single-frame
+    // contract. Wallpaper retains the established closure-driver adapter.
+    let result = if windowed_rotation {
+        crate::wayland_windowshader::drive_windowshader_frame_session(&mut execution_session)
+    } else {
+        execution_session.run(loop_driver)
+    };
     // Release all borrows held by the frame operation before GL teardown.
     drop(execution_session);
 
