@@ -1128,36 +1128,106 @@ where
     }
 }
 
-// Increment 46H-4: a Windowshader-specific session adapter. It preserves
-// the verified handoff contract while isolating the driver-facing context.
-// The legacy command closure is retained pending resource extraction.
+// Increment 46H-5: Windowshader owns its own handoff state and command
+// dispatcher. The legacy command handler remains until GPU-resource extraction.
 struct WindowshaderExecutionContext<F> {
-    session: FrameExecutionSession<F>,
+    dispatcher: FrameCommandDispatcher<F>,
+    handoff: FrameHandoffState,
+    prepared_info: Rc<RefCell<Option<PreparedFrameInfo>>>,
 }
 
 impl<F> WindowshaderExecutionContext<F>
-where F: FnMut(FrameSessionCommand) -> Result<FrameSessionResult, String>,
+where
+    F: FnMut(FrameSessionCommand) -> Result<FrameSessionResult, String>,
 {
-    fn new(session: FrameExecutionSession<F>) -> Self {
-        debug_assert!(session.requires_windowshader_authorization);
-        Self { session }
+    fn new(handler: F, prepared_info: Rc<RefCell<Option<PreparedFrameInfo>>>) -> Self {
+        Self {
+            dispatcher: FrameCommandDispatcher { handler },
+            handoff: FrameHandoffState::default(),
+            prepared_info,
+        }
+    }
+
+    fn invalidate_pending_frame(&mut self) {
+        self.handoff.clear();
+        *self.prepared_info.borrow_mut() = None;
     }
 }
 
 impl<F> FrameExecution for WindowshaderExecutionContext<F>
-where F: FnMut(FrameSessionCommand) -> Result<FrameSessionResult, String>,
+where
+    F: FnMut(FrameSessionCommand) -> Result<FrameSessionResult, String>,
 {
     fn prepared_frame_info(&self) -> Option<PreparedFrameInfo> {
-        self.session.prepared_frame_info()
+        if self.handoff.prepared {
+            self.prepared_info.borrow().clone()
+        } else {
+            None
+        }
     }
+
     fn prepare_next_frame(&mut self) -> Result<FrameLoopAction, String> {
-        self.session.prepare_next_frame()
+        if self.handoff.prepared {
+            return Err("Frame preparation requested while a prepared frame is pending".into());
+        }
+        self.invalidate_pending_frame();
+        match self.dispatcher.dispatch(FrameSessionCommand::Prepare)? {
+            FrameSessionResult::Prepared(FrameLoopAction::Continue) => {
+                if self.prepared_info.borrow().is_none() {
+                    return Err("Frame preparation completed without an active shader snapshot".into());
+                }
+                self.handoff.prepared = true;
+                Ok(FrameLoopAction::Continue)
+            }
+            FrameSessionResult::Prepared(FrameLoopAction::Stop) => Ok(FrameLoopAction::Stop),
+            FrameSessionResult::Skipped => Ok(FrameLoopAction::Continue),
+            FrameSessionResult::Executed(_) | FrameSessionResult::Authorized(_) => {
+                Err("Frame executor returned non-preparation during preparation".into())
+            }
+        }
     }
+
     fn authorize_prepared_windowshader_frame(&mut self) -> Result<bool, String> {
-        self.session.authorize_prepared_windowshader_frame()
+        if !self.handoff.prepared || self.handoff.authorized {
+            return Err("Windowshader authorization requires a new prepared frame".into());
+        }
+        let result = self.dispatcher.dispatch(FrameSessionCommand::Authorize);
+        if result.is_err() {
+            self.invalidate_pending_frame();
+        }
+        match result? {
+            FrameSessionResult::Authorized(true) => {
+                self.handoff.authorized = true;
+                Ok(true)
+            }
+            FrameSessionResult::Authorized(false) => {
+                self.invalidate_pending_frame();
+                Ok(false)
+            }
+            _ => {
+                self.invalidate_pending_frame();
+                Err("Frame executor returned an unexpected authorization result".into())
+            }
+        }
     }
+
     fn execute_prepared_frame(&mut self) -> Result<FrameLoopAction, String> {
-        self.session.execute_prepared_frame()
+        if !self.handoff.prepared {
+            return Err("Frame execution requested without successful preparation".into());
+        }
+        if !self.handoff.authorized {
+            return Err("Windowshader execution requested without compositor authorization".into());
+        }
+        // Consume authorization before entering rendering, even on error.
+        self.invalidate_pending_frame();
+        match self.dispatcher.dispatch(FrameSessionCommand::Execute)? {
+            FrameSessionResult::Executed(action) => Ok(action),
+            FrameSessionResult::Prepared(_)
+            | FrameSessionResult::Skipped
+            | FrameSessionResult::Authorized(_) => {
+                Err("Frame executor returned non-execution during execution".into())
+            }
+        }
     }
 }
 
@@ -2247,16 +2317,25 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             Ok(FrameSessionResult::Executed(FrameLoopAction::Continue))
         }
         };
-    let mut execution_session = FrameExecutionSession { dispatcher: FrameCommandDispatcher { handler: execute_frame_step }, handoff: FrameHandoffState::default(), requires_windowshader_authorization: windowed_rotation, prepared_info };
-    // Windowshader drives the frame session directly through the single-frame
-    // contract. Wallpaper retains the established closure-driver adapter.
+    // Each pipeline now constructs its own session state machine.
+    // The command handler remains shared until the next extraction stage.
     let result = if windowed_rotation {
-        let mut windowshader_context = WindowshaderExecutionContext::new(execution_session);
-        let result = crate::wayland_windowshader::drive_windowshader_frame_session(&mut windowshader_context);
+        let mut windowshader_context =
+            WindowshaderExecutionContext::new(execute_frame_step, prepared_info);
+        let result =
+            crate::wayland_windowshader::drive_windowshader_frame_session(&mut windowshader_context);
         drop(windowshader_context);
         result
     } else {
-        let result = execution_session.run(wallpaper_loop_driver.expect("Wallpaper requires a frame-loop driver"));
+        let mut execution_session = FrameExecutionSession {
+            dispatcher: FrameCommandDispatcher { handler: execute_frame_step },
+            handoff: FrameHandoffState::default(),
+            requires_windowshader_authorization: false,
+            prepared_info,
+        };
+        let result = execution_session.run(
+            wallpaper_loop_driver.expect("Wallpaper requires a frame-loop driver"),
+        );
         drop(execution_session);
         result
     };
