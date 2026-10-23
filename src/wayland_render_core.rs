@@ -984,6 +984,7 @@ struct FrameExecutionSession<F> {
     step: F,
     prepared: bool,
     authorized: bool,
+    requires_windowshader_authorization: bool,
     prepared_info: Rc<RefCell<Option<PreparedFrameInfo>>>,
 }
 
@@ -999,6 +1000,7 @@ where
         if self.prepared {
             return Err("Frame preparation requested while a prepared frame is pending".into());
         }
+        self.authorized = false;
         *self.prepared_info.borrow_mut() = None;
         match (self.step)(FrameSessionCommand::Prepare)? {
             FrameSessionResult::Prepared(FrameLoopAction::Continue) => {
@@ -1015,23 +1017,43 @@ where
     }
 
     fn authorize_prepared_windowshader_frame(&mut self) -> Result<bool, String> {
+        if !self.requires_windowshader_authorization {
+            return Err("Wallpaper must not request Windowshader frame authorization".into());
+        }
         if !self.prepared || self.authorized {
             return Err("Windowshader authorization requires a new prepared frame".into());
         }
-        match (self.step)(FrameSessionCommand::Authorize)? {
+        // An authorization failure invalidates the pending frame; a retry
+        // must begin with fresh preparation and a new compositor decision.
+        let result = (self.step)(FrameSessionCommand::Authorize);
+        if result.is_err() {
+            self.prepared = false;
+            self.authorized = false;
+            *self.prepared_info.borrow_mut() = None;
+        }
+        match result? {
             FrameSessionResult::Authorized(true) => { self.authorized = true; Ok(true) }
             FrameSessionResult::Authorized(false) => {
+                self.authorized = false;
                 self.prepared = false;
                 *self.prepared_info.borrow_mut() = None;
                 Ok(false)
             }
-            _ => Err("Frame executor returned an unexpected authorization result".into()),
+            _ => {
+                self.prepared = false;
+                self.authorized = false;
+                *self.prepared_info.borrow_mut() = None;
+                Err("Frame executor returned an unexpected authorization result".into())
+            },
         }
     }
 
     fn execute_prepared_frame(&mut self) -> Result<FrameLoopAction, String> {
         if !self.prepared {
             return Err("Frame execution requested without successful preparation".into());
+        }
+        if self.requires_windowshader_authorization && !self.authorized {
+            return Err("Windowshader execution requested without compositor authorization".into());
         }
         // Consume authorization before calling into rendering, including on error.
         self.prepared = false;
@@ -2139,7 +2161,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             Ok(FrameSessionResult::Executed(FrameLoopAction::Continue))
         }
         };
-    let mut execution_session = FrameExecutionSession { step: execute_frame_step, prepared: false, authorized: false, prepared_info };
+    let mut execution_session = FrameExecutionSession { step: execute_frame_step, prepared: false, authorized: false, requires_windowshader_authorization: windowed_rotation, prepared_info };
     // Windowshader drives the frame session directly through the single-frame
     // contract. Wallpaper retains the established closure-driver adapter.
     let result = if windowed_rotation {
