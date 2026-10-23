@@ -854,6 +854,58 @@ fn prepare_windowshader_frame_iteration<S: RenderWaylandDispatch>(
     })
 }
 
+// Increment 46H-11: validate and select the pipeline-specific preparation
+// operation before borrowing rendering resources for its preflight.
+#[derive(Clone, Copy)]
+enum FramePreparationPipeline { Wallpaper, Windowshader }
+
+fn select_frame_preparation(
+    command: &FrameSessionCommand,
+    windowed_rotation: bool,
+) -> Result<FramePreparationPipeline, String> {
+    match (command, windowed_rotation) {
+        (FrameSessionCommand::PrepareWindowshader, true) => Ok(FramePreparationPipeline::Windowshader),
+        (FrameSessionCommand::PrepareWallpaper, false) => Ok(FramePreparationPipeline::Wallpaper),
+        _ => Err("Frame preparation command does not match the rendering pipeline".into()),
+    }
+}
+
+// Increment 46H-12: preparation invocation is a standalone operation.
+// The shared frame closure retains policy reload and shader snapshot handling,
+// but no longer directly invokes either pipeline's preflight routine.
+fn execute_pipeline_frame_preflight<S: RenderWaylandDispatch>(
+    pipeline: FramePreparationPipeline,
+    windowshader_controller: Option<&mut crate::wayland_windowshader::WindowshaderFrameLoopState>,
+    display: EglDisplay,
+    context: EglContext,
+    event_queue: &mut wayland_client::EventQueue<S>,
+    state: &mut S,
+    egl_targets: &mut Vec<EglWallpaperTarget>,
+    native_targets: &mut Vec<NativeWallpaperTarget>,
+    postprocess_pipelines: &mut HashMap<u32, crate::postprocess_shader::PostprocessPipeline>,
+    paused: bool,
+    control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+    shader_interval: Option<Duration>,
+    shader_name: &str,
+    policy_id: i64,
+    program: u32,
+    frame: i32,
+    running: &Arc<AtomicBool>,
+) -> Result<FramePreparationOutcome, String> {
+    match pipeline {
+        FramePreparationPipeline::Windowshader => prepare_windowshader_frame_iteration::<S>(
+            windowshader_controller.ok_or_else(|| "Windowshader controller missing during preparation".to_string())?,
+            display, context, event_queue, state, egl_targets, native_targets,
+            postprocess_pipelines, paused, control, shader_interval, shader_name,
+            policy_id, program, frame, running,
+        ),
+        FramePreparationPipeline::Wallpaper => prepare_wallpaper_frame_iteration::<S>(
+            display, context, event_queue, state, egl_targets, native_targets,
+            postprocess_pipelines, control, running,
+        ),
+    }
+}
+
 // Shared shader-rotation execution prerequisite.  Both Wallpaper and
 // Windowshader use the same EGL context-binding operation; neither pipeline
 // delegates its rotation scheduling or callback authorization here.
@@ -1008,7 +1060,14 @@ pub(crate) type FrameLoopDriver = for<'a> fn(&mut FrameStep<'a>) -> Result<(), S
 // authorization remains in the pipeline-specific scheduling path.
 // Increment 46B-3C: preparation and execution are separate calls over one
 // borrowed resource-owning closure. The session enforces a one-shot handoff.
-enum FrameSessionCommand { Prepare, Authorize, Execute(Option<WindowshaderAuthorizedFrame>) }
+// Preparation requests are pipeline-specific. A Windowshader session cannot
+// accidentally invoke Wallpaper preflight (or vice versa).
+enum FrameSessionCommand {
+    PrepareWallpaper,
+    PrepareWindowshader,
+    Authorize,
+    Execute(Option<WindowshaderAuthorizedFrame>),
+}
 
 enum FrameSessionResult { Prepared(FrameLoopAction), Authorized(Option<WindowshaderAuthorizedFrame>), Skipped, Executed(FrameLoopAction) }
 
@@ -1019,6 +1078,86 @@ pub(crate) struct PreparedFrameInfo {
     pub(crate) shader_name: String,
     pub(crate) policy_id: i64,
     pub(crate) gl_program: u32,
+}
+
+// Increment 46H-13: normalize preparation outcomes independently of the
+// shared command closure. No prepared identity is published on Stop or Skip.
+fn preparation_reload_or_action(
+    outcome: FramePreparationOutcome,
+) -> Result<Option<crate::manage_wallpaper_runtime::WallpaperPolicyReload>, FrameSessionResult> {
+    match outcome {
+        FramePreparationOutcome::Stop => Err(FrameSessionResult::Prepared(FrameLoopAction::Stop)),
+        FramePreparationOutcome::Skip => Err(FrameSessionResult::Skipped),
+        FramePreparationOutcome::Ready { pending_policy_reload } => Ok(pending_policy_reload),
+    }
+}
+
+// Increment 46H-15: preparation lifecycle state is coordinated by one
+// concrete transaction. The transaction is created only for Ready preflight;
+// it publishes the committed shader identity only after policy reload.
+struct PreparedFrameTransaction {
+    pending_reload: Option<crate::manage_wallpaper_runtime::WallpaperPolicyReload>,
+}
+
+impl PreparedFrameTransaction {
+    fn begin(outcome: FramePreparationOutcome) -> Result<Self, FrameSessionResult> {
+        Ok(Self {
+            pending_reload: preparation_reload_or_action(outcome)?,
+        })
+    }
+
+    fn take_reload(&mut self) -> Option<crate::manage_wallpaper_runtime::WallpaperPolicyReload> {
+        self.pending_reload.take()
+    }
+
+    fn publish(
+        self,
+        context: &SharedFrameContext,
+        runtime: &SharedFrameRuntimeState,
+        prepared_info: &Rc<RefCell<Option<PreparedFrameInfo>>>,
+    ) {
+        // The caller must take/commit any reload before publication.
+        debug_assert!(self.pending_reload.is_none());
+        *prepared_info.borrow_mut() = Some(capture_prepared_frame_info(context, runtime));
+    }
+}
+
+// Increment 46H-14: commit a pending policy reload between successful
+// preflight and prepared-frame snapshot publication. The caller retains
+// ownership of scheduling and supplies its discontinuity callback.
+fn coordinate_prepared_frame_policy_reload<S: RenderWaylandDispatch>(
+    pending_reload: Option<crate::manage_wallpaper_runtime::WallpaperPolicyReload>,
+    frame_context: &mut SharedFrameContext,
+    frame_runtime: &mut SharedFrameRuntimeState,
+    frame_audio: &mut SharedFrameAudioMotionState,
+    windowed_rotation: bool,
+    notifications_enabled: bool,
+    on_windowshader_schedule_reset: impl FnMut(),
+) {
+    if let Some(reload) = pending_reload {
+        apply_shared_frame_policy_reload::<S>(
+            reload,
+            frame_context,
+            frame_runtime,
+            frame_audio,
+            windowed_rotation,
+            notifications_enabled,
+            on_windowshader_schedule_reset,
+        );
+    }
+}
+
+// Snapshot the committed shader/program identity only after any pending
+// policy reload has completed. This does not authorize GPU presentation.
+fn capture_prepared_frame_info(
+    context: &SharedFrameContext,
+    runtime: &SharedFrameRuntimeState,
+) -> PreparedFrameInfo {
+    PreparedFrameInfo {
+        shader_name: runtime.shader.current.shader_name.clone(),
+        policy_id: runtime.shader.current.policy_id,
+        gl_program: context.gl.program,
+    }
 }
 
 pub(crate) trait FrameExecution {
@@ -1087,7 +1226,7 @@ where
         }
         self.handoff.authorized = false;
         *self.prepared_info.borrow_mut() = None;
-        match self.dispatcher.dispatch(FrameSessionCommand::Prepare)? {
+        match self.dispatcher.dispatch(FrameSessionCommand::PrepareWallpaper)? {
             FrameSessionResult::Prepared(FrameLoopAction::Continue) => {
                 if self.prepared_info.borrow().is_none() {
                     return Err("Frame preparation completed without an active shader snapshot".into());
@@ -1210,7 +1349,7 @@ where
             return Err("Frame preparation requested while a prepared frame is pending".into());
         }
         self.invalidate_pending_frame();
-        match (self.command_handler)(FrameSessionCommand::Prepare)? {
+        match (self.command_handler)(FrameSessionCommand::PrepareWindowshader)? {
             FrameSessionResult::Prepared(FrameLoopAction::Continue) => {
                 if self.prepared_info.borrow().is_none() {
                     return Err("Frame preparation completed without an active shader snapshot".into());
@@ -1679,62 +1818,50 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     let prepared_info = Rc::new(RefCell::new(None::<PreparedFrameInfo>));
     let prepared_info_for_step = Rc::clone(&prepared_info);
     let mut execute_frame_step = |command: FrameSessionCommand| -> Result<FrameSessionResult, String> {
-        if matches!(&command, FrameSessionCommand::Prepare) {
-            // WindowshaderExecutionContext clears the handoff before preparation.
-            // Both pipeline preflight operations are separately callable.
-            // Their invocation still occurs inside the shared frame closure;
-            // the session-level split is the next architectural step.
-            let preparation = if windowed_rotation {
-                prepare_windowshader_frame_iteration::<S>(
+        if matches!(&command, FrameSessionCommand::PrepareWallpaper | FrameSessionCommand::PrepareWindowshader) {
+            // The session specifies its own preflight operation. Reject a
+            // mismatched request instead of selecting by runtime mode alone.
+            let pipeline = select_frame_preparation(&command, windowed_rotation)?;
+            let preparation = execute_pipeline_frame_preflight::<S>(
+                pipeline,
+                windowshader_state.as_mut(),
+                display, context, event_queue, state, egl_targets, native_targets,
+                &mut frame_context.pipeline.postprocess,
+                frame_runtime.clock.paused, control, shader_interval,
+                &frame_runtime.shader.current.shader_name,
+                frame_runtime.shader.current.policy_id,
+                frame_context.gl.program,
+                frame_runtime.accounting.frame, running,
+            )?;
+
+            let mut prepared_transaction = match PreparedFrameTransaction::begin(preparation) {
+                Ok(transaction) => transaction,
+                Err(action) => return Ok(action),
+            };
+
+            // Commit the pending reload before publishing the prepared identity.
+            // Windowshader scheduling is reset only by the reload operation.
+            coordinate_prepared_frame_policy_reload::<S>(
+                prepared_transaction.take_reload(),
+                &mut frame_context,
+                &mut frame_runtime,
+                &mut frame_audio,
+                windowed_rotation,
+                runtime.notifications,
+                || {
                     windowshader_state.as_mut()
-                        .expect("Windowshader controller exists only in Windowed mode"),
-                    display, context, event_queue, state, egl_targets, native_targets,
-                    &mut frame_context.pipeline.postprocess,
-                    frame_runtime.clock.paused, control, shader_interval,
-                    &frame_runtime.shader.current.shader_name,
-                    frame_runtime.shader.current.policy_id, frame_context.gl.program,
-                    frame_runtime.accounting.frame, running,
-                )?
-            } else {
-                prepare_wallpaper_frame_iteration::<S>(
-                    display, context, event_queue, state, egl_targets, native_targets,
-                    &mut frame_context.pipeline.postprocess, control, running,
-                )?
-            };
-
-            let pending_policy_reload = match preparation {
-                FramePreparationOutcome::Stop => return Ok(FrameSessionResult::Prepared(FrameLoopAction::Stop)),
-                FramePreparationOutcome::Skip => return Ok(FrameSessionResult::Skipped),
-                FramePreparationOutcome::Ready { pending_policy_reload } => pending_policy_reload,
-            };
-
-            // Reload preparation/commit is now a separate rendering operation.
-            // Preserve its position between preflight and pause/authorization.
-            if let Some(reload) = pending_policy_reload {
-                apply_shared_frame_policy_reload::<S>(
-                    reload,
-                    &mut frame_context,
-                    &mut frame_runtime,
-                    &mut frame_audio,
-                    windowed_rotation,
-                    runtime.notifications,
-                    || {
-                        windowshader_state.as_mut()
-                            .expect("Windowshader controller exists only in Windowed mode")
-                            .on_schedule_discontinuity(
-                                crate::wayland_windowshader::WindowshaderScheduleReset::PolicyOrShaderChange,
-                            );
-                    },
-                );
-            }
+                        .expect("Windowshader controller exists only in Windowed mode")
+                        .on_schedule_discontinuity(
+                            crate::wayland_windowshader::WindowshaderScheduleReset::PolicyOrShaderChange,
+                        );
+                },
+            );
 
             // Capture identity after reload, so a policy change cannot leave
             // Windowshader observing stale shader/program information.
-            *prepared_info_for_step.borrow_mut() = Some(PreparedFrameInfo {
-                shader_name: frame_runtime.shader.current.shader_name.clone(),
-                policy_id: frame_runtime.shader.current.policy_id,
-                gl_program: frame_context.gl.program,
-            });
+            prepared_transaction.publish(
+                &frame_context, &frame_runtime, &prepared_info_for_step,
+            );
             return Ok(FrameSessionResult::Prepared(FrameLoopAction::Continue));
         }
         if matches!(&command, FrameSessionCommand::Authorize) {
