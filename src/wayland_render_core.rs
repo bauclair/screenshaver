@@ -931,6 +931,25 @@ fn execute_shader_rotation(
     Ok(RotationExecutionOutcome::Activated { shader, uniforms })
 }
 
+// Increment 46F: persistent frame-session ownership. Keep the runtime clocks,
+// policy state and GL/pipeline resources together for the lifetime of one
+// rendering session. The EGL context remains current through explicit release.
+// This is deliberately pipeline-neutral: each invocation owns a separate set.
+struct FrameSessionResources {
+    context: SharedFrameContext,
+    runtime: SharedFrameRuntimeState,
+}
+
+impl FrameSessionResources {
+    fn new(context: SharedFrameContext, runtime: SharedFrameRuntimeState) -> Self {
+        Self { context, runtime }
+    }
+
+    fn release_gl(&mut self) {
+        self.context.release();
+    }
+}
+
 // Increment 36: explicit scheduling result before shared GPU execution.
 // The compositor-owning pipeline decides whether a frame is eligible;
 // a skipped iteration must never reach GL drawing or EGL presentation.
@@ -1467,6 +1486,15 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
         crate::renderer_status::publish(status_pipeline, crate::renderer_status::State::Starting);
     }
     
+
+    // Transfer persistent state into the owning session before constructing
+    // the frame operation. Borrow disjoint fields for the existing closure;
+    // neither the runtime nor the GL resources are recreated per frame.
+    let mut session_resources = FrameSessionResources::new(frame_context, frame_runtime);
+    let (mut frame_context, mut frame_runtime) = (
+        &mut session_resources.context,
+        &mut session_resources.runtime,
+    );
 
     // Keep the GPU execution step separate from the pipeline-owned loop driver.
     // This closure is still hosted by Render Core; the next ownership transfer
@@ -2172,7 +2200,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     // Release all borrows held by the frame operation before GL teardown.
     drop(execution_session);
 
-    frame_context.release();
+    session_resources.release_gl();
 
 
 
