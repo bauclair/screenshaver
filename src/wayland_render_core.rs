@@ -1843,56 +1843,43 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     &mut lyrics_overlay_states,
                 );
 
-                if windowed_rotation {
-                    // Windowshader owns registration of its next genuine
-                    // compositor callback, before the potentially blocking swap.
-                    crate::wayland_windowshader::request_windowshader_next_frame(
+                // The Windowshader controller owns callback registration and
+                // successful-swap bookkeeping as one ordered presentation
+                // operation. Wallpaper retains its existing presentation path.
+                let presentation_duration = if windowed_rotation {
+                    crate::wayland_windowshader::present_windowshader_frame(
+                        windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode"),
                         state,
                         &native_target.surface,
                         native_target.info.registry_name,
                         &frame_queue_handle,
-                    );
+                        frame_runtime.clock.paused,
+                        &mut frame_runtime.controls.status_heartbeat,
+                        status_enabled,
+                        status_pipeline,
+                        |dispatch| frame_context.present_and_acknowledge(
+                            display, egl_target.surface,
+                            native_target.info.registry_name, dispatch, control,
+                        ),
+                    )?
                 } else {
                     state.request_next_presentation_frame(
                         &native_target.surface,
                         native_target.info.registry_name,
                         &frame_queue_handle,
                     );
-                }
-
-
-                // Finish measuring Screenshaver's GPU work before handing
-                // the completed frame to the Wayland compositor.  An
-                // xdg_toplevel on an inactive workspace may block for seconds
-                // in eglSwapBuffers(); that presentation wait is not shader
-                // rendering cost.
-                let presentation_duration = frame_context.present_and_acknowledge(
-                    display,
-                    egl_target.surface,
-                    native_target.info.registry_name,
-                    state,
-                    control,
-                )?;
-                // Pipeline-specific presentation accounting belongs to the
-                // Windowshader controller; Wallpaper retains its own heartbeat.
-                if windowed_rotation {
-                    // Windowshader owns its post-swap status heartbeat decision
-                    // and timestamp update; only successful swaps reach here.
-                    windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode")
-                        .record_windowshader_swap_and_publish_status(
-                            frame_runtime.clock.paused,
-                            &mut frame_runtime.controls.status_heartbeat,
-                            status_enabled,
-                            status_pipeline,
-                        );
-                } else {
+                    let duration = frame_context.present_and_acknowledge(
+                        display, egl_target.surface,
+                        native_target.info.registry_name, state, control,
+                    )?;
                     let publish_rendering = frame_runtime.clock.paused
                         || frame_runtime.controls.status_heartbeat.elapsed() >= Duration::from_secs(1);
                     if status_enabled && publish_rendering {
                         crate::renderer_status::publish(status_pipeline, crate::renderer_status::State::Rendering);
                         frame_runtime.controls.status_heartbeat = Instant::now();
                     }
-                }
+                    duration
+                };
 
                 // Diagnostic only: report a compositor wait that overlapped a
                 // pause request. Do not change frame pacing or handoff behavior.

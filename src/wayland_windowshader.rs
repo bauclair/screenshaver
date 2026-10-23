@@ -91,6 +91,35 @@ pub(crate) fn request_windowshader_next_frame<S: crate::wayland_wallpaper::Rende
     state.request_next_presentation_frame(surface, registry_name, queue);
 }
 
+// Windowshader owns the ordering of callback registration, successful EGL
+// presentation, and its status heartbeat. The supplied operation performs
+// pipeline-neutral GPU measurement, EGL swapping and dispatch acknowledgment.
+// It must return an error on a failed swap; no successful-swap state is then
+// recorded. Wallpaper does not use this sequencing operation.
+pub(crate) fn present_windowshader_frame<S, F>(
+    controller: &mut WindowshaderFrameLoopState,
+    state: &mut S,
+    surface: &wayland_client::protocol::wl_surface::WlSurface,
+    registry_name: u32,
+    queue: &wayland_client::QueueHandle<S>,
+    was_paused: bool,
+    heartbeat: &mut Instant,
+    status_enabled: bool,
+    status_pipeline: crate::renderer_status::Pipeline,
+    mut present: F,
+) -> Result<Duration, String>
+where
+    S: crate::wayland_wallpaper::RenderWaylandDispatch,
+    F: FnMut(&mut S) -> Result<Duration, String>,
+{
+    request_windowshader_next_frame(state, surface, registry_name, queue);
+    let duration = present(state)?;
+    controller.record_windowshader_swap_and_publish_status(
+        was_paused, heartbeat, status_enabled, status_pipeline,
+    );
+    Ok(duration)
+}
+
 pub(crate) fn authorize_windowshader_presentation<S: crate::wayland_wallpaper::RenderWaylandDispatch>(
     controller: &mut WindowshaderFrameLoopState,
     control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
