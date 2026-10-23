@@ -776,6 +776,44 @@ enum FramePreparationOutcome {
     },
 }
 
+// Increment 46B-3A: Wallpaper preflight is independently callable and no
+// longer embedded in the shared GPU frame closure. Windowshader preflight
+// remains pipeline-owned; the following increment separates the two-stage
+// session interface. Preserve event, reconciliation and shutdown order.
+fn prepare_wallpaper_frame_iteration<S: RenderWaylandDispatch>(
+    display: EglDisplay,
+    context: EglContext,
+    event_queue: &mut wayland_client::EventQueue<S>,
+    state: &mut S,
+    egl_targets: &mut Vec<EglWallpaperTarget>,
+    native_targets: &mut Vec<NativeWallpaperTarget>,
+    postprocess_pipelines: &mut HashMap<u32, crate::postprocess_shader::PostprocessPipeline>,
+    control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+    running: &Arc<AtomicBool>,
+) -> Result<FramePreparationOutcome, String> {
+                    control.diagnostic_checkpoint(1);
+                    S::pump_events(event_queue, state)?;
+                    control.diagnostic_checkpoint(2);
+                    if !reconcile_shared_frame_targets(
+                        display, context, state, egl_targets, native_targets,
+                        postprocess_pipelines,
+                    )? {
+                        println!("All wallpaper outputs have been disconnected.");
+                        return Ok(FramePreparationOutcome::Stop);
+                    }
+                    let compositor_closed = state.surfaces().iter().any(|surface| surface.closed);
+                    if compositor_closed {
+                        if S::compositor_close_requests_shutdown() {
+                            running.store(false, Ordering::SeqCst);
+                        }
+                        return Ok(FramePreparationOutcome::Stop);
+                    }
+                    if !running.load(Ordering::SeqCst) {
+                        return Ok(FramePreparationOutcome::Stop);
+                    }
+                    Ok(FramePreparationOutcome::Ready { pending_policy_reload: control.take_policy_reload() })
+}
+
 // Shared shader-rotation execution prerequisite.  Both Wallpaper and
 // Windowshader use the same EGL context-binding operation; neither pipeline
 // delegates its rotation scheduling or callback authorization here.
@@ -1298,54 +1336,33 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     // will move its scheduling decisions into the Windowshader controller.
     let mut execute_frame_step = || -> Result<FrameLoopAction, String> {
 
-            // The Windowshader pipeline owns the ordered pre-frame control
-            // sequence. The shared core supplies only target reconciliation.
-            let preparation = (|| -> Result<FramePreparationOutcome, String> {
-                let pending_policy_reload = if windowed_rotation {
-                    let preflight = crate::wayland_windowshader::run_windowshader_frame_preflight(
-                        windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode"),
-                        event_queue, state, native_targets, frame_runtime.clock.paused,
-                        control, shader_interval, &frame_runtime.shader.current.shader_name,
-                        frame_runtime.shader.current.policy_id, frame_context.gl.program, frame_runtime.accounting.frame,
-                        running,
-                        |state, native_targets| reconcile_shared_frame_targets(
-                            display, context, state, egl_targets, native_targets,
-                            &mut frame_context.pipeline.postprocess,
-                        ),
-                    )?;
-                    match preflight {
-                        crate::wayland_windowshader::WindowshaderPreflightOutcome::Stop => {
-                            return Ok(FramePreparationOutcome::Stop);
-                        }
-                        crate::wayland_windowshader::WindowshaderPreflightOutcome::Continue {
-                            pending_policy_reload,
-                        } => pending_policy_reload,
-                    }
-            } else {
-                    control.diagnostic_checkpoint(1);
-                    S::pump_events(event_queue, state)?;
-                    control.diagnostic_checkpoint(2);
-                    if !reconcile_shared_frame_targets(
+            // Windowshader preflight still runs in the shared closure for now;
+            // Wallpaper preflight is separately callable and preserves its
+            // original ordering before policy reload and authorization.
+            let preparation = if windowed_rotation {
+                let preflight = crate::wayland_windowshader::run_windowshader_frame_preflight(
+                    windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode"),
+                    event_queue, state, native_targets, frame_runtime.clock.paused,
+                    control, shader_interval, &frame_runtime.shader.current.shader_name,
+                    frame_runtime.shader.current.policy_id, frame_context.gl.program, frame_runtime.accounting.frame,
+                    running,
+                    |state, native_targets| reconcile_shared_frame_targets(
                         display, context, state, egl_targets, native_targets,
                         &mut frame_context.pipeline.postprocess,
-                    )? {
-                        println!("All wallpaper outputs have been disconnected.");
-                        return Ok(FramePreparationOutcome::Stop);
+                    ),
+                )?;
+                match preflight {
+                    crate::wayland_windowshader::WindowshaderPreflightOutcome::Stop => FramePreparationOutcome::Stop,
+                    crate::wayland_windowshader::WindowshaderPreflightOutcome::Continue { pending_policy_reload } => {
+                        FramePreparationOutcome::Ready { pending_policy_reload }
                     }
-                    let compositor_closed = state.surfaces().iter().any(|surface| surface.closed);
-                    if compositor_closed {
-                        if S::compositor_close_requests_shutdown() {
-                            running.store(false, Ordering::SeqCst);
-                        }
-                        return Ok(FramePreparationOutcome::Stop);
-                    }
-                    if !running.load(Ordering::SeqCst) {
-                        return Ok(FramePreparationOutcome::Stop);
-                    }
-                    control.take_policy_reload()
-                };
-                Ok(FramePreparationOutcome::Ready { pending_policy_reload })
-            })()?;
+                }
+            } else {
+                prepare_wallpaper_frame_iteration::<S>(
+                    display, context, event_queue, state, egl_targets, native_targets,
+                    &mut frame_context.pipeline.postprocess, control, running,
+                )?
+            };
 
             let pending_policy_reload = match preparation {
                 FramePreparationOutcome::Stop => return Ok(FrameLoopAction::Stop),
