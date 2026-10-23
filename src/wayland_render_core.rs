@@ -948,30 +948,67 @@ pub(crate) type FrameLoopDriver = for<'a> fn(&mut FrameStep<'a>) -> Result<(), S
 // resources across calls; no resources are initialized per frame.
 // The result is a loop-control action, not permission to present: compositor
 // authorization remains in the pipeline-specific scheduling path.
+// Increment 46B-3C: preparation and execution are separate calls over one
+// borrowed resource-owning closure. The session enforces a one-shot handoff.
+#[derive(Clone, Copy)]
+enum FrameSessionCommand { Prepare, Execute }
+
+enum FrameSessionResult { Prepared(FrameLoopAction), Skipped, Executed(FrameLoopAction) }
+
 pub(crate) trait FrameExecution {
-    fn execute_next_frame(&mut self) -> Result<FrameLoopAction, String>;
+    fn prepare_next_frame(&mut self) -> Result<FrameLoopAction, String>;
+    fn execute_prepared_frame(&mut self) -> Result<FrameLoopAction, String>;
+
+    fn execute_next_frame(&mut self) -> Result<FrameLoopAction, String> {
+        match self.prepare_next_frame()? {
+            FrameLoopAction::Stop => Ok(FrameLoopAction::Stop),
+            FrameLoopAction::Continue => self.execute_prepared_frame(),
+        }
+    }
 }
 
 struct FrameExecutionSession<F> {
     step: F,
+    prepared: bool,
 }
 
 impl<F> FrameExecution for FrameExecutionSession<F>
 where
-    F: FnMut() -> Result<FrameLoopAction, String>,
+    F: FnMut(FrameSessionCommand) -> Result<FrameSessionResult, String>,
 {
-    fn execute_next_frame(&mut self) -> Result<FrameLoopAction, String> {
-        (self.step)()
+    fn prepare_next_frame(&mut self) -> Result<FrameLoopAction, String> {
+        if self.prepared {
+            return Err("Frame preparation requested while a prepared frame is pending".into());
+        }
+        match (self.step)(FrameSessionCommand::Prepare)? {
+            FrameSessionResult::Prepared(FrameLoopAction::Continue) => {
+                self.prepared = true;
+                Ok(FrameLoopAction::Continue)
+            }
+            FrameSessionResult::Prepared(FrameLoopAction::Stop) => Ok(FrameLoopAction::Stop),
+            FrameSessionResult::Skipped => Ok(FrameLoopAction::Continue),
+            FrameSessionResult::Executed(_) => Err("Frame executor returned execution during preparation".into()),
+        }
+    }
+
+    fn execute_prepared_frame(&mut self) -> Result<FrameLoopAction, String> {
+        if !self.prepared {
+            return Err("Frame execution requested without successful preparation".into());
+        }
+        // Consume authorization before calling into rendering, including on error.
+        self.prepared = false;
+        match (self.step)(FrameSessionCommand::Execute)? {
+            FrameSessionResult::Executed(action) => Ok(action),
+            FrameSessionResult::Prepared(_) | FrameSessionResult::Skipped => Err("Frame executor returned preparation during execution".into()),
+        }
     }
 }
 
 impl<F> FrameExecutionSession<F>
 where
-    F: FnMut() -> Result<FrameLoopAction, String>,
+    F: FnMut(FrameSessionCommand) -> Result<FrameSessionResult, String>,
 {
     fn run(&mut self, driver: FrameLoopDriver) -> Result<(), String> {
-        // Adapter for existing Wallpaper/Windowshader drivers.  Both now
-        // invoke the session's single-frame interface, not its stored closure.
         let mut next = || self.execute_next_frame();
         driver(&mut next)
     }
@@ -1372,7 +1409,8 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     // Keep the GPU execution step separate from the pipeline-owned loop driver.
     // This closure is still hosted by Render Core; the next ownership transfer
     // will move its scheduling decisions into the Windowshader controller.
-    let mut execute_frame_step = || -> Result<FrameLoopAction, String> {
+    let mut execute_frame_step = |command: FrameSessionCommand| -> Result<FrameSessionResult, String> {
+        if matches!(command, FrameSessionCommand::Prepare) {
 
             // Both pipeline preflight operations are separately callable.
             // Their invocation still occurs inside the shared frame closure;
@@ -1396,8 +1434,8 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             };
 
             let pending_policy_reload = match preparation {
-                FramePreparationOutcome::Stop => return Ok(FrameLoopAction::Stop),
-                FramePreparationOutcome::Skip => return Ok(FrameLoopAction::Continue),
+                FramePreparationOutcome::Stop => return Ok(FrameSessionResult::Prepared(FrameLoopAction::Stop)),
+                FramePreparationOutcome::Skip => return Ok(FrameSessionResult::Skipped),
                 FramePreparationOutcome::Ready { pending_policy_reload } => pending_policy_reload,
             };
 
@@ -1421,6 +1459,9 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 );
             }
 
+            return Ok(FrameSessionResult::Prepared(FrameLoopAction::Continue));
+        }
+        // Execute is reachable only after a successful Prepare call.
             control.diagnostic_checkpoint(3);
             // Windowshader owns its complete pause transition, including the
             // idle wait and release of its animation clock. Wallpaper retains
@@ -1434,7 +1475,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                         &mut frame_runtime.clock.animation_started,
                     ) {
                     crate::wayland_windowshader::WindowshaderPauseTransition::Idle => {
-                        return Ok(FrameLoopAction::Continue);
+                        return Ok(FrameSessionResult::Executed(FrameLoopAction::Continue));
                     }
                     crate::wayland_windowshader::WindowshaderPauseTransition::Resumed => {
                         frame_runtime.accounting.frame_times.clear();
@@ -1461,7 +1502,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                         frame_runtime.clock.paused = true;
                     }
                     thread::sleep(Duration::from_millis(10));
-                    return Ok(FrameLoopAction::Continue);
+                    return Ok(FrameSessionResult::Executed(FrameLoopAction::Continue));
                 }
 
                 if frame_runtime.clock.paused {
@@ -1521,7 +1562,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 }
             };
             let (presentation, rotation_requested) = match scheduling {
-                FrameSchedulingDecision::Skip => return Ok(FrameLoopAction::Continue),
+                FrameSchedulingDecision::Skip => return Ok(FrameSessionResult::Executed(FrameLoopAction::Continue)),
                 FrameSchedulingDecision::Ready { presentation, rotate } => (presentation, rotate),
             };
 
@@ -1752,7 +1793,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                         println!("    Error: {}", error);
                         println!();
                         shader_manager.remove_shader(&shader.manager_name);
-                        return Ok(FrameLoopAction::Continue);
+                        return Ok(FrameSessionResult::Executed(FrameLoopAction::Continue));
                     }
                     RotationExecutionOutcome::CompilationFailed { shader, error } => {
                         if windowed_rotation {
@@ -2033,9 +2074,9 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             if !windowed_rotation {
                 frame_runtime.pacing.pace_wallpaper::<S>();
             }
-            Ok(FrameLoopAction::Continue)
+            Ok(FrameSessionResult::Executed(FrameLoopAction::Continue))
         };
-    let mut execution_session = FrameExecutionSession { step: execute_frame_step };
+    let mut execution_session = FrameExecutionSession { step: execute_frame_step, prepared: false };
     // Windowshader drives the frame session directly through the single-frame
     // contract. Wallpaper retains the established closure-driver adapter.
     let result = if windowed_rotation {
