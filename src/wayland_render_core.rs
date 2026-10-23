@@ -945,6 +945,13 @@ impl FrameSessionResources {
         Self { context, runtime }
     }
 
+    // Increment 46H-3: the execution adapter receives two disjoint mutable
+    // borrows rather than borrowing or destructuring the owning session.
+    // The owner remains responsible for teardown after the adapter is dropped.
+    fn execution_borrows(&mut self) -> (&mut SharedFrameContext, &mut SharedFrameRuntimeState) {
+        (&mut self.context, &mut self.runtime)
+    }
+
     fn release_gl(&mut self) {
         self.context.release();
     }
@@ -1517,10 +1524,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     // the frame operation. Borrow disjoint fields for the existing closure;
     // neither the runtime nor the GL resources are recreated per frame.
     let mut session_resources = FrameSessionResources::new(frame_context, frame_runtime);
-    let (mut frame_context, mut frame_runtime) = (
-        &mut session_resources.context,
-        &mut session_resources.runtime,
-    );
+    let (mut frame_context, mut frame_runtime) = session_resources.execution_borrows();
 
     // Keep the GPU execution step separate from the pipeline-owned loop driver.
     // This closure is still hosted by Render Core; the next ownership transfer
