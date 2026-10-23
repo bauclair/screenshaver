@@ -697,11 +697,26 @@ enum FrameSchedulingDecision {
 pub(crate) type FrameStep<'a> = dyn FnMut() -> Result<FrameLoopAction, String> + 'a;
 pub(crate) type FrameLoopDriver = for<'a> fn(&mut FrameStep<'a>) -> Result<(), String>;
 
-// Increment 37: a scoped execution session keeps the per-frame operation
-// borrowed for the duration of the owning pipeline's loop.  The session
-// must be dropped before Render Core releases persistent GL resources.
+// Increment 39: the pipeline can request exactly one frame operation through
+// this interface.  The session retains the borrowed persistent GL/runtime
+// resources across calls; no resources are initialized per frame.
+// The result is a loop-control action, not permission to present: compositor
+// authorization remains in the pipeline-specific scheduling path.
+trait FrameExecution {
+    fn execute_next_frame(&mut self) -> Result<FrameLoopAction, String>;
+}
+
 struct FrameExecutionSession<F> {
     step: F,
+}
+
+impl<F> FrameExecution for FrameExecutionSession<F>
+where
+    F: FnMut() -> Result<FrameLoopAction, String>,
+{
+    fn execute_next_frame(&mut self) -> Result<FrameLoopAction, String> {
+        (self.step)()
+    }
 }
 
 impl<F> FrameExecutionSession<F>
@@ -709,7 +724,10 @@ where
     F: FnMut() -> Result<FrameLoopAction, String>,
 {
     fn run(&mut self, driver: FrameLoopDriver) -> Result<(), String> {
-        driver(&mut self.step)
+        // Adapter for existing Wallpaper/Windowshader drivers.  Both now
+        // invoke the session's single-frame interface, not its stored closure.
+        let mut next = || self.execute_next_frame();
+        driver(&mut next)
     }
 }
 
