@@ -968,6 +968,36 @@ pub(crate) enum FrameSchedulingDecision {
     },
 }
 
+// Increment 46H-6: explicit one-shot transfer of compositor authorization
+// from Windowshader's authorization operation to GPU execution.  This
+// replaces the anonymous tuple captured by the legacy command closure.
+// The slot is intentionally not an authorization source: only a genuine
+// FrameSchedulingDecision::Ready may populate it.
+#[derive(Default)]
+struct WindowshaderAuthorizedFrame {
+    scheduling: Option<(FramePresentationDecision, bool)>,
+}
+
+impl WindowshaderAuthorizedFrame {
+    fn clear(&mut self) {
+        self.scheduling = None;
+    }
+
+    fn grant(&mut self, presentation: FramePresentationDecision, rotate: bool) -> Result<(), String> {
+        if self.scheduling.is_some() {
+            return Err("Windowshader frame was authorized more than once".into());
+        }
+        self.scheduling = Some((presentation, rotate));
+        Ok(())
+    }
+
+    fn consume(&mut self) -> Result<(FramePresentationDecision, bool), String> {
+        self.scheduling.take().ok_or_else(|| {
+            "Windowshader execution lacked compositor authorization".to_string()
+        })
+    }
+}
+
 pub(crate) type FrameStep<'a> = dyn FnMut() -> Result<FrameLoopAction, String> + 'a;
 pub(crate) type FrameLoopDriver = for<'a> fn(&mut FrameStep<'a>) -> Result<(), String>;
 
@@ -1634,10 +1664,10 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     // will move its scheduling decisions into the Windowshader controller.
     let prepared_info = Rc::new(RefCell::new(None::<PreparedFrameInfo>));
     let prepared_info_for_step = Rc::clone(&prepared_info);
-    let mut authorized_windowshader_scheduling: Option<(FramePresentationDecision, bool)> = None;
+    let mut authorized_windowshader_scheduling = WindowshaderAuthorizedFrame::default();
     let mut execute_frame_step = |command: FrameSessionCommand| -> Result<FrameSessionResult, String> {
         if matches!(command, FrameSessionCommand::Prepare) {
-            authorized_windowshader_scheduling = None;
+            authorized_windowshader_scheduling.clear();
 
             // Both pipeline preflight operations are separately callable.
             // Their invocation still occurs inside the shared frame closure;
@@ -1727,7 +1757,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             match scheduling {
                 FrameSchedulingDecision::Skip => Ok(FrameSessionResult::Authorized(false)),
                 FrameSchedulingDecision::Ready { presentation, rotate } => {
-                    authorized_windowshader_scheduling = Some((presentation, rotate));
+                    authorized_windowshader_scheduling.grant(presentation, rotate)?;
                     Ok(FrameSessionResult::Authorized(true))
                 }
             }
@@ -1787,7 +1817,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             // Windowshader now owns the entire callback gate/recovery decision.
             // Keep Wallpaper's historical path intact until its own extraction.
             let (presentation, rotation_requested) = if windowed_rotation {
-                authorized_windowshader_scheduling.take().ok_or_else(|| "Windowshader execution lacked compositor authorization".to_string())?
+                authorized_windowshader_scheduling.consume()?
             } else {
                 let scheduling = match wallpaper_callbacks.evaluate(
                     state, native_targets, frame_runtime.clock.shader_switched,
