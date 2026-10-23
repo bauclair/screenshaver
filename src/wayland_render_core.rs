@@ -4,6 +4,8 @@
 //! pending its controlled extraction; this module does not claim full separation.
 
 use std::ffi::CString;
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::path::Path;
 use std::ptr;
 use std::sync::{Arc, atomic::AtomicBool};
@@ -955,7 +957,17 @@ enum FrameSessionCommand { Prepare, Execute }
 
 enum FrameSessionResult { Prepared(FrameLoopAction), Skipped, Executed(FrameLoopAction) }
 
+// Increment 46C: a read-only identity snapshot from successful preparation.
+// This is not compositor authorization and does not transfer GL ownership.
+#[derive(Clone, Debug)]
+pub(crate) struct PreparedFrameInfo {
+    pub(crate) shader_name: String,
+    pub(crate) policy_id: i64,
+    pub(crate) gl_program: u32,
+}
+
 pub(crate) trait FrameExecution {
+    fn prepared_frame_info(&self) -> Option<PreparedFrameInfo>;
     fn prepare_next_frame(&mut self) -> Result<FrameLoopAction, String>;
     fn execute_prepared_frame(&mut self) -> Result<FrameLoopAction, String>;
 
@@ -970,18 +982,27 @@ pub(crate) trait FrameExecution {
 struct FrameExecutionSession<F> {
     step: F,
     prepared: bool,
+    prepared_info: Rc<RefCell<Option<PreparedFrameInfo>>>,
 }
 
 impl<F> FrameExecution for FrameExecutionSession<F>
 where
     F: FnMut(FrameSessionCommand) -> Result<FrameSessionResult, String>,
 {
+    fn prepared_frame_info(&self) -> Option<PreparedFrameInfo> {
+        if self.prepared { self.prepared_info.borrow().clone() } else { None }
+    }
+
     fn prepare_next_frame(&mut self) -> Result<FrameLoopAction, String> {
         if self.prepared {
             return Err("Frame preparation requested while a prepared frame is pending".into());
         }
+        *self.prepared_info.borrow_mut() = None;
         match (self.step)(FrameSessionCommand::Prepare)? {
             FrameSessionResult::Prepared(FrameLoopAction::Continue) => {
+                if self.prepared_info.borrow().is_none() {
+                    return Err("Frame preparation completed without an active shader snapshot".into());
+                }
                 self.prepared = true;
                 Ok(FrameLoopAction::Continue)
             }
@@ -997,6 +1018,7 @@ where
         }
         // Consume authorization before calling into rendering, including on error.
         self.prepared = false;
+        *self.prepared_info.borrow_mut() = None;
         match (self.step)(FrameSessionCommand::Execute)? {
             FrameSessionResult::Executed(action) => Ok(action),
             FrameSessionResult::Prepared(_) | FrameSessionResult::Skipped => Err("Frame executor returned preparation during execution".into()),
@@ -1409,6 +1431,8 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     // Keep the GPU execution step separate from the pipeline-owned loop driver.
     // This closure is still hosted by Render Core; the next ownership transfer
     // will move its scheduling decisions into the Windowshader controller.
+    let prepared_info = Rc::new(RefCell::new(None::<PreparedFrameInfo>));
+    let prepared_info_for_step = Rc::clone(&prepared_info);
     let mut execute_frame_step = |command: FrameSessionCommand| -> Result<FrameSessionResult, String> {
         if matches!(command, FrameSessionCommand::Prepare) {
 
@@ -1459,6 +1483,13 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 );
             }
 
+            // Capture identity after reload, so a policy change cannot leave
+            // Windowshader observing stale shader/program information.
+            *prepared_info_for_step.borrow_mut() = Some(PreparedFrameInfo {
+                shader_name: frame_runtime.shader.current.shader_name.clone(),
+                policy_id: frame_runtime.shader.current.policy_id,
+                gl_program: frame_context.gl.program,
+            });
             return Ok(FrameSessionResult::Prepared(FrameLoopAction::Continue));
         }
         // Execute is reachable only after a successful Prepare call.
@@ -2076,7 +2107,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             }
             Ok(FrameSessionResult::Executed(FrameLoopAction::Continue))
         };
-    let mut execution_session = FrameExecutionSession { step: execute_frame_step, prepared: false };
+    let mut execution_session = FrameExecutionSession { step: execute_frame_step, prepared: false, prepared_info };
     // Windowshader drives the frame session directly through the single-frame
     // contract. Wallpaper retains the established closure-driver adapter.
     let result = if windowed_rotation {
