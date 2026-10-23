@@ -694,6 +694,22 @@ enum FrameSchedulingDecision {
 pub(crate) type FrameStep<'a> = dyn FnMut() -> Result<FrameLoopAction, String> + 'a;
 pub(crate) type FrameLoopDriver = for<'a> fn(&mut FrameStep<'a>) -> Result<(), String>;
 
+// Increment 37: a scoped execution session keeps the per-frame operation
+// borrowed for the duration of the owning pipeline's loop.  The session
+// must be dropped before Render Core releases persistent GL resources.
+struct FrameExecutionSession<F> {
+    step: F,
+}
+
+impl<F> FrameExecutionSession<F>
+where
+    F: FnMut() -> Result<FrameLoopAction, String>,
+{
+    fn run(&mut self, driver: FrameLoopDriver) -> Result<(), String> {
+        driver(&mut self.step)
+    }
+}
+
 pub(crate) fn run_wallpaper_frame_loop(step: &mut FrameStep<'_>) -> Result<(), String> {
     loop {
         match step()? {
@@ -2036,8 +2052,10 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             }
             Ok(FrameLoopAction::Continue)
         };
-    let result = loop_driver(&mut execute_frame_step);
-    drop(execute_frame_step);
+    let mut execution_session = FrameExecutionSession { step: execute_frame_step };
+    let result = execution_session.run(loop_driver);
+    // Release all borrows held by the frame operation before GL teardown.
+    drop(execution_session);
 
     frame_context.release();
 
