@@ -3,30 +3,32 @@ use std::time::{Duration, Instant};
 
 const MAX_CHUNK_BYTES: usize = 380; // Stay below MyMemory's small query limit.
 
-pub fn run(target_locale: &str) -> Result<(), String> {
-    let target = target_locale.split(['-', '_']).next().unwrap_or("").to_ascii_lowercase();
-    if target.is_empty() || !target.chars().all(|c| c.is_ascii_alphabetic()) {
-        return Err(format!("Invalid translation locale: {}", target_locale));
-    }
-    if target == "en" {
-        return Err("Stage 4 expects a non-English target language (e.g. fr-FR)".into());
-    }
-    println!("Screenshaver Lyric Translation Test — Stage 4");
-    println!("=============================================");
-    println!("Requested target locale: {}", target_locale);
-    let lines = crate::test_lyrics::retrieve_for_translation_test()?;
+// Stage 5 remains a terminal-only experiment. No production rendering or database writes.
+// The request ID protects against late worker messages; production integration must
+// additionally compare the current MPRIS track identity before publishing results.
+use std::sync::mpsc::{self, RecvTimeoutError};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
+
+struct ForwardResult {
+    request_id: u64,
+    translated: Vec<String>,
+    providers: Vec<String>,
+    elapsed: Duration,
+}
+
+fn translate_forward(
+    lines: &[(String, String)], protected: &[ProtectedLine], target: &str,
+    request_id: u64,
+) -> Result<ForwardResult, String> {
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(12))
         .user_agent(concat!("Screenshaver/", env!("CARGO_PKG_VERSION"), " lyric-translation-test"))
         .build().map_err(|e| format!("HTTP client: {}", e))?;
-    let protected: Vec<ProtectedLine> = lines.iter()
-        .map(|(_, text)| protect_vocalizations(text))
-        .collect();
     let active: Vec<usize> = protected.iter().enumerate()
         .filter_map(|(i, item)| if item.core.trim().is_empty() { None } else { Some(i) })
         .collect();
-    let protected_only = protected.iter().filter(|p| p.is_vocal_only).count();
-    let protected_mixed = protected.iter().filter(|p| p.is_mixed).count();
     let mut translated: Vec<String> = protected.iter()
         .map(|p| if p.is_vocal_only { p.original.clone() } else { String::new() })
         .collect();
@@ -48,23 +50,107 @@ pub fn run(target_locale: &str) -> Result<(), String> {
             cursor += 1;
         }
         let source = chunk.iter().map(|&i| protected[i].core.as_str()).collect::<Vec<_>>().join("\n");
-        let (result, provider) = translate_chunk(&client, &source, "en", &target, chunk.len())?;
+        let (result, provider) = translate_chunk(&client, &source, "en", target, chunk.len())?;
         let output: Vec<&str> = result.split('\n').collect();
         if output.len() != chunk.len() {
             return Err(format!("Provider returned {} lines for {} source lines; refusing misalignment", output.len(), chunk.len()));
         }
         for (&idx, text) in chunk.iter().zip(output) {
-            if text.trim().is_empty() {
-                return Err(format!("Empty translation at {}", lines[idx].0));
-            }
+            if text.trim().is_empty() { return Err(format!("Empty translation at {}", lines[idx].0)); }
             translated[idx] = protected[idx].restore(text.trim());
         }
         providers.push(provider);
     }
-    let forward_elapsed = started.elapsed();
+    Ok(ForwardResult { request_id, translated, providers, elapsed: started.elapsed() })
+}
 
-    // Reverse translation is diagnostic only. Never alter the validated forward
-    // translation or its original timestamps if a reverse provider fails.
+fn matching_request(expected: u64, received: u64) -> bool { expected == received }
+
+pub fn run(target_locale: &str) -> Result<(), String> {
+    let target = target_locale.split(['-', '_']).next().unwrap_or("").to_ascii_lowercase();
+    if target.is_empty() || !target.chars().all(|c| c.is_ascii_alphabetic()) {
+        return Err(format!("Invalid translation locale: {}", target_locale));
+    }
+    if target == "en" {
+        return Err("Stage 5 expects a non-English target language (e.g. fr-FR)".into());
+    }
+    println!("Screenshaver Lyric Translation Test — Stage 5 (asynchronous)");
+    println!("===========================================================");
+    println!("Requested target locale: {}", target_locale);
+    let lines = crate::test_lyrics::retrieve_for_translation_test()?;
+    let protected: Vec<ProtectedLine> = lines.iter()
+        .map(|(_, text)| protect_vocalizations(text)).collect();
+    let active_count = protected.iter().filter(|p| !p.core.trim().is_empty()).count();
+    let protected_only = protected.iter().filter(|p| p.is_vocal_only).count();
+    let protected_mixed = protected.iter().filter(|p| p.is_mixed).count();
+
+    // This output is available immediately, before any translation network request.
+    println!("\nORIGINAL LYRICS READY (translation has not blocked presentation)");
+    for (stamp, original) in &lines { println!("{} EN: {}", stamp, original); }
+    let request_id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
+    let worker_lines = lines.clone();
+    let worker_protected: Vec<ProtectedLine> = worker_lines.iter()
+        .map(|(_, text)| protect_vocalizations(text)).collect();
+    let worker_target = target.clone();
+    let (tx, rx) = mpsc::channel();
+    let foreground_started = Instant::now();
+    std::thread::Builder::new().name("lyric-translation-test".into())
+        .spawn(move || {
+            let result = translate_forward(&worker_lines, &worker_protected, &worker_target, request_id);
+            let _ = tx.send(result);
+        }).map_err(|e| format!("Cannot start translation worker: {}", e))?;
+    println!("\n[FOREGROUND] Original lyrics available; worker request {} started.", request_id);
+    println!("[FOREGROUND] Waiting without blocking the foreground event loop.");
+
+    // In the terminal harness this 250 ms poll represents the foreground event loop.
+    // Production will use its existing renderer/event loop rather than this timer.
+    let forward = loop {
+        match rx.recv_timeout(Duration::from_millis(250)) {
+            Ok(Ok(result)) => {
+                if !matching_request(request_id, result.request_id) {
+                    eprintln!("[FOREGROUND] Ignored stale translation result for request {}", result.request_id);
+                    continue;
+                }
+                break result;
+            }
+            Ok(Err(error)) => return Err(format!("Background translation failed; original lyrics remain available: {}", error)),
+            Err(RecvTimeoutError::Timeout) => {
+                println!("[FOREGROUND] Responsive at {:.2}s; original lyrics remain available", foreground_started.elapsed().as_secs_f64());
+            }
+            Err(RecvTimeoutError::Disconnected) => {
+                return Err("Translation worker disconnected; original lyrics remain available".into());
+            }
+        }
+    };
+    let translated = forward.translated;
+    println!("\n[FOREGROUND] Validated translation published for request {} after {:.3}s", request_id, foreground_started.elapsed().as_secs_f64());
+    println!("\nFORWARD TRANSLATION (en → {})", target);
+    println!("=============================================");
+    for (i, (stamp, original)) in lines.iter().enumerate() {
+        println!("{} EN: {}", stamp, original);
+        if !original.trim().is_empty() { println!("{} {}: {}", stamp, target.to_uppercase(), translated[i]); }
+    }
+    println!("\nOriginal entries: {} | Provider-translated entries: {}", lines.len(), active_count);
+    println!("Protected vocalization-only entries: {} | Mixed entries with protected edge vocalizations: {}", protected_only, protected_mixed);
+    println!("Forward worker elapsed: {:.3} seconds", forward.elapsed.as_secs_f64());
+    println!("Providers per chunk: {}", forward.providers.join(", "));
+    println!("Timestamp alignment: PASS (positional mapping, exact line-count validation)");
+    println!("Track-change note: request ID checked; live MPRIS track revalidation is deferred to production integration.");
+
+    // Reverse translation is intentionally opt-in; it is not part of the async
+    // forward path and must never delay original lyric presentation.
+    let reverse_enabled = std::env::var("SCREENSHAVER_TRANSLATION_REVERSE")
+        .map(|v| v == "1").unwrap_or(false);
+    if !reverse_enabled {
+        println!("Reverse diagnostic: disabled (set SCREENSHAVER_TRANSLATION_REVERSE=1 to enable)");
+        return Ok(());
+    }
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(12))
+        .user_agent(concat!("Screenshaver/", env!("CARGO_PKG_VERSION"), " lyric-translation-test"))
+        .build().map_err(|e| format!("Reverse diagnostic HTTP client: {}", e))?;
+    let active: Vec<usize> = protected.iter().enumerate()
+        .filter_map(|(i, p)| if p.core.trim().is_empty() { None } else { Some(i) }).collect();
     let reverse_started = Instant::now();
     let mut reversed: Vec<Option<String>> = vec![None; lines.len()];
     let mut reverse_providers = Vec::new();
@@ -75,13 +161,11 @@ pub fn run(target_locale: &str) -> Result<(), String> {
         let mut bytes = 0;
         while reverse_cursor < active.len() {
             let idx = active[reverse_cursor];
-            let next = extract_translated_core(&translated[idx], &protected[idx]).len() + if chunk.is_empty() { 0 } else { 1 };
+            let next = extract_translated_core(&translated[idx], &protected[idx]).len()
+                + if chunk.is_empty() { 0 } else { 1 };
             if !chunk.is_empty() && bytes + next > MAX_CHUNK_BYTES { break; }
             if next > MAX_CHUNK_BYTES {
-                reverse_errors.push(format!(
-                    "{}: translated lyric exceeds safe reverse request size",
-                    lines[idx].0
-                ));
+                reverse_errors.push(format!("{}: translated lyric exceeds safe reverse request size", lines[idx].0));
                 reverse_cursor += 1;
                 break;
             }
@@ -90,10 +174,8 @@ pub fn run(target_locale: &str) -> Result<(), String> {
             reverse_cursor += 1;
         }
         if chunk.is_empty() { continue; }
-        let reverse_inputs: Vec<String> = chunk.iter()
-            .map(|&i| extract_translated_core(&translated[i], &protected[i]).to_string())
-            .collect();
-        let source = reverse_inputs.join("\n");
+        let source = chunk.iter().map(|&i| extract_translated_core(&translated[i], &protected[i]))
+            .collect::<Vec<_>>().join("\n");
         match translate_chunk(&client, &source, &target, "en", chunk.len()) {
             Ok((result, provider)) => {
                 for (&idx, text) in chunk.iter().zip(result.split('\n')) {
@@ -101,33 +183,13 @@ pub fn run(target_locale: &str) -> Result<(), String> {
                 }
                 reverse_providers.push(provider);
             }
-            Err(error) => {
-                reverse_errors.push(format!(
-                    "Reverse chunk beginning at {}: {}", lines[chunk[0]].0, error
-                ));
-            }
+            Err(error) => reverse_errors.push(format!("Reverse chunk beginning at {}: {}", lines[chunk[0]].0, error)),
         }
     }
     for (i, item) in protected.iter().enumerate() {
         if item.is_vocal_only { reversed[i] = Some(item.original.clone()); }
     }
-    let reverse_elapsed = reverse_started.elapsed();
-
-    println!("\nFORWARD TRANSLATION (en → {})", target);
-    println!("=============================================");
-    for (i, (stamp, original)) in lines.iter().enumerate() {
-        println!("{} EN: {}", stamp, original);
-        if !original.trim().is_empty() { println!("{} {}: {}", stamp, target.to_uppercase(), translated[i]); }
-    }
-    println!("\nOriginal entries: {} | Provider-translated entries: {}", lines.len(), active.len());
-    println!("Protected vocalization-only entries: {} | Mixed entries with protected edge vocalizations: {}", protected_only, protected_mixed);
-    println!("Already-target-language detection: not applied (conservative; no language classifier)");
-    println!("Forward translation elapsed: {:.3} seconds", forward_elapsed.as_secs_f64());
-    println!("Providers per chunk: {}", providers.join(", "));
-    println!("Timestamp alignment: PASS (positional mapping, exact line-count validation)");
-
     println!("\nREVERSE TRANSLATION DIAGNOSTIC ({} → en)", target);
-    println!("=================================================");
     for (i, (stamp, original)) in lines.iter().enumerate() {
         if original.trim().is_empty() { continue; }
         println!("{} ORIGINAL EN: {}", stamp, original);
@@ -139,10 +201,8 @@ pub fn run(target_locale: &str) -> Result<(), String> {
     }
     let reverse_count = reversed.iter().filter(|v| v.is_some()).count();
     println!("\nReverse available entries: {} / {} (includes {} protected-only entries)", reverse_count, active.len() + protected_only, protected_only);
-    println!("Reverse translation elapsed: {:.3} seconds", reverse_elapsed.as_secs_f64());
-    println!("Reverse providers per chunk: {}", if reverse_providers.is_empty() {
-        "<none>".to_string()
-    } else { reverse_providers.join(", ") });
+    println!("Reverse translation elapsed: {:.3} seconds", reverse_started.elapsed().as_secs_f64());
+    println!("Reverse providers per chunk: {}", if reverse_providers.is_empty() { "<none>".into() } else { reverse_providers.join(", ") });
     if reverse_errors.is_empty() {
         println!("Reverse timestamp alignment: PASS (positional mapping, exact line-count validation)");
     } else {
@@ -308,5 +368,15 @@ mod stage4_tests {
         assert!(!protect_vocalizations("Oh no, my love's at an end").is_vocal_only);
         assert_eq!(protect_vocalizations("Oh no, my love's at an end").core, "Oh no, my love's at an end");
         assert_eq!(protect_vocalizations("I said oh no").core, "I said oh no");
+    }
+}
+
+#[cfg(test)]
+mod stage5_tests {
+    use super::*;
+    #[test]
+    fn rejects_stale_worker_request() {
+        assert!(matching_request(17, 17));
+        assert!(!matching_request(18, 17));
     }
 }
