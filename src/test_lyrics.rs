@@ -112,6 +112,28 @@ pub fn run() -> Result<(), String> {
     run_graphical_test()
 }
 
+/// First-stage lyric translation harness: fetch only, no graphics and no translation.
+/// Reuses the established test retrieval code without altering the production worker.
+pub(crate) fn retrieve_for_translation_test() -> Result<Vec<(String, String)>, String> {
+    let player = find_playing_player()?
+        .ok_or_else(|| "No MPRIS player currently reports Playing. Start a song and retry.".to_string())?;
+    let started = Instant::now();
+    let (track, lines) = load_player_track(&player)?;
+    if lines.is_empty() {
+        return Err("Neither LRCLIB nor LRCMUX returned synchronized lyric lines.".to_string());
+    }
+    let elapsed = started.elapsed();
+    println!("\nORIGINAL SYNCHRONIZED LYRICS");
+    println!("============================");
+    for line in &lines {
+        println!("{} {}", line.source_timestamp, line.text);
+    }
+    println!("\nSynchronized lines: {}", lines.len());
+    println!("Retrieval elapsed: {:.3} seconds", elapsed.as_secs_f64());
+    println!("Track: {} — {}", track.identity.artist, track.identity.title);
+    Ok(lines.into_iter().map(|line| (line.source_timestamp, line.text)).collect())
+}
+
 fn find_playing_player() -> Result<Option<Player>, String> {
     let finder = PlayerFinder::new().map_err(|error| {
         format!(

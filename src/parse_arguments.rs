@@ -25,6 +25,10 @@ pub enum Command {
 
     TestLyrics,
 
+    TestLyricTranslation {
+        locale: String,
+    },
+
     TestLocalization,
 
     AuditTranslation {
@@ -205,6 +209,17 @@ pub fn parse() -> Result<Command, String> {
         }
 
 
+        "--test-lyric-translation" => {
+            if args.len() != 2 {
+                return Err("--test-lyric-translation requires exactly one target locale (for example, fr-FR)".to_string());
+            }
+            let locale = args[1].trim();
+            if !valid_translation_locale(locale) {
+                return Err(format!("Invalid lyric translation locale: '{}'. Expected a language code such as fr or fr-FR.", locale));
+            }
+            Ok(Command::TestLyricTranslation { locale: locale.to_string() })
+        }
+
         "--test-localization" => {
 
             require_no_extra_arguments(
@@ -360,6 +375,21 @@ pub fn parse() -> Result<Command, String> {
     }
 }
 
+
+
+fn valid_translation_locale(locale: &str) -> bool {
+    let mut parts = locale.split('-');
+    let Some(language) = parts.next() else { return false; };
+    if !(2..=3).contains(&language.len()) || !language.bytes().all(|c| c.is_ascii_alphabetic()) {
+        return false;
+    }
+    match (parts.next(), parts.next()) {
+        (None, None) => true,
+        (Some(region), None) => (region.len() == 2 && region.bytes().all(|c| c.is_ascii_alphabetic()))
+            || (region.len() == 3 && region.bytes().all(|c| c.is_ascii_digit())),
+        _ => false,
+    }
+}
 
 fn parse_audit_translation(
     args: &[String],
@@ -965,6 +995,10 @@ pub fn print_help() {
          \n\
              --test-lyrics\n\
                  Run the synchronized-lyrics development test and exit.\n\
+         \n\
+             --test-lyric-translation <LOCALE>\n\
+                 Retrieve and print synchronized lyrics for the playing MPRIS track.\n\
+                 Translation requests are not enabled in this first-stage test.\n\
          \n\
              --test-localization\n\
                  Test locale selection, translation lookup, and English fallback.\n\

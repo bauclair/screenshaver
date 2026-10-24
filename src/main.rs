@@ -135,6 +135,7 @@ mod authenticate_user;
 mod manage_playlists;
 mod test_playlists;
 mod test_lyrics;
+mod test_lyric_translation;
 mod test_localization;
 mod manage_localization;
 mod audit_translation;
@@ -467,6 +468,14 @@ fn main() {
             return;
         }
 
+
+        crate::parse_arguments::Command::TestLyricTranslation { locale } => {
+            if let Err(error) = crate::test_lyric_translation::run(locale) {
+                eprintln!("[LYRIC TRANSLATION TEST] FAILED: {}", error);
+                std::process::exit(1);
+            }
+            return;
+        }
 
         crate::parse_arguments::Command::TestLyrics => {
 
@@ -1449,6 +1458,7 @@ fn main() {
         | crate::parse_arguments::Command::TestWallpaperProtocol
         | crate::parse_arguments::Command::TestPlaylists
         | crate::parse_arguments::Command::TestLyrics
+        | crate::parse_arguments::Command::TestLyricTranslation { .. }
         | crate::parse_arguments::Command::TestLocalization
         | crate::parse_arguments::Command::TestReverseAnimation { .. }
         | crate::parse_arguments::Command::AuditTranslation { .. }
