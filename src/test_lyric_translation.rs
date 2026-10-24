@@ -1,5 +1,6 @@
 //! Terminal-only forward and reverse lyric translation experiment. No renderer/database writes.
 use std::time::{Duration, Instant};
+use mpris::{PlayerFinder, PlaybackStatus};
 
 const MAX_CHUNK_BYTES: usize = 380; // Stay below MyMemory's small query limit.
 
@@ -64,6 +65,48 @@ fn translate_forward(
     Ok(ForwardResult { request_id, translated, providers, elapsed: started.elapsed() })
 }
 
+// Snapshot both player ownership and track metadata. A changed or unreadable
+// identity fails closed: the original lyrics remain available, but no stale
+// translation is published. Do not compare playback position (it changes).
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct LiveTrack {
+    bus_name: String,
+    title: String,
+    artists: Vec<String>,
+    album: String,
+    length_ms: Option<u128>,
+}
+
+fn live_track() -> Result<LiveTrack, String> {
+    let finder = PlayerFinder::new().map_err(|e| format!("MPRIS connection: {}", e))?;
+    let players = finder.find_all().map_err(|e| format!("MPRIS enumeration: {}", e))?;
+    // Follow the same first-playing-player selection used by test_lyrics.
+    for player in players {
+        if !matches!(player.get_playback_status(), Ok(PlaybackStatus::Playing)) {
+            continue;
+        }
+        let metadata = player.get_metadata().map_err(|e| format!("MPRIS metadata: {}", e))?;
+        let title = metadata.title().ok_or("MPRIS title unavailable")?.to_owned();
+        let artists = metadata.artists().unwrap_or_default().iter()
+            .map(|s| (*s).to_owned()).collect();
+        return Ok(LiveTrack {
+            bus_name: player.bus_name().to_string(),
+            title,
+            artists,
+            album: metadata.album_name().unwrap_or("").to_owned(),
+            length_ms: metadata.length().map(|d| d.as_millis()),
+        });
+    }
+    Err("No playing MPRIS player is available".into())
+}
+
+fn ensure_current(expected: &LiveTrack) -> Result<(), String> {
+    let current = live_track()?;
+    if &current == expected { Ok(()) } else {
+        Err(format!("MPRIS track changed: expected {:?}; current {:?}", expected, current))
+    }
+}
+
 fn matching_request(expected: u64, received: u64) -> bool { expected == received }
 
 pub fn run(target_locale: &str) -> Result<(), String> {
@@ -74,10 +117,15 @@ pub fn run(target_locale: &str) -> Result<(), String> {
     if target == "en" {
         return Err("Stage 5 expects a non-English target language (e.g. fr-FR)".into());
     }
-    println!("Screenshaver Lyric Translation Test — Stage 5 (asynchronous)");
+    println!("Screenshaver Lyric Translation Test — Stage 5B (track-change guarded)");
     println!("===========================================================");
     println!("Requested target locale: {}", target_locale);
+    let initial_track = live_track()?;
     let lines = crate::test_lyrics::retrieve_for_translation_test()?;
+    // Retrieval may itself take time; never start translating lyrics for a
+    // track that changed while the network retrieval was in progress.
+    ensure_current(&initial_track).map_err(|e| format!(
+        "Track changed during lyric retrieval; refusing stale lyrics: {}", e))?;
     let protected: Vec<ProtectedLine> = lines.iter()
         .map(|(_, text)| protect_vocalizations(text)).collect();
     let active_count = protected.iter().filter(|p| !p.core.trim().is_empty()).count();
@@ -101,6 +149,7 @@ pub fn run(target_locale: &str) -> Result<(), String> {
         }).map_err(|e| format!("Cannot start translation worker: {}", e))?;
     println!("\n[FOREGROUND] Original lyrics available; worker request {} started.", request_id);
     println!("[FOREGROUND] Waiting without blocking the foreground event loop.");
+    println!("[FOREGROUND] Skip to another song while translating to test stale-result rejection.");
 
     // In the terminal harness this 250 ms poll represents the foreground event loop.
     // Production will use its existing renderer/event loop rather than this timer.
@@ -111,10 +160,14 @@ pub fn run(target_locale: &str) -> Result<(), String> {
                     eprintln!("[FOREGROUND] Ignored stale translation result for request {}", result.request_id);
                     continue;
                 }
+                ensure_current(&initial_track).map_err(|e| format!(
+                    "[FOREGROUND] Discarded completed translation; original lyrics remain available: {}", e))?;
                 break result;
             }
             Ok(Err(error)) => return Err(format!("Background translation failed; original lyrics remain available: {}", error)),
             Err(RecvTimeoutError::Timeout) => {
+                ensure_current(&initial_track).map_err(|e| format!(
+                    "[FOREGROUND] Track changed during translation; abandoned request {}: {}", request_id, e))?;
                 println!("[FOREGROUND] Responsive at {:.2}s; original lyrics remain available", foreground_started.elapsed().as_secs_f64());
             }
             Err(RecvTimeoutError::Disconnected) => {
@@ -135,7 +188,7 @@ pub fn run(target_locale: &str) -> Result<(), String> {
     println!("Forward worker elapsed: {:.3} seconds", forward.elapsed.as_secs_f64());
     println!("Providers per chunk: {}", forward.providers.join(", "));
     println!("Timestamp alignment: PASS (positional mapping, exact line-count validation)");
-    println!("Track-change note: request ID checked; live MPRIS track revalidation is deferred to production integration.");
+    println!("Track-change safety: PASS (request ID and live MPRIS identity checked before publication).");
 
     // Reverse translation is intentionally opt-in; it is not part of the async
     // forward path and must never delay original lyric presentation.
@@ -378,5 +431,10 @@ mod stage5_tests {
     fn rejects_stale_worker_request() {
         assert!(matching_request(17, 17));
         assert!(!matching_request(18, 17));
+        let a = LiveTrack { bus_name: "org.mpris.MediaPlayer2.kew".into(), title: "A".into(), artists: vec!["Artist".into()], album: "Album".into(), length_ms: Some(1234) };
+        let mut b = a.clone();
+        assert_eq!(a, b);
+        b.title = "B".into();
+        assert_ne!(a, b);
     }
 }
