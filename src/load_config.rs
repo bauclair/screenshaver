@@ -37,6 +37,26 @@ fn default_locale() -> String {
     "en-US".to_string()
 }
 
+// Translation target is independent of the interface locale. The absence of
+// this directive (or en-US) preserves original-lyrics-only behavior.
+fn normalized_lyrics_target(value: Option<&str>) -> Result<Option<String>, String> {
+    let Some(value) = value else { return Ok(None); };
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("en-US") {
+        return Ok(None);
+    }
+    let Some((language, region)) = value.split_once('-') else {
+        return Err(format!("Invalid language.translate_lyrics locale '{}': expected language-REGION (e.g. fr-FR)", value));
+    };
+    if language.len() != 2 || region.len() != 2
+        || !language.bytes().all(|b| b.is_ascii_alphabetic())
+        || !region.bytes().all(|b| b.is_ascii_alphabetic())
+    {
+        return Err(format!("Invalid language.translate_lyrics locale '{}': expected language-REGION (e.g. fr-FR)", value));
+    }
+    Ok(Some(format!("{}-{}", language.to_ascii_lowercase(), region.to_ascii_uppercase())))
+}
+
 #[derive(Debug, Deserialize)]
 struct ScreensaverSection {
 
@@ -88,6 +108,13 @@ struct LanguageSection {
 
     #[serde(default = "default_locale")]
     locale: String,
+
+    // Omission means no lyric translation. en-US is also treated as disabled.
+    #[serde(default)]
+    translate_lyrics: Option<String>,
+
+    #[serde(default)]
+    show_original_lyrics: bool,
 }
 
 
@@ -96,6 +123,8 @@ impl Default for LanguageSection {
     fn default() -> Self {
         Self {
             locale: default_locale(),
+            translate_lyrics: None,
+            show_original_lyrics: false,
         }
     }
 }
@@ -1081,6 +1110,11 @@ pub struct Config {
 
     pub locale: String,
 
+    // None means translation is disabled; no caching is performed.
+    pub translate_lyrics: Option<String>,
+
+    pub show_original_lyrics: bool,
+
     pub debug_log: bool,
 
     pub log_level: u8,
@@ -1674,6 +1708,10 @@ pub fn load_config(
                     raw.language.locale.trim().to_string()
                 },
 
+            translate_lyrics: normalized_lyrics_target(raw.language.translate_lyrics.as_deref())?,
+
+            show_original_lyrics: raw.language.show_original_lyrics,
+
             debug_log:
                 raw.debug.debug_log,
 
@@ -1716,6 +1754,16 @@ pub fn load_config(
             format!(
                 "[CONFIG] language.locale = {}",
                 config.locale,
+            ),
+
+            format!(
+                "[CONFIG] language.translate_lyrics = {}",
+                config.translate_lyrics.as_deref().unwrap_or("disabled"),
+            ),
+
+            format!(
+                "[CONFIG] language.show_original_lyrics = {}",
+                config.show_original_lyrics,
             ),
 
             format!(

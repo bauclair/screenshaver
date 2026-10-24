@@ -1,5 +1,6 @@
 //! Terminal-only forward and reverse lyric translation experiment. No renderer/database writes.
 use std::time::{Duration, Instant};
+use std::collections::HashMap;
 use mpris::{PlayerFinder, PlaybackStatus};
 
 const MAX_CHUNK_BYTES: usize = 380; // Stay below MyMemory's small query limit.
@@ -13,6 +14,32 @@ use std::sync::Arc;
 
 static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
 const MAX_IN_FLIGHT_WORKERS: usize = 2;
+// Bump this when translation preprocessing or restoration rules change.
+const TRANSLATION_CACHE_VERSION: u32 = 1;
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct TranslationCacheKey {
+    version: u32,
+    target: String,
+    // Includes every timestamp and source line: changes in lyric content or
+    // synchronization cannot accidentally reuse an older translation.
+    source: Vec<(String, String)>,
+}
+
+#[derive(Clone)]
+struct CachedTranslation {
+    translated: Vec<String>,
+    providers: Vec<String>,
+}
+
+fn cache_key(target: &str, lines: &[(String, String)]) -> TranslationCacheKey {
+    TranslationCacheKey {
+        version: TRANSLATION_CACHE_VERSION,
+        target: target.to_owned(),
+        source: lines.to_vec(),
+    }
+}
+
 
 struct ForwardResult {
     request_id: u64,
@@ -129,7 +156,11 @@ fn print_translation(lines: &[(String, String)], protected: &[ProtectedLine],
     let active_count = protected.iter().filter(|p| !p.core.trim().is_empty()).count();
     let protected_only = protected.iter().filter(|p| p.is_vocal_only).count();
     let protected_mixed = protected.iter().filter(|p| p.is_mixed).count();
-    println!("\n[FOREGROUND] Validated translation published for request {}", forward.request_id);
+    if forward.request_id == 0 {
+        println!("\\n[FOREGROUND] Validated cached translation published.");
+    } else {
+        println!("\\n[FOREGROUND] Validated translation published for request {}", forward.request_id);
+    }
     println!("\nFORWARD TRANSLATION (en → {})", target);
     println!("=============================================");
     for (i, (stamp, original)) in lines.iter().enumerate() {
@@ -140,7 +171,11 @@ fn print_translation(lines: &[(String, String)], protected: &[ProtectedLine],
     }
     println!("\nOriginal entries: {} | Provider-translated entries: {}", lines.len(), active_count);
     println!("Protected vocalization-only entries: {} | Mixed entries: {}", protected_only, protected_mixed);
-    println!("Forward worker elapsed: {:.3} seconds", forward.elapsed.as_secs_f64());
+    if forward.request_id == 0 {
+        println!("Forward worker elapsed: cached (no worker launched)");
+    } else {
+        println!("Forward worker elapsed: {:.3} seconds", forward.elapsed.as_secs_f64());
+    }
     println!("Providers per chunk: {}", forward.providers.join(", "));
     println!("Timestamp alignment: PASS (exact positional mapping and line count)");
     println!("Track-change safety: PASS (live identity checked before publication)");
@@ -151,12 +186,14 @@ pub fn run(target_locale: &str) -> Result<(), String> {
     if target.is_empty() || !target.chars().all(|c| c.is_ascii_alphabetic()) || target == "en" {
         return Err(format!("Stage 5C requires a non-English target locale: {}", target_locale));
     }
-    println!("Screenshaver Lyric Translation Test — Stage 5C (continuous track handling)");
+    println!("Screenshaver Lyric Translation Test — Stage 6 (continuous handling + in-memory translation cache)");
     println!("Requested target locale: {}", target_locale);
     println!("Press Ctrl+C to stop. Skip songs while translation is in progress.");
     println!("Reverse translation is disabled in continuous mode.");
+    println!("Translation cache: in-memory only; cleared when this command exits.");
 
     let in_flight = Arc::new(AtomicUsize::new(0));
+    let mut cache: HashMap<TranslationCacheKey, CachedTranslation> = HashMap::new();
     let mut last_track: Option<LiveTrack> = None;
     // A generation is incremented for every newly detected track, even when
     // retrieval fails. Never publish a worker result across generations.
@@ -196,6 +233,24 @@ pub fn run(target_locale: &str) -> Result<(), String> {
         print_original(&lines);
         let protected: Vec<ProtectedLine> = lines.iter()
             .map(|(_, text)| protect_vocalizations(text)).collect();
+        let key = cache_key(&target, &lines);
+        if let Some(hit) = cache.get(&key) {
+            if ensure_current(&current).is_ok() {
+                println!("[CACHE] HIT — validated translation reused; no HTTP translation request.");
+                let result = ForwardResult {
+                    request_id: 0,
+                    translated: hit.translated.clone(),
+                    providers: hit.providers.clone(),
+                    elapsed: Duration::ZERO,
+                };
+                print_translation(&lines, &protected, &target, result);
+                println!("[CACHE] Reused {} synchronized entries.", lines.len());
+            } else {
+                println!("[CACHE] Track changed before cached translation publication; discarded.");
+            }
+            continue;
+        }
+        println!("[CACHE] MISS — translating {} synchronized entries.", lines.len());
         // Limit detached network workers. An old request can finish its current
         // blocking HTTP call, but cancellation stops it before the next chunk.
         while in_flight.load(Ordering::Acquire) >= MAX_IN_FLIGHT_WORKERS {
@@ -245,6 +300,13 @@ pub fn run(target_locale: &str) -> Result<(), String> {
                         println!("[FOREGROUND] Stale worker result rejected: {}", result.request_id);
                     } else {
                         println!("[FOREGROUND] Worker completed after {:.3}s", started.elapsed().as_secs_f64());
+                        // Only completed, identity-validated translations enter cache.
+                        cache.insert(key.clone(), CachedTranslation {
+                            translated: result.translated.clone(),
+                            providers: result.providers.clone(),
+                        });
+                        println!("[CACHE] STORED — {} synchronized entries; {} cached songs.",
+                                 lines.len(), cache.len());
                         print_translation(&lines, &protected, &target, result);
                     }
                     break;
@@ -439,5 +501,26 @@ mod stage5_tests {
         assert_eq!(a, b);
         b.title = "B".into();
         assert_ne!(a, b);
+    }
+}
+
+#[cfg(test)]
+mod stage6_tests {
+    use super::*;
+    #[test]
+    fn cache_key_distinguishes_locale_text_timestamps_and_version() {
+        let lines = vec![("[00:01.00]".into(), "Hello".into())];
+        let a = cache_key("fr", &lines);
+        assert_eq!(a, cache_key("fr", &lines));
+        assert_ne!(a, cache_key("es", &lines));
+        let mut changed = lines.clone();
+        changed[0].1 = "Hello!".into();
+        assert_ne!(a, cache_key("fr", &changed));
+        changed = lines.clone();
+        changed[0].0 = "[00:02.00]".into();
+        assert_ne!(a, cache_key("fr", &changed));
+        let mut version = a.clone();
+        version.version += 1;
+        assert_ne!(a, version);
     }
 }
