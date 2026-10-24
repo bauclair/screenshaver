@@ -8,9 +8,11 @@ const MAX_CHUNK_BYTES: usize = 380; // Stay below MyMemory's small query limit.
 // The request ID protects against late worker messages; production integration must
 // additionally compare the current MPRIS track identity before publishing results.
 use std::sync::mpsc::{self, RecvTimeoutError};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::Arc;
 
 static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
+const MAX_IN_FLIGHT_WORKERS: usize = 2;
 
 struct ForwardResult {
     request_id: u64,
@@ -21,7 +23,7 @@ struct ForwardResult {
 
 fn translate_forward(
     lines: &[(String, String)], protected: &[ProtectedLine], target: &str,
-    request_id: u64,
+    request_id: u64, cancelled: &AtomicBool,
 ) -> Result<ForwardResult, String> {
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(12))
@@ -37,6 +39,7 @@ fn translate_forward(
     let started = Instant::now();
     let mut cursor = 0;
     while cursor < active.len() {
+        if cancelled.load(Ordering::Acquire) { return Err("Translation superseded by another track".into()); }
         let mut chunk = Vec::new();
         let mut bytes = 0;
         while cursor < active.len() {
@@ -52,6 +55,7 @@ fn translate_forward(
         }
         let source = chunk.iter().map(|&i| protected[i].core.as_str()).collect::<Vec<_>>().join("\n");
         let (result, provider) = translate_chunk(&client, &source, "en", target, chunk.len())?;
+        if cancelled.load(Ordering::Acquire) { return Err("Translation superseded by another track".into()); }
         let output: Vec<&str> = result.split('\n').collect();
         if output.len() != chunk.len() {
             return Err(format!("Provider returned {} lines for {} source lines; refusing misalignment", output.len(), chunk.len()));
@@ -109,161 +113,159 @@ fn ensure_current(expected: &LiveTrack) -> Result<(), String> {
 
 fn matching_request(expected: u64, received: u64) -> bool { expected == received }
 
-pub fn run(target_locale: &str) -> Result<(), String> {
-    let target = target_locale.split(['-', '_']).next().unwrap_or("").to_ascii_lowercase();
-    if target.is_empty() || !target.chars().all(|c| c.is_ascii_alphabetic()) {
-        return Err(format!("Invalid translation locale: {}", target_locale));
-    }
-    if target == "en" {
-        return Err("Stage 5 expects a non-English target language (e.g. fr-FR)".into());
-    }
-    println!("Screenshaver Lyric Translation Test — Stage 5B (track-change guarded)");
-    println!("===========================================================");
-    println!("Requested target locale: {}", target_locale);
-    let initial_track = live_track()?;
-    let lines = crate::test_lyrics::retrieve_for_translation_test()?;
-    // Retrieval may itself take time; never start translating lyrics for a
-    // track that changed while the network retrieval was in progress.
-    ensure_current(&initial_track).map_err(|e| format!(
-        "Track changed during lyric retrieval; refusing stale lyrics: {}", e))?;
-    let protected: Vec<ProtectedLine> = lines.iter()
-        .map(|(_, text)| protect_vocalizations(text)).collect();
+// Each worker decrements the shared count, including on errors or panics.
+struct WorkerSlot(Arc<AtomicUsize>);
+impl Drop for WorkerSlot {
+    fn drop(&mut self) { self.0.fetch_sub(1, Ordering::AcqRel); }
+}
+
+fn print_original(lines: &[(String, String)]) {
+    println!("\nORIGINAL LYRICS READY (translation has not blocked presentation)");
+    for (stamp, original) in lines { println!("{} EN: {}", stamp, original); }
+}
+
+fn print_translation(lines: &[(String, String)], protected: &[ProtectedLine],
+                     target: &str, forward: ForwardResult) {
     let active_count = protected.iter().filter(|p| !p.core.trim().is_empty()).count();
     let protected_only = protected.iter().filter(|p| p.is_vocal_only).count();
     let protected_mixed = protected.iter().filter(|p| p.is_mixed).count();
-
-    // This output is available immediately, before any translation network request.
-    println!("\nORIGINAL LYRICS READY (translation has not blocked presentation)");
-    for (stamp, original) in &lines { println!("{} EN: {}", stamp, original); }
-    let request_id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
-    let worker_lines = lines.clone();
-    let worker_protected: Vec<ProtectedLine> = worker_lines.iter()
-        .map(|(_, text)| protect_vocalizations(text)).collect();
-    let worker_target = target.clone();
-    let (tx, rx) = mpsc::channel();
-    let foreground_started = Instant::now();
-    std::thread::Builder::new().name("lyric-translation-test".into())
-        .spawn(move || {
-            let result = translate_forward(&worker_lines, &worker_protected, &worker_target, request_id);
-            let _ = tx.send(result);
-        }).map_err(|e| format!("Cannot start translation worker: {}", e))?;
-    println!("\n[FOREGROUND] Original lyrics available; worker request {} started.", request_id);
-    println!("[FOREGROUND] Waiting without blocking the foreground event loop.");
-    println!("[FOREGROUND] Skip to another song while translating to test stale-result rejection.");
-
-    // In the terminal harness this 250 ms poll represents the foreground event loop.
-    // Production will use its existing renderer/event loop rather than this timer.
-    let forward = loop {
-        match rx.recv_timeout(Duration::from_millis(250)) {
-            Ok(Ok(result)) => {
-                if !matching_request(request_id, result.request_id) {
-                    eprintln!("[FOREGROUND] Ignored stale translation result for request {}", result.request_id);
-                    continue;
-                }
-                ensure_current(&initial_track).map_err(|e| format!(
-                    "[FOREGROUND] Discarded completed translation; original lyrics remain available: {}", e))?;
-                break result;
-            }
-            Ok(Err(error)) => return Err(format!("Background translation failed; original lyrics remain available: {}", error)),
-            Err(RecvTimeoutError::Timeout) => {
-                ensure_current(&initial_track).map_err(|e| format!(
-                    "[FOREGROUND] Track changed during translation; abandoned request {}: {}", request_id, e))?;
-                println!("[FOREGROUND] Responsive at {:.2}s; original lyrics remain available", foreground_started.elapsed().as_secs_f64());
-            }
-            Err(RecvTimeoutError::Disconnected) => {
-                return Err("Translation worker disconnected; original lyrics remain available".into());
-            }
-        }
-    };
-    let translated = forward.translated;
-    println!("\n[FOREGROUND] Validated translation published for request {} after {:.3}s", request_id, foreground_started.elapsed().as_secs_f64());
+    println!("\n[FOREGROUND] Validated translation published for request {}", forward.request_id);
     println!("\nFORWARD TRANSLATION (en → {})", target);
     println!("=============================================");
     for (i, (stamp, original)) in lines.iter().enumerate() {
         println!("{} EN: {}", stamp, original);
-        if !original.trim().is_empty() { println!("{} {}: {}", stamp, target.to_uppercase(), translated[i]); }
+        if !original.trim().is_empty() {
+            println!("{} {}: {}", stamp, target.to_uppercase(), forward.translated[i]);
+        }
     }
     println!("\nOriginal entries: {} | Provider-translated entries: {}", lines.len(), active_count);
-    println!("Protected vocalization-only entries: {} | Mixed entries with protected edge vocalizations: {}", protected_only, protected_mixed);
+    println!("Protected vocalization-only entries: {} | Mixed entries: {}", protected_only, protected_mixed);
     println!("Forward worker elapsed: {:.3} seconds", forward.elapsed.as_secs_f64());
     println!("Providers per chunk: {}", forward.providers.join(", "));
-    println!("Timestamp alignment: PASS (positional mapping, exact line-count validation)");
-    println!("Track-change safety: PASS (request ID and live MPRIS identity checked before publication).");
+    println!("Timestamp alignment: PASS (exact positional mapping and line count)");
+    println!("Track-change safety: PASS (live identity checked before publication)");
+}
 
-    // Reverse translation is intentionally opt-in; it is not part of the async
-    // forward path and must never delay original lyric presentation.
-    let reverse_enabled = std::env::var("SCREENSHAVER_TRANSLATION_REVERSE")
-        .map(|v| v == "1").unwrap_or(false);
-    if !reverse_enabled {
-        println!("Reverse diagnostic: disabled (set SCREENSHAVER_TRANSLATION_REVERSE=1 to enable)");
-        return Ok(());
+pub fn run(target_locale: &str) -> Result<(), String> {
+    let target = target_locale.split(['-', '_']).next().unwrap_or("").to_ascii_lowercase();
+    if target.is_empty() || !target.chars().all(|c| c.is_ascii_alphabetic()) || target == "en" {
+        return Err(format!("Stage 5C requires a non-English target locale: {}", target_locale));
     }
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(12))
-        .user_agent(concat!("Screenshaver/", env!("CARGO_PKG_VERSION"), " lyric-translation-test"))
-        .build().map_err(|e| format!("Reverse diagnostic HTTP client: {}", e))?;
-    let active: Vec<usize> = protected.iter().enumerate()
-        .filter_map(|(i, p)| if p.core.trim().is_empty() { None } else { Some(i) }).collect();
-    let reverse_started = Instant::now();
-    let mut reversed: Vec<Option<String>> = vec![None; lines.len()];
-    let mut reverse_providers = Vec::new();
-    let mut reverse_errors = Vec::new();
-    let mut reverse_cursor = 0;
-    while reverse_cursor < active.len() {
-        let mut chunk = Vec::new();
-        let mut bytes = 0;
-        while reverse_cursor < active.len() {
-            let idx = active[reverse_cursor];
-            let next = extract_translated_core(&translated[idx], &protected[idx]).len()
-                + if chunk.is_empty() { 0 } else { 1 };
-            if !chunk.is_empty() && bytes + next > MAX_CHUNK_BYTES { break; }
-            if next > MAX_CHUNK_BYTES {
-                reverse_errors.push(format!("{}: translated lyric exceeds safe reverse request size", lines[idx].0));
-                reverse_cursor += 1;
+    println!("Screenshaver Lyric Translation Test — Stage 5C (continuous track handling)");
+    println!("Requested target locale: {}", target_locale);
+    println!("Press Ctrl+C to stop. Skip songs while translation is in progress.");
+    println!("Reverse translation is disabled in continuous mode.");
+
+    let in_flight = Arc::new(AtomicUsize::new(0));
+    let mut last_track: Option<LiveTrack> = None;
+    // A generation is incremented for every newly detected track, even when
+    // retrieval fails. Never publish a worker result across generations.
+    let mut generation: u64 = 0;
+    loop {
+        let current = match live_track() {
+            Ok(track) => track,
+            Err(error) => {
+                if last_track.take().is_some() {
+                    generation += 1;
+                    println!("[FOREGROUND] Player unavailable: {}; pending translation invalidated", error);
+                }
+                std::thread::sleep(Duration::from_millis(250));
+                continue;
+            }
+        };
+        if last_track.as_ref() == Some(&current) {
+            std::thread::sleep(Duration::from_millis(250));
+            continue;
+        }
+        generation += 1;
+        last_track = Some(current.clone());
+        println!("\n[FOREGROUND] Track generation {}: {} — {}", generation,
+                 current.artists.join(", "), current.title);
+        let lines = match crate::test_lyrics::retrieve_for_translation_test() {
+            Ok(lines) => lines,
+            Err(error) => {
+                println!("[FOREGROUND] Lyrics unavailable: {}. Watching for next track.", error);
+                continue;
+            }
+        };
+        if ensure_current(&current).is_err() {
+            println!("[FOREGROUND] Track changed during lyrics retrieval; discarding lyrics.");
+            // Next iteration will detect the newly active track.
+            continue;
+        }
+        print_original(&lines);
+        let protected: Vec<ProtectedLine> = lines.iter()
+            .map(|(_, text)| protect_vocalizations(text)).collect();
+        // Limit detached network workers. An old request can finish its current
+        // blocking HTTP call, but cancellation stops it before the next chunk.
+        while in_flight.load(Ordering::Acquire) >= MAX_IN_FLIGHT_WORKERS {
+            if ensure_current(&current).is_err() { break; }
+            println!("[FOREGROUND] Waiting for an obsolete HTTP worker slot...");
+            std::thread::sleep(Duration::from_millis(250));
+        }
+        if ensure_current(&current).is_err() {
+            println!("[FOREGROUND] Track changed before worker start; discarding request.");
+            continue;
+        }
+        let request_id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
+        let (tx, rx) = mpsc::channel();
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let worker_cancelled = Arc::clone(&cancelled);
+        let worker_count = Arc::clone(&in_flight);
+        let worker_lines = lines.clone();
+        let worker_protected = protected.clone();
+        let worker_target = target.clone();
+        in_flight.fetch_add(1, Ordering::AcqRel);
+        let spawn = std::thread::Builder::new().name("lyric-translation-test".into())
+            .spawn(move || {
+                let _slot = WorkerSlot(worker_count);
+                let result = translate_forward(&worker_lines, &worker_protected,
+                                               &worker_target, request_id, &worker_cancelled);
+                let _ = tx.send(result);
+            });
+        if let Err(error) = spawn {
+            in_flight.fetch_sub(1, Ordering::AcqRel);
+            println!("[FOREGROUND] Worker launch failed: {}", error);
+            continue;
+        }
+        println!("[FOREGROUND] Translation request {} started; foreground remains responsive.", request_id);
+        let started = Instant::now();
+        loop {
+            // Check BEFORE reading results, and AGAIN before publication.
+            if ensure_current(&current).is_err() {
+                cancelled.store(true, Ordering::Release);
+                println!("[FOREGROUND] Track change detected; request {} discarded.", request_id);
+                println!("[FOREGROUND] Stale-result protection: PASS.");
                 break;
             }
-            chunk.push(idx);
-            bytes += next;
-            reverse_cursor += 1;
-        }
-        if chunk.is_empty() { continue; }
-        let source = chunk.iter().map(|&i| extract_translated_core(&translated[i], &protected[i]))
-            .collect::<Vec<_>>().join("\n");
-        match translate_chunk(&client, &source, &target, "en", chunk.len()) {
-            Ok((result, provider)) => {
-                for (&idx, text) in chunk.iter().zip(result.split('\n')) {
-                    reversed[idx] = Some(protected[idx].restore(text.trim()));
+            match rx.recv_timeout(Duration::from_millis(250)) {
+                Ok(Ok(result)) => {
+                    if !matching_request(request_id, result.request_id)
+                        || ensure_current(&current).is_err() {
+                        println!("[FOREGROUND] Stale worker result rejected: {}", result.request_id);
+                    } else {
+                        println!("[FOREGROUND] Worker completed after {:.3}s", started.elapsed().as_secs_f64());
+                        print_translation(&lines, &protected, &target, result);
+                    }
+                    break;
                 }
-                reverse_providers.push(provider);
+                Ok(Err(error)) => {
+                    println!("[FOREGROUND] Translation unavailable: {}. Original lyrics retained.", error);
+                    break;
+                }
+                Err(RecvTimeoutError::Disconnected) => {
+                    println!("[FOREGROUND] Worker disconnected. Original lyrics retained.");
+                    break;
+                }
+                Err(RecvTimeoutError::Timeout) => {
+                    println!("[FOREGROUND] Responsive at {:.2}s; original lyrics available",
+                             started.elapsed().as_secs_f64());
+                }
             }
-            Err(error) => reverse_errors.push(format!("Reverse chunk beginning at {}: {}", lines[chunk[0]].0, error)),
         }
+        // If translation succeeded, wait for the next song instead of
+        // translating this same track repeatedly.
     }
-    for (i, item) in protected.iter().enumerate() {
-        if item.is_vocal_only { reversed[i] = Some(item.original.clone()); }
-    }
-    println!("\nREVERSE TRANSLATION DIAGNOSTIC ({} → en)", target);
-    for (i, (stamp, original)) in lines.iter().enumerate() {
-        if original.trim().is_empty() { continue; }
-        println!("{} ORIGINAL EN: {}", stamp, original);
-        println!("{} FORWARD {}: {}", stamp, target.to_uppercase(), translated[i]);
-        match &reversed[i] {
-            Some(text) => println!("{} REVERSE EN: {}", stamp, text),
-            None => println!("{} REVERSE EN: <unavailable>", stamp),
-        }
-    }
-    let reverse_count = reversed.iter().filter(|v| v.is_some()).count();
-    println!("\nReverse available entries: {} / {} (includes {} protected-only entries)", reverse_count, active.len() + protected_only, protected_only);
-    println!("Reverse translation elapsed: {:.3} seconds", reverse_started.elapsed().as_secs_f64());
-    println!("Reverse providers per chunk: {}", if reverse_providers.is_empty() { "<none>".into() } else { reverse_providers.join(", ") });
-    if reverse_errors.is_empty() {
-        println!("Reverse timestamp alignment: PASS (positional mapping, exact line-count validation)");
-    } else {
-        println!("Reverse timestamp alignment: PARTIAL ({} chunk errors)", reverse_errors.len());
-        for error in &reverse_errors { eprintln!("[REVERSE TRANSLATION] {}", error); }
-    }
-    println!("NOTE: Back-translation is a qualitative aid, not an automatic accuracy score.");
-    Ok(())
 }
 
 fn translate_chunk(client: &reqwest::blocking::Client, source: &str, from: &str, to: &str, expected: usize) -> Result<(String, String), String> {
@@ -314,6 +316,7 @@ fn google(client: &reqwest::blocking::Client, source: &str, from: &str, to: &str
 // Stage 4: deliberately conservative. Only standalone vocalizations and vocal
 // tokens at the beginning/end of a line are protected. Do not rewrite internal
 // phrases or attempt to guess the language of short lyric fragments.
+#[derive(Clone)]
 struct ProtectedLine {
     original: String,
     prefix: String,
