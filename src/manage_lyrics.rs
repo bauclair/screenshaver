@@ -2,7 +2,7 @@ use mpris::{PlaybackStatus, Player, PlayerFinder};
 use serde::Deserialize;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc, Mutex, OnceLock,
+    Arc, Mutex, OnceLock, mpsc,
 };
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -14,11 +14,36 @@ const METADATA_POLL_INTERVAL: Duration = Duration::from_millis(500);
 const PLAYER_SCAN_INTERVAL: Duration = Duration::from_millis(500);
 const FALLBACK_CLOCK_MIN_TRUSTED_POSITION: Duration = Duration::from_secs(5);
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrackProgress {
+    pub position: Duration,
+    pub duration: Duration,
+    pub observed_at: Instant,
+    pub playing: bool,
+}
+
+impl TrackProgress {
+    pub fn fraction(&self) -> f64 {
+        if self.duration.is_zero() { return 0.0; }
+        (self.position.saturating_add(if self.playing { self.observed_at.elapsed() } else { Duration::ZERO })
+            .as_secs_f64() / self.duration.as_secs_f64()).clamp(0.0, 1.0)
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LyricsState {
     pub previous: Option<String>,
     pub current: Option<String>,
     pub next: Option<String>,
+    pub secondary_current: Option<String>,
+    pub progress: Option<TrackProgress>,
+}
+
+impl LyricsState {
+    pub fn same_text(&self, other: &Self) -> bool {
+        self.previous == other.previous && self.current == other.current
+            && self.next == other.next && self.secondary_current == other.secondary_current
+    }
 }
 
 pub type SharedLyricsState = Arc<Mutex<LyricsState>>;
@@ -46,6 +71,14 @@ pub struct LyricsManager {
 
 impl LyricsManager {
     pub fn start() -> Result<Self, String> {
+        Self::start_with_translation(None)
+    }
+
+    pub fn start_with_translation(target_locale: Option<String>) -> Result<Self, String> {
+        Self::start_with_translation_options(target_locale, false)
+    }
+
+    pub fn start_with_translation_options(target_locale: Option<String>, show_original_lyrics: bool) -> Result<Self, String> {
         // Verify that the session D-Bus is reachable before reporting a
         // successfully started manager. The worker owns all later MPRIS access.
         PlayerFinder::new().map_err(|error| {
@@ -65,7 +98,7 @@ impl LyricsManager {
         let worker = thread::Builder::new()
             .name("screenshaver-lyrics".to_string())
             .spawn(move || {
-                run_worker(worker_state, worker_vocal_timing_state, worker_running);
+                run_worker(worker_state, worker_vocal_timing_state, worker_running, target_locale, show_original_lyrics);
             })
             .map_err(|error| format!("Unable to start lyrics worker: {}", error))?;
 
@@ -195,7 +228,16 @@ fn run_worker(
     state: Arc<Mutex<LyricsState>>,
     vocal_timing_state: Arc<Mutex<VocalTimingState>>,
     running: Arc<AtomicBool>,
+    target_locale: Option<String>,
+    show_original_lyrics: bool,
 ) {
+    let target_language = target_locale.as_deref().and_then(|v| v.split(['-', '_']).next()).map(str::to_ascii_lowercase).filter(|v| !v.is_empty() && v != "en");
+    let (translation_tx, translation_rx) = mpsc::channel::<(u64, Result<Vec<(usize, String)>, String>)>();
+    let mut translation_generation = 0u64;
+    let mut translation_cancel: Option<Arc<AtomicBool>> = None;
+    let mut translated_lines: Option<Vec<SynchronizedLine>> = None;
+    let mut translation_started_for_track = false;
+    let mut translation_workers: Vec<JoinHandle<()>> = Vec::new();
     let mut last_position_poll = Instant::now() - POSITION_POLL_INTERVAL;
     let mut last_metadata_poll = Instant::now() - METADATA_POLL_INTERVAL;
     let mut last_player_scan = Instant::now() - PLAYER_SCAN_INTERVAL;
@@ -223,12 +265,25 @@ fn run_worker(
                     ));
                     active_player = None;
                     current_track = None;
+                    translation_generation = translation_generation.wrapping_add(1);
+                    if let Some(cancel) = translation_cancel.take() { cancel.store(true, Ordering::Release); }
+                    translated_lines = None;
+                    translation_started_for_track = false;
                     synchronized_lines.clear();
                     vocal_intervals.clear();
                     last_line_index = None;
                     last_vocal_interval_index = None;
                     last_trusted_position = None;
                     fallback_clock_active = false;
+                    if let Ok(mut snapshot) = state.lock() {
+                        if status == PlaybackStatus::Paused {
+                            if let Some(progress) = snapshot.progress.as_mut() {
+                                progress.position = progress.position.saturating_add(progress.observed_at.elapsed());
+                                progress.observed_at = Instant::now();
+                                progress.playing = false;
+                            }
+                        } else { snapshot.progress = None; }
+                    }
                     publish_state(&state, LyricsState::default());
                     publish_vocal_timing_state(&vocal_timing_state, VocalTimingState::default());
                     last_player_scan = Instant::now() - PLAYER_SCAN_INTERVAL;
@@ -240,12 +295,17 @@ fn run_worker(
                     ));
                     active_player = None;
                     current_track = None;
+                    translation_generation = translation_generation.wrapping_add(1);
+                    if let Some(cancel) = translation_cancel.take() { cancel.store(true, Ordering::Release); }
+                    translated_lines = None;
+                    translation_started_for_track = false;
                     synchronized_lines.clear();
                     vocal_intervals.clear();
                     last_line_index = None;
                     last_vocal_interval_index = None;
                     last_trusted_position = None;
                     fallback_clock_active = false;
+                    if let Ok(mut snapshot) = state.lock() { snapshot.progress = None; }
                     publish_state(&state, LyricsState::default());
                     publish_vocal_timing_state(&vocal_timing_state, VocalTimingState::default());
                     last_player_scan = Instant::now() - PLAYER_SCAN_INTERVAL;
@@ -263,6 +323,13 @@ fn run_worker(
                             "[LYRICS] Following MPRIS player '{}' for '{}' by '{}'",
                             player.identity(), track.identity.title, track.identity.artist
                         ));
+                        // A newly selected player starts a distinct translation generation.
+                        translation_generation = translation_generation.wrapping_add(1);
+                        if let Some(cancel) = translation_cancel.take() {
+                            cancel.store(true, Ordering::Release);
+                        }
+                        translated_lines = None;
+                        translation_started_for_track = false;
                         current_track = Some(track);
                         synchronized_lines = lines;
                         vocal_intervals = intervals;
@@ -273,7 +340,8 @@ fn run_worker(
                         fallback_clock_active = false;
                         last_metadata_poll = Instant::now();
                         last_position_poll = Instant::now() - POSITION_POLL_INTERVAL;
-                        publish_state(&state, LyricsState::default());
+                        if let Ok(mut snapshot) = state.lock() { snapshot.progress = None; }
+                    publish_state(&state, LyricsState::default());
                         publish_vocal_timing_state(
                             &vocal_timing_state,
                             VocalTimingState {
@@ -308,6 +376,13 @@ fn run_worker(
                                 observed_track.identity.artist
                             ));
 
+                            // Invalidate any in-flight translation before loading the next song.
+                            translation_generation = translation_generation.wrapping_add(1);
+                            if let Some(cancel) = translation_cancel.take() {
+                                cancel.store(true, Ordering::Release);
+                            }
+                            translated_lines = None;
+                            translation_started_for_track = false;
                             *track = observed_track;
                             synchronized_lines = match retrieve_synchronized_lines(track) {
                                 Ok(lines) => lines,
@@ -330,7 +405,8 @@ fn run_worker(
                             last_vocal_interval_index = None;
                             last_trusted_position = None;
                             fallback_clock_active = false;
-                            publish_state(&state, LyricsState::default());
+                            if let Ok(mut snapshot) = state.lock() { snapshot.progress = None; }
+                    publish_state(&state, LyricsState::default());
                             publish_vocal_timing_state(
                                 &vocal_timing_state,
                                 VocalTimingState {
@@ -346,6 +422,36 @@ fn run_worker(
                         player.identity(), error
                     )),
                 }
+            }
+        }
+
+        // Translation never blocks position polling. Results are accepted only for
+        // the active generation; all timestamps remain those of the source lines.
+        while let Ok((generation, result)) = translation_rx.try_recv() {
+            if generation != translation_generation || current_track.is_none() { continue; }
+            match result {
+                Ok(batch) => {
+                    // A completed batch is usable immediately; all other lines
+                    // retain their originals until their own translation arrives.
+                    let translated = translated_lines.get_or_insert_with(|| synchronized_lines.clone());
+                    for (index, text) in batch {
+                        if let Some(line) = translated.get_mut(index) {
+                            line.text = text;
+                        }
+                    }
+                    // Rebuild the visible line even if the active index has not
+                    // changed. This is what makes partial results appear promptly.
+                    if let Some((position, observed_at)) = last_trusted_position {
+                        let effective_position = if fallback_clock_active {
+                            position.saturating_add(observed_at.elapsed())
+                        } else { position };
+                        let active = find_active_line(&synchronized_lines, effective_position);
+                        publish_display_line_state(&state, &synchronized_lines,
+                            translated_lines.as_deref(), active, show_original_lyrics);
+                        last_line_index = active;
+                    }
+                }
+                Err(error) => log_warning(&format!("[LYRICS] Translation batch unavailable; originals retained: {}", error)),
             }
         }
 
@@ -406,10 +512,24 @@ fn run_worker(
                         }
                     };
 
+                    if let Some(track) = current_track.as_ref() {
+                        if let Ok(mut snapshot) = state.lock() {
+                            snapshot.progress = (track.duration > Duration::ZERO).then_some(TrackProgress {
+                                position: effective_position,
+                                duration: track.duration,
+                                observed_at: now,
+                                playing: true,
+                            });
+                        }
+                    }
+
                     let active = find_active_line(&synchronized_lines, effective_position);
                     if active != last_line_index {
                         last_line_index = active;
-                        publish_line_state(&state, &synchronized_lines, active);
+                        publish_display_line_state(
+                            &state, &synchronized_lines, translated_lines.as_deref(),
+                            active, show_original_lyrics,
+                        );
                     }
 
                     let vocal_active =
@@ -426,37 +546,83 @@ fn run_worker(
             }
         }
 
+        translation_workers.retain(|handle| !handle.is_finished());
+        if !translation_started_for_track && !synchronized_lines.is_empty() {
+            if let Some(target) = target_language.as_deref() {
+                // Avoid unbounded detached requests when songs are skipped rapidly.
+                if translation_workers.len() < 2 {
+                    translation_started_for_track = true;
+                    let source: Vec<String> = synchronized_lines.iter().map(|l| l.text.clone()).collect();
+                    let cancelled = Arc::new(AtomicBool::new(false));
+                    translation_cancel = Some(Arc::clone(&cancelled));
+                    let sender = translation_tx.clone();
+                    let generation = translation_generation;
+                    let target = target.to_owned();
+                    // Prioritize the current lyric and the next few lines, not
+                    // necessarily the beginning of the track after a seek.
+                    let start_index = last_trusted_position
+                        .and_then(|(position, at)| {
+                            let effective = if fallback_clock_active {
+                                position.saturating_add(at.elapsed())
+                            } else { position };
+                            find_active_line(&synchronized_lines, effective)
+                        }).unwrap_or(0);
+                    match thread::Builder::new().name("screenshaver-lyric-translation".into()).spawn(move || {
+                        translate_production_lines_incrementally(
+                            &source, &target, &cancelled, start_index, |batch| {
+                                let _ = sender.send((generation, batch));
+                            });
+                    }) {
+                        Ok(handle) => translation_workers.push(handle),
+                        Err(error) => log_warning(&format!("[LYRICS] Unable to start translation: {}", error)),
+                    }
+                }
+            }
+        }
+
+
         thread::sleep(Duration::from_millis(10));
     }
 
-    publish_state(&state, LyricsState::default());
+    if let Some(cancel) = translation_cancel { cancel.store(true, Ordering::Release); }
+    if let Ok(mut snapshot) = state.lock() { snapshot.progress = None; }
+                    publish_state(&state, LyricsState::default());
     publish_vocal_timing_state(&vocal_timing_state, VocalTimingState::default());
 }
 
-fn publish_line_state(
+fn publish_display_line_state(
     state: &Arc<Mutex<LyricsState>>,
-    lines: &[SynchronizedLine],
+    originals: &[SynchronizedLine],
+    translations: Option<&[SynchronizedLine]>,
     active: Option<usize>,
+    show_original_lyrics: bool,
 ) {
+    let primary = translations.unwrap_or(originals);
+    let secondary = if show_original_lyrics && translations.is_some() {
+        active.and_then(|index| {
+            let original = originals.get(index)?.text.trim();
+            let translated = primary.get(index)?.text.trim();
+            if original.is_empty() || original == translated { None }
+            else { Some(original.to_string()) }
+        })
+    } else { None };
     let Some(active) = active else {
         publish_state(state, LyricsState::default());
         return;
     };
-
-    let next_state = LyricsState {
-        previous: active
-            .checked_sub(1)
-            .and_then(|index| lines.get(index))
-            .map(|line| line.text.clone()),
-        current: lines.get(active).map(|line| line.text.clone()),
-        next: lines.get(active + 1).map(|line| line.text.clone()),
-    };
-
-    publish_state(state, next_state);
+    publish_state(state, LyricsState {
+        previous: active.checked_sub(1).and_then(|i| primary.get(i)).map(|l| l.text.clone()),
+        current: primary.get(active).map(|l| l.text.clone()),
+        next: primary.get(active + 1).map(|l| l.text.clone()),
+        secondary_current: secondary,
+        progress: None,
+    });
 }
 
 fn publish_state(state: &Arc<Mutex<LyricsState>>, next_state: LyricsState) {
     if let Ok(mut state) = state.lock() {
+        let mut next_state = next_state;
+        next_state.progress = state.progress.take();
         *state = next_state;
     }
 }
@@ -959,3 +1125,204 @@ fn log_information(message: &str) {
 fn log_warning(message: &str) {
     crate::logger::warning(&crate::locate_paths::runtime_log_path(), message);
 }
+
+
+// No persistent translation cache. Translate the active lyric first, followed
+// by the next four, then the remaining lines in playback order. Publish each
+// successful request independently; a failed request never discards earlier work.
+fn translate_production_lines_incrementally(
+    source: &[String], target: &str, cancelled: &AtomicBool,
+    start_index: usize, mut publish: impl FnMut(Result<Vec<(usize, String)>, String>),
+) {
+    const MAX_CHUNK_BYTES: usize = 380;
+    const PRIORITY_LINES: usize = 5;
+    let client = match reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(12))
+        .user_agent(concat!("Screenshaver/", env!("CARGO_PKG_VERSION"), " lyric-translation"))
+        .build() {
+            Ok(client) => client,
+            Err(error) => { publish(Err(error.to_string())); return; }
+        };
+    let protected: Vec<ProtectedLine> = source.iter().map(|line| protect_vocalizations(line)).collect();
+    let start = start_index.min(source.len());
+    let mut order: Vec<usize> = (start..source.len()).chain(0..start).collect();
+    // The first request is intentionally small to reduce time to first display.
+    // Subsequent requests can use the full byte budget.
+    let mut priority_remaining = PRIORITY_LINES;
+    while !order.is_empty() {
+        if cancelled.load(Ordering::Acquire) { return; }
+        let limit = if priority_remaining > 0 { priority_remaining } else { usize::MAX };
+        let mut batch = Vec::new();
+        let mut bytes = 0usize;
+        while !order.is_empty() && batch.len() < limit {
+            let index = order[0];
+            let item = &protected[index];
+            if item.core.trim().is_empty() {
+                order.remove(0);
+                continue;
+            }
+            let next = item.core.len() + usize::from(!batch.is_empty());
+            if next > MAX_CHUNK_BYTES {
+                publish(Err(format!("Lyric {} exceeds translation request limit", index)));
+                order.remove(0);
+                continue;
+            }
+            if bytes + next > MAX_CHUNK_BYTES { break; }
+            bytes += next;
+            batch.push(index);
+            order.remove(0);
+        }
+        if batch.is_empty() { continue; }
+        priority_remaining = priority_remaining.saturating_sub(batch.len());
+        let input = batch.iter().map(|&i| protected[i].core.as_str()).collect::<Vec<_>>().join("\n");
+        match translate_chunk(&client, &input, "en", target, batch.len()) {
+            Ok((response, _provider)) => {
+                if cancelled.load(Ordering::Acquire) { return; }
+                let lines: Vec<&str> = response.split('\n').collect();
+                if lines.len() != batch.len() || lines.iter().any(|line| line.trim().is_empty()) {
+                    publish(Err("Translation alignment mismatch".into()));
+                    continue;
+                }
+                let updates = batch.iter().zip(lines).map(|(&i, text)|
+                    (i, protected[i].restore(text.trim()))).collect();
+                publish(Ok(updates));
+            }
+            Err(error) => {
+                if cancelled.load(Ordering::Acquire) { return; }
+                publish(Err(error));
+            }
+        }
+    }
+}
+
+fn translate_chunk(client: &reqwest::blocking::Client, source: &str, from: &str, to: &str, expected: usize) -> Result<(String, String), String> {
+    let mut errors = Vec::new();
+    match mymemory(client, source, from, to) {
+        Ok(s) if valid_line_count(&s, expected) => return Ok((s, "MyMemory".into())),
+        Ok(s) => errors.push(format!("MyMemory line count mismatch: {} vs {}", s.split('\n').count(), expected)),
+        Err(e) => errors.push(format!("MyMemory: {}", e)),
+    }
+    std::thread::sleep(Duration::from_millis(250));
+    match google(client, source, from, to) {
+        Ok(s) if valid_line_count(&s, expected) => Ok((s, "Google reference endpoint".into())),
+        Ok(s) => Err(format!("Translation line alignment failed: {}; Google returned {} vs {} lines", errors.join("; "), s.split('\n').count(), expected)),
+        Err(e) => Err(format!("Translation providers failed: {}; Google: {}", errors.join("; "), e)),
+    }
+}
+
+fn valid_line_count(text: &str, count: usize) -> bool {
+    text.split('\n').count() == count && text.split('\n').all(|line| !line.trim().is_empty())
+}
+
+fn mymemory(client: &reqwest::blocking::Client, source: &str, from: &str, to: &str) -> Result<String, String> {
+    let pair = format!("{}|{}", from, to);
+    let response = client.get("https://api.mymemory.translated.net/get")
+        .query(&[("q", source), ("langpair", pair.as_str())])
+        .send().map_err(|e| e.to_string())?;
+    if !response.status().is_success() { return Err(format!("HTTP {}", response.status())); }
+    let data: serde_json::Value = response.json().map_err(|e| e.to_string())?;
+    let status = data.get("responseStatus").and_then(|v| v.as_i64()).unwrap_or(0);
+    if status != 200 { return Err(format!("provider status {}: {}", status, data["responseDetails"])); }
+    data.pointer("/responseData/translatedText").and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty()).map(str::to_owned)
+        .ok_or_else(|| "missing translatedText".into())
+}
+
+fn google(client: &reqwest::blocking::Client, source: &str, from: &str, to: &str) -> Result<String, String> {
+    let response = client.get("https://translate.googleapis.com/translate_a/single")
+        .query(&[("client", "gtx"), ("sl", from), ("tl", to), ("dt", "t"), ("q", source)])
+        .send().map_err(|e| e.to_string())?;
+    if !response.status().is_success() { return Err(format!("HTTP {}", response.status())); }
+    let data: serde_json::Value = response.json().map_err(|e| e.to_string())?;
+    let segments = data.get(0).and_then(|v| v.as_array()).ok_or("missing translation segments")?;
+    let output: String = segments.iter().filter_map(|segment| segment.get(0).and_then(|v| v.as_str())).collect();
+    if output.trim().is_empty() { Err("empty translation".into()) } else { Ok(output) }
+}
+
+
+// Stage 4: deliberately conservative. Only standalone vocalizations and vocal
+// tokens at the beginning/end of a line are protected. Do not rewrite internal
+// phrases or attempt to guess the language of short lyric fragments.
+#[derive(Clone)]
+struct ProtectedLine {
+    original: String,
+    prefix: String,
+    core: String,
+    suffix: String,
+    is_vocal_only: bool,
+    is_mixed: bool,
+}
+
+impl ProtectedLine {
+    fn restore(&self, translated_core: &str) -> String {
+        format!("{}{}{}", self.prefix, translated_core, self.suffix)
+    }
+}
+
+fn vocal_token(token: &str) -> bool {
+    let cleaned = token.trim_matches(|c: char| !c.is_alphabetic() && c != '-')
+        .to_ascii_lowercase();
+    if cleaned.is_empty() { return false; }
+    // Hyphenated repetitions count only when *every* syllable is recognized.
+    cleaned.split('-').all(|part| matches!(part,
+        "na" | "la" | "da" | "doo" | "ooh" | "oh" | "ah" | "uh" |
+        "whoa" | "woo" | "woah" | "mm" | "mmm" | "hmm" | "ch"))
+}
+
+fn safe_mixed_vocal_token(token: &str) -> bool {
+    let cleaned = token.trim_matches(|c: char| !c.is_alphabetic() && c != '-')
+        .to_ascii_lowercase();
+    vocal_token(token) && !matches!(cleaned.as_str(), "oh" | "ah" | "uh" | "da" | "la" | "na")
+}
+
+fn protect_vocalizations(text: &str) -> ProtectedLine {
+    // Use whitespace-delimited byte ranges; slicing preserves original spelling.
+    let mut tokens = Vec::new();
+    let mut start = None;
+    for (pos, ch) in text.char_indices() {
+        if ch.is_whitespace() {
+            if let Some(begin) = start.take() { tokens.push((begin, pos)); }
+        } else if start.is_none() { start = Some(pos); }
+    }
+    if let Some(begin) = start { tokens.push((begin, text.len())); }
+    let mut left = 0;
+    while left < tokens.len() && vocal_token(&text[tokens[left].0..tokens[left].1]) { left += 1; }
+    let mut right = tokens.len();
+    while right > left && vocal_token(&text[tokens[right - 1].0..tokens[right - 1].1]) { right -= 1; }
+    let only = !tokens.is_empty() && left == tokens.len();
+    // Single isolated words such as "oh" can be meaningful; preserve only
+    // multi-token vocal lines or explicit nonlexical spellings on their own.
+    let single_nonlexical = tokens.len() == 1 && matches!(
+        text[tokens[0].0..tokens[0].1].trim_matches(|c: char| !c.is_alphabetic()).to_ascii_lowercase().as_str(),
+        "ooh" | "doo" | "mmm" | "hmm" | "whoa" | "woah" | "la-la" | "na-na" | "da-da");
+    if only && (tokens.len() >= 2 || single_nonlexical) {
+        return ProtectedLine { original: text.into(), prefix: text.into(), core: String::new(),
+            suffix: String::new(), is_vocal_only: true, is_mixed: false };
+    }
+    // Mixed-line protection is stricter than whole-line recognition:
+    // do not strip a meaningful introductory "Oh" or similar word.
+    left = 0;
+    while left < tokens.len() && safe_mixed_vocal_token(&text[tokens[left].0..tokens[left].1]) { left += 1; }
+    right = tokens.len();
+    while right > left && safe_mixed_vocal_token(&text[tokens[right - 1].0..tokens[right - 1].1]) { right -= 1; }
+    // A trailing ", oh" is a standalone sung interjection, but "oh" within
+    // ordinary prose can carry meaning. Protect only this narrow punctuation-
+    // delimited suffix; leave introductory and unseparated "oh" to translation.
+    if right == tokens.len() && tokens.len() >= 2 {
+        let last = &text[tokens[right - 1].0..tokens[right - 1].1];
+        let previous = &text[tokens[right - 2].0..tokens[right - 2].1];
+        if last.trim_matches(|c: char| !c.is_alphabetic()).eq_ignore_ascii_case("oh")
+            && previous.ends_with(',')
+        {
+            right -= 1;
+        }
+    }
+    if left == tokens.len() { left = 0; }
+    let core_start = if left > 0 { tokens[left].0 } else { 0 };
+    let core_end = if right < tokens.len() { tokens[right - 1].1 } else { text.len() };
+    let mixed = (left > 0 || right < tokens.len()) && core_start < core_end;
+    ProtectedLine { original: text.into(), prefix: text[..core_start].into(),
+        core: text[core_start..core_end].into(), suffix: text[core_end..].into(),
+        is_vocal_only: false, is_mixed: mixed }
+}
+

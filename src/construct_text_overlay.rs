@@ -901,11 +901,23 @@ const LYRICS_BASELINE_HEIGHT: f32 = 1080.0;
 const LYRICS_BACKGROUND_RGBA: [u8; 4] = [0, 0, 0, 255];
 const LYRICS_CONTEXT_COLOR: Color = Color::RGBA(155, 155, 150, 230);
 const LYRICS_CURRENT_COLOR: Color = Color::RGBA(255, 95, 31, 255);
+const LYRICS_SECONDARY_COLOR: Color = Color::RGBA(125, 125, 125, 255);
 
 pub fn construct_lyrics_panel(
     previous: Option<&str>,
     current: Option<&str>,
     next: Option<&str>,
+    output_width: u32,
+    output_height: u32,
+) -> Result<ConstructedTextOverlay, String> {
+    construct_lyrics_panel_bilingual(previous, current, next, None, output_width, output_height)
+}
+
+pub fn construct_lyrics_panel_bilingual(
+    previous: Option<&str>,
+    current: Option<&str>,
+    next: Option<&str>,
+    secondary_current: Option<&str>,
     output_width: u32,
     output_height: u32,
 ) -> Result<ConstructedTextOverlay, String> {
@@ -979,6 +991,11 @@ pub fn construct_lyrics_panel(
                 .map_err(|error| format!("Unable to convert lyrics text surface: {}", error))
         };
 
+    let secondary_text = secondary_current.map(str::trim).filter(|s| !s.is_empty());
+    let secondary_font_size = ((font_size as f32 * 0.72).round() as u16).max(10);
+    let secondary_font = ttf_context.load_font(&normal_font_path, secondary_font_size)
+        .map_err(|error| format!("Unable to load secondary-lyrics font: {}", error))?;
+    let secondary_surface = render_line(&secondary_font, secondary_text, LYRICS_SECONDARY_COLOR)?;
     let surfaces = [
         render_line(&normal_font, previous, LYRICS_CONTEXT_COLOR)?,
         render_line(&current_font, current, LYRICS_CURRENT_COLOR)?,
@@ -995,7 +1012,11 @@ pub fn construct_lyrics_panel(
 
     // No feathering: the texture is exactly one lyric row plus modest vertical
     // padding, with a single hard boundary against the shader above it.
+    let secondary_gap = if secondary_surface.is_some() { (font_size as u32 / 5).max(3) } else { 0 };
+    let secondary_height = secondary_surface.as_ref().map_or(0, |s| s.height());
     let panel_height = line_height
+        .saturating_add(secondary_gap)
+        .saturating_add(secondary_height)
         .saturating_add(padding_y.saturating_mul(2))
         .min(output_height)
         .max(1);
@@ -1059,6 +1080,15 @@ pub fn construct_lyrics_panel(
         let line_y = text_y.saturating_add(line_height.saturating_sub(surface.height()) / 2);
         composite_surface_centered_full(
             &mut pixels, panel_width, panel_height, surface, line_y,
+        )?;
+    }
+
+    // The original-language line belongs only to the active centered lyric.
+    // It never appears in either context column.
+    if let Some(surface) = secondary_surface.as_ref() {
+        composite_surface_centered_full(
+            &mut pixels, panel_width, panel_height, surface,
+            text_y.saturating_add(line_height).saturating_add(secondary_gap),
         )?;
     }
 

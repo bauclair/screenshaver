@@ -2702,7 +2702,7 @@ fn compose_target_frame_overlays(
                 )
                 .unwrap_or_default();
     
-        if lyrics_state.current.is_none() {
+        if lyrics_state.current.is_none() && lyrics_state.progress.is_none() {
             lyrics_overlays.remove(
                 &registry_name
             );
@@ -2717,17 +2717,18 @@ fn compose_target_frame_overlays(
                     )
                     .is_none_or(
                         |(state, width, height)| {
-                            state != &lyrics_state
+                            !state.same_text(&lyrics_state)
                                 || *width != target_width
                                 || *height != target_height
                         }
                     );
     
             if needs_rebuild {
-                match crate::construct_text_overlay::construct_lyrics_panel(
+                match crate::construct_text_overlay::construct_lyrics_panel_bilingual(
                     lyrics_state.previous.as_deref(),
                     lyrics_state.current.as_deref(),
                     lyrics_state.next.as_deref(),
+                    lyrics_state.secondary_current.as_deref(),
                     target_width,
                     target_height,
                 )
@@ -2747,7 +2748,7 @@ fn compose_target_frame_overlays(
                         lyrics_overlay_states.insert(
                             registry_name,
                             (
-                                lyrics_state,
+                                lyrics_state.clone(),
                                 target_width,
                                 target_height,
                             ),
@@ -2777,10 +2778,10 @@ fn compose_target_frame_overlays(
                     &registry_name
                 )
             {
-                overlay.display_bottom_edge(
-                    target_width,
-                    target_height,
-                );
+                overlay.display_bottom_edge(target_width, target_height);
+                if let Some(progress) = lyrics_state.progress.as_ref() {
+                    overlay.display_progress_bottom_edge(target_width, progress.fraction());
+                }
             }
         }
     }

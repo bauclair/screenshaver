@@ -619,7 +619,26 @@ pub(crate) fn run_with_backend_for_target(
             && runtime.display_format
                 == crate::manage_configuration::WallpaperDisplayFormat::Windowed
         {
-            match crate::manage_lyrics::LyricsManager::start() {
+            // Translation applies only to visible Windowpaper lyrics. Audio Motion
+            // managers elsewhere continue to use the untranslated start() path.
+            // If configuration cannot be reloaded here, retain original lyrics.
+            let (translation_target, show_original_lyrics) = match crate::load_config::load_config(
+                &crate::locate_paths::config_path(),
+            ) {
+                Ok(result) => (result.config.translate_lyrics, result.config.show_original_lyrics),
+                Err(error) => {
+                    crate::logger::warning(
+                        &crate::locate_paths::runtime_log_path(),
+                        &format!(
+                            "[LYRICS] Unable to read translation configuration; using original lyrics: {}",
+                            error,
+                        ),
+                    );
+                    (None, false)
+                }
+            };
+
+            match crate::manage_lyrics::LyricsManager::start_with_translation_options(translation_target, show_original_lyrics) {
                 Ok(manager) => {
                     println!(
                         "{}",

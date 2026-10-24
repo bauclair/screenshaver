@@ -1179,7 +1179,7 @@ impl FrameRenderEngine {
                 )
                 .unwrap_or_default();
 
-        if state.current.is_none() {
+        if state.current.is_none() && state.progress.is_none() {
             self.lyrics_overlay = None;
             self.lyrics_overlay_state = state;
             return;
@@ -1189,13 +1189,14 @@ impl FrameRenderEngine {
             (width, height);
 
         if self.lyrics_overlay.is_none()
-            || self.lyrics_overlay_state != state
+            || !self.lyrics_overlay_state.same_text(&state)
             || self.lyrics_overlay_output_size != current_size
         {
-            match crate::construct_text_overlay::construct_lyrics_panel(
+            match crate::construct_text_overlay::construct_lyrics_panel_bilingual(
                 state.previous.as_deref(),
                 state.current.as_deref(),
                 state.next.as_deref(),
+                state.secondary_current.as_deref(),
                 width,
                 height,
             )
@@ -1209,7 +1210,7 @@ impl FrameRenderEngine {
             ) {
                 Ok(overlay) => {
                     self.lyrics_overlay = Some(overlay);
-                    self.lyrics_overlay_state = state;
+                    self.lyrics_overlay_state = state.clone();
                     self.lyrics_overlay_output_size = current_size;
                 }
 
@@ -1228,10 +1229,10 @@ impl FrameRenderEngine {
         if let Some(overlay) =
             self.lyrics_overlay.as_ref()
         {
-            overlay.display_bottom_edge(
-                width,
-                height,
-            );
+            overlay.display_bottom_edge(width, height);
+            if let Some(progress) = state.progress.as_ref() {
+                overlay.display_progress_bottom_edge(width, progress.fraction());
+            }
         }
     }
 
