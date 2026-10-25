@@ -12,6 +12,8 @@ const DEFAULT_CONFIG: &str = r#"# Screenshaver configuration
 locale = "en-US"            # U.S. English
 #locale = "es-US"            # Spanish
 #locale = "fr-FR"            # Francais
+#translate_lyrics = "fr-FR"  # Translate original lyrics into another language/locale
+#show_original_lyrics = true # Show original lyrics beneath translated lyrics
 
 ################################
 # SCREENSAVER
