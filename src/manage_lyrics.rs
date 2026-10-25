@@ -37,6 +37,9 @@ pub struct LyricsState {
     pub next: Option<String>,
     pub secondary_current: Option<String>,
     pub progress: Option<TrackProgress>,
+    pub seekable: bool,
+    pub can_go_previous: bool,
+    pub can_go_next: bool,
 }
 
 impl LyricsState {
@@ -62,9 +65,58 @@ pub fn shared_audio_motion_vocal_timing_state() -> SharedVocalTimingState {
     Arc::clone(SHARED.get_or_init(|| Arc::new(Mutex::new(VocalTimingState::default()))))
 }
 
+/// A seek request is interpreted by the MPRIS worker, never by the renderer.
+/// `fraction` is normalized to the current track duration.
+#[derive(Debug, Clone, Copy)]
+struct SeekRequest {
+    fraction: f64,
+}
+
+#[derive(Debug, Clone)]
+pub struct LyricsSeekHandle {
+    sender: mpsc::Sender<SeekRequest>,
+    state: SharedLyricsState,
+}
+
+impl LyricsSeekHandle {
+    /// Returns false if the manager is stopped or no usable duration is known.
+    pub fn request_fraction(&self, fraction: f64) -> bool {
+        if !fraction.is_finite() { return false; }
+        let available = self.state.lock().ok()
+            .and_then(|snapshot| snapshot.progress.as_ref().map(|p| snapshot.seekable && !p.duration.is_zero()))
+            .unwrap_or(false);
+        available && self.sender.send(SeekRequest { fraction: fraction.clamp(0.0, 1.0) }).is_ok()
+    }
+}
+
+/// Navigation requests are handled on the existing MPRIS worker thread.
+#[derive(Debug, Clone, Copy)]
+enum NavigationRequest { Previous, Next }
+
+#[derive(Debug, Clone)]
+pub struct LyricsNavigationHandle {
+    sender: mpsc::Sender<NavigationRequest>,
+    state: SharedLyricsState,
+}
+
+impl LyricsNavigationHandle {
+    pub fn previous(&self) -> bool { self.request(NavigationRequest::Previous) }
+    pub fn next(&self) -> bool { self.request(NavigationRequest::Next) }
+
+    fn request(&self, command: NavigationRequest) -> bool {
+        let allowed = self.state.lock().ok().is_some_and(|snapshot| match command {
+            NavigationRequest::Previous => snapshot.can_go_previous,
+            NavigationRequest::Next => snapshot.can_go_next,
+        });
+        allowed && self.sender.send(command).is_ok()
+    }
+}
+
 pub struct LyricsManager {
     state: SharedLyricsState,
     vocal_timing_state: SharedVocalTimingState,
+    seek_sender: mpsc::Sender<SeekRequest>,
+    navigation_sender: mpsc::Sender<NavigationRequest>,
     running: Arc<AtomicBool>,
     worker: Option<JoinHandle<()>>,
 }
@@ -91,6 +143,8 @@ impl LyricsManager {
         let state = Arc::new(Mutex::new(LyricsState::default()));
         let vocal_timing_state = shared_audio_motion_vocal_timing_state();
         let running = Arc::new(AtomicBool::new(true));
+        let (seek_sender, seek_receiver) = mpsc::channel::<SeekRequest>();
+        let (navigation_sender, navigation_receiver) = mpsc::channel::<NavigationRequest>();
         let worker_state = Arc::clone(&state);
         let worker_vocal_timing_state = Arc::clone(&vocal_timing_state);
         let worker_running = Arc::clone(&running);
@@ -98,7 +152,7 @@ impl LyricsManager {
         let worker = thread::Builder::new()
             .name("screenshaver-lyrics".to_string())
             .spawn(move || {
-                run_worker(worker_state, worker_vocal_timing_state, worker_running, target_locale, show_original_lyrics);
+                run_worker(worker_state, worker_vocal_timing_state, worker_running, seek_receiver, navigation_receiver, target_locale, show_original_lyrics);
             })
             .map_err(|error| format!("Unable to start lyrics worker: {}", error))?;
 
@@ -107,9 +161,19 @@ impl LyricsManager {
         Ok(Self {
             state,
             vocal_timing_state,
+            seek_sender,
+            navigation_sender,
             running,
             worker: Some(worker),
         })
+    }
+
+    pub fn seek_handle(&self) -> LyricsSeekHandle {
+        LyricsSeekHandle { sender: self.seek_sender.clone(), state: Arc::clone(&self.state) }
+    }
+
+    pub fn navigation_handle(&self) -> LyricsNavigationHandle {
+        LyricsNavigationHandle { sender: self.navigation_sender.clone(), state: Arc::clone(&self.state) }
     }
 
     pub fn shared_state(&self) -> SharedLyricsState {
@@ -224,10 +288,44 @@ struct VocalInterval {
     text: String,
 }
 
+// Network lookups must never run on the MPRIS polling/seek thread.
+// A single retrieval worker prevents unbounded requests when tracks change rapidly.
+struct RetrievedTrack {
+    generation: u64,
+    identity: TrackIdentity,
+    lines: Vec<SynchronizedLine>,
+    intervals: Vec<VocalInterval>,
+}
+
+fn start_track_retrieval(
+    track: TrackInformation,
+    generation: u64,
+    sender: mpsc::Sender<RetrievedTrack>,
+) -> Result<JoinHandle<()>, String> {
+    thread::Builder::new()
+        .name("screenshaver-lyric-retrieval".into())
+        .spawn(move || {
+            let lines = retrieve_synchronized_lines(&track).unwrap_or_else(|error| {
+                log_warning(&format!("[LYRICS] {}", error));
+                Vec::new()
+            });
+            let intervals = retrieve_lrcmux_vocal_intervals(&track).unwrap_or_else(|error| {
+                log_warning(&format!("[AUDIO MOTION] LRCMUX vocal timing unavailable: {}", error));
+                Vec::new()
+            });
+            let _ = sender.send(RetrievedTrack {
+                generation, identity: track.identity, lines, intervals,
+            });
+        })
+        .map_err(|error| format!("Unable to start lyric retrieval: {}", error))
+}
+
 fn run_worker(
     state: Arc<Mutex<LyricsState>>,
     vocal_timing_state: Arc<Mutex<VocalTimingState>>,
     running: Arc<AtomicBool>,
+    seek_receiver: mpsc::Receiver<SeekRequest>,
+    navigation_receiver: mpsc::Receiver<NavigationRequest>,
     target_locale: Option<String>,
     show_original_lyrics: bool,
 ) {
@@ -253,8 +351,73 @@ fn run_worker(
     // across that specific broken-MPRIS state.
     let mut last_trusted_position: Option<(Duration, Instant)> = None;
     let mut fallback_clock_active = false;
+    let mut last_seekability_poll = Instant::now() - METADATA_POLL_INTERVAL;
+    let mut player_can_seek = false;
+    let (retrieval_tx, retrieval_rx) = mpsc::channel::<RetrievedTrack>();
+    let mut retrieval_generation = 0u64;
+    let mut retrieval_worker: Option<JoinHandle<()>> = None;
+    let mut queued_retrieval: Option<(TrackInformation, u64)> = None;
+
 
     while running.load(Ordering::SeqCst) {
+        // Process navigation independently of lyrics downloads and translation.
+        // Coalesce queued navigation clicks into one command per iteration.
+        let mut pending_navigation = None;
+        while let Ok(command) = navigation_receiver.try_recv() { pending_navigation = Some(command); }
+        if let (Some(command), Some(player)) = (pending_navigation, active_player.as_ref()) {
+            let result = match command {
+                NavigationRequest::Previous if player.can_go_previous().unwrap_or(false) => Some(player.previous()),
+                NavigationRequest::Next if player.can_go_next().unwrap_or(false) => Some(player.next()),
+                _ => None,
+            };
+            if let Some(result) = result {
+                if let Err(error) = result {
+                    log_warning(&format!("[LYRICS] MPRIS navigation rejected: {}", error));
+                } else {
+                    last_metadata_poll = Instant::now() - METADATA_POLL_INTERVAL;
+                    last_position_poll = Instant::now() - POSITION_POLL_INTERVAL;
+                }
+            }
+        }
+
+        // Keep only the newest click if several arrive before a worker iteration.
+        let mut pending_seek = None;
+        while let Ok(request) = seek_receiver.try_recv() { pending_seek = Some(request); }
+        if let Some(request) = pending_seek {
+            if let (Some(player), Some(track)) = (active_player.as_ref(), current_track.as_ref()) {
+                if !track.duration.is_zero() && player.can_seek().unwrap_or(false) {
+                    // Resolve the track ID at execution time. This prevents a stale
+                    // click from targeting a previously selected MPRIS track.
+                    match player.get_metadata() {
+                        Ok(metadata) => {
+                            if let Some(track_id) = metadata.track_id() {
+                                // Reject a queued request if the song changed since the
+                                // last metadata refresh.
+                                let same_track = metadata.title() == Some(track.identity.title.as_str())
+                                    && metadata.artists().and_then(|a| a.first().copied())
+                                        == Some(track.identity.artist.as_str());
+                                if !same_track { continue; }
+                                let requested = Duration::from_secs_f64(
+                                    track.duration.as_secs_f64() * request.fraction
+                                );
+                                if let Err(error) = player.set_position(track_id, &requested) {
+                                    log_warning(&format!("[LYRICS] MPRIS seek rejected: {}", error));
+                                } else {
+                                    // Do not claim success in the displayed clock; the
+                                    // next position poll reconciles actual player state.
+                                    last_position_poll = Instant::now() - POSITION_POLL_INTERVAL;
+                        last_seekability_poll = Instant::now() - METADATA_POLL_INTERVAL;
+                                    last_trusted_position = None;
+                                    fallback_clock_active = false;
+                                }
+                            }
+                        }
+                        Err(error) => log_warning(&format!("[LYRICS] Cannot inspect track for seek: {}", error)),
+                    }
+                }
+            }
+        }
+
         if let Some(player) = active_player.as_ref() {
             match player.get_playback_status() {
                 Ok(PlaybackStatus::Playing) => {}
@@ -265,6 +428,8 @@ fn run_worker(
                     ));
                     active_player = None;
                     current_track = None;
+                    retrieval_generation = retrieval_generation.wrapping_add(1);
+                    queued_retrieval = None;
                     translation_generation = translation_generation.wrapping_add(1);
                     if let Some(cancel) = translation_cancel.take() { cancel.store(true, Ordering::Release); }
                     translated_lines = None;
@@ -295,6 +460,8 @@ fn run_worker(
                     ));
                     active_player = None;
                     current_track = None;
+                    retrieval_generation = retrieval_generation.wrapping_add(1);
+                    queued_retrieval = None;
                     translation_generation = translation_generation.wrapping_add(1);
                     if let Some(cancel) = translation_cancel.take() { cancel.store(true, Ordering::Release); }
                     translated_lines = None;
@@ -318,7 +485,7 @@ fn run_worker(
 
             match find_playing_player() {
                 Ok(Some(player)) => match load_player_track(&player) {
-                    Ok((track, lines, intervals)) => {
+                    Ok(track) => {
                         log_information(&format!(
                             "[LYRICS] Following MPRIS player '{}' for '{}' by '{}'",
                             player.identity(), track.identity.title, track.identity.artist
@@ -330,9 +497,11 @@ fn run_worker(
                         }
                         translated_lines = None;
                         translation_started_for_track = false;
+                        retrieval_generation = retrieval_generation.wrapping_add(1);
+                        queued_retrieval = Some((track.clone(), retrieval_generation));
                         current_track = Some(track);
-                        synchronized_lines = lines;
-                        vocal_intervals = intervals;
+                        synchronized_lines.clear();
+                        vocal_intervals.clear();
                         last_line_index = None;
                         last_vocal_interval_index = None;
                         active_player = Some(player);
@@ -340,7 +509,7 @@ fn run_worker(
                         fallback_clock_active = false;
                         last_metadata_poll = Instant::now();
                         last_position_poll = Instant::now() - POSITION_POLL_INTERVAL;
-                        if let Ok(mut snapshot) = state.lock() { snapshot.progress = None; }
+                        if let Ok(mut snapshot) = state.lock() { snapshot.progress = None; snapshot.seekable = false; }
                     publish_state(&state, LyricsState::default());
                         publish_vocal_timing_state(
                             &vocal_timing_state,
@@ -384,28 +553,16 @@ fn run_worker(
                             translated_lines = None;
                             translation_started_for_track = false;
                             *track = observed_track;
-                            synchronized_lines = match retrieve_synchronized_lines(track) {
-                                Ok(lines) => lines,
-                                Err(error) => {
-                                    log_warning(&format!("[LYRICS] {}", error));
-                                    Vec::new()
-                                }
-                            };
-                            vocal_intervals = match retrieve_lrcmux_vocal_intervals(track) {
-                                Ok(intervals) => intervals,
-                                Err(error) => {
-                                    log_warning(&format!(
-                                        "[AUDIO MOTION] LRCMUX vocal timing unavailable: {}",
-                                        error
-                                    ));
-                                    Vec::new()
-                                }
-                            };
+                            retrieval_generation = retrieval_generation.wrapping_add(1);
+                            queued_retrieval = Some((track.clone(), retrieval_generation));
+                            synchronized_lines.clear();
+                            vocal_intervals.clear();
                             last_line_index = None;
                             last_vocal_interval_index = None;
                             last_trusted_position = None;
                             fallback_clock_active = false;
-                            if let Ok(mut snapshot) = state.lock() { snapshot.progress = None; }
+                            last_seekability_poll = Instant::now() - METADATA_POLL_INTERVAL;
+                            if let Ok(mut snapshot) = state.lock() { snapshot.progress = None; snapshot.seekable = false; }
                     publish_state(&state, LyricsState::default());
                             publish_vocal_timing_state(
                                 &vocal_timing_state,
@@ -421,6 +578,45 @@ fn run_worker(
                         "[LYRICS] Unable to refresh track metadata from '{}': {}",
                         player.identity(), error
                     )),
+                }
+            }
+        }
+
+        // Install only the newest matching retrieval result. Old network requests
+        // may finish after a track change and must never replace current lyrics.
+        while let Ok(result) = retrieval_rx.try_recv() {
+            if result.generation != retrieval_generation
+                || current_track.as_ref().is_none_or(|track| track.identity != result.identity)
+            { continue; }
+            synchronized_lines = result.lines;
+            vocal_intervals = result.intervals;
+            translated_lines = None;
+            translation_started_for_track = false;
+            last_line_index = None;
+            last_vocal_interval_index = None;
+            publish_vocal_timing_state(&vocal_timing_state, VocalTimingState {
+                available: !vocal_intervals.is_empty(), active: false, current_line: None,
+            });
+            if let Some((position, at)) = last_trusted_position {
+                let effective = if fallback_clock_active { position.saturating_add(at.elapsed()) } else { position };
+                let active = find_active_line(&synchronized_lines, effective);
+                publish_display_line_state(&state, &synchronized_lines, None, active, show_original_lyrics);
+                last_line_index = active;
+                let vocal = find_active_vocal_interval(&vocal_intervals, effective);
+                publish_vocal_interval_state(&vocal_timing_state, &vocal_intervals, vocal);
+                last_vocal_interval_index = vocal;
+            }
+        }
+        // Never wait for a previous HTTP request: queue the newest track and
+        // launch it when the single retrieval slot becomes available.
+        if retrieval_worker.as_ref().is_some_and(|worker| worker.is_finished()) {
+            if let Some(worker) = retrieval_worker.take() { let _ = worker.join(); }
+        }
+        if retrieval_worker.is_none() {
+            if let Some((track, generation)) = queued_retrieval.take() {
+                match start_track_retrieval(track.clone(), generation, retrieval_tx.clone()) {
+                    Ok(worker) => retrieval_worker = Some(worker),
+                    Err(error) => log_warning(&format!("[LYRICS] {}", error)),
                 }
             }
         }
@@ -452,6 +648,20 @@ fn run_worker(
                     }
                 }
                 Err(error) => log_warning(&format!("[LYRICS] Translation batch unavailable; originals retained: {}", error)),
+            }
+        }
+
+        if last_seekability_poll.elapsed() >= METADATA_POLL_INTERVAL {
+            last_seekability_poll = Instant::now();
+            player_can_seek = active_player.as_ref()
+                .and_then(|player| player.can_seek().ok()).unwrap_or(false);
+            let can_go_previous = active_player.as_ref()
+                .and_then(|player| player.can_go_previous().ok()).unwrap_or(false);
+            let can_go_next = active_player.as_ref()
+                .and_then(|player| player.can_go_next().ok()).unwrap_or(false);
+            if let Ok(mut snapshot) = state.lock() {
+                snapshot.can_go_previous = can_go_previous;
+                snapshot.can_go_next = can_go_next;
             }
         }
 
@@ -514,6 +724,9 @@ fn run_worker(
 
                     if let Some(track) = current_track.as_ref() {
                         if let Ok(mut snapshot) = state.lock() {
+                            snapshot.seekable = track.duration > Duration::ZERO
+                                && player_can_seek
+                                && !fallback_clock_active;
                             snapshot.progress = (track.duration > Duration::ZERO).then_some(TrackProgress {
                                 position: effective_position,
                                 duration: track.duration,
@@ -616,6 +829,9 @@ fn publish_display_line_state(
         next: primary.get(active + 1).map(|l| l.text.clone()),
         secondary_current: secondary,
         progress: None,
+        seekable: false,
+        can_go_previous: false,
+        can_go_next: false,
     });
 }
 
@@ -623,6 +839,9 @@ fn publish_state(state: &Arc<Mutex<LyricsState>>, next_state: LyricsState) {
     if let Ok(mut state) = state.lock() {
         let mut next_state = next_state;
         next_state.progress = state.progress.take();
+        next_state.seekable = state.seekable;
+        next_state.can_go_previous = state.can_go_previous;
+        next_state.can_go_next = state.can_go_next;
         *state = next_state;
     }
 }
@@ -682,33 +901,8 @@ fn find_playing_player() -> Result<Option<Player>, String> {
     Ok(None)
 }
 
-fn load_player_track(
-    player: &Player,
-) -> Result<(TrackInformation, Vec<SynchronizedLine>, Vec<VocalInterval>), String> {
-    let track = read_track_information(player, None)?;
-    let lines = match retrieve_synchronized_lines(&track) {
-        Ok(lines) => lines,
-        Err(error) => {
-            log_warning(&format!("[LYRICS] {}", error));
-            Vec::new()
-        }
-    };
-
-    // Audio Motion deliberately uses LRCMUX only.  Its explicit start/end
-    // intervals let the test gate vocal emphasis without guessing where a
-    // lyric line stops.  Failure here does not affect ordinary lyric display.
-    let vocal_intervals = match retrieve_lrcmux_vocal_intervals(&track) {
-        Ok(intervals) => intervals,
-        Err(error) => {
-            log_warning(&format!(
-                "[AUDIO MOTION] LRCMUX vocal timing unavailable: {}",
-                error
-            ));
-            Vec::new()
-        }
-    };
-
-    Ok((track, lines, vocal_intervals))
+fn load_player_track(player: &Player) -> Result<TrackInformation, String> {
+    read_track_information(player, None)
 }
 
 fn read_track_information(

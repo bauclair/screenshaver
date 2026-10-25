@@ -93,6 +93,14 @@ pub struct WallpaperRuntime {
     pub lyrics_state:
         Option<crate::manage_lyrics::SharedLyricsState>,
 
+    /// Worker-owned MPRIS seek request channel, available only to Windowshader.
+    pub lyrics_seek_handle:
+        Option<crate::manage_lyrics::LyricsSeekHandle>,
+
+    /// Worker-owned MPRIS Previous/Next control, Windowshader only.
+    pub lyrics_navigation_handle:
+        Option<crate::manage_lyrics::LyricsNavigationHandle>,
+
     pub texture_policy:
         crate::load_config::TexturePolicy,
 

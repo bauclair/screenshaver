@@ -30,6 +30,8 @@ pub struct ConstructedTextOverlay {
     pub width: u32,
     pub height: u32,
     pub pixels: Vec<u8>,
+    /// Width of each lyrics navigation end cap; zero for other overlays.
+    pub lyrics_navigation_width: u32,
 }
 
 pub fn construct(
@@ -204,6 +206,7 @@ pub fn construct_with_fps_warning(
         width,
         height,
         pixels,
+        lyrics_navigation_width: 0,
     })
 }
 
@@ -489,6 +492,7 @@ fn construct_message_with_background(
             width,
             height,
             pixels,
+            lyrics_navigation_width: 0,
         }
     )
 }
@@ -903,6 +907,40 @@ const LYRICS_CONTEXT_COLOR: Color = Color::RGBA(155, 155, 150, 230);
 const LYRICS_CURRENT_COLOR: Color = Color::RGBA(255, 95, 31, 255);
 const LYRICS_SECONDARY_COLOR: Color = Color::RGBA(125, 125, 125, 255);
 
+// The navigation regions are full-height charcoal end caps. Their width
+// is two-thirds of the minimum single-line panel height (a one-third
+// reduction), independent of translations.
+// Shared with the OpenGL progress indicator so its track stays between caps.
+pub(crate) fn lyrics_navigation_inset(panel_width: u32, minimum_panel_height: u32) -> u32 {
+    ((minimum_panel_height as u64 * 2) / 3).max(1).min((panel_width / 2) as u64) as u32
+}
+
+fn draw_lyrics_navigation_chevrons(pixels: &mut [u8], width: u32, height: u32, inset: u32) {
+    if inset == 0 { return; }
+    let center_y = (height.saturating_sub(4) / 2) as i32;
+    let glyph_radius = (inset.min(height.saturating_sub(4)) / 5).max(1) as i32;
+    for (left, direction) in [(true, -1_i32), (false, 1_i32)] {
+        let start_x = if left { 0 } else { width - inset };
+        // Fill the entire height, including the bottom four pixels.
+        for y in 0..height {
+            for x in start_x..start_x + inset {
+                let index = ((y as usize * width as usize) + x as usize) * 4;
+                pixels[index..index + 4].copy_from_slice(&[78, 78, 78, 255]);
+            }
+        }
+        let center_x = (start_x + inset / 2) as i32;
+        for dy in -glyph_radius..=glyph_radius {
+            let dx = direction * (glyph_radius - dy.abs());
+            let x = center_x + dx;
+            let y = center_y + dy;
+            if x < start_x as i32 || x >= (start_x + inset) as i32
+                || y < 0 || y >= height as i32 - 4 { continue; }
+            let index = ((y as usize * width as usize) + x as usize) * 4;
+            pixels[index..index + 4].copy_from_slice(&[245, 245, 245, 255]);
+        }
+    }
+}
+
 pub fn construct_lyrics_panel(
     previous: Option<&str>,
     current: Option<&str>,
@@ -949,7 +987,8 @@ pub fn construct_lyrics_panel_bilingual(
     // lyric would exceed the viewport, reduce only the marquee font size until
     // the complete highlighted line fits between the outer margins.
     let current_text = current.unwrap_or("").trim();
-    let available_current_width = panel_width.saturating_sub(outer_padding.saturating_mul(2)).max(1);
+    let navigation_inset = lyrics_navigation_inset(panel_width, (requested_font_size as u32).saturating_mul(3));
+    let available_current_width = panel_width.saturating_sub(outer_padding.max(navigation_inset).saturating_mul(2)).max(1);
     let mut font_size = requested_font_size;
     if !current_text.is_empty() {
         loop {
@@ -1021,6 +1060,11 @@ pub fn construct_lyrics_panel_bilingual(
         .min(output_height)
         .max(1);
 
+    // Width is based only on the un-translated single-line height.
+    // Adding a translation may increase panel height, but never button width.
+    let minimum_panel_height = line_height.saturating_add(padding_y.saturating_mul(2)).min(output_height).max(1);
+    let navigation_inset = lyrics_navigation_inset(panel_width, minimum_panel_height);
+
     let byte_count = usize::try_from(panel_width)
         .ok()
         .and_then(|w| usize::try_from(panel_height).ok().and_then(|h| w.checked_mul(h)))
@@ -1046,7 +1090,7 @@ pub fn construct_lyrics_panel_bilingual(
     // and the protected highlighted-lyric region.
     if let Some(surface) = surfaces[0].as_ref() {
         let column_end = panel_width / 3;
-        let content_start = column_padding.min(column_end);
+        let content_start = column_padding.max(navigation_inset).min(column_end);
         let mut content_end = column_end.saturating_sub(column_padding).max(content_start);
         if let Some((current_start, _)) = current_bounds {
             content_end = content_end.min(current_start.saturating_sub(column_padding));
@@ -1063,7 +1107,7 @@ pub fn construct_lyrics_panel_bilingual(
     if let Some(surface) = surfaces[2].as_ref() {
         let column_start = (panel_width as u64 * 2 / 3) as u32;
         let mut content_start = column_start.saturating_add(column_padding).min(panel_width);
-        let content_end = panel_width.saturating_sub(column_padding).max(content_start);
+        let content_end = panel_width.saturating_sub(column_padding.max(navigation_inset)).max(content_start);
         if let Some((_, current_end)) = current_bounds {
             content_start = content_start.max(current_end.saturating_add(column_padding).min(panel_width));
         }
@@ -1092,10 +1136,15 @@ pub fn construct_lyrics_panel_bilingual(
         )?;
     }
 
+    // Navigation glyphs live entirely inside the pre-existing text-derived
+    // panel height; the 4px bottom progress strip remains untouched.
+    draw_lyrics_navigation_chevrons(&mut pixels, panel_width, panel_height, navigation_inset);
+
     Ok(ConstructedTextOverlay {
         width: panel_width,
         height: panel_height,
         pixels,
+        lyrics_navigation_width: navigation_inset,
     })
 }
 

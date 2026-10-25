@@ -54,6 +54,63 @@ use crate::wayland_wallpaper::{
     configured_dimension,
 };
 
+/// Last successfully drawn lyrics rectangle in Wayland surface-local coordinates.
+/// The renderer supplies the actual panel height; no fixed-height estimate is used.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct WindowshaderLyricsBounds {
+    pub(crate) width: u32,
+    pub(crate) surface_height: u32,
+    pub(crate) panel_height: u32,
+    pub(crate) navigation_width: u32,
+}
+
+impl WindowshaderLyricsBounds {
+    pub(crate) fn navigation_at(self, x: f64, y: f64) -> Option<bool> {
+        if self.navigation_width == 0 || self.width == 0 || self.panel_height == 0
+            || !x.is_finite() || !y.is_finite() { return None; }
+        let top = self.surface_height.saturating_sub(self.panel_height) as f64;
+        if y < top || y >= self.surface_height as f64 || x < 0.0 || x >= self.width as f64 { return None; }
+        if x < self.navigation_width as f64 { Some(true) }
+        else if x >= (self.width - self.navigation_width) as f64 { Some(false) }
+        else { None }
+    }
+
+    /// Return the horizontal fraction only for a point inside the visible panel.
+    /// The Wayland pointer protocol reports surface-local floating-point coordinates.
+    pub(crate) fn fraction_at(self, x: f64, y: f64) -> Option<f64> {
+        if self.width == 0 || self.surface_height == 0 || self.panel_height == 0
+            || !x.is_finite() || !y.is_finite()
+        {
+            return None;
+        }
+        let panel_top = self.surface_height.saturating_sub(self.panel_height) as f64;
+        if x < 0.0 || x >= self.width as f64
+            || y < panel_top || y >= self.surface_height as f64
+        {
+            return None;
+        }
+        let inset = self.navigation_width.min(self.width / 2) as f64;
+        let track = self.width as f64 - 2.0 * inset;
+        if track <= 0.0 || x < inset || x >= self.width as f64 - inset { return None; }
+        Some(((x - inset) / track).clamp(0.0, 1.0))
+    }
+}
+
+// Windowshader-only one-shot click transfer. The Wayland event callback and
+// renderer preflight execute on the same thread; no Wallpaper state is involved.
+thread_local! {
+    static WINDOWSHADER_LYRICS_CLICK: std::cell::RefCell<Option<(f64, f64)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+pub(crate) fn take_windowshader_lyrics_click() -> Option<(f64, f64)> {
+    WINDOWSHADER_LYRICS_CLICK.with(|click| click.borrow_mut().take())
+}
+
+fn clear_windowshader_lyrics_click() {
+    WINDOWSHADER_LYRICS_CLICK.with(|click| *click.borrow_mut() = None);
+}
+
 // Windowshader owns the presentation-eligibility decision and the shape of
 // its result. None means no compositor-authorized frame: the caller must skip
 // all GL work and presentation. This wrapper does not manufacture readiness.
@@ -188,6 +245,8 @@ fn render_windowshader_frames(
     running: &Arc<AtomicBool>,
     control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
 ) -> Result<(), String> {
+    crate::wayland_render_core::clear_windowshader_lyrics_bounds();
+    clear_windowshader_lyrics_click();
     // Windowshader explicitly acquires and owns its EGL session.
     // Dropping this local session releases EGL on success or failure.
     let mut egl_session = crate::wayland_wallpaper::EglRenderSession::initialize(
@@ -1267,12 +1326,60 @@ pub(crate) struct WindowshaderDispatchState {
     pub(crate) surface_states: Vec<WallpaperSurfaceState>,
     pub(crate) removed_output_names: Vec<u32>,
     pub(crate) windowshader: WindowshaderWaylandState,
+    // Windowshader-only pointer tracking and cursor-shape negotiation.
+    pub(crate) cursor_shape_manager: Option<wayland_protocols::wp::cursor_shape::v1::client::wp_cursor_shape_manager_v1::WpCursorShapeManagerV1>,
+    pub(crate) cursor_shape_device: Option<wayland_protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::WpCursorShapeDeviceV1>,
+    pub(crate) pointer_seat: Option<wayland_client::protocol::wl_seat::WlSeat>,
+    pub(crate) pointer: Option<wayland_client::protocol::wl_pointer::WlPointer>,
+    pub(crate) pointer_position: Option<(f64, f64)>,
+    pub(crate) pointer_enter_serial: Option<u32>,
+    pub(crate) pending_lyrics_click: Option<(f64, f64)>,
+    // Derived from the latest successfully constructed lyrics overlay.
+    pub(crate) lyrics_hover_fraction: Option<f64>,
+    // Last cursor request, to avoid repeating protocol requests every frame.
+    pub(crate) lyrics_cursor_seek_shape: Option<bool>,
 }
 
 // Stage 2D-2C Step 12: Windowshader owns callback diagnostics following a
 // successful Wayland flush. The shared pump invokes this only after flush().
 impl WindowshaderDispatchState {
+    // The cursor device is optional: older compositors may not advertise the
+    // cursor-shape protocol. Creation is deferred until both globals exist.
+    fn ensure_cursor_shape_device(&mut self, queue: &QueueHandle<Self>) {
+        if self.cursor_shape_device.is_none() {
+            if let (Some(manager), Some(pointer)) =
+                (self.cursor_shape_manager.as_ref(), self.pointer.as_ref())
+            {
+                self.cursor_shape_device = Some(manager.get_pointer(pointer, queue, ()));
+            }
+        }
+    }
+
+    // Recheck every event pump as well as pointer movement: lyrics can appear,
+    // disappear, or become unseekable while the pointer remains stationary.
+    fn refresh_lyrics_cursor(&mut self) {
+        let hover = self.pointer_position.and_then(|(x, y)| {
+            crate::wayland_render_core::windowshader_lyrics_bounds()
+                .and_then(|bounds| bounds.fraction_at(x, y))
+        });
+        self.lyrics_hover_fraction = hover;
+        let seek_shape = hover.is_some()
+            && crate::wayland_render_core::windowshader_lyrics_seekable();
+        let (Some(serial), Some(device)) =
+            (self.pointer_enter_serial, self.cursor_shape_device.as_ref())
+        else {
+            self.lyrics_cursor_seek_shape = None;
+            return;
+        };
+        if self.lyrics_cursor_seek_shape != Some(seek_shape) {
+            use wayland_protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::Shape;
+            device.set_shape(serial, if seek_shape { Shape::EwResize } else { Shape::Default });
+            self.lyrics_cursor_seek_shape = Some(seek_shape);
+        }
+    }
+
     fn on_successful_wayland_flush(&mut self) {
+        self.refresh_lyrics_cursor();
         for (target, pending) in self.windowshader.windowshader_pending_callbacks.iter_mut() {
             if !pending.flushed {
                 pending.flushed = true;
@@ -1428,6 +1535,23 @@ impl Dispatch<wayland_client::protocol::wl_registry::WlRegistry, ()> for Windows
                         >(name, version.min(1), queue, ()));
                     }
                 }
+                "wp_cursor_shape_manager_v1" => {
+                    // Stage 5F1: negotiate cursor shapes without changing cursor
+                    // behavior yet. The compositor/theme owns the artwork.
+                    if state.cursor_shape_manager.is_none() {
+                        state.cursor_shape_manager = Some(registry.bind::<
+                            wayland_protocols::wp::cursor_shape::v1::client::wp_cursor_shape_manager_v1::WpCursorShapeManagerV1, _, _
+                        >(name, version.min(1), queue, ()));
+                    }
+                    state.ensure_cursor_shape_device(queue);
+                }
+                "wl_seat" => {
+                    if state.pointer_seat.is_none() {
+                        state.pointer_seat = Some(registry.bind::<
+                            wayland_client::protocol::wl_seat::WlSeat, _, _
+                        >(name, version.min(7), queue, ()));
+                    }
+                }
                 "wl_output" => { state.output_count += 1; }
                 _ => {}
             }
@@ -1435,6 +1559,73 @@ impl Dispatch<wayland_client::protocol::wl_registry::WlRegistry, ()> for Windows
     }
 }
 
+// Pointer events are recorded only. A subsequent increment will connect them
+// to the actual rendered lyrics-panel bounds and the MPRIS seek handle.
+impl Dispatch<wayland_client::protocol::wl_seat::WlSeat, ()> for WindowshaderDispatchState {
+    fn event(state: &mut Self, seat: &wayland_client::protocol::wl_seat::WlSeat,
+        event: wayland_client::protocol::wl_seat::Event, _: &(),
+        _: &Connection, queue: &QueueHandle<Self>) {
+        if let wayland_client::protocol::wl_seat::Event::Capabilities { capabilities } = event {
+            let has_pointer = match capabilities {
+                wayland_client::WEnum::Value(value) =>
+                    value.contains(wayland_client::protocol::wl_seat::Capability::Pointer),
+                wayland_client::WEnum::Unknown(_) => false,
+            };
+            if has_pointer && state.pointer.is_none() {
+                state.pointer = Some(seat.get_pointer(queue, ()));
+                state.ensure_cursor_shape_device(queue);
+            } else if !has_pointer {
+                if let Some(device) = state.cursor_shape_device.take() { device.destroy(); }
+                if let Some(pointer) = state.pointer.take() { pointer.release(); }
+                state.pointer_position = None;
+                state.lyrics_hover_fraction = None;
+                state.pointer_enter_serial = None;
+                state.pending_lyrics_click = None;
+                state.lyrics_cursor_seek_shape = None;
+            }
+        }
+    }
+}
+
+impl Dispatch<wayland_client::protocol::wl_pointer::WlPointer, ()> for WindowshaderDispatchState {
+    fn event(state: &mut Self, _: &wayland_client::protocol::wl_pointer::WlPointer,
+        event: wayland_client::protocol::wl_pointer::Event, _: &(),
+        _: &Connection, _: &QueueHandle<Self>) {
+        use wayland_client::protocol::wl_pointer;
+        match event {
+            wl_pointer::Event::Enter { serial, surface_x, surface_y, .. } => {
+                state.pointer_enter_serial = Some(serial);
+                state.pointer_position = Some((surface_x, surface_y));
+                state.refresh_lyrics_cursor();
+            }
+            wl_pointer::Event::Motion { surface_x, surface_y, .. } => {
+                if state.pointer_enter_serial.is_some() {
+                    state.pointer_position = Some((surface_x, surface_y));
+                state.refresh_lyrics_cursor();
+                }
+            }
+            wl_pointer::Event::Leave { .. } => {
+                state.pointer_enter_serial = None;
+                state.pointer_position = None;
+                state.lyrics_hover_fraction = None;
+                state.lyrics_cursor_seek_shape = None;
+            }
+            wl_pointer::Event::Button { button, state: button_state, .. } => {
+                if button == 0x110 && matches!(button_state,
+                    wayland_client::WEnum::Value(wl_pointer::ButtonState::Pressed)) {
+                    state.pending_lyrics_click = state.pointer_position;
+                    if let Some(position) = state.pointer_position {
+                        WINDOWSHADER_LYRICS_CLICK.with(|click| *click.borrow_mut() = Some(position));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+wayland_client::delegate_noop!(WindowshaderDispatchState: ignore wayland_protocols::wp::cursor_shape::v1::client::wp_cursor_shape_manager_v1::WpCursorShapeManagerV1);
+wayland_client::delegate_noop!(WindowshaderDispatchState: ignore wayland_protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::WpCursorShapeDeviceV1);
 wayland_client::delegate_noop!(WindowshaderDispatchState: ignore wayland_client::protocol::wl_compositor::WlCompositor);
 wayland_client::delegate_noop!(WindowshaderDispatchState: ignore wayland_client::protocol::wl_surface::WlSurface);
 wayland_client::delegate_noop!(WindowshaderDispatchState: ignore wayland_protocols::xdg::decoration::zv1::client::zxdg_decoration_manager_v1::ZxdgDecorationManagerV1);

@@ -683,6 +683,12 @@ pub(crate) fn run_with_backend_for_target(
                 }
             );
 
+    presentation_runtime.lyrics_seek_handle =
+        _lyrics_manager.as_ref().map(|manager| manager.seek_handle());
+
+    presentation_runtime.lyrics_navigation_handle =
+        _lyrics_manager.as_ref().map(|manager| manager.navigation_handle());
+
     backend.run(
         shader_manager,
         &wallpaper_directory,

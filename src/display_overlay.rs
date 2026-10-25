@@ -139,6 +139,7 @@ pub struct OpenGlOverlay {
     texture: u32,
     width: u32,
     height: u32,
+    lyrics_navigation_width: u32,
     placement:
         crate::parse_subtitle_placement::SubtitlePlacement,
 }
@@ -471,6 +472,7 @@ impl OpenGlOverlay {
                     overlay.width,
                 height:
                     overlay.height,
+                lyrics_navigation_width: overlay.lyrics_navigation_width,
                 placement,
             }
         )
@@ -620,8 +622,10 @@ impl OpenGlOverlay {
     /// Called after the panel draw, with its GL context current.
     pub fn display_progress_bottom_edge(&self, output_width: u32, fraction: f64) {
         if output_width == 0 || self.width == 0 || !fraction.is_finite() { return; }
-        let filled = ((self.width as f64 * fraction.clamp(0.0, 1.0)).round() as u32)
-            .min(self.width).min(output_width);
+        let inset = self.lyrics_navigation_width;
+        let track_width = self.width.saturating_sub(inset.saturating_mul(2));
+        let filled = ((track_width as f64 * fraction.clamp(0.0, 1.0)).round() as u32)
+            .min(track_width).min(output_width.saturating_sub(inset));
         if filled == 0 { return; }
         unsafe {
             let mut old_scissor = [0_i32; 4];
@@ -630,7 +634,7 @@ impl OpenGlOverlay {
             gl::GetIntegerv(gl::SCISSOR_BOX, old_scissor.as_mut_ptr());
             gl::GetFloatv(gl::COLOR_CLEAR_VALUE, old_clear.as_mut_ptr());
             gl::Enable(gl::SCISSOR_TEST);
-            gl::Scissor(0, 0, filled as i32, 4.min(self.height) as i32);
+            gl::Scissor(inset as i32, 0, filled as i32, 4.min(self.height) as i32);
             gl::ClearColor(1.0, 95.0 / 255.0, 31.0 / 255.0, 1.0);
             gl::Clear(gl::COLOR_BUFFER_BIT);
             gl::ClearColor(old_clear[0], old_clear[1], old_clear[2], old_clear[3]);

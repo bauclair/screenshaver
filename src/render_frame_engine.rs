@@ -126,6 +126,8 @@ pub(crate) struct FrameRenderEngine {
         crate::manage_lyrics::LyricsState,
     lyrics_overlay_output_size:
         (u32, u32),
+    lyrics_panel_height: u32,
+    lyrics_navigation_width: u32,
     fps_policy: RenderFpsPolicy,
     postprocess_policy:
         crate::load_config::PostprocessPolicy,
@@ -452,6 +454,8 @@ impl FrameRenderEngine {
                     crate::manage_lyrics::LyricsState::default(),
                 lyrics_overlay_output_size:
                     (0, 0),
+                lyrics_panel_height: 0,
+                lyrics_navigation_width: 0,
                 fps_policy,
                 postprocess_policy,
                 audio_bands,
@@ -1168,6 +1172,7 @@ impl FrameRenderEngine {
             self.lyrics_state.as_ref()
         else {
             self.lyrics_overlay = None;
+            self.lyrics_panel_height = 0;
             return;
         };
 
@@ -1181,6 +1186,7 @@ impl FrameRenderEngine {
 
         if state.current.is_none() && state.progress.is_none() {
             self.lyrics_overlay = None;
+            self.lyrics_panel_height = 0;
             self.lyrics_overlay_state = state;
             return;
         }
@@ -1202,13 +1208,17 @@ impl FrameRenderEngine {
             )
             .and_then(
                 |constructed| {
+                    let panel_height = constructed.height;
+                    let navigation_width = constructed.lyrics_navigation_width;
                     crate::display_overlay::OpenGlOverlay::new_from_constructed(
                         constructed,
                         crate::parse_subtitle_placement::parse(None).placement,
-                    )
+                    ).map(|overlay| (overlay, panel_height, navigation_width))
                 }
             ) {
-                Ok(overlay) => {
+                Ok((overlay, panel_height, navigation_width)) => {
+                    self.lyrics_navigation_width = navigation_width;
+                    self.lyrics_panel_height = panel_height;
                     self.lyrics_overlay = Some(overlay);
                     self.lyrics_overlay_state = state.clone();
                     self.lyrics_overlay_output_size = current_size;
@@ -1222,6 +1232,8 @@ impl FrameRenderEngine {
                         )
                     );
                     self.lyrics_overlay = None;
+                    self.lyrics_panel_height = 0;
+                    self.lyrics_navigation_width = 0;
                 }
             }
         }
@@ -1236,6 +1248,21 @@ impl FrameRenderEngine {
         }
     }
 
+
+    /// Bounds of the last successfully rendered lyrics panel, in window-local
+    /// coordinates with the origin at the upper-left. None when no panel exists.
+    pub(crate) fn lyrics_navigation_width(&self) -> u32 { self.lyrics_navigation_width }
+
+    pub(crate) fn lyrics_panel_bounds(&self) -> Option<(u32, u32, u32, u32)> {
+        let (width, height) = self.lyrics_overlay_output_size;
+        if self.lyrics_overlay.is_none() || self.lyrics_panel_height == 0
+            || width == 0 || height == 0
+        {
+            return None;
+        }
+        let panel_height = self.lyrics_panel_height.min(height);
+        Some((0, height - panel_height, width, panel_height))
+    }
 
     pub(crate) fn current_metadata(
         &self,

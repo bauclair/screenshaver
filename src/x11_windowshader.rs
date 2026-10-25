@@ -86,6 +86,8 @@ struct X11WindowshaderWindow {
     normal_width: i32,
     normal_height: i32,
     maximized: bool,
+    seek_cursor: xlib::Cursor,
+    seek_cursor_active: bool,
 }
 
 #[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
@@ -215,7 +217,11 @@ fn create_windowshader_window(
         attributes.event_mask =
             xlib::ExposureMask
                 | xlib::StructureNotifyMask
-                | xlib::KeyPressMask;
+                | xlib::KeyPressMask
+                | xlib::PointerMotionMask
+                | xlib::EnterWindowMask
+                | xlib::LeaveWindowMask
+                | xlib::ButtonPressMask;
 
         let attribute_mask =
             xlib::CWBackPixel
@@ -327,6 +333,9 @@ fn create_windowshader_window(
             normal_width: saved.width,
             normal_height: saved.height,
             maximized: saved.maximized,
+            // X cursorfont glyph 108: sb_h_double_arrow.
+            seek_cursor: xlib::XCreateFontCursor(display, 108),
+            seek_cursor_active: false,
         })
     }
 }
@@ -337,6 +346,10 @@ fn destroy_windowshader_window(
 ) {
     unsafe {
         let display = connection.display();
+
+        if wallpaper_window.seek_cursor != 0 {
+            xlib::XFreeCursor(display, wallpaper_window.seek_cursor);
+        }
 
         if wallpaper_window.glx_window != 0 {
             glx::glXDestroyWindow(
@@ -531,8 +544,73 @@ fn notify_wallpaper_events(
     }
 }
 
-fn drain_x11_events(display: *mut xlib::Display, window: &mut X11WindowshaderWindow,
-    running: &AtomicBool) {
+fn seek_enabled(runtime: &WallpaperRuntime) -> bool {
+    if runtime.lyrics_seek_handle.is_none() { return false; }
+    runtime.lyrics_state.as_ref()
+        .and_then(|shared| shared.lock().ok())
+        .map(|state| state.seekable && state.progress.as_ref()
+            .is_some_and(|progress| !progress.duration.is_zero()))
+        .unwrap_or(false)
+}
+
+fn lyrics_seek_fraction(
+    engine: &FrameRenderEngine, x: i32, y: i32,
+) -> Option<f64> {
+    let (left, top, width, height) = engine.lyrics_panel_bounds()?;
+    if width == 0 || height == 0 { return None; }
+    let x = i64::from(x);
+    let y = i64::from(y);
+    if x < i64::from(left) || x >= i64::from(left) + i64::from(width)
+        || y < i64::from(top) || y >= i64::from(top) + i64::from(height)
+    { return None; }
+    let inset = i64::from(engine.lyrics_navigation_width());
+    let track = i64::from(width).saturating_sub(inset * 2);
+    if track <= 0 || x < i64::from(left) + inset
+        || x >= i64::from(left) + i64::from(width) - inset { return None; }
+    Some(((x - i64::from(left) - inset) as f64 / track as f64).clamp(0.0, 1.0))
+}
+
+fn update_seek_cursor(display: *mut xlib::Display, window: &mut X11WindowshaderWindow, active: bool) {
+    if window.seek_cursor_active == active || window.window == 0 { return; }
+    unsafe {
+        if active && window.seek_cursor != 0 {
+            xlib::XDefineCursor(display, window.window, window.seek_cursor);
+        } else {
+            xlib::XUndefineCursor(display, window.window);
+        }
+    }
+    window.seek_cursor_active = active && window.seek_cursor != 0;
+}
+
+fn refresh_seek_cursor(
+    display: *mut xlib::Display,
+    window: &mut X11WindowshaderWindow,
+    engine: &FrameRenderEngine,
+    runtime: &WallpaperRuntime,
+) {
+    if window.window == 0 { return; }
+    unsafe {
+        let mut root = 0;
+        let mut child = 0;
+        let mut root_x = 0;
+        let mut root_y = 0;
+        let mut x = 0;
+        let mut y = 0;
+        let mut mask = 0;
+        let inside = xlib::XQueryPointer(display, window.window, &mut root, &mut child,
+            &mut root_x, &mut root_y, &mut x, &mut y, &mut mask) != 0;
+        update_seek_cursor(display, window, inside && seek_enabled(runtime)
+            && lyrics_seek_fraction(engine, x, y).is_some());
+    }
+}
+
+fn drain_x11_events(
+    display: *mut xlib::Display,
+    window: &mut X11WindowshaderWindow,
+    running: &AtomicBool,
+    engine: &FrameRenderEngine,
+    runtime: &WallpaperRuntime,
+) {
     unsafe {
         while xlib::XPending(display) > 0 {
             let mut event: xlib::XEvent = std::mem::zeroed();
@@ -547,6 +625,48 @@ fn drain_x11_events(display: *mut xlib::Display, window: &mut X11WindowshaderWin
                         if !window.maximized {
                             window.normal_width = window.width;
                             window.normal_height = window.height;
+                        }
+                    }
+                }
+                xlib::MotionNotify => {
+                    let e = event.motion;
+                    if e.window == window.window {
+                        update_seek_cursor(display, window, seek_enabled(runtime)
+                            && lyrics_seek_fraction(engine, e.x, e.y).is_some());
+                    }
+                }
+                xlib::EnterNotify => {
+                    let e = event.crossing;
+                    if e.window == window.window {
+                        update_seek_cursor(display, window, seek_enabled(runtime)
+                            && lyrics_seek_fraction(engine, e.x, e.y).is_some());
+                    }
+                }
+                xlib::LeaveNotify => {
+                    if event.crossing.window == window.window {
+                        update_seek_cursor(display, window, false);
+                    }
+                }
+                xlib::ButtonPress => {
+                    let e = event.button;
+                    if e.window == window.window && e.button == 1 {
+                        if let Some((left, top, width, height)) = engine.lyrics_panel_bounds() {
+                            let inset = engine.lyrics_navigation_width();
+                            let inside = e.x >= left as i32 && e.x < (left + width) as i32
+                                && e.y >= top as i32 && e.y < (top + height) as i32;
+                            if inside && inset > 0 && e.x < (left + inset) as i32 {
+                                if let Some(handle) = runtime.lyrics_navigation_handle.as_ref() {
+                                    let _ = handle.previous();
+                                }
+                            } else if inside && inset > 0 && e.x >= (left + width - inset) as i32 {
+                                if let Some(handle) = runtime.lyrics_navigation_handle.as_ref() {
+                                    let _ = handle.next();
+                                }
+                            } else if seek_enabled(runtime) {
+                                if let (Some(handle), Some(fraction)) = (
+                                    runtime.lyrics_seek_handle.as_ref(), lyrics_seek_fraction(engine, e.x, e.y)
+                                ) { let _ = handle.request_fraction(fraction); }
+                            }
                         }
                     }
                 }
@@ -572,6 +692,7 @@ fn run_window_loop(
     display: *mut xlib::Display,
     wallpaper_window: &mut X11WindowshaderWindow,
     engine: &mut FrameRenderEngine,
+    runtime: &WallpaperRuntime,
     running: &AtomicBool,
     control: &WallpaperRuntimeControl,
     notifications_enabled: bool,
@@ -597,7 +718,8 @@ fn run_window_loop(
     let mut paused = false;
     let mut first_frame_presented = false;
     while running.load(Ordering::SeqCst) {
-        drain_x11_events(display, wallpaper_window, running);
+        drain_x11_events(display, wallpaper_window, running, engine, runtime);
+        refresh_seek_cursor(display, wallpaper_window, engine, runtime);
         if !running.load(Ordering::SeqCst) { break; }
 
         if let Some(reload) =
@@ -837,6 +959,7 @@ impl WallpaperBackend for X11WindowshaderBackend {
                 display,
                 &mut wallpaper_window,
                 &mut engine,
+                runtime,
                 running.as_ref(),
                 &control,
                 runtime.notifications,

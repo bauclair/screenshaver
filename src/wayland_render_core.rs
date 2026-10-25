@@ -1841,7 +1841,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
             HashMap::new();
 
     let mut lyrics_overlay_states:
-        HashMap<u32, (crate::manage_lyrics::LyricsState, u32, u32)> =
+        HashMap<u32, (crate::manage_lyrics::LyricsState, u32, u32, u32, u32)> =
             HashMap::new();
 
 
@@ -1941,13 +1941,31 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 let preparation_lease = WindowshaderPreparationLease::new(
                     &mut frame_context, &mut frame_runtime, &mut frame_audio,
                 );
-                return prepare_and_commit_windowshader_frame::<S>(
+                let preparation = prepare_and_commit_windowshader_frame::<S>(
                     windowshader_state.as_mut().ok_or_else(||
                         "Windowshader controller missing during preparation".to_string())?,
                     display, context, event_queue, state, egl_targets, native_targets,
                     preparation_lease,
                     control, shader_interval, runtime.notifications, running,
                 );
+                // Dispatch occurred during preparation. Consume at most one click
+                // against the latest actual panel bounds, and let the seek handle
+                // reject unseekable tracks or unknown durations.
+                if let Some((x, y)) = crate::wayland_windowshader::take_windowshader_lyrics_click() {
+                    if let Some(bounds) = windowshader_lyrics_bounds() {
+                        if let Some(previous) = bounds.navigation_at(x, y) {
+                            if let Some(handle) = runtime.lyrics_navigation_handle.as_ref() {
+                                if previous { let _ = handle.previous(); }
+                                else { let _ = handle.next(); }
+                            }
+                        } else if let Some(fraction) = bounds.fraction_at(x, y) {
+                            if let Some(handle) = runtime.lyrics_seek_handle.as_ref() {
+                                let _ = handle.request_fraction(fraction);
+                            }
+                        }
+                    }
+                }
+                return preparation;
             }
             if windowed_rotation {
                 return Err("Wallpaper preparation requested from Windowshader pipeline".into());
@@ -2664,6 +2682,37 @@ struct ShaderSceneUniforms {
     i_frame: i32,
 }
 
+// Windowshader-only lyrics geometry bridge. Wayland dispatch and EGL rendering
+// execute on the same thread; this avoids sharing pointer state with Wallpaper.
+// Cleared at Windowshader startup and whenever no panel is rendered.
+thread_local! {
+    static WINDOWSHADER_LYRICS_BOUNDS: RefCell<Option<crate::wayland_windowshader::WindowshaderLyricsBounds>> =
+        const { RefCell::new(None) };
+    static WINDOWSHADER_LYRICS_SEEKABLE: RefCell<bool> = const { RefCell::new(false) };
+}
+
+pub(crate) fn windowshader_lyrics_bounds() -> Option<crate::wayland_windowshader::WindowshaderLyricsBounds> {
+    WINDOWSHADER_LYRICS_BOUNDS.with(|bounds| *bounds.borrow())
+}
+
+pub(crate) fn clear_windowshader_lyrics_bounds() {
+    WINDOWSHADER_LYRICS_BOUNDS.with(|bounds| *bounds.borrow_mut() = None);
+    publish_windowshader_lyrics_seekable(false);
+}
+
+/// Whether the last composed Windowshader lyrics panel belongs to a seekable track.
+pub(crate) fn windowshader_lyrics_seekable() -> bool {
+    WINDOWSHADER_LYRICS_SEEKABLE.with(|seekable| *seekable.borrow())
+}
+
+fn publish_windowshader_lyrics_seekable(seekable: bool) {
+    WINDOWSHADER_LYRICS_SEEKABLE.with(|current| *current.borrow_mut() = seekable);
+}
+
+fn publish_windowshader_lyrics_bounds(bounds: Option<crate::wayland_windowshader::WindowshaderLyricsBounds>) {
+    WINDOWSHADER_LYRICS_BOUNDS.with(|current| *current.borrow_mut() = bounds);
+}
+
 // GPU overlay composition for a completed target scene. This operation is
 // independent of Wayland callback eligibility and EGL buffer presentation.
 // The pipeline owner still requests the next genuine callback and swaps.
@@ -2674,7 +2723,7 @@ fn compose_target_frame_overlays(
     target_height: u32,
     renderer_status_panels: &mut HashMap<u32, crate::display_overlay::RendererStatusPanel>,
     lyrics_overlays: &mut HashMap<u32, crate::display_overlay::OpenGlOverlay>,
-    lyrics_overlay_states: &mut HashMap<u32, (crate::manage_lyrics::LyricsState, u32, u32)>,
+    lyrics_overlay_states: &mut HashMap<u32, (crate::manage_lyrics::LyricsState, u32, u32, u32, u32)>,
 ) {
     // Diagnostic only: compose after post-processing, before EGL windowshader presentation.
     let status_text = crate::renderer_status::enabled()
@@ -2702,6 +2751,10 @@ fn compose_target_frame_overlays(
                 )
                 .unwrap_or_default();
     
+        // The geometry is valid only while a corresponding overlay exists.
+        // Recompute after each composition, including text/size changes.
+        publish_windowshader_lyrics_bounds(None);
+        publish_windowshader_lyrics_seekable(false);
         if lyrics_state.current.is_none() && lyrics_state.progress.is_none() {
             lyrics_overlays.remove(
                 &registry_name
@@ -2716,7 +2769,7 @@ fn compose_target_frame_overlays(
                         &registry_name
                     )
                     .is_none_or(
-                        |(state, width, height)| {
+                        |(state, width, height, _panel_height, _navigation_width)| {
                             !state.same_text(&lyrics_state)
                                 || *width != target_width
                                 || *height != target_height
@@ -2734,13 +2787,18 @@ fn compose_target_frame_overlays(
                 )
                 .and_then(
                     |constructed| {
+                        // Retain the actual constructed height for accurate
+                        // Windowshader pointer hit-testing. It varies with
+                        // font metrics and secondary lyric content.
+                        let panel_height = constructed.height;
+                        let navigation_width = constructed.lyrics_navigation_width;
                         crate::display_overlay::OpenGlOverlay::new_from_constructed(
                             constructed,
                             crate::parse_subtitle_placement::parse(None).placement,
-                        )
+                        ).map(|overlay| (overlay, panel_height, navigation_width))
                     }
                 ) {
-                    Ok(overlay) => {
+                    Ok((overlay, panel_height, navigation_width)) => {
                         lyrics_overlays.insert(
                             registry_name,
                             overlay,
@@ -2751,6 +2809,8 @@ fn compose_target_frame_overlays(
                                 lyrics_state.clone(),
                                 target_width,
                                 target_height,
+                                panel_height,
+                                navigation_width,
                             ),
                         );
                     }
@@ -2778,6 +2838,15 @@ fn compose_target_frame_overlays(
                     &registry_name
                 )
             {
+                if let Some((_, width, height, panel_height, navigation_width)) = lyrics_overlay_states.get(&registry_name) {
+                    publish_windowshader_lyrics_seekable(lyrics_state.seekable && lyrics_state.progress.is_some());
+                    publish_windowshader_lyrics_bounds(Some(crate::wayland_windowshader::WindowshaderLyricsBounds {
+                        width: *width,
+                        surface_height: *height,
+                        panel_height: *panel_height,
+                        navigation_width: *navigation_width,
+                    }));
+                }
                 overlay.display_bottom_edge(target_width, target_height);
                 if let Some(progress) = lyrics_state.progress.as_ref() {
                     overlay.display_progress_bottom_edge(target_width, progress.fraction());
@@ -2803,7 +2872,7 @@ fn execute_target_gpu_frame(
     runtime: &crate::define_wallpaper::WallpaperRuntime,
     renderer_status_panels: &mut HashMap<u32, crate::display_overlay::RendererStatusPanel>,
     lyrics_overlays: &mut HashMap<u32, crate::display_overlay::OpenGlOverlay>,
-    lyrics_overlay_states: &mut HashMap<u32, (crate::manage_lyrics::LyricsState, u32, u32)>,
+    lyrics_overlay_states: &mut HashMap<u32, (crate::manage_lyrics::LyricsState, u32, u32, u32, u32)>,
 ) -> Result<(), String> {
     let (target_width, target_height) = execute_bound_target_scene(
         display,

@@ -2418,6 +2418,10 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
                 cfg.lyrics_enabled,
             lyrics_state:
                 None,
+            lyrics_seek_handle:
+                None,
+            lyrics_navigation_handle:
+                None,
             texture_policy:
                 cfg.wallpaper_texture_policy,
             fps_policy:
@@ -2444,6 +2448,10 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
             lyrics_enabled:
                 cfg.lyrics_enabled,
             lyrics_state:
+                None,
+            lyrics_seek_handle:
+                None,
+            lyrics_navigation_handle:
                 None,
             texture_policy:
                 cfg.windowshader_texture_policy.clone(),
