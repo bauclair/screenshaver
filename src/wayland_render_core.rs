@@ -26,6 +26,27 @@ use std::sync::atomic::Ordering;
 use wayland_client::Proxy;
 
 
+// Native title formatting is shared by metadata changes and policy rotation.
+// Never hold the lyrics mutex while sending Wayland requests.
+fn windowshader_native_title(
+    policy_name: &str,
+    shared_lyrics: Option<&crate::manage_lyrics::SharedLyricsState>,
+) -> String {
+    let mut title = format!("P: {}", policy_name);
+    let metadata = shared_lyrics
+        .and_then(|shared| shared.lock().ok())
+        .and_then(|state| state.track_metadata.clone());
+    if let Some(track) = metadata {
+        if !track.artist.trim().is_empty() && !track.title.trim().is_empty() {
+            title.push_str("    ♫  ");
+            title.push_str(&track.artist);
+            title.push_str(" - ");
+            title.push_str(&track.title);
+        }
+    }
+    title
+}
+
 // Pipeline-neutral callback result. The owning controller decides whether a
 // compositor-authorized frame may proceed; the shared executor only applies
 // clock/FPS effects. This type does not grant frame readiness.
@@ -1892,6 +1913,9 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
         None
     };
     let mut wallpaper_callbacks = WallpaperCallbackController::new();
+    // Windowshader-only native title cache. This is not rendering state.
+    let mut windowshader_last_title: Option<String> = None;
+
 
 
     let status_pipeline = if runtime.display_format
@@ -1948,6 +1972,20 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     preparation_lease,
                     control, shader_interval, runtime.notifications, running,
                 );
+                // Update the native title even when the compositor withholds frames.
+                // MPRIS state is read without blocking on D-Bus or lyric retrieval.
+                let next_title = windowshader_native_title(
+                    &frame_runtime.shader.current.policy_name,
+                    runtime.lyrics_state.as_ref(),
+                );
+                if windowshader_last_title.as_deref() != Some(next_title.as_str()) {
+                    for target in native_targets.iter() {
+                        if let Some(toplevel) = target.xdg_toplevel.as_ref() {
+                            toplevel.set_title(next_title.clone());
+                        }
+                    }
+                    windowshader_last_title = Some(next_title);
+                }
                 // Dispatch occurred during preparation. Consume at most one click
                 // against the latest actual panel bounds, and let the seek handle
                 // reject unseekable tracks or unknown durations.
@@ -1962,6 +2000,13 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                             if let Some(handle) = runtime.lyrics_seek_handle.as_ref() {
                                 let _ = handle.request_fraction(fraction);
                             }
+                        }
+                    }
+                }
+                if let Some((x, y)) = crate::wayland_windowshader::take_windowshader_lyrics_toggle() {
+                    if windowshader_lyrics_bounds().is_some_and(|bounds| bounds.contains(x, y)) {
+                        if let Some(handle) = runtime.lyrics_navigation_handle.as_ref() {
+                            let _ = handle.toggle_playback();
                         }
                     }
                 }
@@ -2204,6 +2249,20 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
 
 
                                 frame_runtime.shader.accept_replacement(next_shader.clone());
+                                if windowed_rotation {
+                                    // The native title belongs to the Windowshader XDG toplevel.
+                                    // Update it only after the replacement shader is committed.
+                                    let next_title = windowshader_native_title(
+                                        &frame_runtime.shader.current.policy_name,
+                                        runtime.lyrics_state.as_ref(),
+                                    );
+                                    for target in native_targets.iter() {
+                                        if let Some(toplevel) = target.xdg_toplevel.as_ref() {
+                                            toplevel.set_title(next_title.clone());
+                                        }
+                                    }
+                                    windowshader_last_title = Some(next_title);
+                                }
                                 if windowed_rotation {
                                     windowshader_state.as_mut().expect("Windowshader controller exists only in Windowed mode").record_rotation_success(
                                         &frame_runtime.shader.current.shader_name, frame_runtime.shader.current.policy_id, frame_context.gl.program,
@@ -2689,6 +2748,7 @@ thread_local! {
     static WINDOWSHADER_LYRICS_BOUNDS: RefCell<Option<crate::wayland_windowshader::WindowshaderLyricsBounds>> =
         const { RefCell::new(None) };
     static WINDOWSHADER_LYRICS_SEEKABLE: RefCell<bool> = const { RefCell::new(false) };
+    static WINDOWSHADER_LYRICS_NAVIGATION: RefCell<(bool, bool)> = const { RefCell::new((false, false)) };
 }
 
 pub(crate) fn windowshader_lyrics_bounds() -> Option<crate::wayland_windowshader::WindowshaderLyricsBounds> {
@@ -2698,11 +2758,20 @@ pub(crate) fn windowshader_lyrics_bounds() -> Option<crate::wayland_windowshader
 pub(crate) fn clear_windowshader_lyrics_bounds() {
     WINDOWSHADER_LYRICS_BOUNDS.with(|bounds| *bounds.borrow_mut() = None);
     publish_windowshader_lyrics_seekable(false);
+    publish_windowshader_lyrics_navigation(false, false);
 }
 
 /// Whether the last composed Windowshader lyrics panel belongs to a seekable track.
 pub(crate) fn windowshader_lyrics_seekable() -> bool {
     WINDOWSHADER_LYRICS_SEEKABLE.with(|seekable| *seekable.borrow())
+}
+
+pub(crate) fn windowshader_lyrics_navigation() -> (bool, bool) {
+    WINDOWSHADER_LYRICS_NAVIGATION.with(|state| *state.borrow())
+}
+
+fn publish_windowshader_lyrics_navigation(previous: bool, next: bool) {
+    WINDOWSHADER_LYRICS_NAVIGATION.with(|state| *state.borrow_mut() = (previous, next));
 }
 
 fn publish_windowshader_lyrics_seekable(seekable: bool) {
@@ -2755,6 +2824,7 @@ fn compose_target_frame_overlays(
         // Recompute after each composition, including text/size changes.
         publish_windowshader_lyrics_bounds(None);
         publish_windowshader_lyrics_seekable(false);
+        publish_windowshader_lyrics_navigation(false, false);
         if lyrics_state.current.is_none() && lyrics_state.progress.is_none() {
             lyrics_overlays.remove(
                 &registry_name
@@ -2771,19 +2841,23 @@ fn compose_target_frame_overlays(
                     .is_none_or(
                         |(state, width, height, _panel_height, _navigation_width)| {
                             !state.same_text(&lyrics_state)
+                                || state.can_go_previous != lyrics_state.can_go_previous
+                                || state.can_go_next != lyrics_state.can_go_next
                                 || *width != target_width
                                 || *height != target_height
                         }
                     );
     
             if needs_rebuild {
-                match crate::construct_text_overlay::construct_lyrics_panel_bilingual(
+                match crate::construct_text_overlay::construct_lyrics_panel_bilingual_with_navigation(
                     lyrics_state.previous.as_deref(),
                     lyrics_state.current.as_deref(),
                     lyrics_state.next.as_deref(),
                     lyrics_state.secondary_current.as_deref(),
                     target_width,
                     target_height,
+                    lyrics_state.can_go_previous,
+                    lyrics_state.can_go_next,
                 )
                 .and_then(
                     |constructed| {
@@ -2840,6 +2914,7 @@ fn compose_target_frame_overlays(
             {
                 if let Some((_, width, height, panel_height, navigation_width)) = lyrics_overlay_states.get(&registry_name) {
                     publish_windowshader_lyrics_seekable(lyrics_state.seekable && lyrics_state.progress.is_some());
+                    publish_windowshader_lyrics_navigation(lyrics_state.can_go_previous, lyrics_state.can_go_next);
                     publish_windowshader_lyrics_bounds(Some(crate::wayland_windowshader::WindowshaderLyricsBounds {
                         width: *width,
                         surface_height: *height,

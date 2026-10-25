@@ -915,11 +915,11 @@ pub(crate) fn lyrics_navigation_inset(panel_width: u32, minimum_panel_height: u3
     ((minimum_panel_height as u64 * 2) / 3).max(1).min((panel_width / 2) as u64) as u32
 }
 
-fn draw_lyrics_navigation_chevrons(pixels: &mut [u8], width: u32, height: u32, inset: u32) {
+fn draw_lyrics_navigation_chevrons(pixels: &mut [u8], width: u32, height: u32, inset: u32, can_previous: bool, can_next: bool) {
     if inset == 0 { return; }
     let center_y = (height.saturating_sub(4) / 2) as i32;
     let glyph_radius = (inset.min(height.saturating_sub(4)) / 5).max(1) as i32;
-    for (left, direction) in [(true, -1_i32), (false, 1_i32)] {
+    for (left, direction, enabled) in [(true, -1_i32, can_previous), (false, 1_i32, can_next)] {
         let start_x = if left { 0 } else { width - inset };
         // Fill the entire height, including the bottom four pixels.
         for y in 0..height {
@@ -936,7 +936,7 @@ fn draw_lyrics_navigation_chevrons(pixels: &mut [u8], width: u32, height: u32, i
             if x < start_x as i32 || x >= (start_x + inset) as i32
                 || y < 0 || y >= height as i32 - 4 { continue; }
             let index = ((y as usize * width as usize) + x as usize) * 4;
-            pixels[index..index + 4].copy_from_slice(&[245, 245, 245, 255]);
+            pixels[index..index + 4].copy_from_slice(if enabled { &[245, 245, 245, 255] } else { &[125, 125, 125, 255] });
         }
     }
 }
@@ -958,6 +958,20 @@ pub fn construct_lyrics_panel_bilingual(
     secondary_current: Option<&str>,
     output_width: u32,
     output_height: u32,
+) -> Result<ConstructedTextOverlay, String> {
+    construct_lyrics_panel_bilingual_with_navigation(previous, current, next, secondary_current, output_width, output_height, true, true)
+}
+
+/// Draw enabled or dimmed navigation chevrons using the current MPRIS capabilities.
+pub fn construct_lyrics_panel_bilingual_with_navigation(
+    previous: Option<&str>,
+    current: Option<&str>,
+    next: Option<&str>,
+    secondary_current: Option<&str>,
+    output_width: u32,
+    output_height: u32,
+    can_previous: bool,
+    can_next: bool,
 ) -> Result<ConstructedTextOverlay, String> {
     if output_width == 0 || output_height == 0 {
         return Err("Cannot construct a lyrics panel for a zero-sized viewport".to_string());
@@ -1138,7 +1152,7 @@ pub fn construct_lyrics_panel_bilingual(
 
     // Navigation glyphs live entirely inside the pre-existing text-derived
     // panel height; the 4px bottom progress strip remains untouched.
-    draw_lyrics_navigation_chevrons(&mut pixels, panel_width, panel_height, navigation_inset);
+    draw_lyrics_navigation_chevrons(&mut pixels, panel_width, panel_height, navigation_inset, can_previous, can_next);
 
     Ok(ConstructedTextOverlay {
         width: panel_width,

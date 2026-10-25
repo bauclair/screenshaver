@@ -65,6 +65,14 @@ pub(crate) struct WindowshaderLyricsBounds {
 }
 
 impl WindowshaderLyricsBounds {
+    pub(crate) fn contains(self, x: f64, y: f64) -> bool {
+        self.width > 0 && self.panel_height > 0 && self.surface_height > 0
+            && x.is_finite() && y.is_finite()
+            && x >= 0.0 && x < self.width as f64
+            && y >= self.surface_height.saturating_sub(self.panel_height) as f64
+            && y < self.surface_height as f64
+    }
+
     pub(crate) fn navigation_at(self, x: f64, y: f64) -> Option<bool> {
         if self.navigation_width == 0 || self.width == 0 || self.panel_height == 0
             || !x.is_finite() || !y.is_finite() { return None; }
@@ -101,14 +109,21 @@ impl WindowshaderLyricsBounds {
 thread_local! {
     static WINDOWSHADER_LYRICS_CLICK: std::cell::RefCell<Option<(f64, f64)>> =
         const { std::cell::RefCell::new(None) };
+    static WINDOWSHADER_LYRICS_TOGGLE: std::cell::RefCell<Option<(f64, f64)>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 pub(crate) fn take_windowshader_lyrics_click() -> Option<(f64, f64)> {
     WINDOWSHADER_LYRICS_CLICK.with(|click| click.borrow_mut().take())
 }
 
+pub(crate) fn take_windowshader_lyrics_toggle() -> Option<(f64, f64)> {
+    WINDOWSHADER_LYRICS_TOGGLE.with(|click| click.borrow_mut().take())
+}
+
 fn clear_windowshader_lyrics_click() {
     WINDOWSHADER_LYRICS_CLICK.with(|click| *click.borrow_mut() = None);
+    WINDOWSHADER_LYRICS_TOGGLE.with(|click| *click.borrow_mut() = None);
 }
 
 // Windowshader owns the presentation-eligibility decision and the shape of
@@ -615,10 +630,10 @@ pub fn run_egl_windowed_surface(
             decoration
         });
 
-    xdg_toplevel.set_title(
-        "Screenshaver Windowshader"
-            .to_string()
-    );
+    // Use the selected policy name rather than the generic application title.
+    // Music metadata and subsequent policy rotations will be connected in the
+    // next increment; this initial title is set before the first surface commit.
+    xdg_toplevel.set_title(format!("P: {}", active_shader.policy_name));
 
 
     xdg_toplevel.set_app_id(
@@ -1337,7 +1352,7 @@ pub(crate) struct WindowshaderDispatchState {
     // Derived from the latest successfully constructed lyrics overlay.
     pub(crate) lyrics_hover_fraction: Option<f64>,
     // Last cursor request, to avoid repeating protocol requests every frame.
-    pub(crate) lyrics_cursor_seek_shape: Option<bool>,
+    pub(crate) lyrics_cursor_seek_shape: Option<u8>,
 }
 
 // Stage 2D-2C Step 12: Windowshader owns callback diagnostics following a
@@ -1358,23 +1373,41 @@ impl WindowshaderDispatchState {
     // Recheck every event pump as well as pointer movement: lyrics can appear,
     // disappear, or become unseekable while the pointer remains stationary.
     fn refresh_lyrics_cursor(&mut self) {
+        let bounds = crate::wayland_render_core::windowshader_lyrics_bounds();
         let hover = self.pointer_position.and_then(|(x, y)| {
-            crate::wayland_render_core::windowshader_lyrics_bounds()
-                .and_then(|bounds| bounds.fraction_at(x, y))
+            bounds.and_then(|bounds| bounds.fraction_at(x, y))
         });
         self.lyrics_hover_fraction = hover;
-        let seek_shape = hover.is_some()
-            && crate::wayland_render_core::windowshader_lyrics_seekable();
+        let navigation = self.pointer_position.and_then(|(x, y)| {
+            bounds.and_then(|bounds| bounds.navigation_at(x, y))
+        });
+        let (can_previous, can_next) = crate::wayland_render_core::windowshader_lyrics_navigation();
+        let seekable = crate::wayland_render_core::windowshader_lyrics_seekable();
+        // 0 = default arrow; 1 = horizontal seek cursor; 2 = enabled navigation hand.
+        let shape_id = if navigation.is_some_and(|previous| {
+            if previous { can_previous } else { can_next }
+        }) {
+            2_u8
+        } else if hover.is_some() && seekable {
+            1_u8
+        } else {
+            0_u8
+        };
         let (Some(serial), Some(device)) =
             (self.pointer_enter_serial, self.cursor_shape_device.as_ref())
         else {
             self.lyrics_cursor_seek_shape = None;
             return;
         };
-        if self.lyrics_cursor_seek_shape != Some(seek_shape) {
+        if self.lyrics_cursor_seek_shape != Some(shape_id) {
             use wayland_protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::Shape;
-            device.set_shape(serial, if seek_shape { Shape::EwResize } else { Shape::Default });
-            self.lyrics_cursor_seek_shape = Some(seek_shape);
+            let shape = match shape_id {
+                1 => Shape::EwResize,
+                2 => Shape::Pointer,
+                _ => Shape::Default,
+            };
+            device.set_shape(serial, shape);
+            self.lyrics_cursor_seek_shape = Some(shape_id);
         }
     }
 
@@ -1611,11 +1644,15 @@ impl Dispatch<wayland_client::protocol::wl_pointer::WlPointer, ()> for Windowsha
                 state.lyrics_cursor_seek_shape = None;
             }
             wl_pointer::Event::Button { button, state: button_state, .. } => {
-                if button == 0x110 && matches!(button_state,
+                if (button == 0x110 || button == 0x111) && matches!(button_state,
                     wayland_client::WEnum::Value(wl_pointer::ButtonState::Pressed)) {
-                    state.pending_lyrics_click = state.pointer_position;
                     if let Some(position) = state.pointer_position {
-                        WINDOWSHADER_LYRICS_CLICK.with(|click| *click.borrow_mut() = Some(position));
+                        if button == 0x110 {
+                            state.pending_lyrics_click = Some(position);
+                            WINDOWSHADER_LYRICS_CLICK.with(|click| *click.borrow_mut() = Some(position));
+                        } else {
+                            WINDOWSHADER_LYRICS_TOGGLE.with(|click| *click.borrow_mut() = Some(position));
+                        }
                     }
                 }
             }

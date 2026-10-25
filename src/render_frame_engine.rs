@@ -1196,15 +1196,19 @@ impl FrameRenderEngine {
 
         if self.lyrics_overlay.is_none()
             || !self.lyrics_overlay_state.same_text(&state)
+            || self.lyrics_overlay_state.can_go_previous != state.can_go_previous
+            || self.lyrics_overlay_state.can_go_next != state.can_go_next
             || self.lyrics_overlay_output_size != current_size
         {
-            match crate::construct_text_overlay::construct_lyrics_panel_bilingual(
+            match crate::construct_text_overlay::construct_lyrics_panel_bilingual_with_navigation(
                 state.previous.as_deref(),
                 state.current.as_deref(),
                 state.next.as_deref(),
                 state.secondary_current.as_deref(),
                 width,
                 height,
+                state.can_go_previous,
+                state.can_go_next,
             )
             .and_then(
                 |constructed| {

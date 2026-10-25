@@ -32,6 +32,8 @@ impl TrackProgress {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LyricsState {
+    /// Current MPRIS metadata, independent of synchronized lyric availability.
+    pub track_metadata: Option<LyricsTrackMetadata>,
     pub previous: Option<String>,
     pub current: Option<String>,
     pub next: Option<String>,
@@ -40,6 +42,14 @@ pub struct LyricsState {
     pub seekable: bool,
     pub can_go_previous: bool,
     pub can_go_next: bool,
+}
+
+/// Metadata for the Windowshader native title; published by the MPRIS worker.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LyricsTrackMetadata {
+    pub artist: String,
+    pub title: String,
+    pub playing: bool,
 }
 
 impl LyricsState {
@@ -91,7 +101,7 @@ impl LyricsSeekHandle {
 
 /// Navigation requests are handled on the existing MPRIS worker thread.
 #[derive(Debug, Clone, Copy)]
-enum NavigationRequest { Previous, Next }
+enum NavigationRequest { Previous, Next, TogglePlayback }
 
 #[derive(Debug, Clone)]
 pub struct LyricsNavigationHandle {
@@ -102,11 +112,14 @@ pub struct LyricsNavigationHandle {
 impl LyricsNavigationHandle {
     pub fn previous(&self) -> bool { self.request(NavigationRequest::Previous) }
     pub fn next(&self) -> bool { self.request(NavigationRequest::Next) }
+    /// Queue an MPRIS playback toggle without blocking the rendering thread.
+    pub fn toggle_playback(&self) -> bool { self.request(NavigationRequest::TogglePlayback) }
 
     fn request(&self, command: NavigationRequest) -> bool {
         let allowed = self.state.lock().ok().is_some_and(|snapshot| match command {
             NavigationRequest::Previous => snapshot.can_go_previous,
             NavigationRequest::Next => snapshot.can_go_next,
+            NavigationRequest::TogglePlayback => true,
         });
         allowed && self.sender.send(command).is_ok()
     }
@@ -368,6 +381,11 @@ fn run_worker(
             let result = match command {
                 NavigationRequest::Previous if player.can_go_previous().unwrap_or(false) => Some(player.previous()),
                 NavigationRequest::Next if player.can_go_next().unwrap_or(false) => Some(player.next()),
+                NavigationRequest::TogglePlayback => match player.get_playback_status() {
+                    Ok(PlaybackStatus::Playing) if player.can_pause().unwrap_or(false) => Some(player.pause()),
+                    Ok(PlaybackStatus::Paused) if player.can_play().unwrap_or(false) => Some(player.play()),
+                    _ => None,
+                },
                 _ => None,
             };
             if let Some(result) = result {
@@ -420,7 +438,29 @@ fn run_worker(
 
         if let Some(player) = active_player.as_ref() {
             match player.get_playback_status() {
-                Ok(PlaybackStatus::Playing) => {}
+                Ok(PlaybackStatus::Playing) => {
+                    if let Ok(mut snapshot) = state.lock() {
+                        if let Some(metadata) = snapshot.track_metadata.as_mut() {
+                            metadata.playing = true;
+                        }
+                    }
+                }
+                // Preserve the selected player and its lyric state while paused.
+                // Otherwise a second right-click could not resume playback.
+                Ok(PlaybackStatus::Paused) => {
+                    if let Ok(mut snapshot) = state.lock() {
+                        if let Some(metadata) = snapshot.track_metadata.as_mut() {
+                            metadata.playing = false;
+                        }
+                        if let Some(progress) = snapshot.progress.as_mut() {
+                            if progress.playing {
+                                progress.position = progress.position.saturating_add(progress.observed_at.elapsed());
+                                progress.observed_at = Instant::now();
+                                progress.playing = false;
+                            }
+                        }
+                    }
+                }
                 Ok(status) => {
                     log_information(&format!(
                         "[LYRICS] Active player '{}' is now {:?}; searching for another playing player",
@@ -428,6 +468,7 @@ fn run_worker(
                     ));
                     active_player = None;
                     current_track = None;
+                    set_track_metadata(&state, None, false);
                     retrieval_generation = retrieval_generation.wrapping_add(1);
                     queued_retrieval = None;
                     translation_generation = translation_generation.wrapping_add(1);
@@ -460,6 +501,7 @@ fn run_worker(
                     ));
                     active_player = None;
                     current_track = None;
+                    set_track_metadata(&state, None, false);
                     retrieval_generation = retrieval_generation.wrapping_add(1);
                     queued_retrieval = None;
                     translation_generation = translation_generation.wrapping_add(1);
@@ -499,6 +541,7 @@ fn run_worker(
                         translation_started_for_track = false;
                         retrieval_generation = retrieval_generation.wrapping_add(1);
                         queued_retrieval = Some((track.clone(), retrieval_generation));
+                        set_track_metadata(&state, Some(&track), true);
                         current_track = Some(track);
                         synchronized_lines.clear();
                         vocal_intervals.clear();
@@ -553,6 +596,7 @@ fn run_worker(
                             translated_lines = None;
                             translation_started_for_track = false;
                             *track = observed_track;
+                            set_track_metadata(&state, Some(track), true);
                             retrieval_generation = retrieval_generation.wrapping_add(1);
                             queued_retrieval = Some((track.clone(), retrieval_generation));
                             synchronized_lines.clear();
@@ -709,7 +753,9 @@ fn run_worker(
                                     ));
                                 }
                                 fallback_clock_active = true;
-                                trusted_position.saturating_add(trusted_at.elapsed())
+                                if player.get_playback_status().ok() == Some(PlaybackStatus::Playing) {
+                                    trusted_position.saturating_add(trusted_at.elapsed())
+                                } else { trusted_position }
                             } else {
                                 reported_position
                             }
@@ -731,7 +777,7 @@ fn run_worker(
                                 position: effective_position,
                                 duration: track.duration,
                                 observed_at: now,
-                                playing: true,
+                                playing: player.get_playback_status().ok() == Some(PlaybackStatus::Playing),
                             });
                         }
                     }
@@ -797,6 +843,7 @@ fn run_worker(
         thread::sleep(Duration::from_millis(10));
     }
 
+    set_track_metadata(&state, None, false);
     if let Some(cancel) = translation_cancel { cancel.store(true, Ordering::Release); }
     if let Ok(mut snapshot) = state.lock() { snapshot.progress = None; }
                     publish_state(&state, LyricsState::default());
@@ -824,6 +871,7 @@ fn publish_display_line_state(
         return;
     };
     publish_state(state, LyricsState {
+        track_metadata: None,
         previous: active.checked_sub(1).and_then(|i| primary.get(i)).map(|l| l.text.clone()),
         current: primary.get(active).map(|l| l.text.clone()),
         next: primary.get(active + 1).map(|l| l.text.clone()),
@@ -835,9 +883,24 @@ fn publish_display_line_state(
     });
 }
 
+fn set_track_metadata(
+    state: &Arc<Mutex<LyricsState>>,
+    track: Option<&TrackInformation>,
+    playing: bool,
+) {
+    if let Ok(mut snapshot) = state.lock() {
+        snapshot.track_metadata = track.map(|track| LyricsTrackMetadata {
+            artist: track.identity.artist.clone(),
+            title: track.identity.title.clone(),
+            playing,
+        });
+    }
+}
+
 fn publish_state(state: &Arc<Mutex<LyricsState>>, next_state: LyricsState) {
     if let Ok(mut state) = state.lock() {
         let mut next_state = next_state;
+        next_state.track_metadata = state.track_metadata.clone();
         next_state.progress = state.progress.take();
         next_state.seekable = state.seekable;
         next_state.can_go_previous = state.can_go_previous;

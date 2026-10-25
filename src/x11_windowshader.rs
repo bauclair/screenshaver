@@ -87,7 +87,8 @@ struct X11WindowshaderWindow {
     normal_height: i32,
     maximized: bool,
     seek_cursor: xlib::Cursor,
-    seek_cursor_active: bool,
+    hand_cursor: xlib::Cursor,
+    active_cursor: u8,
 }
 
 #[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
@@ -335,7 +336,8 @@ fn create_windowshader_window(
             maximized: saved.maximized,
             // X cursorfont glyph 108: sb_h_double_arrow.
             seek_cursor: xlib::XCreateFontCursor(display, 108),
-            seek_cursor_active: false,
+            hand_cursor: xlib::XCreateFontCursor(display, 60),
+            active_cursor: 0,
         })
     }
 }
@@ -347,6 +349,9 @@ fn destroy_windowshader_window(
     unsafe {
         let display = connection.display();
 
+        if wallpaper_window.hand_cursor != 0 {
+            xlib::XFreeCursor(display, wallpaper_window.hand_cursor);
+        }
         if wallpaper_window.seek_cursor != 0 {
             xlib::XFreeCursor(display, wallpaper_window.seek_cursor);
         }
@@ -570,16 +575,44 @@ fn lyrics_seek_fraction(
     Some(((x - i64::from(left) - inset) as f64 / track as f64).clamp(0.0, 1.0))
 }
 
-fn update_seek_cursor(display: *mut xlib::Display, window: &mut X11WindowshaderWindow, active: bool) {
-    if window.seek_cursor_active == active || window.window == 0 { return; }
+// 0 = default, 1 = horizontal seek, 2 = enabled navigation hand.
+fn update_lyrics_cursor(display: *mut xlib::Display, window: &mut X11WindowshaderWindow, desired: u8) {
+    let desired = match desired {
+        1 if window.seek_cursor != 0 => 1,
+        2 if window.hand_cursor != 0 => 2,
+        _ => 0,
+    };
+    if window.active_cursor == desired || window.window == 0 { return; }
     unsafe {
-        if active && window.seek_cursor != 0 {
-            xlib::XDefineCursor(display, window.window, window.seek_cursor);
-        } else {
-            xlib::XUndefineCursor(display, window.window);
+        match desired {
+            1 => xlib::XDefineCursor(display, window.window, window.seek_cursor),
+            2 => xlib::XDefineCursor(display, window.window, window.hand_cursor),
+            _ => xlib::XUndefineCursor(display, window.window),
+        };
+    }
+    window.active_cursor = desired;
+}
+
+fn lyrics_cursor_at(engine: &FrameRenderEngine, runtime: &WallpaperRuntime, x: i32, y: i32) -> u8 {
+    if let Some((left, top, width, height)) = engine.lyrics_panel_bounds() {
+        let x = i64::from(x);
+        let y = i64::from(y);
+        let left = i64::from(left);
+        let top = i64::from(top);
+        let width = i64::from(width);
+        let height = i64::from(height);
+        if x >= left && x < left + width && y >= top && y < top + height {
+            let inset = i64::from(engine.lyrics_navigation_width());
+            if inset > 0 && (x < left + inset || x >= left + width - inset) {
+                let previous = x < left + inset;
+                let enabled = runtime.lyrics_navigation_handle.is_some()
+                    && runtime.lyrics_state.as_ref().and_then(|state| state.lock().ok())
+                        .is_some_and(|state| if previous { state.can_go_previous } else { state.can_go_next });
+                return if enabled { 2 } else { 0 };
+            }
         }
     }
-    window.seek_cursor_active = active && window.seek_cursor != 0;
+    if seek_enabled(runtime) && lyrics_seek_fraction(engine, x, y).is_some() { 1 } else { 0 }
 }
 
 fn refresh_seek_cursor(
@@ -599,8 +632,7 @@ fn refresh_seek_cursor(
         let mut mask = 0;
         let inside = xlib::XQueryPointer(display, window.window, &mut root, &mut child,
             &mut root_x, &mut root_y, &mut x, &mut y, &mut mask) != 0;
-        update_seek_cursor(display, window, inside && seek_enabled(runtime)
-            && lyrics_seek_fraction(engine, x, y).is_some());
+        update_lyrics_cursor(display, window, if inside { lyrics_cursor_at(engine, runtime, x, y) } else { 0 });
     }
 }
 
@@ -631,25 +663,35 @@ fn drain_x11_events(
                 xlib::MotionNotify => {
                     let e = event.motion;
                     if e.window == window.window {
-                        update_seek_cursor(display, window, seek_enabled(runtime)
-                            && lyrics_seek_fraction(engine, e.x, e.y).is_some());
+                        update_lyrics_cursor(display, window, lyrics_cursor_at(engine, runtime, e.x, e.y));
                     }
                 }
                 xlib::EnterNotify => {
                     let e = event.crossing;
                     if e.window == window.window {
-                        update_seek_cursor(display, window, seek_enabled(runtime)
-                            && lyrics_seek_fraction(engine, e.x, e.y).is_some());
+                        update_lyrics_cursor(display, window, lyrics_cursor_at(engine, runtime, e.x, e.y));
                     }
                 }
                 xlib::LeaveNotify => {
                     if event.crossing.window == window.window {
-                        update_seek_cursor(display, window, false);
+                        update_lyrics_cursor(display, window, 0);
                     }
                 }
                 xlib::ButtonPress => {
                     let e = event.button;
-                    if e.window == window.window && e.button == 1 {
+                    if e.window == window.window && e.button == 3 {
+                        if let Some((left, top, width, height)) = engine.lyrics_panel_bounds() {
+                            if i64::from(e.x) >= i64::from(left)
+                                && i64::from(e.x) < i64::from(left) + i64::from(width)
+                                && i64::from(e.y) >= i64::from(top)
+                                && i64::from(e.y) < i64::from(top) + i64::from(height)
+                            {
+                                if let Some(handle) = runtime.lyrics_navigation_handle.as_ref() {
+                                    let _ = handle.toggle_playback();
+                                }
+                            }
+                        }
+                    } else if e.window == window.window && e.button == 1 {
                         if let Some((left, top, width, height)) = engine.lyrics_panel_bounds() {
                             let inset = engine.lyrics_navigation_width();
                             let inside = e.x >= left as i32 && e.x < (left + width) as i32
