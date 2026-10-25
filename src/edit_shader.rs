@@ -892,6 +892,31 @@ pub fn run_wallpaper_only_prepaused(
 }
 
 
+// The resident tray runtime has already coordinated presentation pauses before
+// entering this path. Reuse that ownership instead of requesting a second
+// pause acknowledgment from a suspended renderer.
+pub fn run_windowshader_only_prepaused(
+    shader_path: PathBuf,
+    policy_id: i64,
+    audio_bands: Option<crate::audio_backend::SharedAudioBands>,
+) -> Result<(), String> {
+    run_paths(
+        vec![shader_path],
+        None,
+        None,
+        None,
+        None,
+        None,
+        EditorTargetRestriction::Unrestricted,
+        Some(crate::editor_layout::PolicyTarget::Windowshader),
+        Some(policy_id),
+        None,
+        audio_bands,
+        false,
+    )
+}
+
+
 pub fn run_screensaver_only(
     shader_path: PathBuf,
     policy_id: i64,
@@ -954,9 +979,23 @@ impl Drop for ControlCenterStatusGuard {
     }
 }
 
+// Tray presentation has already been paused by the resident coordinator.
+// Do not acquire another pause transaction from inside Control Center.
+pub fn run_empty_session_prepaused(
+    audio_bands: Option<crate::audio_backend::SharedAudioBands>,
+) -> Result<(), String> {
+    run_empty_session_impl(audio_bands, false)
+}
+
 fn run_empty_session(
-    audio_bands:
-    Option<crate::audio_backend::SharedAudioBands>,
+    audio_bands: Option<crate::audio_backend::SharedAudioBands>,
+) -> Result<(), String> {
+    run_empty_session_impl(audio_bands, true)
+}
+
+fn run_empty_session_impl(
+    audio_bands: Option<crate::audio_backend::SharedAudioBands>,
+    acquire_presentation_pause: bool,
 ) -> Result<(), String> {
     let _renderer_status_guard = ControlCenterStatusGuard::begin();
 
@@ -966,8 +1005,11 @@ fn run_empty_session(
         false
     );
 
-    let presentation_pause_guards =
-    PresentationPauseGuards::acquire()?;
+    let presentation_pause_guards = if acquire_presentation_pause {
+        Some(PresentationPauseGuards::acquire()?)
+    } else {
+        None
+    };
 
     let config_result =
     crate::load_config::load_config(
@@ -6990,7 +7032,7 @@ process_export_destination_browse_request(
 
                                                                                     let selected_target_available =
                                                                                     match policy_target {
-                                                                                        crate::editor_layout::PolicyTarget::Windowshader => { false },
+                                                                                        crate::editor_layout::PolicyTarget::Windowshader => { true },
                                                                                         crate::editor_layout::PolicyTarget::Screensaver => {
                                                                                             screensaver_target_available
                                                                                         }

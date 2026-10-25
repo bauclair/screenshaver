@@ -59,6 +59,16 @@ pub struct X11WindowshaderBackend {
     connection: X11Connection,
 }
 
+// Clear only the Windowshader tray record when this backend exits, including
+// early errors during GLX initialization. Wallpaper status is independent.
+struct WindowshaderTrayLifetime(crate::tray_icon::TrayStatusControl);
+
+impl Drop for WindowshaderTrayLifetime {
+    fn drop(&mut self) {
+        self.0.set_windowshader_disabled();
+    }
+}
+
 fn diagnostic(message: &str) {
     println!("{message}");
 }
@@ -153,6 +163,61 @@ fn set_atom_property(
             values.as_ptr() as *const u8,
             values.len() as i32,
         );
+    }
+}
+
+// Set both the EWMH UTF-8 title and the legacy WM_NAME fallback.
+// The latter is kept for older X11 window managers.
+fn set_windowshader_title(display: *mut xlib::Display, window: xlib::Window, title: &str) {
+    if window == 0 { return; }
+    let Ok(utf8_atom) = intern_atom(display, "UTF8_STRING") else { return; };
+    let Ok(name_atom) = intern_atom(display, "_NET_WM_NAME") else { return; };
+    unsafe {
+        xlib::XChangeProperty(display, window, name_atom, utf8_atom, 8,
+            xlib::PropModeReplace, title.as_ptr(), title.len() as i32);
+        // XStoreName uses the legacy encoding; ASCII fallback avoids mangling
+        // the music-note character in older window managers.
+        let fallback = title.replace('♫', "-");
+        if let Ok(name) = CString::new(fallback) {
+            xlib::XStoreName(display, window, name.as_ptr());
+        }
+        xlib::XFlush(display);
+    }
+}
+
+fn windowshader_title(
+    policy_name: &str,
+    lyrics: Option<&crate::manage_lyrics::SharedLyricsState>,
+    monitor: Option<&crate::manage_lyrics::WindowTitleMusicMonitor>,
+) -> String {
+    let mut title = format!("P: {}", policy_name);
+    let metadata = lyrics.and_then(|state| state.lock().ok())
+        .and_then(|state| state.track_metadata.clone())
+        .or_else(|| monitor.and_then(|monitor| monitor.current_metadata()));
+    if let Some(track) = metadata {
+        if !track.artist.trim().is_empty() && !track.title.trim().is_empty() {
+            title.push_str("    ♫  ");
+            title.push_str(&track.artist);
+            title.push_str(" - ");
+            title.push_str(&track.title);
+        }
+    }
+    title
+}
+
+fn refresh_windowshader_title(
+    display: *mut xlib::Display,
+    window: xlib::Window,
+    engine: &FrameRenderEngine,
+    runtime: &WallpaperRuntime,
+    monitor: Option<&crate::manage_lyrics::WindowTitleMusicMonitor>,
+    last_title: &mut Option<String>,
+) {
+    let policy_name = engine.current_metadata().policy_name;
+    let title = windowshader_title(&policy_name, runtime.lyrics_state.as_ref(), monitor);
+    if last_title.as_ref() != Some(&title) {
+        set_windowshader_title(display, window, &title);
+        *last_title = Some(title);
     }
 }
 
@@ -275,8 +340,7 @@ fn create_windowshader_window(
             diagnostic("Applying normal Windowshader window properties...");
             let normal = intern_atom(display, "_NET_WM_WINDOW_TYPE_NORMAL")?;
             set_atom_property(display, window, wm_type, &[normal]);
-            let title = CString::new("Screenshaver Windowshader").unwrap();
-            xlib::XStoreName(display, window, title.as_ptr());
+            set_windowshader_title(display, window, "P: Screenshaver Windowshader");
 
             // When a previous Windowshader position exists, tell the window
             // manager that the restored coordinates are intentional. Without
@@ -510,9 +574,9 @@ fn notify_wallpaper_events(
         match event {
             FrameRenderEvent::ShaderChanged(metadata) => {
                 if let Some(shader_path) = metadata.shader_path.clone() {
-                    tray_status.set_active(
+                    tray_status.set_windowshader_active(
                         metadata.policy_id,
-                        metadata.shader_name.clone(),
+                        metadata.policy_name.clone(),
                         shader_path,
                     );
                 }
@@ -757,12 +821,31 @@ fn run_window_loop(
     let mut status_panel = crate::display_overlay::RendererStatusPanel::new();
 
 
+    let title_monitor = if runtime.lyrics_state.is_none() {
+        match crate::manage_lyrics::WindowTitleMusicMonitor::start() {
+            Ok(monitor) => Some(monitor),
+            Err(error) => {
+                crate::logger::warning(&crate::locate_paths::runtime_log_path(), &error);
+                None
+            }
+        }
+    } else { None };
+    let mut last_title: Option<String> = None;
+    let mut last_title_check = Instant::now() - Duration::from_secs(1);
+    refresh_windowshader_title(display, wallpaper_window.window, engine, runtime,
+        title_monitor.as_ref(), &mut last_title);
+
     let mut paused = false;
     let mut first_frame_presented = false;
     while running.load(Ordering::SeqCst) {
         drain_x11_events(display, wallpaper_window, running, engine, runtime);
         refresh_seek_cursor(display, wallpaper_window, engine, runtime);
         if !running.load(Ordering::SeqCst) { break; }
+        if last_title_check.elapsed() >= Duration::from_millis(250) {
+            refresh_windowshader_title(display, wallpaper_window.window, engine, runtime,
+                title_monitor.as_ref(), &mut last_title);
+            last_title_check = Instant::now();
+        }
 
         if let Some(reload) =
             control.take_policy_reload()
@@ -823,6 +906,10 @@ fn run_window_loop(
             status_heartbeat = Instant::now();
         }
 
+        // The render call may have rotated to a different policy.
+        refresh_windowshader_title(display, wallpaper_window.window, engine, runtime,
+            title_monitor.as_ref(), &mut last_title);
+
         notify_wallpaper_events(
             notifications_enabled,
             status,
@@ -882,7 +969,8 @@ impl WallpaperBackend for X11WindowshaderBackend {
             return Err("X11 Windowshader backend requires Windowed display format".to_string());
         }
         runtime.tray_status
-            .set_starting();
+            .set_windowshader_starting();
+        let _tray_lifetime = WindowshaderTrayLifetime(runtime.tray_status.clone());
 
 
         let display = self.connection.display();
@@ -973,9 +1061,9 @@ impl WallpaperBackend for X11WindowshaderBackend {
                 engine.current_metadata();
 
             if let Some(shader_path) = initial_metadata.shader_path.clone() {
-                runtime.tray_status.set_active(
+                runtime.tray_status.set_windowshader_active(
                     initial_metadata.policy_id,
-                    initial_metadata.shader_name.clone(),
+                    initial_metadata.policy_name.clone(),
                     shader_path,
                 );
             }

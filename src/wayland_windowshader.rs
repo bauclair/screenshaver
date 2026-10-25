@@ -500,6 +500,15 @@ fn finish_windowshader_surface(
     Ok(())
 }
 
+// Renderer-owned status cleanup. Never clear the other presentation pipeline.
+struct WindowshaderTrayStatusCleanup(crate::tray_icon::TrayStatusControl);
+
+impl Drop for WindowshaderTrayStatusCleanup {
+    fn drop(&mut self) {
+        self.0.set_windowshader_disabled();
+    }
+}
+
 pub fn run_egl_windowed_surface(
     mut shader_manager: crate::manage_shader::ShaderManager,
     wallpaper_directory: &Path,
@@ -508,6 +517,9 @@ pub fn run_egl_windowed_surface(
     running: Arc<AtomicBool>,
     control: crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
 ) -> Result<(), String> {
+    // Keep the active-policy record accurate on normal exit and early errors.
+    let _tray_status_cleanup = WindowshaderTrayStatusCleanup(runtime.tray_status.clone());
+
 
     const WINDOWED_TARGET_ID: u32 = 0;
     let saved_geometry = crate::wayland_windowshader::load_windowshader_geometry();
@@ -522,7 +534,7 @@ pub fn run_egl_windowed_surface(
 
 
     runtime.tray_status
-        .set_starting();
+        .set_windowshader_starting();
 
 
     let active_shader =
@@ -537,9 +549,9 @@ pub fn run_egl_windowed_surface(
     );
 
 
-    runtime.tray_status.set_active(
+    runtime.tray_status.set_windowshader_active(
         active_shader.policy_id,
-        active_shader.shader_name.clone(),
+        active_shader.policy_name.clone(),
         active_shader.source_path.clone(),
     );
 

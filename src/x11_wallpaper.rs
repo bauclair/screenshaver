@@ -57,6 +57,15 @@ pub struct X11WallpaperBackend {
     connection: X11Connection,
 }
 
+// Clear the Wallpaper tray record on normal exit and early initialization errors.
+struct WallpaperTrayLifetime(crate::tray_icon::TrayStatusControl);
+
+impl Drop for WallpaperTrayLifetime {
+    fn drop(&mut self) {
+        self.0.set_wallpaper_disabled();
+    }
+}
+
 fn diagnostic(message: &str) {
     println!("{message}");
 }
@@ -492,7 +501,7 @@ fn notify_wallpaper_events(
                 if let Some(shader_path) = metadata.shader_path.clone() {
                     tray_status.set_active(
                         metadata.policy_id,
-                        metadata.shader_name.clone(),
+                        metadata.policy_name.clone(),
                         shader_path,
                     );
                 }
@@ -717,6 +726,7 @@ impl WallpaperBackend for X11WallpaperBackend {
         }
         runtime.tray_status
             .set_starting();
+        let _tray_lifetime = WallpaperTrayLifetime(runtime.tray_status.clone());
 
 
         let display = self.connection.display();
@@ -809,7 +819,7 @@ impl WallpaperBackend for X11WallpaperBackend {
             if let Some(shader_path) = initial_metadata.shader_path.clone() {
                 runtime.tray_status.set_active(
                     initial_metadata.policy_id,
-                    initial_metadata.shader_name.clone(),
+                    initial_metadata.policy_name.clone(),
                     shader_path,
                 );
             }

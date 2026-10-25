@@ -61,6 +61,83 @@ impl LyricsState {
 
 pub type SharedLyricsState = Arc<Mutex<LyricsState>>;
 
+/// Lightweight title-only MPRIS observer. Used only when the production lyrics
+/// manager is disabled, so the two observers never compete for player selection.
+/// D-Bus operations stay on the worker thread, never on the render thread.
+pub struct WindowTitleMusicMonitor {
+    state: Arc<Mutex<Option<LyricsTrackMetadata>>>,
+    running: Arc<AtomicBool>,
+    worker: Option<JoinHandle<()>>,
+}
+
+impl WindowTitleMusicMonitor {
+    pub fn start() -> Result<Self, String> {
+        PlayerFinder::new().map_err(|error| format!(
+            "Unable to connect to session D-Bus for Windowshader music metadata: {}", error
+        ))?;
+        let state = Arc::new(Mutex::new(None));
+        let running = Arc::new(AtomicBool::new(true));
+        let worker_state = Arc::clone(&state);
+        let worker_running = Arc::clone(&running);
+        let worker = thread::Builder::new()
+            .name("screenshaver-title-mpris".into())
+            .spawn(move || {
+                let mut active_player: Option<Player> = None;
+                while worker_running.load(Ordering::Acquire) {
+                    // Follow the same playing-player preference as LyricsManager.
+                    if let Some(player) = active_player.as_ref() {
+                        match player.get_playback_status() {
+                            Ok(PlaybackStatus::Paused)
+                                if matches!(find_playing_player(), Ok(Some(ref candidate))
+                                    if candidate.identity() != player.identity()) => {
+                                active_player = None;
+                                if let Ok(mut snapshot) = worker_state.lock() { *snapshot = None; }
+                            }
+                            Ok(PlaybackStatus::Playing) | Ok(PlaybackStatus::Paused) => {
+                                let playing = player.get_playback_status().ok()
+                                    == Some(PlaybackStatus::Playing);
+                                if let Ok(metadata) = player.get_metadata() {
+                                    let artist = metadata.artists()
+                                        .and_then(|artists| artists.first().copied())
+                                        .unwrap_or("").to_string();
+                                    let title = metadata.title().unwrap_or("").to_string();
+                                    if let Ok(mut snapshot) = worker_state.lock() {
+                                        *snapshot = Some(LyricsTrackMetadata { artist, title, playing });
+                                    }
+                                }
+                            }
+                            _ => {
+                                active_player = None;
+                                if let Ok(mut snapshot) = worker_state.lock() { *snapshot = None; }
+                            }
+                        }
+                    }
+                    if active_player.is_none() {
+                        if let Ok(Some(player)) = find_playing_player() {
+                            active_player = Some(player);
+                        }
+                    }
+                    thread::sleep(METADATA_POLL_INTERVAL);
+                }
+                if let Ok(mut snapshot) = worker_state.lock() { *snapshot = None; }
+            })
+            .map_err(|error| format!("Unable to start Windowshader music observer: {}", error))?;
+        Ok(Self { state, running, worker: Some(worker) })
+    }
+
+    pub fn current_metadata(&self) -> Option<LyricsTrackMetadata> {
+        self.state.lock().ok().and_then(|snapshot| snapshot.clone())
+    }
+}
+
+impl Drop for WindowTitleMusicMonitor {
+    fn drop(&mut self) {
+        self.running.store(false, Ordering::Release);
+        if let Some(worker) = self.worker.take() { let _ = worker.join(); }
+    }
+}
+
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct VocalTimingState {
     pub available: bool,
@@ -445,9 +522,51 @@ fn run_worker(
                         }
                     }
                 }
-                // Preserve the selected player and its lyric state while paused.
-                // Otherwise a second right-click could not resume playback.
+                // Retain paused playback controls unless another MPRIS player is
+                // actively playing. A paused Spotify instance must not monopolize
+                // lyrics after kew starts playback.
                 Ok(PlaybackStatus::Paused) => {
+                    if last_player_scan.elapsed() >= PLAYER_SCAN_INTERVAL {
+                        last_player_scan = Instant::now();
+                        match find_playing_player() {
+                            Ok(Some(candidate)) if candidate.identity() != player.identity() => {
+                                log_information(&format!(
+                                    "[LYRICS] Handing off from paused '{}' to playing '{}'",
+                                    player.identity(), candidate.identity()
+                                ));
+                                active_player = None;
+                                current_track = None;
+                                retrieval_generation = retrieval_generation.wrapping_add(1);
+                                queued_retrieval = None;
+                                translation_generation = translation_generation.wrapping_add(1);
+                                if let Some(cancel) = translation_cancel.take() {
+                                    cancel.store(true, Ordering::Release);
+                                }
+                                translated_lines = None;
+                                translation_started_for_track = false;
+                                synchronized_lines.clear();
+                                vocal_intervals.clear();
+                                last_line_index = None;
+                                last_vocal_interval_index = None;
+                                last_trusted_position = None;
+                                fallback_clock_active = false;
+                                set_track_metadata(&state, None, false);
+                                if let Ok(mut snapshot) = state.lock() {
+                                    snapshot.progress = None;
+                                    snapshot.seekable = false;
+                                }
+                                publish_state(&state, LyricsState::default());
+                                publish_vocal_timing_state(&vocal_timing_state, VocalTimingState::default());
+                                // Allow the existing discovery/initialization path to
+                                // load the new player's track and start retrieval.
+                                last_player_scan = Instant::now() - PLAYER_SCAN_INTERVAL;
+                            }
+                            Ok(_) => {}
+                            Err(error) => log_warning(&format!(
+                                "[LYRICS] Paused-player handoff scan failed: {}", error
+                            )),
+                        }
+                    }
                     if let Ok(mut snapshot) = state.lock() {
                         if let Some(metadata) = snapshot.track_metadata.as_mut() {
                             metadata.playing = false;

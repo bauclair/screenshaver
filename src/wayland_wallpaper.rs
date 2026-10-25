@@ -1033,6 +1033,15 @@ pub(crate) fn print_active_wallpaper_shader(
 }
 
 
+// Renderer-owned status cleanup. Never clear the other presentation pipeline.
+struct WallpaperTrayStatusCleanup(crate::tray_icon::TrayStatusControl);
+
+impl Drop for WallpaperTrayStatusCleanup {
+    fn drop(&mut self) {
+        self.0.set_wallpaper_disabled();
+    }
+}
+
 pub fn run_egl_background_surface(
     mut shader_manager: crate::manage_shader::ShaderManager,
     wallpaper_directory: &Path,
@@ -1041,6 +1050,9 @@ pub fn run_egl_background_surface(
     running: Arc<AtomicBool>,
     control: crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
 ) -> Result<(), String> {
+    // Keep the active-policy record accurate on normal exit and early errors.
+    let _tray_status_cleanup = WallpaperTrayStatusCleanup(runtime.tray_status.clone());
+
 
     runtime.tray_status
         .set_starting();
@@ -1060,7 +1072,7 @@ pub fn run_egl_background_surface(
 
     runtime.tray_status.set_active(
         active_shader.policy_id,
-        active_shader.shader_name.clone(),
+        active_shader.policy_name.clone(),
         active_shader.source_path.clone(),
     );
 

@@ -19,6 +19,8 @@ const ICON_NAME: &str = "screenshaver";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrayCommand {
     Edit,
+    EditWallpaper,
+    EditWindowshader,
     Restart,
     Stop,
 }
@@ -60,6 +62,7 @@ impl ActiveWallpaperInfo {
 #[derive(Clone)]
 pub struct TrayStatusControl {
     wallpaper_status: Arc<RwLock<WallpaperTrayStatus>>,
+    windowshader_status: Arc<RwLock<WallpaperTrayStatus>>,
     wallpaper_display_enabled: bool,
     tray_handle: Arc<Mutex<Option<TrayHandle>>>,
 }
@@ -75,6 +78,7 @@ impl std::fmt::Debug for TrayStatusControl {
                 "wallpaper_status",
                 &self.wallpaper_label(),
             )
+            .field("windowshader_status", &self.active_windowshader())
             .finish_non_exhaustive()
     }
 }
@@ -98,6 +102,7 @@ impl TrayStatusControl {
                         wallpaper_status
                     )
                 ),
+            windowshader_status: Arc::new(RwLock::new(WallpaperTrayStatus::Disabled)),
             wallpaper_display_enabled,
             tray_handle:
                 Arc::new(
@@ -129,6 +134,60 @@ impl TrayStatusControl {
                 )
             )
         );
+    }
+
+    /// Target-specific Wallpaper publication. Legacy setters remain aliases for
+    /// Wallpaper until all rendering call sites have been migrated.
+    pub fn set_wallpaper_starting(&self) { self.set_starting(); }
+
+    pub fn set_wallpaper_active(
+        &self,
+        policy_id: i64,
+        display_name: impl Into<String>,
+        path: impl Into<PathBuf>,
+    ) {
+        self.set_active(policy_id, display_name, path);
+    }
+
+    pub fn set_wallpaper_disabled(&self) { self.set_disabled(); }
+
+    /// Windowshader publication never modifies the Wallpaper policy record.
+    pub fn set_windowshader_starting(&self) {
+        self.set_windowshader_status(WallpaperTrayStatus::Starting);
+    }
+
+    pub fn set_windowshader_active(
+        &self,
+        policy_id: i64,
+        display_name: impl Into<String>,
+        path: impl Into<PathBuf>,
+    ) {
+        self.set_windowshader_status(WallpaperTrayStatus::Active(
+            ActiveWallpaperInfo::new(policy_id, display_name, path),
+        ));
+    }
+
+    pub fn set_windowshader_disabled(&self) {
+        self.set_windowshader_status(WallpaperTrayStatus::Disabled);
+    }
+
+    pub fn active_windowshader(&self) -> Option<ActiveWallpaperInfo> {
+        let status = match self.windowshader_status.read() {
+            Ok(status) => status.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        };
+        match status {
+            WallpaperTrayStatus::Active(info) => Some(info),
+            WallpaperTrayStatus::Disabled | WallpaperTrayStatus::Starting => None,
+        }
+    }
+
+    fn set_windowshader_status(&self, status: WallpaperTrayStatus) {
+        match self.windowshader_status.write() {
+            Ok(mut current) => *current = status,
+            Err(poisoned) => *poisoned.into_inner() = status,
+        }
+        self.refresh_tray();
     }
 
     pub fn active_wallpaper(
@@ -212,6 +271,20 @@ impl TrayStatusControl {
             let _ = handle.update(
                 |_tray| {}
             );
+        }
+    }
+
+    pub(crate) fn windowshader_label(&self) -> String {
+        let status = match self.windowshader_status.read() {
+            Ok(status) => status.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        };
+        match status {
+            WallpaperTrayStatus::Disabled =>
+                crate::manage_localization::runtime_text("tray.status.disabled"),
+            WallpaperTrayStatus::Starting =>
+                crate::manage_localization::runtime_text("tray.status.starting"),
+            WallpaperTrayStatus::Active(info) => info.display_name,
         }
     }
 
@@ -386,31 +459,38 @@ impl Tray for ScreenshaverTray {
                     format!(
                         "{}: {}",
                         crate::manage_localization::runtime_text("target.windowshader"),
-                        enabled_status(
-                            self.status.windowshader_enabled
-                        ),
+                        self.status.wallpaper.windowshader_label(),
                     ),
                 enabled: false,
                 ..Default::default()
             }
             .into(),
             StandardItem {
-                label:
-                    crate::manage_localization::runtime_text("tray.menu.edit"),
-                icon_name:
-                    "document-edit".into(),
-                enabled: true,
-                activate:
-                    Box::new(
-                        |tray: &mut Self| {
-                            tray.send_command(
-                                TrayCommand::Edit
-                            );
-                        }
-                    ),
+                label: crate::manage_localization::runtime_text("tray.menu.edit"),
+                icon_name: "document-edit".into(),
+                activate: Box::new(|tray: &mut Self| {
+                    tray.send_command(TrayCommand::Edit);
+                }),
                 ..Default::default()
-            }
-            .into(),
+            }.into(),
+            StandardItem {
+                label: "Edit current wallpaper".into(),
+                icon_name: "document-edit".into(),
+                enabled: self.status.wallpaper.active_wallpaper().is_some(),
+                activate: Box::new(|tray: &mut Self| {
+                    tray.send_command(TrayCommand::EditWallpaper);
+                }),
+                ..Default::default()
+            }.into(),
+            StandardItem {
+                label: "Edit current windowshader".into(),
+                icon_name: "document-edit".into(),
+                enabled: self.status.wallpaper.active_windowshader().is_some(),
+                activate: Box::new(|tray: &mut Self| {
+                    tray.send_command(TrayCommand::EditWindowshader);
+                }),
+                ..Default::default()
+            }.into(),
             StandardItem {
                 label:
                     crate::manage_localization::runtime_text("tray.menu.restart"),

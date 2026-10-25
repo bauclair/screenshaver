@@ -31,11 +31,13 @@ use wayland_client::Proxy;
 fn windowshader_native_title(
     policy_name: &str,
     shared_lyrics: Option<&crate::manage_lyrics::SharedLyricsState>,
+    title_monitor: Option<&crate::manage_lyrics::WindowTitleMusicMonitor>,
 ) -> String {
     let mut title = format!("P: {}", policy_name);
     let metadata = shared_lyrics
         .and_then(|shared| shared.lock().ok())
         .and_then(|state| state.track_metadata.clone());
+    let metadata = metadata.or_else(|| title_monitor.and_then(|monitor| monitor.current_metadata()));
     if let Some(track) = metadata {
         if !track.artist.trim().is_empty() && !track.title.trim().is_empty() {
             title.push_str("    ♫  ");
@@ -1915,6 +1917,18 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
     let mut wallpaper_callbacks = WallpaperCallbackController::new();
     // Windowshader-only native title cache. This is not rendering state.
     let mut windowshader_last_title: Option<String> = None;
+    // LyricsManager already monitors MPRIS when lyrics are enabled. Start a
+    // lightweight title-only observer only when no lyrics state is provided.
+    let windowshader_title_monitor = if windowed_rotation && runtime.lyrics_state.is_none() {
+        match crate::manage_lyrics::WindowTitleMusicMonitor::start() {
+            Ok(monitor) => Some(monitor),
+            Err(error) => {
+                crate::logger::warning(&crate::locate_paths::runtime_log_path(), &error);
+                None
+            }
+        }
+    } else { None };
+
 
 
 
@@ -1977,6 +1991,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 let next_title = windowshader_native_title(
                     &frame_runtime.shader.current.policy_name,
                     runtime.lyrics_state.as_ref(),
+                    windowshader_title_monitor.as_ref(),
                 );
                 if windowshader_last_title.as_deref() != Some(next_title.as_str()) {
                     for target in native_targets.iter() {
@@ -2255,6 +2270,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                     let next_title = windowshader_native_title(
                                         &frame_runtime.shader.current.policy_name,
                                         runtime.lyrics_state.as_ref(),
+                    windowshader_title_monitor.as_ref(),
                                     );
                                     for target in native_targets.iter() {
                                         if let Some(toplevel) = target.xdg_toplevel.as_ref() {
@@ -2330,11 +2346,19 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                 }
 
 
-                                runtime.tray_status.set_active(
-                                    frame_runtime.shader.current.policy_id,
-                                    frame_runtime.shader.current.shader_name.clone(),
-                                    frame_runtime.shader.current.source_path.clone(),
-                                );
+                                if windowed_rotation {
+                                    runtime.tray_status.set_windowshader_active(
+                                        frame_runtime.shader.current.policy_id,
+                                        frame_runtime.shader.current.policy_name.clone(),
+                                        frame_runtime.shader.current.source_path.clone(),
+                                    );
+                                } else {
+                                    runtime.tray_status.set_wallpaper_active(
+                                        frame_runtime.shader.current.policy_id,
+                                        frame_runtime.shader.current.policy_name.clone(),
+                                        frame_runtime.shader.current.source_path.clone(),
+                                    );
+                                }
 
 
                                 shader_manager.record_rendered_policy(

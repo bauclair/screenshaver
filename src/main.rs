@@ -2535,7 +2535,7 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
             }
 
 
-            Ok(crate::tray_icon::TrayCommand::Edit) => {
+            Ok(command @ (crate::tray_icon::TrayCommand::Edit | crate::tray_icon::TrayCommand::EditWallpaper | crate::tray_icon::TrayCommand::EditWindowshader)) => {
 
                 println!(
                     "[TRAY] Control Center requested."
@@ -2546,8 +2546,11 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
                     "[TRAY] Control Center requested",
                 );
 
-                let active_wallpaper =
-                    tray_status.active_wallpaper();
+                let active_policy = match command {
+                    crate::tray_icon::TrayCommand::EditWallpaper => tray_status.active_wallpaper(),
+                    crate::tray_icon::TrayCommand::EditWindowshader => tray_status.active_windowshader(),
+                    _ => None,
+                };
 
                 // Always coordinate both renderers, even when tray metadata
                 // does not identify an active Wallpaper policy.
@@ -2563,21 +2566,21 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
                                 .to_string()
                         )
                     } else {
-                        match active_wallpaper {
-                            Some(active_wallpaper) => {
+                        match (command, active_policy) {
+                            (crate::tray_icon::TrayCommand::Edit, _) => {
+                                crate::edit_shader::run_empty_session_prepaused(audio_bands.clone())
+                            }
+                            (crate::tray_icon::TrayCommand::EditWallpaper, Some(active)) => {
                                 crate::edit_shader::run_wallpaper_only_prepaused(
-                                    active_wallpaper.path,
-                                    active_wallpaper.policy_id,
-                                    audio_bands.clone(),
+                                    active.path, active.policy_id, audio_bands.clone(),
                                 )
                             }
-
-                            None => {
-                                crate::edit_shader::run(
-                                    None,
-                                    audio_bands.clone(),
+                            (crate::tray_icon::TrayCommand::EditWindowshader, Some(active)) => {
+                                crate::edit_shader::run_windowshader_only_prepaused(
+                                    active.path, active.policy_id, audio_bands.clone(),
                                 )
                             }
+                            _ => Err("The requested renderer has no active policy to edit.".to_string()),
                         }
                     };
 
