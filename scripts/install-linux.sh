@@ -232,7 +232,75 @@ is_debian_family() {
 # Conventional Linux dependency installation
 # -----------------------------------------------------------------------------
 
+# Installation-media repositories are often left enabled after a fresh Debian
+# installation. APT cannot refresh those entries without the original media.
+# Never change system repositories without an explicit confirmation, including
+# when --yes was supplied for package installation.
+repair_debian_cdrom_sources() {
+    local source_file temp_file backup_file
+    local -a affected=()
+    local found=false
+
+    for source_file in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+        [[ -f "$source_file" ]] || continue
+        if [[ "$source_file" == *.sources ]]; then
+            if awk 'BEGIN { RS=""; IGNORECASE=1 }
+                { if ($0 ~ /(^|\n)URIs:[^\n]*cdrom:/ && $0 !~ /(^|\n)Enabled:[[:space:]]*no([[:space:]]|$)/) found=1 }
+                END { exit !found }' "$source_file"; then
+                affected+=("$source_file")
+            fi
+        elif grep -Eiq '^[[:space:]]*deb([[:space:]]+\[[^]]*\])?[[:space:]]+cdrom:' "$source_file"; then
+            affected+=("$source_file")
+        fi
+    done
+
+    (( ${#affected[@]} > 0 )) || return 0
+
+    warn "Enabled installation-media (cdrom:) APT repositories were found:"
+    printf '  %s\n' "${affected[@]}" >&2
+    printf '%s\n' 'APT updates can fail when the original DVD is unavailable.' >&2
+
+    # Deliberately do not use confirm(): --yes must not authorize editing
+    # system package sources.
+    if [[ ! -t 0 ]]; then
+        die "Disable the obsolete cdrom: APT source manually, then rerun the installer."
+    fi
+    local reply
+    read -r -p "Back up these files and disable only their cdrom: entries? [y/N] " reply
+    case "$reply" in y|Y|yes|YES) ;; *) die "APT source configuration was left unchanged." ;; esac
+
+    for source_file in "${affected[@]}"; do
+        backup_file="${source_file}.screenshaver-backup-$(date +%Y%m%d%H%M%S)"
+        "${SUDO[@]}" cp -p -- "$source_file" "$backup_file"
+        temp_file="$(mktemp)"
+        if [[ "$source_file" == *.sources ]]; then
+            # A deb822 stanza can include multiple URIs. Disable the whole
+            # stanza containing installation media; preserve other stanzas.
+            awk 'BEGIN { RS=""; ORS="\n\n" }
+                {
+                    if ($0 ~ /(^|\n)URIs:[^\n]*cdrom:/ && $0 !~ /(^|\n)Enabled:[[:space:]]*no([[:space:]]|$)/) {
+                        if ($0 ~ /(^|\n)Enabled:/) {
+                            n=split($0, a, "\n"); $0="";
+                            for (i=1;i<=n;i++) {
+                                if (a[i] ~ /^Enabled:/) a[i]="Enabled: no";
+                                $0=$0 (i==1 ? "" : "\n") a[i];
+                            }
+                        } else $0=$0 "\nEnabled: no";
+                    }
+                    print
+                }' "$source_file" > "$temp_file"
+        else
+            sed -E '/^[[:space:]]*deb([[:space:]]+\[[^]]*\])?[[:space:]]+cdrom:/ s/^/# Disabled by Screenshaver installer: /' \
+                "$source_file" > "$temp_file"
+        fi
+        "${SUDO[@]}" cp -- "$temp_file" "$source_file"
+        rm -f -- "$temp_file"
+        log "Disabled installation-media source in $source_file (backup: $backup_file)"
+    done
+}
+
 install_debian_dependencies() {
+    repair_debian_cdrom_sources
     "${SUDO[@]}" apt-get update
 
     "${SUDO[@]}" apt-get install -y \
@@ -245,6 +313,9 @@ install_debian_dependencies() {
         libx11-dev \
         libxss-dev \
         libgl1-mesa-dev \
+        libclang-dev \
+        libpam0g-dev \
+        libssl-dev \
         desktop-file-utils
 }
 
