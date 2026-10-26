@@ -51,4 +51,5 @@ pkg-config = "0.3"
 [features]
 default = []
 libdecor-test = []
+libdecor-bridge = []
 kde-host = []

@@ -23,6 +23,8 @@ pub enum Command {
 
     TestLibdecor,
 
+    TestLibdecorBridge,
+
     TestPlaylists,
 
     TestLyrics,
@@ -179,8 +181,11 @@ pub fn parse() -> Result<Command, String> {
 
 
         "--test-libdecor" => {
-            require_no_extra_arguments(&args, "--test-libdecor")?;
-            Ok(Command::TestLibdecor)
+            match args.as_slice() {
+                [_] => Ok(Command::TestLibdecor),
+                [_, mode] if mode == "bridge" => Ok(Command::TestLibdecorBridge),
+                _ => Err("--test-libdecor accepts only the optional argument 'bridge'".to_string()),
+            }
         }
 
         "--test-wallpaper-protocol" => {

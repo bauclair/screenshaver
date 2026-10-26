@@ -82,6 +82,22 @@ impl WindowshaderSurfaceRole {
     }
 }
 
+// Stage 3: compile-time native bridge handshake only. No context is created,
+// and no libdecor event dispatcher runs in the production windowshader path.
+// The bridge C API borrows the wl_display and must never disconnect it.
+#[cfg(feature = "libdecor-bridge")]
+unsafe extern "C" {
+    fn screenshaver_decor_bridge_abi_version() -> std::ffi::c_int;
+}
+
+#[cfg(feature = "libdecor-bridge")]
+#[allow(dead_code)]
+fn verify_windowshader_libdecor_bridge_abi() -> Result<(), String> {
+    let version = unsafe { screenshaver_decor_bridge_abi_version() };
+    if version == 1 { Ok(()) }
+    else { Err(format!("Unsupported libdecor bridge ABI: {}", version)) }
+}
+
 // Stage 2: define the native-bridge ownership contract without activating FFI.
 // libdecor and Rust wayland-client must not independently read/dispatch the
 // same wl_display. Until a single dispatch owner is implemented and tested,

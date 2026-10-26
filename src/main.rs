@@ -335,6 +335,14 @@ fn main() {
             return;
         }
 
+        crate::parse_arguments::Command::TestLibdecorBridge => {
+            if let Err(error) = crate::test_libdecor::run_bridge() {
+                eprintln!("[LIBDECOR BRIDGE TEST] FAILED: {error}");
+                std::process::exit(1);
+            }
+            return;
+        }
+
         crate::parse_arguments::Command::TestWallpaperProtocol => {
             if let Err(error) = crate::control_wallpaper::run_protocol_tests() {
                 eprintln!("[WALLPAPER PROTOCOL TEST] FAILED: {error}");
@@ -1467,6 +1475,7 @@ fn main() {
         | crate::parse_arguments::Command::TestWallpaperProtocol
         | crate::parse_arguments::Command::TestPlaylists
         | crate::parse_arguments::Command::TestLibdecor
+        | crate::parse_arguments::Command::TestLibdecorBridge
         | crate::parse_arguments::Command::TestLyrics
         | crate::parse_arguments::Command::TestLyricTranslation { .. }
         | crate::parse_arguments::Command::TestLocalization
