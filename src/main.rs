@@ -141,6 +141,7 @@ mod manage_localization;
 mod audit_translation;
 mod test_render_benchmark;
 mod test_audio_motion;
+mod test_libdecor;
 
 mod import_data;
 mod export_data;
@@ -325,6 +326,14 @@ fn main() {
             return;
         }
 
+
+        crate::parse_arguments::Command::TestLibdecor => {
+            if let Err(error) = crate::test_libdecor::run() {
+                eprintln!("[LIBDECOR TEST] FAILED: {error}");
+                std::process::exit(1);
+            }
+            return;
+        }
 
         crate::parse_arguments::Command::TestWallpaperProtocol => {
             if let Err(error) = crate::control_wallpaper::run_protocol_tests() {
@@ -1457,6 +1466,7 @@ fn main() {
         | crate::parse_arguments::Command::Version
         | crate::parse_arguments::Command::TestWallpaperProtocol
         | crate::parse_arguments::Command::TestPlaylists
+        | crate::parse_arguments::Command::TestLibdecor
         | crate::parse_arguments::Command::TestLyrics
         | crate::parse_arguments::Command::TestLyricTranslation { .. }
         | crate::parse_arguments::Command::TestLocalization

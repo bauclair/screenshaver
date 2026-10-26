@@ -21,6 +21,8 @@ pub enum Command {
 
     TestWallpaperProtocol,
 
+    TestLibdecor,
+
     TestPlaylists,
 
     TestLyrics,
@@ -175,6 +177,11 @@ pub fn parse() -> Result<Command, String> {
             )
         }
 
+
+        "--test-libdecor" => {
+            require_no_extra_arguments(&args, "--test-libdecor")?;
+            Ok(Command::TestLibdecor)
+        }
 
         "--test-wallpaper-protocol" => {
             require_no_extra_arguments(&args, "--test-wallpaper-protocol")?;
@@ -986,6 +993,9 @@ pub fn print_help() {
                  Render one shader at exactly -1.0x animation speed for 60 seconds.\n\
                  Press Esc to stop the test and return to the command line.\n\
                  Test load failures do not change shader validation/rejection state.\n\
+         \n\
+              --test-libdecor\n\
+                  Open an isolated Wayland libdecor window (build with --features libdecor-test).\n\
          \n\
              --test-wallpaper-protocol\n\
                   Run isolated wallpaper pause/resume protocol checks and exit.\n\
