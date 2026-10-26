@@ -41,6 +41,47 @@ pub(crate) fn save_windowshader_geometry(geometry: WindowshaderGeometry) -> Resu
 }
 
 
+// Decoration backend selection is resolved before assigning a Wayland surface role.
+// This increment deliberately retains XDG as the sole executable backend.
+// A libdecor frame must own its XDG role; it cannot decorate a surface after
+// xdg_wm_base.get_xdg_surface() has already assigned that role.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum WindowshaderDecorationBackend {
+    XdgServerSide,
+    // Reserved for the native libdecor integration. Not selectable yet.
+    #[allow(dead_code)]
+    Libdecor,
+}
+
+impl WindowshaderDecorationBackend {
+    fn select_for_current_build() -> Self {
+        // Do not infer availability from the desktop name or the presence of
+        // the xdg-decoration global. Selection requires a working native bridge.
+        Self::XdgServerSide
+    }
+}
+
+// Keep the ownership decision explicit even while only XDG is implemented.
+// A later increment will give the Libdecor variant an owned native context,
+// frame, callbacks and teardown path, separate from Rust XDG proxy ownership.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum WindowshaderSurfaceRole {
+    Xdg,
+    #[allow(dead_code)]
+    Libdecor,
+}
+
+impl WindowshaderSurfaceRole {
+    fn for_backend(backend: WindowshaderDecorationBackend) -> Result<Self, String> {
+        match backend {
+            WindowshaderDecorationBackend::XdgServerSide => Ok(Self::Xdg),
+            WindowshaderDecorationBackend::Libdecor => Err(
+                "libdecor windowshader role is not implemented in this build".to_string(),
+            ),
+        }
+    }
+}
+
 // The XDG toplevel lifecycle is owned here; EGL/frame processing remains shared.
 use std::collections::HashMap;
 use std::path::Path;
@@ -522,6 +563,11 @@ pub fn run_egl_windowed_surface(
 
 
     const WINDOWED_TARGET_ID: u32 = 0;
+    let decoration_backend = WindowshaderDecorationBackend::select_for_current_build();
+    // Resolve before any wl_surface or xdg_surface is created. Fail closed if
+    // an unimplemented backend is ever selected by a future change.
+    let surface_role = WindowshaderSurfaceRole::for_backend(decoration_backend)?;
+    debug_assert_eq!(surface_role, WindowshaderSurfaceRole::Xdg);
     let saved_geometry = crate::wayland_windowshader::load_windowshader_geometry();
     // A failed KDE integration must never prevent Windowshader rendering.
     let _kwin_guard = match crate::manage_windowshader_kde::WindowshaderKwinGuard::start(
@@ -617,6 +663,10 @@ pub fn run_egl_windowed_surface(
             (),
         );
 
+
+    if surface_role != WindowshaderSurfaceRole::Xdg {
+        return Err("Refusing to assign an XDG role to a libdecor-owned surface".into());
+    }
 
     let xdg_surface =
         xdg_wm_base.get_xdg_surface(
