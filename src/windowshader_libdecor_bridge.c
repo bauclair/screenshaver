@@ -146,6 +146,7 @@ static const struct wl_registry_listener bridge_test_registry_listener = {
 extern int screenshaver_libdecor_rust_gl_initialize(void);
 extern int screenshaver_libdecor_rust_gl_draw(int width, int height, unsigned frame);
 extern void screenshaver_libdecor_rust_gl_release(void);
+extern int screenshaver_libdecor_rust_gl_replace(const char *name);
 void *screenshaver_libdecor_gl_proc_address(const char *name) {
     return (void *)eglGetProcAddress(name);
 }
@@ -226,7 +227,8 @@ static struct libdecor_frame_interface bridge_test_frame_interface = {
 
 /* Interactive test: close the window to exit; a 120-second limit prevents
  * indefinitely hanging unattended diagnostics. */
-int screenshaver_decor_bridge_run_diagnostic(void) {
+int screenshaver_decor_bridge_run_diagnostic_with_stop(
+    int (*should_stop)(void *), void *stop_userdata) {
     struct bridge_test_window w = {0};
     w.width = 720; w.height = 420; w.running = 1;
     w.egl_display = EGL_NO_DISPLAY;
@@ -258,9 +260,24 @@ int screenshaver_decor_bridge_run_diagnostic(void) {
     libdecor_frame_map(w.frame);
     fprintf(stderr, "[LIBDECOR BRIDGE TEST] window requested; drag, resize, then close\n");
     time_t started = time(NULL);
+    /* Diagnostic only: one manually requested replacement after ten seconds.
+     * This is not the policy scheduler and does not alter the native window. */
+    const char *replacement = getenv("SCREENSHAVER_LIBDECOR_REPLACEMENT_SHADER");
+    int replacement_attempted = 0;
     while (w.running) {
+        if (should_stop && should_stop(stop_userdata)) {
+            fprintf(stderr, "[LIBDECOR BRIDGE TEST] external shutdown requested\n");
+            break;
+        }
         if (screenshaver_decor_bridge_dispatch(w.bridge, 50) < 0) {
             w.failed = 1; break;
+        }
+        if (!replacement_attempted && replacement && replacement[0] &&
+            w.configured && w.frames > 0 && time(NULL) - started >= 10) {
+            replacement_attempted = 1;
+            fprintf(stderr, "[LIBDECOR REPLACE] attempting managed shader: %s\n", replacement);
+            if (screenshaver_libdecor_rust_gl_replace(replacement) != 0)
+                fprintf(stderr, "[LIBDECOR REPLACE] previous shader remains active\n");
         }
         if (w.configured && bridge_test_paint(&w) < 0) {
             fprintf(stderr, "[LIBDECOR BRIDGE TEST] EGL swap failed (error=0x%x)\n", eglGetError());
@@ -292,5 +309,62 @@ cleanup:
     screenshaver_decor_bridge_destroy(w.bridge);
     fprintf(stderr, "[LIBDECOR BRIDGE TEST] %s (configured=%d)\n",
             result ? "FAIL" : "PASS", w.configured);
+    return result;
+}
+
+
+/* Preserve standalone diagnostic callers without an external stop source. */
+int screenshaver_decor_bridge_run_diagnostic(void) {
+    return screenshaver_decor_bridge_run_diagnostic_with_stop(NULL, NULL);
+}
+
+
+/* Stage 3C-6B1: bounded, non-rendering native lifecycle probe.
+ * This owns a separate connection and a libdecor surface role. It intentionally
+ * creates no EGL objects and does not enter the production shader loop.
+ * A compositor may not display the surface without an attached buffer.
+ */
+int screenshaver_decor_bridge_probe_native_session(void) {
+    struct bridge_test_window w = {0};
+    w.width = 720; w.height = 420; w.running = 1;
+    w.egl_display = EGL_NO_DISPLAY;
+    w.egl_context = EGL_NO_CONTEXT;
+    w.egl_surface = EGL_NO_SURFACE;
+    int result = -1;
+    fprintf(stderr, "[LIBDECOR SESSION PROBE] starting native ownership test\n");
+    w.bridge = screenshaver_decor_bridge_create_isolated();
+    if (!w.bridge || !screenshaver_decor_bridge_dispatch_is_safe(w.bridge)) goto done;
+    w.registry = wl_display_get_registry(w.bridge->display);
+    if (!w.registry || wl_registry_add_listener(w.registry, &bridge_test_registry_listener, &w) < 0)
+        goto done;
+    if (wl_display_roundtrip(w.bridge->display) < 0 || !w.compositor) goto done;
+    w.surface = wl_compositor_create_surface(w.compositor);
+    if (!w.surface) goto done;
+    w.frame = libdecor_decorate(w.bridge->context, w.surface,
+                               &bridge_test_frame_interface, &w);
+    if (!w.frame) goto done;
+    libdecor_frame_set_app_id(w.frame, "screenshaver-libdecor-session-probe");
+    libdecor_frame_set_title(w.frame, "Screenshaver native session probe");
+    libdecor_frame_set_min_content_size(w.frame, 160, 120);
+    libdecor_frame_map(w.frame);
+    /* The configure callback commits the libdecor configuration. A lack of
+     * configure without an EGL buffer is not treated as rendering success. */
+    struct timespec begin, now;
+    clock_gettime(CLOCK_MONOTONIC, &begin);
+    do {
+        if (screenshaver_decor_bridge_dispatch(w.bridge, 50) < 0 || w.failed) goto done;
+        if (!w.running) break;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+    } while ((now.tv_sec - begin.tv_sec) * 1000L +
+             (now.tv_nsec - begin.tv_nsec) / 1000000L < 3000L);
+    result = 0;
+done:
+    if (w.frame) libdecor_frame_unref(w.frame);
+    if (w.surface) wl_surface_destroy(w.surface);
+    if (w.compositor) wl_compositor_destroy(w.compositor);
+    if (w.registry) wl_registry_destroy(w.registry);
+    screenshaver_decor_bridge_destroy(w.bridge);
+    fprintf(stderr, "[LIBDECOR SESSION PROBE] %s (configured=%d, no EGL)\n",
+            result == 0 ? "PASS" : "FAIL", w.configured);
     return result;
 }

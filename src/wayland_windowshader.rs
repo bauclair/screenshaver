@@ -54,10 +54,28 @@ pub(crate) enum WindowshaderDecorationBackend {
 }
 
 impl WindowshaderDecorationBackend {
-    fn select_for_current_build() -> Self {
-        // Do not infer availability from the desktop name or the presence of
-        // the xdg-decoration global. Selection requires a working native bridge.
-        Self::XdgServerSide
+    fn select_for_current_build() -> Result<Self, String> {
+        // Stage 3C-6A: opt-in selection is checked BEFORE a wl_surface or
+        // XDG role is created. The native production backend is deliberately
+        // unavailable at this stage; never silently fall back after opt-in.
+        match std::env::var("SCREENSHAVER_WINDOWSHADER_DECORATION_BACKEND") {
+            Err(std::env::VarError::NotPresent) => Ok(Self::XdgServerSide),
+            Err(std::env::VarError::NotUnicode(_)) => Err(
+                "Windowshader decoration backend setting is not valid UTF-8".into(),
+            ),
+            Ok(value) if value.trim().eq_ignore_ascii_case("xdg") =>
+                Ok(Self::XdgServerSide),
+            Ok(value) if value.trim().eq_ignore_ascii_case("libdecor") => {
+                #[cfg(feature = "libdecor-bridge")]
+                verify_windowshader_libdecor_bridge_abi()?;
+                #[cfg(not(feature = "libdecor-bridge"))]
+                return Err("libdecor requested, but the libdecor-bridge feature is disabled".into());
+                Ok(Self::Libdecor)
+            }
+            Ok(value) => Err(format!(
+                "Unknown windowshader decoration backend {value:?}; expected xdg or libdecor"
+            )),
+        }
     }
 }
 
@@ -88,6 +106,12 @@ impl WindowshaderSurfaceRole {
 #[cfg(feature = "libdecor-bridge")]
 unsafe extern "C" {
     fn screenshaver_decor_bridge_abi_version() -> std::ffi::c_int;
+    fn screenshaver_decor_bridge_probe_native_session() -> std::ffi::c_int;
+    fn screenshaver_decor_bridge_run_diagnostic() -> std::ffi::c_int;
+    fn screenshaver_decor_bridge_run_diagnostic_with_stop(
+        should_stop: extern "C" fn(*mut std::ffi::c_void) -> std::ffi::c_int,
+        stop_userdata: *mut std::ffi::c_void,
+    ) -> std::ffi::c_int;
 }
 
 #[cfg(feature = "libdecor-bridge")]
@@ -99,6 +123,15 @@ fn verify_windowshader_libdecor_bridge_abi() -> Result<(), String> {
 }
 
 // Stage 2: define the native-bridge ownership contract without activating FFI.
+#[cfg(feature = "libdecor-bridge")]
+extern "C" fn windowshader_libdecor_should_stop(
+    userdata: *mut std::ffi::c_void,
+) -> std::ffi::c_int {
+    if userdata.is_null() { return 1; }
+    let running = unsafe { &*(userdata as *const AtomicBool) };
+    if running.load(Ordering::SeqCst) { 0 } else { 1 }
+}
+
 // libdecor and Rust wayland-client must not independently read/dispatch the
 // same wl_display. Until a single dispatch owner is implemented and tested,
 // native libdecor acquisition is deliberately refused.
@@ -648,7 +681,51 @@ pub fn run_egl_windowed_surface(
 
 
     const WINDOWED_TARGET_ID: u32 = 0;
-    let decoration_backend = WindowshaderDecorationBackend::select_for_current_build();
+    let decoration_backend = WindowshaderDecorationBackend::select_for_current_build()?;
+    // Stage 3C-6B2: explicitly selected native rendering diagnostic.
+    // The C bridge owns its own Wayland connection, libdecor role, EGL context
+    // and presentation. Rust owns GL resources via the existing diagnostic
+    // callbacks. This is not yet the production policy/rotation renderer.
+    // Return success after the user closes the diagnostic window so the
+    // supervisor does not retry a completed test.
+    if decoration_backend == WindowshaderDecorationBackend::Libdecor {
+        #[cfg(feature = "libdecor-bridge")]
+        {
+            // Resolve the same initial policy used by the XDG windowshader
+            // before creating any native surface. This selection is passed
+            // through a thread-local scope, never a process-wide environment
+            // variable, so concurrent Wallpaper execution cannot change it.
+            let active_shader = select_safe_wallpaper_shader(
+                &mut shader_manager, wallpaper_directory,
+            )?;
+            let _selection = crate::test_libdecor::install_windowshader_selection(
+                active_shader.shader_name.clone(),
+                active_shader.policy_id,
+                active_shader.source_path.clone(),
+                runtime.texture_policy.clone(),
+            )?;
+            eprintln!(
+                "[LIBDECOR WINDOWSHADER] Stage 3C-6C policy={} shader={}",
+                active_shader.policy_id, active_shader.shader_name,
+            );
+            let status = unsafe {
+                screenshaver_decor_bridge_run_diagnostic_with_stop(
+                    windowshader_libdecor_should_stop,
+                    Arc::as_ptr(&running) as *mut std::ffi::c_void,
+                )
+            };
+            // Closing the native frame is equivalent to closing the XDG toplevel.
+            // Do not let the supervisor restart the windowshader after closure.
+            running.store(false, Ordering::SeqCst);
+            if status == 0 {
+                eprintln!("[LIBDECOR WINDOWSHADER] Stage 3C-6C PASS; native window closed");
+                return Ok(());
+            }
+            return Err(format!("Stage 3C-6C native rendering diagnostic failed (code {status})"));
+        }
+        #[cfg(not(feature = "libdecor-bridge"))]
+        return Err("libdecor-bridge feature is disabled".into());
+    }
     // Resolve before any wl_surface or xdg_surface is created. Fail closed if
     // an unimplemented backend is ever selected by a future change.
     let surface_role = WindowshaderSurfaceRole::for_backend(decoration_backend)?;

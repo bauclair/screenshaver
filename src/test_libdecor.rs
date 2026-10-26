@@ -50,6 +50,53 @@ pub(crate) fn run_bridge() -> Result<(), String> {
     }
 }
 
+// Stage 3C-6C: an opt-in Windowshader session passes its selected policy
+// directly to the Rust diagnostic renderer on the same thread. The guard
+// clears the selection even when native initialization returns an error.
+#[cfg(feature = "libdecor-bridge")]
+#[derive(Clone)]
+struct WindowshaderNativeSelection {
+    shader_name: String,
+    policy_id: i64,
+    source_path: std::path::PathBuf,
+    texture_policy: crate::load_config::TexturePolicy,
+}
+
+#[cfg(feature = "libdecor-bridge")]
+thread_local! {
+    static WINDOWSHADER_NATIVE_SELECTION: std::cell::RefCell<Option<WindowshaderNativeSelection>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(feature = "libdecor-bridge")]
+pub(crate) struct WindowshaderNativeSelectionGuard;
+
+#[cfg(feature = "libdecor-bridge")]
+impl Drop for WindowshaderNativeSelectionGuard {
+    fn drop(&mut self) {
+        WINDOWSHADER_NATIVE_SELECTION.with(|slot| *slot.borrow_mut() = None);
+    }
+}
+
+#[cfg(feature = "libdecor-bridge")]
+pub(crate) fn install_windowshader_selection(
+    shader_name: String,
+    policy_id: i64,
+    source_path: std::path::PathBuf,
+    texture_policy: crate::load_config::TexturePolicy,
+) -> Result<WindowshaderNativeSelectionGuard, String> {
+    WINDOWSHADER_NATIVE_SELECTION.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        if slot.is_some() {
+            return Err("Native windowshader selection already installed on this thread".into());
+        }
+        *slot = Some(WindowshaderNativeSelection {
+            shader_name, policy_id, source_path, texture_policy,
+        });
+        Ok(WindowshaderNativeSelectionGuard)
+    })
+}
+
 // Stage 3C-5F: Rust rendering callbacks run synchronously on the C diagnostic
 // thread while its desktop OpenGL EGL context is current. Not production code.
 #[cfg(feature = "libdecor-bridge")]
@@ -69,7 +116,57 @@ mod rust_gl_diagnostic {
         time: i32, resolution: i32, mouse: i32, frame: i32,
         textures: Option<crate::manage_textures::TextureManager>,
     }
-    thread_local! { static RESOURCES: RefCell<Option<Resources>> = const { RefCell::new(None) }; }
+    thread_local! {
+        static RESOURCES: RefCell<Option<Resources>> = const { RefCell::new(None) };
+        static REPLACEMENT_NAME: RefCell<Option<String>> = const { RefCell::new(None) };
+    }
+
+    fn release_resources(mut r: Resources) {
+        if let Some(manager) = r.textures.as_mut() { manager.delete_all(); }
+        unsafe {
+            gl::UseProgram(0);
+            gl::DeleteBuffers(1, &r.vbo);
+            gl::DeleteVertexArrays(1, &r.vao);
+            gl::DeleteProgram(r.program);
+        }
+    }
+
+    // Called only on the native rendering thread, with the EGL context current.
+    // A failed compilation or texture setup leaves the previous shader alive.
+    #[unsafe(no_mangle)]
+    pub extern "C" fn screenshaver_libdecor_rust_gl_replace(name: *const c_char) -> i32 {
+        let result = std::panic::catch_unwind(|| -> Result<(), String> {
+            if name.is_null() { return Err("Null replacement shader name".into()); }
+            let name = unsafe { std::ffi::CStr::from_ptr(name) }
+                .to_str().map_err(|e| e.to_string())?.to_owned();
+            if name.is_empty() || std::path::Path::new(&name).file_name()
+                .and_then(|n| n.to_str()) != Some(name.as_str()) {
+                return Err("Replacement must be a managed shader filename".into());
+            }
+            let previous = RESOURCES.with(|slot| slot.borrow_mut().take())
+                .ok_or("No active shader to replace")?;
+            REPLACEMENT_NAME.with(|slot| *slot.borrow_mut() = Some(name.clone()));
+            let initialized = screenshaver_libdecor_rust_gl_initialize();
+            REPLACEMENT_NAME.with(|slot| *slot.borrow_mut() = None);
+            if initialized != 0 {
+                // Initialize commits RESOURCES only after all preparation succeeds.
+                // Defensive cleanup handles an unexpected partial commit.
+                if let Some(partial) = RESOURCES.with(|slot| slot.borrow_mut().take()) {
+                    release_resources(partial);
+                }
+                RESOURCES.with(|slot| *slot.borrow_mut() = Some(previous));
+                return Err(format!("Could not prepare replacement {name}"));
+            }
+            release_resources(previous);
+            eprintln!("[LIBDECOR REPLACE] PASS: {name}");
+            Ok(())
+        });
+        match result {
+            Ok(Ok(())) => 0,
+            Ok(Err(error)) => { eprintln!("[LIBDECOR REPLACE] FAILED, previous shader retained: {error}"); -1 },
+            Err(_) => { eprintln!("[LIBDECOR REPLACE] PANIC during replacement"); -1 },
+        }
+    }
 
     #[unsafe(no_mangle)]
     pub extern "C" fn screenshaver_libdecor_rust_gl_initialize() -> i32 {
@@ -83,8 +180,13 @@ mod rust_gl_diagnostic {
             });
             // The optional value is a managed shader filename, not an arbitrary
             // filesystem path. The database supplies validated runtime GLSL.
-            let selected = std::env::var("SCREENSHAVER_LIBDECOR_TEST_SHADER")
-                .ok().filter(|s| !s.trim().is_empty());
+            let replacement = REPLACEMENT_NAME.with(|slot| slot.borrow().clone());
+            let native_selection = if replacement.is_some() { None } else {
+                super::WINDOWSHADER_NATIVE_SELECTION.with(|slot| slot.borrow().clone())
+            };
+            let selected = replacement.or_else(|| native_selection.as_ref().map(|s| s.shader_name.clone()))
+                .or_else(|| std::env::var("SCREENSHAVER_LIBDECOR_TEST_SHADER")
+                    .ok().filter(|s| !s.trim().is_empty()));
             let (program, managed, mut textures) = if let Some(name) = selected.as_deref() {
                 if std::path::Path::new(name).file_name().and_then(|n| n.to_str()) != Some(name) {
                     return Err("Specify a managed shader filename, without a directory".into());
@@ -112,17 +214,26 @@ mod rust_gl_diagnostic {
                     return Err(format!("OpenGL error applying ISF inputs: 0x{input_error:04x}"));
                 }
                 // Use the production texture manager in this isolated EGL context.
-                // No policy ID is selected here: global/individual policy overrides
-                // are deliberately NOT simulated in the diagnostic.
+                // Native windowshader sessions use the selected policy and its
+                // texture configuration; standalone diagnostics keep fallback settings.
                 let mut manager = crate::manage_textures::TextureManager::new(
-                    crate::load_config::TexturePolicy {
-                        global_texture: None,
-                        global_palette: None,
-                        texture_policy_entries: Vec::new(),
-                    }
+                    native_selection.as_ref().map(|s| s.texture_policy.clone())
+                        .unwrap_or_else(|| crate::load_config::TexturePolicy {
+                            global_texture: None,
+                            global_palette: None,
+                            texture_policy_entries: Vec::new(),
+                        })
                 );
                 let channels = channel_usage.channels;
-                if let Err(error) = manager.prepare_for_shader(name, channel_usage) {
+                let prepared = if let Some(selection) = native_selection.as_ref() {
+                    manager.prepare_for_policy_with_path(
+                        selection.policy_id, name,
+                        Some(selection.source_path.as_path()), channel_usage,
+                    )
+                } else {
+                    manager.prepare_for_shader(name, channel_usage)
+                };
+                if let Err(error) = prepared {
                     manager.delete_all();
                     unsafe { gl::UseProgram(0); gl::DeleteProgram(program); }
                     return Err(format!("Texture preparation failed: {error}"));
@@ -229,17 +340,11 @@ mod rust_gl_diagnostic {
     #[unsafe(no_mangle)]
     pub extern "C" fn screenshaver_libdecor_rust_gl_release() {
         let _ = std::panic::catch_unwind(|| RESOURCES.with(|slot| {
-            if let Some(mut r) = slot.borrow_mut().take() {
-                eprintln!("[LIBDECOR BRIDGE TEST] Rust renderer release: frames={}, elapsed={:.2}s",
-                    r.draw_count, r.started.elapsed().as_secs_f32());
-                if let Some(manager) = r.textures.as_mut() { manager.delete_all(); }
-                unsafe {
-                    gl::UseProgram(0);
-                    gl::DeleteBuffers(1, &r.vbo);
-                    gl::DeleteVertexArrays(1, &r.vao);
-                    gl::DeleteProgram(r.program);
+                if let Some(r) = slot.borrow_mut().take() {
+                    eprintln!("[LIBDECOR BRIDGE TEST] Rust renderer release: frames={}, elapsed={:.2}s",
+                        r.draw_count, r.started.elapsed().as_secs_f32());
+                    release_resources(r);
                 }
-            }
         }));
     }
 }
