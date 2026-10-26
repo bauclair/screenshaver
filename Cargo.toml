@@ -45,10 +45,10 @@ mpris = "2.1"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 
 [build-dependencies]
-cc = { version = "1", optional = true }
-pkg-config = { version = "0.3", optional = true }
+cc = "1"
+pkg-config = "0.3"
 
 [features]
 default = []
-libdecor-test = ["dep:cc", "dep:pkg-config"]
+libdecor-test = []
 kde-host = []
