@@ -67,6 +67,8 @@ Conventional Linux installation may install:
   * SDL2 and SDL2_ttf development libraries
   * X11 and XScreenSaver development libraries
   * OpenGL development libraries
+  * Clang, PAM, and OpenSSL development libraries
+  * Qt6 and CMake build dependencies on KDE Plasma
   * rustup, Cargo, and the stable Rust toolchain
 
 On conventional Linux distributions, application files are installed under:
@@ -346,6 +348,9 @@ install_fedora_dependencies() {
         libXScrnSaver-devel \
         libglvnd-devel \
         mesa-libGL-devel \
+        clang-devel \
+        pam-devel \
+        openssl-devel \
         desktop-file-utils
 }
 
@@ -463,6 +468,9 @@ repositories are enabled:
         libXScrnSaver-devel \
         libglvnd-devel \
         mesa-libGL-devel \
+        clang-devel \
+        pam-devel \
+        openssl-devel \
         desktop-file-utils
 }
 
@@ -477,6 +485,9 @@ install_arch_dependencies() {
         libx11 \
         libxss \
         libglvnd \
+        clang \
+        pam \
+        openssl \
         desktop-file-utils
 }
 
@@ -494,6 +505,9 @@ install_suse_dependencies() {
         libX11-devel \
         libXss-devel \
         libglvnd-devel \
+        clang-devel \
+        pam-devel \
+        libopenssl-devel \
         desktop-file-utils
 }
 
@@ -514,6 +528,9 @@ install_void_dependencies() {
         libX11-devel \
         libXScrnSaver-devel \
         MesaLib-devel \
+        clang \
+        pam-devel \
+        openssl-devel \
         desktop-file-utils
 }
 
@@ -1019,10 +1036,22 @@ If Cargo is not available in another terminal session, run:
 SUCCESS
 }
 
+verify_gnome_extension_prerequisite() {
+    case "${DESKTOP_ENVIRONMENT,,}" in
+        *gnome*|*zorin*) ;;
+        *) return 0 ;;
+    esac
+
+    log "Verifying GNOME Shell extension management prerequisite"
+    command -v gnome-extensions >/dev/null 2>&1 ||
+        die "GNOME was detected, but 'gnome-extensions' is unavailable. Install the distribution's GNOME Shell extension management tools and rerun the installer."
+}
+
 install_conventional_linux() {
     initialize_sudo
     validate_runtime_assets
     install_build_dependencies
+    verify_gnome_extension_prerequisite
     install_rust_toolchain
     build_application
     build_kde_native_integration
