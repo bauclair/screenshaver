@@ -524,7 +524,9 @@ pub fn run_egl_windowed_surface(
     const WINDOWED_TARGET_ID: u32 = 0;
     let saved_geometry = crate::wayland_windowshader::load_windowshader_geometry();
     // A failed KDE integration must never prevent Windowshader rendering.
-    let _kwin_guard = match crate::manage_windowshader_kde::WindowshaderKwinGuard::start(saved_geometry.x.zip(saved_geometry.y)) {
+    let _kwin_guard = match crate::manage_windowshader_kde::WindowshaderKwinGuard::start(
+        saved_geometry.x.zip(saved_geometry.y), saved_geometry.width, saved_geometry.height,
+    ) {
         Ok(guard) => guard,
         Err(error) => {
             eprintln!("[WINDOWSHADER] KDE window integration unavailable: {}", error);

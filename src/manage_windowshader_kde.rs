@@ -20,8 +20,9 @@ const SCRIPT: &str = r###"// Temporary, process-owned KWin script for Screenshav
 (function () {
     var prefix = '[SCREENSHAVER-KWIN] ';
     var restored = false;
+    var attached = [];
     function matches(w) {
-        return w && String(w.caption || '') === 'Screenshaver Windowshader'
+        return w && String(w.caption || '').indexOf('P: ') === 0
             && (String(w.resourceClass || '').toLowerCase() === 'screenshaver'
                 || String(w.resourceName || '').toLowerCase() === 'screenshaver');
     }
@@ -35,21 +36,32 @@ const SCRIPT: &str = r###"// Temporary, process-owned KWin script for Screenshav
             Math.round(g.x), Math.round(g.y));
     }
     function attach(w) {
-        if (!matches(w)) return;
+        if (!matches(w) || attached.indexOf(w) !== -1) return;
+        attached.push(w);
         try {
             w.keepAbove = true;
-            if (!restored && __RESTORE__) {
+            if (!restored) {
                 restored = true;
                 var g = w.frameGeometry;
-                w.frameGeometry = { x: __X__, y: __Y__, width: g.width, height: g.height };
+                w.frameGeometry = {
+                    x: __RESTORE__ ? __X__ : g.x,
+                    y: __RESTORE__ ? __Y__ : g.y,
+                    width: __WIDTH__, height: __HEIGHT__
+                };
             }
             report(w);
             w.frameGeometryChanged.connect(function () { report(w); });
             print(prefix + 'Windowshader keepAbove=' + w.keepAbove);
         } catch (e) { print(prefix + 'integration error: ' + e); }
     }
-    workspace.windowList().forEach(attach);
-    workspace.windowAdded.connect(attach);
+    function observe(w) {
+        attach(w);
+        if (w && w.captionChanged) {
+            w.captionChanged.connect(function () { attach(w); });
+        }
+    }
+    workspace.windowList().forEach(observe);
+    workspace.windowAdded.connect(observe);
 })();
 "###;
 
@@ -67,7 +79,7 @@ impl WindowshaderKwinGuard {
         self.position.lock().ok().and_then(|position| *position)
     }
 
-    pub(crate) fn start(saved_position: Option<(i32, i32)>) -> Result<Option<Self>, String> {
+    pub(crate) fn start(saved_position: Option<(i32, i32)>, saved_width: i32, saved_height: i32) -> Result<Option<Self>, String> {
         if !crate::detect_desktop_environment::detect().is_kde_plasma()
             || std::env::var("XDG_SESSION_TYPE").ok().as_deref() != Some("wayland") {
             return Ok(None);
@@ -104,7 +116,9 @@ impl WindowshaderKwinGuard {
         let script = SCRIPT.replace("__SERVICE__", &service)
             .replace("__RESTORE__", restore)
             .replace("__X__", &x.to_string())
-            .replace("__Y__", &y.to_string());
+            .replace("__Y__", &y.to_string())
+            .replace("__WIDTH__", &saved_width.to_string())
+            .replace("__HEIGHT__", &saved_height.to_string());
         std::fs::write(&script_path, script).map_err(|e| e.to_string())?;
         let name = format!("screenshaver-windowshader-{}", std::process::id());
         let load = Command::new(qdbus).args([
