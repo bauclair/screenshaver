@@ -82,6 +82,75 @@ impl WindowshaderSurfaceRole {
     }
 }
 
+// Stage 2: define the native-bridge ownership contract without activating FFI.
+// libdecor and Rust wayland-client must not independently read/dispatch the
+// same wl_display. Until a single dispatch owner is implemented and tested,
+// native libdecor acquisition is deliberately refused.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum WindowshaderEventDispatchOwner {
+    RustWaylandClient,
+    #[allow(dead_code)]
+    NativeLibdecor,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum WindowshaderDecorationLifecycle {
+    Selected,
+    RoleCreated,
+    Rendering,
+    Released,
+}
+
+// This controller tracks the presentation role, not the GL resources. It does
+// not hold or fabricate native pointers. The future native context/frame owner
+// must be introduced only when the event-dispatch interoperability is proven.
+struct WindowshaderDecorationOwnership {
+    backend: WindowshaderDecorationBackend,
+    dispatch_owner: WindowshaderEventDispatchOwner,
+    lifecycle: WindowshaderDecorationLifecycle,
+}
+
+impl WindowshaderDecorationOwnership {
+    fn new(backend: WindowshaderDecorationBackend) -> Result<Self, String> {
+        if backend == WindowshaderDecorationBackend::Libdecor {
+            return Err(
+                "libdecor requires a verified single-owner Wayland event bridge before activation"
+                    .to_string(),
+            );
+        }
+        Ok(Self {
+            backend,
+            dispatch_owner: WindowshaderEventDispatchOwner::RustWaylandClient,
+            lifecycle: WindowshaderDecorationLifecycle::Selected,
+        })
+    }
+
+    fn role_created(&mut self) -> Result<(), String> {
+        if self.lifecycle != WindowshaderDecorationLifecycle::Selected {
+            return Err("Windowshader decoration role created out of sequence".to_string());
+        }
+        if self.backend != WindowshaderDecorationBackend::XdgServerSide
+            || self.dispatch_owner != WindowshaderEventDispatchOwner::RustWaylandClient
+        {
+            return Err("Windowshader decoration dispatch owner mismatch".to_string());
+        }
+        self.lifecycle = WindowshaderDecorationLifecycle::RoleCreated;
+        Ok(())
+    }
+
+    fn rendering_started(&mut self) -> Result<(), String> {
+        if self.lifecycle != WindowshaderDecorationLifecycle::RoleCreated {
+            return Err("Windowshader rendering started before decoration role creation".to_string());
+        }
+        self.lifecycle = WindowshaderDecorationLifecycle::Rendering;
+        Ok(())
+    }
+
+    fn released(&mut self) {
+        self.lifecycle = WindowshaderDecorationLifecycle::Released;
+    }
+}
+
 // The XDG toplevel lifecycle is owned here; EGL/frame processing remains shared.
 use std::collections::HashMap;
 use std::path::Path;
@@ -568,6 +637,7 @@ pub fn run_egl_windowed_surface(
     // an unimplemented backend is ever selected by a future change.
     let surface_role = WindowshaderSurfaceRole::for_backend(decoration_backend)?;
     debug_assert_eq!(surface_role, WindowshaderSurfaceRole::Xdg);
+    let mut decoration_ownership = WindowshaderDecorationOwnership::new(decoration_backend)?;
     let saved_geometry = crate::wayland_windowshader::load_windowshader_geometry();
     // A failed KDE integration must never prevent Windowshader rendering.
     let _kwin_guard = match crate::manage_windowshader_kde::WindowshaderKwinGuard::start(
@@ -693,6 +763,8 @@ pub fn run_egl_windowed_surface(
             decoration.set_mode(zxdg_toplevel_decoration_v1::Mode::ServerSide);
             decoration
         });
+
+    decoration_ownership.role_created()?;
 
     // Use the selected policy name rather than the generic application title.
     // Music metadata and subsequent policy rotations will be connected in the
@@ -918,6 +990,8 @@ pub fn run_egl_windowed_surface(
         ];
 
 
+    decoration_ownership.rendering_started()?;
+
     let render_result =
         render_windowshader_frames(
             &connection,
@@ -939,6 +1013,7 @@ pub fn run_egl_windowed_surface(
         native_targets, &mut state, saved_geometry, last_position,
         &xdg_wm_base, &connection,
     )?;
+    decoration_ownership.released();
 
     render_result
 }
