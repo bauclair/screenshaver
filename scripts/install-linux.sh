@@ -44,6 +44,7 @@ DISTRO_NAME=""
 
 DESKTOP_ENVIRONMENT=""
 XFCE_INTEGRATION=false
+KDE_INTEGRATION=false
 XFCE_SAVER_DIR=""
 
 SUDO=()
@@ -209,6 +210,9 @@ detect_desktop_environment() {
     DESKTOP_ENVIRONMENT="$desktop_value"
 
     case "${desktop_value,,}" in
+        *kde*|*plasma*)
+            KDE_INTEGRATION=true
+            ;;
         *xfce*)
             XFCE_INTEGRATION=true
             ;;
@@ -317,6 +321,15 @@ install_debian_dependencies() {
         libpam0g-dev \
         libssl-dev \
         desktop-file-utils
+
+    if $KDE_INTEGRATION; then
+        log "Installing Debian KDE-native screen-lock build dependencies"
+        "${SUDO[@]}" apt-get install -y \
+            cmake \
+            ninja-build \
+            qt6-base-dev \
+            qt6-declarative-dev
+    fi
 }
 
 install_fedora_dependencies() {
@@ -664,6 +677,85 @@ build_application() {
 }
 
 # -----------------------------------------------------------------------------
+# KDE Plasma native lock-screen presenter (conventional distributions)
+# -----------------------------------------------------------------------------
+
+install_kde_build_dependencies() {
+    $KDE_INTEGRATION || return 0
+    # Debian-family packages are installed with the base dependencies above.
+    if is_debian_family; then return 0; fi
+
+    log "Installing KDE-native Qt6/CMake build dependencies"
+    case "$DISTRO_ID" in
+        fedora|rhel|centos|rocky|almalinux)
+            "${SUDO[@]}" dnf install -y cmake ninja-build qt6-qtbase-devel qt6-qtdeclarative-devel ;;
+        arch|manjaro|endeavouros|omarchy)
+            "${SUDO[@]}" pacman -S --needed --noconfirm cmake ninja qt6-base qt6-declarative ;;
+        opensuse-leap|opensuse-tumbleweed|sles)
+            "${SUDO[@]}" zypper --non-interactive install cmake ninja libQt6Core6-devel libQt6DBus6-devel libQt6Gui6-devel libQt6Qml6-devel libQt6Quick6-devel ;;
+        void)
+            "${SUDO[@]}" xbps-install -y cmake ninja qt6-base-devel qt6-declarative-devel ;;
+        *)
+            die "KDE-native build dependency package mapping is not verified for ${DISTRO_NAME}." ;;
+    esac
+}
+
+build_kde_native_integration() {
+    $KDE_INTEGRATION || return 0
+    [[ -f "${PROJECT_DIR}/kde-renderer/Cargo.toml" ]] ||
+        die "KDE renderer manifest missing: ${PROJECT_DIR}/kde-renderer/Cargo.toml"
+    [[ -f "${PROJECT_DIR}/kde-host/CMakeLists.txt" ]] ||
+        die "KDE host CMakeLists.txt is missing."
+    [[ -f "${PROJECT_DIR}/kde-host/build_kde_host.sh" ]] ||
+        die "KDE host build script is missing."
+
+    install_kde_build_dependencies
+    command -v cmake >/dev/null 2>&1 || die "CMake unavailable after KDE dependency installation."
+
+    log "Building the KDE native Rust renderer (release)"
+    cargo build --release --manifest-path "${PROJECT_DIR}/kde-renderer/Cargo.toml"
+    [[ -f "${PROJECT_DIR}/kde-renderer/target/release/libscreenshaver.so" ]] ||
+        die "KDE renderer shared library missing after build."
+
+    log "Building the KDE Qt6 native host plugin (release)"
+    bash "${PROJECT_DIR}/kde-host/build_kde_host.sh" release "$PROJECT_DIR"
+
+    local module="${PROJECT_DIR}/kde-host/build-release/qml/ScreenshaverNativeGL"
+    local name
+    for name in qmldir libScreenshaverNativeGLPlugin.so libscreenshaver.so; do
+        [[ -f "${module}/${name}" ]] || die "KDE native build output missing: ${module}/${name}"
+    done
+}
+
+install_kde_native_integration() {
+    $KDE_INTEGRATION || return 0
+    local source="${PROJECT_DIR}/kde-host/build-release/qml/ScreenshaverNativeGL"
+    local destination="${INSTALL_PREFIX}/lib/screenshaver/kde/qml/ScreenshaverNativeGL"
+    local name mode
+    log "Installing KDE-native screen-lock runtime assets"
+    for name in qmldir libScreenshaverNativeGLPlugin.so libscreenshaver.so; do
+        mode=644
+        [[ "$name" == *.so ]] && mode=755
+        "${SUDO[@]}" install -Dm"$mode" "${source}/${name}" "${destination}/${name}"
+    done
+}
+
+verify_kde_native_integration() {
+    $KDE_INTEGRATION || return 0
+    local destination="${INSTALL_PREFIX}/lib/screenshaver/kde/qml/ScreenshaverNativeGL"
+    local name missing
+    for name in qmldir libScreenshaverNativeGLPlugin.so libscreenshaver.so; do
+        [[ -f "${destination}/${name}" ]] || die "Installed KDE runtime asset missing: ${destination}/${name}"
+    done
+    if command -v ldd >/dev/null 2>&1; then
+        for name in libScreenshaverNativeGLPlugin.so libscreenshaver.so; do
+            missing="$(ldd "${destination}/${name}" 2>/dev/null | awk '/not found/ { print $1 }')"
+            [[ -z "$missing" ]] || die "Unresolved KDE runtime libraries for ${name}: ${missing}"
+        done
+    fi
+}
+
+# -----------------------------------------------------------------------------
 # Conventional filesystem installation
 # -----------------------------------------------------------------------------
 
@@ -891,6 +983,7 @@ verify_conventional_installation() {
 
     verify_desktop_file
     verify_shared_libraries
+    verify_kde_native_integration
 
     if $XFCE_INTEGRATION; then
         if resolve_xfce_saver_directory; then
@@ -932,7 +1025,9 @@ install_conventional_linux() {
     install_build_dependencies
     install_rust_toolchain
     build_application
+    build_kde_native_integration
     install_application
+    install_kde_native_integration
     install_omarchy_pam_service
     install_xfce_lock_integration
     refresh_desktop_caches
