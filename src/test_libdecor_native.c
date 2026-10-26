@@ -69,16 +69,37 @@ static void close_frame(struct libdecor_frame *f, void *user_data) {
     fprintf(stderr, "[LIBDECOR TEST] Close requested\n");
     running = 0;
 }
-static const struct libdecor_frame_interface frame_interface = {
+/* The GTK decoration plugin may request a parent-surface commit when it
+ * uses synchronized subsurfaces. A NULL commit callback can crash when the
+ * plugin calls through the frame interface. */
+static void commit_frame(struct libdecor_frame *f, void *user_data) {
+    (void)f;
+    (void)user_data;
+    if (surface) {
+        wl_surface_commit(surface);
+    }
+}
+
+/* No popup windows are created by this isolated diagnostic. */
+static void dismiss_popup(struct libdecor_frame *f, const char *seat_name,
+                          void *user_data) {
+    (void)f;
+    (void)seat_name;
+    (void)user_data;
+}
+
+static struct libdecor_frame_interface frame_interface = {
     .configure = configure,
     .close = close_frame,
+    .commit = commit_frame,
+    .dismiss_popup = dismiss_popup,
 };
 static void libdecor_error(struct libdecor *context, enum libdecor_error error, const char *message) {
     (void)context;
     fprintf(stderr, "[LIBDECOR TEST] error %d: %s\n", error, message ? message : "unknown");
     running = 0;
 }
-static const struct libdecor_interface decor_interface = { .error = libdecor_error };
+static struct libdecor_interface decor_interface = { .error = libdecor_error };
 static void global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version) {
     (void)data;
     if (!strcmp(interface, wl_compositor_interface.name))
