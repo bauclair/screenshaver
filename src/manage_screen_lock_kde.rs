@@ -663,8 +663,7 @@ fn install_native_renderer_into_staging(
 }
 
 fn locate_native_runtime_directory() -> io::Result<PathBuf> {
-    // Explicit override remains available for unusual development or packaging
-    // environments, but normal Screenshaver execution must not require it.
+    // Explicit override for development and nonstandard packaging.
     if let Some(path) = env::var_os("SCREENSHAVER_KDE_RUNTIME_DIR") {
         let candidate = PathBuf::from(path);
         validate_native_runtime_directory(&candidate)?;
@@ -672,54 +671,60 @@ fn locate_native_runtime_directory() -> io::Result<PathBuf> {
     }
 
     let executable = env::current_exe()?;
+    let mut candidates = Vec::new();
 
-    // Production / packaged layout:
-    //
-    //     <prefix>/bin/screenshaver
-    //     <prefix>/lib/screenshaver/kde/
-    //
-    // This is the layout produced by the Nix package and remains the preferred
-    // lookup whenever Screenshaver is installed normally.
-    if let Some(prefix) = executable
-        .parent()
-        .and_then(Path::parent)
-    {
-        let candidate = prefix.join(NATIVE_RUNTIME_RELATIVE_DIR);
-
-        if validate_native_runtime_directory(&candidate).is_ok() {
-            return Ok(candidate);
-        }
+    // Installed layouts: the flat directory is retained for existing Nix
+    // packages, while the nested QML module directory is used by install-linux.sh.
+    if let Some(prefix) = executable.parent().and_then(Path::parent) {
+        let installed_root = prefix.join(NATIVE_RUNTIME_RELATIVE_DIR);
+        candidates.push(installed_root.clone());
+        candidates.push(
+            installed_root.join("qml").join(NATIVE_QML_MODULE_DIRECTORY),
+        );
     }
 
-    // Repository debug layout:
-    //
-    //     <repo>/target/debug/screenshaver
-    //     <repo>/kde-host/build-debug/qml/ScreenshaverNativeGL/
-    //
-    // Derive <repo> from the executable rather than from the current working
-    // directory so Screenshaver can be launched from anywhere.
+    // Repository builds: select the matching KDE host profile first, but
+    // allow the other profile as a fallback for existing development setups.
     if let Some(repository_root) = executable
         .parent()
         .and_then(Path::parent)
         .and_then(Path::parent)
     {
-        let candidate = repository_root
-            .join("kde-host")
-            .join("build-debug")
-            .join("qml")
-            .join(NATIVE_QML_MODULE_DIRECTORY);
+        let profile = executable
+            .parent()
+            .and_then(Path::file_name)
+            .and_then(|name| name.to_str());
+        let profiles: &[&str] = match profile {
+            Some("release") => &["release", "debug"],
+            _ => &["debug", "release"],
+        };
+        for profile in profiles {
+            candidates.push(
+                repository_root
+                    .join("kde-host")
+                    .join(format!("build-{}", profile))
+                    .join("qml")
+                    .join(NATIVE_QML_MODULE_DIRECTORY),
+            );
+        }
+    }
 
-        if validate_native_runtime_directory(&candidate).is_ok() {
-            return Ok(candidate);
+    for candidate in &candidates {
+        if validate_native_runtime_directory(candidate).is_ok() {
+            return Ok(candidate.clone());
         }
     }
 
     Err(io::Error::new(
         io::ErrorKind::NotFound,
         format!(
-            "Unable to locate Screenshaver KDE native runtime assets for executable {}.              Checked the installed lib/screenshaver/kde layout and the repository              kde-host/build-debug/qml/{} layout.",
+            "Unable to locate Screenshaver KDE native runtime assets for executable {}. Checked: {}",
             executable.display(),
-            NATIVE_QML_MODULE_DIRECTORY,
+            candidates
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", "),
         ),
     ))
 }
