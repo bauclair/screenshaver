@@ -218,7 +218,8 @@ static void bridge_cursor_apply(struct bridge_test_window *w, int kind) {
     wl_pointer_set_cursor(w->input_pointer, w->pointer_enter_serial,
                           w->cursor_surface, (int)img->hotspot_x, (int)img->hotspot_y);
     w->pointer_cursor_kind = kind;
-    fprintf(stderr, "[LIBDECOR CURSOR] %s\n", kind == 1 ? "hand" : kind == 2 ? "horizontal-resize" : "arrow");
+    if (w->diagnostic_mode)
+        fprintf(stderr, "[LIBDECOR CURSOR] %s\n", kind == 1 ? "hand" : kind == 2 ? "horizontal-resize" : "arrow");
 }
 
 static void bridge_cursor_refresh(struct bridge_test_window *w) {
@@ -264,7 +265,8 @@ static void bridge_pointer_enter(void *data, struct wl_pointer *pointer,
     if (w->pointer_on_surface) {
         w->pointer_x = wl_fixed_to_double(x);
         w->pointer_y = wl_fixed_to_double(y);
-        fprintf(stderr, "[LIBDECOR POINTER] enter x=%.1f y=%.1f\n", w->pointer_x, w->pointer_y);
+        if (w->diagnostic_mode)
+            fprintf(stderr, "[LIBDECOR POINTER] enter x=%.1f y=%.1f\n", w->pointer_x, w->pointer_y);
         bridge_cursor_refresh(w);
     }
 }
@@ -276,7 +278,8 @@ static void bridge_pointer_leave(void *data, struct wl_pointer *pointer,
         w->pointer_on_surface = 0;
         w->pointer_enter_serial = 0;
         w->pointer_cursor_kind = -1;
-        fprintf(stderr, "[LIBDECOR POINTER] leave\n");
+        if (w->diagnostic_mode)
+            fprintf(stderr, "[LIBDECOR POINTER] leave\n");
     }
 }
 static void bridge_pointer_motion(void *data, struct wl_pointer *pointer,
@@ -298,7 +301,7 @@ static void bridge_pointer_button(void *data, struct wl_pointer *pointer,
         && bridge_lyrics_pointer_event) {
         (void)bridge_lyrics_pointer_event(w->pointer_x, w->pointer_y, 1);
     }
-    if (w->pointer_on_surface)
+    if (w->pointer_on_surface && w->diagnostic_mode)
         fprintf(stderr, "[LIBDECOR POINTER] button=%u state=%u x=%.1f y=%.1f\n",
                 button, state, w->pointer_x, w->pointer_y);
 }
@@ -448,7 +451,8 @@ static int bridge_egl_initialize(struct bridge_test_window *w) {
         fprintf(stderr, "[LIBDECOR EGL DIAG] swap interval unchanged (EGL default)\n");
     }
     if (screenshaver_libdecor_rust_gl_initialize() != 0) return -1;
-    fprintf(stderr, "[LIBDECOR BRIDGE TEST] EGL/desktop OpenGL initialized: %s\n",
+    fprintf(stderr, "[%s] EGL/desktop OpenGL initialized: %s\n",
+            w->diagnostic_mode ? "LIBDECOR BRIDGE TEST" : "LIBDECOR WINDOWSHADER",
             (const char *)glGetString(GL_VERSION));
     return 0;
 }
@@ -519,12 +523,14 @@ static void bridge_test_configure(struct libdecor_frame *frame,
     }
     if (w->egl_window) wl_egl_window_resize(w->egl_window, w->width, w->height, 0, 0);
     w->configured = 1;
-    fprintf(stderr, "[LIBDECOR BRIDGE TEST] configure: %d x %d\n", w->width, w->height);
+    if (w->diagnostic_mode)
+        fprintf(stderr, "[LIBDECOR BRIDGE TEST] configure: %d x %d\n", w->width, w->height);
 }
 static void bridge_test_close(struct libdecor_frame *frame, void *data) {
     (void)frame;
     struct bridge_test_window *w = data;
-    fprintf(stderr, "[LIBDECOR BRIDGE TEST] close requested\n");
+    fprintf(stderr, "[%s] close requested\n",
+            w->diagnostic_mode ? "LIBDECOR BRIDGE TEST" : "LIBDECOR WINDOWSHADER");
     w->running = 0;
 }
 static void bridge_test_commit(struct libdecor_frame *frame, void *data) {
@@ -551,14 +557,16 @@ static void bridge_diagnostic_window_defaults(struct bridge_test_window *w) {
 }
 
 static int bridge_diagnostic_window_open(struct bridge_test_window *w, int production_windowshader, const char *production_title) {
-    fprintf(stderr, "[LIBDECOR BRIDGE TEST] connecting isolated native bridge\n");
+    fprintf(stderr, "[%s] connecting native bridge\n",
+            w->diagnostic_mode ? "LIBDECOR BRIDGE TEST" : "LIBDECOR WINDOWSHADER");
     w->bridge = screenshaver_decor_bridge_create_isolated();
     if (!w->bridge || !screenshaver_decor_bridge_dispatch_is_safe(w->bridge)) return -1;
     w->registry = wl_display_get_registry(w->bridge->display);
     if (!w->registry || wl_registry_add_listener(w->registry, &bridge_test_registry_listener, w) < 0)
         return -1;
     if (wl_display_roundtrip(w->bridge->display) < 0 || !w->compositor) {
-        fprintf(stderr, "[LIBDECOR BRIDGE TEST] compositor unavailable\n");
+        fprintf(stderr, "[%s] compositor unavailable\n",
+                w->diagnostic_mode ? "LIBDECOR BRIDGE TEST" : "LIBDECOR WINDOWSHADER");
         return -1;
     }
     bridge_cursor_initialize(w);
@@ -571,11 +579,15 @@ static int bridge_diagnostic_window_open(struct bridge_test_window *w, int produ
     libdecor_frame_set_title(w->frame, production_windowshader ? (production_title ? production_title : "P: Windowshader") : "Screenshaver libdecor bridge - drag / resize / close");
     libdecor_frame_set_min_content_size(w->frame, 160, 120);
     if (bridge_egl_initialize(w) < 0) {
-        fprintf(stderr, "[LIBDECOR BRIDGE TEST] EGL setup failed (error=0x%x)\n", eglGetError());
+        fprintf(stderr, "[%s] EGL setup failed (error=0x%x)\n",
+                w->diagnostic_mode ? "LIBDECOR BRIDGE TEST" : "LIBDECOR WINDOWSHADER", eglGetError());
         return -1;
     }
     libdecor_frame_map(w->frame);
-    fprintf(stderr, "[LIBDECOR BRIDGE TEST] window requested; drag, resize, then close\n");
+    if (w->diagnostic_mode)
+        fprintf(stderr, "[LIBDECOR BRIDGE TEST] window requested; drag, resize, then close\n");
+    else
+        fprintf(stderr, "[LIBDECOR WINDOWSHADER] window requested\n");
     return 0;
 }
 
@@ -647,7 +659,8 @@ static void bridge_diagnostic_window_close(struct bridge_test_window *w,
     bridge_lyrics_pointer_event = NULL;
     bridge_diagnostic_pause_status = NULL;
     bridge_diagnostic_pause_userdata = NULL;
-    fprintf(stderr, "[LIBDECOR BRIDGE TEST] %s (configured=%d)\n",
+    fprintf(stderr, "[%s] %s (configured=%d)\n",
+            w->diagnostic_mode ? "LIBDECOR BRIDGE TEST" : "LIBDECOR WINDOWSHADER",
             result ? "FAIL" : "PASS", w->configured);
 }
 
@@ -730,9 +743,14 @@ static int bridge_diagnostic_dispatch_heartbeat(struct bridge_test_window *w,
     long heartbeat_ms = (dispatch_end.tv_sec - diagnostic_last->tv_sec) * 1000L
                       + (dispatch_end.tv_nsec - diagnostic_last->tv_nsec) / 1000000L;
     if (heartbeat_ms >= 5000) {
-        bridge_handoff_stamp("native loop heartbeat", heartbeat_ms);
-        fprintf(stderr, "[LIBDECOR HANDOFF DIAG] frames=%u configured=%d\n",
-                w->frames, w->configured);
+        /* Routine heartbeat output belongs to the isolated diagnostic mode.
+         * Production still dispatches events, refreshes the cursor, and
+         * records heartbeat timing; blocking-dispatch warnings remain active. */
+        if (w->diagnostic_mode) {
+            bridge_handoff_stamp("native loop heartbeat", heartbeat_ms);
+            fprintf(stderr, "[LIBDECOR HANDOFF DIAG] frames=%u configured=%d\n",
+                    w->frames, w->configured);
+        }
         *diagnostic_last = dispatch_end;
     }
     return 0;
@@ -935,7 +953,8 @@ static int bridge_run_windowshader_with_rotation(
             rotation_interval_ns ? "enabled" : "disabled");
     while (w.running) {
         if (should_stop && should_stop(stop_userdata)) {
-            fprintf(stderr, "[LIBDECOR BRIDGE TEST] external shutdown requested\n");
+            fprintf(stderr, "[%s] external shutdown requested\n",
+                    diagnostic_mode ? "LIBDECOR BRIDGE TEST" : "LIBDECOR WINDOWSHADER");
             break;
         }
         if (bridge_diagnostic_dispatch_heartbeat(&w, &diagnostic_last) < 0) {
@@ -1067,7 +1086,8 @@ static int bridge_run_windowshader_with_rotation(
             clock_gettime(CLOCK_MONOTONIC, &paint_end);
             bridge_diagnostic_log_paint_duration(&paint_begin, &paint_end);
             if (paint_result < 0) {
-                fprintf(stderr, "[LIBDECOR BRIDGE TEST] EGL swap failed (error=0x%x)\n", eglGetError());
+                fprintf(stderr, "[%s] EGL swap failed (error=0x%x)\n",
+                        diagnostic_mode ? "LIBDECOR BRIDGE TEST" : "LIBDECOR WINDOWSHADER", eglGetError());
                 w.failed = 1; break;
             }
         }

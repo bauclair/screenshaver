@@ -420,7 +420,9 @@ mod rust_gl_diagnostic {
                     unsafe { gl::UseProgram(0); gl::DeleteProgram(program); }
                     return Err(format!("Texture configuration GL error: 0x{texture_error:04x}"));
                 }
-                eprintln!("[LIBDECOR BRIDGE TEST] managed shader loaded: {name}; ISF inputs applied: {}; texture channels: {:?}; fallback policy", shader_inputs.len(), channels);
+                eprintln!("[LIBDECOR SHADER] loaded: {name}; ISF inputs applied: {}; texture channels: {:?}; policy={}",
+                    shader_inputs.len(), channels,
+                    native_selection.as_ref().map_or_else(|| "diagnostic fallback".to_string(), |s| s.policy_id.to_string()));
                 (program, true, Some(manager))
             } else {
                 let vertex = "#version 330 core\nlayout(location=0) in vec2 position; out vec2 uv; void main(){uv=position*0.5+0.5;gl_Position=vec4(position,0.0,1.0);}";
@@ -490,13 +492,13 @@ mod rust_gl_diagnostic {
                 draw_count: 0, last_dimensions: None, textures, postprocess, audio_demand, audio_bands,
                 audio_motion_effect, audio_motion_state: Default::default(), audio_last_update: Instant::now(), lyrics_overlay: None, lyrics_overlay_state: None,
             }));
-            eprintln!("[LIBDECOR BRIDGE TEST] Rust GL renderer initialized via compile_shader::build_program");
+            eprintln!("[LIBDECOR RENDERER] initialized via compile_shader::build_program");
             Ok(())
         });
         match result {
             Ok(Ok(())) => 0,
-            Ok(Err(e)) => { eprintln!("[LIBDECOR BRIDGE TEST] Rust GL init failed: {e}"); -1 },
-            Err(_) => { eprintln!("[LIBDECOR BRIDGE TEST] Rust GL init panicked"); -1 },
+            Ok(Err(e)) => { eprintln!("[LIBDECOR RENDERER] initialization failed: {e}"); -1 },
+            Err(_) => { eprintln!("[LIBDECOR RENDERER] initialization panicked"); -1 },
         }
     }
 
@@ -507,13 +509,13 @@ mod rust_gl_diagnostic {
             let Some(r) = slot.as_mut() else { return -1 };
             if width <= 0 || height <= 0 { return -1; }
             if r.last_dimensions != Some((width, height)) {
-                eprintln!("[LIBDECOR BRIDGE TEST] Rust viewport: {width} x {height}");
+                eprintln!("[LIBDECOR RENDERER] viewport: {width} x {height}");
                 r.last_dimensions = Some((width, height));
             }
             let elapsed = r.started.elapsed().as_secs_f32() * r.animation_speed;
             if let Some(manager) = r.textures.as_mut() {
                 if let Err(error) = manager.update_animations() {
-                    eprintln!("[LIBDECOR BRIDGE TEST] Texture animation failed: {error}");
+                    eprintln!("[LIBDECOR RENDERER] texture animation failed: {error}");
                     return -1;
                 }
                 manager.bind_channels();
@@ -574,7 +576,7 @@ mod rust_gl_diagnostic {
                 gl::DrawArrays(gl::TRIANGLES, 0, 3);
                 let error = gl::GetError();
                 if error != gl::NO_ERROR {
-                    eprintln!("[LIBDECOR BRIDGE TEST] OpenGL draw error: 0x{error:04x}");
+                    eprintln!("[LIBDECOR RENDERER] OpenGL draw error: 0x{error:04x}");
                     return -1;
                 }
             }
@@ -662,7 +664,7 @@ mod rust_gl_diagnostic {
     pub extern "C" fn screenshaver_libdecor_rust_gl_release() {
         let _ = std::panic::catch_unwind(|| RESOURCES.with(|slot| {
                 if let Some(r) = slot.borrow_mut().take() {
-                    eprintln!("[LIBDECOR BRIDGE TEST] Rust renderer release: frames={}, elapsed={:.2}s",
+                    eprintln!("[LIBDECOR RENDERER] released: frames={}, elapsed={:.2}s",
                         r.draw_count, r.started.elapsed().as_secs_f32());
                     release_resources(r);
                 }

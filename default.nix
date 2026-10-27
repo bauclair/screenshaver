@@ -7,6 +7,7 @@
 , SDL2_ttf
 , libGL
 , libglvnd
+, libdecor
 , wayland
 , libpulseaudio
 , libxkbcommon
@@ -21,6 +22,8 @@ rustPlatform.buildRustPackage rec {
   version = "0.5.5";
 
   src = ./.;
+
+  buildFeatures = [ "libdecor-bridge" ];
 
   cargoLock = {
     lockFile = ./Cargo.lock;
@@ -44,6 +47,7 @@ rustPlatform.buildRustPackage rec {
     SDL2_ttf
     libGL
     libglvnd
+    libdecor
     wayland
     wayland.dev
     libpulseaudio

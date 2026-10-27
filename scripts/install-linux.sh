@@ -67,6 +67,7 @@ Conventional Linux installation may install:
   * SDL2 and SDL2_ttf development libraries
   * X11 and XScreenSaver development libraries
   * OpenGL development libraries
+  * Wayland, EGL, and libdecor development libraries
   * Clang, PAM, and OpenSSL development libraries
   * Qt6 and CMake build dependencies on KDE Plasma
   * rustup, Cargo, and the stable Rust toolchain
@@ -319,6 +320,9 @@ install_debian_dependencies() {
         libx11-dev \
         libxss-dev \
         libgl1-mesa-dev \
+        libegl-dev \
+        libwayland-dev \
+        libdecor-0-dev \
         libclang-dev \
         libpam0g-dev \
         libssl-dev \
@@ -348,6 +352,8 @@ install_fedora_dependencies() {
         libXScrnSaver-devel \
         libglvnd-devel \
         mesa-libGL-devel \
+        wayland-devel \
+        libdecor-devel \
         clang-devel \
         pam-devel \
         openssl-devel \
@@ -468,6 +474,8 @@ repositories are enabled:
         libXScrnSaver-devel \
         libglvnd-devel \
         mesa-libGL-devel \
+        wayland-devel \
+        libdecor-devel \
         clang-devel \
         pam-devel \
         openssl-devel \
@@ -485,6 +493,8 @@ install_arch_dependencies() {
         libx11 \
         libxss \
         libglvnd \
+        wayland \
+        libdecor \
         clang \
         pam \
         openssl \
@@ -505,6 +515,8 @@ install_suse_dependencies() {
         libX11-devel \
         libXss-devel \
         libglvnd-devel \
+        wayland-devel \
+        libdecor-devel \
         clang-devel \
         pam-devel \
         libopenssl-devel \
@@ -528,6 +540,9 @@ install_void_dependencies() {
         libX11-devel \
         libXScrnSaver-devel \
         MesaLib-devel \
+        libglvnd-devel \
+        wayland-devel \
+        libdecor-devel \
         clang \
         pam-devel \
         openssl-devel \
@@ -682,12 +697,24 @@ install_rust_toolchain() {
         die "rustc was not found after installing rustup."
 }
 
+verify_libdecor_build_dependencies() {
+    local component
+    command -v pkg-config >/dev/null 2>&1 ||
+        die "pkg-config is required to build the native libdecor bridge."
+
+    for component in libdecor-0 wayland-client egl wayland-egl; do
+        pkg-config --exists "$component" ||
+            die "Missing native libdecor build dependency: $component (pkg-config)."
+    done
+}
+
 build_application() {
     log "Building ${APP_NAME} in release mode"
 
     cd "$PROJECT_DIR"
 
-    cargo build --release --locked
+    verify_libdecor_build_dependencies
+    cargo build --release --locked --features libdecor-bridge
 
     [[ -x "$BUILD_BINARY" ]] ||
         die "Expected executable was not produced: $BUILD_BINARY"
@@ -995,11 +1022,22 @@ verify_shared_libraries() {
     fi
 }
 
+verify_libdecor_linkage() {
+    local installed_binary="${INSTALL_PREFIX}/bin/${BINARY_NAME}"
+    local dependencies
+
+    command -v ldd >/dev/null 2>&1 || return 0
+    dependencies="$(ldd "$installed_binary")"
+    grep -Eq '^[[:space:]]*libdecor-0\.so\.0[[:space:]]*=>' <<< "$dependencies" ||
+        die "Installed Screenshaver is missing the native libdecor shared-library dependency."
+}
+
 verify_conventional_installation() {
     log "Verifying the installation"
 
     verify_desktop_file
     verify_shared_libraries
+    verify_libdecor_linkage
     verify_kde_native_integration
 
     if $XFCE_INTEGRATION; then
@@ -1119,7 +1157,7 @@ check_nixos_flake() {
 }
 
 build_nixos_flake() {
-    log "Building ${APP_NAME} with Nix"
+    log "Building ${APP_NAME} with Nix (standalone project flake)"
 
     nix_command \
         build \

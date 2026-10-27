@@ -42,22 +42,21 @@ pub(crate) fn save_windowshader_geometry(geometry: WindowshaderGeometry) -> Resu
 
 
 // Decoration backend selection is resolved before assigning a Wayland surface role.
-// This increment deliberately retains XDG as the sole executable backend.
+// XDG is the default; native libdecor is an explicit opt-in backend.
 // A libdecor frame must own its XDG role; it cannot decorate a surface after
 // xdg_wm_base.get_xdg_surface() has already assigned that role.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum WindowshaderDecorationBackend {
     XdgServerSide,
-    // Reserved for the native libdecor integration. Not selectable yet.
+    // Available when compiled with the libdecor-bridge feature.
     #[allow(dead_code)]
     Libdecor,
 }
 
 impl WindowshaderDecorationBackend {
     fn select_for_current_build() -> Result<Self, String> {
-        // Stage 3C-6A: opt-in selection is checked BEFORE a wl_surface or
-        // XDG role is created. The native production backend is deliberately
-        // unavailable at this stage; never silently fall back after opt-in.
+        // Select the backend before creating a Wayland surface role.
+        // A requested libdecor backend must not silently fall back to XDG.
         match std::env::var("SCREENSHAVER_WINDOWSHADER_DECORATION_BACKEND") {
             Err(std::env::VarError::NotPresent) => Ok(Self::XdgServerSide),
             Err(std::env::VarError::NotUnicode(_)) => Err(
@@ -79,9 +78,8 @@ impl WindowshaderDecorationBackend {
     }
 }
 
-// Keep the ownership decision explicit even while only XDG is implemented.
-// A later increment will give the Libdecor variant an owned native context,
-// frame, callbacks and teardown path, separate from Rust XDG proxy ownership.
+// This role controller applies to the Rust-owned XDG path. Native libdecor
+// owns its surface role and lifecycle separately in the C bridge.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum WindowshaderSurfaceRole {
     Xdg,
@@ -100,9 +98,8 @@ impl WindowshaderSurfaceRole {
     }
 }
 
-// Stage 3: compile-time native bridge handshake only. No context is created,
-// and no libdecor event dispatcher runs in the production windowshader path.
-// The bridge C API borrows the wl_display and must never disconnect it.
+// Native libdecor bridge entry points, including production rendering and
+// opt-in diagnostics. The production bridge owns its Wayland connection.
 #[cfg(feature = "libdecor-bridge")]
 unsafe extern "C" {
     fn screenshaver_decor_bridge_abi_version() -> std::ffi::c_int;
@@ -193,7 +190,7 @@ fn verify_windowshader_libdecor_bridge_abi() -> Result<(), String> {
     else { Err(format!("Unsupported libdecor bridge ABI: {}", version)) }
 }
 
-// Stage 2: define the native-bridge ownership contract without activating FFI.
+// Native bridge shutdown callback reads the Windowshader running flag.
 #[cfg(feature = "libdecor-bridge")]
 extern "C" fn windowshader_libdecor_should_stop(
     userdata: *mut std::ffi::c_void,
@@ -203,9 +200,8 @@ extern "C" fn windowshader_libdecor_should_stop(
     if running.load(Ordering::SeqCst) { 0 } else { 1 }
 }
 
-// libdecor and Rust wayland-client must not independently read/dispatch the
-// same wl_display. Until a single dispatch owner is implemented and tested,
-// native libdecor acquisition is deliberately refused.
+// The Rust XDG path dispatches through wayland-client; the native libdecor
+// path has its own connection and dispatch owner.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum WindowshaderEventDispatchOwner {
     RustWaylandClient,
@@ -221,9 +217,8 @@ enum WindowshaderDecorationLifecycle {
     Released,
 }
 
-// This controller tracks the presentation role, not the GL resources. It does
-// not hold or fabricate native pointers. The future native context/frame owner
-// must be introduced only when the event-dispatch interoperability is proven.
+// XDG-only presentation lifecycle controller; native libdecor resources and
+// lifecycle are managed separately by the C bridge.
 struct WindowshaderDecorationOwnership {
     backend: WindowshaderDecorationBackend,
     dispatch_owner: WindowshaderEventDispatchOwner,
@@ -905,16 +900,14 @@ pub fn run_egl_windowed_surface(
 
     const WINDOWED_TARGET_ID: u32 = 0;
     let decoration_backend = WindowshaderDecorationBackend::select_for_current_build()?;
-    // Stage 29: explicitly selected native production renderer.
-    // The C bridge owns its own Wayland connection, libdecor role, EGL context
-    // and presentation. Rust owns GL resources via the existing diagnostic
-    // callbacks. This is not yet the production policy/rotation renderer.
-    // Return success after the user closes the native window so the
-    // supervisor does not retry a completed test.
+    // Explicitly selected native production renderer. The C bridge owns its
+    // Wayland connection, libdecor role, EGL context and presentation; Rust
+    // supplies shader resources, policy rotation and runtime callbacks.
+    // A normal native window close ends this Windowshader session.
     if decoration_backend == WindowshaderDecorationBackend::Libdecor {
         #[cfg(feature = "libdecor-bridge")]
         {
-            // Stage 3C-6D2C-22: publish native Windowshader lifecycle status.
+            // Publish native Windowshader lifecycle status.
             // The XDG branch already publishes these transitions, but the
             // native branch returns before reaching that code.
             runtime.tray_status.set_windowshader_starting();
@@ -958,7 +951,7 @@ pub fn run_egl_windowed_surface(
                 runtime.lyrics_state.clone(),
             );
             eprintln!(
-                "[LIBDECOR WINDOWSHADER] Stage 3C-6C policy={} shader={}",
+                "[LIBDECOR WINDOWSHADER] starting policy={} shader={}",
                 active_shader.policy_id, active_shader.shader_name,
             );
             // Resolve the existing policy FPS precedence in Rust, just as the
@@ -1057,16 +1050,16 @@ pub fn run_egl_windowed_surface(
             // Do not let the supervisor restart the windowshader after closure.
             running.store(false, Ordering::SeqCst);
             if status == 0 {
-                eprintln!("[LIBDECOR WINDOWSHADER] Stage 3C-6C PASS; native window closed");
+                eprintln!("[LIBDECOR WINDOWSHADER] native window closed");
                 return Ok(());
             }
-            return Err(format!("Stage 3C-6C native rendering diagnostic failed (code {status})"));
+            return Err(format!("Native libdecor windowshader rendering failed (code {status})"));
         }
         #[cfg(not(feature = "libdecor-bridge"))]
         return Err("libdecor-bridge feature is disabled".into());
     }
-    // Resolve before any wl_surface or xdg_surface is created. Fail closed if
-    // an unimplemented backend is ever selected by a future change.
+    // The remaining branch is XDG-only; reject any unexpected surface role
+    // before creating wl_surface or xdg_surface.
     let surface_role = WindowshaderSurfaceRole::for_backend(decoration_backend)?;
     debug_assert_eq!(surface_role, WindowshaderSurfaceRole::Xdg);
     let mut decoration_ownership = WindowshaderDecorationOwnership::new(decoration_backend)?;

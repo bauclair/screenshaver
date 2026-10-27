@@ -1,5 +1,5 @@
 // Screenshaver build script.
-// The libdecor diagnostic is opt-in and does not affect normal builds.
+// The libdecor diagnostic and production bridge are enabled independently by Cargo features.
 fn main() {
     #[cfg(target_os = "linux")]
     println!("cargo:rustc-link-lib=GL");
@@ -47,7 +47,7 @@ fn build_libdecor_test() {
     println!("cargo:rustc-link-lib=dylib=m");
 }
 
-// Production-independent native ABI. No runtime activation or event dispatch.
+// Build the native libdecor bridge used by the opt-in production Windowshader backend.
 fn build_libdecor_bridge() {
     let decor = pkg_config::Config::new().cargo_metadata(false)
         .probe("libdecor-0").expect("libdecor-0 development files not found");
