@@ -2526,6 +2526,8 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
         true;
 
 
+    let mut screensaver_waiting_for_active = false;
+
     while running.load(Ordering::SeqCst) {
 
         if tray_channel_connected {
@@ -2772,6 +2774,24 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
                 }
             };
 
+
+        // An SDL renderer exit does not itself reset the compositor's idle
+        // notification. Require a fresh Active observation before rearming.
+        if screensaver_waiting_for_active {
+            match session_state {
+                crate::query_session::SessionState::Active => {
+                    screensaver_waiting_for_active = false;
+                    crate::logger::information(
+                        &logfile,
+                        "[SESSION REARM] Active observed; idle activation rearmed",
+                    );
+                }
+                crate::query_session::SessionState::Idle => {
+                    std::thread::sleep(Duration::from_millis(50));
+                    continue;
+                }
+            }
+        }
 
         match session_state {
 
@@ -3172,6 +3192,13 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
                                 );
                             }
 
+                            // Wait for the idle backend to report actual
+                            // activity before allowing another activation.
+                            screensaver_waiting_for_active = true;
+                            crate::logger::information(
+                                &logfile,
+                                "[SESSION REARM] Screensaver exited; waiting for Active",
+                            );
                             break 'screensaver_session;
                         }
 

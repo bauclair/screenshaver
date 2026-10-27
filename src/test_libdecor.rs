@@ -97,6 +97,21 @@ pub(crate) fn install_windowshader_selection(
     })
 }
 
+// Stage 3C-6D2A: staging interface for the forthcoming rotation controller.
+// This does not start a timer, alter supervisor behavior, or change the C ABI.
+#[cfg(feature = "libdecor-bridge")]
+#[allow(dead_code)]
+pub(crate) fn replace_windowshader_policy(
+    shader_name: String,
+    policy_id: i64,
+    source_path: std::path::PathBuf,
+    texture_policy: crate::load_config::TexturePolicy,
+) -> Result<(), String> {
+    rust_gl_diagnostic::replace_policy(WindowshaderNativeSelection {
+        shader_name, policy_id, source_path, texture_policy,
+    })
+}
+
 // Stage 3C-5F: Rust rendering callbacks run synchronously on the C diagnostic
 // thread while its desktop OpenGL EGL context is current. Not production code.
 #[cfg(feature = "libdecor-bridge")]
@@ -119,6 +134,7 @@ mod rust_gl_diagnostic {
     thread_local! {
         static RESOURCES: RefCell<Option<Resources>> = const { RefCell::new(None) };
         static REPLACEMENT_NAME: RefCell<Option<String>> = const { RefCell::new(None) };
+        static REPLACEMENT_POLICY: RefCell<Option<super::WindowshaderNativeSelection>> = const { RefCell::new(None) };
     }
 
     fn release_resources(mut r: Resources) {
@@ -133,6 +149,41 @@ mod rust_gl_diagnostic {
 
     // Called only on the native rendering thread, with the EGL context current.
     // A failed compilation or texture setup leaves the previous shader alive.
+    // Stage 3C-6D2A: policy-aware replacement entry point. This is deliberately
+    // not called by the native diagnostic timer. The rotation controller will
+    // supply a fully resolved policy, rather than only a shader filename.
+    // Must be called on the thread with the native EGL context current.
+    pub(crate) fn replace_policy(selection: super::WindowshaderNativeSelection) -> Result<(), String> {
+        if selection.policy_id <= 0 {
+            return Err("Native replacement requires a database policy ID".into());
+        }
+        if selection.shader_name.is_empty() ||
+            std::path::Path::new(&selection.shader_name).file_name()
+                .and_then(|n| n.to_str()) != Some(selection.shader_name.as_str()) {
+            return Err("Native replacement requires a managed shader filename".into());
+        }
+        if REPLACEMENT_POLICY.with(|slot| slot.borrow().is_some()) {
+            return Err("Native policy replacement already in progress".into());
+        }
+        let previous = RESOURCES.with(|slot| slot.borrow_mut().take())
+            .ok_or("No active shader to replace")?;
+        let policy_id = selection.policy_id;
+        let shader_name = selection.shader_name.clone();
+        REPLACEMENT_POLICY.with(|slot| *slot.borrow_mut() = Some(selection));
+        let initialized = screenshaver_libdecor_rust_gl_initialize();
+        REPLACEMENT_POLICY.with(|slot| *slot.borrow_mut() = None);
+        if initialized != 0 {
+            if let Some(partial) = RESOURCES.with(|slot| slot.borrow_mut().take()) {
+                release_resources(partial);
+            }
+            RESOURCES.with(|slot| *slot.borrow_mut() = Some(previous));
+            return Err(format!("Policy {policy_id} shader {shader_name} failed preparation; previous policy retained"));
+        }
+        release_resources(previous);
+        eprintln!("[LIBDECOR POLICY REPLACE] PASS policy={policy_id} shader={shader_name}");
+        Ok(())
+    }
+
     #[unsafe(no_mangle)]
     pub extern "C" fn screenshaver_libdecor_rust_gl_replace(name: *const c_char) -> i32 {
         let result = std::panic::catch_unwind(|| -> Result<(), String> {
@@ -181,10 +232,15 @@ mod rust_gl_diagnostic {
             // The optional value is a managed shader filename, not an arbitrary
             // filesystem path. The database supplies validated runtime GLSL.
             let replacement = REPLACEMENT_NAME.with(|slot| slot.borrow().clone());
-            let native_selection = if replacement.is_some() { None } else {
+            let pending_policy = REPLACEMENT_POLICY.with(|slot| slot.borrow().clone());
+            let native_selection = if pending_policy.is_some() {
+                pending_policy
+            } else if replacement.is_some() {
+                None
+            } else {
                 super::WINDOWSHADER_NATIVE_SELECTION.with(|slot| slot.borrow().clone())
             };
-            let selected = replacement.or_else(|| native_selection.as_ref().map(|s| s.shader_name.clone()))
+            let selected = native_selection.as_ref().map(|s| s.shader_name.clone()).or(replacement)
                 .or_else(|| std::env::var("SCREENSHAVER_LIBDECOR_TEST_SHADER")
                     .ok().filter(|s| !s.trim().is_empty()));
             let (program, managed, mut textures) = if let Some(name) = selected.as_deref() {

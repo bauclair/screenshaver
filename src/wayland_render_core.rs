@@ -1771,10 +1771,15 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
         initial_timing,
     );
 
+    // Windowshader never inherits Wallpaper's desktop notification setting.
+    // This does not affect FPS monitoring, status, or diagnostic logging.
+    let wallpaper_notifications_enabled = runtime.notifications
+        && runtime.display_format != crate::manage_configuration::WallpaperDisplayFormat::Windowed;
+
     notify_active_wallpaper(
         &mut frame_runtime.notifications,
         true,
-        runtime.notifications,
+        wallpaper_notifications_enabled,
         active_shader,
         &frame_context.pipeline.textures,
         frame_runtime.pacing.rendered_fps,
@@ -1984,7 +1989,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                         "Windowshader controller missing during preparation".to_string())?,
                     display, context, event_queue, state, egl_targets, native_targets,
                     preparation_lease,
-                    control, shader_interval, runtime.notifications, running,
+                    control, shader_interval, wallpaper_notifications_enabled, running,
                 );
                 // Update the native title even when the compositor withholds frames.
                 // MPRIS state is read without blocking on D-Bus or lyric retrieval.
@@ -2046,7 +2051,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 &mut frame_runtime,
                 &mut frame_audio,
                 false,
-                runtime.notifications,
+                wallpaper_notifications_enabled,
                 || {},
             );
             let info = prepared_transaction.publish(&frame_context, &frame_runtime);
@@ -2376,7 +2381,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                                 notify_active_wallpaper(
                                     &mut frame_runtime.notifications,
                                     true,
-                                    runtime.notifications,
+                                    wallpaper_notifications_enabled,
                                     &frame_runtime.shader.current,
                                     &frame_context.pipeline.textures,
                                     frame_runtime.pacing.rendered_fps,
@@ -2688,7 +2693,7 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                 notify_active_wallpaper(
                     &mut frame_runtime.notifications,
                     false,
-                    runtime.notifications,
+                    wallpaper_notifications_enabled,
                     &frame_runtime.shader.current,
                     &frame_context.pipeline.textures,
                     frame_runtime.pacing.rendered_fps,

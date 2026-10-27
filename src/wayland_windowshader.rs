@@ -108,6 +108,29 @@ unsafe extern "C" {
     fn screenshaver_decor_bridge_abi_version() -> std::ffi::c_int;
     fn screenshaver_decor_bridge_probe_native_session() -> std::ffi::c_int;
     fn screenshaver_decor_bridge_run_diagnostic() -> std::ffi::c_int;
+    fn screenshaver_decor_bridge_run_diagnostic_with_policy(
+        should_stop: extern "C" fn(*mut std::ffi::c_void) -> std::ffi::c_int,
+        stop_userdata: *mut std::ffi::c_void,
+        replace_policy: extern "C" fn(*mut std::ffi::c_void) -> std::ffi::c_int,
+        policy_userdata: *mut std::ffi::c_void,
+    ) -> std::ffi::c_int;
+    fn screenshaver_decor_bridge_run_diagnostic_with_pause_and_fps(
+        should_stop: extern "C" fn(*mut std::ffi::c_void) -> std::ffi::c_int,
+        stop_userdata: *mut std::ffi::c_void,
+        replace_policy: extern "C" fn(*mut std::ffi::c_void) -> std::ffi::c_int,
+        policy_userdata: *mut std::ffi::c_void,
+        pause_status: extern "C" fn(*mut std::ffi::c_void, std::ffi::c_int) -> std::ffi::c_int,
+        pause_userdata: *mut std::ffi::c_void,
+        configured_fps: u32,
+    ) -> std::ffi::c_int;
+    fn screenshaver_decor_bridge_run_diagnostic_with_pause(
+        should_stop: extern "C" fn(*mut std::ffi::c_void) -> std::ffi::c_int,
+        stop_userdata: *mut std::ffi::c_void,
+        replace_policy: extern "C" fn(*mut std::ffi::c_void) -> std::ffi::c_int,
+        policy_userdata: *mut std::ffi::c_void,
+        pause_status: extern "C" fn(*mut std::ffi::c_void, std::ffi::c_int) -> std::ffi::c_int,
+        pause_userdata: *mut std::ffi::c_void,
+    ) -> std::ffi::c_int;
     fn screenshaver_decor_bridge_run_diagnostic_with_stop(
         should_stop: extern "C" fn(*mut std::ffi::c_void) -> std::ffi::c_int,
         stop_userdata: *mut std::ffi::c_void,
@@ -668,6 +691,96 @@ impl Drop for WindowshaderTrayStatusCleanup {
     }
 }
 
+// Stage 3C-6D2C: the C loop owns native dispatch and presentation.
+// phase=0 is the pre-paint gate; phase=1 is a confirmed EGL swap.
+#[cfg(feature = "libdecor-bridge")]
+struct NativePauseContext {
+    control: crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+    paused: bool,
+    awaiting_resumed_frame: bool,
+}
+
+#[cfg(feature = "libdecor-bridge")]
+extern "C" fn windowshader_libdecor_pause_status(
+    userdata: *mut std::ffi::c_void,
+    phase: std::ffi::c_int,
+) -> std::ffi::c_int {
+    if userdata.is_null() { return 1; }
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let state = unsafe { &mut *(userdata as *mut NativePauseContext) };
+        if phase == 2 {
+            state.control.diagnostic_checkpoint(5); // entering native EGL swap
+            return 0;
+        }
+        if phase == 3 {
+            state.control.diagnostic_checkpoint(6); // native EGL swap returned
+            return 0;
+        }
+        if phase == 1 {
+            if state.awaiting_resumed_frame {
+                state.control.acknowledge_resumed_frame();
+                state.awaiting_resumed_frame = false;
+                eprintln!("[LIBDECOR PAUSE] resumed frame confirmed");
+            }
+            return 0;
+        }
+        state.control.diagnostic_checkpoint(3); // native pre-paint pause gate
+        if state.control.pause_requested() {
+            if !state.paused {
+                state.control.acknowledge_pause_detected();
+                state.control.diagnostic_checkpoint(8);
+                state.control.acknowledge_paused();
+                state.paused = true;
+                state.awaiting_resumed_frame = true;
+                eprintln!("[LIBDECOR PAUSE] pause acknowledged");
+            }
+            return 1;
+        }
+        if state.paused {
+            state.paused = false;
+            eprintln!("[LIBDECOR PAUSE] released; awaiting presented frame");
+        }
+        0
+    }));
+    result.unwrap_or(1)
+}
+
+#[cfg(feature = "libdecor-bridge")]
+struct NativePolicyTestContext<'a> {
+    manager: &'a mut crate::manage_shader::ShaderManager,
+    directory: &'a std::path::Path,
+    texture_policy: crate::load_config::TexturePolicy,
+    active_policy_id: i64,
+}
+
+// Called synchronously by C with the native EGL context current.
+#[cfg(feature = "libdecor-bridge")]
+extern "C" fn windowshader_libdecor_next_policy(userdata: *mut std::ffi::c_void) -> i32 {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<(), String> {
+        if userdata.is_null() { return Err("Null policy controller".into()); }
+        let state = unsafe { &mut *(userdata as *mut NativePolicyTestContext<'_>) };
+        let candidate = select_safe_wallpaper_shader(state.manager, state.directory)?;
+        if candidate.policy_id == state.active_policy_id {
+            eprintln!("[LIBDECOR POLICY TEST] selected same policy {}; no transition", candidate.policy_id);
+            return Ok(());
+        }
+        crate::test_libdecor::replace_windowshader_policy(
+            candidate.shader_name.clone(), candidate.policy_id,
+            candidate.source_path.clone(), state.texture_policy.clone(),
+        )?;
+        state.active_policy_id = candidate.policy_id;
+        state.manager.record_rendered_policy(candidate.policy_id);
+        eprintln!("[LIBDECOR POLICY TEST] PASS policy={} name={} shader={}",
+            candidate.policy_id, candidate.policy_name, candidate.shader_name);
+        Ok(())
+    }));
+    match result {
+        Ok(Ok(())) => 0,
+        Ok(Err(error)) => { eprintln!("[LIBDECOR POLICY TEST] FAILED: {error}"); -1 },
+        Err(_) => { eprintln!("[LIBDECOR POLICY TEST] PANIC; transition not confirmed"); -1 },
+    }
+}
+
 pub fn run_egl_windowed_surface(
     mut shader_manager: crate::manage_shader::ShaderManager,
     wallpaper_directory: &Path,
@@ -708,10 +821,33 @@ pub fn run_egl_windowed_surface(
                 "[LIBDECOR WINDOWSHADER] Stage 3C-6C policy={} shader={}",
                 active_shader.policy_id, active_shader.shader_name,
             );
+            // Resolve the existing policy FPS precedence in Rust, just as the
+            // XDG windowshader path does. No independent libdecor default.
+            let configured_fps = crate::wayland_wallpaper::FrameLoopInitialTiming::for_shader(
+                runtime, &active_shader,
+            ).rendered_fps;
+            eprintln!("[LIBDECOR FPS] initial policy={} resolved FPS={}",
+                active_shader.policy_id, configured_fps);
+            let mut policy_context = NativePolicyTestContext {
+                manager: &mut shader_manager,
+                directory: wallpaper_directory,
+                texture_policy: runtime.texture_policy.clone(),
+                active_policy_id: active_shader.policy_id,
+            };
+            let mut pause_context = NativePauseContext {
+                control: control.clone(),
+                paused: false,
+                awaiting_resumed_frame: false,
+            };
             let status = unsafe {
-                screenshaver_decor_bridge_run_diagnostic_with_stop(
+                screenshaver_decor_bridge_run_diagnostic_with_pause_and_fps(
                     windowshader_libdecor_should_stop,
                     Arc::as_ptr(&running) as *mut std::ffi::c_void,
+                    windowshader_libdecor_next_policy,
+                    (&mut policy_context as *mut NativePolicyTestContext<'_>).cast(),
+                    windowshader_libdecor_pause_status,
+                    (&mut pause_context as *mut NativePauseContext).cast(),
+                    configured_fps,
                 )
             };
             // Closing the native frame is equivalent to closing the XDG toplevel.

@@ -142,7 +142,7 @@ static void bridge_test_global_remove(void *data, struct wl_registry *registry, 
 static const struct wl_registry_listener bridge_test_registry_listener = {
     .global = bridge_test_global, .global_remove = bridge_test_global_remove
 };
-/* Stage 3C-5B: Rust owns all GL objects; C owns EGL and presentation. */
+/* Stage 3C-6D2C-5: opt-in swap-interval experiment; Rust owns GL objects. */
 extern int screenshaver_libdecor_rust_gl_initialize(void);
 extern int screenshaver_libdecor_rust_gl_draw(int width, int height, unsigned frame);
 extern void screenshaver_libdecor_rust_gl_release(void);
@@ -174,16 +174,74 @@ static int bridge_egl_initialize(struct bridge_test_window *w) {
                                              (EGLNativeWindowType)w->egl_window, NULL);
     if (w->egl_surface == EGL_NO_SURFACE ||
         !eglMakeCurrent(w->egl_display, w->egl_surface, w->egl_surface, w->egl_context)) return -1;
+    /* Stage 3C-6D2C-5: opt-in EGL swap-interval comparison.
+     * Leave the established default untouched unless explicitly requested.
+     * This is diagnostic only: a successful request does not guarantee the
+     * compositor or EGL driver will avoid blocking in eglSwapBuffers(). */
+    const char *swap_interval = getenv("SCREENSHAVER_LIBDECOR_DIAG_SWAP_INTERVAL");
+    if (swap_interval && swap_interval[0]) {
+        if (strcmp(swap_interval, "0") != 0 && strcmp(swap_interval, "1") != 0) {
+            fprintf(stderr, "[LIBDECOR EGL DIAG] invalid swap interval '%s' (expected 0 or 1)\n",
+                    swap_interval);
+            return -1;
+        }
+        int requested = swap_interval[0] - '0';
+        EGLBoolean accepted = eglSwapInterval(w->egl_display, requested);
+        if (!accepted) {
+            EGLint error = eglGetError();
+            fprintf(stderr, "[LIBDECOR EGL DIAG] eglSwapInterval(%d) rejected (EGL error=0x%x)\n",
+                    requested, error);
+            return -1;
+        }
+        fprintf(stderr, "[LIBDECOR EGL DIAG] eglSwapInterval(%d) accepted; effective presentation pacing is driver/compositor-dependent\n",
+                requested);
+    } else {
+        fprintf(stderr, "[LIBDECOR EGL DIAG] swap interval unchanged (EGL default)\n");
+    }
     if (screenshaver_libdecor_rust_gl_initialize() != 0) return -1;
     fprintf(stderr, "[LIBDECOR BRIDGE TEST] EGL/desktop OpenGL initialized: %s\n",
             (const char *)glGetString(GL_VERSION));
     return 0;
 }
 
+/* Stage 3C-6D2C-4: timestamps pair native diagnostics with the runtime log. */
+static void bridge_handoff_stamp(const char *operation, long duration_ms) {
+    struct timespec wall, mono;
+    struct tm local;
+    clock_gettime(CLOCK_REALTIME, &wall);
+    clock_gettime(CLOCK_MONOTONIC, &mono);
+    localtime_r(&wall.tv_sec, &local);
+    fprintf(stderr,
+            "[LIBDECOR HANDOFF DIAG] %04d-%02d-%02d %02d:%02d:%02d.%03ld monotonic=%lld.%09ld %s %ldms\n",
+            local.tm_year + 1900, local.tm_mon + 1, local.tm_mday,
+            local.tm_hour, local.tm_min, local.tm_sec, wall.tv_nsec / 1000000L,
+            (long long)mono.tv_sec, mono.tv_nsec, operation, duration_ms);
+}
+
+/* Only the diagnostic's owning thread sets and calls these borrowed callbacks. */
+static int (*bridge_diagnostic_pause_status)(void *, int) = NULL;
+static void *bridge_diagnostic_pause_userdata = NULL;
+
 static int bridge_test_paint(struct bridge_test_window *w) {
     if (!w->configured || w->egl_surface == EGL_NO_SURFACE) return -1;
-    if (screenshaver_libdecor_rust_gl_draw(w->width, w->height, w->frames) != 0) return -1;
-    if (!eglSwapBuffers(w->egl_display, w->egl_surface)) return -1;
+    struct timespec draw_begin, draw_end, swap_begin, swap_end;
+    clock_gettime(CLOCK_MONOTONIC, &draw_begin);
+    int draw_result = screenshaver_libdecor_rust_gl_draw(w->width, w->height, w->frames);
+    clock_gettime(CLOCK_MONOTONIC, &draw_end);
+    long draw_ms = (draw_end.tv_sec - draw_begin.tv_sec) * 1000L
+                 + (draw_end.tv_nsec - draw_begin.tv_nsec) / 1000000L;
+    if (draw_ms >= 250) bridge_handoff_stamp("Rust GL draw blocked", draw_ms);
+    if (draw_result != 0) return -1;
+    /* Phase 2/3 only update diagnostics; they never grant pause acknowledgment. */
+    if (bridge_diagnostic_pause_status) (void)bridge_diagnostic_pause_status(bridge_diagnostic_pause_userdata, 2);
+    clock_gettime(CLOCK_MONOTONIC, &swap_begin);
+    int swap_result = eglSwapBuffers(w->egl_display, w->egl_surface);
+    clock_gettime(CLOCK_MONOTONIC, &swap_end);
+    if (bridge_diagnostic_pause_status) (void)bridge_diagnostic_pause_status(bridge_diagnostic_pause_userdata, 3);
+    long swap_ms = (swap_end.tv_sec - swap_begin.tv_sec) * 1000L
+                 + (swap_end.tv_nsec - swap_begin.tv_nsec) / 1000000L;
+    if (swap_ms >= 250) bridge_handoff_stamp("eglSwapBuffers blocked", swap_ms);
+    if (!swap_result) return -1;
     ++w->frames;
     return 0;
 }
@@ -225,10 +283,14 @@ static struct libdecor_frame_interface bridge_test_frame_interface = {
     .commit = bridge_test_commit, .dismiss_popup = bridge_test_dismiss_popup
 };
 
-/* Interactive test: close the window to exit; a 120-second limit prevents
- * indefinitely hanging unattended diagnostics. */
-int screenshaver_decor_bridge_run_diagnostic_with_stop(
-    int (*should_stop)(void *), void *stop_userdata) {
+/* Interactive diagnostic: continue until explicit shutdown or window close. */
+int screenshaver_decor_bridge_run_diagnostic_with_pause_and_fps(
+    int (*should_stop)(void *), void *stop_userdata,
+    int (*replace_policy)(void *), void *policy_userdata,
+    int (*pause_status)(void *, int), void *pause_userdata,
+    unsigned configured_fps) {
+    bridge_diagnostic_pause_status = pause_status;
+    bridge_diagnostic_pause_userdata = pause_userdata;
     struct bridge_test_window w = {0};
     w.width = 720; w.height = 420; w.running = 1;
     w.egl_display = EGL_NO_DISPLAY;
@@ -260,17 +322,76 @@ int screenshaver_decor_bridge_run_diagnostic_with_stop(
     libdecor_frame_map(w.frame);
     fprintf(stderr, "[LIBDECOR BRIDGE TEST] window requested; drag, resize, then close\n");
     time_t started = time(NULL);
+    /* Stage 3C-6D2C-6: bounded, opt-in diagnostic frame pacing.
+     * Rust supplies policy-resolved FPS; diagnostic override is optional. */
+    const char *fps_env = getenv("SCREENSHAVER_LIBDECOR_DIAG_FPS");
+    unsigned diagnostic_fps = configured_fps;
+    if (diagnostic_fps < 1 || diagnostic_fps > 240) {
+        fprintf(stderr, "[LIBDECOR FPS] invalid configured FPS %u (expected 1..240)\n", diagnostic_fps);
+        w.failed = 1;
+        goto cleanup;
+    }
+    fprintf(stderr, "[LIBDECOR FPS] Rust-resolved policy FPS: %u\n", diagnostic_fps);
+    if (fps_env && fps_env[0]) {
+        char *end = NULL;
+        unsigned long parsed = strtoul(fps_env, &end, 10);
+        if (!end || *end != '\0' || parsed < 1 || parsed > 240) {
+            fprintf(stderr, "[LIBDECOR FPS DIAG] invalid FPS '%s' (expected 1..240)\n", fps_env);
+            w.failed = 1;
+            goto cleanup;
+        }
+        diagnostic_fps = (unsigned)parsed;
+        fprintf(stderr, "[LIBDECOR FPS DIAG] diagnostic frame pacing enabled: %u FPS\n", diagnostic_fps);
+    } else {
+        fprintf(stderr, "[LIBDECOR FPS DIAG] no diagnostic override; using Rust-resolved %u FPS\n", diagnostic_fps);
+    }
+    /* Stage 3C-6D2B: explicitly opted-in one-shot policy transition.
+     * The callback runs on the EGL owner thread, between draw calls. */
+    const char *policy_test = getenv("SCREENSHAVER_LIBDECOR_TEST_POLICY_TRANSITION");
+    int policy_attempted = 0;
     /* Diagnostic only: one manually requested replacement after ten seconds.
      * This is not the policy scheduler and does not alter the native window. */
     const char *replacement = getenv("SCREENSHAVER_LIBDECOR_REPLACEMENT_SHADER");
     int replacement_attempted = 0;
+    /* Stage 3C-6D2C-3: native loop diagnostics, no behavior change. */
+    struct timespec diagnostic_last;
+    clock_gettime(CLOCK_MONOTONIC, &diagnostic_last);
     while (w.running) {
         if (should_stop && should_stop(stop_userdata)) {
             fprintf(stderr, "[LIBDECOR BRIDGE TEST] external shutdown requested\n");
             break;
         }
-        if (screenshaver_decor_bridge_dispatch(w.bridge, 50) < 0) {
+        struct timespec dispatch_begin, dispatch_end;
+        clock_gettime(CLOCK_MONOTONIC, &dispatch_begin);
+        int dispatch_result = screenshaver_decor_bridge_dispatch(w.bridge, 50);
+        clock_gettime(CLOCK_MONOTONIC, &dispatch_end);
+        long dispatch_ms = (dispatch_end.tv_sec - dispatch_begin.tv_sec) * 1000L
+                         + (dispatch_end.tv_nsec - dispatch_begin.tv_nsec) / 1000000L;
+        if (dispatch_ms >= 250)
+            bridge_handoff_stamp("libdecor dispatch blocked", dispatch_ms);
+        if (dispatch_result < 0) {
             w.failed = 1; break;
+        }
+        long heartbeat_ms = (dispatch_end.tv_sec - diagnostic_last.tv_sec) * 1000L
+                          + (dispatch_end.tv_nsec - diagnostic_last.tv_nsec) / 1000000L;
+        if (heartbeat_ms >= 5000) {
+            bridge_handoff_stamp("native loop heartbeat", heartbeat_ms);
+            fprintf(stderr, "[LIBDECOR HANDOFF DIAG] frames=%u configured=%d\n",
+                    w.frames, w.configured);
+            diagnostic_last = dispatch_end;
+        }
+        /* Keep dispatch and shutdown live while paused, but never swap or
+         * request a replacement until presentation has resumed. */
+        int paused = pause_status ? pause_status(pause_userdata, 0) : 0;
+        if (paused) continue;
+        if (!policy_attempted && policy_test && policy_test[0] == '1' &&
+            w.configured && w.frames > 0 && time(NULL) - started >= 10) {
+            policy_attempted = 1;
+            if (replace_policy) {
+                fprintf(stderr, "[LIBDECOR POLICY TEST] requesting next database policy\n");
+                if (replace_policy(policy_userdata) != 0)
+                    fprintf(stderr, "[LIBDECOR POLICY TEST] transition failed; previous policy retained\n");
+            }
         }
         if (!replacement_attempted && replacement && replacement[0] &&
             w.configured && w.frames > 0 && time(NULL) - started >= 10) {
@@ -279,13 +400,37 @@ int screenshaver_decor_bridge_run_diagnostic_with_stop(
             if (screenshaver_libdecor_rust_gl_replace(replacement) != 0)
                 fprintf(stderr, "[LIBDECOR REPLACE] previous shader remains active\n");
         }
-        if (w.configured && bridge_test_paint(&w) < 0) {
-            fprintf(stderr, "[LIBDECOR BRIDGE TEST] EGL swap failed (error=0x%x)\n", eglGetError());
-            w.failed = 1; break;
+        struct timespec paint_begin, paint_end;
+        if (w.configured) {
+            clock_gettime(CLOCK_MONOTONIC, &paint_begin);
+            int paint_result = bridge_test_paint(&w);
+            clock_gettime(CLOCK_MONOTONIC, &paint_end);
+            long paint_ms = (paint_end.tv_sec - paint_begin.tv_sec) * 1000L
+                          + (paint_end.tv_nsec - paint_begin.tv_nsec) / 1000000L;
+            if (paint_ms >= 250)
+                bridge_handoff_stamp("total draw/swap blocked", paint_ms);
+            if (paint_result < 0) {
+                fprintf(stderr, "[LIBDECOR BRIDGE TEST] EGL swap failed (error=0x%x)\n", eglGetError());
+                w.failed = 1; break;
+            }
         }
-        if (time(NULL) - started >= 120) {
-            fprintf(stderr, "[LIBDECOR BRIDGE TEST] timed out waiting for close\n");
-            w.failed = 1; break;
+        if (w.configured && pause_status) (void)pause_status(pause_userdata, 1);
+        /* Sleep only the remaining frame budget. The pause callback runs before
+         * this bounded sleep and on the next iteration; never sleep while paused.
+         * Avoid accumulated deadlines or catch-up bursts after a handoff. */
+        if (diagnostic_fps && w.configured) {
+            struct timespec now;
+            clock_gettime(CLOCK_MONOTONIC, &now);
+            long long elapsed_ns = (long long)(now.tv_sec - paint_begin.tv_sec) * 1000000000LL
+                                 + (long long)(now.tv_nsec - paint_begin.tv_nsec);
+            long long remaining_ns = 1000000000LL / diagnostic_fps - elapsed_ns;
+            if (remaining_ns > 0) {
+                struct timespec delay = {
+                    .tv_sec = (time_t)(remaining_ns / 1000000000LL),
+                    .tv_nsec = (long)(remaining_ns % 1000000000LL)
+                };
+                (void)nanosleep(&delay, NULL);
+            }
         }
     }
     result = (w.configured && w.frames > 0 && !w.failed) ? 0 : 1;
@@ -307,11 +452,39 @@ cleanup:
     if (w.compositor) wl_compositor_destroy(w.compositor);
     if (w.registry) wl_registry_destroy(w.registry);
     screenshaver_decor_bridge_destroy(w.bridge);
+    bridge_diagnostic_pause_status = NULL;
+    bridge_diagnostic_pause_userdata = NULL;
     fprintf(stderr, "[LIBDECOR BRIDGE TEST] %s (configured=%d)\n",
             result ? "FAIL" : "PASS", w.configured);
     return result;
 }
 
+
+/* Legacy diagnostic entrypoint: no Rust policy context. Preserve the
+ * previous unpaced behavior unless a diagnostic FPS override is supplied. */
+int screenshaver_decor_bridge_run_diagnostic_with_pause(
+    int (*should_stop)(void *), void *stop_userdata,
+    int (*replace_policy)(void *), void *policy_userdata,
+    int (*pause_status)(void *, int), void *pause_userdata) {
+    /* Legacy calls retain the old diagnostic default of 60 FPS. */
+    return screenshaver_decor_bridge_run_diagnostic_with_pause_and_fps(
+        should_stop, stop_userdata, replace_policy, policy_userdata,
+        pause_status, pause_userdata, 60);
+}
+
+/* Keep the prior C entrypoint and standalone diagnostic behavior intact. */
+int screenshaver_decor_bridge_run_diagnostic_with_policy(
+    int (*should_stop)(void *), void *stop_userdata,
+    int (*replace_policy)(void *), void *policy_userdata) {
+    return screenshaver_decor_bridge_run_diagnostic_with_pause(
+        should_stop, stop_userdata, replace_policy, policy_userdata, NULL, NULL);
+}
+
+int screenshaver_decor_bridge_run_diagnostic_with_stop(
+    int (*should_stop)(void *), void *stop_userdata) {
+    return screenshaver_decor_bridge_run_diagnostic_with_policy(
+        should_stop, stop_userdata, NULL, NULL);
+}
 
 /* Preserve standalone diagnostic callers without an external stop source. */
 int screenshaver_decor_bridge_run_diagnostic(void) {

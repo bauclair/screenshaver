@@ -182,9 +182,20 @@ impl WallpaperRuntimeControl {
         running: &AtomicBool,
     ) -> bool {
 
-        if !self.enabled
-            || !self.active.load(Ordering::SeqCst)
-        {
+        let pipeline = if self.windowshader { "Windowshader" } else { "Wallpaper" };
+        let initially_active = self.active.load(Ordering::SeqCst);
+        crate::logger::warning(
+            &crate::locate_paths::runtime_log_path(),
+            &format!(
+                "[PRESENTATION_HANDOFF_DIAG] {} pause entry: enabled={}, supervisor_active={}, checkpoint={} ({}), detected={}, acknowledged={}",
+                pipeline, self.enabled, initially_active,
+                self.render_checkpoint.load(Ordering::SeqCst),
+                Self::checkpoint_description(self.render_checkpoint.load(Ordering::SeqCst)),
+                self.pause_detected.load(Ordering::SeqCst),
+                self.pause_acknowledged.load(Ordering::SeqCst),
+            ),
+        );
+        if !self.enabled || !initially_active {
             return true;
         }
 
@@ -204,7 +215,7 @@ impl WallpaperRuntimeControl {
         let overall_deadline = started + Duration::from_secs(2);
         crate::logger::warning(
             &crate::locate_paths::runtime_log_path(),
-            "[WALLPAPER_HANDOFF_DIAG] Screensaver requested wallpaper pause (500ms detection, 2000ms overall deadline)",
+            &format!("[PRESENTATION_HANDOFF_DIAG] {} pause requested (500ms detection, 2000ms overall deadline)", pipeline),
         );
 
         // Stage 1: confirm the wallpaper renderer has entered its pause path.
@@ -222,8 +233,8 @@ impl WallpaperRuntimeControl {
         crate::logger::warning(
             &crate::locate_paths::runtime_log_path(),
             &format!(
-                "[WALLPAPER_HANDOFF_DIAG] Pause detection stage ended after {}ms: detected={}, acknowledged={}",
-                started.elapsed().as_millis(), detected, early_acknowledged,
+                "[PRESENTATION_HANDOFF_DIAG] {}: Pause detection stage ended after {}ms: detected={}, acknowledged={}",
+                pipeline, started.elapsed().as_millis(), detected, early_acknowledged,
             ),
         );
 
@@ -235,8 +246,8 @@ impl WallpaperRuntimeControl {
             crate::logger::warning(
                 &crate::locate_paths::runtime_log_path(),
                 &format!(
-                    "[WALLPAPER_HANDOFF_DIAG] Pause detection timeout: renderer checkpoint={} ({}), checkpoint_age_ms={}",
-                    checkpoint,
+                    "[PRESENTATION_HANDOFF_DIAG] {}: Pause detection timeout: renderer checkpoint={} ({}), checkpoint_age_ms={}",
+                    pipeline, checkpoint,
                     Self::checkpoint_description(checkpoint),
                     checkpoint_age_ms,
                 ),
@@ -261,13 +272,23 @@ impl WallpaperRuntimeControl {
         crate::logger::warning(
             &crate::locate_paths::runtime_log_path(),
             &format!(
-                "[WALLPAPER_HANDOFF_DIAG] Screensaver pause wait ended after {}ms: detected={}, active={}, acknowledged={}, running={}",
-                started.elapsed().as_millis(), detected, still_active,
+                "[PRESENTATION_HANDOFF_DIAG] {}: Screensaver pause wait ended after {}ms: detected={}, active={}, acknowledged={}, running={}",
+                pipeline, started.elapsed().as_millis(), detected, still_active,
                 acknowledged, still_running,
             ),
         );
         // Acknowledgment is authoritative; an inactive wallpaper backend
         // cannot continue presenting frames.
+        crate::logger::warning(
+            &crate::locate_paths::runtime_log_path(),
+            &format!(
+                "[PRESENTATION_HANDOFF_DIAG] {} pause result: success={}, supervisor_active={}, checkpoint={} ({}), detected={}, acknowledged={}",
+                pipeline, !still_active || acknowledged, still_active,
+                self.render_checkpoint.load(Ordering::SeqCst),
+                Self::checkpoint_description(self.render_checkpoint.load(Ordering::SeqCst)),
+                self.pause_detected.load(Ordering::SeqCst), acknowledged,
+            ),
+        );
         !still_active || acknowledged
     }
 
