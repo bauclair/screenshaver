@@ -60,6 +60,8 @@ struct WindowshaderNativeSelection {
     policy_id: i64,
     source_path: std::path::PathBuf,
     texture_policy: crate::load_config::TexturePolicy,
+    animation_speed: f32,
+    postprocess_profile: crate::load_config::PostprocessProfile,
 }
 
 #[cfg(feature = "libdecor-bridge")]
@@ -84,6 +86,8 @@ pub(crate) fn install_windowshader_selection(
     policy_id: i64,
     source_path: std::path::PathBuf,
     texture_policy: crate::load_config::TexturePolicy,
+    animation_speed: f32,
+    postprocess_profile: crate::load_config::PostprocessProfile,
 ) -> Result<WindowshaderNativeSelectionGuard, String> {
     WINDOWSHADER_NATIVE_SELECTION.with(|slot| {
         let mut slot = slot.borrow_mut();
@@ -91,9 +95,111 @@ pub(crate) fn install_windowshader_selection(
             return Err("Native windowshader selection already installed on this thread".into());
         }
         *slot = Some(WindowshaderNativeSelection {
-            shader_name, policy_id, source_path, texture_policy,
+            shader_name, policy_id, source_path, texture_policy, animation_speed, postprocess_profile,
         });
         Ok(WindowshaderNativeSelectionGuard)
+    })
+}
+
+// Stage 28B (revised): lyrics-only state belongs to the native EGL owner thread.
+// No policy-description, subtitle, or FPS-warning pills are installed here.
+#[cfg(feature = "libdecor-bridge")]
+thread_local! {
+    static WINDOWSHADER_NATIVE_LYRICS: std::cell::RefCell<Option<crate::manage_lyrics::SharedLyricsState>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(feature = "libdecor-bridge")]
+pub(crate) struct WindowshaderNativeLyricsGuard;
+
+#[cfg(feature = "libdecor-bridge")]
+impl Drop for WindowshaderNativeLyricsGuard {
+    fn drop(&mut self) {
+        WINDOWSHADER_NATIVE_LYRICS.with(|slot| *slot.borrow_mut() = None);
+    }
+}
+
+#[cfg(feature = "libdecor-bridge")]
+pub(crate) fn install_windowshader_lyrics(
+    lyrics: Option<crate::manage_lyrics::SharedLyricsState>,
+) -> WindowshaderNativeLyricsGuard {
+    WINDOWSHADER_NATIVE_LYRICS.with(|slot| *slot.borrow_mut() = lyrics);
+    WindowshaderNativeLyricsGuard
+}
+
+// Stage 28C2: panel geometry comes from the successfully built GL overlay,
+// never a guessed height. All access stays on the native EGL/dispatch thread.
+#[cfg(feature = "libdecor-bridge")]
+#[derive(Clone)]
+struct NativeLyricsInteraction {
+    bounds: Option<(u32, u32, u32, u32)>, // width, surface height, panel height, navigation width
+    seek: Option<crate::manage_lyrics::LyricsSeekHandle>,
+    navigation: Option<crate::manage_lyrics::LyricsNavigationHandle>,
+    state: Option<crate::manage_lyrics::SharedLyricsState>,
+}
+#[cfg(feature = "libdecor-bridge")]
+thread_local! {
+    static NATIVE_LYRICS_INTERACTION: std::cell::RefCell<NativeLyricsInteraction> =
+        std::cell::RefCell::new(NativeLyricsInteraction {
+            bounds: None, seek: None, navigation: None, state: None,
+        });
+}
+#[cfg(feature = "libdecor-bridge")]
+pub(crate) fn install_windowshader_lyrics_interaction(
+    seek: Option<crate::manage_lyrics::LyricsSeekHandle>,
+    navigation: Option<crate::manage_lyrics::LyricsNavigationHandle>,
+    state: Option<crate::manage_lyrics::SharedLyricsState>,
+) {
+    NATIVE_LYRICS_INTERACTION.with(|slot| {
+        *slot.borrow_mut() = NativeLyricsInteraction { bounds: None, seek, navigation, state };
+    });
+}
+#[cfg(feature = "libdecor-bridge")]
+pub(crate) fn clear_windowshader_lyrics_interaction() {
+    NATIVE_LYRICS_INTERACTION.with(|slot| {
+        let mut state = slot.borrow_mut();
+        state.bounds = None;
+        state.seek = None;
+        state.navigation = None;
+        state.state = None;
+    });
+}
+#[cfg(feature = "libdecor-bridge")]
+#[unsafe(no_mangle)]
+pub extern "C" fn screenshaver_libdecor_rust_lyrics_pointer(
+    x: f64, y: f64, pressed: std::ffi::c_int,
+) -> std::ffi::c_int {
+    if !x.is_finite() || !y.is_finite() { return 0; }
+    NATIVE_LYRICS_INTERACTION.with(|slot| {
+        let slot = slot.borrow();
+        let Some((width, surface_height, panel_height, nav_width)) = slot.bounds else { return 0; };
+        let bounds = crate::wayland_windowshader::WindowshaderLyricsBounds {
+            width, surface_height, panel_height, navigation_width: nav_width,
+        };
+        if !bounds.contains(x, y) { return 0; }
+        let snapshot = slot.state.as_ref().and_then(|s| s.lock().ok().map(|s| s.clone()));
+        let Some(snapshot) = snapshot else { return 0; };
+        if let Some(previous) = bounds.navigation_at(x, y) {
+            let allowed = if previous { snapshot.can_go_previous } else { snapshot.can_go_next };
+            if !allowed { return 0; }
+            if pressed == 1 {
+                let accepted = slot.navigation.as_ref().is_some_and(|handle| {
+                    if previous { handle.previous() } else { handle.next() }
+                });
+                eprintln!("[LIBDECOR LYRICS INPUT] {} accepted={accepted}",
+                    if previous { "previous" } else { "next" });
+            }
+            return 1;
+        }
+        let Some(fraction) = bounds.fraction_at(x, y) else { return 0; };
+        if !snapshot.seekable || snapshot.progress.as_ref().is_none_or(|p| p.duration.is_zero()) {
+            return 0;
+        }
+        if pressed == 1 {
+            let accepted = slot.seek.as_ref().is_some_and(|handle| handle.request_fraction(fraction));
+            eprintln!("[LIBDECOR LYRICS INPUT] seek fraction={fraction:.3} accepted={accepted}");
+        }
+        2
     })
 }
 
@@ -106,9 +212,11 @@ pub(crate) fn replace_windowshader_policy(
     policy_id: i64,
     source_path: std::path::PathBuf,
     texture_policy: crate::load_config::TexturePolicy,
+    animation_speed: f32,
+    postprocess_profile: crate::load_config::PostprocessProfile,
 ) -> Result<(), String> {
     rust_gl_diagnostic::replace_policy(WindowshaderNativeSelection {
-        shader_name, policy_id, source_path, texture_policy,
+        shader_name, policy_id, source_path, texture_policy, animation_speed, postprocess_profile,
     })
 }
 
@@ -126,10 +234,18 @@ mod rust_gl_diagnostic {
 
     struct Resources {
         program: u32, vao: u32, vbo: u32,
-        phase: i32, managed: bool, started: Instant,
+        phase: i32, managed: bool, started: Instant, animation_speed: f32,
         draw_count: u64, last_dimensions: Option<(i32, i32)>,
         time: i32, resolution: i32, mouse: i32, frame: i32,
         textures: Option<crate::manage_textures::TextureManager>,
+        postprocess: Option<crate::postprocess_shader::PostprocessPipeline>,
+        audio_demand: Option<crate::audio_backend::AudioDemandHandle>,
+        audio_bands: Option<crate::audio_backend::SharedAudioBands>,
+        audio_motion_effect: crate::render_audio_motion::AudioMotionEffect,
+        audio_motion_state: crate::render_audio_motion::AudioMotionState,
+        audio_last_update: Instant,
+        lyrics_overlay: Option<crate::display_overlay::OpenGlOverlay>,
+        lyrics_overlay_state: Option<(crate::manage_lyrics::LyricsState, u32, u32)>,
     }
     thread_local! {
         static RESOURCES: RefCell<Option<Resources>> = const { RefCell::new(None) };
@@ -138,6 +254,9 @@ mod rust_gl_diagnostic {
     }
 
     fn release_resources(mut r: Resources) {
+        // Drop overlay while the native EGL context is current.
+        r.postprocess.take();
+        r.lyrics_overlay.take();
         if let Some(manager) = r.textures.as_mut() { manager.delete_all(); }
         unsafe {
             gl::UseProgram(0);
@@ -335,10 +454,41 @@ mod rust_gl_diagnostic {
             let resolution = unsafe { gl::GetUniformLocation(program, c"iResolution".as_ptr()) };
             let mouse = unsafe { gl::GetUniformLocation(program, c"iMouse".as_ptr()) };
             let frame = unsafe { gl::GetUniformLocation(program, c"iFrame".as_ptr()) };
+            // Construct all effect resources with the native EGL context current.
+            // Do not commit RESOURCES until the entire pipeline is ready.
+            let mut postprocess = None;
+            let mut audio_demand = None;
+            let mut audio_bands = None;
+            let mut audio_motion_effect = crate::render_audio_motion::AudioMotionEffect::Off;
+            if let Some(selection) = native_selection.as_ref() {
+                let profile = selection.postprocess_profile;
+                audio_motion_effect = profile.audio_motion;
+                // Initial native dimensions are established by libdecor later.
+                // Resize on the first actual frame before rendering.
+                match crate::postprocess_shader::PostprocessPipeline::new(960, 540, profile) {
+                    Ok(pipeline) => postprocess = Some(pipeline),
+                    Err(error) => {
+                        unsafe {
+                            gl::DeleteBuffers(1, &vbo);
+                            gl::DeleteVertexArrays(1, &vao);
+                            if let Some(manager) = textures.as_mut() { manager.delete_all(); }
+                            gl::DeleteProgram(program);
+                        }
+                        return Err(format!("Native post-processing initialization failed: {error}"));
+                    }
+                }
+                let demand = crate::audio_backend::register_audio_demand();
+                demand.set_required(matches!(profile.bloom.name(), "audio" | "spectral" | "loudness")
+                    || profile.audio_motion.is_enabled());
+                audio_bands = Some(crate::audio_backend::shared_audio_bands());
+                audio_demand = Some(demand);
+            }
             RESOURCES.with(|r| *r.borrow_mut() = Some(Resources {
                 program, vao, vbo, phase, managed, started: Instant::now(),
+                animation_speed: native_selection.as_ref().map_or(1.0, |s| s.animation_speed),
                 time, resolution, mouse, frame,
-                draw_count: 0, last_dimensions: None, textures,
+                draw_count: 0, last_dimensions: None, textures, postprocess, audio_demand, audio_bands,
+                audio_motion_effect, audio_motion_state: Default::default(), audio_last_update: Instant::now(), lyrics_overlay: None, lyrics_overlay_state: None,
             }));
             eprintln!("[LIBDECOR BRIDGE TEST] Rust GL renderer initialized via compile_shader::build_program");
             Ok(())
@@ -360,7 +510,7 @@ mod rust_gl_diagnostic {
                 eprintln!("[LIBDECOR BRIDGE TEST] Rust viewport: {width} x {height}");
                 r.last_dimensions = Some((width, height));
             }
-            let elapsed = r.started.elapsed().as_secs_f32();
+            let elapsed = r.started.elapsed().as_secs_f32() * r.animation_speed;
             if let Some(manager) = r.textures.as_mut() {
                 if let Err(error) = manager.update_animations() {
                     eprintln!("[LIBDECOR BRIDGE TEST] Texture animation failed: {error}");
@@ -368,12 +518,53 @@ mod rust_gl_diagnostic {
                 }
                 manager.bind_channels();
             }
+            let mut scene_dimensions = (width as u32, height as u32);
+            if let Some(pipeline) = r.postprocess.as_mut() {
+                if let Err(error) = pipeline.resize(width as u32, height as u32) {
+                    eprintln!("[LIBDECOR POSTPROCESS] resize failed: {error}");
+                    return -1;
+                }
+                if let Some(bands) = r.audio_bands.as_ref().and_then(|s| s.read().ok().map(|b| *b)) {
+                    pipeline.set_audio_bands(bands);
+                }
+                let now = Instant::now();
+                let frame_seconds = now.duration_since(r.audio_last_update).as_secs_f32();
+                r.audio_last_update = now;
+                match r.audio_motion_effect {
+                    crate::render_audio_motion::AudioMotionEffect::WooferFromHell => {
+                        let spectrum = crate::analyze_audio::shared_audio_motion_spectrum()
+                            .read().ok().map(|v| *v).unwrap_or_default();
+                        let vocal = crate::manage_lyrics::shared_audio_motion_vocal_timing_state()
+                            .lock().ok().map(|v| v.clone()).unwrap_or_default();
+                        pipeline.set_audio_motion_scale(r.audio_motion_state.update(spectrum, frame_seconds, &vocal));
+                    }
+                    crate::render_audio_motion::AudioMotionEffect::FftMirrorWarp => {
+                        let spectrum = crate::analyze_audio::shared_audio_motion_fft_trace()
+                            .read().ok().map(|v| *v).unwrap_or_default();
+                        pipeline.set_audio_motion_fft_trace(r.audio_motion_state.update_fft_mirror_warp(spectrum, frame_seconds));
+                    }
+                    crate::render_audio_motion::AudioMotionEffect::PolarPropeller => {
+                        let spectrum = crate::analyze_audio::shared_audio_motion_fft_trace()
+                            .read().ok().map(|v| *v).unwrap_or_default();
+                        pipeline.set_audio_motion_fft_trace(r.audio_motion_state.update_polar_propeller(spectrum, frame_seconds));
+                        pipeline.set_audio_motion_rotation_turns(r.audio_motion_state.polar_rotation_turns());
+                    }
+                    crate::render_audio_motion::AudioMotionEffect::Off => r.audio_motion_state.reset(),
+                }
+                pipeline.bind_scene_target();
+                scene_dimensions = pipeline.scene_dimensions();
+            }
             unsafe {
-                gl::Viewport(0, 0, width, height);
+                gl::Viewport(0, 0, scene_dimensions.0 as i32, scene_dimensions.1 as i32);
+                gl::Disable(gl::BLEND);
+                gl::ColorMask(gl::TRUE, gl::TRUE, gl::TRUE, gl::TRUE);
+                gl::ClearColor(0.0, 0.0, 0.0, 1.0);
+                gl::Clear(gl::COLOR_BUFFER_BIT);
+                gl::ColorMask(gl::TRUE, gl::TRUE, gl::TRUE, gl::FALSE);
                 gl::UseProgram(r.program);
                 if r.managed {
                     gl::Uniform1f(r.time, elapsed);
-                    gl::Uniform3f(r.resolution, width as f32, height as f32, 1.0);
+                    gl::Uniform3f(r.resolution, scene_dimensions.0 as f32, scene_dimensions.1 as f32, 1.0);
                     gl::Uniform4f(r.mouse, 0.0, 0.0, 0.0, 0.0);
                     gl::Uniform1i(r.frame, frame.min(i32::MAX as u32) as i32);
                 } else {
@@ -385,6 +576,80 @@ mod rust_gl_diagnostic {
                 if error != gl::NO_ERROR {
                     eprintln!("[LIBDECOR BRIDGE TEST] OpenGL draw error: 0x{error:04x}");
                     return -1;
+                }
+            }
+            if let Some(pipeline) = r.postprocess.as_ref() {
+                pipeline.present_scene();
+                let error = unsafe { gl::GetError() };
+                if error != gl::NO_ERROR {
+                    eprintln!("[LIBDECOR POSTPROCESS] presentation GL error: 0x{error:04x}");
+                    return -1;
+                }
+            }
+            // Stage 28B revised: synchronized lyrics only, matching the XDG
+            // windowshader composition. MPRIS state is produced asynchronously;
+            // this GL callback only snapshots it and never performs D-Bus work.
+            let lyrics = super::WINDOWSHADER_NATIVE_LYRICS.with(|slot| {
+                slot.borrow().as_ref().and_then(|shared| shared.lock().ok().map(|s| s.clone()))
+            });
+            if let Some(lyrics) = lyrics {
+                if lyrics.current.is_none() && lyrics.progress.is_none() {
+                    r.lyrics_overlay.take();
+                    r.lyrics_overlay_state = None;
+                    super::NATIVE_LYRICS_INTERACTION.with(|slot| slot.borrow_mut().bounds = None);
+                } else {
+                    let rebuild = r.lyrics_overlay_state.as_ref().is_none_or(|(old, ow, oh)| {
+                        !old.same_text(&lyrics)
+                            || old.can_go_previous != lyrics.can_go_previous
+                            || old.can_go_next != lyrics.can_go_next
+                            || *ow != width as u32 || *oh != height as u32
+                    });
+                    if rebuild {
+                        // Destroy the previous texture/program before creating a new one.
+                        r.lyrics_overlay.take();
+                        r.lyrics_overlay_state = None;
+                        let constructed = crate::construct_text_overlay::construct_lyrics_panel_bilingual_with_navigation(
+                            lyrics.previous.as_deref(),
+                            lyrics.current.as_deref(),
+                            lyrics.next.as_deref(),
+                            lyrics.secondary_current.as_deref(),
+                            width as u32, height as u32,
+                            lyrics.can_go_previous, lyrics.can_go_next,
+                        );
+                        match constructed.and_then(|panel| {
+                            crate::display_overlay::OpenGlOverlay::new_from_constructed(
+                                panel, crate::parse_subtitle_placement::parse(None).placement,
+                            )
+                        }) {
+                            Ok(overlay) => {
+                                super::NATIVE_LYRICS_INTERACTION.with(|slot| {
+                                    slot.borrow_mut().bounds = Some((
+                                        width as u32, height as u32,
+                                        overlay.lyrics_panel_height(), overlay.lyrics_navigation_width(),
+                                    ));
+                                });
+                                r.lyrics_overlay = Some(overlay);
+                                r.lyrics_overlay_state = Some((lyrics.clone(), width as u32, height as u32));
+                                eprintln!("[LIBDECOR LYRICS] overlay updated: {width} x {height}");
+                            }
+                            Err(error) => {
+                                // Lyrics failure must not terminate shader presentation.
+                                super::NATIVE_LYRICS_INTERACTION.with(|slot| slot.borrow_mut().bounds = None);
+                                eprintln!("[LIBDECOR LYRICS] overlay unavailable: {error}");
+                            }
+                        }
+                    }
+                    if let Some(overlay) = r.lyrics_overlay.as_ref() {
+                        overlay.display_bottom_edge(width as u32, height as u32);
+                        if let Some(progress) = lyrics.progress.as_ref() {
+                            overlay.display_progress_bottom_edge(width as u32, progress.fraction());
+                        }
+                        let error = unsafe { gl::GetError() };
+                        if error != gl::NO_ERROR {
+                            eprintln!("[LIBDECOR LYRICS] GL error: 0x{error:04x}");
+                            return -1;
+                        }
+                    }
                 }
             }
             r.draw_count = r.draw_count.saturating_add(1);

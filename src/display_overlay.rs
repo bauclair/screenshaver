@@ -146,6 +146,10 @@ pub struct OpenGlOverlay {
 
 
 impl OpenGlOverlay {
+    /// Actual constructed lyrics panel dimensions for native pointer hit-testing.
+    pub fn lyrics_panel_height(&self) -> u32 { self.height }
+    pub fn lyrics_navigation_width(&self) -> u32 { self.lyrics_navigation_width }
+
 
     /// Diagnostic-only variant: fully opaque black capsule background.
     pub fn new_renderer_status_message(

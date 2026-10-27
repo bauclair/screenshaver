@@ -114,6 +114,54 @@ unsafe extern "C" {
         replace_policy: extern "C" fn(*mut std::ffi::c_void) -> std::ffi::c_int,
         policy_userdata: *mut std::ffi::c_void,
     ) -> std::ffi::c_int;
+    fn screenshaver_decor_bridge_run_diagnostic_with_dynamic_fps(
+        should_stop: extern "C" fn(*mut std::ffi::c_void) -> std::ffi::c_int,
+        stop_userdata: *mut std::ffi::c_void,
+        replace_policy: extern "C" fn(*mut std::ffi::c_void) -> std::ffi::c_int,
+        policy_userdata: *mut std::ffi::c_void,
+        pause_status: extern "C" fn(*mut std::ffi::c_void, std::ffi::c_int) -> std::ffi::c_int,
+        pause_userdata: *mut std::ffi::c_void,
+        configured_fps: u32,
+        resolve_fps: extern "C" fn(*mut std::ffi::c_void, *mut u32) -> std::ffi::c_int,
+    ) -> std::ffi::c_int;
+    fn screenshaver_decor_bridge_run_windowshader(
+        should_stop: extern "C" fn(*mut std::ffi::c_void) -> std::ffi::c_int,
+        stop_userdata: *mut std::ffi::c_void,
+        replace_policy: extern "C" fn(*mut std::ffi::c_void) -> std::ffi::c_int,
+        policy_userdata: *mut std::ffi::c_void,
+        pause_status: extern "C" fn(*mut std::ffi::c_void, std::ffi::c_int) -> std::ffi::c_int,
+        pause_userdata: *mut std::ffi::c_void,
+        configured_fps: u32,
+        resolve_fps: extern "C" fn(*mut std::ffi::c_void, *mut u32) -> std::ffi::c_int,
+        rotation_interval_ns: u64,
+        initial_width: std::ffi::c_int,
+        initial_height: std::ffi::c_int,
+        initial_maximized: std::ffi::c_int,
+        final_width: *mut std::ffi::c_int,
+        final_height: *mut std::ffi::c_int,
+        final_maximized: *mut std::ffi::c_int,
+        initial_title: *const std::ffi::c_char,
+        current_title: extern "C" fn(*mut std::ffi::c_void) -> *const std::ffi::c_char,
+    ) -> std::ffi::c_int;
+    fn screenshaver_decor_bridge_run_diagnostic_with_rotation(
+        should_stop: extern "C" fn(*mut std::ffi::c_void) -> std::ffi::c_int,
+        stop_userdata: *mut std::ffi::c_void,
+        replace_policy: extern "C" fn(*mut std::ffi::c_void) -> std::ffi::c_int,
+        policy_userdata: *mut std::ffi::c_void,
+        pause_status: extern "C" fn(*mut std::ffi::c_void, std::ffi::c_int) -> std::ffi::c_int,
+        pause_userdata: *mut std::ffi::c_void,
+        configured_fps: u32,
+        resolve_fps: extern "C" fn(*mut std::ffi::c_void, *mut u32) -> std::ffi::c_int,
+        rotation_interval_ns: u64,
+        initial_width: std::ffi::c_int,
+        initial_height: std::ffi::c_int,
+        initial_maximized: std::ffi::c_int,
+        final_width: *mut std::ffi::c_int,
+        final_height: *mut std::ffi::c_int,
+        final_maximized: *mut std::ffi::c_int,
+        initial_title: *const std::ffi::c_char,
+        current_title: extern "C" fn(*mut std::ffi::c_void) -> *const std::ffi::c_char,
+    ) -> std::ffi::c_int;
     fn screenshaver_decor_bridge_run_diagnostic_with_pause_and_fps(
         should_stop: extern "C" fn(*mut std::ffi::c_void) -> std::ffi::c_int,
         stop_userdata: *mut std::ffi::c_void,
@@ -750,34 +798,96 @@ struct NativePolicyTestContext<'a> {
     manager: &'a mut crate::manage_shader::ShaderManager,
     directory: &'a std::path::Path,
     texture_policy: crate::load_config::TexturePolicy,
+    tray_status: crate::tray_icon::TrayStatusControl,
     active_policy_id: i64,
+    fps_policy: crate::load_config::FpsPolicy,
+    animation_speed_policy: crate::load_config::AnimationSpeedPolicy,
+    postprocess_policy: crate::load_config::PostprocessPolicy,
+    active_shader_name: String,
+    active_source_path: std::path::PathBuf,
+    native_title: std::ffi::CString,
+}
+
+#[cfg(feature = "libdecor-bridge")]
+extern "C" fn windowshader_libdecor_current_title(userdata: *mut std::ffi::c_void) -> *const std::ffi::c_char {
+    if userdata.is_null() { return std::ptr::null(); }
+    let state = unsafe { &*(userdata as *const NativePolicyTestContext<'_>) };
+    state.native_title.as_ptr()
 }
 
 // Called synchronously by C with the native EGL context current.
 #[cfg(feature = "libdecor-bridge")]
 extern "C" fn windowshader_libdecor_next_policy(userdata: *mut std::ffi::c_void) -> i32 {
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<(), String> {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<bool, String> {
         if userdata.is_null() { return Err("Null policy controller".into()); }
         let state = unsafe { &mut *(userdata as *mut NativePolicyTestContext<'_>) };
         let candidate = select_safe_wallpaper_shader(state.manager, state.directory)?;
         if candidate.policy_id == state.active_policy_id {
-            eprintln!("[LIBDECOR POLICY TEST] selected same policy {}; no transition", candidate.policy_id);
-            return Ok(());
+            eprintln!("[LIBDECOR ROTATION] selected same policy {}; retaining shader", candidate.policy_id);
+            return Ok(false);
         }
         crate::test_libdecor::replace_windowshader_policy(
             candidate.shader_name.clone(), candidate.policy_id,
             candidate.source_path.clone(), state.texture_policy.clone(),
+            state.animation_speed_policy.animation_speed_for_policy(
+                candidate.policy_id, &candidate.shader_name,
+                Some(candidate.source_path.as_path()), None,
+            ),
+            state.postprocess_policy.profile_for_policy(
+                candidate.policy_id, &candidate.shader_name,
+                Some(candidate.source_path.as_path()),
+            ),
         )?;
+        let new_title = std::ffi::CString::new(format!("P: {}", candidate.policy_name))
+            .unwrap_or_else(|_| std::ffi::CString::new("P: Windowshader").expect("literal"));
         state.active_policy_id = candidate.policy_id;
+        state.native_title = new_title;
+        state.active_shader_name = candidate.shader_name.clone();
+        state.active_source_path = candidate.source_path.clone();
         state.manager.record_rendered_policy(candidate.policy_id);
+        // Publish only confirmed replacements; failed transitions retain the old tray policy.
+        state.tray_status.set_windowshader_active(
+            candidate.policy_id,
+            candidate.policy_name.clone(),
+            candidate.source_path.clone(),
+        );
         eprintln!("[LIBDECOR POLICY TEST] PASS policy={} name={} shader={}",
             candidate.policy_id, candidate.policy_name, candidate.shader_name);
+        Ok(true)
+    }));
+    match result {
+        Ok(Ok(true)) => 0,
+        Ok(Ok(false)) => 1,
+        Ok(Err(error)) => { eprintln!("[LIBDECOR POLICY TEST] FAILED: {error}"); -1 },
+        Err(_) => { eprintln!("[LIBDECOR POLICY TEST] PANIC; transition not confirmed"); -1 },
+    }
+}
+
+// Resolve FPS only after a successful native policy replacement. The C loop
+// applies the new cadence between frames, never while EGL is presenting.
+#[cfg(feature = "libdecor-bridge")]
+extern "C" fn windowshader_libdecor_resolve_fps(
+    userdata: *mut std::ffi::c_void,
+    fps_out: *mut u32,
+) -> std::ffi::c_int {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        if userdata.is_null() || fps_out.is_null() { return Err("Null FPS callback pointer"); }
+        let state = unsafe { &*(userdata as *const NativePolicyTestContext<'_>) };
+        let fps = state.fps_policy.rendered_fps_for_policy(
+            state.active_policy_id,
+            &state.active_shader_name,
+            Some(state.active_source_path.as_path()),
+            None,
+        );
+        if !(1..=240).contains(&fps) { return Err("Resolved FPS outside native 1..240 range"); }
+        unsafe { *fps_out = fps; }
+        eprintln!("[LIBDECOR FPS] replacement policy={} resolved FPS={}", state.active_policy_id, fps);
         Ok(())
     }));
     match result {
         Ok(Ok(())) => 0,
-        Ok(Err(error)) => { eprintln!("[LIBDECOR POLICY TEST] FAILED: {error}"); -1 },
-        Err(_) => { eprintln!("[LIBDECOR POLICY TEST] PANIC; transition not confirmed"); -1 },
+        Ok(Err(error)) => { eprintln!("[LIBDECOR FPS] FAILED: {error}"); -1 },
+        Err(_) => { eprintln!("[LIBDECOR FPS] PANIC during FPS resolution"); -1 },
     }
 }
 
@@ -795,15 +905,19 @@ pub fn run_egl_windowed_surface(
 
     const WINDOWED_TARGET_ID: u32 = 0;
     let decoration_backend = WindowshaderDecorationBackend::select_for_current_build()?;
-    // Stage 3C-6B2: explicitly selected native rendering diagnostic.
+    // Stage 29: explicitly selected native production renderer.
     // The C bridge owns its own Wayland connection, libdecor role, EGL context
     // and presentation. Rust owns GL resources via the existing diagnostic
     // callbacks. This is not yet the production policy/rotation renderer.
-    // Return success after the user closes the diagnostic window so the
+    // Return success after the user closes the native window so the
     // supervisor does not retry a completed test.
     if decoration_backend == WindowshaderDecorationBackend::Libdecor {
         #[cfg(feature = "libdecor-bridge")]
         {
+            // Stage 3C-6D2C-22: publish native Windowshader lifecycle status.
+            // The XDG branch already publishes these transitions, but the
+            // native branch returns before reaching that code.
+            runtime.tray_status.set_windowshader_starting();
             // Resolve the same initial policy used by the XDG windowshader
             // before creating any native surface. This selection is passed
             // through a thread-local scope, never a process-wide environment
@@ -811,12 +925,38 @@ pub fn run_egl_windowed_surface(
             let active_shader = select_safe_wallpaper_shader(
                 &mut shader_manager, wallpaper_directory,
             )?;
+            runtime.tray_status.set_windowshader_active(
+                active_shader.policy_id,
+                active_shader.policy_name.clone(),
+                active_shader.source_path.clone(),
+            );
             let _selection = crate::test_libdecor::install_windowshader_selection(
                 active_shader.shader_name.clone(),
                 active_shader.policy_id,
                 active_shader.source_path.clone(),
                 runtime.texture_policy.clone(),
+                runtime.animation_speed_policy.animation_speed_for_policy(
+                    active_shader.policy_id, &active_shader.shader_name,
+                    Some(active_shader.source_path.as_path()), None,
+                ),
+                runtime.postprocess_policy.profile_for_policy(
+                    active_shader.policy_id, &active_shader.shader_name,
+                    Some(active_shader.source_path.as_path()),
+                ),
             )?;
+            // Native lyrics are independent of policy rotation and never
+            // create description pills. Keep the state available until the
+            // C bridge has released its GL resources.
+            let _lyrics_guard = crate::test_libdecor::install_windowshader_lyrics(
+                runtime.lyrics_state.clone(),
+            );
+            // Restore native pointer hit-testing and MPRIS control channels.
+            // Rendering state alone does not initialize the interaction slot.
+            crate::test_libdecor::install_windowshader_lyrics_interaction(
+                runtime.lyrics_seek_handle.clone(),
+                runtime.lyrics_navigation_handle.clone(),
+                runtime.lyrics_state.clone(),
+            );
             eprintln!(
                 "[LIBDECOR WINDOWSHADER] Stage 3C-6C policy={} shader={}",
                 active_shader.policy_id, active_shader.shader_name,
@@ -832,15 +972,41 @@ pub fn run_egl_windowed_surface(
                 manager: &mut shader_manager,
                 directory: wallpaper_directory,
                 texture_policy: runtime.texture_policy.clone(),
+                tray_status: runtime.tray_status.clone(),
                 active_policy_id: active_shader.policy_id,
+                fps_policy: runtime.fps_policy.clone(),
+                animation_speed_policy: runtime.animation_speed_policy.clone(),
+                postprocess_policy: runtime.postprocess_policy.clone(),
+                active_shader_name: active_shader.shader_name.clone(),
+                active_source_path: active_shader.source_path.clone(),
+                native_title: std::ffi::CString::new(format!("P: {}", active_shader.policy_name))
+                    .unwrap_or_else(|_| std::ffi::CString::new("P: Windowshader").expect("literal")),
             };
             let mut pause_context = NativePauseContext {
                 control: control.clone(),
                 paused: false,
                 awaiting_resumed_frame: false,
             };
+            // Native libdecor owns dimensions. On KDE/Wayland only, KWin
+            // owns the optional placement/keep-above integration. Install
+            // before mapping so the script can observe the new toplevel.
+            let saved_geometry = load_windowshader_geometry();
+            let kwin_guard = match crate::manage_windowshader_kde::WindowshaderKwinGuard::start(
+                saved_geometry.x.zip(saved_geometry.y),
+                saved_geometry.width,
+                saved_geometry.height,
+            ) {
+                Ok(guard) => guard,
+                Err(error) => {
+                    eprintln!("[LIBDECOR KWIN] integration unavailable: {error}");
+                    None
+                }
+            };
+            let mut final_width: std::ffi::c_int = 0;
+            let mut final_height: std::ffi::c_int = 0;
+            let mut final_maximized: std::ffi::c_int = -1;
             let status = unsafe {
-                screenshaver_decor_bridge_run_diagnostic_with_pause_and_fps(
+                screenshaver_decor_bridge_run_windowshader(
                     windowshader_libdecor_should_stop,
                     Arc::as_ptr(&running) as *mut std::ffi::c_void,
                     windowshader_libdecor_next_policy,
@@ -848,8 +1014,45 @@ pub fn run_egl_windowed_surface(
                     windowshader_libdecor_pause_status,
                     (&mut pause_context as *mut NativePauseContext).cast(),
                     configured_fps,
+                    windowshader_libdecor_resolve_fps,
+                    shader_interval.map(|d| d.as_nanos().min(u64::MAX as u128) as u64).unwrap_or(0),
+                    saved_geometry.width,
+                    saved_geometry.height,
+                    i32::from(saved_geometry.maximized),
+                    &mut final_width,
+                    &mut final_height,
+                    &mut final_maximized,
+                    policy_context.native_title.as_ptr(),
+                    windowshader_libdecor_current_title,
                 )
             };
+            if status == 0 && (64..=4096).contains(&final_width)
+                && (64..=4096).contains(&final_height)
+            {
+                let geometry = WindowshaderGeometry {
+                    width: final_width,
+                    height: final_height,
+                    // KWin reports global position on KDE; other Wayland
+                    // compositors preserve the previous saved coordinates.
+                    x: kwin_guard.as_ref().and_then(|guard| guard.last_position())
+                        .map(|position| position.0).or(saved_geometry.x),
+                    y: kwin_guard.as_ref().and_then(|guard| guard.last_position())
+                        .map(|position| position.1).or(saved_geometry.y),
+                    maximized: if final_maximized >= 0 {
+                        final_maximized != 0
+                    } else {
+                        saved_geometry.maximized
+                    },
+                };
+                if let Err(error) = save_windowshader_geometry(geometry) {
+                    eprintln!("[LIBDECOR GEOMETRY] unable to save size: {error}");
+                } else {
+                    eprintln!("[LIBDECOR GEOMETRY] saved size: {final_width} x {final_height}");
+                }
+            }
+            // The native bridge has returned; invalidate pointer hit-testing and
+            // release worker handles before leaving this native session.
+            crate::test_libdecor::clear_windowshader_lyrics_interaction();
             // Closing the native frame is equivalent to closing the XDG toplevel.
             // Do not let the supervisor restart the windowshader after closure.
             running.store(false, Ordering::SeqCst);
