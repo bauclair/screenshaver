@@ -5,13 +5,26 @@
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
-struct PositionReceiver(Arc<Mutex<Option<(i32, i32)>>>);
+struct PositionReceiver {
+    position: Arc<Mutex<Option<(i32, i32)>>>,
+    saved_position: Option<(i32, i32)>,
+    pid: u32,
+}
 
 #[zbus::interface(name = "org.screenshaver.Windowshader.Position")]
 impl PositionReceiver {
+    // A PID-bound request prevents an old or unrelated window from receiving
+    // this process's saved placement. Returned flag=false means no saved X/Y.
+    fn get_restore_position(&self) -> (i32, i32, bool, u32) {
+        match self.saved_position {
+            Some((x, y)) => (x, y, true, self.pid),
+            None => (0, 0, false, self.pid),
+        }
+    }
+
     fn report(&self, x: i32, y: i32) {
         // GNOME logical coordinates can be negative on multi-monitor layouts.
-        if let Ok(mut position) = self.0.lock() {
+        if let Ok(mut position) = self.position.lock() {
             *position = Some((x, y));
         }
     }
@@ -32,7 +45,7 @@ pub(crate) struct WindowshaderGnomeGuard {
 }
 
 impl WindowshaderGnomeGuard {
-    pub(crate) fn start() -> Result<Option<Self>, String> {
+    pub(crate) fn start(saved_position: Option<(i32, i32)>) -> Result<Option<Self>, String> {
         if !is_gnome_wayland_session() {
             return Ok(None);
         }
@@ -48,7 +61,7 @@ impl WindowshaderGnomeGuard {
                 .map_err(|error| format!("GNOME geometry session bus: {error}"))?;
             connection.request_name("org.screenshaver.Windowshader.Gnome")
                 .map_err(|error| format!("GNOME geometry bus name: {error}"))?;
-            connection.object_server().at("/Windowshader", PositionReceiver(position.clone()))
+            connection.object_server().at("/Windowshader", PositionReceiver { position: position.clone(), saved_position, pid: std::process::id() })
                 .map_err(|error| format!("GNOME geometry D-Bus object: {error}"))?;
             connection
         };

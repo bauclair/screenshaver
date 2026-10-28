@@ -1665,6 +1665,10 @@ export default class ScreenshaverExtension extends Extension {
         if (previous)
             previous.signature = signature;
         console.log(`[SCREENSHAVER-GNOME-GEOMETRY] ${reason} x=${rect.x} y=${rect.y} width=${rect.width} height=${rect.height} maximized=${window.get_maximized?.() ?? 0}`);
+        // Do not report GNOME's initial automatic placement while a restore
+        // request is outstanding. That would overwrite the saved coordinates.
+        if (!previous?.restoreResolved)
+            return;
         // GNOME's normal desktop is the only authority for Windowshader placement.
         // A missing Rust listener is harmless; no lock-screen activity is involved.
         if (Main.sessionMode.currentMode === 'user' && !(window.get_maximized?.() ?? 0)) {
@@ -1690,9 +1694,13 @@ export default class ScreenshaverExtension extends Extension {
         if (!window || this._windowshaderGeometrySignals.has(window))
             return;
         // Window title/application identity may arrive after window-created.
-        const record = {ids: [], signature: null};
+        const record = {ids: [], signature: null, restoreRequested: false,
+            restoreResolved: false};
         this._windowshaderGeometrySignals.set(window, record);
-        const report = () => this._reportWindowshaderGeometry(window, 'changed');
+        const report = () => {
+            this._requestWindowshaderRestore(window, record);
+            this._reportWindowshaderGeometry(window, 'changed');
+        };
         for (const signal of ['notify::title', 'position-changed', 'size-changed']) {
             try { record.ids.push(window.connect(signal, report)); }
             catch (error) {
@@ -1700,6 +1708,46 @@ export default class ScreenshaverExtension extends Extension {
             }
         }
         report();
+    }
+
+    _requestWindowshaderRestore(window, record) {
+        if (record.restoreRequested || !this._isWindowshaderGeometryWindow(window) ||
+            Main.sessionMode.currentMode !== 'user')
+            return;
+        record.restoreRequested = true;
+        Gio.DBus.session.call(
+            'org.screenshaver.Windowshader.Gnome', '/Windowshader',
+            'org.screenshaver.Windowshader.Position', 'GetRestorePosition',
+            null, new GLib.VariantType('(iibu)'),
+            Gio.DBusCallFlags.NO_AUTO_START, 1500, null,
+            (_connection, result) => {
+                // Ignore callbacks from an extension generation already disabled.
+                if (this._windowshaderGeometrySignals?.get(window) !== record)
+                    return;
+                try {
+                    const reply = Gio.DBus.session.call_finish(result);
+                    const [x, y, valid, pid] = reply.deep_unpack();
+                    // Meta.Window.get_pid() identifies the Wayland client.
+                    if (Number(window.get_pid()) !== Number(pid)) {
+                        console.log('[SCREENSHAVER-GNOME-GEOMETRY] restore skipped: PID mismatch');
+                        record.restoreResolved = true;
+                        return;
+                    }
+                    if (valid && !(window.get_maximized?.() ?? 0)) {
+                        window.move_frame(true, x, y);
+                        console.log(`[SCREENSHAVER-GNOME-GEOMETRY] restored x=${x} y=${y}`);
+                    }
+                    record.restoreResolved = true;
+                    record.signature = null;
+                    this._reportWindowshaderGeometry(window, 'restored');
+                } catch (error) {
+                    // Do not submit initial auto-placement when no listener exists.
+                    // A subsequent move can be reported if the service appears.
+                    console.log(`[SCREENSHAVER-GNOME-GEOMETRY] restore unavailable: ${error}`);
+                    record.restoreRequested = false;
+                }
+            }
+        );
     }
 
     _stopWindowshaderGeometryDiagnostics() {

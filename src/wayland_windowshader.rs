@@ -1021,7 +1021,7 @@ pub fn run_egl_windowed_surface(
             // owns the optional placement/keep-above integration. Install
             // before mapping so the script can observe the new toplevel.
             let saved_geometry = load_windowshader_geometry();
-            let gnome_guard = match manage_windowshader_gnome::WindowshaderGnomeGuard::start() {
+            let gnome_guard = match manage_windowshader_gnome::WindowshaderGnomeGuard::start(saved_geometry.x.zip(saved_geometry.y)) {
                 Ok(guard) => guard,
                 Err(error) => {
                     eprintln!("[GNOME GEOMETRY] integration unavailable: {error}");
@@ -1108,7 +1108,7 @@ pub fn run_egl_windowed_surface(
     debug_assert_eq!(surface_role, WindowshaderSurfaceRole::Xdg);
     let mut decoration_ownership = WindowshaderDecorationOwnership::new(decoration_backend)?;
     let saved_geometry = crate::wayland_windowshader::load_windowshader_geometry();
-    let gnome_guard = match manage_windowshader_gnome::WindowshaderGnomeGuard::start() {
+    let gnome_guard = match manage_windowshader_gnome::WindowshaderGnomeGuard::start(saved_geometry.x.zip(saved_geometry.y)) {
         Ok(guard) => guard,
         Err(error) => {
             eprintln!("[GNOME GEOMETRY] integration unavailable: {error}");
