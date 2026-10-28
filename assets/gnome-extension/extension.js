@@ -1613,7 +1613,7 @@ export default class ScreenshaverExtension extends Extension {
         this._idleInhibitRequestPending = false;
         this._idleInhibitWaitState = null;
 
-        // Read-only Windowshader diagnostics. No positioning or persistence.
+        // Windowshader geometry integration (normal GNOME desktop only).
         this._windowshaderGeometrySignals = new Map();
         this._windowshaderWindowCreatedSignal = global.display.connect(
             'window-created', (_display, window) => this._observeWindowshaderGeometry(window)
@@ -1693,9 +1693,11 @@ export default class ScreenshaverExtension extends Extension {
     _observeWindowshaderGeometry(window) {
         if (!window || this._windowshaderGeometrySignals.has(window))
             return;
-        // Window title/application identity may arrive after window-created.
-        const record = {ids: [], signature: null, restoreRequested: false,
-            restoreResolved: false};
+        const record = {
+            ids: [], actor: null, actorSignal: 0, signature: null,
+            restoreRequested: false, restoreResolved: false,
+            restoreReply: null, firstFrameSeen: false, restoreApplied: false,
+        };
         this._windowshaderGeometrySignals.set(window, record);
         const report = () => {
             this._requestWindowshaderRestore(window, record);
@@ -1707,7 +1709,53 @@ export default class ScreenshaverExtension extends Extension {
                 console.log(`[SCREENSHAVER-GNOME-GEOMETRY] signal ${signal} unavailable: ${error}`);
             }
         }
+        // A MetaWindowActor first-frame event occurs after the compositor has
+        // created and initially placed the window. Never move at D-Bus reply time.
+        const actor = window.get_compositor_private?.();
+        if (actor) {
+            record.actor = actor;
+            try {
+                record.actorSignal = actor.connect('first-frame', () => {
+                    record.firstFrameSeen = true;
+                    this._applyWindowshaderRestore(window, record);
+                });
+            } catch (error) {
+                console.log(`[SCREENSHAVER-GNOME-GEOMETRY] first-frame signal unavailable: ${error}`);
+            }
+        }
         report();
+    }
+
+    _applyWindowshaderRestore(window, record) {
+        if (this._windowshaderGeometrySignals?.get(window) !== record ||
+            record.restoreApplied || !record.restoreReply || !record.firstFrameSeen)
+            return;
+        const [x, y, valid] = record.restoreReply;
+        record.restoreApplied = true;
+        if (valid && !(window.get_maximized?.() ?? 0)) {
+            console.log(`[SCREENSHAVER-GNOME-GEOMETRY] restore requested x=${x} y=${y}`);
+            try {
+                window.move_frame(true, x, y);
+                console.log(`[SCREENSHAVER-GNOME-GEOMETRY] restore applied x=${x} y=${y}`);
+            } catch (error) {
+                console.log(`[SCREENSHAVER-GNOME-GEOMETRY] restore failed: ${error}`);
+            }
+        }
+        // Verify after the current compositor event, rather than assuming
+        // move_frame() succeeded. No fixed-delay polling is involved.
+        GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+            if (this._windowshaderGeometrySignals?.get(window) !== record)
+                return GLib.SOURCE_REMOVE;
+            if (valid && !(window.get_maximized?.() ?? 0)) {
+                const actual = window.get_frame_rect();
+                const label = actual.x === x && actual.y === y ? 'restore verified' : 'restore unverified';
+                console.log(`[SCREENSHAVER-GNOME-GEOMETRY] ${label} requested=${x},${y} actual=${actual.x},${actual.y}`);
+            }
+            record.restoreResolved = true;
+            record.signature = null;
+            this._reportWindowshaderGeometry(window, 'post-restore');
+            return GLib.SOURCE_REMOVE;
+        });
     }
 
     _requestWindowshaderRestore(window, record) {
@@ -1721,28 +1769,20 @@ export default class ScreenshaverExtension extends Extension {
             null, new GLib.VariantType('(iibu)'),
             Gio.DBusCallFlags.NO_AUTO_START, 1500, null,
             (_connection, result) => {
-                // Ignore callbacks from an extension generation already disabled.
                 if (this._windowshaderGeometrySignals?.get(window) !== record)
                     return;
                 try {
                     const reply = Gio.DBus.session.call_finish(result);
                     const [x, y, valid, pid] = reply.deep_unpack();
-                    // Meta.Window.get_pid() identifies the Wayland client.
                     if (Number(window.get_pid()) !== Number(pid)) {
                         console.log('[SCREENSHAVER-GNOME-GEOMETRY] restore skipped: PID mismatch');
                         record.restoreResolved = true;
                         return;
                     }
-                    if (valid && !(window.get_maximized?.() ?? 0)) {
-                        window.move_frame(true, x, y);
-                        console.log(`[SCREENSHAVER-GNOME-GEOMETRY] restored x=${x} y=${y}`);
-                    }
-                    record.restoreResolved = true;
-                    record.signature = null;
-                    this._reportWindowshaderGeometry(window, 'restored');
+                    record.restoreReply = [x, y, valid];
+                    console.log(`[SCREENSHAVER-GNOME-GEOMETRY] restore handshake ready firstFrame=${record.firstFrameSeen}`);
+                    this._applyWindowshaderRestore(window, record);
                 } catch (error) {
-                    // Do not submit initial auto-placement when no listener exists.
-                    // A subsequent move can be reported if the service appears.
                     console.log(`[SCREENSHAVER-GNOME-GEOMETRY] restore unavailable: ${error}`);
                     record.restoreRequested = false;
                 }
@@ -1758,6 +1798,9 @@ export default class ScreenshaverExtension extends Extension {
         for (const [window, record] of this._windowshaderGeometrySignals ?? []) {
             for (const id of record.ids) {
                 try { window.disconnect(id); } catch (_) { /* already destroyed */ }
+            }
+            if (record.actor && record.actorSignal) {
+                try { record.actor.disconnect(record.actorSignal); } catch (_) { /* already destroyed */ }
             }
         }
         this._windowshaderGeometrySignals?.clear();
