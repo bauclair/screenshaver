@@ -1665,6 +1665,25 @@ export default class ScreenshaverExtension extends Extension {
         if (previous)
             previous.signature = signature;
         console.log(`[SCREENSHAVER-GNOME-GEOMETRY] ${reason} x=${rect.x} y=${rect.y} width=${rect.width} height=${rect.height} maximized=${window.get_maximized?.() ?? 0}`);
+        // GNOME's normal desktop is the only authority for Windowshader placement.
+        // A missing Rust listener is harmless; no lock-screen activity is involved.
+        if (Main.sessionMode.currentMode === 'user' && !(window.get_maximized?.() ?? 0)) {
+            Gio.DBus.session.call(
+                'org.screenshaver.Windowshader.Gnome',
+                '/Windowshader',
+                'org.screenshaver.Windowshader.Position',
+                'Report',
+                new GLib.Variant('(ii)', [Math.round(rect.x), Math.round(rect.y)]),
+                null,
+                Gio.DBusCallFlags.NO_AUTO_START,
+                750,
+                null,
+                (_connection, result) => {
+                    try { Gio.DBus.session.call_finish(result); }
+                    catch (_) { /* Screenshaver may have exited or not started yet. */ }
+                }
+            );
+        }
     }
 
     _observeWindowshaderGeometry(window) {

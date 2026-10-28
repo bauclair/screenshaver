@@ -1,6 +1,10 @@
 //! Windowshader-owned Wayland geometry and presentation-state persistence.
 //! XDG presentation is owned here; EGL frame processing remains shared.
 
+#[path = "manage_windowshader_gnome.rs"]
+mod manage_windowshader_gnome;
+
+
 #[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub(crate) struct WindowshaderGeometry {
     #[serde(default)]
@@ -1017,6 +1021,13 @@ pub fn run_egl_windowed_surface(
             // owns the optional placement/keep-above integration. Install
             // before mapping so the script can observe the new toplevel.
             let saved_geometry = load_windowshader_geometry();
+            let gnome_guard = match manage_windowshader_gnome::WindowshaderGnomeGuard::start() {
+                Ok(guard) => guard,
+                Err(error) => {
+                    eprintln!("[GNOME GEOMETRY] integration unavailable: {error}");
+                    None
+                }
+            };
             let kwin_guard = match crate::manage_windowshader_kde::WindowshaderKwinGuard::start(
                 saved_geometry.x.zip(saved_geometry.y),
                 saved_geometry.width,
@@ -1055,15 +1066,15 @@ pub fn run_egl_windowed_surface(
             if status == 0 && (64..=4096).contains(&final_width)
                 && (64..=4096).contains(&final_height)
             {
+                let reported_position = gnome_guard.as_ref().and_then(|guard| guard.last_position())
+                    .or_else(|| kwin_guard.as_ref().and_then(|guard| guard.last_position()));
                 let geometry = WindowshaderGeometry {
                     width: final_width,
                     height: final_height,
                     // KWin reports global position on KDE; other Wayland
                     // compositors preserve the previous saved coordinates.
-                    x: kwin_guard.as_ref().and_then(|guard| guard.last_position())
-                        .map(|position| position.0).or(saved_geometry.x),
-                    y: kwin_guard.as_ref().and_then(|guard| guard.last_position())
-                        .map(|position| position.1).or(saved_geometry.y),
+                    x: reported_position.map(|position| position.0).or(saved_geometry.x),
+                    y: reported_position.map(|position| position.1).or(saved_geometry.y),
                     maximized: if final_maximized >= 0 {
                         final_maximized != 0
                     } else {
@@ -1097,6 +1108,13 @@ pub fn run_egl_windowed_surface(
     debug_assert_eq!(surface_role, WindowshaderSurfaceRole::Xdg);
     let mut decoration_ownership = WindowshaderDecorationOwnership::new(decoration_backend)?;
     let saved_geometry = crate::wayland_windowshader::load_windowshader_geometry();
+    let gnome_guard = match manage_windowshader_gnome::WindowshaderGnomeGuard::start() {
+        Ok(guard) => guard,
+        Err(error) => {
+            eprintln!("[GNOME GEOMETRY] integration unavailable: {error}");
+            None
+        }
+    };
     // A failed KDE integration must never prevent Windowshader rendering.
     let _kwin_guard = match crate::manage_windowshader_kde::WindowshaderKwinGuard::start(
         saved_geometry.x.zip(saved_geometry.y), saved_geometry.width, saved_geometry.height,
@@ -1466,7 +1484,8 @@ pub fn run_egl_windowed_surface(
         );
 
 
-    let last_position = _kwin_guard.as_ref().and_then(|guard| guard.last_position());
+    let last_position = gnome_guard.as_ref().and_then(|guard| guard.last_position())
+        .or_else(|| _kwin_guard.as_ref().and_then(|guard| guard.last_position()));
     finish_windowshader_surface(
         native_targets, &mut state, saved_geometry, last_position,
         &xdg_wm_base, &connection,
