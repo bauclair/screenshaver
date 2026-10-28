@@ -1613,6 +1613,14 @@ export default class ScreenshaverExtension extends Extension {
         this._idleInhibitRequestPending = false;
         this._idleInhibitWaitState = null;
 
+        // Read-only Windowshader diagnostics. No positioning or persistence.
+        this._windowshaderGeometrySignals = new Map();
+        this._windowshaderWindowCreatedSignal = global.display.connect(
+            'window-created', (_display, window) => this._observeWindowshaderGeometry(window)
+        );
+        for (const actor of global.get_window_actors())
+            this._observeWindowshaderGeometry(actor.meta_window);
+
         this._sessionModeSignal = Main.sessionMode.connect(
             'updated',
             () => this._onSessionModeChanged()
@@ -1629,7 +1637,63 @@ export default class ScreenshaverExtension extends Extension {
             this._sessionModeSignal = null;
         }
 
+        this._stopWindowshaderGeometryDiagnostics();
         this._removeLockActor();
+    }
+
+    // Read-only compositor-side diagnostics; shared by libdecor and XDG.
+    _isWindowshaderGeometryWindow(window) {
+        if (!window)
+            return false;
+        const appId = String(window.get_gtk_application_id?.() ?? '').toLowerCase();
+        const wmClass = String(window.get_wm_class?.() ?? '').toLowerCase();
+        const title = String(window.get_title?.() ?? '');
+        return title.startsWith('P: ') &&
+            (appId === 'screenshaver' || wmClass === 'screenshaver');
+    }
+
+    _reportWindowshaderGeometry(window, reason) {
+        if (!this._isWindowshaderGeometryWindow(window))
+            return;
+        const rect = window.get_frame_rect();
+        if (!rect || rect.width < 64 || rect.height < 64)
+            return;
+        const previous = this._windowshaderGeometrySignals.get(window);
+        const signature = `${rect.x},${rect.y},${rect.width},${rect.height}`;
+        if (previous?.signature === signature)
+            return;
+        if (previous)
+            previous.signature = signature;
+        console.log(`[SCREENSHAVER-GNOME-GEOMETRY] ${reason} x=${rect.x} y=${rect.y} width=${rect.width} height=${rect.height} maximized=${window.get_maximized?.() ?? 0}`);
+    }
+
+    _observeWindowshaderGeometry(window) {
+        if (!window || this._windowshaderGeometrySignals.has(window))
+            return;
+        // Window title/application identity may arrive after window-created.
+        const record = {ids: [], signature: null};
+        this._windowshaderGeometrySignals.set(window, record);
+        const report = () => this._reportWindowshaderGeometry(window, 'changed');
+        for (const signal of ['notify::title', 'position-changed', 'size-changed']) {
+            try { record.ids.push(window.connect(signal, report)); }
+            catch (error) {
+                console.log(`[SCREENSHAVER-GNOME-GEOMETRY] signal ${signal} unavailable: ${error}`);
+            }
+        }
+        report();
+    }
+
+    _stopWindowshaderGeometryDiagnostics() {
+        if (this._windowshaderWindowCreatedSignal) {
+            global.display.disconnect(this._windowshaderWindowCreatedSignal);
+            this._windowshaderWindowCreatedSignal = 0;
+        }
+        for (const [window, record] of this._windowshaderGeometrySignals ?? []) {
+            for (const id of record.ids) {
+                try { window.disconnect(id); } catch (_) { /* already destroyed */ }
+            }
+        }
+        this._windowshaderGeometrySignals?.clear();
     }
 
     _onSessionModeChanged() {
