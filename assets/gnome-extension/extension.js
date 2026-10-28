@@ -2455,11 +2455,11 @@ export default class ScreenshaverExtension extends Extension {
 
     _buildShaderEffect(productionSource, width, height, elapsedSeconds, renderScale, colorPrecision, antiAliasing, dithering, bloomMode, bloomThreshold, bloomIntensity) {
         const shaderBody =
-            this._extractShaderToyBodyFromProductionSource(productionSource);
+            this._extractGnomeShaderBodyFromProductionSource(productionSource);
 
         if (!/\bvoid\s+mainImage\s*\(/.test(shaderBody)) {
             throw new Error(
-                `${RUNTIME_SHADER_FILENAME} does not contain a usable preprocessed ShaderToy mainImage()`
+                `${RUNTIME_SHADER_FILENAME} does not contain a usable mainImage() entry point`
             );
         }
 
@@ -2844,12 +2844,11 @@ export default class ScreenshaverExtension extends Extension {
         }
     }
 
-    _extractShaderToyBodyFromProductionSource(source) {
-        // Screenshaver's production ShaderToy preprocessor emits a complete
-        // OpenGL 3.3 fragment shader. Shell.GLSLEffect instead needs the body
-        // inserted into Cogl's fragment pipeline. Remove only Screenshaver's
-        // generated OpenGL wrapper; retain the already-preprocessed shader body.
+    _extractGnomeShaderBodyFromProductionSource(source) {
+        // Work with the already-prepared production source. This adapter is
+        // GNOME-only and must not alter the shared Rust preprocessing path.
         let body = source.replace(/^\s*#version[^\n]*\n/m, '');
+        const hasShaderToy = /\bvoid\s+mainImage\s*\(/.test(body);
 
         body = body.replace(/^\s*out\s+vec4\s+fragColor\s*;\s*$/m, '');
 
@@ -2862,19 +2861,31 @@ export default class ScreenshaverExtension extends Extension {
             /^\s*uniform\s+int\s+iFrame\s*;\s*$/gm,
             /^\s*uniform\s+sampler2D\s+iChannel[0-3]\s*;\s*$/gm,
         ];
-
         for (const pattern of generatedUniforms)
             body = body.replace(pattern, '');
 
-        // The production preprocessor appends this wrapper after mainImage().
-        // Test #27 currently supports the ShaderToy path only, so the first
-        // top-level generated main() marks the end of the body we hand to Cogl.
-        const generatedMain = body.search(/\n\s*void\s+main\s*\(\s*\)\s*\{/m);
+        if (hasShaderToy) {
+            // Remove the production main() wrapper, not the shader's mainImage.
+            const generatedMain = body.search(/\n\s*void\s+main\s*\(\s*\)\s*\{/m);
+            if (generatedMain >= 0)
+                body = body.slice(0, generatedMain);
+            return body.trim();
+        }
 
-        if (generatedMain >= 0)
-            body = body.slice(0, generatedMain);
+        // Native GLSL and supported single-pass ISF expose main(). Rename
+        // it to avoid colliding with Cogl's own fragment entry point, and
+        // bridge its fragment output into the existing mainImage contract.
+        const nativeMain = /\bvoid\s+main\s*\(\s*(?:void\s*)?\)/;
+        if (!nativeMain.test(body))
+            throw new Error('Native GLSL/ISF source has no supported main() entry point');
+        body = body.replace(nativeMain, 'void screenshaverNativeMain()');
 
-        return body.trim();
+        return `vec4 fragColor;\n${body}\n` +
+            `void mainImage(out vec4 screenshaverOutput, in vec2 screenshaverCoord) {\n` +
+            `    fragColor = vec4(0.0);\n` +
+            `    screenshaverNativeMain();\n` +
+            `    screenshaverOutput = fragColor;\n` +
+            `}`;
     }
 
     _createLockActor() {

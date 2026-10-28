@@ -726,18 +726,24 @@ fn select_production_shader(
                     continue;
                 }
 
+                // ISF scalar/vector inputs require their own Cogl uniform
+                // bindings. Keep this restriction until that second stage is
+                // implemented; do not reject ordinary Native GLSL by format.
                 if !shader_inputs.is_empty() {
                     log_warning_global(&format!(
-                        "[LOCK] Test #27 skipping '{}' because GNOME native ISF input binding is not connected yet",
+                        "[LOCK] Skipping '{}' because GNOME ISF parameter uniform binding is not connected yet",
                         entry.name,
                     ));
                     shader_manager.remove_entry(&entry);
                     continue;
                 }
 
-                if !source.contains("mainImage") {
+                if !source.contains("mainImage")
+                    && !source.contains("void main(")
+                    && !source.contains("void main (")
+                {
                     log_warning_global(&format!(
-                        "[LOCK] Test #27 skipping '{}' because this diagnostic bridge currently requires the production ShaderToy mainImage path",
+                        "[LOCK] Skipping '{}' because the source defines neither mainImage() nor main()",
                         entry.name,
                     ));
                     shader_manager.remove_entry(&entry);
@@ -772,7 +778,7 @@ fn select_production_shader(
         }
     }
 
-    Err("No Test #27-compatible production ShaderToy shader is available".to_string())
+    Err("No GNOME-compatible production shader is available".to_string())
 }
 
 fn build_presentation_metadata(
