@@ -3124,6 +3124,17 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
                         }
 
 
+                        // A completed or failed secure-lock attempt does not
+                        // necessarily clear the idle notification. Require a
+                        // fresh Active observation before another attempt,
+                        // preventing a persistent backend error from causing
+                        // an unbounded lock-request loop.
+                        screensaver_waiting_for_active = true;
+                        crate::logger::information(
+                            &logfile,
+                            "[SESSION REARM] Secure-lock attempt ended; waiting for Active before retry",
+                        );
+
                         break 'screensaver_session;
                     }
 
