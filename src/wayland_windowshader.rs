@@ -42,7 +42,7 @@ pub(crate) fn save_windowshader_geometry(geometry: WindowshaderGeometry) -> Resu
 
 
 // Decoration backend selection is resolved before assigning a Wayland surface role.
-// XDG is the default; native libdecor is an explicit opt-in backend.
+// Prefer native libdecor when compiled in; XDG remains the compatibility backend.
 // A libdecor frame must own its XDG role; it cannot decorate a surface after
 // xdg_wm_base.get_xdg_surface() has already assigned that role.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,17 +58,39 @@ impl WindowshaderDecorationBackend {
         // Select the backend before creating a Wayland surface role.
         // A requested libdecor backend must not silently fall back to XDG.
         match std::env::var("SCREENSHAVER_WINDOWSHADER_DECORATION_BACKEND") {
-            Err(std::env::VarError::NotPresent) => Ok(Self::XdgServerSide),
+            Err(std::env::VarError::NotPresent) => {
+                #[cfg(feature = "libdecor-bridge")]
+                {
+                    match verify_windowshader_libdecor_bridge_abi() {
+                        Ok(()) => {
+                            eprintln!("[WINDOWSHADER BACKEND] auto-selected libdecor");
+                            Ok(Self::Libdecor)
+                        }
+                        Err(error) => {
+                            eprintln!("[WINDOWSHADER BACKEND] libdecor preflight failed ({error}); selecting XDG");
+                            Ok(Self::XdgServerSide)
+                        }
+                    }
+                }
+                #[cfg(not(feature = "libdecor-bridge"))]
+                {
+                    eprintln!("[WINDOWSHADER BACKEND] libdecor bridge not compiled; selecting XDG");
+                    Ok(Self::XdgServerSide)
+                }
+            },
             Err(std::env::VarError::NotUnicode(_)) => Err(
                 "Windowshader decoration backend setting is not valid UTF-8".into(),
             ),
-            Ok(value) if value.trim().eq_ignore_ascii_case("xdg") =>
-                Ok(Self::XdgServerSide),
+            Ok(value) if value.trim().eq_ignore_ascii_case("xdg") => {
+                eprintln!("[WINDOWSHADER BACKEND] explicitly selected XDG");
+                Ok(Self::XdgServerSide)
+            },
             Ok(value) if value.trim().eq_ignore_ascii_case("libdecor") => {
                 #[cfg(feature = "libdecor-bridge")]
                 verify_windowshader_libdecor_bridge_abi()?;
                 #[cfg(not(feature = "libdecor-bridge"))]
                 return Err("libdecor requested, but the libdecor-bridge feature is disabled".into());
+                eprintln!("[WINDOWSHADER BACKEND] explicitly selected libdecor");
                 Ok(Self::Libdecor)
             }
             Ok(value) => Err(format!(
