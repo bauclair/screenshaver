@@ -683,6 +683,7 @@ struct ProductionShader {
     source: String,
     channel_usage: crate::preprocess_shader::ShaderChannelUsage,
     built_in_default: bool,
+    shader_inputs: Vec<crate::isf_types::ShaderInput>,
 }
 
 fn select_production_shader(
@@ -726,18 +727,6 @@ fn select_production_shader(
                     continue;
                 }
 
-                // ISF scalar/vector inputs require their own Cogl uniform
-                // bindings. Keep this restriction until that second stage is
-                // implemented; do not reject ordinary Native GLSL by format.
-                if !shader_inputs.is_empty() {
-                    log_warning_global(&format!(
-                        "[LOCK] Skipping '{}' because GNOME ISF parameter uniform binding is not connected yet",
-                        entry.name,
-                    ));
-                    shader_manager.remove_entry(&entry);
-                    continue;
-                }
-
                 if !source.contains("mainImage")
                     && !source.contains("void main(")
                     && !source.contains("void main (")
@@ -755,6 +744,7 @@ fn select_production_shader(
                     source,
                     channel_usage,
                     built_in_default,
+                    shader_inputs,
                 });
             }
 
@@ -829,6 +819,21 @@ fn build_presentation_metadata(
     lines.push("version=1".to_string());
     lines.push(format!("source_bytes={}", selected.source.len()));
     lines.push(format!("policy_id={}", selected.entry.policy_id));
+    // The supported ISF inputs are fixed policy defaults at shader creation.
+    // Encode as JSON in the existing atomic metadata handoff.
+    let isf_inputs = selected.shader_inputs.iter().map(|input| {
+        use crate::isf_types::ShaderInputValue;
+        let (kind, value) = match &input.value {
+            ShaderInputValue::Float(v) => ("float", serde_json::json!(v)),
+            ShaderInputValue::Bool(v) => ("bool", serde_json::json!(v)),
+            ShaderInputValue::Integer(v) => ("integer", serde_json::json!(v)),
+            ShaderInputValue::Point2D(v) => ("point2d", serde_json::json!(v)),
+            ShaderInputValue::Color(v) => ("color", serde_json::json!(v)),
+        };
+        serde_json::json!({"name": input.name, "type": kind, "value": value})
+    }).collect::<Vec<_>>();
+    lines.push(format!("isf_inputs={}", serde_json::Value::Array(isf_inputs)));
+
     lines.push(format!("shader={}", sanitize_metadata_value(&shader_label)));
     lines.push(format!(
         "texture={}",

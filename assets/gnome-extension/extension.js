@@ -2008,6 +2008,7 @@ export default class ScreenshaverExtension extends Extension {
 
         return {
             sourceBytes: Number.parseInt(values.get('source_bytes') ?? '0', 10),
+            isfInputs: JSON.parse(values.get('isf_inputs') ?? '[]'),
             policyId: Number.parseInt(values.get('policy_id') ?? '0', 10),
             shader: values.get('shader') ?? '',
             texture: values.get('texture') ?? '',
@@ -2036,6 +2037,7 @@ export default class ScreenshaverExtension extends Extension {
 
         return [
             metadata.sourceBytes,
+            JSON.stringify(metadata.isfInputs ?? []),
             metadata.policyId,
             metadata.shader,
             metadata.texture,
@@ -2453,9 +2455,74 @@ export default class ScreenshaverExtension extends Extension {
         };
     }
 
-    _buildShaderEffect(productionSource, width, height, elapsedSeconds, renderScale, colorPrecision, antiAliasing, dithering, bloomMode, bloomThreshold, bloomIntensity) {
-        const shaderBody =
-            this._extractGnomeShaderBodyFromProductionSource(productionSource);
+    _applyIsfInputDefaults(body, inputs) {
+        if (!Array.isArray(inputs) || inputs.length === 0)
+            return body;
+
+        const floatLiteral = value => {
+            const n = Number(value);
+            if (!Number.isFinite(n))
+                throw new Error('Non-finite ISF input default');
+            const s = String(n);
+            return /[.eE]/.test(s) ? s : `${s}.0`;
+        };
+        const entries = [];
+        const seen = new Set();
+        for (const input of inputs) {
+            const name = input?.name;
+            if (typeof name !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name))
+                throw new Error(`Invalid ISF input name: ${name}`);
+            if (seen.has(name))
+                throw new Error(`Duplicate ISF input name: ${name}`);
+            seen.add(name);
+
+            let type, literal;
+            switch (input.type) {
+            case 'float':
+                type = 'float';
+                literal = floatLiteral(input.value);
+                break;
+            case 'bool':
+                type = 'bool';
+                if (typeof input.value !== 'boolean')
+                    throw new Error(`Invalid bool ISF input: ${name}`);
+                literal = input.value ? 'true' : 'false';
+                break;
+            case 'integer':
+                type = 'int';
+                if (!Number.isInteger(input.value))
+                    throw new Error(`Invalid integer ISF input: ${name}`);
+                literal = String(input.value);
+                break;
+            case 'point2d':
+            case 'color': {
+                const count = input.type === 'point2d' ? 2 : 4;
+                type = `vec${count}`;
+                if (!Array.isArray(input.value) || input.value.length !== count)
+                    throw new Error(`Invalid vector ISF input: ${name}`);
+                literal = `${type}(${input.value.map(floatLiteral).join(', ')})`;
+                break;
+            }
+            default:
+                throw new Error(`Unsupported GNOME ISF input type: ${input.type}`);
+            }
+            // Remove only the exact generated declaration from preprocess_isf.
+            const declaration = new RegExp(
+                `^\\s*uniform\\s+${type}\\s+${name}\\s*;\\s*$`, 'm'
+            );
+            if (!declaration.test(body))
+                throw new Error(`Missing generated ISF uniform: ${name}`);
+            body = body.replace(declaration, '');
+            entries.push(`const ${type} ${name} = ${literal};`);
+        }
+        return `${entries.join('\n')}\n${body}`;
+    }
+
+    _buildShaderEffect(productionSource, width, height, elapsedSeconds, renderScale, colorPrecision, antiAliasing, dithering, bloomMode, bloomThreshold, bloomIntensity, isfInputs = []) {
+        const shaderBody = this._applyIsfInputDefaults(
+            this._extractGnomeShaderBodyFromProductionSource(productionSource),
+            isfInputs
+        );
 
         if (!/\bvoid\s+mainImage\s*\(/.test(shaderBody)) {
             throw new Error(
@@ -2551,7 +2618,8 @@ export default class ScreenshaverExtension extends Extension {
             initialDithering,
             initialBloomMode,
             initialBloomThreshold,
-            initialBloomIntensity
+            initialBloomIntensity,
+            initialMetadata?.isfInputs ?? []
         );
 
         this._shaderEffect = built.effect;
@@ -2738,7 +2806,8 @@ export default class ScreenshaverExtension extends Extension {
                 observedMetadata.dithering,
                 observedMetadata.bloomMode,
                 observedMetadata.bloomThreshold,
-                observedMetadata.bloomIntensity
+                observedMetadata.bloomIntensity,
+                observedMetadata.isfInputs ?? []
             );
         } catch (error) {
             console.log(
