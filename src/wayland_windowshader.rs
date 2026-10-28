@@ -53,6 +53,17 @@ pub(crate) enum WindowshaderDecorationBackend {
     Libdecor,
 }
 
+// Record the decision in the persistent runtime log as well as stderr.
+fn log_windowshader_backend_selection(message: &str, fallback: bool) {
+    eprintln!("{message}");
+    let path = crate::locate_paths::runtime_log_path();
+    if fallback {
+        crate::logger::warning(&path, message);
+    } else {
+        crate::logger::information(&path, message);
+    }
+}
+
 impl WindowshaderDecorationBackend {
     fn select_for_current_build() -> Result<Self, String> {
         // Select the backend before creating a Wayland surface role.
@@ -63,18 +74,18 @@ impl WindowshaderDecorationBackend {
                 {
                     match verify_windowshader_libdecor_bridge_abi() {
                         Ok(()) => {
-                            eprintln!("[WINDOWSHADER BACKEND] auto-selected libdecor");
+                            log_windowshader_backend_selection("[WINDOWSHADER_BACKEND] Selected libdecor (automatic)", false);
                             Ok(Self::Libdecor)
                         }
                         Err(error) => {
-                            eprintln!("[WINDOWSHADER BACKEND] libdecor preflight failed ({error}); selecting XDG");
+                            log_windowshader_backend_selection(&format!("[WINDOWSHADER_BACKEND] libdecor preflight failed; falling back to XDG: {error}"), true);
                             Ok(Self::XdgServerSide)
                         }
                     }
                 }
                 #[cfg(not(feature = "libdecor-bridge"))]
                 {
-                    eprintln!("[WINDOWSHADER BACKEND] libdecor bridge not compiled; selecting XDG");
+                    log_windowshader_backend_selection("[WINDOWSHADER_BACKEND] Selected XDG (libdecor bridge not compiled)", false);
                     Ok(Self::XdgServerSide)
                 }
             },
@@ -82,7 +93,7 @@ impl WindowshaderDecorationBackend {
                 "Windowshader decoration backend setting is not valid UTF-8".into(),
             ),
             Ok(value) if value.trim().eq_ignore_ascii_case("xdg") => {
-                eprintln!("[WINDOWSHADER BACKEND] explicitly selected XDG");
+                log_windowshader_backend_selection("[WINDOWSHADER_BACKEND] Selected XDG (explicit override)", false);
                 Ok(Self::XdgServerSide)
             },
             Ok(value) if value.trim().eq_ignore_ascii_case("libdecor") => {
@@ -90,7 +101,7 @@ impl WindowshaderDecorationBackend {
                 verify_windowshader_libdecor_bridge_abi()?;
                 #[cfg(not(feature = "libdecor-bridge"))]
                 return Err("libdecor requested, but the libdecor-bridge feature is disabled".into());
-                eprintln!("[WINDOWSHADER BACKEND] explicitly selected libdecor");
+                log_windowshader_backend_selection("[WINDOWSHADER_BACKEND] Selected libdecor (explicit override)", false);
                 Ok(Self::Libdecor)
             }
             Ok(value) => Err(format!(

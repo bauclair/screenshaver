@@ -1836,6 +1836,11 @@ fn resolve_portable_policies(
             "wallpaper"
         )?;
 
+    let windowshader_defaults =
+        crate::manage_configuration::load_target_defaults(
+            "windowshader"
+        )?;
+
     let connection =
         crate::open_database::open()
             .map_err(
@@ -1979,6 +1984,7 @@ fn resolve_portable_policies(
             match policy_target.as_str() {
                 "screensaver" => Some(&screensaver_defaults),
                 "wallpaper" => Some(&wallpaper_defaults),
+                "windowshader" => Some(&windowshader_defaults),
                 "unassigned" => None,
                 other => {
                     return Err(

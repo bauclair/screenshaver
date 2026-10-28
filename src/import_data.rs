@@ -1285,7 +1285,7 @@ fn policy_values_match(policy: &PackagePolicy, local: &LocalPolicyValues) -> Res
 
     let app = crate::manage_configuration::load_app_defaults()?;
     let target = match policy.target.as_str() {
-        "screensaver" | "wallpaper" => Some(crate::manage_configuration::load_target_defaults(&policy.target)?),
+        "screensaver" | "wallpaper" | "windowshader" => Some(crate::manage_configuration::load_target_defaults(&policy.target)?),
         "unassigned" => None,
         other => return Err(trp("import.diag.unsupported_policy_target", &[("target", (other).to_string())])),
     };
