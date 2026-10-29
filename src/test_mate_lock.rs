@@ -1,6 +1,6 @@
 //! Temporary native MATE/X11 lock presentation test.
 //! Authentication and input isolation remain owned by mate-screensaver.
-use std::{fs, path::PathBuf, process::Command, thread, time::{Duration, Instant}};
+use std::{fs, path::PathBuf, process::{Command, Stdio}, thread, time::{Duration, Instant}};
 
 const SCHEMA: &str = "org.mate.screensaver";
 const THEME: &str = "screensavers-screenshaver-mate-test";
@@ -142,19 +142,34 @@ pub(crate) fn run() -> Result<(), String> {
         set("themes", &format!("['{THEME}']"))?;
         set("mode", "single")?;
         println!("[MATE TEST] Requesting native secure lock. Unlock normally to finish.");
-        command("gdbus", &["call", "--session", "--dest", DEST,
-            "--object-path", OBJECT, "--method", "org.mate.ScreenSaver.Lock"])?;
+        // MATE may not reply to Lock until the screen is unlocked. Never
+        // synchronously wait for the method call before polling GetActive.
+        let mut lock_request = Command::new("gdbus")
+            .args(["call", "--session", "--dest", DEST,
+                "--object-path", OBJECT, "--method", "org.mate.ScreenSaver.Lock"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| format!("Cannot start native MATE lock request: {e}"))?;
         let deadline = Instant::now() + Duration::from_secs(5);
         let mut activated = false;
         while Instant::now() < deadline {
             if active()? { activated = true; break; }
             thread::sleep(Duration::from_millis(100));
         }
-        if !activated { return Err("MATE did not report active within five seconds".into()); }
+        if !activated {
+            let _ = lock_request.kill();
+            let _ = lock_request.wait();
+            return Err("MATE did not report active within five seconds".into());
+        }
         println!("[MATE TEST] Native MATE lock active. Check shader and authentication display.");
         // Never restore the theme while the session is still locked.
         while active()? { thread::sleep(Duration::from_millis(250)); }
         println!("[MATE TEST] MATE unlocked.");
+        if lock_request.try_wait().map_err(|e| e.to_string())?.is_none() {
+            let _ = lock_request.kill();
+            let _ = lock_request.wait();
+        }
         Ok(())
     })();
     let restored = if active().unwrap_or(true) {
