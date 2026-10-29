@@ -25,6 +25,7 @@ mod manage_shader;
 mod manage_screen_lock;
 mod manage_screen_lock_gnome;
 mod manage_screen_lock_xfce;
+mod manage_screen_lock_mate;
 mod manage_runtime_xfce;
 mod manage_runtime_mate;
 mod test_mate_lock;
