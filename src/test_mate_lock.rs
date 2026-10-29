@@ -125,17 +125,37 @@ pub(crate) fn run() -> Result<(), String> {
     }
     if active()? { return Err("Unlock MATE before running this test".into()); }
     let theme = theme_path()?;
-    if theme.exists() { return Err(format!("Refusing to overwrite existing theme: {}", theme.display())); }
+    // Two-stage test: register the theme in one invocation, then allow MATE's
+    // preferences UI / daemon to discover it before a later lock invocation.
+    // Never overwrite an unrelated or modified desktop entry.
+    let binary = std::env::current_exe().map_err(|e| e.to_string())?;
+    let binary = binary.canonicalize().map_err(|e| e.to_string())?;
+    let binary_str = binary.to_str().ok_or("Executable path is not UTF-8")?;
+    if binary_str.contains('\n') || binary_str.contains('\r') || binary_str.contains('%') || binary_str.contains(' ') {
+        return Err("Executable path contains characters unsupported by this temporary theme launcher".into());
+    }
+    let entry = format!("[Desktop Entry]\nName=Screenshaver MATE GLX Test\nExec=/usr/bin/env SCREENSHAVER_MATE_PRESENTATION_TEST=1 {binary_str}\nTryExec={binary_str}\nStartupNotify=false\nTerminal=false\nType=Application\nCategories=Screensaver;\nOnlyShowIn=MATE;\n");
+    if !theme.exists() {
+        fs::create_dir_all(theme.parent().ok_or("Invalid theme path")?)
+            .map_err(|e| e.to_string())?;
+        // create_new ensures we cannot overwrite a foreign file.
+        use std::io::Write;
+        let mut file = fs::OpenOptions::new().write(true).create_new(true)
+            .open(&theme).map_err(|e| e.to_string())?;
+        file.write_all(entry.as_bytes()).map_err(|e| e.to_string())?;
+        diagnostic(&format!("Prepared persistent test theme={} executable={}", theme.display(), binary.display()));
+        println!("[MATE TEST] Test theme registered. Open mate-screensaver-preferences and verify 'Screenshaver MATE GLX Test' is listed.");
+        println!("[MATE TEST] Close preferences, then run screenshaver --test-mate-lock again to perform the lock test.");
+        return Ok(());
+    }
+    if fs::read_to_string(&theme).map_err(|e| e.to_string())? != entry {
+        return Err(format!("Existing theme differs from this test's expected contents; refusing to replace: {}", theme.display()));
+    }
+    diagnostic("Previously registered test theme verified; proceeding with lock test");
     let marker = marker_path()?;
     if marker.exists() {
         if presenter_authorized()? { return Err("Another MATE test owner is active".into()); }
         fs::remove_file(&marker).map_err(|e| e.to_string())?;
-    }
-    let binary = std::env::current_exe().map_err(|e| e.to_string())?;
-    let binary = binary.canonicalize().map_err(|e| e.to_string())?;
-    let binary_str = binary.to_str().ok_or("Executable path is not UTF-8")?;
-    if (binary_str.contains('\n') || binary_str.contains('\r')) || binary_str.contains('%') || binary_str.contains(' ') {
-        return Err("Executable path contains characters unsupported by this temporary theme launcher".into());
     }
     let mode = get("mode")?;
     let themes = get("themes")?;
@@ -150,11 +170,7 @@ pub(crate) fn run() -> Result<(), String> {
             .map_err(|e| e.to_string())?;
     }
     let result = (|| -> Result<(), String> {
-        fs::create_dir_all(theme.parent().ok_or("Invalid theme path")?)
-            .map_err(|e| e.to_string())?;
-        let entry = format!("[Desktop Entry]\nName=Screenshaver MATE GLX Test\nExec=/usr/bin/env SCREENSHAVER_MATE_PRESENTATION_TEST=1 {binary_str}\nTryExec={binary_str}\nStartupNotify=false\nTerminal=false\nType=Application\nCategories=Screensaver;\nOnlyShowIn=MATE;\n");
-        fs::write(&theme, entry).map_err(|e| e.to_string())?;
-        diagnostic(&format!("Registered theme={} executable={}", theme.display(), binary.display()));
+        diagnostic(&format!("Using pre-registered theme={} executable={}", theme.display(), binary.display()));
         fs::write(&marker, owner_identity()?).map_err(|e| e.to_string())?;
         set("themes", &format!("['{THEME}']"))?;
         set("mode", "single")?;
