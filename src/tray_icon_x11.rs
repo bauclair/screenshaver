@@ -145,6 +145,8 @@ unsafe fn run_with_display(
     }
     let menu_gc = unsafe { xlib::XCreateGC(display, menu, 0, std::ptr::null_mut()) };
     let mut menu_open = false;
+    // One-shot diagnostic only: test whether the host permits a client resize.
+    let mut diagnostic_resize_attempted = false;
     let diagnostic_started = Instant::now();
     let mut snapshot_one_logged = false;
     let mut snapshot_three_logged = false;
@@ -179,6 +181,21 @@ unsafe fn run_with_display(
                     if e.window == icon {
                         crate::logger::information(logfile, "[TRAY/X11/DIAG] MapNotify: icon mapped");
                         unsafe { log_icon_snapshot(display, icon, logfile, "after map"); }
+                        if !diagnostic_resize_attempted {
+                            let mut attrs: xlib::XWindowAttributes = unsafe { std::mem::zeroed() };
+                            if unsafe { xlib::XGetWindowAttributes(display, icon, &mut attrs) } != 0
+                                && attrs.width == 1 && attrs.height > 1
+                            {
+                                diagnostic_resize_attempted = true;
+                                crate::logger::information(logfile, &format!(
+                                    "[TRAY/X11/DIAG] One-shot client resize request: 1x{} -> 24x{}",
+                                    attrs.height, attrs.height));
+                                unsafe {
+                                    xlib::XResizeWindow(display, icon, 24, attrs.height as u32);
+                                    xlib::XFlush(display);
+                                }
+                            }
+                        }
                     }
                 },
                 xlib::ConfigureNotify => {
