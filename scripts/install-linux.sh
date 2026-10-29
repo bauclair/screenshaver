@@ -45,6 +45,7 @@ DISTRO_NAME=""
 DESKTOP_ENVIRONMENT=""
 XFCE_INTEGRATION=false
 KDE_INTEGRATION=false
+MATE_INTEGRATION=false
 XFCE_SAVER_DIR=""
 
 SUDO=()
@@ -70,6 +71,7 @@ Conventional Linux installation may install:
   * Wayland, EGL, and libdecor development libraries
   * Clang, PAM, and OpenSSL development libraries
   * Qt6 and CMake build dependencies on KDE Plasma
+  * Ayatana indicator integration on Debian-family MATE desktops
   * rustup, Cargo, and the stable Rust toolchain
 
 On conventional Linux distributions, application files are installed under:
@@ -218,6 +220,9 @@ detect_desktop_environment() {
             ;;
         *xfce*)
             XFCE_INTEGRATION=true
+            ;;
+        *mate*)
+            MATE_INTEGRATION=true
             ;;
         *)
             XFCE_INTEGRATION=false
@@ -566,6 +571,30 @@ installation will continue without modifying the native screen locker."
         xfce4-screensaver
 }
 
+install_mate_indicator_runtime_dependency() {
+    $MATE_INTEGRATION || return 0
+
+    if ! is_debian_family; then
+        warn "MATE was detected, but automatic Ayatana provisioning is currently supported only for Debian-family distributions. Screenshaver installation will continue."
+        return 0
+    fi
+
+    local package
+    local -a packages=(ayatana-indicator-application mate-indicator-applet)
+
+    for package in "${packages[@]}"; do
+        if ! apt-cache show "$package" >/dev/null 2>&1; then
+            warn "MATE indicator package '$package' is unavailable in the configured APT repositories. Screenshaver installation will continue; tray integration may require manual setup."
+            return 0
+        fi
+    done
+
+    log "Installing MATE Ayatana indicator runtime support"
+    if ! "${SUDO[@]}" apt-get install -y "${packages[@]}"; then
+        warn "MATE indicator support could not be installed. Screenshaver installation will continue, but its tray icon may not appear until a compatible StatusNotifier host is configured."
+    fi
+}
+
 install_build_dependencies() {
     log "Detected ${DISTRO_NAME}"
 
@@ -636,6 +665,7 @@ Install these components manually and run the installer again:
     esac
 
     install_xfce_runtime_dependency
+    install_mate_indicator_runtime_dependency
 }
 
 # -----------------------------------------------------------------------------
@@ -1100,6 +1130,12 @@ install_conventional_linux() {
     refresh_desktop_caches
     verify_conventional_installation
     print_conventional_success
+    if $MATE_INTEGRATION; then
+        cat <<'MATE_NOTICE'
+MATE system tray: If the Screenshaver icon is not visible, add
+"Indicator Applet Complete" to your MATE panel and restart Screenshaver.
+MATE_NOTICE
+    fi
 }
 
 # -----------------------------------------------------------------------------
