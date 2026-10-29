@@ -33,6 +33,7 @@ mod present_screen_lock_xfce;
 mod lock_screen_widget;
 mod define_lock_screen_widget;
 mod construct_lock_screen_xfce;
+mod construct_lock_screen_mate;
 mod manage_screen_lock_kde;
 mod manage_windowshader_kde;
 mod detect_desktop_environment;
