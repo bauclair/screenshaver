@@ -95,17 +95,6 @@ unsafe fn run_with_display(
     // Diagnostic-only name: makes the embedded child identifiable with xwininfo.
     let diagnostic_name = CString::new("Screenshaver Tray Icon").unwrap();
     unsafe { xlib::XStoreName(display, icon, diagnostic_name.as_ptr()); }
-    // Advertise a usable minimum width to XEmbed hosts that consult WM_NORMAL_HINTS.
-    // These are advisory: the panel retains authority over the final allocation.
-    // Avoid a fixed maximum or repeated XResizeWindow calls.
-    let mut size_hints: xlib::XSizeHints = unsafe { std::mem::zeroed() };
-    size_hints.flags = (xlib::PMinSize | xlib::PBaseSize) as _;
-    size_hints.min_width = 16;
-    size_hints.min_height = 16;
-    size_hints.base_width = 24;
-    size_hints.base_height = 24;
-    unsafe { xlib::XSetWMNormalHints(display, icon, &mut size_hints); }
-    crate::logger::information(logfile, "[TRAY/X11/DIAG] Published WM_NORMAL_HINTS: min=16x16, base=24x24");
     // XEMBED_MAPPED = 1; version = 0. Property type must be _XEMBED_INFO.
     // The property format is 32 bits,
     // but Xlib expects native-long storage for format-32 properties.
@@ -140,7 +129,7 @@ unsafe fn run_with_display(
         if sent == 0 {
             crate::logger::warning(logfile, "[TRAY/X11] XEmbed dock request was not delivered");
         }
-        draw_icon(display, icon, gc, &decoded);
+        // Flush the docking request promptly; painting occurs on Expose.
         xlib::XFlush(display);
     }
     crate::logger::information(logfile, "[TRAY/X11] XEmbed tray backend started");
