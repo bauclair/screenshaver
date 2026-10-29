@@ -29,6 +29,8 @@ pub enum Command {
 
     TestLyrics,
 
+    TestMateLock,
+
     TestLyricTranslation {
         locale: String,
     },
@@ -206,6 +208,11 @@ pub fn parse() -> Result<Command, String> {
             )
         }
 
+
+        "--test-mate-lock" => {
+            require_no_extra_arguments(&args, "--test-mate-lock")?;
+            Ok(Command::TestMateLock)
+        }
 
         "--test-lyrics" => {
 
@@ -1007,6 +1014,9 @@ pub fn print_help() {
          \n\
              --test-playlists\n\
                  Run developer Playlist database-management tests and exit.\n\
+         \n\
+             --test-mate-lock\n\
+                  Temporarily test native MATE/X11 lock and GLX presentation.\n\
          \n\
              --test-lyrics\n\
                  Run the synchronized-lyrics development test and exit.\n\

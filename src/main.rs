@@ -26,6 +26,7 @@ mod manage_screen_lock;
 mod manage_screen_lock_gnome;
 mod manage_screen_lock_xfce;
 mod manage_runtime_xfce;
+mod test_mate_lock;
 mod manage_gnome_extension;
 mod present_screen_lock_gnome;
 mod present_screen_lock_xfce;
@@ -603,6 +604,14 @@ fn main() {
         }
 
 
+        crate::parse_arguments::Command::TestMateLock => {
+            if let Err(error) = crate::test_mate_lock::run() {
+                eprintln!("[MATE TEST] FAILED: {error}");
+                std::process::exit(1);
+            }
+            return;
+        }
+
         crate::parse_arguments::Command::ConstructLockScreenXfce => {
 
             let desktop_environment =
@@ -807,6 +816,28 @@ fn main() {
 
 
     if xfce_presentation_child {
+
+        if crate::detect_desktop_environment::detect().is_mate()
+            && std::env::var("XDG_SESSION_TYPE").as_deref() == Ok("x11")
+            && std::env::var("SCREENSHAVER_MATE_PRESENTATION_TEST").as_deref() == Ok("1")
+        {
+            match crate::test_mate_lock::presenter_authorized() {
+                Ok(true) => {
+                    crate::logger::information(&logfile,
+                        "[MATE TEST] Authorized presenter started");
+                    if let Err(error) =
+                        crate::present_screen_lock_xfce::detect_presentation_window(&logfile)
+                    {
+                        eprintln!("[MATE TEST] GLX presenter failed: {error}");
+                        crate::logger::error(&logfile,
+                            &format!("[MATE TEST] GLX presenter failed: {error}"));
+                    }
+                }
+                Ok(false) => eprintln!("[MATE TEST] No live test owner; refusing presentation"),
+                Err(error) => eprintln!("[MATE TEST] Authorization error: {error}"),
+            }
+            return;
+        }
 
         match crate::manage_runtime_xfce::resident_runtime_active() {
 
@@ -1488,6 +1519,7 @@ fn main() {
         | crate::parse_arguments::Command::TestMigrationCoordinator { .. }
         | crate::parse_arguments::Command::ConstructLockScreenKde
         | crate::parse_arguments::Command::ConstructLockScreenXfce
+        | crate::parse_arguments::Command::TestMateLock
         | crate::parse_arguments::Command::ResetIdleTimeout { .. } => {
 
             unreachable!(
