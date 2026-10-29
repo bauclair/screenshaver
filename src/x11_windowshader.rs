@@ -251,8 +251,6 @@ fn create_windowshader_window(
         let wm_state = intern_atom(display, "_NET_WM_STATE")?;
         let wm_state_below =
             intern_atom(display, "_NET_WM_STATE_BELOW")?;
-        let wm_state_above =
-            intern_atom(display, "_NET_WM_STATE_ABOVE")?;
         let wm_state_skip_taskbar =
             intern_atom(display, "_NET_WM_STATE_SKIP_TASKBAR")?;
         let wm_state_skip_pager =
@@ -364,10 +362,10 @@ fn create_windowshader_window(
                     display,
                     window,
                     wm_state,
-                    &[wm_state_above, max_v, max_h],
+                    &[max_v, max_h],
                 );
             } else {
-                set_atom_property(display, window, wm_state, &[wm_state_above]);
+                set_atom_property(display, window, wm_state, &[]);
             }
             xlib::XMapWindow(display, window);
         } else {
@@ -875,6 +873,12 @@ fn run_window_loop(
             if !paused {
                 control.acknowledge_pause_detected();
                 paused = true;
+                if wallpaper_window.windowed {
+                    unsafe {
+                        xlib::XUnmapWindow(display, wallpaper_window.window);
+                        xlib::XSync(display, xlib::False);
+                    }
+                }
                 control.acknowledge_paused();
                 if status_enabled {
                     crate::renderer_status::publish(status_pipeline, crate::renderer_status::State::Paused);
@@ -891,6 +895,12 @@ fn run_window_loop(
 
         if paused {
             engine.reset_after_pause();
+            if wallpaper_window.windowed {
+                unsafe {
+                    xlib::XMapWindow(display, wallpaper_window.window);
+                    xlib::XSync(display, xlib::False);
+                }
+            }
         }
 
         let status =
