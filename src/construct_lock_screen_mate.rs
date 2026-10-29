@@ -28,6 +28,20 @@ impl MateLockConfigurationStatus {
     }
 }
 
+// The privileged launcher is installed by packaging, not by this module.
+// Verify the two essential production contract lines before advertising readiness.
+fn trusted_presenter_ready() -> bool {
+    let path = Path::new(TRUSTED_PRESENTER);
+    if !is_executable(path) {
+        return false;
+    }
+    let Ok(contents) = fs::read_to_string(path) else {
+        return false;
+    };
+    contents.lines().any(|line| line.trim() == "export SCREENSHAVER_MATE_PRESENTATION=1")
+        && contents.lines().any(|line| line.trim() == "exec /usr/local/bin/screenshaver")
+}
+
 fn theme_entry() -> String {
     format!(
         "[Desktop Entry]\n\
@@ -74,7 +88,7 @@ pub fn inspect() -> Result<MateLockConfigurationStatus, String> {
     let theme = theme_path()?;
     Ok(MateLockConfigurationStatus {
         mate_screensaver_available: is_executable(Path::new(MATE_SCREENSAVER)),
-        trusted_presenter_installed: is_executable(Path::new(TRUSTED_PRESENTER)),
+        trusted_presenter_installed: trusted_presenter_ready(),
         saver_desktop_registered: fs::read_to_string(&theme)
             .map(|contents| contents == theme_entry())
             .unwrap_or(false),
@@ -87,9 +101,9 @@ pub fn configure_user() -> Result<MateLockConfigurationStatus, String> {
     if !is_executable(Path::new(MATE_SCREENSAVER)) {
         return Err(format!("MATE Screensaver is unavailable at {MATE_SCREENSAVER}"));
     }
-    if !is_executable(Path::new(TRUSTED_PRESENTER)) {
+    if !trusted_presenter_ready() {
         return Err(format!(
-            "MATE trusted presenter is not installed at {TRUSTED_PRESENTER}; install it through the package or installer first"
+            "MATE trusted presenter at {TRUSTED_PRESENTER} is missing, not executable, or lacks the required production launcher lines; install the launcher through the package or installer first"
         ));
     }
 
