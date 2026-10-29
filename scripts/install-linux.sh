@@ -913,6 +913,64 @@ resolve_xfce_saver_directory() {
 }
 
 
+# -----------------------------------------------------------------------------
+# MATE native screen-lock presenter (conventional distributions)
+# -----------------------------------------------------------------------------
+
+install_mate_lock_integration() {
+    local presenter="/usr/libexec/mate-screensaver/screenshaver"
+    local installed_binary="${INSTALL_PREFIX}/bin/${BINARY_NAME}"
+    local expected existing temp_file
+
+    $MATE_INTEGRATION || return 0
+
+    if [[ ! -x /usr/bin/mate-screensaver || ! -d /usr/libexec/mate-screensaver ]]; then
+        warn "MATE native screensaver or its presenter directory is unavailable; MATE lock integration was not installed."
+        return 0
+    fi
+
+    [[ -x "$installed_binary" ]] || die "Installed Screenshaver binary is missing: $installed_binary"
+
+    # Keep this contract synchronized with construct_lock_screen_mate.rs.
+    # Do not permanently select a MATE theme; the resident runtime owns that.
+    expected="$(cat <<EOF
+#!/bin/sh
+
+export SCREENSHAVER_MATE_PRESENTATION=1
+
+if [ -z "\${XDG_RUNTIME_DIR:-}" ]; then
+    export XDG_RUNTIME_DIR="/run/user/\$(id -u)"
+fi
+
+exec ${installed_binary}
+EOF
+)"
+
+    if [[ -e "$presenter" || -L "$presenter" ]]; then
+        if [[ ! -f "$presenter" || -L "$presenter" ]]; then
+            die "Refusing to replace an existing non-regular MATE presenter: $presenter"
+        fi
+        existing="$(cat -- "$presenter")"
+        if [[ "$existing" != "$expected" ]]; then
+            die "Refusing to overwrite a different MATE presenter: $presenter. Inspect and reconcile it manually."
+        fi
+        log "Existing MATE presenter matches the expected launcher"
+    else
+        log "Installing the trusted MATE Screenshaver presenter"
+        temp_file="$(mktemp)"
+        printf '%s\n' "$expected" > "$temp_file"
+        if ! "${SUDO[@]}" install -Dm755 -- "$temp_file" "$presenter"; then
+            rm -f -- "$temp_file"
+            die "Unable to install MATE presenter: $presenter"
+        fi
+        rm -f -- "$temp_file"
+    fi
+
+    [[ -x "$presenter" ]] || die "MATE presenter is not executable: $presenter"
+    log "Registering the MATE Screenshaver theme for the current user"
+    "$installed_binary" --construct-lock-screen-mate
+}
+
 install_omarchy_pam_service() {
     # Omarchy uses a dedicated PAM service for its native lock-password stack.
     # Screenshaver keeps its own stable PAM service name ("screenshaver") and
@@ -1127,6 +1185,7 @@ install_conventional_linux() {
     install_kde_native_integration
     install_omarchy_pam_service
     install_xfce_lock_integration
+    install_mate_lock_integration
     refresh_desktop_caches
     verify_conventional_installation
     print_conventional_success
