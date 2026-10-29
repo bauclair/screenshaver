@@ -92,12 +92,12 @@ unsafe fn run_with_display(
     let xembed_message = unsafe { xlib::XInternAtom(display, xembed_name.as_ptr(), xlib::False) };
     let icon = unsafe { xlib::XCreateSimpleWindow(display, root, 0, 0, 32, 32, 0, 0, 0) };
     if icon == 0 { return Err("XCreateSimpleWindow failed".into()); }
-    // XEMBED_MAPPED = 1; version = 0. Property type must be CARDINAL.
+    // XEMBED_MAPPED = 1; version = 0. Property type must be _XEMBED_INFO.
     // The property format is 32 bits,
     // but Xlib expects native-long storage for format-32 properties.
     let info: [c_long; 2] = [0, 1];
     unsafe {
-        xlib::XChangeProperty(display, icon, embed, xlib::XA_CARDINAL, 32, xlib::PropModeReplace,
+        xlib::XChangeProperty(display, icon, embed, embed, 32, xlib::PropModeReplace,
             info.as_ptr() as *const c_uchar, 2);
         xlib::XSelectInput(display, icon, xlib::ExposureMask | xlib::StructureNotifyMask | xlib::ButtonPressMask | xlib::ButtonReleaseMask);
     }
