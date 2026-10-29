@@ -45,6 +45,7 @@ FLAKE_PACKAGE_NAME="screenshaver"
 
 INSTALL_PREFIX="/usr/local"
 XFCE_TRUSTED_PRESENTER="/usr/libexec/xfce4-screensaver/screenshaver"
+MATE_TRUSTED_PRESENTER="/usr/libexec/mate-screensaver/screenshaver"
 XFCE_SAVER_DESKTOP="$HOME/.local/share/applications/screensavers/screenshaver.desktop"
 LIGHT_LOCKER_OVERRIDE="$HOME/.config/autostart/light-locker.desktop"
 ASSUME_YES=false
@@ -265,6 +266,60 @@ Hidden=true'
 }
 
 # -----------------------------------------------------------------------------
+# MATE native lock-screen integration removal
+# -----------------------------------------------------------------------------
+
+remove_mate_lock_integration() {
+    local expected_presenter expected_theme theme_path data_home
+
+    # Match the launcher produced by install-linux.sh. Do not delete an
+    # unrelated or modified executable under MATE's system libexec directory.
+    expected_presenter="$(cat <<EOF
+#!/bin/sh
+
+export SCREENSHAVER_MATE_PRESENTATION=1
+
+if [ -z "\${XDG_RUNTIME_DIR:-}" ]; then
+    export XDG_RUNTIME_DIR="/run/user/\$(id -u)"
+fi
+
+exec ${INSTALL_PREFIX}/bin/${BINARY_NAME}
+EOF
+)"
+
+    if [[ -f "$MATE_TRUSTED_PRESENTER" && ! -L "$MATE_TRUSTED_PRESENTER" ]]; then
+        if [[ "$(cat -- "$MATE_TRUSTED_PRESENTER")" == "$expected_presenter" ]]; then
+            remove_file_if_present "$MATE_TRUSTED_PRESENTER"
+        else
+            warn "Preserving nonmatching MATE presenter: $MATE_TRUSTED_PRESENTER"
+        fi
+    elif [[ -e "$MATE_TRUSTED_PRESENTER" || -L "$MATE_TRUSTED_PRESENTER" ]]; then
+        warn "Preserving non-regular MATE presenter: $MATE_TRUSTED_PRESENTER"
+    fi
+
+    data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
+    if [[ "$data_home" != /* ]]; then
+        warn "Cannot safely resolve relative XDG_DATA_HOME; MATE theme left unchanged"
+        return 0
+    fi
+    theme_path="$data_home/applications/screensavers/screenshaver-mate.desktop"
+    expected_theme='[Desktop Entry]
+Name=Screenshaver
+Comment=Screenshaver shader presentation for the native MATE screensaver
+Exec=/usr/libexec/mate-screensaver/screenshaver
+TryExec=/usr/libexec/mate-screensaver/screenshaver
+StartupNotify=false
+Terminal=false
+Type=Application
+Categories=Screensaver;
+OnlyShowIn=MATE;'
+    remove_user_file_if_exact "$theme_path" "$expected_theme"
+
+    # MATE owns authentication. Never uninstall mate-screensaver or change
+    # the selected theme here; the resident runtime must be stopped first.
+}
+
+# -----------------------------------------------------------------------------
 # Conventional Linux uninstall
 # -----------------------------------------------------------------------------
 
@@ -459,6 +514,7 @@ uninstall_conventional_linux() {
     initialize_sudo
 
     remove_xfce_lock_integration
+    remove_mate_lock_integration
     remove_installed_binary
     remove_desktop_launcher
     remove_screenshaver_icons
