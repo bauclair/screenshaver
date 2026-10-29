@@ -437,6 +437,66 @@ copy_optional_directory \
 
 
 # -----------------------------------------------------------------------------
+# MATE native lock-screen integration (release payload, not host installation)
+# -----------------------------------------------------------------------------
+
+info
+info "Staging optional MATE trusted-presenter integration files..."
+
+MATE_PAYLOAD_DIR="$STAGING_DIR/integration/mate"
+mkdir -p "$MATE_PAYLOAD_DIR"
+
+cat > "$MATE_PAYLOAD_DIR/screenshaver" <<'MATE_LAUNCHER'
+#!/bin/sh
+
+export SCREENSHAVER_MATE_PRESENTATION=1
+
+if [ -z "${XDG_RUNTIME_DIR:-}" ]; then
+    export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+fi
+
+exec /usr/local/bin/screenshaver
+MATE_LAUNCHER
+chmod 755 "$MATE_PAYLOAD_DIR/screenshaver"
+
+cat > "$MATE_PAYLOAD_DIR/README.md" <<'MATE_README'
+# Screenshaver native MATE lock-screen integration
+
+This directory contains the trusted MATE presenter launcher for conventional
+Linux installations where Screenshaver is installed at
+`/usr/local/bin/screenshaver`.
+
+The release archive only *contains* these files; extracting it does not install
+or activate the MATE integration.
+
+On a MATE system with `mate-screensaver` installed, first install the main
+Screenshaver executable at `/usr/local/bin/screenshaver`. Then, after checking
+that `/usr/libexec/mate-screensaver/screenshaver` does not belong to another
+application, install the supplied launcher:
+
+```sh
+sudo install -Dm755 integration/mate/screenshaver \
+  /usr/libexec/mate-screensaver/screenshaver
+screenshaver --construct-lock-screen-mate
+```
+
+Do not overwrite a preexisting, different launcher. The construct command
+registers the per-user MATE theme but does not select it. Screenshaver's
+resident runtime handles temporary theme selection and restoration.
+
+If Screenshaver is installed somewhere other than `/usr/local/bin`, adjust the
+launcher executable path accordingly. The current MATE construction validator
+expects `/usr/local/bin/screenshaver`, so nonstandard prefixes require a
+corresponding application-side change before registration will pass.
+
+MATE owns password authentication and unlock. Do not modify MATE PAM settings.
+MATE_README
+
+sh -n "$MATE_PAYLOAD_DIR/screenshaver" || error "Invalid MATE launcher syntax"
+success "Staged MATE trusted presenter and instructions"
+
+
+# -----------------------------------------------------------------------------
 # Copy other runtime assets
 # -----------------------------------------------------------------------------
 
@@ -544,6 +604,11 @@ if [[ ! -s "$STAGING_DIR/LICENSE" ]]; then
     error "Staged package does not contain LICENSE."
 fi
 
+if [[ ! -x "$STAGING_DIR/integration/mate/screenshaver" ||
+      ! -s "$STAGING_DIR/integration/mate/README.md" ]]; then
+    error "Staged package is missing MATE integration files."
+fi
+
 success "Staging directory passed validation"
 
 info
@@ -611,6 +676,14 @@ fi
 if ! tar -tzf "$ARCHIVE_PATH" |
     grep -Fxq "$PACKAGE_NAME/LICENSE"; then
     error "The generated archive does not contain LICENSE."
+fi
+
+if ! tar -tzf "$ARCHIVE_PATH" | grep -Fxq "$PACKAGE_NAME/integration/mate/screenshaver"; then
+    error "Release archive does not contain the MATE presenter launcher."
+fi
+
+if ! tar -tzf "$ARCHIVE_PATH" | grep -Fxq "$PACKAGE_NAME/integration/mate/README.md"; then
+    error "Release archive does not contain MATE integration instructions."
 fi
 
 success "Archive passed validation"
