@@ -28,7 +28,7 @@ use wayland_client::Proxy;
 
 // Native title formatting is shared by metadata changes and policy rotation.
 // Never hold the lyrics mutex while sending Wayland requests.
-fn windowshader_native_title(
+pub(crate) fn windowshader_native_title(
     policy_name: &str,
     shared_lyrics: Option<&crate::manage_lyrics::SharedLyricsState>,
     title_monitor: Option<&crate::manage_lyrics::WindowTitleMusicMonitor>,

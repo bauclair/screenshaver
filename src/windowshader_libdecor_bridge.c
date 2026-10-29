@@ -951,7 +951,24 @@ static int bridge_run_windowshader_with_rotation(
     fprintf(stderr, "[LIBDECOR ROTATION] interval_ns=%llu (%s)\n",
             (unsigned long long)rotation_interval_ns,
             rotation_interval_ns ? "enabled" : "disabled");
+    /* Track metadata changes independently of policy rotation. The callback
+     * returns a borrowed Rust CString valid until the next callback; libdecor
+     * consumes the title synchronously on this native dispatch thread. */
+    char *last_applied_title = NULL;
     while (w.running) {
+        if (!diagnostic_mode && current_title && w.frame) {
+            const char *title = current_title(policy_userdata);
+            if (title && title[0] &&
+                (!last_applied_title || strcmp(last_applied_title, title) != 0)) {
+                char *copy = strdup(title);
+                if (copy) {
+                    libdecor_frame_set_title(w.frame, title);
+                    free(last_applied_title);
+                    last_applied_title = copy;
+                    fprintf(stderr, "[LIBDECOR TITLE] updated: %s\n", title);
+                }
+            }
+        }
         if (should_stop && should_stop(stop_userdata)) {
             fprintf(stderr, "[%s] external shutdown requested\n",
                     diagnostic_mode ? "LIBDECOR BRIDGE TEST" : "LIBDECOR WINDOWSHADER");
@@ -1107,6 +1124,7 @@ static int bridge_run_windowshader_with_rotation(
                 w.normal_width, w.normal_height);
     }
 cleanup:
+    free(last_applied_title);
     bridge_diagnostic_window_close(&w, result, workspace_diag);
     return result;
 }

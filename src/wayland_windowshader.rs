@@ -838,12 +838,25 @@ struct NativePolicyTestContext<'a> {
     active_shader_name: String,
     active_source_path: std::path::PathBuf,
     native_title: std::ffi::CString,
+    active_policy_name: String,
+    lyrics_state: Option<crate::manage_lyrics::SharedLyricsState>,
+    title_monitor: Option<crate::manage_lyrics::WindowTitleMusicMonitor>,
 }
 
 #[cfg(feature = "libdecor-bridge")]
 extern "C" fn windowshader_libdecor_current_title(userdata: *mut std::ffi::c_void) -> *const std::ffi::c_char {
     if userdata.is_null() { return std::ptr::null(); }
-    let state = unsafe { &*(userdata as *const NativePolicyTestContext<'_>) };
+    let state = unsafe { &mut *(userdata as *mut NativePolicyTestContext<'_>) };
+    let title = crate::wayland_render_core::windowshader_native_title(
+        &state.active_policy_name,
+        state.lyrics_state.as_ref(),
+        state.title_monitor.as_ref(),
+    );
+    if state.native_title.to_bytes() != title.as_bytes() {
+        if let Ok(updated) = std::ffi::CString::new(title) {
+            state.native_title = updated;
+        }
+    }
     state.native_title.as_ptr()
 }
 
@@ -874,6 +887,7 @@ extern "C" fn windowshader_libdecor_next_policy(userdata: *mut std::ffi::c_void)
             .unwrap_or_else(|_| std::ffi::CString::new("P: Windowshader").expect("literal"));
         state.active_policy_id = candidate.policy_id;
         state.native_title = new_title;
+        state.active_policy_name = candidate.policy_name.clone();
         state.active_shader_name = candidate.shader_name.clone();
         state.active_source_path = candidate.source_path.clone();
         state.manager.record_rendered_policy(candidate.policy_id);
@@ -1011,6 +1025,17 @@ pub fn run_egl_windowed_surface(
                 active_source_path: active_shader.source_path.clone(),
                 native_title: std::ffi::CString::new(format!("P: {}", active_shader.policy_name))
                     .unwrap_or_else(|_| std::ffi::CString::new("P: Windowshader").expect("literal")),
+                active_policy_name: active_shader.policy_name.clone(),
+                lyrics_state: runtime.lyrics_state.clone(),
+                title_monitor: if runtime.lyrics_state.is_none() {
+                    match crate::manage_lyrics::WindowTitleMusicMonitor::start() {
+                        Ok(monitor) => Some(monitor),
+                        Err(error) => {
+                            crate::logger::warning(&crate::locate_paths::runtime_log_path(), &error);
+                            None
+                        }
+                    }
+                } else { None },
             };
             let mut pause_context = NativePauseContext {
                 control: control.clone(),
