@@ -85,6 +85,8 @@ pub enum Command {
 
     ConstructLockScreenXfce,
 
+    ConstructLockScreenMate,
+
     ResetIdleTimeout {
         value: String,
     },
@@ -354,6 +356,11 @@ pub fn parse() -> Result<Command, String> {
             )
         }
 
+
+        "--construct-lock-screen-mate" => {
+            require_no_extra_arguments(&args, "--construct-lock-screen-mate")?;
+            Ok(Command::ConstructLockScreenMate)
+        }
 
         "--construct-lock-screen-xfce" => {
 
@@ -1047,6 +1054,10 @@ pub fn print_help() {
              --construct-lock-screen-kde\n\
                  Construct/install the KDE lock-screen integration.\n\
                  Temporary development/setup command.\n\
+         \n\
+             --construct-lock-screen-mate\n\
+                 Register and verify the MATE lock-screen theme without selecting it.\n\
+                 Requires the trusted presenter to be installed separately.\n\
          \n\
              --construct-lock-screen-xfce\n\
                  Construct/configure the Xfce lock-screen integration.\n\

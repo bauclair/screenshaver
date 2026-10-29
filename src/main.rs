@@ -613,6 +613,36 @@ fn main() {
             return;
         }
 
+        crate::parse_arguments::Command::ConstructLockScreenMate => {
+            let desktop = crate::detect_desktop_environment::detect();
+            if !desktop.is_mate() {
+                eprintln!(
+                    "MATE lock-screen configuration was not modified: detected desktop is {}.",
+                    desktop.name()
+                );
+                std::process::exit(1);
+            }
+
+            match crate::construct_lock_screen_mate::configure_user() {
+                Ok(status) => {
+                    println!("MATE Screensaver available: {}", status.mate_screensaver_available);
+                    println!("Trusted MATE presenter installed: {}", status.trusted_presenter_installed);
+                    println!("Screenshaver MATE theme registered: {}", status.saver_desktop_registered);
+                    if !status.ready_for_runtime() {
+                        eprintln!("MATE theme registration did not verify successfully.");
+                        std::process::exit(1);
+                    }
+                    println!("MATE theme registered; native screensaver selection unchanged.");
+                    println!("Production runtime activation is not yet implemented.");
+                }
+                Err(error) => {
+                    eprintln!("Unable to configure MATE lock-screen theme: {error}");
+                    std::process::exit(1);
+                }
+            }
+            return;
+        }
+
         crate::parse_arguments::Command::ConstructLockScreenXfce => {
 
             let desktop_environment =
@@ -1541,6 +1571,7 @@ fn main() {
         | crate::parse_arguments::Command::TestMigrationCoordinator { .. }
         | crate::parse_arguments::Command::ConstructLockScreenKde
         | crate::parse_arguments::Command::ConstructLockScreenXfce
+        | crate::parse_arguments::Command::ConstructLockScreenMate
         | crate::parse_arguments::Command::TestMateLock
         | crate::parse_arguments::Command::ResetIdleTimeout { .. } => {
 
