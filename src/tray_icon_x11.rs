@@ -10,7 +10,7 @@ use std::sync::mpsc::Sender;
 use crate::tray_icon::{TrayCommand, TrayStatus};
 use std::sync::mpsc::{self, Receiver};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use x11::xlib;
 
 const ARTWORK: &[u8] = include_bytes!("../assets/icons/hicolor/32x32/apps/screenshaver.png");
@@ -92,6 +92,9 @@ unsafe fn run_with_display(
     let xembed_message = unsafe { xlib::XInternAtom(display, xembed_name.as_ptr(), xlib::False) };
     let icon = unsafe { xlib::XCreateSimpleWindow(display, root, 0, 0, 32, 32, 0, 0, 0) };
     if icon == 0 { return Err("XCreateSimpleWindow failed".into()); }
+    // Diagnostic-only name: makes the embedded child identifiable with xwininfo.
+    let diagnostic_name = CString::new("Screenshaver Tray Icon").unwrap();
+    unsafe { xlib::XStoreName(display, icon, diagnostic_name.as_ptr()); }
     // XEMBED_MAPPED = 1; version = 0. Property type must be _XEMBED_INFO.
     // The property format is 32 bits,
     // but Xlib expects native-long storage for format-32 properties.
@@ -142,7 +145,18 @@ unsafe fn run_with_display(
     }
     let menu_gc = unsafe { xlib::XCreateGC(display, menu, 0, std::ptr::null_mut()) };
     let mut menu_open = false;
+    let diagnostic_started = Instant::now();
+    let mut snapshot_one_logged = false;
+    let mut snapshot_three_logged = false;
     loop {
+        if !snapshot_one_logged && diagnostic_started.elapsed() >= Duration::from_secs(1) {
+            unsafe { log_icon_snapshot(display, icon, logfile, "after 1s"); }
+            snapshot_one_logged = true;
+        }
+        if !snapshot_three_logged && diagnostic_started.elapsed() >= Duration::from_secs(3) {
+            unsafe { log_icon_snapshot(display, icon, logfile, "after 3s"); }
+            snapshot_three_logged = true;
+        }
         if shutdown.try_recv().is_ok() {
             crate::logger::information(logfile, "[TRAY/X11] Shutdown requested by tray handle");
             break;
@@ -151,9 +165,35 @@ unsafe fn run_with_display(
             let mut next: xlib::XEvent = unsafe { std::mem::zeroed() };
             unsafe { xlib::XNextEvent(display, &mut next); }
             match next.get_type() {
+                xlib::ReparentNotify => {
+                    let e = unsafe { &*((&next as *const xlib::XEvent).cast::<xlib::XReparentEvent>()) };
+                    if e.window == icon {
+                        crate::logger::information(logfile, &format!(
+                            "[TRAY/X11/DIAG] ReparentNotify: icon=0x{:X}, parent=0x{:X}, x={}, y={}",
+                            icon, e.parent, e.x, e.y));
+                        unsafe { log_icon_snapshot(display, icon, logfile, "after reparent"); }
+                    }
+                },
+                xlib::MapNotify => {
+                    let e = unsafe { &*((&next as *const xlib::XEvent).cast::<xlib::XMapEvent>()) };
+                    if e.window == icon {
+                        crate::logger::information(logfile, "[TRAY/X11/DIAG] MapNotify: icon mapped");
+                        unsafe { log_icon_snapshot(display, icon, logfile, "after map"); }
+                    }
+                },
+                xlib::ConfigureNotify => {
+                    let e = unsafe { &*((&next as *const xlib::XEvent).cast::<xlib::XConfigureEvent>()) };
+                    if e.window == icon {
+                        crate::logger::information(logfile, &format!(
+                            "[TRAY/X11/DIAG] ConfigureNotify: {}x{} at {},{}", e.width, e.height, e.x, e.y));
+                    }
+                },
                 xlib::Expose => {
                     let e = unsafe { &*((&next as *const xlib::XEvent).cast::<xlib::XExposeEvent>()) };
-                    if e.window == icon { unsafe { draw_icon(display, icon, gc, &decoded); } }
+                    if e.window == icon {
+                        crate::logger::information(logfile, &format!("[TRAY/X11/DIAG] Expose: {}x{}, count={}", e.width, e.height, e.count));
+                        unsafe { draw_icon(display, icon, gc, &decoded); }
+                    }
                     else if e.window == menu { unsafe { paint_menu(display, menu, menu_gc, screen, status); } }
                 },
                 xlib::ButtonPress => {
@@ -353,4 +393,31 @@ unsafe fn paint_menu(
         }
         xlib::XFlush(display);
     }
+}
+
+/// Temporary XEmbed diagnostic; does not modify window mapping or geometry.
+unsafe fn log_icon_snapshot(
+    display: *mut xlib::Display,
+    icon: xlib::Window,
+    logfile: &Path,
+    phase: &str,
+) {
+    let mut attrs: xlib::XWindowAttributes = unsafe { std::mem::zeroed() };
+    if unsafe { xlib::XGetWindowAttributes(display, icon, &mut attrs) } == 0 {
+        crate::logger::warning(logfile, &format!("[TRAY/X11/DIAG] {phase}: XGetWindowAttributes failed"));
+        return;
+    }
+    let mut root: xlib::Window = 0;
+    let mut parent: xlib::Window = 0;
+    let mut children: *mut xlib::Window = std::ptr::null_mut();
+    let mut child_count: u32 = 0;
+    let query_ok = unsafe { xlib::XQueryTree(display, icon, &mut root, &mut parent, &mut children, &mut child_count) } != 0;
+    if !children.is_null() {
+        unsafe { xlib::XFree(children.cast()); }
+    }
+    crate::logger::information(logfile, &format!(
+        "[TRAY/X11/DIAG] {phase}: icon=0x{icon:X}, parent={}, geometry={}x{}+{}+{}, map_state={}, query_tree_ok={}",
+        if query_ok { format!("0x{parent:X}") } else { "unknown".into() },
+        attrs.width, attrs.height, attrs.x, attrs.y, attrs.map_state, query_ok,
+    ));
 }
