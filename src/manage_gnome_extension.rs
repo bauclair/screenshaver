@@ -253,124 +253,20 @@ impl GnomeExtensionIntegrationGuard {
     }
 
 
-    pub(crate) fn deactivate(
-        &mut self,
-    ) -> Result<(), String> {
-
-        if !self.enabled {
-            return Ok(());
-        }
-
-
-        let disable_output =
-            run_gnome_extensions_command(
-                &[
-                    "disable",
-                    GNOME_EXTENSION_UUID,
-                ]
-            )?;
-
-
-        if !disable_output.status.success() {
-            return Err(
-                format!(
-                    "Unable to disable GNOME extension '{}': {}",
-                    GNOME_EXTENSION_UUID,
-                    command_output_message(
-                        &disable_output
-                    ),
-                )
-            );
-        }
-
-
-        if !wait_for_extension_inactive()? {
-            return Err(
-                format!(
-                    "GNOME extension '{}' did not leave ACTIVE state after disable request",
-                    GNOME_EXTENSION_UUID,
-                )
-            );
-        }
-
-
-        self.enabled =
-            false;
-
-
-        crate::logger::information(
-            &self.logfile,
-            "[LOCK] Screenshaver GNOME Shell extension disabled",
-        );
-
-
+    pub(crate) fn deactivate(&mut self) -> Result<(), String> {
+        // The GNOME Shell extension is session-persistent: windowshader geometry
+        // handling must remain available after the lock presenter exits.
+        // Secure lock-screen authorization is separately revoked by
+        // GnomeRuntimeSession's runtime-marker cleanup.
+        self.enabled = false;
         Ok(())
     }
 }
 
 
 impl Drop for GnomeExtensionIntegrationGuard {
-    fn drop(
-        &mut self,
-    ) {
-
-        if !self.enabled {
-            return;
-        }
-
-
-        if let Err(error) =
-            self.deactivate()
-        {
-            crate::logger::warning(
-                &self.logfile,
-                &format!(
-                    "[LOCK] Unable to disable Screenshaver GNOME Shell extension during cleanup: {}",
-                    error,
-                ),
-            );
-        }
-    }
-}
-
-
-/// Best-effort stale-state cleanup for a GNOME Screenshaver runtime that is
-/// running with secure screen locking disabled.  Persistent extension files are
-/// intentionally retained; only GNOME Shell activation is withdrawn.
-pub(crate) fn disable_if_present(
-    logfile: &Path,
-) {
-
-    let output =
-        match run_gnome_extensions_command(
-            &[
-                "disable",
-                GNOME_EXTENSION_UUID,
-            ]
-        ) {
-            Ok(output) => {
-                output
-            }
-
-            Err(error) => {
-                crate::logger::information(
-                    logfile,
-                    &format!(
-                        "[LOCK] GNOME extension stale-state cleanup skipped: {}",
-                        error,
-                    ),
-                );
-
-                return;
-            }
-        };
-
-
-    if output.status.success() {
-        crate::logger::information(
-            logfile,
-            "[LOCK] Screenshaver GNOME Shell extension is inactive because screen locking is disabled",
-        );
+    fn drop(&mut self) {
+        let _ = self.deactivate();
     }
 }
 
@@ -793,36 +689,6 @@ fn wait_for_extension_active()
             return Ok(
                 true
             );
-        }
-
-
-        thread::sleep(
-            EXTENSION_STATE_VERIFY_DELAY
-        );
-    }
-
-
-    Ok(
-        false
-    )
-}
-
-
-fn wait_for_extension_inactive()
-    -> Result<bool, String>
-{
-
-    for _ in 0..EXTENSION_STATE_VERIFY_ATTEMPTS {
-        match extension_state()? {
-            Some(state)
-                if state == "ACTIVE" =>
-            {}
-
-            _ => {
-                return Ok(
-                    true
-                );
-            }
         }
 
 

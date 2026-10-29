@@ -1768,46 +1768,29 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
         };
 
 
-    let mut gnome_extension_integration =
-        None;
+    // The GNOME Shell extension serves both lock presentation and windowshader
+    // geometry. Keep it active independently of the secure-lock setting.
+    // GnomeRuntimeSession above still controls lock-screen authorization.
+    let mut gnome_extension_integration = None;
 
     if desktop_environment.is_gnome() {
-        if cfg.screen_lock_enabled {
-            if gnome_runtime_session.is_some() {
-                match crate::manage_gnome_extension::GnomeExtensionIntegrationGuard::activate(
-                    &logfile
-                ) {
-                    Ok(integration) => {
-                        println!(
-                            "[LOCK] Screenshaver GNOME Shell extension enabled for this runtime."
-                        );
-
-                        gnome_extension_integration =
-                            Some(
-                                integration
-                            );
-                    }
-
-                    Err(error) => {
-                        eprintln!(
-                            "[LOCK] GNOME extension activation unavailable; stock GNOME lock presentation will be used: {}",
-                            error
-                        );
-
-                        crate::logger::warning(
-                            &logfile,
-                            &format!(
-                                "[LOCK] GNOME extension activation unavailable; stock GNOME lock presentation will be used: {}",
-                                error,
-                            ),
-                        );
-                    }
-                }
+        match crate::manage_gnome_extension::GnomeExtensionIntegrationGuard::activate(
+            &logfile
+        ) {
+            Ok(integration) => {
+                println!("[GNOME] Screenshaver Shell extension active for this session.");
+                gnome_extension_integration = Some(integration);
             }
-        } else {
-            crate::manage_gnome_extension::disable_if_present(
-                &logfile
-            );
+            Err(error) => {
+                eprintln!(
+                    "[GNOME] Shell extension activation unavailable; GNOME integration may be limited: {}",
+                    error
+                );
+                crate::logger::warning(
+                    &logfile,
+                    &format!("[GNOME] Shell extension activation unavailable: {}", error),
+                );
+            }
         }
     }
 
@@ -3124,17 +3107,6 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
                         }
 
 
-                        // A completed or failed secure-lock attempt does not
-                        // necessarily clear the idle notification. Require a
-                        // fresh Active observation before another attempt,
-                        // preventing a persistent backend error from causing
-                        // an unbounded lock-request loop.
-                        screensaver_waiting_for_active = true;
-                        crate::logger::information(
-                            &logfile,
-                            "[SESSION REARM] Secure-lock attempt ended; waiting for Active before retry",
-                        );
-
                         break 'screensaver_session;
                     }
 
@@ -3379,7 +3351,7 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
             Ok(()) => {
                 crate::logger::information(
                     &logfile,
-                    "[LOCK] GNOME Shell extension deactivated on Screenshaver shutdown",
+                    "[GNOME] Runtime extension guard released; Shell extension remains active",
                 );
             }
 
