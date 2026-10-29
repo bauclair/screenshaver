@@ -828,9 +828,11 @@ fn main() {
 
     if xfce_presentation_child {
 
-        if crate::detect_desktop_environment::detect().is_mate()
-            && std::env::var("XDG_SESSION_TYPE").as_deref() == Ok("x11")
-            && std::env::var("SCREENSHAVER_MATE_PRESENTATION_TEST").as_deref() == Ok("1")
+        // MATE's screensaver engine child may not inherit desktop/session
+        // identification variables. The explicit test launcher flag selects
+        // this branch; presenter_authorized() still requires a live test owner.
+        // The X11 presenter subsequently validates the supplied window.
+        if std::env::var("SCREENSHAVER_MATE_PRESENTATION_TEST").as_deref() == Ok("1")
         {
             crate::test_mate_lock::diagnostic("Child entered MATE presenter authorization");
             match crate::test_mate_lock::presenter_authorized() {
