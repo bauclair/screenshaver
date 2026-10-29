@@ -815,26 +815,45 @@ fn main() {
     }
 
 
+    // Capture MATE theme launches even if the native saver does not supply
+    // XSCREENSAVER_WINDOW. This runs only in the explicitly tagged test child.
+    if std::env::var("SCREENSHAVER_MATE_PRESENTATION_TEST").as_deref() == Ok("1") {
+        crate::test_mate_lock::diagnostic(&format!(
+            "Child entered main: desktop={}, session={:?}, XSCREENSAVER_WINDOW={:?}",
+            crate::detect_desktop_environment::detect().name(),
+            std::env::var("XDG_SESSION_TYPE").ok(),
+            std::env::var("XSCREENSAVER_WINDOW").ok(),
+        ));
+    }
+
     if xfce_presentation_child {
 
         if crate::detect_desktop_environment::detect().is_mate()
             && std::env::var("XDG_SESSION_TYPE").as_deref() == Ok("x11")
             && std::env::var("SCREENSHAVER_MATE_PRESENTATION_TEST").as_deref() == Ok("1")
         {
+            crate::test_mate_lock::diagnostic("Child entered MATE presenter authorization");
             match crate::test_mate_lock::presenter_authorized() {
                 Ok(true) => {
+                    crate::test_mate_lock::diagnostic("Authorization PASS; invoking X11/GLX presenter");
                     crate::logger::information(&logfile,
                         "[MATE TEST] Authorized presenter started");
-                    if let Err(error) =
-                        crate::present_screen_lock_xfce::detect_presentation_window(&logfile)
-                    {
+                    let presentation = crate::present_screen_lock_xfce::detect_presentation_window(&logfile);
+                    crate::test_mate_lock::diagnostic(&format!("GLX presenter returned: {:?}", presentation));
+                    if let Err(error) = presentation {
                         eprintln!("[MATE TEST] GLX presenter failed: {error}");
                         crate::logger::error(&logfile,
                             &format!("[MATE TEST] GLX presenter failed: {error}"));
                     }
                 }
-                Ok(false) => eprintln!("[MATE TEST] No live test owner; refusing presentation"),
-                Err(error) => eprintln!("[MATE TEST] Authorization error: {error}"),
+                Ok(false) => {
+                    crate::test_mate_lock::diagnostic("Authorization DENIED: no live owner");
+                    eprintln!("[MATE TEST] No live test owner; refusing presentation");
+                }
+                Err(error) => {
+                    crate::test_mate_lock::diagnostic(&format!("Authorization ERROR: {error}"));
+                    eprintln!("[MATE TEST] Authorization error: {error}");
+                },
             }
             return;
         }

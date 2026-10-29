@@ -96,11 +96,27 @@ fn theme_path() -> Result<PathBuf, String> {
     Ok(data.join("applications/screensavers/screenshaver-mate-test.desktop"))
 }
 
+/// Append-only diagnostics shared by the test owner and MATE-launched child.
+/// This file is deliberately separate from the normal runtime log.
+pub(crate) fn diagnostic(message: &str) {
+    use std::io::Write;
+    let Ok(directory) = config_dir() else { return; };
+    if fs::create_dir_all(&directory).is_err() { return; }
+    let path = directory.join("mate-lock-presentation.log");
+    let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(path) else { return; };
+    #[cfg(unix)] {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = file.set_permissions(fs::Permissions::from_mode(0o600));
+    }
+    let _ = writeln!(file, "[MATE PROBE pid={}] {}", std::process::id(), message);
+}
+
 pub(crate) fn run() -> Result<(), String> {
     if !crate::detect_desktop_environment::detect().is_mate()
         || std::env::var("XDG_SESSION_TYPE").as_deref() != Ok("x11") {
         return Err("--test-mate-lock requires a MATE/X11 session".into());
     }
+    diagnostic("Test owner entered --test-mate-lock");
     let snapshot = snapshot_path()?;
     if snapshot.exists() {
         if active()? { return Err("MATE is locked; unlock before recovering an interrupted test".into()); }
@@ -138,9 +154,11 @@ pub(crate) fn run() -> Result<(), String> {
             .map_err(|e| e.to_string())?;
         let entry = format!("[Desktop Entry]\nName=Screenshaver MATE GLX Test\nExec=/usr/bin/env SCREENSHAVER_MATE_PRESENTATION_TEST=1 {binary_str}\nTryExec={binary_str}\nStartupNotify=false\nTerminal=false\nType=Application\nCategories=Screensaver;\nOnlyShowIn=MATE;\n");
         fs::write(&theme, entry).map_err(|e| e.to_string())?;
+        diagnostic(&format!("Registered theme={} executable={}", theme.display(), binary.display()));
         fs::write(&marker, owner_identity()?).map_err(|e| e.to_string())?;
         set("themes", &format!("['{THEME}']"))?;
         set("mode", "single")?;
+        diagnostic(&format!("Selected theme: mode={} themes={}", get("mode")?, get("themes")?));
         println!("[MATE TEST] Requesting native secure lock. Unlock normally to finish.");
         // MATE may not reply to Lock until the screen is unlocked. Never
         // synchronously wait for the method call before polling GetActive.
@@ -163,9 +181,11 @@ pub(crate) fn run() -> Result<(), String> {
             return Err("MATE did not report active within five seconds".into());
         }
         println!("[MATE TEST] Native MATE lock active. Check shader and authentication display.");
+        diagnostic("Native MATE GetActive=true");
         // Never restore the theme while the session is still locked.
         while active()? { thread::sleep(Duration::from_millis(250)); }
         println!("[MATE TEST] MATE unlocked.");
+        diagnostic("Native MATE GetActive=false");
         if lock_request.try_wait().map_err(|e| e.to_string())?.is_none() {
             let _ = lock_request.kill();
             let _ = lock_request.wait();
@@ -185,5 +205,6 @@ pub(crate) fn run() -> Result<(), String> {
         let _ = fs::remove_file(&marker);
         let _ = fs::remove_file(&theme);
     }
+    diagnostic(&format!("Test completed: result={:?}, settings_restored={restored}", result));
     result
 }
