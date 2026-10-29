@@ -635,7 +635,7 @@ fn main() {
                         std::process::exit(1);
                     }
                     println!("MATE theme registered; native screensaver selection unchanged.");
-                    println!("Production runtime activation is not yet implemented.");
+                    println!("Production theme selection is managed by the resident Screenshaver runtime.");
                 }
                 Err(error) => {
                     eprintln!("Unable to configure MATE lock-screen theme: {error}");
@@ -1839,6 +1839,37 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
         };
 
 
+    // MATE/X11 keeps native authentication and unlock ownership. The guard
+    // temporarily selects the registered shader theme only for this resident
+    // runtime, and restores the previous settings when dropped. A failed
+    // acquisition leaves MATE's native locking available without shaders.
+    let _mate_runtime_session =
+        if desktop_environment.is_mate() && cfg.screen_lock_enabled {
+            match crate::manage_runtime_mate::MateRuntimeSession::acquire(&logfile) {
+                Ok(session) => {
+                    crate::logger::information(
+                        &logfile,
+                        "[LOCK] MATE runtime ownership established; temporary native theme active",
+                    );
+                    Some(session)
+                }
+                Err(error) => {
+                    crate::logger::warning(
+                        &logfile,
+                        &format!(
+                            "[LOCK] MATE shader theme activation unavailable; native MATE locking remains responsible: {}",
+                            error,
+                        ),
+                    );
+                    eprintln!("[LOCK] MATE shader presentation unavailable: {error}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+
     // GNOME shader lock presentation is runtime-owned. Establish the
     // authorization marker only after the resident Screenshaver singleton has
     // been acquired, then provision and activate the Shell extension. GNOME
@@ -3022,6 +3053,21 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
 
 
                                 crate::manage_screen_lock_xfce::run(
+                                    &logfile,
+                                    running.as_ref(),
+                                    &wallpaper_control,
+                                )
+
+                            } else if desktop_environment
+                                .is_mate()
+                            {
+
+                                drop(shader_manager);
+
+                                // Always use MATE's native locker, even when
+                                // shader-theme activation was unavailable.
+                                // Never fall through to the Wayland/PAM path.
+                                crate::manage_screen_lock_mate::run(
                                     &logfile,
                                     running.as_ref(),
                                     &wallpaper_control,
