@@ -297,9 +297,10 @@ static void bridge_pointer_button(void *data, struct wl_pointer *pointer,
                                   uint32_t button, uint32_t state) {
     struct bridge_test_window *w = data;
     (void)pointer; (void)serial; (void)time;
-    if (w->pointer_on_surface && button == 0x110 && state == WL_POINTER_BUTTON_STATE_PRESSED
-        && bridge_lyrics_pointer_event) {
-        (void)bridge_lyrics_pointer_event(w->pointer_x, w->pointer_y, 1);
+    if (w->pointer_on_surface && (button == 0x110 || button == 0x111)
+        && state == WL_POINTER_BUTTON_STATE_PRESSED && bridge_lyrics_pointer_event) {
+        (void)bridge_lyrics_pointer_event(w->pointer_x, w->pointer_y,
+                                          button == 0x111 ? 3 : 1);
     }
     if (w->pointer_on_surface && w->diagnostic_mode)
         fprintf(stderr, "[LIBDECOR POINTER] button=%u state=%u x=%.1f y=%.1f\n",

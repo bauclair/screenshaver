@@ -177,6 +177,13 @@ pub extern "C" fn screenshaver_libdecor_rust_lyrics_pointer(
             width, surface_height, panel_height, navigation_width: nav_width,
         };
         if !bounds.contains(x, y) { return 0; }
+        // Button 3 is a right-click. Match the XDG path: toggle playback
+        // anywhere inside the lyric rectangle, including navigation buttons.
+        if pressed == 3 {
+            let accepted = slot.navigation.as_ref().is_some_and(|handle| handle.toggle_playback());
+            eprintln!("[LIBDECOR LYRICS INPUT] toggle playback accepted={accepted}");
+            return 1;
+        }
         let snapshot = slot.state.as_ref().and_then(|s| s.lock().ok().map(|s| s.clone()));
         let Some(snapshot) = snapshot else { return 0; };
         if let Some(previous) = bounds.navigation_at(x, y) {
