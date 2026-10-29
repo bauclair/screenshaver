@@ -26,6 +26,7 @@ mod manage_screen_lock;
 mod manage_screen_lock_gnome;
 mod manage_screen_lock_xfce;
 mod manage_runtime_xfce;
+mod manage_runtime_mate;
 mod test_mate_lock;
 mod manage_gnome_extension;
 mod present_screen_lock_gnome;
