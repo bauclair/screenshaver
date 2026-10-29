@@ -22,6 +22,7 @@ pub enum DesktopEnvironment {
     KdePlasma,
     Gnome,
     Xfce,
+    Mate,
     Lxde,
     Other,
     Unknown,
@@ -42,6 +43,10 @@ impl DesktopEnvironment {
 
             Self::Xfce => {
                 "XFCE"
+            }
+
+            Self::Mate => {
+                "MATE"
             }
 
             Self::Lxde => {
@@ -68,6 +73,10 @@ impl DesktopEnvironment {
         self,
     ) -> bool {
         self == Self::Gnome
+    }
+
+    pub fn is_mate(self) -> bool {
+        self == Self::Mate
     }
 
     pub fn is_lxde(self) -> bool {
@@ -174,6 +183,12 @@ pub fn detect(
         is_xfce_identifier,
     ) {
         return DesktopEnvironment::Xfce;
+    }
+
+    for variable in ["XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "DESKTOP_SESSION"] {
+        if environment_variable_contains_desktop(variable, is_mate_identifier) {
+            return DesktopEnvironment::Mate;
+        }
     }
 
     for variable in ["XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "DESKTOP_SESSION"] {
@@ -294,6 +309,13 @@ fn is_xfce_identifier(
         || normalized.starts_with(
             "xfce_"
         )
+}
+
+fn is_mate_identifier(value: &str) -> bool {
+    let normalized = normalize_identifier(value);
+    normalized == "mate"
+        || normalized.starts_with("mate-")
+        || normalized.starts_with("mate_")
 }
 
 fn is_lxde_identifier(value: &str) -> bool {
@@ -449,8 +471,19 @@ mod tests {
         is_gnome_identifier,
         is_kde_identifier,
         is_lxde_identifier,
+        is_mate_identifier,
         is_xfce_identifier,
     };
+
+    #[test]
+    fn recognizes_mate_identifiers() {
+        assert!(is_mate_identifier("MATE"));
+        assert!(is_mate_identifier("mate"));
+        assert!(is_mate_identifier("mate-session"));
+        assert!(!is_mate_identifier("XFCE"));
+        assert!(!is_mate_identifier("LXDE"));
+        assert!(!is_mate_identifier("ultimate"));
+    }
 
     #[test]
     fn recognizes_lxde_identifiers() {
