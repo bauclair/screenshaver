@@ -892,6 +892,43 @@ fn main() {
             return;
         }
 
+        // Production MATE presenter selection is explicit. The trusted MATE
+        // launcher supplies this tag; the tag alone is never authorization.
+        // A live resident PID/start-time marker is also mandatory. This path
+        // does not change MATE's selected theme or activate its runtime.
+        if std::env::var("SCREENSHAVER_MATE_PRESENTATION").as_deref() == Ok("1") {
+            match crate::manage_runtime_mate::resident_runtime_active() {
+                Ok(true) => {
+                    crate::logger::information(
+                        &logfile,
+                        "[LOCK] MATE production presenter verified resident runtime ownership",
+                    );
+                    if let Err(error) =
+                        crate::present_screen_lock_xfce::detect_presentation_window(&logfile)
+                    {
+                        crate::logger::error(
+                            &logfile,
+                            &format!("[LOCK] MATE production presentation failed: {error}"),
+                        );
+                        eprintln!("MATE presentation failed: {error}");
+                    }
+                }
+                Ok(false) => {
+                    crate::logger::warning(
+                        &logfile,
+                        "[LOCK] MATE production presenter denied: no live resident runtime owner",
+                    );
+                }
+                Err(error) => {
+                    crate::logger::warning(
+                        &logfile,
+                        &format!("[LOCK] MATE production presenter authorization failed: {error}"),
+                    );
+                }
+            }
+            return;
+        }
+
         match crate::manage_runtime_xfce::resident_runtime_active() {
 
             Ok(true) => {
