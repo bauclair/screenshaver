@@ -125,31 +125,13 @@ pub(crate) fn run() -> Result<(), String> {
     }
     if active()? { return Err("Unlock MATE before running this test".into()); }
     let theme = theme_path()?;
-    // Two-stage test: register the theme in one invocation, then allow MATE's
-    // preferences UI / daemon to discover it before a later lock invocation.
-    // Never overwrite an unrelated or modified desktop entry.
-    // Independent executable probe: no Screenshaver initialization or GLX involved.
-    let probe = config_dir()?.join("mate-theme-exec-probe.sh");
-    let log = config_dir()?.join("mate-theme-exec-probe.log");
-    let probe_str = probe.to_str().ok_or("Probe path is not UTF-8")?;
-    let log_str = log.to_str().ok_or("Probe log path is not UTF-8")?;
-    if [probe_str, log_str].iter().any(|p| p.contains('\n') || p.contains('\r') || p.contains(' ') || p.contains('%') || p.contains('\'')) {
-        return Err("Probe path contains unsupported characters".into());
+    // The launcher is installed separately in MATE's approved engine directory.
+    // Do not attempt privileged installation or modify system files here.
+    const LAUNCHER: &str = "/usr/libexec/mate-screensaver/screenshaver-mate-probe";
+    if !std::path::Path::new(LAUNCHER).is_file() {
+        return Err(format!("MATE-approved launcher missing: {LAUNCHER}"));
     }
-    let script = format!("#!/bin/sh\nprintf 'MATE launched probe: pid=%s window=%s display=%s\\n' \"$$\" \"${{XSCREENSAVER_WINDOW-UNSET}}\" \"${{DISPLAY-UNSET}}\" >> '{log_str}'\n# Keep the saver process alive until MATE stops it.\nexec sleep 3600\n");
-    let entry = format!("[Desktop Entry]\nName=Screenshaver MATE Launch Probe\nExec={probe_str}\nTryExec=/bin/sh\nStartupNotify=false\nTerminal=false\nType=Application\nCategories=Screensaver;\nOnlyShowIn=MATE;\n");
-    if !probe.exists() {
-        fs::create_dir_all(probe.parent().ok_or("Invalid probe path")?).map_err(|e| e.to_string())?;
-        use std::io::Write;
-        let mut f = fs::OpenOptions::new().write(true).create_new(true).open(&probe).map_err(|e| e.to_string())?;
-        f.write_all(script.as_bytes()).map_err(|e| e.to_string())?;
-        #[cfg(unix)] {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&probe, fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
-        }
-    } else if fs::read_to_string(&probe).map_err(|e| e.to_string())? != script {
-        return Err(format!("Existing probe script differs; refusing to replace: {}", probe.display()));
-    }
+    let entry = format!("[Desktop Entry]\nName=Screenshaver MATE Launch Probe\nExec={LAUNCHER}\nTryExec={LAUNCHER}\nStartupNotify=false\nTerminal=false\nType=Application\nCategories=Screensaver;\nOnlyShowIn=MATE;\n");
     if !theme.exists() {
         fs::create_dir_all(theme.parent().ok_or("Invalid theme path")?)
             .map_err(|e| e.to_string())?;
@@ -158,7 +140,7 @@ pub(crate) fn run() -> Result<(), String> {
         let mut file = fs::OpenOptions::new().write(true).create_new(true)
             .open(&theme).map_err(|e| e.to_string())?;
         file.write_all(entry.as_bytes()).map_err(|e| e.to_string())?;
-        diagnostic(&format!("Prepared persistent launch-probe theme={} script={}", theme.display(), probe.display()));
+        diagnostic(&format!("Prepared MATE presenter theme={}", theme.display()));
         println!("[MATE TEST] Test theme registered. Open mate-screensaver-preferences and verify 'Screenshaver MATE Launch Probe' is listed.");
         println!("[MATE TEST] Close preferences, then run screenshaver --test-mate-lock again to perform the lock test.");
         return Ok(());
@@ -185,7 +167,7 @@ pub(crate) fn run() -> Result<(), String> {
             .map_err(|e| e.to_string())?;
     }
     let result = (|| -> Result<(), String> {
-        diagnostic(&format!("Using pre-registered launch probe theme={} script={}", theme.display(), probe.display()));
+        diagnostic(&format!("Using pre-registered presenter theme={}", theme.display()));
         fs::write(&marker, owner_identity()?).map_err(|e| e.to_string())?;
         set("themes", &format!("['{THEME}']"))?;
         set("mode", "single")?;
@@ -234,20 +216,9 @@ pub(crate) fn run() -> Result<(), String> {
     };
     if restored {
         let _ = fs::remove_file(&marker);
-        let _ = fs::remove_file(&theme);
-        let _ = fs::remove_file(&probe);
+        // Keep the registered theme for subsequent tests; no system launcher is removed.
     }
-    match fs::read_to_string(&log) {
-        Ok(contents) => {
-            println!("[MATE TEST] Theme launch probe output:\n{}", contents.trim());
-            diagnostic(&format!("Theme launch probe output: {}", contents.trim()));
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            println!("[MATE TEST] No theme launch probe output: MATE did not execute the script (or could not write the log).");
-            diagnostic("Theme launch probe did not record execution");
-        }
-        Err(e) => diagnostic(&format!("Unable to read theme launch probe log: {e}")),
-    }
+    println!("[MATE TEST] Presenter diagnostics: {}", config_dir()?.join("mate-lock-presentation.log").display());
     diagnostic(&format!("Test completed: result={:?}, settings_restored={restored}", result));
     result
 }
