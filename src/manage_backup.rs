@@ -36,6 +36,89 @@ pub fn backup_now() -> Result<PathBuf, String> {
 }
 
 
+/// Create and independently verify a pre-policy-change full backup.
+///
+/// Unlike `backup_now`, this does not modify `app_defaults.last_backup`.
+/// The caller must still coordinate database writers and validate that the
+/// backed-up state is the same state used by its subsequent transaction.
+/// This helper alone does not authorize policy writes.
+pub fn create_pre_policy_change_backup() -> Result<PathBuf, String> {
+    ensure_directory()?;
+    let path = crate::export_data::create_full_backup()?;
+    verify_pre_policy_change_archive(&path)?;
+    Ok(path)
+}
+
+/// Check the finished archive's manifest and every payload digest without
+/// invoking restore staging or mutating the operational database.
+fn verify_pre_policy_change_archive(path: &std::path::Path) -> Result<(), String> {
+    use std::io::Read;
+    let file = std::fs::File::open(path)
+        .map_err(|e| format!("Unable to reopen pre-policy-change backup: {}", e))?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| format!("Invalid pre-policy-change ZIP archive: {}", e))?;
+    let mut payloads = std::collections::BTreeMap::<String, Vec<u8>>::new();
+    let mut manifest_bytes = None;
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index)
+            .map_err(|e| format!("Unable to read backup ZIP entry {}: {}", index, e))?;
+        if entry.is_dir() { continue; }
+        let name = entry.name().to_string();
+        if !safe_archive_member(&name) {
+            return Err(format!("Unsafe backup ZIP entry: {}", name));
+        }
+        let mut bytes = Vec::new();
+        entry.read_to_end(&mut bytes)
+            .map_err(|e| format!("Unable to read backup member {}: {}", name, e))?;
+        if name == "manifest.json" {
+            if manifest_bytes.replace(bytes).is_some() {
+                return Err("Duplicate backup manifest".to_string());
+            }
+        } else if payloads.insert(name.clone(), bytes).is_some() {
+            return Err(format!("Duplicate backup member: {}", name));
+        }
+    }
+    let manifest_bytes = manifest_bytes
+        .ok_or_else(|| "Backup is missing manifest.json".to_string())?;
+    let manifest: RestoreManifest = serde_json::from_slice(&manifest_bytes)
+        .map_err(|e| format!("Unable to parse backup manifest: {}", e))?;
+    if !manifest.backup || manifest.format_version != 1 {
+        return Err("Archive is not a supported full backup".to_string());
+    }
+    if manifest.database_snapshot.as_deref() != Some("backup/screenshaver.db") {
+        return Err("Full backup is missing its database snapshot declaration".to_string());
+    }
+    // Export Format 1 records its own manifest schema identifier (currently 1),
+    // which is distinct from the live SQLite schema revision (currently v004).
+    // Comparing the two rejects every otherwise-valid full backup. The snapshot
+    // itself is integrity-checked when export_data creates the archive.
+    if manifest.database_schema_version != 1 {
+        return Err(format!(
+            "Unsupported backup manifest database schema identifier: {}",
+            manifest.database_schema_version
+        ));
+    }
+    // Export Format 1 includes shader source payloads in its package digest,
+    // but does not list those shader files individually in manifest.files.
+    // Consequently the manifest and ZIP member counts need not match.
+    // Verify all declared member digests and the canonical package digest,
+    // which covers every payload (including shader source files).
+    for (name, integrity) in &manifest.files {
+        let bytes = payloads.get(name)
+            .ok_or_else(|| format!("Missing backup payload: {}", name))?;
+        if sha256_hex(bytes) != integrity.sha256.to_ascii_lowercase() {
+            return Err(format!("Backup payload checksum mismatch: {}", name));
+        }
+    }
+    if package_sha256(&payloads) != manifest.package_sha256.to_ascii_lowercase() {
+        return Err("Backup package checksum mismatch".to_string());
+    }
+    if !payloads.contains_key("backup/screenshaver.db") {
+        return Err("Backup archive does not contain the SQLite snapshot".to_string());
+    }
+    Ok(())
+}
+
 pub fn run_scheduled_backup_if_due() -> Result<Option<PathBuf>, String> {
     ensure_directory()?;
 

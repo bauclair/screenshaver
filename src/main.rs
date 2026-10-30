@@ -1266,13 +1266,57 @@ fn main() {
     }
 
 
-    // Assignment management is initiated from the Control Center, not on
-    // every startup. Existing databases are never interrupted by a modal.
+    // Show policy management on ordinary startup only when reconciliation has
+    // left at least one managed shader without any policy. Existing Unassigned
+    // policies count as policies and do not trigger this dialog.
+    if matches!(&command, crate::parse_arguments::Command::Run | crate::parse_arguments::Command::Start | crate::parse_arguments::Command::RunRendererStatus) {
+        match crate::assign_shader_policies::load_managed_assignments() {
+            Ok(rows) if rows.iter().any(|row| row.has_no_policies) => {
+                crate::logger::information(&logfile, "[POLICIES] Unassigned new shaders detected; opening Manage Shader Policies at startup.");
+                // Release the startup connection while the Control Center is
+                // active. It is reacquired after the dialog closes.
+                drop(database_connection);
+                let startup_result = crate::edit_shader::run_startup_assignment_session(
+                    Some(crate::audio_backend::shared_audio_bands()),
+                );
+                if let Err(error) = startup_result {
+                    crate::logger::warning(&logfile, &format!("[POLICIES] Startup assignment dialog failed: {error}"));
+                    eprintln!("[POLICIES] Startup assignment dialog failed: {error}");
+                }
+                database_connection = match crate::open_database::open() {
+                    Ok(connection) => connection,
+                    Err(error) => {
+                        crate::logger::error(&logfile, &format!("[DATABASE] Unable to reopen database after policy dialog: {error}"));
+                        return;
+                    }
+                };
+            }
+            Ok(_) => {}
+            Err(error) => {
+                crate::logger::warning(&logfile, &format!("[POLICIES] Unable to inspect startup assignments: {error}"));
+            }
+        }
+    }
 
     // Automatic backup runs only after database preparation, shader
     // reconciliation, and required policy assignment have completed. A failed
     // backup never advances app_defaults.last_backup, so the next startup can
     // retry it.
+    // Validate persisted rendering selections after shader reconciliation and
+    // policy assignment, before loading configuration or starting renderers.
+    match crate::manage_configuration::repair_invalid_runtime_modes_at_startup() {
+        Ok(repairs) => {
+            for repair in repairs {
+                crate::logger::warning(&logfile, &format!("[RUNTIME FALLBACK] {}", repair));
+            }
+        }
+        Err(error) => {
+            eprintln!("[MAIN] RUNTIME FALLBACK ERROR: {}", error);
+            crate::logger::error(&logfile, &format!("[RUNTIME FALLBACK] {}", error));
+            return;
+        }
+    }
+
     match crate::manage_backup::run_scheduled_backup_if_due() {
         Ok(Some(path)) => {
             crate::logger::information(

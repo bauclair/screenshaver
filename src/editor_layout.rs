@@ -1329,6 +1329,7 @@ pub struct EditWindowOverlay {
     manage_assignments: Option<Vec<crate::assign_shader_policies::ManagedAssignmentRow>>,
     manage_filter: String,
     manage_missing_only: bool,
+    manage_confirmation_open: bool,
 
     pending_bulk_create_candidates:
         Option<Vec<BulkCreateCandidate>>,
@@ -1759,6 +1760,7 @@ impl EditWindowOverlay {
                 manage_assignments: None,
             manage_filter: String::new(),
             manage_missing_only: false,
+            manage_confirmation_open: false,
             pending_bulk_create_candidates:
                     None,
 
@@ -4104,6 +4106,7 @@ impl EditWindowOverlay {
                         &mut self.manage_assignments,
                         &mut self.manage_filter,
                         &mut self.manage_missing_only,
+                        &mut self.manage_confirmation_open,
                         &mut manage_assignments_create_requested,
                     );
 
@@ -5303,6 +5306,7 @@ impl EditWindowOverlay {
         self.manage_assignments = Some(rows);
         self.manage_filter.clear();
         self.manage_missing_only = false;
+        self.manage_confirmation_open = false;
     }
 
     pub fn begin_bulk_policy_creation(
@@ -7662,111 +7666,127 @@ fn draw_manage_assignments_modal(
     pending: &mut Option<Vec<crate::assign_shader_policies::ManagedAssignmentRow>>,
     filter: &mut String,
     missing_only: &mut bool,
+    confirmation_open: &mut bool,
     requested: &mut Option<Vec<crate::assign_shader_policies::ManagedAssignmentRow>>,
 ) {
     let Some(rows) = pending.as_mut() else { return; };
     let mut cancel = false;
-    let mut create = false;
+    let mut review = false;
+    let mut apply = false;
     const SHADER_WIDTH: f32 = 290.0;
-    const TARGET_WIDTH: f32 = 160.0;
-
-    egui::Window::new("Shader Policy Assignment")
+    const TARGET_WIDTH: f32 = 132.0;
+    egui::Window::new("Manage Shader Policies")
         .id(egui::Id::new("manage_shader_policies_modal"))
-        .collapsible(false)
-        .resizable(true)
-        .default_width(850.0)
-        .min_width(820.0)
+        .collapsible(false).resizable(true).default_width(900.0).min_width(850.0)
         .show(context, |ui| {
             ui.horizontal(|ui| {
                 ui.label("Filter filenames:");
                 ui.text_edit_singleline(filter);
-                ui.checkbox(missing_only, "Only shaders with missing assignments");
+                ui.checkbox(missing_only, "Only shaders with no policies");
             });
             ui.separator();
-
-            // Use the same grid and fixed column widths for header and body.
-            // Header checkboxes operate on editable cells only; existing
-            // assignments remain checked, disabled, and untouched.
             egui::ScrollArea::vertical().max_height(390.0).show(ui, |ui| {
                 egui::Grid::new("manage_assignments_grid")
-                    .num_columns(4)
-                    .spacing([12.0, 5.0])
-                    .striped(true)
-                    .show(ui, |ui| {
-                        ui.allocate_ui_with_layout(
-                            egui::vec2(SHADER_WIDTH, 22.0),
-                            egui::Layout::left_to_right(egui::Align::Center),
-                            |ui| {
+                    .num_columns(5).spacing([12.0, 5.0]).striped(true).show(ui, |ui| {
+                        ui.allocate_ui_with_layout(egui::vec2(SHADER_WIDTH, 22.0),
+                            egui::Layout::left_to_right(egui::Align::Center), |ui| {
                                 ui.label(egui::RichText::new("Shader").strong());
-                            },
-                        );
-                        for (index, title) in ["Screensaver", "Wallpaper", "Windowshader"].iter().enumerate() {
-                            let editable = rows.iter().any(|row| !row.existing[index]);
-                            let mut all_selected = rows.iter()
-                                .filter(|row| !row.existing[index])
-                                .all(|row| row.selected[index]);
-                            ui.allocate_ui_with_layout(
-                                egui::vec2(TARGET_WIDTH, 22.0),
-                                egui::Layout::left_to_right(egui::Align::Center),
-                                |ui| {
-                                    let response = ui.add_enabled(
-                                        editable,
-                                        egui::Checkbox::new(&mut all_selected, *title),
-                                    );
-                                    if response.changed() {
-                                        for row in rows.iter_mut() {
-                                            if !row.existing[index] {
-                                                row.selected[index] = all_selected;
-                                            }
-                                        }
+                            });
+                        for (index, title) in ["Screensaver", "Wallpaper", "Windowshader", "Unassigned"].iter().enumerate() {
+                            let mut all_selected = rows.iter().all(|row| row.selected[index]);
+                            ui.allocate_ui_with_layout(egui::vec2(TARGET_WIDTH, 22.0),
+                                egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                                    if ui.checkbox(&mut all_selected, *title).changed() {
+                                        for row in rows.iter_mut() { row.set_target(index, all_selected); }
                                     }
-                                    response.on_hover_text("Select or clear all missing assignments in this column");
-                                },
-                            );
+                                });
                         }
                         ui.end_row();
-
                         let filter_lower = filter.to_lowercase();
                         for row in rows.iter_mut() {
                             if !filter_lower.is_empty() && !row.filename.to_lowercase().contains(&filter_lower) { continue; }
-                            if *missing_only && row.existing.iter().all(|value| *value) { continue; }
-                            ui.allocate_ui_with_layout(
-                                egui::vec2(SHADER_WIDTH, 22.0),
-                                egui::Layout::left_to_right(egui::Align::Center),
-                                |ui| {
-                                    ui.add(egui::Label::new(&row.filename))
-                                        .on_hover_text(&row.filename);
-                                },
-                            );
-                            for index in 0..3 {
-                                ui.allocate_ui_with_layout(
-                                    egui::vec2(TARGET_WIDTH, 22.0),
-                                    egui::Layout::left_to_right(egui::Align::Center),
-                                    |ui| {
-                                        if row.existing[index] {
-                                            let mut checked = true;
-                                            ui.add_enabled(false, egui::Checkbox::without_text(&mut checked))
-                                                .on_hover_text("An existing policy is preserved");
-                                        } else {
-                                            ui.checkbox(&mut row.selected[index], "");
+                            if *missing_only && !row.has_no_policies { continue; }
+                            ui.allocate_ui_with_layout(egui::vec2(SHADER_WIDTH, 22.0),
+                                egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                                    if row.has_no_policies {
+                                        ui.label(egui::RichText::new(format!("{}  [New — No Policies]", row.filename))
+                                            .strong().color(egui::Color32::from_rgb(255, 190, 75)))
+                                            .on_hover_text("New shader: no existing policies");
+                                    } else if row.existing[3] {
+                                        ui.label(egui::RichText::new(&row.filename)
+                                            .strong().color(egui::Color32::from_rgb(128, 0, 128)))
+                                            .on_hover_text("Shader has an existing Unassigned policy");
+                                    } else {
+                                        ui.label(&row.filename).on_hover_text(&row.filename);
+                                    }
+                                });
+                            for index in 0..4 {
+                                ui.allocate_ui_with_layout(egui::vec2(TARGET_WIDTH, 22.0),
+                                    egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                                        let mut checked = row.selected[index];
+                                        if ui.checkbox(&mut checked, "").changed() {
+                                            row.set_target(index, checked);
                                         }
-                                    },
-                                );
+                                    });
                             }
                             ui.end_row();
                         }
                     });
             });
-            let selected: usize = rows.iter().map(|row| (0..3).filter(|&i| !row.existing[i] && row.selected[i]).count()).sum();
+            let counts = crate::assign_shader_policies::assignment_change_counts(rows);
             ui.separator();
-            ui.label(format!("{selected} new policies selected; existing policies will not be modified."));
+            ui.label(format!("Staged changes: {} policies added, {} policies deleted.",
+                counts.additions(), counts.deletions()));
             ui.horizontal(|ui| {
-                if ui.add_enabled(selected > 0, egui::Button::new("Create Selected Policies")).clicked() { create = true; }
-                if ui.button("Cancel").clicked() { cancel = true; }
+                if ui.add_enabled(counts.has_changes(), egui::Button::new("Review Changes…")).clicked() {
+                    review = true;
+                }
+                if ui.button("Cancel / Close").clicked() { cancel = true; }
             });
         });
-    if create { *requested = pending.take(); }
-    else if cancel { *pending = None; }
+    if cancel { *confirmation_open = false; }
+    if review && !cancel { *confirmation_open = true; }
+    if *confirmation_open && !cancel {
+        let mut back = false;
+        let mut discard = false;
+        egui::Window::new("Confirm Shader Policy Changes")
+            .id(egui::Id::new("manage_shader_policies_confirmation"))
+            .collapsible(false).resizable(false).default_width(530.0)
+            .show(context, |ui| {
+                let counts = crate::assign_shader_policies::assignment_change_counts(rows);
+                ui.label("Review the number of policy records that would be affected:");
+                ui.add_space(8.0);
+                egui::Grid::new("policy_change_confirmation_counts")
+                    .num_columns(3).spacing([24.0, 7.0]).striped(true).show(ui, |ui| {
+                        ui.strong("Policy Target"); ui.strong("Added"); ui.strong("Deleted"); ui.end_row();
+                        for (i, name) in ["Screensaver", "Wallpaper", "Windowshader", "Unassigned"].iter().enumerate() {
+                            ui.label(*name);
+                            ui.label(counts.added[i].to_string());
+                            ui.label(counts.deleted[i].to_string());
+                            ui.end_row();
+                        }
+                        ui.strong("Total");
+                        ui.strong(counts.additions().to_string());
+                        ui.strong(counts.deletions().to_string());
+                        ui.end_row();
+                    });
+                ui.add_space(10.0);
+                ui.label("Before any changes, Screenshaver must create and verify a full backup.");
+                ui.label("Deleted policies permanently lose their settings, playlist memberships, and runtime assignments. A full restore remains available.");
+                ui.label("Physical shader files will not be deleted.");
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Back to Selection").clicked() { back = true; }
+                    if ui.add_enabled(counts.has_changes(), egui::Button::new("Confirm and Apply")).clicked() { apply = true; }
+                    if ui.button("Cancel / Close").clicked() { discard = true; }
+                });
+            });
+        if back { *confirmation_open = false; }
+        if discard { *confirmation_open = false; cancel = true; }
+    }
+    // Defer clearing the option until the mutable row borrow is no longer used.
+    if apply && !cancel { *requested = Some(rows.clone()); }
+    if cancel || apply { *pending = None; *confirmation_open = false; }
 }
 
 fn draw_bulk_create_confirmation_modal(

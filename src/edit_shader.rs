@@ -981,6 +981,14 @@ impl Drop for ControlCenterStatusGuard {
 
 // Tray presentation has already been paused by the resident coordinator.
 // Do not acquire another pause transaction from inside Control Center.
+/// Open the Control Center directly in policy-management mode during normal
+/// startup, after shader reconciliation has found at least one policyless shader.
+pub fn run_startup_assignment_session(
+    audio_bands: Option<crate::audio_backend::SharedAudioBands>,
+) -> Result<(), String> {
+    run_empty_session_impl_with_assignments(audio_bands, true, true)
+}
+
 pub fn run_empty_session_prepaused(
     audio_bands: Option<crate::audio_backend::SharedAudioBands>,
 ) -> Result<(), String> {
@@ -996,6 +1004,14 @@ fn run_empty_session(
 fn run_empty_session_impl(
     audio_bands: Option<crate::audio_backend::SharedAudioBands>,
     acquire_presentation_pause: bool,
+) -> Result<(), String> {
+    run_empty_session_impl_with_assignments(audio_bands, acquire_presentation_pause, false)
+}
+
+fn run_empty_session_impl_with_assignments(
+    audio_bands: Option<crate::audio_backend::SharedAudioBands>,
+    acquire_presentation_pause: bool,
+    show_startup_assignments: bool,
 ) -> Result<(), String> {
     let _renderer_status_guard = ControlCenterStatusGuard::begin();
 
@@ -1142,6 +1158,13 @@ fn run_empty_session_impl(
         &mut edit_window,
         &policy_display_rows,
     );
+
+    if show_startup_assignments {
+        let rows = crate::assign_shader_policies::load_managed_assignments()?;
+        if rows.iter().any(|row| row.has_no_policies) {
+            edit_window.begin_manage_assignments(rows);
+        }
+    }
 
 
     let mut last_saved_policy_list_state =
@@ -1295,20 +1318,20 @@ fn run_empty_session_impl(
                     }
                 }
                 if let Some(rows) = editor_output.manage_assignments_create_requested.as_ref() {
-                    match crate::assign_shader_policies::create_selected_assignments(rows) {
-                        Ok(created) => {
+                    match crate::assign_shader_policies::apply_managed_assignments_with_backup(rows) {
+                        Ok((counts, archive)) => {
                             match crate::load_config::load_config(&crate::locate_paths::config_path()) {
                                 Ok(reloaded) => {
                                     config = reloaded.config;
                                     policy_display_rows = build_policy_display_rows(&config);
-                                    edit_window.set_status_message(format!("Created {created} shader policies."));
+                                    edit_window.set_status_message(format!("Shader policies updated: {} added, {} deleted. Verified backup: {}", counts.additions(), counts.deletions(), archive.display()));
                                 }
-                                Err(error) => edit_window.set_status_message(format!("Created {created} policies, but refresh failed: {error}")),
+                                Err(error) => edit_window.set_status_message(format!("Policy changes committed ({} added, {} deleted); verified backup: {}. Refresh failed: {error}", counts.additions(), counts.deletions(), archive.display())),
                             }
                         }
                         Err(error) => {
                             edit_window.begin_manage_assignments(rows.clone());
-                            edit_window.set_status_message(format!("Unable to create shader policies: {error}"));
+                            edit_window.set_status_message(format!("Shader policy changes were not applied: {error}"));
                         }
                     }
                 }
@@ -3576,20 +3599,20 @@ fn run_paths(
                     }
                 }
                 if let Some(rows) = editor_output.manage_assignments_create_requested.as_ref() {
-                    match crate::assign_shader_policies::create_selected_assignments(rows) {
-                        Ok(created) => {
+                    match crate::assign_shader_policies::apply_managed_assignments_with_backup(rows) {
+                        Ok((counts, archive)) => {
                             match crate::load_config::load_config(&crate::locate_paths::config_path()) {
                                 Ok(reloaded) => {
                                     config = reloaded.config;
                                     policy_display_rows = build_policy_display_rows(&config);
-                                    edit_window.set_status_message(format!("Created {created} shader policies."));
+                                    edit_window.set_status_message(format!("Shader policies updated: {} added, {} deleted. Verified backup: {}", counts.additions(), counts.deletions(), archive.display()));
                                 }
-                                Err(error) => edit_window.set_status_message(format!("Created {created} policies, but refresh failed: {error}")),
+                                Err(error) => edit_window.set_status_message(format!("Policy changes committed ({} added, {} deleted); verified backup: {}. Refresh failed: {error}", counts.additions(), counts.deletions(), archive.display())),
                             }
                         }
                         Err(error) => {
                             edit_window.begin_manage_assignments(rows.clone());
-                            edit_window.set_status_message(format!("Unable to create shader policies: {error}"));
+                            edit_window.set_status_message(format!("Shader policy changes were not applied: {error}"));
                         }
                     }
                 }
@@ -4781,20 +4804,20 @@ process_export_destination_browse_request(
                     }
                 }
                 if let Some(rows) = editor_output.manage_assignments_create_requested.as_ref() {
-                    match crate::assign_shader_policies::create_selected_assignments(rows) {
-                        Ok(created) => {
+                    match crate::assign_shader_policies::apply_managed_assignments_with_backup(rows) {
+                        Ok((counts, archive)) => {
                             match crate::load_config::load_config(&crate::locate_paths::config_path()) {
                                 Ok(reloaded) => {
                                     config = reloaded.config;
                                     policy_display_rows = build_policy_display_rows(&config);
-                                    edit_window.set_status_message(format!("Created {created} shader policies."));
+                                    edit_window.set_status_message(format!("Shader policies updated: {} added, {} deleted. Verified backup: {}", counts.additions(), counts.deletions(), archive.display()));
                                 }
-                                Err(error) => edit_window.set_status_message(format!("Created {created} policies, but refresh failed: {error}")),
+                                Err(error) => edit_window.set_status_message(format!("Policy changes committed ({} added, {} deleted); verified backup: {}. Refresh failed: {error}", counts.additions(), counts.deletions(), archive.display())),
                             }
                         }
                         Err(error) => {
                             edit_window.begin_manage_assignments(rows.clone());
-                            edit_window.set_status_message(format!("Unable to create shader policies: {error}"));
+                            edit_window.set_status_message(format!("Shader policy changes were not applied: {error}"));
                         }
                     }
                 }

@@ -834,56 +834,265 @@ fn show_completion_dialog(
 }
 
 
-// Manage Shader Policies: assignment presence is per shader AND target.
+// Manage Shader Policies: stage four independent target-presence flags.
+// Unassigned is exclusive with all rendering targets.
 #[derive(Clone, Debug)]
 pub struct ManagedAssignmentRow {
     pub shader_id: i64,
     pub filename: String,
-    pub existing: [bool; 3],
-    pub selected: [bool; 3],
+    pub existing: [bool; 4],
+    pub has_no_policies: bool,
+    pub selected: [bool; 4],
+    // Counts include cloned policies; presence flags alone are insufficient
+    // to calculate how many records an unchecked target would delete.
+    pub existing_counts: [usize; 4],
+}
+
+impl ManagedAssignmentRow {
+    pub fn set_target(&mut self, index: usize, checked: bool) {
+        if index >= 4 { return; }
+        self.selected[index] = checked;
+        if checked {
+            if index == 3 {
+                self.selected[..3].fill(false);
+            } else {
+                self.selected[3] = false;
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct AssignmentChangeCounts {
+    pub added: [usize; 4],
+    pub deleted: [usize; 4],
+}
+
+impl AssignmentChangeCounts {
+    pub fn additions(self) -> usize { self.added.iter().sum() }
+    pub fn deletions(self) -> usize { self.deleted.iter().sum() }
+    pub fn has_changes(self) -> bool { self.additions() + self.deletions() > 0 }
+}
+
+pub fn assignment_change_counts(rows: &[ManagedAssignmentRow]) -> AssignmentChangeCounts {
+    let mut counts = AssignmentChangeCounts::default();
+    for row in rows {
+        for index in 0..4 {
+            if row.selected[index] && !row.existing[index] { counts.added[index] += 1; }
+            if !row.selected[index] && row.existing[index] {
+                counts.deleted[index] += row.existing_counts[index];
+            }
+        }
+    }
+    counts
 }
 
 pub fn load_managed_assignments() -> Result<Vec<ManagedAssignmentRow>, String> {
     let connection = crate::open_database::open()?;
     let managed_dir = crate::locate_paths::shader_dir().to_string_lossy().to_string();
     let mut statement = connection.prepare(
-        "SELECT s.shader_id, s.filename,          EXISTS(SELECT 1 FROM shader_policies p WHERE p.shader_id=s.shader_id AND p.policy_target='screensaver'),          EXISTS(SELECT 1 FROM shader_policies p WHERE p.shader_id=s.shader_id AND p.policy_target='wallpaper'),          EXISTS(SELECT 1 FROM shader_policies p WHERE p.shader_id=s.shader_id AND p.policy_target='windowshader')          FROM shaders s WHERE s.source_path=?1 AND s.file_status <> 'missing'          ORDER BY s.filename COLLATE NOCASE, s.filename, s.shader_id"
+        "SELECT s.shader_id, s.filename, \
+         (SELECT COUNT(*) FROM shader_policies p WHERE p.shader_id=s.shader_id AND p.policy_target='screensaver'), \
+         (SELECT COUNT(*) FROM shader_policies p WHERE p.shader_id=s.shader_id AND p.policy_target='wallpaper'), \
+         (SELECT COUNT(*) FROM shader_policies p WHERE p.shader_id=s.shader_id AND p.policy_target='windowshader'), \
+         (SELECT COUNT(*) FROM shader_policies p WHERE p.shader_id=s.shader_id AND p.policy_target='unassigned') \
+         FROM shaders s WHERE s.source_path=?1 AND s.file_status <> 'missing' \
+         AND s.filename COLLATE NOCASE <> 'default.glsl' \
+         ORDER BY s.filename COLLATE NOCASE, s.filename, s.shader_id"
     ).map_err(|e| e.to_string())?;
     let rows = statement.query_map([managed_dir], |row| {
-        let existing = [row.get::<_, i64>(2)? != 0, row.get::<_, i64>(3)? != 0, row.get::<_, i64>(4)? != 0];
+        let existing_counts = [
+            row.get::<_, i64>(2)? as usize, row.get::<_, i64>(3)? as usize,
+            row.get::<_, i64>(4)? as usize, row.get::<_, i64>(5)? as usize,
+        ];
+        let existing = existing_counts.map(|count| count != 0);
         Ok(ManagedAssignmentRow {
             shader_id: row.get(0)?, filename: row.get(1)?, existing,
-            selected: [!existing[0], !existing[1], !existing[2]],
+            has_no_policies: existing_counts.iter().all(|count| *count == 0),
+            selected: existing, existing_counts,
         })
     }).map_err(|e| e.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    let mut assignments = rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+    assignments.sort_by(|a, b| {
+        // Display groups: shaders without policies, shaders with an existing
+        // Unassigned policy, then all other shaders. Within each group,
+        // filenames remain case-insensitively alphabetical.
+        let group = |row: &ManagedAssignmentRow| -> u8 {
+            if row.has_no_policies { 0 }
+            else if row.existing[3] { 1 }
+            else { 2 }
+        };
+        group(a).cmp(&group(b))
+            .then_with(|| a.filename.to_lowercase().cmp(&b.filename.to_lowercase()))
+            .then_with(|| a.filename.cmp(&b.filename))
+            .then_with(|| a.shader_id.cmp(&b.shader_id))
+    });
+    Ok(assignments)
 }
 
-pub fn create_selected_assignments(rows: &[ManagedAssignmentRow]) -> Result<usize, String> {
-    let mut connection = crate::open_database::open()?;
-    let transaction = connection.transaction().map_err(|e| e.to_string())?;
-    let mut count = 0;
+// Retained for existing callers, but fail closed: the former additions-only
+// writer must never bypass the mandatory backup and confirmation workflow.
+pub fn create_selected_assignments(_rows: &[ManagedAssignmentRow]) -> Result<usize, String> {
+    Err("Policy changes require the new confirmation and verified full-backup workflow; no changes were applied.".to_string())
+}
+
+
+/// Phase 3B.2: transaction-scoped writer. This intentionally does not open,
+/// commit, or back up a database. The eventual coordinator must hold the
+/// database write reservation, create and verify its pre-change backup, then
+/// call this function and commit the transaction. Never call it directly from UI.
+#[allow(dead_code)]
+pub(crate) fn apply_managed_assignments_in_transaction(
+    transaction: &rusqlite::Transaction<'_>,
+    rows: &[ManagedAssignmentRow],
+) -> Result<AssignmentChangeCounts, String> {
+    use std::collections::HashSet;
+
+    let targets = ["screensaver", "wallpaper", "windowshader", "unassigned"];
+    let mut seen = HashSet::new();
+    let mut verified = Vec::with_capacity(rows.len());
+    let managed_dir = crate::locate_paths::shader_dir().to_string_lossy().to_string();
+    let mut actual = AssignmentChangeCounts::default();
+
+    // Validate every staged row before modifying any policy. In particular,
+    // reject stale snapshots and any attempt to touch the protected shader.
     for row in rows {
-        for (index, target) in ["screensaver", "wallpaper", "windowshader"].iter().enumerate() {
-            if row.existing[index] || !row.selected[index] { continue; }
-            let exists: i64 = transaction.query_row(
-                "SELECT EXISTS(SELECT 1 FROM shader_policies WHERE shader_id=?1 AND policy_target=?2)",
-                params![row.shader_id, target], |r| r.get(0)
+        if row.shader_id <= 0 || !seen.insert(row.shader_id) {
+            return Err("Invalid or repeated shader ID in policy change set".into());
+        }
+        if row.selected[3] && row.selected[..3].iter().any(|value| *value) {
+            return Err(format!("Conflicting Unassigned selection for {}", row.filename));
+        }
+        let (filename, source_path, file_status): (String, String, String) = transaction
+            .query_row(
+                "SELECT filename, source_path, file_status FROM shaders WHERE shader_id=?1",
+                [row.shader_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .map_err(|e| format!("Shader {} changed or disappeared: {}", row.shader_id, e))?;
+        if filename != row.filename || source_path != managed_dir
+            || file_status == "missing" || filename.eq_ignore_ascii_case("default.glsl")
+        {
+            return Err(format!("Shader {} is no longer eligible for policy changes", row.filename));
+        }
+        let mut current = [0usize; 4];
+        for (i, target) in targets.iter().enumerate() {
+            let count: i64 = transaction.query_row(
+                "SELECT COUNT(*) FROM shader_policies WHERE shader_id=?1 AND policy_target=?2",
+                params![row.shader_id, target],
+                |r| r.get(0),
             ).map_err(|e| e.to_string())?;
-            if exists != 0 { continue; }
-            // The physical shader must still exist and be managed.
-            let present: i64 = transaction.query_row(
-                "SELECT EXISTS(SELECT 1 FROM shaders WHERE shader_id=?1 AND file_status <> 'missing' AND source_path=?2)",
-                params![row.shader_id, crate::locate_paths::shader_dir().to_string_lossy().as_ref()],
-                |r| r.get(0)
-            ).map_err(|e| e.to_string())?;
-            if present == 0 { continue; }
-            insert_default_policy(&transaction, &PolicylessShader {
-                shader_id: row.shader_id, filename: row.filename.clone(),
-            }, target)?;
-            count += 1;
+            current[i] = count as usize;
+        }
+        if current != row.existing_counts
+            || current.map(|count| count > 0) != row.existing
+        {
+            return Err(format!("Policies for {} changed since the dialog opened; reload and review", filename));
+        }
+        for i in 0..4 {
+            if row.selected[i] && current[i] == 0 { actual.added[i] += 1; }
+            if !row.selected[i] && current[i] > 0 { actual.deleted[i] += current[i]; }
+        }
+        verified.push((row.shader_id, filename, row.selected, current));
+    }
+
+    // Apply deletes first to free policy names. Foreign keys remove playlist
+    // memberships and null out references to deleted Single policies.
+    for (shader_id, _, selected, current) in &verified {
+        for (i, target) in targets.iter().enumerate() {
+            if !selected[i] && current[i] > 0 {
+                let removed = transaction.execute(
+                    "DELETE FROM shader_policies WHERE shader_id=?1 AND policy_target=?2",
+                    params![shader_id, target],
+                ).map_err(|e| format!("Could not delete {} policies: {}", target, e))?;
+                if removed != current[i] {
+                    return Err("Policy deletion count changed unexpectedly".into());
+                }
+            }
         }
     }
-    transaction.commit().map_err(|e| e.to_string())?;
-    Ok(count)
+
+    for (shader_id, filename, selected, current) in &verified {
+        for (i, target) in targets.iter().enumerate() {
+            if selected[i] && current[i] == 0 {
+                insert_default_policy(
+                    transaction,
+                    &PolicylessShader { shader_id: *shader_id, filename: filename.clone() },
+                    target,
+                )?;
+            }
+        }
+    }
+
+    // Preserve the selected display mode. For Single, a deleted selection
+    // falls back to the protected default rather than changing mode.
+    for target in &targets[..3] {
+        let missing_single: i64 = transaction.query_row(
+            "SELECT COUNT(*) FROM runtime_targets WHERE target=?1 AND display_mode='single' AND single_policy_id IS NULL",
+            [target], |r| r.get(0),
+        ).map_err(|e| e.to_string())?;
+        if missing_single > 0 {
+            let fallback: i64 = transaction.query_row(
+                "SELECT p.policy_id FROM shader_policies p JOIN shaders s ON s.shader_id=p.shader_id WHERE p.policy_target=?1 AND s.filename='default.glsl' ORDER BY p.policy_id LIMIT 1",
+                [target], |r| r.get(0),
+            ).map_err(|e| format!("Protected {} default policy unavailable: {}", target, e))?;
+            transaction.execute(
+                "UPDATE runtime_targets SET single_policy_id=?1 WHERE target=?2 AND display_mode='single' AND single_policy_id IS NULL",
+                params![fallback, target],
+            ).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(actual)
+}
+
+
+/// Phase 3B.3: coordinated full backup and atomic policy update.
+///
+/// The dedicated connection is opened before the backup. SQLite's
+/// `data_version` changes when another connection commits; checking it after
+/// acquiring the IMMEDIATE write reservation detects intervening commits.
+/// On any mismatch, the operation fails closed and the user must review again.
+/// The UI must not call this until its confirmation flow is wired and tested.
+#[allow(dead_code)]
+pub(crate) fn apply_managed_assignments_with_backup(
+    rows: &[ManagedAssignmentRow],
+) -> Result<(AssignmentChangeCounts, std::path::PathBuf), String> {
+    if rows.is_empty() {
+        return Err("No shader assignments were supplied".to_string());
+    }
+    let requested = assignment_change_counts(rows);
+    if !requested.has_changes() {
+        return Err("No policy changes were selected; no backup was created".to_string());
+    }
+
+    // Keep this connection alive across the backup. A data_version comparison
+    // on different connections is not meaningful.
+    let mut connection = crate::open_database::open()?;
+    let version_before: i64 = connection
+        .query_row("PRAGMA data_version", [], |row| row.get(0))
+        .map_err(|error| format!("Unable to inspect database version: {}", error))?;
+
+    // A verified full backup is mandatory and must not reset the scheduled
+    // backup clock. No database write is attempted if it fails.
+    let archive = crate::manage_backup::create_pre_policy_change_backup()?;
+
+    // Reserve the writer slot before comparing versions and validating rows.
+    // Any error after this point drops the transaction and rolls back.
+    let transaction = connection
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .map_err(|error| format!("Unable to reserve database for policy changes: {}", error))?;
+    let version_after: i64 = transaction
+        .query_row("PRAGMA data_version", [], |row| row.get(0))
+        .map_err(|error| format!("Unable to recheck database version: {}", error))?;
+    if version_before != version_after {
+        return Err("The database changed during the mandatory backup. No policies were modified; reopen Manage Shader Policies and review the changes.".to_string());
+    }
+
+    let actual = apply_managed_assignments_in_transaction(&transaction, rows)?;
+    if actual.added != requested.added || actual.deleted != requested.deleted {
+        return Err("Policy change totals no longer match the confirmation. No changes were committed.".to_string());
+    }
+    transaction.commit()
+        .map_err(|error| format!("Unable to commit policy changes: {}", error))?;
+    Ok((actual, archive))
 }

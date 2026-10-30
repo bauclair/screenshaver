@@ -1558,10 +1558,17 @@ pub fn save_configuration(
         updates
     )?;
 
+    // Resolve selections against currently available policies before persisting.
+    // The Control Center reloads the saved configuration after this operation,
+    // so its displayed selection will match the actual renderer mode.
+    let screensaver_mode = validated_save_mode("screensaver", &updates.screensaver_mode)?;
+    let wallpaper_mode = validated_save_mode("wallpaper", &updates.wallpaper_mode)?;
+    let windowshader_mode = validated_save_mode("windowshader", &updates.windowshader_mode)?;
+
     write_runtime_modes(
-        &updates.screensaver_mode,
-        &updates.wallpaper_mode,
-        &updates.windowshader_mode,
+        &screensaver_mode,
+        &wallpaper_mode,
+        &windowshader_mode,
     )?;
 
     let mut document =
@@ -2017,4 +2024,159 @@ pub fn automatic_backup_due() -> Result<bool, String> {
         |row| Ok(row.get::<_, i64>(0)? != 0),
     )
     .map_err(|error| format!("Unable to evaluate automatic backup schedule: {}", error))
+}
+
+
+/// Phase 4B.1: repair invalid saved rendering selections before config hydration.
+/// A playlist must contain at least one eligible, available policy for its target.
+/// Repairs are atomic across all three independent runtime targets.
+pub fn repair_invalid_runtime_modes_at_startup() -> Result<Vec<String>, String> {
+    let mut db = crate::open_database::open()
+        .map_err(|e| format!("Unable to open database for runtime fallback: {}", e))?;
+    let tx = db.transaction()
+        .map_err(|e| format!("Unable to start runtime fallback transaction: {}", e))?;
+    let mut repairs = Vec::new();
+
+    for target in ["screensaver", "wallpaper", "windowshader"] {
+        let (mode, single_id, playlist_id): (String, Option<i64>, Option<i64>) = tx.query_row(
+            "SELECT display_mode, single_policy_id, playlist_id
+             FROM runtime_targets WHERE target = ?1",
+            [target],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        ).map_err(|e| format!("Unable to read {} runtime mode: {}", target, e))?;
+
+        let eligible_sql =
+            "SELECT COUNT(*) FROM shader_policies p
+             JOIN shaders s ON s.shader_id = p.shader_id
+             WHERE p.policy_target = ?1
+               AND s.file_status NOT IN ('missing', 'unreadable', 'invalid', 'rejected')
+               AND (?2 IS NULL OR p.policy_id = ?2)";
+        let invalid = match mode.as_str() {
+            "playlist" => {
+                match playlist_id {
+                    Some(id) if id > 0 => {
+                        let count: i64 = tx.query_row(
+                            "SELECT COUNT(*) FROM playlist_members pm
+                             JOIN shader_policies p ON p.policy_id = pm.policy_id
+                             JOIN shaders s ON s.shader_id = p.shader_id
+                             JOIN playlists pl ON pl.playlist_id = pm.playlist_id
+                             WHERE pm.playlist_id = ?1 AND p.policy_target = ?2
+                               AND s.file_status NOT IN ('missing', 'unreadable', 'invalid', 'rejected')",
+                            rusqlite::params![id, target], |r| r.get(0),
+                        ).map_err(|e| format!("Unable to validate {} playlist: {}", target, e))?;
+                        count == 0
+                    }
+                    _ => true,
+                }
+            }
+            "single" => {
+                match single_id {
+                    Some(id) if id > 0 => {
+                        let count: i64 = tx.query_row(
+                            eligible_sql, rusqlite::params![target, id], |r| r.get(0),
+                        ).map_err(|e| format!("Unable to validate {} Single policy: {}", target, e))?;
+                        count == 0
+                    }
+                    _ => true,
+                }
+            }
+            "ordered" | "random" => {
+                let count: i64 = tx.query_row(
+                    eligible_sql, rusqlite::params![target, Option::<i64>::None],
+                    |r| r.get(0),
+                ).map_err(|e| format!("Unable to validate {} rotation policies: {}", target, e))?;
+                count == 0
+            }
+            other => return Err(format!("Unsupported {} rendering mode '{}'", target, other)),
+        };
+        if !invalid { continue; }
+
+        let fallback_id: i64 = tx.query_row(
+            "SELECT p.policy_id FROM shader_policies p
+             JOIN shaders s ON s.shader_id = p.shader_id
+             WHERE p.policy_target = ?1 AND s.filename = 'default.glsl' COLLATE NOCASE
+               AND s.file_status NOT IN ('missing', 'unreadable', 'invalid', 'rejected')
+             ORDER BY p.policy_id LIMIT 1",
+            [target], |r| r.get(0),
+        ).map_err(|e| format!("Protected {} default.glsl policy unavailable: {}", target, e))?;
+
+        let changed = tx.execute(
+            "UPDATE runtime_targets SET display_mode='single', interval_seconds=NULL,
+             single_policy_id=?1, playlist_id=NULL WHERE target=?2",
+            rusqlite::params![fallback_id, target],
+        ).map_err(|e| format!("Unable to repair {} runtime mode: {}", target, e))?;
+        if changed != 1 {
+            return Err(format!("Expected one {} runtime target row; updated {}", target, changed));
+        }
+        repairs.push(format!("{}: {} -> single:{} (default.glsl)", target, mode, fallback_id));
+    }
+    tx.commit().map_err(|e| format!("Unable to commit runtime fallbacks: {}", e))?;
+    Ok(repairs)
+}
+
+
+/// Validate a Control Center mode selection before writing it. Empty playlists
+/// remain legal database objects; they simply cannot be selected for rendering.
+fn validated_save_mode(target: &str, requested: &str) -> Result<String, String> {
+    let mode = parse_runtime_mode(target, requested)?;
+    let db = crate::open_database::open()
+        .map_err(|e| format!("Unable to validate {} rendering selection: {}", target, e))?;
+    let invalid = match mode.display_mode {
+        "playlist" => {
+            let playlist_id = mode.playlist_id.ok_or_else(||
+                format!("{} Playlist selection has no playlist ID", target))?;
+            let eligible: i64 = db.query_row(
+                "SELECT COUNT(*) FROM playlist_members pm
+                 JOIN shader_policies p ON p.policy_id = pm.policy_id
+                 JOIN shaders s ON s.shader_id = p.shader_id
+                 JOIN playlists pl ON pl.playlist_id = pm.playlist_id
+                 WHERE pm.playlist_id = ?1 AND p.policy_target = ?2
+                   AND s.file_status NOT IN ('missing', 'unreadable', 'invalid', 'rejected')",
+                rusqlite::params![playlist_id, target], |r| r.get(0),
+            ).map_err(|e| format!("Unable to validate {} playlist: {}", target, e))?;
+            eligible == 0
+        }
+        "single" => {
+            match mode.single_policy_id {
+                Some(id) => {
+                    let eligible: i64 = db.query_row(
+                        "SELECT COUNT(*) FROM shader_policies p
+                         JOIN shaders s ON s.shader_id = p.shader_id
+                         WHERE p.policy_id = ?1 AND p.policy_target = ?2
+                           AND s.file_status NOT IN ('missing', 'unreadable', 'invalid', 'rejected')",
+                        rusqlite::params![id, target], |r| r.get(0),
+                    ).map_err(|e| format!("Unable to validate {} Single policy: {}", target, e))?;
+                    eligible == 0
+                }
+                None => true,
+            }
+        }
+        "random" | "ordered" => {
+            let eligible: i64 = db.query_row(
+                "SELECT COUNT(*) FROM shader_policies p
+                 JOIN shaders s ON s.shader_id = p.shader_id
+                 WHERE p.policy_target = ?1
+                   AND s.file_status NOT IN ('missing', 'unreadable', 'invalid', 'rejected')",
+                [target], |r| r.get(0),
+            ).map_err(|e| format!("Unable to validate {} rotation policies: {}", target, e))?;
+            eligible == 0
+        }
+        _ => false,
+    };
+    if !invalid { return Ok(requested.to_string()); }
+
+    let fallback_id: i64 = db.query_row(
+        "SELECT p.policy_id FROM shader_policies p
+         JOIN shaders s ON s.shader_id = p.shader_id
+         WHERE p.policy_target = ?1 AND s.filename = 'default.glsl' COLLATE NOCASE
+           AND s.file_status NOT IN ('missing', 'unreadable', 'invalid', 'rejected')
+         ORDER BY p.policy_id LIMIT 1",
+        [target], |r| r.get(0),
+    ).map_err(|e| format!("Cannot save {} rendering fallback: protected default.glsl policy unavailable: {}", target, e))?;
+    let fallback = format!("single:{}", fallback_id);
+    crate::logger::warning(
+        &crate::locate_paths::runtime_log_path(),
+        &format!("[RUNTIME FALLBACK] Control Center {} mode '{}' has no eligible policies; saving '{}' instead", target, requested, fallback),
+    );
+    Ok(fallback)
 }
