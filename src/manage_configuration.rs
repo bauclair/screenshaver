@@ -2035,10 +2035,21 @@ pub fn repair_invalid_runtime_modes_at_startup() -> Result<Vec<String>, String> 
         .map_err(|e| format!("Unable to open database for runtime fallback: {}", e))?;
     let tx = db.transaction()
         .map_err(|e| format!("Unable to start runtime fallback transaction: {}", e))?;
+    let repairs = repair_invalid_runtime_modes_in_connection(&tx)?;
+    tx.commit().map_err(|e| format!("Unable to commit runtime fallbacks: {}", e))?;
+    Ok(repairs)
+}
+
+/// Revalidate active runtime selections inside the caller's existing write
+/// transaction. Used after policy/playlist changes so cleanup and fallback
+/// either commit together or roll back together.
+pub(crate) fn repair_invalid_runtime_modes_in_connection(
+    db: &rusqlite::Connection,
+) -> Result<Vec<String>, String> {
     let mut repairs = Vec::new();
 
     for target in ["screensaver", "wallpaper", "windowshader"] {
-        let (mode, single_id, playlist_id): (String, Option<i64>, Option<i64>) = tx.query_row(
+        let (mode, single_id, playlist_id): (String, Option<i64>, Option<i64>) = db.query_row(
             "SELECT display_mode, single_policy_id, playlist_id
              FROM runtime_targets WHERE target = ?1",
             [target],
@@ -2055,7 +2066,7 @@ pub fn repair_invalid_runtime_modes_at_startup() -> Result<Vec<String>, String> 
             "playlist" => {
                 match playlist_id {
                     Some(id) if id > 0 => {
-                        let count: i64 = tx.query_row(
+                        let count: i64 = db.query_row(
                             "SELECT COUNT(*) FROM playlist_members pm
                              JOIN shader_policies p ON p.policy_id = pm.policy_id
                              JOIN shaders s ON s.shader_id = p.shader_id
@@ -2072,7 +2083,7 @@ pub fn repair_invalid_runtime_modes_at_startup() -> Result<Vec<String>, String> 
             "single" => {
                 match single_id {
                     Some(id) if id > 0 => {
-                        let count: i64 = tx.query_row(
+                        let count: i64 = db.query_row(
                             eligible_sql, rusqlite::params![target, id], |r| r.get(0),
                         ).map_err(|e| format!("Unable to validate {} Single policy: {}", target, e))?;
                         count == 0
@@ -2081,7 +2092,7 @@ pub fn repair_invalid_runtime_modes_at_startup() -> Result<Vec<String>, String> 
                 }
             }
             "ordered" | "random" => {
-                let count: i64 = tx.query_row(
+                let count: i64 = db.query_row(
                     eligible_sql, rusqlite::params![target, Option::<i64>::None],
                     |r| r.get(0),
                 ).map_err(|e| format!("Unable to validate {} rotation policies: {}", target, e))?;
@@ -2091,16 +2102,21 @@ pub fn repair_invalid_runtime_modes_at_startup() -> Result<Vec<String>, String> 
         };
         if !invalid { continue; }
 
-        let fallback_id: i64 = tx.query_row(
+        let fallback_id: i64 = db.query_row(
             "SELECT p.policy_id FROM shader_policies p
              JOIN shaders s ON s.shader_id = p.shader_id
              WHERE p.policy_target = ?1 AND s.filename = 'default.glsl' COLLATE NOCASE
+               AND p.policy_name_key = CASE ?1
+                   WHEN 'screensaver' THEN 'screensaver default'
+                   WHEN 'wallpaper' THEN 'wallpaper default'
+                   WHEN 'windowshader' THEN 'windowshader default'
+               END
                AND s.file_status NOT IN ('missing', 'unreadable', 'invalid', 'rejected')
              ORDER BY p.policy_id LIMIT 1",
             [target], |r| r.get(0),
         ).map_err(|e| format!("Protected {} default.glsl policy unavailable: {}", target, e))?;
 
-        let changed = tx.execute(
+        let changed = db.execute(
             "UPDATE runtime_targets SET display_mode='single', interval_seconds=NULL,
              single_policy_id=?1, playlist_id=NULL WHERE target=?2",
             rusqlite::params![fallback_id, target],
@@ -2110,7 +2126,6 @@ pub fn repair_invalid_runtime_modes_at_startup() -> Result<Vec<String>, String> 
         }
         repairs.push(format!("{}: {} -> single:{} (default.glsl)", target, mode, fallback_id));
     }
-    tx.commit().map_err(|e| format!("Unable to commit runtime fallbacks: {}", e))?;
     Ok(repairs)
 }
 
@@ -2169,6 +2184,11 @@ fn validated_save_mode(target: &str, requested: &str) -> Result<String, String> 
         "SELECT p.policy_id FROM shader_policies p
          JOIN shaders s ON s.shader_id = p.shader_id
          WHERE p.policy_target = ?1 AND s.filename = 'default.glsl' COLLATE NOCASE
+               AND p.policy_name_key = CASE ?1
+                   WHEN 'screensaver' THEN 'screensaver default'
+                   WHEN 'wallpaper' THEN 'wallpaper default'
+                   WHEN 'windowshader' THEN 'windowshader default'
+               END
            AND s.file_status NOT IN ('missing', 'unreadable', 'invalid', 'rejected')
          ORDER BY p.policy_id LIMIT 1",
         [target], |r| r.get(0),

@@ -404,6 +404,7 @@ pub fn retarget_policy_by_id(
         return Err(format!("Expected to retarget policy ID {}, updated {}", policy_id, changed));
     }
 
+    crate::manage_configuration::repair_invalid_runtime_modes_in_connection(&transaction)?;
     transaction.commit().map_err(|error| format!("Unable to commit Policy Target change for policy ID {}: {}", policy_id, error))
 }
 
@@ -451,6 +452,7 @@ pub fn assign_unassigned_policies_by_id(
         changed += 1;
     }
 
+    crate::manage_configuration::repair_invalid_runtime_modes_in_connection(&transaction)?;
     transaction.commit().map_err(|error| format!("Unable to commit Unassigned-policy assignment transaction: {}", error))?;
     Ok(changed)
 }
@@ -1189,6 +1191,7 @@ pub fn patch_policies_by_id(
             changed_policies += 1;
         }
     }
+    crate::manage_configuration::repair_invalid_runtime_modes_in_connection(&transaction)?;
     transaction.commit().map_err(|error| format!("Unable to commit Bulk Edit transaction: {}", error))?;
     Ok(changed_policies)
 }
@@ -1275,6 +1278,7 @@ pub fn delete_policy_by_id(
         )?;
     }
 
+    crate::manage_configuration::repair_invalid_runtime_modes_in_connection(&transaction)?;
     transaction.commit()
         .map_err(|error| format!(
             "Unable to commit deletion of policy ID {} ('{}'): {}",

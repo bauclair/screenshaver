@@ -633,6 +633,14 @@ fn draw_value_control(
         }
 
 
+        crate::parse_qbe::QbeValueKind::AudioMotionEffect => {
+            draw_string_value_combo(
+                ui, id, width, &mut clause.value,
+                &["Off".to_string(), "Woofer from Hell".to_string(),
+                  "FFT Mirror Warp".to_string(), "Polar Propeller".to_string()],
+            );
+        }
+
         crate::parse_qbe::QbeValueKind::BloomMode => {
             draw_localized_value_combo(
                 ui,

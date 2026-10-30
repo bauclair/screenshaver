@@ -36,6 +36,7 @@ pub enum QbeField {
     Dithering,
     ColorPrecision,
     BloomMode,
+    AudioMotionEffect,
     BloomFrequencyInvert,
 }
 
@@ -64,6 +65,7 @@ impl QbeField {
         Self::Dithering,
         Self::ColorPrecision,
         Self::BloomMode,
+        Self::AudioMotionEffect,
         Self::BloomFrequencyInvert,
     ];
 
@@ -135,6 +137,9 @@ impl QbeField {
 
             Self::BloomMode =>
                 crate::manage_localization::runtime_text("qbe.field.audiovisual_effect"),
+
+            Self::AudioMotionEffect =>
+                "Audio Motion Effect".to_string(),
 
             Self::BloomFrequencyInvert =>
                 crate::manage_localization::runtime_text("qbe.field.invert_frequency_mapping"),
@@ -263,6 +268,7 @@ pub enum QbeValueKind {
     Dithering,
     ColorPrecision,
     BloomMode,
+    AudioMotionEffect,
 }
 
 
@@ -553,7 +559,8 @@ pub const fn operators_for(
         | QbeField::AntiAliasing
         | QbeField::Dithering
         | QbeField::ColorPrecision
-        | QbeField::BloomMode =>
+        | QbeField::BloomMode
+        | QbeField::AudioMotionEffect =>
             ENUM_OPERATORS,
 
         QbeField::BloomFrequencyInvert =>
@@ -699,6 +706,13 @@ pub const fn value_kind_for(
             _,
         ) => {
             QbeValueKind::BloomMode
+        }
+
+        (
+            QbeField::AudioMotionEffect,
+            _,
+        ) => {
+            QbeValueKind::AudioMotionEffect
         }
 
         (
@@ -884,6 +898,7 @@ pub enum QbeParseError {
     InvalidDithering(String),
     InvalidColorPrecision(String),
     InvalidBloomMode(String),
+    InvalidAudioMotionEffect(String),
 }
 
 
@@ -956,6 +971,9 @@ impl QbeParseError {
                     "qbe.error.invalid_color_precision",
                     &[("value", value.as_str())],
                 ),
+
+            Self::InvalidAudioMotionEffect(value) =>
+                format!("Invalid Audio Motion Effect: {}", value),
 
             Self::InvalidBloomMode(value) =>
                 crate::manage_localization::runtime_text_with_params(
@@ -1313,6 +1331,15 @@ fn build_clause_sql(
 
             build_enum_column_clause(
                 "p.audiovisual_effect",
+                operator,
+                canonical,
+            )
+        }
+
+        QbeField::AudioMotionEffect => {
+            let canonical = canonical_audio_motion_effect(value)?;
+            build_enum_column_clause(
+                "p.audio_motion_effect",
                 operator,
                 canonical,
             )
@@ -2115,6 +2142,16 @@ fn canonical_color_precision(
     }
 }
 
+
+fn canonical_audio_motion_effect(value: &str) -> Result<String, QbeParseError> {
+    match compact_key(value).as_str() {
+        "off" => Ok("off".to_string()),
+        "wooferfromhell" => Ok("woofer_from_hell".to_string()),
+        "fftmirrorwarp" => Ok("fft_mirror_warp".to_string()),
+        "polarpropeller" => Ok("polar_propeller".to_string()),
+        _ => Err(QbeParseError::InvalidAudioMotionEffect(value.to_string())),
+    }
+}
 
 fn canonical_bloom_mode(
     value: &str,

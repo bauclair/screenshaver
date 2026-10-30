@@ -1042,6 +1042,12 @@ pub(crate) fn apply_managed_assignments_in_transaction(
             ).map_err(|e| e.to_string())?;
         }
     }
+    // Policy deletion can empty a selected playlist or invalidate a rotation.
+    // Keep the repair in the same transaction as the policy changes.
+    for repair in crate::manage_configuration::repair_invalid_runtime_modes_in_connection(transaction)? {
+        crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+            &format!("[RUNTIME FALLBACK] {}", repair));
+    }
     Ok(actual)
 }
 

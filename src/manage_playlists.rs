@@ -159,6 +159,45 @@ pub fn create_playlist(
 }
 
 
+
+/// Create a playlist and its initial memberships atomically. An empty playlist is valid.
+pub fn create_playlist_with_policies(
+    playlist_name: &str,
+    description: Option<&str>,
+    policy_ids: &[i64],
+) -> Result<i64, String> {
+    let playlist_name = normalized_playlist_name(playlist_name)?;
+    let name_key = playlist_name_key(&playlist_name)?;
+    let description = normalized_description(description);
+    let mut connection = crate::open_database::open()
+        .map_err(|error| format!("Unable to open database for playlist creation: {}", error))?;
+    let transaction = connection.transaction()
+        .map_err(|error| format!("Unable to begin playlist creation: {}", error))?;
+    ensure_playlist_name_available(&transaction, &name_key, None)?;
+    let mut seen = HashSet::new();
+    for &policy_id in policy_ids {
+        require_positive_id("Policy", policy_id)?;
+        if !seen.insert(policy_id) {
+            return Err(format!("Policy ID {} was selected more than once", policy_id));
+        }
+        ensure_policy_exists(&transaction, policy_id)?;
+    }
+    transaction.execute(
+        "INSERT INTO playlists (playlist_created_at, playlist_modified_at, playlist_name, playlist_name_key, description)
+         VALUES (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?1, ?2, ?3)",
+        params![playlist_name, name_key, description],
+    ).map_err(|error| format!("Unable to create playlist: {}", error))?;
+    let playlist_id = transaction.last_insert_rowid();
+    for (index, &policy_id) in policy_ids.iter().enumerate() {
+        transaction.execute(
+            "INSERT INTO playlist_members (playlist_id, policy_id, position) VALUES (?1, ?2, ?3)",
+            params![playlist_id, policy_id, index as i64 + 1],
+        ).map_err(|error| format!("Unable to add initial policy {}: {}", policy_id, error))?;
+    }
+    transaction.commit().map_err(|error| format!("Unable to commit new playlist: {}", error))?;
+    Ok(playlist_id)
+}
+
 pub fn rename_playlist(
     playlist_id: i64,
     new_playlist_name: &str,
@@ -316,7 +355,7 @@ pub fn delete_playlist(
     )?;
 
 
-    let connection =
+    let mut connection =
         crate::open_database::open()
             .map_err(
                 |error| {
@@ -336,8 +375,11 @@ pub fn delete_playlist(
         )?;
 
 
+    let transaction = connection.transaction()
+        .map_err(|e| format!("Unable to begin playlist-delete transaction: {}", e))?;
+
     let deleted =
-        connection
+        transaction
             .execute(
                 "DELETE FROM playlists
                  WHERE playlist_id = ?1",
@@ -362,7 +404,10 @@ pub fn delete_playlist(
             playlist_id,
             playlist_name,
         ),
-    )
+    )?;
+    log_runtime_fallback_repairs(&transaction)?;
+    transaction.commit().map_err(|e| format!("Unable to commit playlist deletion: {}", e))?;
+    Ok(())
 }
 
 
@@ -1073,6 +1118,10 @@ pub fn remove_policy(
         )?;
     }
 
+
+    if removed == 1 {
+        log_runtime_fallback_repairs(&transaction)?;
+    }
 
     transaction
         .commit()
@@ -2100,4 +2149,15 @@ fn expect_one_changed(
             )
         }
     }
+}
+
+
+/// Keep runtime fallback and playlist membership changes atomic.
+fn log_runtime_fallback_repairs(connection: &Connection) -> Result<(), String> {
+    let repairs = crate::manage_configuration::repair_invalid_runtime_modes_in_connection(connection)?;
+    for repair in repairs {
+        crate::logger::warning(&crate::locate_paths::runtime_log_path(),
+            &format!("[RUNTIME FALLBACK] {}", repair));
+    }
+    Ok(())
 }
