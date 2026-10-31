@@ -146,6 +146,7 @@ mod audit_translation;
 mod test_render_benchmark;
 mod test_audio_motion;
 mod test_libdecor;
+mod test_kde_wallpaper;
 
 mod import_data;
 mod export_data;
@@ -342,6 +343,14 @@ fn main() {
         crate::parse_arguments::Command::TestLibdecorBridge => {
             if let Err(error) = crate::test_libdecor::run_bridge() {
                 eprintln!("[LIBDECOR BRIDGE TEST] FAILED: {error}");
+                std::process::exit(1);
+            }
+            return;
+        }
+
+        crate::parse_arguments::Command::TestKdeWallpaper => {
+            if let Err(error) = crate::test_kde_wallpaper::run() {
+                eprintln!("[KDE WALLPAPER TEST] FAILED: {error}");
                 std::process::exit(1);
             }
             return;
@@ -743,6 +752,7 @@ fn main() {
         | crate::parse_arguments::Command::Start
         | crate::parse_arguments::Command::Control { .. }
         | crate::parse_arguments::Command::TestWallpaperProtocol
+        | crate::parse_arguments::Command::TestKdeWallpaper
         | crate::parse_arguments::Command::TestPlaylists
         | crate::parse_arguments::Command::TestLocalization
         | crate::parse_arguments::Command::BenchmarkRender { .. }
@@ -1639,6 +1649,7 @@ fn main() {
         | crate::parse_arguments::Command::CompareDatabases { .. }
         | crate::parse_arguments::Command::Version
         | crate::parse_arguments::Command::TestWallpaperProtocol
+        | crate::parse_arguments::Command::TestKdeWallpaper
         | crate::parse_arguments::Command::TestPlaylists
         | crate::parse_arguments::Command::TestLibdecor
         | crate::parse_arguments::Command::TestLibdecorBridge

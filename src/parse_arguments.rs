@@ -21,6 +21,8 @@ pub enum Command {
 
     TestWallpaperProtocol,
 
+    TestKdeWallpaper,
+
     TestLibdecor,
 
     TestLibdecorBridge,
@@ -190,6 +192,11 @@ pub fn parse() -> Result<Command, String> {
                 [_, mode] if mode == "bridge" => Ok(Command::TestLibdecorBridge),
                 _ => Err("--test-libdecor accepts only the optional argument 'bridge'".to_string()),
             }
+        }
+
+        "--test-kde-wallpaper" => {
+            require_no_extra_arguments(&args, "--test-kde-wallpaper")?;
+            Ok(Command::TestKdeWallpaper)
         }
 
         "--test-wallpaper-protocol" => {
@@ -1018,6 +1025,10 @@ pub fn print_help() {
          \n\
              --test-wallpaper-protocol\n\
                   Run isolated wallpaper pause/resume protocol checks and exit.\n\
+         \n\
+              --test-kde-wallpaper\n\
+                   Run the native KDE Plasma shared-memory wallpaper producer test.\n\
+                   Press Ctrl+C to stop; no Python runtime is required.\n\
          \n\
              --test-playlists\n\
                  Run developer Playlist database-management tests and exit.\n\
