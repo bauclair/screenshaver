@@ -76,6 +76,7 @@ use wayland_protocols_wlr::layer_shell::v1::client::{
 enum WallpaperLayerStrategy {
     Background,
     BottomCompatibility,
+    PlasmaBottomExperiment,
 }
 
 
@@ -101,6 +102,24 @@ impl WallpaperLayerStrategy {
             }
         }
 
+        // Experimental KDE Plasma/Wayland compatibility: keep Screenshaver's
+        // layer surface above Plasma's own Background-layer wallpaper surface.
+        // This is intentionally limited to the Wayland wallpaper backend.
+        for variable in ["XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "DESKTOP_SESSION"] {
+            if let Ok(value) = std::env::var(variable) {
+                if value.split(|c: char| c == ':' || c == ';' || c == ',')
+                    .any(|part| {
+                        let part = part.trim();
+                        part.eq_ignore_ascii_case("KDE")
+                            || part.eq_ignore_ascii_case("plasma")
+                            || part.eq_ignore_ascii_case("plasmawayland")
+                    })
+                {
+                    return Self::PlasmaBottomExperiment;
+                }
+            }
+        }
+
         Self::Background
     }
 
@@ -108,7 +127,7 @@ impl WallpaperLayerStrategy {
     fn layer(self) -> Layer {
         match self {
             Self::Background => Layer::Background,
-            Self::BottomCompatibility => Layer::Bottom,
+            Self::BottomCompatibility | Self::PlasmaBottomExperiment => Layer::Bottom,
         }
     }
 
@@ -117,6 +136,7 @@ impl WallpaperLayerStrategy {
         match self {
             Self::Background => "standard background layer",
             Self::BottomCompatibility => "Sway bottom-layer compatibility",
+            Self::PlasmaBottomExperiment => "KDE Plasma bottom-layer experiment",
         }
     }
 }
