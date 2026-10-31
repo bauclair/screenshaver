@@ -828,6 +828,14 @@ fn prepare_wallpaper_frame_iteration<S: RenderWaylandDispatch>(
                     }
                     let compositor_closed = state.surfaces().iter().any(|surface| surface.closed);
                     if compositor_closed {
+                        let closed_outputs: Vec<u32> = state.surfaces().iter()
+                            .filter(|surface| surface.closed)
+                            .map(|surface| surface.registry_name)
+                            .collect();
+                        crate::logger::warning(
+                            &crate::locate_paths::runtime_log_path(),
+                            &format!("[WALLPAPER_SURFACE_DIAG] Frame loop stopping after compositor Closed; outputs={closed_outputs:?}"),
+                        );
                         if S::compositor_close_requests_shutdown() {
                             running.store(false, Ordering::SeqCst);
                         }

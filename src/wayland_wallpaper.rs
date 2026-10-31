@@ -220,6 +220,8 @@ pub(crate) struct WaylandState {
     pub(crate) targets: Vec<WallpaperTarget>,
     pub(crate) surface_states: Vec<WallpaperSurfaceState>,
     pub(crate) removed_output_names: Vec<u32>,
+    // Diagnostic-only swap counters; never affect rendering or presentation.
+    wallpaper_swap_diagnostics: HashMap<u32, (u64, Instant)>,
     pub(crate) windowshader: crate::wayland_windowshader::WindowshaderWaylandState,
 }
 
@@ -443,6 +445,11 @@ impl Dispatch<ZwlrLayerSurfaceV1, LayerSurfaceDispatchData>
                 layer_surface.ack_configure(
                     serial
                 );
+                crate::logger::warning(
+                    &crate::locate_paths::runtime_log_path(),
+                    &format!("[WALLPAPER_SURFACE_DIAG] Configure output={} serial={} width={} height={}",
+                        data.registry_name, serial, width, height),
+                );
 
 
                 if let Some(
@@ -471,6 +478,10 @@ impl Dispatch<ZwlrLayerSurfaceV1, LayerSurfaceDispatchData>
 
 
             zwlr_layer_surface_v1::Event::Closed => {
+                crate::logger::warning(
+                    &crate::locate_paths::runtime_log_path(),
+                    &format!("[WALLPAPER_SURFACE_DIAG] Closed output={}", data.registry_name),
+                );
 
                 if let Some(
                     surface_state
@@ -1858,7 +1869,21 @@ impl RenderWaylandDispatch for WaylandState {
     fn on_pause_entered(&mut self, _native_targets: &[NativeWallpaperTarget]) {}
     fn on_pause_released(&mut self) {}
     fn on_resumed_frame_presented(&mut self) {}
-    fn on_frame_swap_completed(&mut self, _registry_name: u32) {}
+    fn on_frame_swap_completed(&mut self, registry_name: u32) {
+        let (count, reported_at) = self.wallpaper_swap_diagnostics
+            .entry(registry_name)
+            .or_insert_with(|| (0, Instant::now()));
+        *count = count.saturating_add(1);
+        if reported_at.elapsed() >= Duration::from_secs(5) {
+            crate::logger::information(
+                &crate::locate_paths::runtime_log_path(),
+                &format!("[WALLPAPER_SURFACE_DIAG] EGL swaps successful output={} count={} interval_ms={}",
+                    registry_name, count, reported_at.elapsed().as_millis()),
+            );
+            *count = 0;
+            *reported_at = Instant::now();
+        }
+    }
     fn frames_ready_for_presentation(&mut self, _native_targets: &[NativeWallpaperTarget]) -> bool { true }
     fn outstanding_frame_callbacks(&mut self, _native_targets: &[NativeWallpaperTarget]) -> Vec<u32> { Vec::new() }
     fn log_outstanding_callback_details(&mut self, _outstanding: &[u32]) {}
