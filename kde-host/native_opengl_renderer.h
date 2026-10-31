@@ -12,6 +12,7 @@ public:
 
     void setRect(const QRectF &rect);
     void setPixelSize(const QSize &size);
+    void setPresentationMode(const QString &mode);
 
     RenderingFlags flags() const override;
     StateFlags changedStates() const override;
@@ -26,6 +27,7 @@ private:
 
     QRectF m_rect;
     QSize m_pixelSize;
+    QString m_presentationMode = QStringLiteral("screensaver");
     ScreenshaverKdeGlRenderer *m_renderer = nullptr;
     bool m_failed = false;
 };

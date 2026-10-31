@@ -6,6 +6,7 @@
 #include <QDBusPendingCall>
 #include <QFile>
 #include <QFileInfo>
+#include <QDebug>
 #include <QQuickWindow>
 #include <QTimer>
 
@@ -112,6 +113,19 @@ bool NativeOpenGLUnderlay::runtimeMarkerIsLive() const
     return QFileInfo(target).fileName() == QStringLiteral("screenshaver");
 }
 
+void NativeOpenGLUnderlay::setPresentationMode(const QString &mode)
+{
+    if (mode != QStringLiteral("screensaver") && mode != QStringLiteral("wallpaper")) {
+        qWarning("SCREENSHAVER: unsupported presentation mode");
+        return;
+    }
+    if (mode == m_presentationMode)
+        return;
+    m_presentationMode = mode;
+    emit presentationModeChanged();
+    update();
+}
+
 void NativeOpenGLUnderlay::setTime(qreal value)
 {
     if (qFuzzyCompare(m_time, value))
@@ -131,6 +145,7 @@ QSGNode *NativeOpenGLUnderlay::updatePaintNode(QSGNode *oldNode,
         node = new NativeOpenGLRenderNode();
 
     node->setRect(boundingRect());
+    node->setPresentationMode(m_presentationMode);
 
     if (window()) {
         const qreal dpr = window()->effectiveDevicePixelRatio();

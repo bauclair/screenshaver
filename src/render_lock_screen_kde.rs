@@ -224,6 +224,27 @@ pub unsafe extern "C" fn screenshaver_kde_gl_create(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn screenshaver_kde_gl_create_for_mode(
+    loader: Option<GlProcLoader>,
+    width: i32,
+    height: i32,
+    mode: u32,
+) -> *mut KdeFrameRenderer {
+    clear_last_error();
+    match mode {
+        0 => unsafe { screenshaver_kde_gl_create(loader, width, height) },
+        1 => {
+            set_last_error("KDE wallpaper renderer is not enabled in Phase 3A mode-boundary test");
+            ptr::null_mut()
+        }
+        _ => {
+            set_last_error(format!("Unknown KDE renderer mode: {mode}"));
+            ptr::null_mut()
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn screenshaver_kde_gl_render(
     renderer: *mut KdeFrameRenderer,
     width: i32,
@@ -252,5 +273,5 @@ pub extern "C" fn screenshaver_kde_gl_last_error() -> *const c_char {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn screenshaver_kde_gl_bridge_version() -> u32 {
-    3
+    4
 }

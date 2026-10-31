@@ -7,7 +7,7 @@
 
 namespace {
 
-constexpr uint32_t ExpectedBridgeVersion = 3;
+constexpr uint32_t ExpectedBridgeVersion = 4;
 
 const void *qtGetProcAddress(const char *name)
 {
@@ -36,6 +36,19 @@ void NativeOpenGLRenderNode::setRect(const QRectF &rect)
 void NativeOpenGLRenderNode::setPixelSize(const QSize &size)
 {
     m_pixelSize = size;
+}
+
+void NativeOpenGLRenderNode::setPresentationMode(const QString &mode)
+{
+    // Mode changes must not destroy live GL objects on the GUI thread.
+    // Phase 3A fixes mode before the first render; runtime mode switching
+    // requires a separate, render-thread-owned lifecycle transition.
+    if (m_renderer || m_failed) {
+        if (mode != m_presentationMode)
+            qWarning() << "SCREENSHAVER: cannot change presentation mode after renderer initialization";
+        return;
+    }
+    m_presentationMode = mode;
 }
 
 QSGRenderNode::RenderingFlags NativeOpenGLRenderNode::flags() const
@@ -95,10 +108,11 @@ bool NativeOpenGLRenderNode::buildRenderer()
         return false;
     }
 
-    m_renderer = screenshaver_kde_gl_create(
+    m_renderer = screenshaver_kde_gl_create_for_mode(
         &qtGetProcAddress,
         m_pixelSize.width(),
-        m_pixelSize.height());
+        m_pixelSize.height(),
+        m_presentationMode == QStringLiteral("wallpaper") ? 1u : 0u);
 
     if (!m_renderer) {
         qCritical().noquote()

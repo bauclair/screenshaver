@@ -16,6 +16,14 @@ ScreenshaverKdeGlRenderer *screenshaver_kde_gl_create(
     int32_t width,
     int32_t height);
 
+// 0 = screensaver (existing behavior); 1 = wallpaper (reserved until
+// wallpaper policy/runtime initialization is implemented).
+ScreenshaverKdeGlRenderer *screenshaver_kde_gl_create_for_mode(
+    ScreenshaverGlProcLoader loader,
+    int32_t width,
+    int32_t height,
+    uint32_t mode);
+
 bool screenshaver_kde_gl_render(
     ScreenshaverKdeGlRenderer *renderer,
     int32_t width,
