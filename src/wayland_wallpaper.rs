@@ -127,7 +127,7 @@ impl WallpaperLayerStrategy {
     fn layer(self) -> Layer {
         match self {
             Self::Background => Layer::Background,
-            Self::BottomCompatibility | Self::PlasmaBottomExperiment => Layer::Bottom,
+            Self::BottomCompatibility | Self::PlasmaBottomExperiment => Layer::Background,
         }
     }
 
