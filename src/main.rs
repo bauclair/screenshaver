@@ -147,6 +147,7 @@ mod test_render_benchmark;
 mod test_audio_motion;
 mod test_libdecor;
 mod test_kde_wallpaper;
+mod probe_kde_wallpaper;
 
 mod import_data;
 mod export_data;
