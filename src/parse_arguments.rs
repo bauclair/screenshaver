@@ -21,7 +21,7 @@ pub enum Command {
 
     TestWallpaperProtocol,
 
-    TestKdeWallpaper,
+    TestKdeWallpaper { shader_path: Option<String> },
 
     TestLibdecor,
 
@@ -195,8 +195,14 @@ pub fn parse() -> Result<Command, String> {
         }
 
         "--test-kde-wallpaper" => {
-            require_no_extra_arguments(&args, "--test-kde-wallpaper")?;
-            Ok(Command::TestKdeWallpaper)
+            if args.len() > 2 {
+                return Err("--test-kde-wallpaper accepts at most one shader path".into());
+            }
+            let shader_path = args.get(1).map(|s| s.trim().to_string());
+            if shader_path.as_deref().is_some_and(|s| s.is_empty() || s.starts_with('-')) {
+                return Err("--test-kde-wallpaper requires a valid shader path".into());
+            }
+            Ok(Command::TestKdeWallpaper { shader_path })
         }
 
         "--test-wallpaper-protocol" => {
@@ -1026,7 +1032,7 @@ pub fn print_help() {
              --test-wallpaper-protocol\n\
                   Run isolated wallpaper pause/resume protocol checks and exit.\n\
          \n\
-              --test-kde-wallpaper\n\
+              --test-kde-wallpaper [SHADER_PATH]\n\
                    Run the native KDE Plasma shared-memory wallpaper producer test.\n\
                    Press Ctrl+C to stop; no Python runtime is required.\n\
          \n\

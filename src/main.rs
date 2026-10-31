@@ -348,8 +348,8 @@ fn main() {
             return;
         }
 
-        crate::parse_arguments::Command::TestKdeWallpaper => {
-            if let Err(error) = crate::test_kde_wallpaper::run() {
+        crate::parse_arguments::Command::TestKdeWallpaper { shader_path } => {
+            if let Err(error) = crate::test_kde_wallpaper::run(shader_path.as_deref()) {
                 eprintln!("[KDE WALLPAPER TEST] FAILED: {error}");
                 std::process::exit(1);
             }
@@ -752,7 +752,7 @@ fn main() {
         | crate::parse_arguments::Command::Start
         | crate::parse_arguments::Command::Control { .. }
         | crate::parse_arguments::Command::TestWallpaperProtocol
-        | crate::parse_arguments::Command::TestKdeWallpaper
+        | crate::parse_arguments::Command::TestKdeWallpaper { .. }
         | crate::parse_arguments::Command::TestPlaylists
         | crate::parse_arguments::Command::TestLocalization
         | crate::parse_arguments::Command::BenchmarkRender { .. }
@@ -1649,7 +1649,7 @@ fn main() {
         | crate::parse_arguments::Command::CompareDatabases { .. }
         | crate::parse_arguments::Command::Version
         | crate::parse_arguments::Command::TestWallpaperProtocol
-        | crate::parse_arguments::Command::TestKdeWallpaper
+        | crate::parse_arguments::Command::TestKdeWallpaper { .. }
         | crate::parse_arguments::Command::TestPlaylists
         | crate::parse_arguments::Command::TestLibdecor
         | crate::parse_arguments::Command::TestLibdecorBridge
