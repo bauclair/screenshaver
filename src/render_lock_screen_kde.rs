@@ -156,6 +156,112 @@ unsafe fn create_renderer(
     })))
 }
 
+// KDE Plasma wallpaper mode: policy discovery stays inside the renderer library.
+// Do not pull the application's wallpaper backend/supervisor into this cdylib.
+fn wallpaper_selection(
+    configured_mode: &str,
+) -> Result<(crate::manage_shader::ShaderMode, u64), String> {
+    use crate::parse_mode::ModeType;
+    use crate::manage_shader::ShaderMode;
+
+    let parsed = crate::parse_mode::parse_mode(configured_mode);
+    match parsed.mode {
+        ModeType::Single => Ok((ShaderMode::Single(parsed.argument), 0)),
+        ModeType::Random => Ok((
+            ShaderMode::Random,
+            crate::parse_interval::parse_interval(&parsed.argument).seconds,
+        )),
+        ModeType::Ordered => Ok((
+            ShaderMode::Ordered,
+            crate::parse_interval::parse_interval(&parsed.argument).seconds,
+        )),
+        ModeType::Playlist => {
+            let playlist_id = parsed.argument.parse::<i64>()
+                .map_err(|error| format!("Invalid KDE wallpaper playlist ID: {error}"))?;
+            if playlist_id <= 0 {
+                return Err("KDE wallpaper playlist ID must be positive".to_string());
+            }
+            let seconds = configured_mode.split(':').nth(2)
+                .ok_or_else(|| "KDE wallpaper playlist interval is missing".to_string())?
+                .parse::<u64>()
+                .map_err(|error| format!("Invalid KDE wallpaper playlist interval: {error}"))?;
+            if seconds == 0 {
+                return Err("KDE wallpaper playlist interval must be positive".to_string());
+            }
+            Ok((ShaderMode::Playlist(playlist_id), seconds))
+        }
+        ModeType::Invalid => Err(format!(
+            "Unsupported KDE wallpaper mode: {configured_mode}"
+        )),
+    }
+}
+
+unsafe fn create_wallpaper_renderer(
+    loader: Option<GlProcLoader>,
+    width: i32,
+    height: i32,
+) -> Result<*mut KdeFrameRenderer, String> {
+    let loader = loader.ok_or_else(|| "Qt OpenGL procedure loader was null".to_string())?;
+    if width <= 0 || height <= 0 {
+        return Err(format!("Invalid KDE wallpaper render size: {width}x{height}"));
+    }
+    load_gl(loader)?;
+
+    let config_path = crate::locate_paths::config_path();
+    let cfg = crate::load_config::load_config(&config_path)
+        .map_err(|error| format!("Unable to load KDE wallpaper configuration: {error}"))?
+        .config;
+    if !cfg.wallpaper_enabled {
+        return Err("Screenshaver wallpaper is disabled in configuration".to_string());
+    }
+
+    let (shader_mode, mut shader_interval) = wallpaper_selection(&cfg.wallpaper_mode)?;
+    let managed_directory = crate::locate_paths::shader_dir();
+    let mut entries = Vec::new();
+    for policy in &cfg.wallpaper_policies {
+        let source_path = policy.source_path.clone()
+            .unwrap_or_else(|| managed_directory.join(&policy.shader));
+        if !source_path.is_file() {
+            continue;
+        }
+        entries.push(crate::manage_shader::ShaderEntry::with_policy_id_source_path(
+            policy.policy_id,
+            policy.shader.clone(),
+            policy.policy_key.clone(),
+            source_path,
+        ));
+    }
+    if entries.is_empty() {
+        return Err("No available KDE wallpaper shader policies".to_string());
+    }
+    if entries.len() == 1 {
+        shader_interval = 0;
+    }
+
+    let shader_manager =
+        crate::manage_shader::ShaderManager::from_shader_entries_for_target(
+            shader_mode,
+            entries,
+            crate::manage_shader::OrderedTarget::Wallpaper,
+        );
+    let engine = crate::render_frame_engine::FrameRenderEngine::new_for_wallpaper(
+        shader_manager,
+        &managed_directory,
+        shader_interval,
+        cfg.wallpaper_speed_policy,
+        cfg.wallpaper_fps_policy,
+        cfg.wallpaper_texture_policy,
+        cfg.wallpaper_postprocess_policy,
+        Some(crate::audio_backend::shared_audio_bands()),
+        false,
+        cfg.subtitle_placement,
+        None,
+        width as u32,
+        height as u32,
+    )?;
+    Ok(Box::into_raw(Box::new(KdeFrameRenderer { engine })))
+}
+
 unsafe fn render_frame(
     renderer: *mut KdeFrameRenderer,
     width: i32,
@@ -233,10 +339,13 @@ pub unsafe extern "C" fn screenshaver_kde_gl_create_for_mode(
     clear_last_error();
     match mode {
         0 => unsafe { screenshaver_kde_gl_create(loader, width, height) },
-        1 => {
-            set_last_error("KDE wallpaper renderer is not enabled in Phase 3A mode-boundary test");
-            ptr::null_mut()
-        }
+        1 => match unsafe { create_wallpaper_renderer(loader, width, height) } {
+            Ok(renderer) => renderer,
+            Err(error) => {
+                set_last_error(error);
+                ptr::null_mut()
+            }
+        },
         _ => {
             set_last_error(format!("Unknown KDE renderer mode: {mode}"));
             ptr::null_mut()

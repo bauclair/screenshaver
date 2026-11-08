@@ -252,6 +252,15 @@ impl TrayStatusControl {
         }
     }
 
+    /// Release the controller-owned KSNI handle at shutdown. The caller must
+    /// also drop its own handle before waiting for renderer cleanup.
+    pub fn detach_handle(&self) {
+        match self.tray_handle.lock() {
+            Ok(mut handle) => { handle.take(); }
+            Err(poisoned) => { poisoned.into_inner().take(); }
+        }
+    }
+
     fn refresh_tray(
         &self,
     ) {

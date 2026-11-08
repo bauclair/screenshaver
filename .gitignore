@@ -33,3 +33,9 @@ dist/
 # OS metadata
 .DS_Store
 Thumbs.db
+
+# KDE native host generated build artifacts
+/kde-host/build-staging-*/
+/kde-host/build/
+/kde-host/build-*/
+/kde-host/deployments/

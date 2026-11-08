@@ -303,6 +303,35 @@ impl SharedFrameContext {
         Ok(duration)
     }
 
+    // Wallpaper-only submission gate. The caller must treat None as a
+    // cancelled presentation, never as a completed EGL swap. Windowshader
+    // continues to use present_and_acknowledge() unchanged.
+    fn present_wallpaper_if_authorized<S: RenderWaylandDispatch>(
+        &self,
+        display: EglDisplay,
+        surface: *mut std::ffi::c_void,
+        registry_name: u32,
+        state: &mut S,
+        control: &crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
+    ) -> Result<Option<Duration>, String> {
+        // Finish GPU timestamp bookkeeping BEFORE the final authorization
+        // check. Otherwise even a short GL operation would widen the gap
+        // between observing a pause and submitting the EGL buffer.
+        self.finish_frame_gpu_measurement();
+        control.diagnostic_checkpoint(5);
+        // This is a late cancellation gate, NOT a cross-process transaction
+        // fence. The coordinator must retain the matching acknowledged pause
+        // lease throughout native ownership; a check alone cannot be atomic
+        // with another process publishing its grant.
+        if control.pause_requested() {
+            return Ok(None);
+        }
+        let duration = present_egl_frame_target(display, surface)?;
+        control.diagnostic_checkpoint(6);
+        state.on_frame_swap_completed(registry_name);
+        Ok(Some(duration))
+    }
+
     fn completed_frame_gpu_duration(&self) -> Duration {
         self.gl.completed_gpu_frame_duration()
     }
@@ -2142,7 +2171,10 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                     }
                     frame_runtime.pacing.reset_wallpaper_deadline::<S>();
                     frame_runtime.accounting.frame_times.clear();
-                    frame_runtime.clock.paused = false;
+                    // Keep the paused transition pending until the first successful
+                    // EGL presentation. The post-presentation path consumes this
+                    // flag and publishes the matching resumed-frame acknowledgment.
+                    // Clearing it here silently skips that acknowledgment.
                 }
             }
 
@@ -2635,15 +2667,27 @@ pub(crate) fn render_mirror_frames_with_driver<S: RenderWaylandDispatch + 'stati
                         ),
                     )?
                 } else {
+                    // Phase 10C-3B-1: a pause may arrive while GPU frame
+                    // preparation is underway. Do not request another Wayland
+                    // callback or submit an EGL buffer after observing it.
+                    // Return to the existing wallpaper pause/acknowledgment loop.
+                    // Windowshader presentation remains unchanged.
+                    if control.pause_requested() {
+                        return Ok(FrameSessionResult::Executed(FrameLoopAction::Continue));
+                    }
                     state.request_next_presentation_frame(
                         &native_target.surface,
                         native_target.info.registry_name,
                         &frame_queue_handle,
                     );
-                    let duration = frame_context.present_and_acknowledge(
+                    let Some(duration) = frame_context.present_wallpaper_if_authorized(
                         display, egl_target.surface,
                         native_target.info.registry_name, state, control,
-                    )?;
+                    )? else {
+                        // A late pause must not publish successful-swap state,
+                        // resume ACK, FPS samples, or increment the frame count.
+                        return Ok(FrameSessionResult::Executed(FrameLoopAction::Continue));
+                    };
                     let publish_rendering = frame_runtime.clock.paused
                         || frame_runtime.controls.status_heartbeat.elapsed() >= Duration::from_secs(1);
                     if status_enabled && publish_rendering {

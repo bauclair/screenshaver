@@ -6,17 +6,82 @@
 #include <QDBusPendingCall>
 #include <QFile>
 #include <QFileInfo>
+#include <QDir>
 #include <QDebug>
 #include <QQuickWindow>
 #include <QTimer>
+#include <QSaveFile>
+#include <QFileDevice>
+#include <QCoreApplication>
+#include <QRegularExpression>
 
 #include <signal.h>
 #include <cerrno>
+#include <unistd.h>
+
+// Implemented in native_opengl_renderer.cpp; shares its render-call fence.
+void screenshaverCheckNativeWallpaperRevocation();
+bool screenshaverNativeWallpaperGrantAuthorized();
+
+// An explicitly configured diagnostic directory isolates native pause testing
+// from the production legacy wallpaper transaction. Never fall back to the
+// production directory if a diagnostic override is invalid.
+QString wallpaperPauseRequestPath()
+{
+    const QString diagnostic = qEnvironmentVariable("SCREENSHAVER_PLASMA_PAUSE_DIAG_DIR");
+    if (diagnostic.isEmpty() || !QDir(diagnostic).exists())
+        return {};
+    return QDir(diagnostic).filePath(QStringLiteral("screenshaver-wallpaper.pause"));
+}
+
+// Read-only diagnostic records are per-item, not a singleton ownership marker.
+// The PID/start-ticks pair permits readers to reject stale records after a crash.
+// No diagnostic record is an ownership grant, readiness ACK, or resume signal.
+static QByteArray processStartTicks()
+{
+    QFile stat(QStringLiteral("/proc/self/stat"));
+    if (!stat.open(QIODevice::ReadOnly)) return {};
+    const QByteArray line = stat.readAll();
+    const qsizetype close = line.lastIndexOf(')');
+    if (close < 0 || close + 2 >= line.size()) return {};
+    const QList<QByteArray> fields = line.mid(close + 2).simplified().split(' ');
+    // First token after comm is field 3 (state); starttime is field 22.
+    if (fields.size() <= 19) return {};
+    bool ok = false;
+    const qulonglong ticks = fields.at(19).toULongLong(&ok);
+    return ok && ticks != 0 ? QByteArray::number(ticks) : QByteArray{};
+}
 
 NativeOpenGLUnderlay::NativeOpenGLUnderlay(QQuickItem *parent)
     : QQuickItem(parent)
 {
     setFlag(ItemHasContents, true);
+
+    const QString runtimeDir = qEnvironmentVariable("XDG_RUNTIME_DIR");
+    const QByteArray ticks = processStartTicks();
+    if (!runtimeDir.isEmpty() && !ticks.isEmpty() && QDir(runtimeDir).exists()) {
+        const QString instance = QString::number(reinterpret_cast<quintptr>(this), 16);
+        m_presentationObservationPath = QDir(runtimeDir).filePath(
+            QStringLiteral("screenshaver-plasma-presentation.%1.%2.%3.status")
+                .arg(QCoreApplication::applicationPid())
+                .arg(QString::fromLatin1(ticks))
+                .arg(instance));
+    } else {
+        qWarning() << "SCREENSHAVER PLASMA STATUS: no safe runtime path or process identity";
+    }
+
+    // Lifecycle observations only: none of these events grants ownership,
+    // acknowledges a frame, or changes the legacy pause protocol.
+    qInfo() << "SCREENSHAVER PLASMA LIFECYCLE: item constructed" << this;
+    connect(this, &QQuickItem::windowChanged, this,
+            [this](QQuickWindow *associatedWindow) {
+                qInfo() << "SCREENSHAVER PLASMA LIFECYCLE: window association"
+                        << this << associatedWindow
+                        << "mode=" << m_presentationMode;
+                // A window association is not scene-graph readiness.
+                update();
+                publishPresentationObservation();
+            });
 
     // The overlay is persistent filesystem state, but its behavior is not.
     // A live Screenshaver process writes a PID marker into XDG_RUNTIME_DIR.
@@ -31,6 +96,19 @@ NativeOpenGLUnderlay::NativeOpenGLUnderlay(QQuickItem *parent)
     connect(m_runtimeStateTimer, &QTimer::timeout,
             this, &NativeOpenGLUnderlay::refreshRuntimeActive);
     m_runtimeStateTimer->start();
+
+    // Independent GUI-thread wakeup for native wallpaper pause transitions.
+    // The render thread still reads the control file itself before every
+    // frame; this timer does not authorize rendering or publish an ACK.
+    m_wallpaperPauseTimer = new QTimer(this);
+    m_wallpaperPauseTimer->setInterval(50);
+    m_wallpaperPauseTimer->setTimerType(Qt::PreciseTimer);
+    connect(m_wallpaperPauseTimer, &QTimer::timeout,
+            this, &NativeOpenGLUnderlay::refreshWallpaperPauseRequest);
+    m_wallpaperPauseTimer->start();
+    refreshWallpaperPauseRequest();
+    refreshWallpaperGrantAuthorization();
+    publishPresentationObservation();
 
     // Plasma 6 PowerDevil deliberately ignores ordinary screen-management
     // inhibitions while the screen locker is active and, by default, registers
@@ -48,6 +126,15 @@ NativeOpenGLUnderlay::NativeOpenGLUnderlay(QQuickItem *parent)
         simulateUserActivity();
         m_idleHeartbeat->start();
     }
+}
+
+NativeOpenGLUnderlay::~NativeOpenGLUnderlay()
+{
+    // Destruction is not a native revocation ACK. Only the render-call fence
+    // and verified transaction protocol may authorize legacy resumption.
+    retirePresentationObservation();
+    qInfo() << "SCREENSHAVER PLASMA LIFECYCLE: item destroyed" << this
+            << "mode=" << m_presentationMode;
 }
 
 void NativeOpenGLUnderlay::refreshRuntimeActive()
@@ -68,8 +155,94 @@ void NativeOpenGLUnderlay::refreshRuntimeActive()
         }
     }
 
+    publishPresentationObservation();
     emit runtimeActiveChanged();
     update();
+}
+
+void NativeOpenGLUnderlay::refreshWallpaperPauseRequest()
+{
+    if (m_presentationMode != QStringLiteral("wallpaper"))
+        return;
+
+    refreshWallpaperGrantAuthorization();
+
+    publishPresentationObservation();
+
+    // Check process-wide revocation after all in-flight GL calls finish.
+    screenshaverCheckNativeWallpaperRevocation();
+
+    // GUI-thread wakeup only, now unconditional for wallpaper items. The
+    // render thread independently validates the full grant before Rust GL.
+    {
+        const QString runtime = qEnvironmentVariable("XDG_RUNTIME_DIR");
+        QByteArray grantIdentity("<unavailable>");
+        if (!runtime.isEmpty()) {
+            QFile grant(QDir(runtime).filePath(
+                QStringLiteral("screenshaver-plasma-ownership.grant")));
+            if (!grant.exists()) {
+                grantIdentity = "<absent>";
+            } else if (grant.open(QIODevice::ReadOnly)) {
+                grantIdentity = grant.read(256);
+                if (grant.error() != QFile::NoError || !grant.atEnd())
+                    grantIdentity = "<invalid>";
+            }
+        }
+        if (!m_ownershipGrantInitialized || grantIdentity != m_ownershipGrantIdentity) {
+            m_ownershipGrantInitialized = true;
+            m_ownershipGrantIdentity = grantIdentity;
+            update();
+        }
+    }
+
+    const QString requestPath = wallpaperPauseRequestPath();
+    bool pauseRequested = true;
+    QByteArray identity("<unavailable>");
+    if (!requestPath.isEmpty() && QFileInfo(requestPath).dir().exists()) {
+        QFile request(requestPath);
+        if (!request.exists()) {
+            pauseRequested = false;
+            identity = "<absent>";
+        } else if (request.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            identity = request.readAll().trimmed();
+            if (request.error() != QFile::NoError)
+                identity = "<unreadable>";
+        } else {
+            identity = "<unreadable>";
+        }
+    }
+
+    if (!m_wallpaperPauseInitialized || pauseRequested != m_wallpaperPauseRequested ||
+        identity != m_wallpaperPauseIdentity) {
+        m_wallpaperPauseInitialized = true;
+        m_wallpaperPauseRequested = pauseRequested;
+        m_wallpaperPauseIdentity = identity;
+        qInfo() << "SCREENSHAVER PLASMA PAUSE WATCHER:"
+                << (pauseRequested ? "pause/token change observed; requesting render-thread check"
+                                   : "request absent; requesting render-thread check");
+        update();
+    }
+}
+
+void NativeOpenGLUnderlay::setOwnershipMonitorOnly(bool value)
+{
+    if (m_ownershipMonitorOnly == value) return;
+    m_ownershipMonitorOnly = value;
+    // A monitor-only item must never allocate a QSGRenderNode. QML sets this
+    // immediately on construction, before its first scene-graph sync.
+    setFlag(ItemHasContents, !value);
+    emit ownershipMonitorOnlyChanged();
+    publishPresentationObservation();
+    update();
+}
+
+void NativeOpenGLUnderlay::refreshWallpaperGrantAuthorization()
+{
+    const bool authorized = m_presentationMode == QStringLiteral("wallpaper")
+        && screenshaverNativeWallpaperGrantAuthorized();
+    if (authorized == m_wallpaperGrantAuthorized) return;
+    m_wallpaperGrantAuthorized = authorized;
+    emit wallpaperGrantAuthorizedChanged();
 }
 
 void NativeOpenGLUnderlay::simulateUserActivity()
@@ -122,6 +295,11 @@ void NativeOpenGLUnderlay::setPresentationMode(const QString &mode)
     if (mode == m_presentationMode)
         return;
     m_presentationMode = mode;
+    m_wallpaperPauseInitialized = false;
+    m_ownershipGrantInitialized = false;
+    refreshWallpaperPauseRequest();
+    refreshWallpaperGrantAuthorization();
+    publishPresentationObservation();
     emit presentationModeChanged();
     update();
 }
@@ -139,10 +317,18 @@ void NativeOpenGLUnderlay::setTime(qreal value)
 QSGNode *NativeOpenGLUnderlay::updatePaintNode(QSGNode *oldNode,
                                                 UpdatePaintNodeData *)
 {
+    if (m_ownershipMonitorOnly) return nullptr;
     auto *node = static_cast<NativeOpenGLRenderNode *>(oldNode);
 
-    if (!node)
+    if (!node) {
         node = new NativeOpenGLRenderNode();
+        m_renderNodeObserved.store(true, std::memory_order_release);
+        // Called by Qt Quick's scene-graph update path, potentially on the
+        // render thread. This only proves node construction, not GL success
+        // or compositor presentation. No QObject state is modified here.
+        qInfo() << "SCREENSHAVER PLASMA LIFECYCLE: render node constructed"
+                << "mode=" << m_presentationMode;
+    }
 
     node->setRect(boundingRect());
     node->setPresentationMode(m_presentationMode);
@@ -150,9 +336,42 @@ QSGNode *NativeOpenGLUnderlay::updatePaintNode(QSGNode *oldNode,
     if (window()) {
         const qreal dpr = window()->effectiveDevicePixelRatio();
         node->setPixelSize(
-            QSize(qMax(1, qRound(window()->width() * dpr)),
-                  qMax(1, qRound(window()->height() * dpr))));
+            QSize(qMax(1, qRound(width() * dpr)),
+                  qMax(1, qRound(height() * dpr))));
     }
 
     return node;
+}
+
+void NativeOpenGLUnderlay::publishPresentationObservation()
+{
+    // GUI-thread only. Atomic node flag is the sole cross-thread observation.
+    // A status file is not a successful GL frame or compositor-present fence.
+    if (m_presentationObservationPath.isEmpty()) return;
+    const QByteArray ticks = processStartTicks();
+    if (ticks.isEmpty()) return;
+    const QByteArray payload =
+        "v1 " + QByteArray::number(QCoreApplication::applicationPid()) + " " + ticks +
+        " " + m_presentationMode.toLatin1() +
+        " window=" + (window() ? QByteArray("associated") : QByteArray("absent")) +
+        " monitor_only=" + (m_ownershipMonitorOnly ? QByteArray("1") : QByteArray("0")) +
+        " node_ever_constructed=" +
+        (m_renderNodeObserved.load(std::memory_order_acquire) ? QByteArray("1") : QByteArray("0")) +
+        "\n";
+    if (payload == m_lastPresentationObservation) return;
+    QSaveFile file(m_presentationObservationPath);
+    if (!file.open(QIODevice::WriteOnly) || file.write(payload) != payload.size() || !file.commit()) {
+        qWarning() << "SCREENSHAVER PLASMA STATUS: cannot publish diagnostic record";
+        return;
+    }
+    m_lastPresentationObservation = payload;
+}
+
+void NativeOpenGLUnderlay::retirePresentationObservation()
+{
+    if (m_presentationObservationPath.isEmpty()) return;
+    // Per-instance filename prevents deleting another live item's status.
+    // A crash can leave this file; readers must verify PID and start ticks.
+    if (!QFile::remove(m_presentationObservationPath))
+        qWarning() << "SCREENSHAVER PLASMA STATUS: could not retire diagnostic record";
 }

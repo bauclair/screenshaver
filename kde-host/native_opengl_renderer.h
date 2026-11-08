@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QSGRenderNode>
+#include <QByteArray>
 
 struct ScreenshaverKdeGlRenderer;
 
@@ -24,10 +25,21 @@ public:
 private:
     bool buildRenderer();
     QString rustError() const;
+    void publishWallpaperReadyMarker();
+    void clearWallpaperReadyMarker();
+    void publishNativeActivationAck(const QByteArray &token);
+    void clearNativeActivationAck();
 
     QRectF m_rect;
     QSize m_pixelSize;
     QString m_presentationMode = QStringLiteral("screensaver");
     ScreenshaverKdeGlRenderer *m_renderer = nullptr;
     bool m_failed = false;
+    QString m_readyPath;
+    bool m_readyPublished = false;
+    QString m_activationAckPath;
+    QByteArray m_activationAckToken;
+    bool m_pauseRequestObserved = false;
+    QByteArray m_heldPauseToken;
+    QByteArray m_pauseAckToken;
 };

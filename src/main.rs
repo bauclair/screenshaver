@@ -37,6 +37,7 @@ mod define_lock_screen_widget;
 mod construct_lock_screen_xfce;
 mod construct_lock_screen_mate;
 mod manage_screen_lock_kde;
+mod manage_wallpaper_kde;
 mod manage_windowshader_kde;
 mod detect_desktop_environment;
 mod manage_textures;
@@ -90,6 +91,7 @@ mod locate_wallpaper;
 mod manage_wallpaper;
 mod manage_windowshader;
 mod manage_wallpaper_runtime;
+mod manage_wallpaper_ownership;
 mod manage_windowshader_runtime;
 mod manage_lyrics;
 mod notify_wallpaper;
@@ -2016,6 +2018,26 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
     // by an abnormal previous termination. If locking is enabled, install the
     // Screenshaver presentation underlay and retain a guard that restores KDE
     // on normal shutdown.
+    // Plasma wallpaper selection is independently lifetime-owned. A failed
+    // activation leaves legacy rendering available only through its existing
+    // ownership gate; it never overrides native handoff evidence.
+    let mut kde_wallpaper_integration = None;
+    if desktop_environment.is_kde_plasma()
+        && wallpaper_enabled_this_launch
+        && cfg.wallpaper_display_format == crate::manage_configuration::WallpaperDisplayFormat::FullScreen
+    {
+        match crate::manage_wallpaper_kde::KdeWallpaperIntegrationGuard::activate() {
+            Ok(guard) => {
+                crate::logger::information(&logfile, "[KDE WALLPAPER] Plasma wallpaper selected; native presentation not yet verified");
+                kde_wallpaper_integration = Some(guard);
+            }
+            Err(error) => {
+                crate::logger::error(&logfile, &format!("[KDE WALLPAPER] Automatic activation refused: {error}"));
+                eprintln!("[KDE WALLPAPER] Automatic activation refused: {error}");
+            }
+        }
+    }
+
     let mut kde_lock_integration = None;
 
     if desktop_environment.is_kde_plasma() {
@@ -2177,7 +2199,7 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
     // LXPanel's traditional notification area uses XEmbed, not KSNI.
     // Keep the existing KSNI tray unchanged on all other desktops.
     let use_xembed_tray = lxde_session && lxde_x11;
-    let _x11_tray_handle = if use_xembed_tray {
+    let mut _x11_tray_handle = if use_xembed_tray {
         match crate::tray_icon_x11::start(
             &logfile,
             tray_command_sender.clone(),
@@ -2202,7 +2224,7 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
         None
     };
 
-    let _tray_handle = if use_xembed_tray {
+    let mut _tray_handle = if use_xembed_tray {
         None
     } else {
         match crate::tray_icon::start(
@@ -3567,8 +3589,32 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
     }
 
 
-    if let Some(manager) = windowshader_manager.as_mut() { manager.stop_and_join(); }
-    if let Some(manager) = wallpaper_manager.as_mut() { manager.stop_and_join(); }
+    // Batch 7: withdraw the tray registration before potentially slow renderer
+    // joins or KDE wallpaper restoration. The status controller retains a
+    // second KSNI handle; release it as well as the main-owned handle.
+    let shutdown_started = std::time::Instant::now();
+    crate::logger::information(&logfile, "[SHUTDOWN TIMING] shutdown entered; retiring tray");
+    tray_status.detach_handle();
+    _tray_handle.take();
+    _x11_tray_handle.take();
+    crate::logger::information(&logfile, &format!(
+        "[SHUTDOWN TIMING] tray handles released at {} ms",
+        shutdown_started.elapsed().as_millis()));
+
+    if let Some(manager) = windowshader_manager.as_mut() {
+        let started = std::time::Instant::now();
+        manager.stop_and_join();
+        crate::logger::information(&logfile, &format!(
+            "[SHUTDOWN TIMING] windowshader join completed in {} ms; total={} ms",
+            started.elapsed().as_millis(), shutdown_started.elapsed().as_millis()));
+    }
+    if let Some(manager) = wallpaper_manager.as_mut() {
+        let started = std::time::Instant::now();
+        manager.stop_and_join();
+        crate::logger::information(&logfile, &format!(
+            "[SHUTDOWN TIMING] wallpaper join completed in {} ms; total={} ms",
+            started.elapsed().as_millis(), shutdown_started.elapsed().as_millis()));
+    }
 
 
     if let Some(mut integration) =
@@ -3594,6 +3640,18 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
         }
     }
 
+
+    if let Some(mut integration) = kde_wallpaper_integration.take() {
+        let restore_started = std::time::Instant::now();
+        if let Err(error) = integration.deactivate() {
+            crate::logger::error(&logfile, &format!("[KDE WALLPAPER] Original Plasma wallpaper restoration unverified: {error}"));
+        } else {
+            crate::logger::information(&logfile, "[KDE WALLPAPER] Original Plasma wallpaper restored");
+        }
+        crate::logger::information(&logfile, &format!(
+            "[SHUTDOWN TIMING] KDE restoration completed in {} ms; total={} ms",
+            restore_started.elapsed().as_millis(), shutdown_started.elapsed().as_millis()));
+    }
 
     if let Some(mut integration) = kde_lock_integration.take() {
         match integration.deactivate() {

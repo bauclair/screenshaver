@@ -19,7 +19,9 @@ case "$PROFILE" in
 esac
 
 RENDERER_LIBRARY="${PROJECT_ROOT}/kde-renderer/target/${PROFILE}/libscreenshaver.so"
-BUILD_DIR="${SCRIPT_DIR}/build-${PROFILE}"
+# Never build into build-debug/build-release: Plasma may have those
+# shared libraries mapped. This staging tree is not used by the live QML import.
+BUILD_DIR="${SCRIPT_DIR}/build-staging-${PROFILE}"
 
 if [[ ! -f "$RENDERER_LIBRARY" ]]; then
     echo "ERROR: Screenshaver KDE renderer library not found:" >&2
@@ -49,11 +51,17 @@ if [[ ! -f "$PLUGIN" ]]; then
 fi
 
 # Keep the renderer beside the plugin so $ORIGIN resolves the runtime library.
-cp -f "$RENDERER_LIBRARY" "${PLUGIN_DIR}/libscreenshaver.so"
+# Copy only into the staging tree. Never overwrite a live mapped library.
+cp -- "$RENDERER_LIBRARY" "${PLUGIN_DIR}/libscreenshaver.so"
 
 echo
-echo "Screenshaver KDE host build completed:"
+echo "Screenshaver KDE host STAGING build completed (not deployed):"
 echo "  ${PLUGIN_DIR}"
 echo
 echo "Contents:"
 ls -lh "$PLUGIN_DIR"
+
+echo
+echo "The active build-${PROFILE} directory was not modified."
+echo "Do not repoint the live QML import or copy staged libraries into"
+echo "a directory currently mapped by plasmashell."

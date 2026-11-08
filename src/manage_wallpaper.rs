@@ -604,6 +604,15 @@ pub(crate) fn run_with_backend_for_target(
         );
 
 
+    // Phase 3B-3E-9A: read-only native Plasma observation.
+    // Never assess windowshaders or windowed wallpapers as native wallpaper owners.
+    let full_screen_wallpaper =
+        matches!(policy_target, crate::manage_policies::PolicyTarget::Wallpaper)
+        && runtime.display_format
+            == crate::manage_configuration::WallpaperDisplayFormat::FullScreen;
+    let observation = crate::wallpaper_backend::assess_plasma_wallpaper(full_screen_wallpaper);
+    crate::wallpaper_backend::report_plasma_wallpaper_observation(&observation);
+
     let backend =
         backend_factory()?;
 
