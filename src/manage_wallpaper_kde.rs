@@ -153,17 +153,21 @@ fn read_journal() -> Result<Option<Vec<Assignment>>,String> {
 // The appletsrc file is asynchronous evidence, not a live Plasma acknowledgment.
 // In particular, an old value observed immediately after a selection request
 // cannot prove that a newer request will not overwrite it later.
-fn wait_for_settled(assignments: &[Assignment]) -> Result<(), String> {
+fn wait_for_settled(assignments: &[Assignment], retry_restoration: bool) -> Result<(), String> {
+    // Retry only for restoration, never for native wallpaper activation.
+    // A retry is a synchronous, bounded Plasma script request.
     let started = Instant::now();
     let deadline = started + Duration::from_secs(8);
     let mut matching_since: Option<Instant> = None;
+    let mut last_request = started;
+    let mut retry_count = 0usize;
     let mut previous_observation: Option<String> = None;
     let expected = assignments.iter()
         .map(|a| format!("{}={}", a.id, a.plugin))
         .collect::<Vec<_>>().join(", ");
     eprintln!("[KDE WALLPAPER SETTLE] begin; expected=[{expected}]; stable_required_ms=2000; timeout_ms=8000");
     loop {
-        let (matches, observation) = match inventory() {
+        let (matches, observation, conflict) = match inventory() {
             Ok(current) => {
                 let details = assignments.iter().map(|a| {
                     match current.iter().find(|c| c.id == a.id) {
@@ -174,9 +178,12 @@ fn wait_for_settled(assignments: &[Assignment]) -> Result<(), String> {
                 }).collect::<Vec<_>>().join("; ");
                 let matches = assignments.iter().all(|a| current.iter()
                     .any(|c| c.id == a.id && c.plugin == a.plugin));
-                (matches, details)
+                let conflict = assignments.iter().any(|a| current.iter()
+                    .find(|c| c.id == a.id)
+                    .is_some_and(|c| c.plugin != a.plugin && c.plugin != TARGET));
+                (matches, details, conflict)
             }
-            Err(error) => (false, format!("inventory_error={error}")),
+            Err(error) => (false, format!("inventory_error={error}"), false),
         };
         // Log on transitions, not every 100 ms: avoids flooding runtime logs.
         if previous_observation.as_deref() != Some(observation.as_str()) {
@@ -198,6 +205,20 @@ fn wait_for_settled(assignments: &[Assignment]) -> Result<(), String> {
         } else if matching_since.take().is_some() {
             eprintln!("[KDE WALLPAPER SETTLE] elapsed_ms={}; stability window reset",
                 started.elapsed().as_millis());
+        }
+        // A third-party selection is not ours to overwrite. Retain the journal.
+        if conflict {
+            return Err("Wallpaper changed to an unexpected plugin during restoration; refusing retry".into());
+        }
+        // Retry only if the original selection remains mismatched. Avoid retries
+        // once a matching observation has started the stability window.
+        if retry_restoration && !matches && last_request.elapsed() >= Duration::from_secs(2)
+            && retry_count < 2 && Instant::now() < deadline {
+            retry_count += 1;
+            eprintln!("[KDE WALLPAPER SETTLE] elapsed_ms={}; retry={} requesting original wallpaper", started.elapsed().as_millis(), retry_count);
+            // Calls are synchronous; no overlapping qdbus requests are possible.
+            select(assignments).map_err(|e| format!("Restoration retry {retry_count} failed: {e}"))?;
+            last_request = Instant::now();
         }
         if Instant::now() >= deadline {
             eprintln!("[KDE WALLPAPER SETTLE] elapsed_ms={}; timeout; last_observation=[{}]",
@@ -224,7 +245,7 @@ fn restore(retain_journal: bool) -> Result<(),String> {
         }
     }
     select(&saved).map_err(|e| format!("Explicit restoration request failed: {e}; journal retained"))?;
-    wait_for_settled(&saved).map_err(|e| format!("Restoration not settled: {e}; journal retained"))?;
+    wait_for_settled(&saved, true).map_err(|e| format!("Restoration not settled: {e}; journal retained"))?;
     if retain_journal {
         return Ok(());
     }
@@ -277,9 +298,12 @@ impl KdeWallpaperIntegrationGuard {
     }
     pub fn deactivate(&mut self) -> Result<(),String> {
         if !self.active { return Ok(()); }
-        restore(false)?;
+        // This guard gets one shutdown restoration attempt. Mark it consumed
+        // before attempting the fallible operation so Drop cannot initiate a
+        // second eight-second wait after an explicit shutdown failure.
+        // restore() preserves the durable recovery journal on failure.
         self.active = false;
-        Ok(())
+        restore(false)
     }
 }
 impl Drop for KdeWallpaperIntegrationGuard {
