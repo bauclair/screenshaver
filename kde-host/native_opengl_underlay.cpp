@@ -314,7 +314,12 @@ bool NativeOpenGLUnderlay::runtimeMarkerIsLive() const
     if (target.isEmpty())
         return false;
 
-    return QFileInfo(target).fileName() == QStringLiteral("screenshaver");
+    // NixOS wraps the installed executable as .screenshaver-wrapped.
+    // Accept only the two known Screenshaver executable basenames; the
+    // existing live-PID and /proc/<pid>/exe checks remain mandatory.
+    const QString executableName = QFileInfo(target).fileName();
+    return executableName == QStringLiteral("screenshaver")
+        || executableName == QStringLiteral(".screenshaver-wrapped");
 }
 
 void NativeOpenGLUnderlay::setPresentationMode(const QString &mode)

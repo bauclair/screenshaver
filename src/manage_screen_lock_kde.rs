@@ -673,6 +673,29 @@ fn locate_native_runtime_directory() -> io::Result<PathBuf> {
     let executable = env::current_exe()?;
     let mut candidates = Vec::new();
 
+    // Developer KDE-host builds publish a complete, lock-screen-only runtime
+    // generation here. Prefer it to the Nix store package so rebuilding the
+    // KDE host does not require a NixOS rebuild or manual plugin copying.
+    // This selection affects only the temporary KScreenLocker overlay; normal
+    // Plasma wallpaper imports and the Rust renderer remain untouched.
+    if let Some(data_home) = env::var_os("XDG_DATA_HOME") {
+        candidates.push(
+            PathBuf::from(data_home)
+                .join("screenshaver")
+                .join("kde-lock-runtime")
+                .join("current"),
+        );
+    } else if let Some(home) = env::var_os("HOME") {
+        candidates.push(
+            PathBuf::from(home)
+                .join(".local")
+                .join("share")
+                .join("screenshaver")
+                .join("kde-lock-runtime")
+                .join("current"),
+        );
+    }
+
     // Installed layouts: the flat directory is retained for existing Nix
     // packages, while the nested QML module directory is used by install-linux.sh.
     if let Some(prefix) = executable.parent().and_then(Path::parent) {
@@ -1073,6 +1096,17 @@ fn copy_directory_tree(source: &Path, destination: &Path) -> io::Result<()> {
     }
 
     fs::create_dir_all(destination)?;
+    // Nix store directories are commonly read-only (0555). The overlay is
+    // user-owned and must remain writable while its ownership marker, native
+    // QML module, and patched lock-screen QML are installed. Preserve the
+    // source access bits but grant the owning user directory write access.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = metadata.permissions().mode() | 0o700;
+        fs::set_permissions(destination, fs::Permissions::from_mode(mode))?;
+    }
+    #[cfg(not(unix))]
     fs::set_permissions(destination, metadata.permissions())?;
 
     for entry in fs::read_dir(source)? {

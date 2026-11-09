@@ -51,11 +51,42 @@ if [[ ! -f "$PLUGIN" ]]; then
 fi
 
 # Keep the renderer beside the plugin so $ORIGIN resolves the runtime library.
-# Copy only into the staging tree. Never overwrite a live mapped library.
+# The staging tree is never used by live Plasma processes.
 cp -- "$RENDERER_LIBRARY" "${PLUGIN_DIR}/libscreenshaver.so"
 
+# Publish a lock-screen-only runtime generation. Do not change the live
+# plasmashell QML import or overwrite any mapped shared library. The Rust
+# lock-screen overlay installer reads the 'current' generation on startup.
+# A new directory and atomic symlink switch make deployment deterministic.
+DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}"
+LOCK_RUNTIME_ROOT="${DATA_HOME}/screenshaver/kde-lock-runtime"
+mkdir -p -- "$LOCK_RUNTIME_ROOT"
+GENERATION_DIR="$(mktemp -d "${LOCK_RUNTIME_ROOT}/.generation-XXXXXXXX")"
+NEW_LINK="${LOCK_RUNTIME_ROOT}/.current-$$"
+cleanup_deployment() {
+    rm -f -- "$NEW_LINK"
+    if [[ -n "${GENERATION_DIR:-}" && -d "$GENERATION_DIR" ]]; then
+        rm -rf -- "$GENERATION_DIR"
+    fi
+}
+trap cleanup_deployment EXIT
+for filename in libScreenshaverNativeGLPlugin.so libscreenshaver.so qmldir; do
+    if [[ ! -f "${PLUGIN_DIR}/${filename}" ]]; then
+        echo "ERROR: Missing KDE lock runtime asset: ${PLUGIN_DIR}/${filename}" >&2
+        exit 1
+    fi
+    cp -- "${PLUGIN_DIR}/${filename}" "${GENERATION_DIR}/${filename}"
+done
+printf '%s\n' "$PROFILE" > "${GENERATION_DIR}/build-profile"
+ln -s -- "$(basename -- "$GENERATION_DIR")" "$NEW_LINK"
+mv -Tf -- "$NEW_LINK" "${LOCK_RUNTIME_ROOT}/current"
+# Preserve the published generation; older generations remain safe for any
+# already-running greeter and can be removed during a later maintenance pass.
+PUBLISHED_GENERATION="$GENERATION_DIR"
+GENERATION_DIR=""
+
 echo
-echo "Screenshaver KDE host STAGING build completed (not deployed):"
+echo "Screenshaver KDE host staging build and lock-screen deployment completed:"
 echo "  KScreen discovery: ${BUILD_DIR}/libScreenshaverKScreen.so"
 echo "  ${PLUGIN_DIR}"
 echo
@@ -66,3 +97,8 @@ echo
 echo "The active build-${PROFILE} directory was not modified."
 echo "Do not repoint the live QML import or copy staged libraries into"
 echo "a directory currently mapped by plasmashell."
+
+echo
+echo "Lock-screen runtime generation: ${PUBLISHED_GENERATION}"
+echo "Lock-screen runtime selection: ${LOCK_RUNTIME_ROOT}/current"
+echo "The next Screenshaver start will copy this generation into its temporary lock overlay."
