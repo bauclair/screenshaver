@@ -320,6 +320,85 @@ OnlyShowIn=MATE;'
 }
 
 # -----------------------------------------------------------------------------
+# KDE native integration cleanup
+# -----------------------------------------------------------------------------
+
+screenshaver_process_running() {
+    local proc executable name
+    for proc in /proc/[0-9]*; do
+        [[ -d "$proc" ]] || continue
+        executable="$(readlink -- "$proc/exe" 2>/dev/null || true)"
+        name="${executable##*/}"
+        case "$name" in
+            screenshaver|.screenshaver-wrapped|screenshaver\ \(deleted\)|.screenshaver-wrapped\ \(deleted\))
+                return 0 ;;
+        esac
+    done
+    return 1
+}
+
+remove_kde_native_integration() {
+    local root="${INSTALL_PREFIX}/lib/screenshaver/kde/qml/ScreenshaverNativeGL"
+    local name
+    for name in qmldir libScreenshaverNativeGLPlugin.so libscreenshaver.so; do
+        remove_file_if_present "${root}/${name}"
+    done
+    remove_empty_directory "$root"
+    remove_empty_directory "${INSTALL_PREFIX}/lib/screenshaver/kde/qml"
+    remove_empty_directory "${INSTALL_PREFIX}/lib/screenshaver/kde"
+    remove_empty_directory "${INSTALL_PREFIX}/lib/screenshaver"
+}
+
+remove_kde_development_runtime() {
+    local data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
+    local root="${data_home}/screenshaver/kde-lock-runtime"
+    local link target generation entry
+    [[ "$data_home" == /* ]] || { warn "Relative XDG_DATA_HOME: preserving KDE development runtime"; return; }
+    [[ -d "$root" && ! -L "$root" ]] || return 0
+
+    # Remove only the runtime layout published by build_kde_host.sh. Do not
+    # follow symlinks, remove unrelated files, or touch Plasma's shell overlay.
+    link="$root/current"
+    if [[ -L "$link" ]]; then
+        target="$(readlink -- "$link")"
+        if [[ "$target" == .generation-* && "$target" != */* ]]; then
+            rm -f -- "$link"
+        else
+            warn "Preserving unexpected KDE runtime selection: $link"
+            return 0
+        fi
+    elif [[ -e "$link" ]]; then
+        warn "Preserving unexpected KDE runtime selection: $link"
+        return 0
+    fi
+
+    shopt -s nullglob
+    for generation in "$root"/.generation-*; do
+        [[ -d "$generation" && ! -L "$generation" ]] || continue
+        # Avoid removing a directory that contains anything other than the
+        # exact files created by Screenshaver's runtime publisher.
+        local safe=true
+        for entry in "$generation"/* "$generation"/.[!.]* "$generation"/..?*; do
+            [[ -e "$entry" || -L "$entry" ]] || continue
+            case "${entry##*/}" in
+                qmldir|libScreenshaverNativeGLPlugin.so|libscreenshaver.so|build-profile) ;;
+                *) safe=false ;;
+            esac
+        done
+        if $safe; then
+            rm -f -- "$generation/qmldir" "$generation/libScreenshaverNativeGLPlugin.so" \
+                "$generation/libscreenshaver.so" "$generation/build-profile"
+            rmdir -- "$generation" 2>/dev/null || true
+        else
+            warn "Preserving modified KDE runtime generation: $generation"
+        fi
+    done
+    shopt -u nullglob
+    rmdir -- "$root" 2>/dev/null || true
+    rmdir -- "$data_home/screenshaver" 2>/dev/null || true
+}
+
+# -----------------------------------------------------------------------------
 # Conventional Linux uninstall
 # -----------------------------------------------------------------------------
 
@@ -463,6 +542,12 @@ verify_conventional_removal() {
         remaining=true
     fi
 
+    local kde_root="${INSTALL_PREFIX}/lib/screenshaver/kde/qml/ScreenshaverNativeGL"
+    if [[ -e "$kde_root/qmldir" || -e "$kde_root/libScreenshaverNativeGLPlugin.so" ||
+          -e "$kde_root/libscreenshaver.so" ]]; then
+        warn "One or more Screenshaver KDE native runtime assets remain installed."
+        remaining=true
+    fi
     if $remaining; then
         die "One or more Screenshaver files could not be removed."
     fi
@@ -511,8 +596,15 @@ SUCCESS
 }
 
 uninstall_conventional_linux() {
+    # KDE's temporary shell overlay is restored by Screenshaver on exit.
+    # Never remove its files while a renderer or greeter may still use them.
+    if screenshaver_process_running; then
+        die "Screenshaver is running. Stop it and verify KDE wallpaper/lock-screen restoration before uninstalling."
+    fi
     initialize_sudo
 
+    remove_kde_native_integration
+    remove_kde_development_runtime
     remove_xfce_lock_integration
     remove_mate_lock_integration
     remove_installed_binary
@@ -669,7 +761,11 @@ SUCCESS
 }
 
 uninstall_nixos() {
+    if screenshaver_process_running; then
+        die "Screenshaver is running. Stop it and verify KDE wallpaper/lock-screen restoration before uninstalling."
+    fi
     verify_nix_available
+    remove_kde_development_runtime
     remove_nixos_profile_entry
     verify_nixos_removal
     print_nixos_success

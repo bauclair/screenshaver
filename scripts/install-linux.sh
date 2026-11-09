@@ -615,7 +615,7 @@ install_build_dependencies() {
             install_rhel_dependencies
             ;;
 
-        arch|manjaro|endeavouros)
+        arch|manjaro|endeavouros|omarchy)
             install_arch_dependencies
             ;;
 
@@ -760,18 +760,20 @@ install_kde_build_dependencies() {
     if is_debian_family; then return 0; fi
 
     log "Installing KDE-native Qt6/CMake build dependencies"
-    case "$DISTRO_ID" in
-        fedora|rhel|centos|rocky|almalinux)
-            "${SUDO[@]}" dnf install -y cmake ninja-build qt6-qtbase-devel qt6-qtdeclarative-devel ;;
-        arch|manjaro|endeavouros|omarchy)
-            "${SUDO[@]}" pacman -S --needed --noconfirm cmake ninja qt6-base qt6-declarative ;;
-        opensuse-leap|opensuse-tumbleweed|sles)
-            "${SUDO[@]}" zypper --non-interactive install cmake ninja libQt6Core6-devel libQt6DBus6-devel libQt6Gui6-devel libQt6Qml6-devel libQt6Quick6-devel ;;
-        void)
-            "${SUDO[@]}" xbps-install -y cmake ninja qt6-base-devel qt6-declarative-devel ;;
-        *)
-            die "KDE-native build dependency package mapping is not verified for ${DISTRO_NAME}." ;;
-    esac
+    if [[ "$DISTRO_ID" == "fedora" || "$DISTRO_ID" == "rhel" ||
+          "$DISTRO_ID" == "centos" || "$DISTRO_ID" == "rocky" ||
+          "$DISTRO_ID" == "almalinux" ]] || is_like fedora || is_like rhel; then
+        "${SUDO[@]}" dnf install -y cmake ninja-build qt6-qtbase-devel qt6-qtdeclarative-devel
+    elif [[ "$DISTRO_ID" == "arch" || "$DISTRO_ID" == "manjaro" ||
+            "$DISTRO_ID" == "endeavouros" || "$DISTRO_ID" == "omarchy" ]] || is_like arch; then
+        "${SUDO[@]}" pacman -S --needed --noconfirm cmake ninja qt6-base qt6-declarative
+    elif [[ "$DISTRO_ID" == opensuse-* || "$DISTRO_ID" == "sles" ]] || is_like suse; then
+        "${SUDO[@]}" zypper --non-interactive install cmake ninja libQt6Core6-devel libQt6DBus6-devel libQt6Gui6-devel libQt6Qml6-devel libQt6Quick6-devel
+    elif [[ "$DISTRO_ID" == "void" ]] || is_like void; then
+        "${SUDO[@]}" xbps-install -y cmake ninja qt6-base-devel qt6-declarative-devel
+    else
+        die "KDE-native build dependency package mapping is not verified for ${DISTRO_NAME}."
+    fi
 }
 
 build_kde_native_integration() {
@@ -792,9 +794,19 @@ build_kde_native_integration() {
         die "KDE renderer shared library missing after build."
 
     log "Building the KDE Qt6 native host plugin (release)"
-    bash "${PROJECT_DIR}/kde-host/build_kde_host.sh" release "$PROJECT_DIR"
+    # The KDE host build script also publishes a user-level runtime generation
+    # for live development. An installer must NOT modify that selection: it may
+    # be in use by a running KDE greeter or development session. Redirect that
+    # side effect into a disposable build-only XDG data home instead.
+    local isolated_data_home
+    isolated_data_home="$(mktemp -d)"
+    if ! XDG_DATA_HOME="$isolated_data_home" bash "${PROJECT_DIR}/kde-host/build_kde_host.sh" release "$PROJECT_DIR"; then
+        rm -rf -- "$isolated_data_home"
+        die "KDE host release build failed."
+    fi
+    rm -rf -- "$isolated_data_home"
 
-    local module="${PROJECT_DIR}/kde-host/build-release/qml/ScreenshaverNativeGL"
+    local module="${PROJECT_DIR}/kde-host/build-staging-release/qml/ScreenshaverNativeGL"
     local name
     for name in qmldir libScreenshaverNativeGLPlugin.so libscreenshaver.so; do
         [[ -f "${module}/${name}" ]] || die "KDE native build output missing: ${module}/${name}"
@@ -803,10 +815,12 @@ build_kde_native_integration() {
 
 install_kde_native_integration() {
     $KDE_INTEGRATION || return 0
-    local source="${PROJECT_DIR}/kde-host/build-release/qml/ScreenshaverNativeGL"
+    local source="${PROJECT_DIR}/kde-host/build-staging-release/qml/ScreenshaverNativeGL"
     local destination="${INSTALL_PREFIX}/lib/screenshaver/kde/qml/ScreenshaverNativeGL"
     local name mode
-    log "Installing KDE-native screen-lock runtime assets"
+    log "Installing KDE-native production runtime assets (upgrade-safe)"
+    # The installed path remains stable across the old build-release and new
+    # build-staging-release layouts. Never install from an obsolete build tree.
     for name in qmldir libScreenshaverNativeGLPlugin.so libscreenshaver.so; do
         mode=644
         [[ "$name" == *.so ]] && mode=755
@@ -820,6 +834,13 @@ verify_kde_native_integration() {
     local name missing
     for name in qmldir libScreenshaverNativeGLPlugin.so libscreenshaver.so; do
         [[ -f "${destination}/${name}" ]] || die "Installed KDE runtime asset missing: ${destination}/${name}"
+    done
+    # Compare the installed generation to the release build; an old plugin
+    # must never silently survive an upgrade.
+    local source="${PROJECT_DIR}/kde-host/build-staging-release/qml/ScreenshaverNativeGL"
+    for name in qmldir libScreenshaverNativeGLPlugin.so libscreenshaver.so; do
+        cmp -s -- "${source}/${name}" "${destination}/${name}" ||
+            die "Installed KDE asset differs from the current release build: ${name}"
     done
     if command -v ldd >/dev/null 2>&1; then
         for name in libScreenshaverNativeGLPlugin.so libscreenshaver.so; do
@@ -1127,6 +1148,9 @@ verify_conventional_installation() {
     verify_shared_libraries
     verify_libdecor_linkage
     verify_kde_native_integration
+    if $KDE_INTEGRATION; then
+        log "KDE production runtime verified under ${INSTALL_PREFIX}/lib/screenshaver/kde"
+    fi
 
     if $XFCE_INTEGRATION; then
         if resolve_xfce_saver_directory; then
