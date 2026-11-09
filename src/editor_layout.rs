@@ -5480,6 +5480,9 @@ impl EditWindowOverlay {
         self.bloom_intensity =
             baseline.bloom_intensity;
 
+        self.bloom_saturation =
+            baseline.bloom_saturation;
+
         self.bloom_threshold =
             baseline.bloom_threshold;
         self.bloom_frequency_rotation =
@@ -5513,6 +5516,9 @@ impl EditWindowOverlay {
             None;
 
         self.bloom_intensity_drag_state =
+            None;
+
+        self.bloom_saturation_drag_state =
             None;
 
         self.bloom_threshold_drag_state =

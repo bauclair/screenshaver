@@ -70,7 +70,7 @@ Conventional Linux installation may install:
   * OpenGL development libraries
   * Wayland, EGL, and libdecor development libraries
   * Clang, PAM, and OpenSSL development libraries
-  * Qt6 and CMake build dependencies on KDE Plasma
+  * Qt6, KDE Frameworks 6 KScreen, and CMake dependencies on KDE Plasma
   * Ayatana indicator integration on Debian-family MATE desktops
   * rustup, Cargo, and the stable Rust toolchain
 
@@ -339,7 +339,8 @@ install_debian_dependencies() {
             cmake \
             ninja-build \
             qt6-base-dev \
-            qt6-declarative-dev
+            qt6-declarative-dev \
+            libkscreen-dev
     fi
 }
 
@@ -754,6 +755,69 @@ build_application() {
 # KDE Plasma native lock-screen presenter (conventional distributions)
 # -----------------------------------------------------------------------------
 
+# Resolve KDE KScreen development package names against enabled repositories.
+# Different distro releases may use different names; never silently omit KF6Screen.
+install_kde_kscreen_package() {
+    local manager="$1"; shift
+    local candidate
+    case "$manager" in
+        dnf)
+            for candidate in "$@"; do
+                if dnf -q repoquery --available --qf '%{name}' "$candidate" 2>/dev/null | grep -Fxq "$candidate" ||
+                   rpm -q "$candidate" >/dev/null 2>&1; then
+                    "${SUDO[@]}" dnf install -y "$candidate"
+                    return 0
+                fi
+            done
+            ;;
+        pacman)
+            for candidate in "$@"; do
+                if pacman -Si "$candidate" >/dev/null 2>&1 || pacman -Q "$candidate" >/dev/null 2>&1; then
+                    "${SUDO[@]}" pacman -S --needed --noconfirm "$candidate"
+                    return 0
+                fi
+            done
+            ;;
+        zypper)
+            for candidate in "$@"; do
+                if rpm -q "$candidate" >/dev/null 2>&1 ||
+                   zypper --non-interactive search --match-exact --type package "$candidate" 2>/dev/null | grep -Eq "^[[:space:]]*[i |]*[|][[:space:]]*${candidate}[[:space:]]*[|]"; then
+                    "${SUDO[@]}" zypper --non-interactive install "$candidate"
+                    return 0
+                fi
+            done
+            ;;
+        xbps)
+            for candidate in "$@"; do
+                if xbps-query -Rs "^${candidate}$" 2>/dev/null | grep -Fq "$candidate" ||
+                   xbps-query -p pkgver "$candidate" >/dev/null 2>&1; then
+                    "${SUDO[@]}" xbps-install -y "$candidate"
+                    return 0
+                fi
+            done
+            ;;
+    esac
+    die "KDE Plasma was detected, but no KF6Screen development package was found in enabled ${DISTRO_NAME} repositories. Tried: $*. Verify that KDE Frameworks 6 development repositories are enabled."
+}
+
+# Fail before the expensive Rust build if the KDE CMake dependency is absent.
+verify_kde_kscreen_cmake() {
+    $KDE_INTEGRATION || return 0
+    local probe_dir
+    probe_dir="$(mktemp -d)"
+    cat > "${probe_dir}/CMakeLists.txt" <<'CMAKE_EOF'
+cmake_minimum_required(VERSION 3.21)
+project(ScreenshaverKScreenDependencyCheck LANGUAGES CXX)
+find_package(Qt6 REQUIRED COMPONENTS Core DBus Gui Qml Quick)
+find_package(KF6Screen REQUIRED)
+CMAKE_EOF
+    if ! cmake -S "$probe_dir" -B "${probe_dir}/build"; then
+        rm -rf -- "$probe_dir"
+        die "KDE build dependency preflight failed. Qt6 and KF6Screen must be discoverable by CMake before compiling Screenshaver."
+    fi
+    rm -rf -- "$probe_dir"
+}
+
 install_kde_build_dependencies() {
     $KDE_INTEGRATION || return 0
     # Debian-family packages are installed with the base dependencies above.
@@ -764,13 +828,17 @@ install_kde_build_dependencies() {
           "$DISTRO_ID" == "centos" || "$DISTRO_ID" == "rocky" ||
           "$DISTRO_ID" == "almalinux" ]] || is_like fedora || is_like rhel; then
         "${SUDO[@]}" dnf install -y cmake ninja-build qt6-qtbase-devel qt6-qtdeclarative-devel
+        install_kde_kscreen_package dnf libkscreen-qt6-devel libkscreen-devel
     elif [[ "$DISTRO_ID" == "arch" || "$DISTRO_ID" == "manjaro" ||
             "$DISTRO_ID" == "endeavouros" || "$DISTRO_ID" == "omarchy" ]] || is_like arch; then
         "${SUDO[@]}" pacman -S --needed --noconfirm cmake ninja qt6-base qt6-declarative
+        install_kde_kscreen_package pacman libkscreen
     elif [[ "$DISTRO_ID" == opensuse-* || "$DISTRO_ID" == "sles" ]] || is_like suse; then
         "${SUDO[@]}" zypper --non-interactive install cmake ninja libQt6Core6-devel libQt6DBus6-devel libQt6Gui6-devel libQt6Qml6-devel libQt6Quick6-devel
+        install_kde_kscreen_package zypper libkscreen6-devel libkscreen-qt6-devel
     elif [[ "$DISTRO_ID" == "void" ]] || is_like void; then
         "${SUDO[@]}" xbps-install -y cmake ninja qt6-base-devel qt6-declarative-devel
+        install_kde_kscreen_package xbps libkscreen-devel libkscreen-qt6-devel
     else
         die "KDE-native build dependency package mapping is not verified for ${DISTRO_NAME}."
     fi
@@ -785,7 +853,6 @@ build_kde_native_integration() {
     [[ -f "${PROJECT_DIR}/kde-host/build_kde_host.sh" ]] ||
         die "KDE host build script is missing."
 
-    install_kde_build_dependencies
     command -v cmake >/dev/null 2>&1 || die "CMake unavailable after KDE dependency installation."
 
     log "Building the KDE native Rust renderer (release)"
@@ -811,6 +878,8 @@ build_kde_native_integration() {
     for name in qmldir libScreenshaverNativeGLPlugin.so libscreenshaver.so; do
         [[ -f "${module}/${name}" ]] || die "KDE native build output missing: ${module}/${name}"
     done
+    [[ -f "${PROJECT_DIR}/kde-host/build-staging-release/libScreenshaverKScreen.so" ]] ||
+        die "KDE KScreen discovery library was not produced by the release build."
 }
 
 install_kde_native_integration() {
@@ -826,6 +895,10 @@ install_kde_native_integration() {
         [[ "$name" == *.so ]] && mode=755
         "${SUDO[@]}" install -Dm"$mode" "${source}/${name}" "${destination}/${name}"
     done
+    # KScreen discovery is a separate native bridge, built at the CMake root.
+    "${SUDO[@]}" install -Dm755 \
+        "${PROJECT_DIR}/kde-host/build-staging-release/libScreenshaverKScreen.so" \
+        "${INSTALL_PREFIX}/lib/screenshaver/kde/libScreenshaverKScreen.so"
 }
 
 verify_kde_native_integration() {
@@ -835,6 +908,11 @@ verify_kde_native_integration() {
     for name in qmldir libScreenshaverNativeGLPlugin.so libscreenshaver.so; do
         [[ -f "${destination}/${name}" ]] || die "Installed KDE runtime asset missing: ${destination}/${name}"
     done
+    local kscreen_source="${PROJECT_DIR}/kde-host/build-staging-release/libScreenshaverKScreen.so"
+    local kscreen_destination="${INSTALL_PREFIX}/lib/screenshaver/kde/libScreenshaverKScreen.so"
+    [[ -f "$kscreen_destination" ]] || die "Installed KScreen discovery library missing: $kscreen_destination"
+    cmp -s -- "$kscreen_source" "$kscreen_destination" ||
+        die "Installed KScreen discovery library differs from the current release build."
     # Compare the installed generation to the release build; an old plugin
     # must never silently survive an upgrade.
     local source="${PROJECT_DIR}/kde-host/build-staging-release/qml/ScreenshaverNativeGL"
@@ -847,6 +925,8 @@ verify_kde_native_integration() {
             missing="$(ldd "${destination}/${name}" 2>/dev/null | awk '/not found/ { print $1 }')"
             [[ -z "$missing" ]] || die "Unresolved KDE runtime libraries for ${name}: ${missing}"
         done
+        missing="$(ldd "$kscreen_destination" 2>/dev/null | awk '/not found/ { print $1 }')"
+        [[ -z "$missing" ]] || die "Unresolved KScreen discovery libraries: ${missing}"
     fi
 }
 
@@ -1202,6 +1282,10 @@ install_conventional_linux() {
     validate_runtime_assets
     install_build_dependencies
     verify_gnome_extension_prerequisite
+    if $KDE_INTEGRATION; then
+        install_kde_build_dependencies
+        verify_kde_kscreen_cmake
+    fi
     install_rust_toolchain
     build_application
     build_kde_native_integration
