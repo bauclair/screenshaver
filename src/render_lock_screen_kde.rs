@@ -205,12 +205,15 @@ unsafe fn create_wallpaper_renderer(
     if width <= 0 || height <= 0 {
         return Err(format!("Invalid KDE wallpaper render size: {width}x{height}"));
     }
+    eprintln!("[KDE INIT DIAG] wallpaper A: entering GL loader");
     load_gl(loader)?;
+    eprintln!("[KDE INIT DIAG] wallpaper B: GL loader complete");
 
     let config_path = crate::locate_paths::config_path();
     let cfg = crate::load_config::load_config(&config_path)
         .map_err(|error| format!("Unable to load KDE wallpaper configuration: {error}"))?
         .config;
+    eprintln!("[KDE INIT DIAG] wallpaper C: configuration loaded");
     if !cfg.wallpaper_enabled {
         return Err("Screenshaver wallpaper is disabled in configuration".to_string());
     }
@@ -231,6 +234,7 @@ unsafe fn create_wallpaper_renderer(
             source_path,
         ));
     }
+    eprintln!("[KDE INIT DIAG] wallpaper D: {} usable policy files", entries.len());
     if entries.is_empty() {
         return Err("No available KDE wallpaper shader policies".to_string());
     }
@@ -244,6 +248,7 @@ unsafe fn create_wallpaper_renderer(
             entries,
             crate::manage_shader::OrderedTarget::Wallpaper,
         );
+    eprintln!("[KDE INIT DIAG] wallpaper E: entering FrameRenderEngine constructor");
     let engine = crate::render_frame_engine::FrameRenderEngine::new_for_wallpaper(
         shader_manager,
         &managed_directory,
@@ -259,6 +264,7 @@ unsafe fn create_wallpaper_renderer(
         width as u32,
         height as u32,
     )?;
+    eprintln!("[KDE INIT DIAG] wallpaper F: FrameRenderEngine constructed");
     Ok(Box::into_raw(Box::new(KdeFrameRenderer { engine })))
 }
 
@@ -361,6 +367,39 @@ pub unsafe extern "C" fn screenshaver_kde_gl_render(
 ) -> bool {
     match unsafe { render_frame(renderer, width, height) } {
         Ok(()) => true,
+        Err(error) => {
+            set_last_error(error);
+            false
+        }
+    }
+}
+
+// Wallpaper-only transactional policy reload. The SDL/Qt OpenGL context stays
+// current and unchanged. Construct the replacement before retiring the old
+// engine; if configuration or shader initialization fails, keep the old engine.
+// This operation must be called on the renderer's OpenGL thread.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn screenshaver_kde_gl_reload_wallpaper(
+    renderer: *mut KdeFrameRenderer,
+    loader: Option<GlProcLoader>,
+    width: i32,
+    height: i32,
+) -> bool {
+    clear_last_error();
+    if renderer.is_null() {
+        set_last_error("Cannot reload a null KDE wallpaper renderer");
+        return false;
+    }
+    match unsafe { create_wallpaper_renderer(loader, width, height) } {
+        Ok(replacement) => {
+            // Keep the original opaque handle stable for the producer.
+            // Only the engine is replaced, after successful construction.
+            let replacement = unsafe { Box::from_raw(replacement) };
+            let original = unsafe { &mut *renderer };
+            let old_engine = std::mem::replace(&mut original.engine, replacement.engine);
+            drop(old_engine);
+            true
+        }
         Err(error) => {
             set_last_error(error);
             false

@@ -1265,6 +1265,108 @@ fn verify_abandoned_legacy_pause(old: &HandoffJournal) -> Result<(), String> {
     Ok(())
 }
 
+/// Batch 7F-B: withdraw an abandoned production grant without reauthorizing
+/// legacy rendering. This is a transaction-locked recovery operation, not a
+/// general-purpose grant removal API. The original pause requester must be
+/// gone and the active marker absent. A live original Plasma generation must
+/// match the requested target; a retired generation can be withdrawn only
+/// after its process identity has been independently checked.
+/// The retained journal and pause are NEVER removed by this function.
+/// Returns true only when this call withdrew the matching grant. A previously
+/// withdrawn grant returns false; its revocation ACK must still be verified.
+pub(crate) fn withdraw_abandoned_native_grant(
+    expected: &crate::manage_wallpaper_ownership::PlasmaInstance,
+) -> Result<bool, String> {
+    let lock_path = required_path(TRANSACTION_LOCK_FILE)?;
+    let lock_meta = fs::symlink_metadata(&lock_path)
+        .map_err(|e| format!("Cannot inspect existing transaction lock: {e}"))?;
+    if !lock_meta.file_type().is_file() {
+        return Err("Transaction lock is not a regular file".into());
+    }
+    let lock = OpenOptions::new().read(true).write(true).open(&lock_path)
+        .map_err(|e| format!("Cannot open transaction lock: {e}"))?;
+    lock.try_lock_exclusive()
+        .map_err(|e| format!("Abandoned transaction is still owned: {e}"))?;
+
+    let old = read_handoff_journal()?.ok_or("Missing abandoned handoff journal")?;
+    // Cross-generation recovery: the requested replacement target must be a
+    // live Plasma process. An existing original generation can only be
+    // withdrawn through the same-generation path; a retired original may be
+    // withdrawn without its (now impossible) revocation ACK. Neither case
+    // authorizes the legacy renderer to resume.
+    if process_start_ticks(expected.pid)? != Some(expected.start_ticks) {
+        return Err("Replacement target Plasma process identity is not live".into());
+    }
+    let original_ticks = process_start_ticks(old.native.pid)?;
+    let original_live = original_ticks == Some(old.native.start_ticks);
+    if original_live && (old.native.pid != expected.pid
+        || old.native.start_ticks != expected.start_ticks)
+    {
+        return Err("Original Plasma generation remains live; cross-generation withdrawal forbidden".into());
+    }
+    let pause_path = required_path(PAUSE_REQUEST_FILE)?;
+    let pause_meta = fs::symlink_metadata(&pause_path)
+        .map_err(|e| format!("Cannot inspect abandoned legacy pause: {e}"))?;
+    if !pause_meta.file_type().is_file()
+        || fs::read(&pause_path).map_err(|e| e.to_string())?
+            != format!("{}\n", old.pause_token).as_bytes()
+    {
+        return Err("Abandoned legacy pause does not match journal".into());
+    }
+    // Even a surviving pause ACK is insufficient to prove abandonment.
+    // Refuse recovery if the original requester PID is still allocated.
+    let origin = old.pause_token.split('-').next()
+        .ok_or("Missing pause origin PID")?;
+    let origin_pid: u32 = origin.parse()
+        .map_err(|_| "Invalid pause origin PID")?;
+    if origin_pid == 0 || origin_pid.to_string() != origin {
+        return Err("Noncanonical pause origin PID".into());
+    }
+    if process_start_ticks(origin_pid)?.is_some() {
+        return Err("Original legacy pause requester is still alive".into());
+    }
+    let active_path = required_path(ACTIVE_FILE)?;
+    match fs::symlink_metadata(&active_path) {
+        Ok(_) => return Err("Legacy active marker still exists; refusing abandoned withdrawal".into()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
+        Err(e) => return Err(format!("Cannot inspect legacy active marker: {e}")),
+    }
+    verify_abandoned_legacy_pause(&old)?;
+    let grant_path = required_path(NATIVE_GRANT_FILE)?;
+    let grant_meta = match fs::symlink_metadata(&grant_path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // Idempotent only with matching, verified revocation evidence.
+            verify_native_revocation(&grant_path, &required_path(NATIVE_REVOKED_FILE)?, &old.native)?;
+            return Ok(false);
+        }
+        Err(e) => return Err(format!("Cannot inspect abandoned native grant: {e}")),
+        Ok(meta) => meta,
+    };
+    if !grant_meta.file_type().is_file() {
+        return Err("Abandoned native grant is not a regular file".into());
+    }
+    if NativeOwnershipRecord::decode(&fs::read(&grant_path)
+        .map_err(|e| format!("Cannot read abandoned native grant: {e}"))?)? != old.native
+    {
+        return Err("Refusing to withdraw a different native transaction".into());
+    }
+    if read_handoff_journal()?.as_ref() != Some(&old)
+        || process_start_ticks(expected.pid)? != Some(expected.start_ticks)
+        || process_start_ticks(old.native.pid)? != original_ticks
+    {
+        return Err("Abandoned transaction or Plasma identity changed before withdrawal".into());
+    }
+    fs::remove_file(&grant_path)
+        .map_err(|e| format!("Cannot withdraw abandoned native grant: {e}"))?;
+    File::open(grant_path.parent().ok_or("Native grant parent missing")?)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|e| format!("Cannot sync withdrawn native grant directory: {e}"))?;
+    // The transaction lock is held through the unlink and directory sync.
+    // No ACK, node retirement, or compositor quiescence is inferred here.
+    drop(lock);
+    Ok(true)
+}
+
 /// Replace a withdrawn native generation without releasing the legacy pause.
 /// This is deliberately separate from legacy reauthorization. The old process
 /// must be gone, or its exact GL revocation ACK must be present.
@@ -2169,7 +2271,11 @@ fn inspect_native_presentations() -> Result<Vec<NativePresentationObservation>, 
         // that native GL has stopped. Do not delete it automatically.
         let current_ticks = process_start_ticks(pid)?;
         if current_ticks != Some(ticks) {
-            return Err(format!("Stale native presentation record: {name}"));
+            // A verified nonmatching process generation cannot supply a live
+            // wallpaper monitor. Preserve its record for forensic recovery,
+            // but do not let it poison discovery of the replacement Plasma.
+            // process_start_ticks errors still fail closed above.
+            continue;
         }
         if fields[3] == "wallpaper" {
             observations.push(NativePresentationObservation {
@@ -2429,6 +2535,59 @@ fn recovery_prerequisite(
     }
 }
 
+// Batch 7F-D: transaction-scoped classification of durable retirement
+// evidence.  This is NOT compositor quiescence or permission to resume.
+fn classify_retirement_commit(
+    expected: &HandoffJournal,
+    committed: Option<&HandoffJournal>,
+) -> &'static str {
+    match committed {
+        None => "absent",
+        Some(actual) if actual == expected => "exact_transaction_match_observation_only",
+        Some(_) => "different_transaction_blocking",
+    }
+}
+
+// Batch 7F-E: explicit fail-closed retirement gate.  A transaction-matched
+// commit and native revocation are necessary, but not sufficient: KWin may
+// still be presenting a previously submitted frame.  Until the compositor
+// supplies a verified quiescence certificate for this exact transaction,
+// automatic retirement must remain unavailable.  This pure predicate keeps
+// the boundary independently testable and prevents accidental promotion of
+// the single-node observation into a compositor-wide release certificate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProductionRetirementGate {
+    MissingOrMismatchedCommit,
+    NativeRevocationUnverified,
+    CompositorQuiescenceUnverified,
+}
+
+impl ProductionRetirementGate {
+    fn label(self) -> &'static str {
+        match self {
+            Self::MissingOrMismatchedCommit => "missing_or_mismatched_retirement_commit",
+            Self::NativeRevocationUnverified => "native_revocation_unverified",
+            Self::CompositorQuiescenceUnverified => "compositor_quiescence_unverified",
+        }
+    }
+}
+
+fn production_retirement_gate(
+    expected: &HandoffJournal,
+    committed: Option<&HandoffJournal>,
+    revocation_verified: bool,
+) -> ProductionRetirementGate {
+    if committed != Some(expected) {
+        ProductionRetirementGate::MissingOrMismatchedCommit
+    } else if !revocation_verified {
+        ProductionRetirementGate::NativeRevocationUnverified
+    } else {
+        // There is no trusted compositor-quiescence certificate in the
+        // current Rust/C++ protocol.  No marker deletion or latch release.
+        ProductionRetirementGate::CompositorQuiescenceUnverified
+    }
+}
+
 /// Production read-only assessment of an interrupted native wallpaper handoff.
 /// This is diagnostic evidence, NEVER a release authorization. In particular,
 /// native revocation ACK and absence of a grant do not prove scene retirement.
@@ -2498,13 +2657,29 @@ pub(crate) fn assess_production_handoff_recovery() -> String {
             Ok(value) => value,
             Err(error) => format!("unverified({error})"),
         };
+        // Batch 7F-D: correlate durable retirement evidence with the *exact*
+        // handoff generation.  A commit from a previous generation is not a
+        // retirement decision for the current journal, even if its pause token
+        // happens to match.  This assessment is strictly read-only.
+        let retirement_correlation = classify_retirement_commit(
+            &journal, retirement.as_ref());
+        let retirement_gate = production_retirement_gate(
+            &journal, retirement.as_ref(), revocation_verified);
+        // Recheck the journal and pause after gathering the evidence.  The
+        // transaction lock is held, but Plasma may publish independent scene
+        // observations concurrently; no observation authorizes rendering.
+        if read_handoff_journal()?.as_ref() != Some(&journal)
+            || read_marker(PAUSE_REQUEST_FILE)?.as_deref()
+                != Some(journal.pause_token.as_str()) {
+            return Err("Handoff transaction changed during retirement assessment".into());
+        }
         // A matching ACK alone is intentionally insufficient to authorize
         // legacy frames or marker retirement.
         Ok(format!(
-            "pause_token={}; native_token={}; plasma_pid={}; plasma_start_ticks={}; plasma_identity={}; old_process_retired={}; grant_present={}; revocation={}; native_presentations={presentation:?}; scene_retirement={scene_retirement}; retirement_commit_present={}; compositor_quiescence=unverified; recovery_prerequisite={}; decision=inspection_only_no_resume_no_marker_retirement",
+            "pause_token={}; native_token={}; plasma_pid={}; plasma_start_ticks={}; plasma_identity={}; old_process_retired={}; grant_present={}; revocation={}; native_presentations={presentation:?}; scene_retirement={scene_retirement}; retirement_commit_present={}; retirement_commit_correlation={}; retirement_gate={}; compositor_quiescence=unverified; recovery_prerequisite={}; decision=inspection_only_no_resume_no_marker_retirement",
             journal.pause_token, journal.native.token, journal.native.pid,
             journal.native.start_ticks, identity, generation.old_process_retired(), grant, revocation,
-            retirement.is_some(), prerequisite.label(),
+            retirement.is_some(), retirement_correlation, retirement_gate.label(), prerequisite.label(),
         ))
     }
     match inspect() {
@@ -5006,6 +5181,50 @@ pub(crate) fn run_protocol_tests() -> Result<(), String> {
         })();
         let _ = fs::remove_file(&path);
         result
+    })(), &mut failures);
+
+    check("Batch 7F-D: retirement commit correlation is transaction-scoped", (|| {
+        let native = native_identity();
+        let expected = HandoffJournal {
+            pause_token: "123-456-1".to_owned(), native: native.clone(),
+        };
+        ensure(classify_retirement_commit(&expected, None) == "absent",
+            "Missing commit must not be interpreted as retirement")?;
+        ensure(classify_retirement_commit(&expected, Some(&expected))
+            == "exact_transaction_match_observation_only",
+            "Matching commit classification failed")?;
+        let mut other = expected.clone();
+        other.native.token = "ffffffffffffffffffffffffffffffff".to_owned();
+        ensure(classify_retirement_commit(&expected, Some(&other))
+            == "different_transaction_blocking",
+            "Stale native generation commit was accepted")?;
+        other = expected.clone();
+        other.pause_token = "123-456-2".to_owned();
+        ensure(classify_retirement_commit(&expected, Some(&other))
+            == "different_transaction_blocking",
+            "Stale pause transaction commit was accepted")?;
+        Ok(())
+    })(), &mut failures);
+
+    check("Batch 7F-E: production retirement never infers compositor quiescence", (|| {
+        let expected = HandoffJournal {
+            pause_token: "123-456-1".to_owned(), native: native_identity(),
+        };
+        let mut stale = expected.clone();
+        stale.native.token = "ffffffffffffffffffffffffffffffff".to_owned();
+        ensure(production_retirement_gate(&expected, None, true)
+            == ProductionRetirementGate::MissingOrMismatchedCommit,
+            "Missing commit permitted retirement")?;
+        ensure(production_retirement_gate(&expected, Some(&stale), true)
+            == ProductionRetirementGate::MissingOrMismatchedCommit,
+            "Stale commit permitted retirement")?;
+        ensure(production_retirement_gate(&expected, Some(&expected), false)
+            == ProductionRetirementGate::NativeRevocationUnverified,
+            "Missing revocation permitted retirement")?;
+        ensure(production_retirement_gate(&expected, Some(&expected), true)
+            == ProductionRetirementGate::CompositorQuiescenceUnverified,
+            "Commit plus ACK incorrectly certified compositor quiescence")?;
+        Ok(())
     })(), &mut failures);
 
     check("Native scene retirement: canonical C++ record and matching node", (|| {

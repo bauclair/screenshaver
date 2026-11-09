@@ -1,6 +1,7 @@
 # Rust
 /target/
 /kde-renderer/target/
+/kde-wallpaper-producer/target/
 **/*.rs.bk
 
 # Nix

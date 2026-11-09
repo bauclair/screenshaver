@@ -318,15 +318,32 @@ fn observe_native_activation_during_attempt(
                         // process. The retained pause/journal remain blocking
                         // until the separate production retirement path exists.
                         match granted.withdraw_production_grant(|| live_plasma_instance(&plasma)) {
-                            Ok(()) => match granted.verify_production_revocation_ack(
-                                || live_plasma_instance(&plasma)
-                            ) {
-                                Ok(()) => crate::logger::information(&logfile,
-                                    "[KDE NATIVE COORDINATOR] native GL revoked; legacy pause retained pending compositor retirement"),
-                                Err(error) => crate::logger::error(&logfile, &format!(
-                                    "[KDE NATIVE COORDINATOR] revocation ACK unverified: {error}; legacy remains blocked"
-                                )),
-                            },
+                            Ok(()) => {
+                                crate::logger::information(&logfile,
+                                    "[KDE NATIVE COORDINATOR] native grant withdrawn; awaiting transaction-matched revocation ACK; legacy pause retained");
+                                // The Qt GUI watcher polls at 50ms. An immediate
+                                // verification races that watcher, so wait for a
+                                // bounded interval. Never infer ACK from timeout.
+                                let deadline = Instant::now() + Duration::from_secs(2);
+                                loop {
+                                    match granted.verify_production_revocation_ack(
+                                        || live_plasma_instance(&plasma)
+                                    ) {
+                                        Ok(()) => {
+                                            crate::logger::information(&logfile,
+                                                "[KDE NATIVE COORDINATOR] native GL revoked; legacy pause retained pending compositor retirement");
+                                            break;
+                                        }
+                                        Err(error) if Instant::now() >= deadline => {
+                                            crate::logger::error(&logfile, &format!(
+                                                "[KDE NATIVE COORDINATOR] revocation ACK unverified after 2s: {error}; legacy remains blocked"
+                                            ));
+                                            break;
+                                        }
+                                        Err(_) => std::thread::sleep(Duration::from_millis(25)),
+                                    }
+                                }
+                            }
                             Err(error) => crate::logger::error(&logfile, &format!(
                                 "[KDE NATIVE COORDINATOR] native withdrawal unverified: {error}; legacy remains blocked"
                             )),
@@ -372,6 +389,21 @@ fn recover_native_wallpaper_while_legacy_blocked(
         if let Some(plasma) = target {
             if matches!(crate::control_wallpaper::assess_native_handoff_preflight(&plasma),
                 crate::control_wallpaper::NativePresentationPreflight::Candidate { .. }) {
+                // Recover a stranded grant before replacement. This operation
+                // holds the transaction lock and refuses to act while the old
+                // requester is alive. The legacy pause/journal remain intact.
+                if let Err(error) = crate::control_wallpaper::withdraw_abandoned_native_grant(&plasma) {
+                    let reason = format!("abandoned withdrawal pending: {error}");
+                    if reason != last {
+                        crate::logger::warning(logfile, &format!(
+                            "[KDE NATIVE COORDINATOR] {reason}; legacy remains blocked"));
+                        last = reason;
+                    }
+                    std::thread::sleep(Duration::from_millis(250));
+                    continue;
+                }
+                // A withdrawn grant is not a revocation ACK. The replacement
+                // function independently requires exact ACK + absent grant.
                 match fresh_native_transaction_token().and_then(|token|
                     crate::control_wallpaper::replace_native_generation(&token, &plasma)) {
                     Ok(()) => {
@@ -1157,6 +1189,43 @@ impl WallpaperRuntimeManager {
         }
 
 
+        // Plasma full-screen wallpapers are presented inside Plasma itself.
+        // Never enter the legacy Wayland layer-shell/native-grant path here.
+        let kde_plasma = runtime.display_format
+            == crate::manage_configuration::WallpaperDisplayFormat::FullScreen
+            && std::env::var("XDG_SESSION_TYPE")
+                .map(|v| v.eq_ignore_ascii_case("wayland")).unwrap_or(false)
+            && std::env::var("XDG_CURRENT_DESKTOP")
+                .map(|v| v.split(':').any(|part| part.eq_ignore_ascii_case("KDE")))
+                .unwrap_or(false);
+        crate::logger::information(&logfile, &format!(
+            "[KDE WALLPAPER STARTUP] enabled={enabled} format={:?} session={} desktop={} kde_branch={kde_plasma}",
+            runtime.display_format,
+            std::env::var("XDG_SESSION_TYPE").unwrap_or_default(),
+            std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default(),
+        ));
+        if kde_plasma {
+            let thread_running = Arc::clone(&running);
+            let thread_logfile = logfile.clone();
+            let thread_control = control.clone();
+            let thread = std::thread::Builder::new()
+                .name("screenshaver-kde-wallpaper".to_owned())
+                .spawn(move || {
+                    if let Err(error) = run_kde_plasma_wallpaper(
+                        &thread_running, &thread_control, &thread_logfile,
+                    ) {
+                        crate::logger::error(&thread_logfile,
+                            &format!("[KDE WALLPAPER] Independent producer unavailable: {error}"));
+                    }
+                });
+            return Self {
+                running, control,
+                thread: thread.ok(),
+                ownership_observer: None,
+                ownership_events: None,
+            };
+        }
+
         crate::logger::information(
             &logfile,
             &crate::manage_localization::runtime_text("wallpaper.runtime.starting"),
@@ -1205,8 +1274,30 @@ impl WallpaperRuntimeManager {
                             crate::logger::warning(&logfile,
                                 &crate::control_wallpaper::assess_production_handoff_recovery());
                             let _ = thread_ownership_sender.send(WallpaperOwnershipEvent::SupervisorStarted);
-                            if runtime.display_format == crate::manage_configuration::WallpaperDisplayFormat::FullScreen {
-                                recover_native_wallpaper_while_legacy_blocked(&thread_running, &logfile);
+                            // The replacement Plasma process cannot expose an
+                            // ownership monitor until its Screenshaver wallpaper
+                            // component has been selected. Keep this guard alive
+                            // for the entire blocked recovery attempt so its
+                            // original wallpaper selection is restored on exit.
+                            // Never start the legacy renderer in this branch.
+                            let kde_recovery_session = runtime.display_format
+                                == crate::manage_configuration::WallpaperDisplayFormat::FullScreen
+                                && std::env::var("XDG_SESSION_TYPE")
+                                    .map(|value| value.eq_ignore_ascii_case("wayland"))
+                                    .unwrap_or(false)
+                                && std::env::var("XDG_CURRENT_DESKTOP")
+                                    .map(|value| value.split(':').any(|part| part.eq_ignore_ascii_case("KDE")))
+                                    .unwrap_or(false);
+                            if kde_recovery_session {
+                                match crate::manage_wallpaper_kde::KdeWallpaperIntegrationGuard::activate() {
+                                    Ok(_recovery_guard) => {
+                                        crate::logger::information(&logfile,
+                                            "[KDE NATIVE COORDINATOR] recovery wallpaper selection verified; replacing dead Plasma generation with legacy paused");
+                                        recover_native_wallpaper_while_legacy_blocked(&thread_running, &logfile);
+                                    }
+                                    Err(error) => crate::logger::error(&logfile, &format!(
+                                        "[KDE NATIVE COORDINATOR] recovery wallpaper activation unverified; legacy remains blocked: {error}")),
+                                }
                             }
                             let _ = thread_ownership_sender.send(WallpaperOwnershipEvent::SupervisorStopped);
                             return;
@@ -1401,7 +1492,7 @@ impl WallpaperRuntimeManager {
                             if let Ok(handle) = coordinator {
                                 if handle.join().is_err() {
                                     crate::logger::warning(&logfile,
-                                        "[KDE NATIVE COORDINATOR] observer panicked; no ownership was issued");
+                                        "[KDE NATIVE COORDINATOR] coordinator panicked; grant publication and withdrawal status UNKNOWN; durable ownership evidence must be verified; legacy resume forbidden");
                                 }
                             }
 
@@ -1611,3 +1702,222 @@ impl Drop for WallpaperRuntimeManager {
     }
 }
 
+
+/// Dedicated Plasma presentation lifecycle. Producer starts before selection;
+/// the original Plasma wallpaper is restored before producer termination.
+fn run_kde_plasma_wallpaper(
+    running: &AtomicBool,
+    control: &WallpaperRuntimeControl,
+    logfile: &std::path::Path,
+) -> Result<(), String> {
+    use std::time::{Duration, Instant};
+    let settings = crate::kde_producer_supervisor::ProducerSettings::from_environment()?;
+    crate::logger::information(logfile, &format!(
+        "[KDE WALLPAPER STARTUP] producer={} renderer={} geometry={}x{} fps={}",
+        settings.executable.display(), settings.library.display(),
+        settings.width, settings.height, settings.fps,
+    ));
+    let mut producer = crate::kde_producer_supervisor::ProducerSupervisor::start(&settings)?;
+    crate::logger::information(logfile, "[KDE WALLPAPER STARTUP] producer published frames; activating Plasma wallpaper");
+    let runtime_dir = settings.frame_file.parent().ok_or("Frame file has no parent")?;
+    let ack_path = runtime_dir.join("screenshaver-plasma-presenter.ready");
+    // An old ACK cannot be accepted for the new producer inode. Removing it
+    // is unnecessary and could interfere with another Plasma instance.
+    let mut accepted_sequence = None;
+    let mut accepted_pid = None;
+    let guard = crate::manage_wallpaper_kde::KdeWallpaperIntegrationGuard::activate_with_readiness(|| {
+        let deadline = Instant::now() + Duration::from_secs(12);
+        let mut reason = "No presenter ACK received".to_owned();
+        while running.load(Ordering::SeqCst) && Instant::now() < deadline {
+            match verify_live_plasma_presenter(
+                &ack_path, producer.frame_file(), accepted_pid,
+                accepted_sequence, Duration::from_secs(3),
+            ) {
+                Ok(ack) => {
+                    accepted_sequence = Some(ack.sequence);
+                    accepted_pid = Some(ack.pid);
+                    return Ok(());
+                }
+                Err(error) => reason = error,
+            }
+            std::thread::sleep(Duration::from_millis(80));
+        }
+        Err(format!("Plasma presenter did not acknowledge the producer: {reason}"))
+    })?;
+    control.active.store(true, Ordering::SeqCst);
+    crate::logger::information(logfile,
+        "[KDE WALLPAPER] Plasma presenter acknowledged independent producer");
+    let mut guard = guard;
+    let mut failure = None;
+    // KDE owns its producer directly: never consult the legacy Wayland
+    // frame/ownership gate. Observe the same external pause request that
+    // the other wallpaper renderer uses, and acknowledge only completed
+    // producer transitions (not merely requests).
+    let mut producer_paused = false;
+    // ACKs are rate-limited by the presenter to once per second. Allow a
+    // bounded interval for low frame rates and scheduling jitter.
+    let mut last_presenter_progress = Instant::now();
+    while running.load(Ordering::SeqCst) {
+        match producer.is_alive() {
+            Ok(true) => {}
+            Ok(false) => { failure = Some("KDE producer exited unexpectedly".to_owned()); break; }
+            Err(e) => { failure = Some(e); break; }
+        }
+        let should_pause = control.pause_requested.load(Ordering::SeqCst)
+            || crate::control_wallpaper::external_pause_requested();
+        if should_pause && !producer_paused {
+            control.acknowledge_pause_detected();
+            match producer.pause(Duration::from_millis(1200)) {
+                Ok(sequence) => {
+                    producer_paused = true;
+                    control.acknowledge_paused();
+                    crate::logger::information(logfile, &format!(
+                        "[KDE WALLPAPER] Producer PAUSED at frame {sequence}"));
+                }
+                Err(error) => {
+                    failure = Some(format!("KDE producer pause failed: {error}"));
+                    break;
+                }
+            }
+        } else if !should_pause && producer_paused {
+            match producer.resume(Duration::from_millis(1200)) {
+                Ok(sequence) => {
+                    producer_paused = false;
+                    // A producer-side frame alone is insufficient: require
+                    // Plasma to consume a later frame before acknowledging
+                    // the wallpaper's resumed presentation.
+                    let deadline = Instant::now() + Duration::from_secs(5);
+                    let mut confirmed = false;
+                    while running.load(Ordering::SeqCst) && Instant::now() < deadline {
+                        if let Ok(ack) = verify_live_plasma_presenter(
+                            &ack_path, producer.frame_file(), accepted_pid,
+                            accepted_sequence, Duration::from_secs(3),
+                        ) {
+                            accepted_sequence = Some(ack.sequence);
+                            accepted_pid = Some(ack.pid);
+                            last_presenter_progress = Instant::now();
+                            confirmed = true;
+                            break;
+                        }
+                        std::thread::sleep(Duration::from_millis(80));
+                    }
+                    if !confirmed {
+                        failure = Some("Plasma presenter did not confirm a resumed frame".into());
+                        break;
+                    }
+                    control.acknowledge_resumed_frame();
+                    crate::logger::information(logfile, &format!(
+                        "[KDE WALLPAPER] Producer RESUMED at frame {sequence}"));
+                }
+                Err(error) => {
+                    failure = Some(format!("KDE producer resume failed: {error}"));
+                    break;
+                }
+            }
+        }
+        // Consume pending wallpaper policy changes in the KDE-owned runtime.
+        // The renderer's RELOAD is transactional: on rejection it retains the
+        // previous engine, so report the failure and continue presenting it.
+        // This is valid while paused: no frame publication is required until
+        // the next successful RESUME.
+        if control.take_policy_reload().is_some() {
+            match producer.reload(Duration::from_secs(8)) {
+                Ok(sequence) => {
+                    crate::logger::information(logfile, &format!(
+                        "[KDE WALLPAPER] Policy RELOADED at frame {sequence}; paused={producer_paused}"));
+                    // The existing presentation-progress timer is not reset:
+                    // an ACK is still required from Plasma during rendering.
+                }
+                Err(error) => {
+                    crate::logger::warning(logfile, &format!(
+                        "[KDE WALLPAPER] Policy reload rejected; previous renderer retained: {error}"));
+                }
+            }
+        }
+        // A paused producer intentionally has no advancing ACK sequence.
+        // On an unpaused producer, continued ACK advancement is mandatory.
+        if !producer_paused {
+            if let Ok(ack) = verify_live_plasma_presenter(
+                &ack_path, producer.frame_file(), accepted_pid,
+                accepted_sequence, Duration::from_secs(6),
+            ) {
+                accepted_sequence = Some(ack.sequence);
+                accepted_pid = Some(ack.pid);
+                last_presenter_progress = Instant::now();
+            }
+            if last_presenter_progress.elapsed() > Duration::from_secs(6) {
+                failure = Some("Plasma presenter stopped acknowledging new frames".into());
+                break;
+            }
+        } else {
+            // Do not penalize the presenter for a deliberate pause, including
+            // a long-running screensaver. Resume must establish fresh progress.
+            last_presenter_progress = Instant::now();
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    // Critical order: keep last published frame available while Plasma
+    // restores its previous wallpaper plugin.
+    let restoration = guard.deactivate();
+    control.active.store(false, Ordering::SeqCst);
+    producer.stop();
+    restoration?;
+    if let Some(error) = failure { return Err(error); }
+    Ok(())
+}
+
+/// Validate a real ACK against the currently running, same-user Plasma
+/// process. The PID is selected from the ACK, never guessed from /proc order.
+/// Once a session is accepted, changing its presenter PID is forbidden.
+fn verify_live_plasma_presenter(
+    ack_path: &std::path::Path,
+    frame_path: &std::path::Path,
+    accepted_pid: Option<u32>,
+    previous_sequence: Option<u64>,
+    max_age: std::time::Duration,
+) -> Result<crate::kde_presenter_ack::PresenterAck, String> {
+    let bytes = std::fs::read(ack_path)
+        .map_err(|e| format!("Read Plasma presenter ACK: {e}"))?;
+    let candidate = crate::kde_presenter_ack::PresenterAck::parse(&bytes)?;
+    if accepted_pid.is_some_and(|pid| pid != candidate.pid) {
+        return Err("Plasma presenter PID changed during active session".into());
+    }
+    if !is_same_user_plasmashell(candidate.pid)? {
+        return Err("Presenter ACK PID is not a live same-user plasmashell".into());
+    }
+    crate::kde_presenter_ack::verify(
+        ack_path, frame_path, candidate.pid, previous_sequence, max_age,
+    )
+}
+
+fn is_same_user_plasmashell(pid: u32) -> Result<bool, String> {
+    let current = std::fs::read_to_string("/proc/self/status")
+        .map_err(|e| format!("Read own process status: {e}"))?;
+    let expected_uid = process_real_uid(&current).ok_or("Cannot determine current UID")?;
+    let path = std::path::PathBuf::from(format!("/proc/{pid}"));
+    // /proc/<pid>/comm is a mutable thread name, not an executable identity.
+    // The Qt wallpaper presenter executes in Plasma's process, so verify its
+    // actual executable instead of requiring a particular thread name.
+    let Ok(executable) = std::fs::read_link(path.join("exe")) else {
+        return Ok(false);
+    };
+    // NixOS wraps Plasma executables; /proc/<pid>/exe then resolves to
+    // .plasmashell-wrapped rather than plasmashell. Accept only these two
+    // explicit executable basenames, not arbitrary processes with Plasma-like
+    // thread names or command-line arguments.
+    let executable_name = executable.file_name().and_then(|name| name.to_str());
+    if !matches!(executable_name, Some("plasmashell" | ".plasmashell-wrapped")) {
+        return Ok(false);
+    }
+    let Ok(status) = std::fs::read_to_string(path.join("status")) else {
+        return Ok(false);
+    };
+    Ok(process_real_uid(&status) == Some(expected_uid))
+}
+
+fn process_real_uid(status: &str) -> Option<u32> {
+    status.lines().find_map(|line| {
+        line.strip_prefix("Uid:")?
+            .split_whitespace().next()?.parse::<u32>().ok()
+    })
+}

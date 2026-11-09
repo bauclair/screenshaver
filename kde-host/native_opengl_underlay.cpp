@@ -13,6 +13,8 @@
 #include <QSaveFile>
 #include <QFileDevice>
 #include <QCoreApplication>
+#include <QPointer>
+#include <QThread>
 #include <QRegularExpression>
 
 #include <signal.h>
@@ -22,6 +24,34 @@
 // Implemented in native_opengl_renderer.cpp; shares its render-call fence.
 void screenshaverCheckNativeWallpaperRevocation();
 bool screenshaverNativeWallpaperGrantAuthorized();
+
+// One revocation observer per loaded Plasma plugin process, not per QQuickItem.
+// The timer belongs to the application, so deleting the last wallpaper item
+// does not stop checking an outstanding native ownership transaction.
+// This must be installed on the GUI thread; it does not authorize rendering.
+static void ensureProcessWideWallpaperRevocationWatcher()
+{
+    static QPointer<QTimer> watcher;
+    QCoreApplication *app = QCoreApplication::instance();
+    if (!app || QThread::currentThread() != app->thread()) {
+        qWarning() << "SCREENSHAVER PLASMA REVOCATION: cannot install GUI-thread watcher";
+        return;
+    }
+    if (watcher) return;
+
+    auto *timer = new QTimer(app);
+    timer->setInterval(50);
+    timer->setTimerType(Qt::PreciseTimer);
+    QObject::connect(timer, &QTimer::timeout, app, []() {
+        screenshaverCheckNativeWallpaperRevocation();
+    });
+    watcher = timer;
+    // Observe an existing grant immediately, even if this item is not yet
+    // configured as a wallpaper. Future withdrawals then have a known token.
+    screenshaverCheckNativeWallpaperRevocation();
+    timer->start();
+    qInfo() << "SCREENSHAVER PLASMA REVOCATION: process-wide watcher started";
+}
 
 // An explicitly configured diagnostic directory isolates native pause testing
 // from the production legacy wallpaper transaction. Never fall back to the
@@ -56,6 +86,7 @@ NativeOpenGLUnderlay::NativeOpenGLUnderlay(QQuickItem *parent)
     : QQuickItem(parent)
 {
     setFlag(ItemHasContents, true);
+    ensureProcessWideWallpaperRevocationWatcher();
 
     const QString runtimeDir = qEnvironmentVariable("XDG_RUNTIME_DIR");
     const QByteArray ticks = processStartTicks();
@@ -169,8 +200,8 @@ void NativeOpenGLUnderlay::refreshWallpaperPauseRequest()
 
     publishPresentationObservation();
 
-    // Check process-wide revocation after all in-flight GL calls finish.
-    screenshaverCheckNativeWallpaperRevocation();
+    // Revocation is checked by the application-owned watcher independently
+    // of this item, including after this item is destroyed.
 
     // GUI-thread wakeup only, now unconditional for wallpaper items. The
     // render thread independently validates the full grant before Rust GL.

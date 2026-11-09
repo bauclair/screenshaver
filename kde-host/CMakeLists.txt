@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 project(ScreenshaverKdeHost LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
@@ -11,6 +11,12 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_BUILD_RPATH_USE_ORIGIN TRUE)
 
 find_package(Qt6 REQUIRED COMPONENTS Core DBus Gui Qml Quick)
+find_package(KF6Screen REQUIRED)
+
+# Loadable by the independent Rust supervisor, not by Plasma QML.
+add_library(ScreenshaverKScreen SHARED kscreen_discovery.cpp)
+target_link_libraries(ScreenshaverKScreen PRIVATE Qt6::Core Qt6::Gui KF6::Screen)
+set_target_properties(ScreenshaverKScreen PROPERTIES BUILD_WITH_INSTALL_RPATH TRUE BUILD_RPATH "$ORIGIN" INSTALL_RPATH "$ORIGIN" INSTALL_RPATH_USE_LINK_PATH FALSE)
 
 set(
     SCREENSHAVER_RENDERER_LIBRARY
@@ -41,6 +47,8 @@ add_library(
     native_opengl_underlay.h
     native_opengl_renderer.cpp
     native_opengl_renderer.h
+    native_wallpaper_presenter.cpp
+    native_wallpaper_presenter.h
 )
 
 target_link_libraries(

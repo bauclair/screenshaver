@@ -1,4 +1,5 @@
 #include "native_opengl_underlay.h"
+#include "native_wallpaper_presenter.h"
 
 #include <QQmlExtensionPlugin>
 #include <qqml.h>
@@ -16,6 +17,7 @@ public:
             1,
             0,
             "NativeOpenGLUnderlay");
+        qmlRegisterType<NativeWallpaperPresenter>(uri, 1, 0, "NativeWallpaperPresenter");
     }
 };
 

@@ -56,6 +56,7 @@ cp -- "$RENDERER_LIBRARY" "${PLUGIN_DIR}/libscreenshaver.so"
 
 echo
 echo "Screenshaver KDE host STAGING build completed (not deployed):"
+echo "  KScreen discovery: ${BUILD_DIR}/libScreenshaverKScreen.so"
 echo "  ${PLUGIN_DIR}"
 echo
 echo "Contents:"

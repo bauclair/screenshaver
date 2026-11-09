@@ -150,6 +150,8 @@ mod test_audio_motion;
 mod test_libdecor;
 mod test_kde_wallpaper;
 mod probe_kde_wallpaper;
+mod kde_presenter_ack;
+mod kde_producer_supervisor;
 
 mod import_data;
 mod export_data;
@@ -2021,22 +2023,8 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
     // Plasma wallpaper selection is independently lifetime-owned. A failed
     // activation leaves legacy rendering available only through its existing
     // ownership gate; it never overrides native handoff evidence.
-    let mut kde_wallpaper_integration = None;
-    if desktop_environment.is_kde_plasma()
-        && wallpaper_enabled_this_launch
-        && cfg.wallpaper_display_format == crate::manage_configuration::WallpaperDisplayFormat::FullScreen
-    {
-        match crate::manage_wallpaper_kde::KdeWallpaperIntegrationGuard::activate() {
-            Ok(guard) => {
-                crate::logger::information(&logfile, "[KDE WALLPAPER] Plasma wallpaper selected; native presentation not yet verified");
-                kde_wallpaper_integration = Some(guard);
-            }
-            Err(error) => {
-                crate::logger::error(&logfile, &format!("[KDE WALLPAPER] Automatic activation refused: {error}"));
-                eprintln!("[KDE WALLPAPER] Automatic activation refused: {error}");
-            }
-        }
-    }
+    // KDE wallpaper selection is owned exclusively by WallpaperRuntimeManager.
+    // Do not select it here: the producer and presenter must be ready first.
 
     let mut kde_lock_integration = None;
 
@@ -2705,6 +2693,12 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
 
     // Each enabled target owns its own supervisor thread and renderer backend.
     // Both share the session shutdown flag, but not presentation pause state.
+    crate::logger::information(&logfile, &format!(
+        "[KDE WALLPAPER STARTUP] main enabled={} display_format={:?} session={} desktop={}",
+        wallpaper_enabled_this_launch, cfg.wallpaper_display_format,
+        std::env::var("XDG_SESSION_TYPE").unwrap_or_default(),
+        std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default(),
+    ));
     let mut wallpaper_manager = if wallpaper_enabled_this_launch {
         Some(crate::manage_wallpaper_runtime::WallpaperRuntimeManager::start(
             wallpaper_enabled_this_launch, cfg.wallpaper_mode.clone(),
@@ -3641,17 +3635,7 @@ Screensaver and wallpaper functionality will remain available. Screen locking mu
     }
 
 
-    if let Some(mut integration) = kde_wallpaper_integration.take() {
-        let restore_started = std::time::Instant::now();
-        if let Err(error) = integration.deactivate() {
-            crate::logger::error(&logfile, &format!("[KDE WALLPAPER] Original Plasma wallpaper restoration unverified: {error}"));
-        } else {
-            crate::logger::information(&logfile, "[KDE WALLPAPER] Original Plasma wallpaper restored");
-        }
-        crate::logger::information(&logfile, &format!(
-            "[SHUTDOWN TIMING] KDE restoration completed in {} ms; total={} ms",
-            restore_started.elapsed().as_millis(), shutdown_started.elapsed().as_millis()));
-    }
+
 
     if let Some(mut integration) = kde_lock_integration.take() {
         match integration.deactivate() {

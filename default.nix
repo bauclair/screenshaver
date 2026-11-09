@@ -15,6 +15,7 @@
 , xorg
 , cmake
 , qt6
+, kdePackages
 }:
 
 rustPlatform.buildRustPackage rec {
@@ -57,6 +58,7 @@ rustPlatform.buildRustPackage rec {
     xorg.libXScrnSaver
     qt6.qtbase
     qt6.qtdeclarative
+    kdePackages.libkscreen
   ];
 
 
@@ -84,6 +86,14 @@ preBuild = ''
       --manifest-path kde-renderer/Cargo.toml \
       --release
 
+    echo "=== Building independent KDE wallpaper producer ==="
+    # The root lockfile is the Nix-vendored dependency set.
+    rm -f kde-wallpaper-producer/Cargo.lock
+    cargo build \
+      --offline \
+      --manifest-path kde-wallpaper-producer/Cargo.toml \
+      --release
+
     echo "=== Building KDE Qt Quick native host ==="
     cmake \
       -S kde-host \
@@ -96,6 +106,14 @@ preBuild = ''
 
 
   postInstall = ''
+    install -Dm755 \
+      kde-wallpaper-producer/target/release/screenshaver-plasma-producer \
+      $out/bin/screenshaver-plasma-producer
+
+    install -Dm755 \
+      kde-host/build-release/libScreenshaverKScreen.so \
+      $out/lib/screenshaver/kde/libScreenshaverKScreen.so
+
     install -Dm755 \
       kde-host/build-release/qml/ScreenshaverNativeGL/libScreenshaverNativeGLPlugin.so \
       $out/lib/screenshaver/kde/libScreenshaverNativeGLPlugin.so

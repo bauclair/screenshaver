@@ -272,12 +272,14 @@ impl FrameRenderEngine {
             "[RENDER] Initializing shared frame render engine"
         );
 
+        eprintln!("[KDE INIT DIAG] engine 1: selecting/compiling initial shader");
         let active_shader =
             select_safe_shader_program(
                 &mut shader_manager,
                 shader_directory.as_deref(),
             )?;
 
+        eprintln!("[KDE INIT DIAG] engine 2: shader selected/compiled");
         let animation_speed =
             animation_speed_policy.animation_speed_for_policy(
                 active_shader.policy_id,
@@ -297,6 +299,7 @@ impl FrameRenderEngine {
             &active_shader
         );
 
+        eprintln!("[KDE INIT DIAG] engine 3: preparing texture manager");
         let mut texture_manager =
             crate::manage_textures::TextureManager::new(
                 texture_policy
@@ -309,6 +312,7 @@ impl FrameRenderEngine {
             active_shader.channel_usage,
         )?;
 
+        eprintln!("[KDE INIT DIAG] engine 4: textures prepared");
         texture_manager.configure_program(
             active_shader.program,
         );
@@ -374,6 +378,7 @@ impl FrameRenderEngine {
                 None
             };
 
+        eprintln!("[KDE INIT DIAG] engine 5: creating postprocess pipeline");
         let postprocess =
             crate::postprocess_shader::PostprocessPipeline::new(
                 output_width,
@@ -381,6 +386,7 @@ impl FrameRenderEngine {
                 postprocess_profile,
             )?;
 
+        eprintln!("[KDE INIT DIAG] engine 6: postprocess ready; allocating VAO");
         let mut vao =
             0_u32;
 
@@ -395,6 +401,7 @@ impl FrameRenderEngine {
             );
         }
 
+        eprintln!("[KDE INIT DIAG] engine 7: VAO allocated; allocating GPU queries");
                 let mut gpu_timer_queries =
             [0_u32; 2];
 
@@ -419,6 +426,7 @@ impl FrameRenderEngine {
         // point loading, compilation, texture preparation, overlay creation,
         // and post-processing setup have all succeeded, so this policy is the
         // renderer's accepted active shader.
+        eprintln!("[KDE INIT DIAG] engine 8: GPU queries allocated; recording policy");
         shader_manager.record_rendered_policy(
             active_shader.policy_id
         );

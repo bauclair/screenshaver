@@ -150,24 +150,73 @@ fn read_journal() -> Result<Option<Vec<Assignment>>,String> {
     if out.is_empty() { return Err("Empty wallpaper restoration journal".into()); }
     Ok(Some(out))
 }
-// The appletsrc file is asynchronous evidence, not a live Plasma acknowledgment.
-// In particular, an old value observed immediately after a selection request
-// cannot prove that a newer request will not overwrite it later.
-fn wait_for_settled(assignments: &[Assignment], retry_restoration: bool) -> Result<(), String> {
-    // Retry only for restoration, never for native wallpaper activation.
-    // A retry is a synchronous, bounded Plasma script request.
+// Query the actual Plasma desktop objects, rather than the asynchronously
+// persisted appletsrc file. This is configuration selection evidence, NOT proof
+// of compositor scene retirement or native ownership revocation.
+fn live_inventory() -> Result<Vec<Assignment>, String> {
+    // print() is required: evaluateScript does not return the last expression.
+    let script = "print(desktops().map(function(d){return String(d.id)+'='+String(d.wallpaperPlugin);}).join('\\n'))";
+    let command = if Command::new("qdbus6").arg("--help")
+        .stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok() {
+        "qdbus6"
+    } else { "qdbus" };
+    let mut child = Command::new(command)
+        .args(["org.kde.plasmashell", "/PlasmaShell", "org.kde.PlasmaShell.evaluateScript", script])
+        .stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()
+        .map_err(|e| format!("Cannot query live Plasma desktops: {e}"))?;
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(25)),
+            Ok(None) => {
+                let _ = child.kill(); let _ = child.wait();
+                return Err("Live Plasma desktop query timed out".into());
+            }
+            Err(e) => return Err(format!("Cannot wait for live Plasma query: {e}")),
+        }
+    };
+    let mut stdout = String::new();
+    let mut stderr = String::new();
+    if let Some(mut pipe) = child.stdout.take() {
+        pipe.read_to_string(&mut stdout).map_err(|e| e.to_string())?;
+    }
+    if let Some(mut pipe) = child.stderr.take() {
+        let _ = pipe.read_to_string(&mut stderr);
+    }
+    if !status.success() {
+        return Err(format!("Live Plasma query failed ({status}): {stderr}"));
+    }
+    let mut result = Vec::new();
+    for line in stdout.lines().map(str::trim).filter(|s| !s.is_empty()) {
+        let (id, plugin) = line.split_once('=')
+            .ok_or_else(|| format!("Unexpected live Plasma assignment: {line:?}"))?;
+        let id = id.parse::<u64>()
+            .map_err(|_| format!("Invalid live Plasma desktop ID: {id:?}"))?;
+        if plugin.is_empty() || result.iter().any(|a: &Assignment| a.id == id) {
+            return Err("Empty or duplicate live Plasma wallpaper assignment".into());
+        }
+        result.push(Assignment { id, plugin: plugin.to_owned() });
+    }
+    if result.is_empty() {
+        return Err(format!("Live Plasma query returned no assignments: {stdout:?}"));
+    }
+    Ok(result)
+}
+
+// A stable live selection is the primary restoration criterion. The persisted
+// appletsrc value is reported as supplemental evidence and is not allowed to
+// stall a verified live restoration.
+fn wait_for_settled(assignments: &[Assignment], _retry_restoration: bool) -> Result<(), String> {
     let started = Instant::now();
     let deadline = started + Duration::from_secs(8);
     let mut matching_since: Option<Instant> = None;
-    let mut last_request = started;
-    let mut retry_count = 0usize;
     let mut previous_observation: Option<String> = None;
-    let expected = assignments.iter()
-        .map(|a| format!("{}={}", a.id, a.plugin))
+    let expected = assignments.iter().map(|a| format!("{}={}", a.id, a.plugin))
         .collect::<Vec<_>>().join(", ");
-    eprintln!("[KDE WALLPAPER SETTLE] begin; expected=[{expected}]; stable_required_ms=2000; timeout_ms=8000");
+    eprintln!("[KDE WALLPAPER SETTLE] begin; source=live_plasma; expected=[{expected}]; stable_required_ms=2000; timeout_ms=8000");
     loop {
-        let (matches, observation, conflict) = match inventory() {
+        let (matches, observation, conflict) = match live_inventory() {
             Ok(current) => {
                 let details = assignments.iter().map(|a| {
                     match current.iter().find(|c| c.id == a.id) {
@@ -183,47 +232,41 @@ fn wait_for_settled(assignments: &[Assignment], retry_restoration: bool) -> Resu
                     .is_some_and(|c| c.plugin != a.plugin && c.plugin != TARGET));
                 (matches, details, conflict)
             }
-            Err(error) => (false, format!("inventory_error={error}"), false),
+            Err(error) => (false, format!("live_query_error={error}"), false),
         };
-        // Log on transitions, not every 100 ms: avoids flooding runtime logs.
         if previous_observation.as_deref() != Some(observation.as_str()) {
             eprintln!("[KDE WALLPAPER SETTLE] elapsed_ms={}; observation=[{}]",
                 started.elapsed().as_millis(), observation);
             previous_observation = Some(observation);
         }
+        if conflict {
+            return Err("Live Plasma wallpaper changed to a third-party plugin; journal retained".into());
+        }
         if matches {
             if matching_since.is_none() {
-                eprintln!("[KDE WALLPAPER SETTLE] elapsed_ms={}; stability window started",
+                eprintln!("[KDE WALLPAPER SETTLE] elapsed_ms={}; live stability window started",
                     started.elapsed().as_millis());
             }
             let since = matching_since.get_or_insert_with(Instant::now);
             if since.elapsed() >= Duration::from_secs(2) {
-                eprintln!("[KDE WALLPAPER SETTLE] elapsed_ms={}; persisted assignment stable for 2000 ms (not live presentation proof)",
-                    started.elapsed().as_millis());
+                match inventory() {
+                    Ok(persisted) => {
+                        let persisted_matches = assignments.iter().all(|a| persisted.iter()
+                            .any(|c| c.id == a.id && c.plugin == a.plugin));
+                        eprintln!("[KDE WALLPAPER SETTLE] live assignment stable for 2000 ms; persisted_match={} (supplemental, not live presentation proof)", persisted_matches);
+                    }
+                    Err(error) => eprintln!("[KDE WALLPAPER SETTLE] live assignment stable for 2000 ms; persisted_query_error={error}"),
+                }
                 return Ok(());
             }
         } else if matching_since.take().is_some() {
-            eprintln!("[KDE WALLPAPER SETTLE] elapsed_ms={}; stability window reset",
+            eprintln!("[KDE WALLPAPER SETTLE] elapsed_ms={}; live stability window reset",
                 started.elapsed().as_millis());
-        }
-        // A third-party selection is not ours to overwrite. Retain the journal.
-        if conflict {
-            return Err("Wallpaper changed to an unexpected plugin during restoration; refusing retry".into());
-        }
-        // Retry only if the original selection remains mismatched. Avoid retries
-        // once a matching observation has started the stability window.
-        if retry_restoration && !matches && last_request.elapsed() >= Duration::from_secs(2)
-            && retry_count < 2 && Instant::now() < deadline {
-            retry_count += 1;
-            eprintln!("[KDE WALLPAPER SETTLE] elapsed_ms={}; retry={} requesting original wallpaper", started.elapsed().as_millis(), retry_count);
-            // Calls are synchronous; no overlapping qdbus requests are possible.
-            select(assignments).map_err(|e| format!("Restoration retry {retry_count} failed: {e}"))?;
-            last_request = Instant::now();
         }
         if Instant::now() >= deadline {
             eprintln!("[KDE WALLPAPER SETTLE] elapsed_ms={}; timeout; last_observation=[{}]",
                 started.elapsed().as_millis(), previous_observation.as_deref().unwrap_or("<none>"));
-            return Err("Plasma persisted wallpaper did not remain stable for two seconds".into());
+            return Err("Live Plasma wallpaper assignment did not remain stable for two seconds".into());
         }
         thread::sleep(Duration::from_millis(100));
     }
@@ -235,7 +278,9 @@ fn wait_for_settled(assignments: &[Assignment], retry_restoration: bool) -> Resu
 // settles, because no authoritative live-state verification is available.
 fn restore(retain_journal: bool) -> Result<(),String> {
     let Some(saved) = read_journal()? else { return Ok(()); };
-    let current = inventory()?;
+    // The persisted appletsrc can lag the running Plasma process. Check the
+    // live desktop assignments before deciding whether rollback is safe.
+    let current = live_inventory().map_err(|e| format!("Cannot verify live Plasma state before restoration: {e}; journal retained"))?;
     for item in &saved {
         let actual = current.iter().find(|c| c.id == item.id)
             .ok_or("Desktop containment disappeared; journal retained")?;
@@ -249,12 +294,20 @@ fn restore(retain_journal: bool) -> Result<(),String> {
     if retain_journal {
         return Ok(());
     }
-    fs::remove_file(journal()?).map_err(|e| format!("Wallpaper appears restored, but journal removal failed: {e}"))
+    fs::remove_file(journal()?).map_err(|e| format!("Live Plasma wallpaper selection restored, but journal removal failed: {e}"))
 }
 
 pub struct KdeWallpaperIntegrationGuard { active: bool }
 impl KdeWallpaperIntegrationGuard {
     pub fn activate() -> Result<Self,String> {
+        Self::activate_with_readiness(wait_for_native_presentation)
+    }
+
+    /// Use the new frame-presenter readiness protocol instead of the legacy
+    /// NativeOpenGLUnderlay monitor. Caller must start producer first.
+    pub fn activate_with_readiness<F>(mut readiness: F) -> Result<Self,String>
+    where F: FnMut() -> Result<(),String> {
+
         // Resolve a previous interrupted transaction before capturing a new
         // baseline. Never delete the journal merely because an appletsrc
         // snapshot happens to match: request restoration explicitly and wait
@@ -265,9 +318,11 @@ impl KdeWallpaperIntegrationGuard {
             restore(false).map_err(|error| format!(
                 "Previous KDE wallpaper transaction could not be restored; journal retained: {error}"
             ))?;
-            eprintln!("[KDE WALLPAPER] Previous restoration journal resolved after explicit Plasma restoration and settled configuration; native readiness remains independently verified");
+            eprintln!("[KDE WALLPAPER] Previous restoration journal resolved after explicit Plasma restoration and stable live selection; native readiness remains independently verified");
         }
-        let original = inventory()?;
+        // Capture the live assignment that will actually be replaced. A stale
+        // appletsrc value must not become the recovery baseline.
+        let original = live_inventory()?;
         if original.iter().any(|a| a.plugin == TARGET) {
             return Err("Screenshaver is already selected as a wallpaper; original selection is unknown".into());
         }
@@ -276,9 +331,12 @@ impl KdeWallpaperIntegrationGuard {
             .ok_or("Cannot resolve KDE package directory")?
             .join("plasma/wallpapers").join(TARGET).join("metadata.json");
         if !package.is_file() { return Err(format!("KDE wallpaper package not installed: {}",package.display())); }
+        // Record the live selection durably before requesting any change.
+        // Plasma retains wallpaper-plugin-specific configuration when its
+        // wallpaperPlugin selection changes; we do not rewrite those groups.
         write_journal(&original)?;
         let desired: Vec<_> = original.iter().map(|a| Assignment { id:a.id, plugin:TARGET.into() }).collect();
-        if let Err(activation_error) = select(&desired).and_then(|_|wait_for_native_presentation()) {
+        if let Err(activation_error) = select(&desired).and_then(|_|readiness()) {
             // A failed activation can already have changed the live Plasma
             // wallpaper. No guard exists yet, so rollback must happen here.
             // Keep the durable journal unless restoration is verified.
@@ -287,7 +345,7 @@ impl KdeWallpaperIntegrationGuard {
             eprintln!("[KDE WALLPAPER] Activation failed: {activation_error}; attempting immediate rollback");
             return match restore(true) {
                 Ok(()) => Err(format!(
-                    "Activation unverified: {activation_error}; restoration requested and persisted value settled, but live state unverified; journal retained"
+                    "Activation unverified: {activation_error}; restoration requested and live selection settled, but native scene retirement unverified; journal retained"
                 )),
                 Err(rollback_error) => Err(format!(
                     "Activation unverified: {activation_error}; immediate rollback unverified: {rollback_error}; restoration journal retained"
