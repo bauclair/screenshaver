@@ -9,6 +9,8 @@ pub struct KdeFrameRenderer {
     // process gets its own demand-driven AudioRuntime; FrameRenderEngine tells
     // it when the active policy needs Audio Bloom.
     engine: crate::render_frame_engine::FrameRenderEngine,
+    status_panel: crate::display_overlay::RendererStatusPanel,
+    wallpaper_mode: bool,
 }
 
 static LAST_ERROR: LazyLock<Mutex<CString>> =
@@ -153,6 +155,8 @@ unsafe fn create_renderer(
 
     Ok(Box::into_raw(Box::new(KdeFrameRenderer {
         engine,
+        status_panel: crate::display_overlay::RendererStatusPanel::new(),
+        wallpaper_mode: false,
     })))
 }
 
@@ -265,7 +269,11 @@ unsafe fn create_wallpaper_renderer(
         height as u32,
     )?;
     eprintln!("[KDE INIT DIAG] wallpaper F: FrameRenderEngine constructed");
-    Ok(Box::into_raw(Box::new(KdeFrameRenderer { engine })))
+    Ok(Box::into_raw(Box::new(KdeFrameRenderer {
+        engine,
+        status_panel: crate::display_overlay::RendererStatusPanel::new(),
+        wallpaper_mode: true,
+    })))
 }
 
 unsafe fn render_frame(
@@ -300,6 +308,15 @@ unsafe fn render_frame(
         output_framebuffer.max(0) as u32,
     );
 
+    // The producer renders into its private GL context. Draw the existing
+    // diagnostic capsules into that same framebuffer before glReadPixels()
+    // publishes the image to Plasma. The overlay is diagnostic-only.
+    if renderer.wallpaper_mode {
+        let status_text = crate::renderer_status::enabled()
+            .then(crate::renderer_status::panel_text);
+        renderer.status_panel.draw(width as u32, height as u32, status_text.as_deref());
+    }
+
     // Do not call FrameRenderEngine::limit_fps() from the Qt scene-graph render
     // thread. Qt owns presentation cadence; blocking that thread would stall
     // the lock-screen compositor. The engine still resolves and evaluates the
@@ -315,7 +332,11 @@ unsafe fn destroy_renderer(renderer: *mut KdeFrameRenderer) {
 
     // FrameRenderEngine::drop() deletes GL resources. The C++ render node calls
     // this only while the Qt OpenGL context is current.
-    drop(unsafe { Box::from_raw(renderer) });
+    let renderer = unsafe { Box::from_raw(renderer) };
+    if renderer.wallpaper_mode {
+        crate::renderer_status::clear(crate::renderer_status::Pipeline::Wallpaper);
+    }
+    drop(renderer);
 }
 
 #[unsafe(no_mangle)]
@@ -371,6 +392,26 @@ pub unsafe extern "C" fn screenshaver_kde_gl_render(
             set_last_error(error);
             false
         }
+    }
+}
+
+/// Producer-confirmed wallpaper lifecycle transition. State codes are private
+/// to the producer/bridge contract: 0=Starting, 1=Rendering, 2=Paused,
+/// 3=Stopping, 4=Clear. Never infer presentation from this alone.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn screenshaver_kde_gl_wallpaper_status(
+    renderer: *mut KdeFrameRenderer,
+    state: u32,
+) {
+    if renderer.is_null() || !unsafe { &*renderer }.wallpaper_mode { return; }
+    use crate::renderer_status::{Pipeline, State};
+    match state {
+        0 => crate::renderer_status::publish(Pipeline::Wallpaper, State::Starting),
+        1 => crate::renderer_status::publish(Pipeline::Wallpaper, State::Rendering),
+        2 => crate::renderer_status::publish(Pipeline::Wallpaper, State::Paused),
+        3 => crate::renderer_status::publish(Pipeline::Wallpaper, State::Stopping),
+        4 => crate::renderer_status::clear(Pipeline::Wallpaper),
+        _ => {},
     }
 }
 

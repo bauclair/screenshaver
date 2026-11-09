@@ -771,6 +771,22 @@ impl Drop for WindowshaderTrayStatusCleanup {
     }
 }
 
+// Keep the native diagnostic record scoped to this renderer session, including
+// early Rust errors. Never clear Wallpaper's independently owned record.
+#[cfg(feature = "libdecor-bridge")]
+struct NativeWindowshaderStatusCleanup;
+
+#[cfg(feature = "libdecor-bridge")]
+impl Drop for NativeWindowshaderStatusCleanup {
+    fn drop(&mut self) {
+        crate::renderer_status::publish(
+            crate::renderer_status::Pipeline::Windowshader,
+            crate::renderer_status::State::Stopping,
+        );
+        crate::renderer_status::clear(crate::renderer_status::Pipeline::Windowshader);
+    }
+}
+
 // Stage 3C-6D2C: the C loop owns native dispatch and presentation.
 // phase=0 is the pre-paint gate; phase=1 is a confirmed EGL swap.
 #[cfg(feature = "libdecor-bridge")]
@@ -778,6 +794,8 @@ struct NativePauseContext {
     control: crate::manage_wallpaper_runtime::WallpaperRuntimeControl,
     paused: bool,
     awaiting_resumed_frame: bool,
+    last_status_heartbeat: Option<Instant>,
+    last_reported_paused: Option<bool>,
 }
 
 #[cfg(feature = "libdecor-bridge")]
@@ -797,10 +815,25 @@ extern "C" fn windowshader_libdecor_pause_status(
             return 0;
         }
         if phase == 1 {
-            if state.awaiting_resumed_frame {
+            let resumed = state.awaiting_resumed_frame;
+            if resumed {
                 state.control.acknowledge_resumed_frame();
                 state.awaiting_resumed_frame = false;
                 eprintln!("[LIBDECOR PAUSE] resumed frame confirmed");
+            }
+            // Phase 1 is issued only after the native bridge confirms a
+            // successful EGL swap. Do not report Rendering at pause release.
+            if crate::renderer_status::enabled()
+                && (resumed
+                    || state.last_reported_paused != Some(false)
+                    || state.last_status_heartbeat.is_none_or(|at| at.elapsed() >= Duration::from_secs(1)))
+            {
+                crate::renderer_status::publish(
+                    crate::renderer_status::Pipeline::Windowshader,
+                    crate::renderer_status::State::Rendering,
+                );
+                state.last_status_heartbeat = Some(Instant::now());
+                state.last_reported_paused = Some(false);
             }
             return 0;
         }
@@ -813,6 +846,17 @@ extern "C" fn windowshader_libdecor_pause_status(
                 state.paused = true;
                 state.awaiting_resumed_frame = true;
                 eprintln!("[LIBDECOR PAUSE] pause acknowledged");
+            }
+            if crate::renderer_status::enabled()
+                && (state.last_reported_paused != Some(true)
+                    || state.last_status_heartbeat.is_none_or(|at| at.elapsed() >= Duration::from_secs(1)))
+            {
+                crate::renderer_status::publish(
+                    crate::renderer_status::Pipeline::Windowshader,
+                    crate::renderer_status::State::Paused,
+                );
+                state.last_status_heartbeat = Some(Instant::now());
+                state.last_reported_paused = Some(true);
             }
             return 1;
         }
@@ -962,6 +1006,11 @@ pub fn run_egl_windowed_surface(
             // The XDG branch already publishes these transitions, but the
             // native branch returns before reaching that code.
             runtime.tray_status.set_windowshader_starting();
+            let _native_status_cleanup = NativeWindowshaderStatusCleanup;
+            crate::renderer_status::publish(
+                crate::renderer_status::Pipeline::Windowshader,
+                crate::renderer_status::State::Starting,
+            );
             // Resolve the same initial policy used by the XDG windowshader
             // before creating any native surface. This selection is passed
             // through a thread-local scope, never a process-wide environment
@@ -1041,6 +1090,8 @@ pub fn run_egl_windowed_surface(
                 control: control.clone(),
                 paused: false,
                 awaiting_resumed_frame: false,
+                last_status_heartbeat: None,
+                last_reported_paused: None,
             };
             // Native libdecor owns dimensions. On KDE/Wayland only, KWin
             // owns the optional placement/keep-above integration. Install

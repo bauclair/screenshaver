@@ -19,6 +19,7 @@ type Render = unsafe extern "C" fn(*mut c_void, i32, i32) -> bool;
 type Destroy = unsafe extern "C" fn(*mut c_void);
 type LastError = unsafe extern "C" fn() -> *const c_char;
 type Reload = unsafe extern "C" fn(*mut c_void, Option<unsafe extern "C" fn(*const c_char) -> *const c_void>, i32, i32) -> bool;
+type WallpaperStatus = unsafe extern "C" fn(*mut c_void, u32);
 
 unsafe extern "C" fn get_gl_proc(name: *const c_char) -> *const c_void {
     // SDL owns the OpenGL context and its procedure resolver.
@@ -102,6 +103,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     let destroy: Symbol<Destroy> = unsafe { library.get(b"screenshaver_kde_gl_destroy\0")? };
     let last_error: Symbol<LastError> = unsafe { library.get(b"screenshaver_kde_gl_last_error\0")? };
     let reload: Symbol<Reload> = unsafe { library.get(b"screenshaver_kde_gl_reload_wallpaper\0")? };
+    let status: Symbol<WallpaperStatus> = unsafe { library.get(b"screenshaver_kde_gl_wallpaper_status\0")? };
     let renderer = unsafe { create(Some(get_gl_proc), width as i32, height as i32, 1) };
     if renderer.is_null() {
         let ptr = unsafe { last_error() };
@@ -112,6 +114,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     struct Guard { renderer: *mut c_void, destroy: Destroy }
     impl Drop for Guard { fn drop(&mut self) { unsafe { (self.destroy)(self.renderer) }; } }
     let guard = Guard { renderer, destroy: *destroy };
+    unsafe { status(guard.renderer, 0) }; // Starting
     let stop = Arc::new(AtomicBool::new(false));
     let stop_signal = Arc::clone(&stop);
     ctrlc::set_handler(move || stop_signal.store(true, Ordering::Relaxed))?;
@@ -142,6 +145,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             match command.trim() {
                 "PAUSE" => {
                     paused = true;
+                    unsafe { status(guard.renderer, 2) }; // Paused after render thread applies command
                     eprintln!("[PLASMA CONTROL] PAUSED sequence={seq}");
                 }
                 "RESUME" => {
@@ -223,11 +227,13 @@ fn run() -> Result<(), Box<dyn Error>> {
         seq = seq.checked_add(1).ok_or("Sequence overflow")?;
         unsafe { (*seq_ptr).store(seq, Ordering::Release) };
         FileExt::unlock(&file)?;
+        unsafe { status(guard.renderer, 1) }; // Rendering heartbeat after frame publication
         next_frame += frame_period;
         let now = Instant::now();
         if next_frame > now { thread::sleep(next_frame - now); }
         else { next_frame = now; }
     }
+    unsafe { status(guard.renderer, 3) }; // Stopping
     eprintln!("[PLASMA PRODUCER] stopping after {seq} frames");
     drop(guard); // destroy GL renderer before SDL context teardown
     Ok(())

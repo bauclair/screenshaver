@@ -106,6 +106,8 @@ mod palettes;
 mod construct_text_overlay;
 #[path = "../../src/display_overlay.rs"]
 mod display_overlay;
+#[path = "../../src/renderer_status.rs"]
+mod renderer_status;
 #[path = "../../src/fps_monitor.rs"]
 mod fps_monitor;
 
