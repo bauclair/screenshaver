@@ -895,6 +895,26 @@ install_kde_native_integration() {
         [[ "$name" == *.so ]] && mode=755
         "${SUDO[@]}" install -Dm"$mode" "${source}/${name}" "${destination}/${name}"
     done
+    # The independent frame producer loads this library from the KDE root,
+    # not from the QML import directory.
+    "${SUDO[@]}" install -Dm755 "${source}/libscreenshaver.so" \
+        "${INSTALL_PREFIX}/lib/screenshaver/kde/libscreenshaver.so"
+
+    # The temporary wallpaper selection guard requires a user-level package.
+    # Install the production package only; never select it or edit appletsrc.
+    local package_source="${PROJECT_DIR}/kde-host/screenshaver-plasma-wallpaper"
+    local data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
+    [[ "$data_home" == /* ]] || die "XDG_DATA_HOME must be absolute for KDE wallpaper installation."
+    local package_dest="${data_home}/plasma/wallpapers/org.screenshaver.wallpaper"
+    [[ -f "${package_source}/metadata.json" && -f "${package_source}/contents/ui/main.qml" ]] ||
+        die "Production KDE wallpaper package sources are missing."
+    if [[ -e "$package_dest" && ! -f "${package_dest}/.screenshaver-installed" ]]; then
+        die "Production wallpaper package exists but is not marked as installer-owned: $package_dest"
+    fi
+    mkdir -p "${package_dest}/contents/ui"
+    install -m644 "${package_source}/metadata.json" "${package_dest}/metadata.json"
+    install -m644 "${package_source}/contents/ui/main.qml" "${package_dest}/contents/ui/main.qml"
+    printf '%s\n' 'screenshaver-installer-v1' > "${package_dest}/.screenshaver-installed"
     # KScreen discovery is a separate native bridge, built at the CMake root.
     "${SUDO[@]}" install -Dm755 \
         "${PROJECT_DIR}/kde-host/build-staging-release/libScreenshaverKScreen.so" \
@@ -908,6 +928,17 @@ verify_kde_native_integration() {
     for name in qmldir libScreenshaverNativeGLPlugin.so libscreenshaver.so; do
         [[ -f "${destination}/${name}" ]] || die "Installed KDE runtime asset missing: ${destination}/${name}"
     done
+    local root_library="${INSTALL_PREFIX}/lib/screenshaver/kde/libscreenshaver.so"
+    [[ -f "$root_library" ]] || die "KDE producer renderer library missing: $root_library"
+    cmp -s -- "${PROJECT_DIR}/kde-host/build-staging-release/qml/ScreenshaverNativeGL/libscreenshaver.so" "$root_library" ||
+        die "KDE producer renderer library differs from release build."
+    local data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
+    local package_dest="${data_home}/plasma/wallpapers/org.screenshaver.wallpaper"
+    [[ -f "${package_dest}/.screenshaver-installed" ]] || die "Production KDE wallpaper ownership marker missing."
+    cmp -s -- "${PROJECT_DIR}/kde-host/screenshaver-plasma-wallpaper/metadata.json" "${package_dest}/metadata.json" ||
+        die "Production KDE wallpaper metadata differs from source."
+    cmp -s -- "${PROJECT_DIR}/kde-host/screenshaver-plasma-wallpaper/contents/ui/main.qml" "${package_dest}/contents/ui/main.qml" ||
+        die "Production KDE wallpaper QML differs from source."
     local kscreen_source="${PROJECT_DIR}/kde-host/build-staging-release/libScreenshaverKScreen.so"
     local kscreen_destination="${INSTALL_PREFIX}/lib/screenshaver/kde/libScreenshaverKScreen.so"
     [[ -f "$kscreen_destination" ]] || die "Installed KScreen discovery library missing: $kscreen_destination"

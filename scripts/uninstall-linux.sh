@@ -343,6 +343,21 @@ remove_kde_native_integration() {
     for name in qmldir libScreenshaverNativeGLPlugin.so libscreenshaver.so; do
         remove_file_if_present "${root}/${name}"
     done
+    remove_file_if_present "${INSTALL_PREFIX}/lib/screenshaver/kde/libscreenshaver.so"
+    remove_file_if_present "${INSTALL_PREFIX}/lib/screenshaver/kde/libScreenshaverKScreen.so"
+    local data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
+    if [[ "$data_home" == /* ]]; then
+        local package="${data_home}/plasma/wallpapers/org.screenshaver.wallpaper"
+        if [[ -f "$package/.screenshaver-installed" ]] &&
+           [[ "$(cat "$package/.screenshaver-installed")" == screenshaver-installer-v1 ]]; then
+            # Only remove the known installed files. Leave modified/extra package
+            # content in place rather than recursively deleting user data.
+            rm -f -- "$package/metadata.json" "$package/contents/ui/main.qml" "$package/.screenshaver-installed"
+            rmdir -- "$package/contents/ui" "$package/contents" "$package" 2>/dev/null || true
+        else
+            [[ ! -e "$package" ]] || warn "Preserving unmarked KDE wallpaper package: $package"
+        fi
+    fi
     remove_empty_directory "$root"
     remove_empty_directory "${INSTALL_PREFIX}/lib/screenshaver/kde/qml"
     remove_empty_directory "${INSTALL_PREFIX}/lib/screenshaver/kde"
@@ -546,6 +561,11 @@ verify_conventional_removal() {
     if [[ -e "$kde_root/qmldir" || -e "$kde_root/libScreenshaverNativeGLPlugin.so" ||
           -e "$kde_root/libscreenshaver.so" ]]; then
         warn "One or more Screenshaver KDE native runtime assets remain installed."
+        remaining=true
+    fi
+    if [[ -e "${INSTALL_PREFIX}/lib/screenshaver/kde/libscreenshaver.so" ||
+          -e "${INSTALL_PREFIX}/lib/screenshaver/kde/libScreenshaverKScreen.so" ]]; then
+        warn "KDE producer/KScreen libraries remain installed."
         remaining=true
     fi
     if $remaining; then
