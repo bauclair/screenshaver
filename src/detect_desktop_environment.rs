@@ -24,6 +24,7 @@ pub enum DesktopEnvironment {
     Xfce,
     Mate,
     Lxde,
+    Cinnamon,
     Other,
     Unknown,
 }
@@ -53,6 +54,10 @@ impl DesktopEnvironment {
                 "LXDE"
             }
 
+            Self::Cinnamon => {
+                "Cinnamon"
+            }
+
             Self::Other => {
                 "Other"
             }
@@ -77,6 +82,10 @@ impl DesktopEnvironment {
 
     pub fn is_mate(self) -> bool {
         self == Self::Mate
+    }
+
+    pub fn is_cinnamon(self) -> bool {
+        self == Self::Cinnamon
     }
 
     pub fn is_lxde(self) -> bool {
@@ -194,6 +203,12 @@ pub fn detect(
     for variable in ["XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "DESKTOP_SESSION"] {
         if environment_variable_contains_desktop(variable, is_lxde_identifier) {
             return DesktopEnvironment::Lxde;
+        }
+    }
+
+    for variable in ["XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "DESKTOP_SESSION"] {
+        if environment_variable_contains_desktop(variable, is_cinnamon_identifier) {
+            return DesktopEnvironment::Cinnamon;
         }
     }
 
@@ -318,6 +333,14 @@ fn is_mate_identifier(value: &str) -> bool {
         || normalized.starts_with("mate_")
 }
 
+fn is_cinnamon_identifier(value: &str) -> bool {
+    let normalized = normalize_identifier(value);
+    normalized == "cinnamon"
+        || normalized == "x-cinnamon"
+        || normalized.starts_with("cinnamon-")
+        || normalized.starts_with("cinnamon_")
+}
+
 fn is_lxde_identifier(value: &str) -> bool {
     let normalized = normalize_identifier(value);
     normalized == "lxde" || normalized.starts_with("lxde-")
@@ -328,6 +351,16 @@ fn is_lxde_identifier(value: &str) -> bool {
 /// then walk the X11 window hierarchy (some window managers omit desktop
 /// windows from the client list or reparent them).
 pub fn pcmanfm_manages_x11_desktop() -> bool {
+    x11_desktop_window_present("pcmanfm", "pcmanfm")
+}
+
+/// True only when Nemo owns an X11 desktop-type window, not merely when a
+/// Nemo file-manager window is open.
+pub fn nemo_manages_x11_desktop() -> bool {
+    x11_desktop_window_present("nemo-desktop", "Nemo-desktop")
+}
+
+fn x11_desktop_window_present(expected_name: &str, expected_class: &str) -> bool {
     use std::ffi::{CStr, CString};
     use std::ptr;
     use x11::xlib;
@@ -337,19 +370,24 @@ pub fn pcmanfm_manages_x11_desktop() -> bool {
         window: xlib::Window,
         type_atom: xlib::Atom,
         desktop_atom: xlib::Atom,
+        expected_name: &str,
+        expected_class: &str,
     ) -> bool {
         let mut hint: xlib::XClassHint = std::mem::zeroed();
         if xlib::XGetClassHint(display, window, &mut hint) == 0 {
             return false;
         }
-        let pcmanfm = [hint.res_name, hint.res_class].iter().any(|&value| {
+        let matched_class = [hint.res_name, hint.res_class].iter().any(|&value| {
             !value.is_null()
-                && CStr::from_ptr(value).to_string_lossy()
-                    .eq_ignore_ascii_case("pcmanfm")
+                && {
+                    let actual = CStr::from_ptr(value).to_string_lossy();
+                    actual.eq_ignore_ascii_case(expected_name)
+                        || actual.eq_ignore_ascii_case(expected_class)
+                }
         });
         if !hint.res_name.is_null() { xlib::XFree(hint.res_name as *mut _); }
         if !hint.res_class.is_null() { xlib::XFree(hint.res_class as *mut _); }
-        if !pcmanfm { return false; }
+        if !matched_class { return false; }
 
         let mut actual_type = 0;
         let mut actual_format = 0;
@@ -377,8 +415,10 @@ pub fn pcmanfm_manages_x11_desktop() -> bool {
         type_atom: xlib::Atom,
         desktop_atom: xlib::Atom,
         depth: usize,
+        expected_name: &str,
+        expected_class: &str,
     ) -> bool {
-        if matches_desktop(display, window, type_atom, desktop_atom) { return true; }
+        if matches_desktop(display, window, type_atom, desktop_atom, expected_name, expected_class) { return true; }
         if depth == 0 { return false; }
         let mut root = 0;
         let mut parent = 0;
@@ -389,7 +429,7 @@ pub fn pcmanfm_manages_x11_desktop() -> bool {
         let mut found = false;
         for index in 0..count {
             if search_tree(display, *children.add(index as usize),
-                type_atom, desktop_atom, depth - 1) {
+                type_atom, desktop_atom, depth - 1, expected_name, expected_class) {
                 found = true;
                 break;
             }
@@ -424,7 +464,7 @@ pub fn pcmanfm_manages_x11_desktop() -> bool {
                     && actual_format == 32 && !property.is_null() {
                     for &window in std::slice::from_raw_parts(
                         property as *const xlib::Window, count as usize) {
-                        if matches_desktop(display, window, type_atom, desktop_atom) {
+                        if matches_desktop(display, window, type_atom, desktop_atom, expected_name, expected_class) {
                             found = true;
                             break;
                         }
@@ -432,7 +472,7 @@ pub fn pcmanfm_manages_x11_desktop() -> bool {
                 }
                 if !property.is_null() { xlib::XFree(property as *mut _); }
             }
-            if !found { found = search_tree(display, root, type_atom, desktop_atom, 4); }
+            if !found { found = search_tree(display, root, type_atom, desktop_atom, 4, expected_name, expected_class); }
         }
         xlib::XCloseDisplay(display);
         found
@@ -471,6 +511,7 @@ mod tests {
         is_gnome_identifier,
         is_kde_identifier,
         is_lxde_identifier,
+        is_cinnamon_identifier,
         is_mate_identifier,
         is_xfce_identifier,
     };
@@ -483,6 +524,14 @@ mod tests {
         assert!(!is_mate_identifier("XFCE"));
         assert!(!is_mate_identifier("LXDE"));
         assert!(!is_mate_identifier("ultimate"));
+    }
+
+    #[test]
+    fn recognizes_cinnamon_identifiers() {
+        assert!(is_cinnamon_identifier("X-Cinnamon"));
+        assert!(is_cinnamon_identifier("Cinnamon"));
+        assert!(!is_cinnamon_identifier("GNOME"));
+        assert!(!is_cinnamon_identifier("LXDE"));
     }
 
     #[test]

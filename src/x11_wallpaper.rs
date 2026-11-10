@@ -311,7 +311,7 @@ fn create_wallpaper_window(
             set_atom_property(display, window, wm_type, &[wm_type_desktop]);
             set_atom_property(display, window, wm_state,
                 &[wm_state_below, wm_state_skip_taskbar, wm_state_skip_pager]);
-            xlib::XMapWindow(display, window);
+            xlib::XMapRaised(display, window);
         }
         xlib::XSync(display, xlib::False);
 
